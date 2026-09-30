@@ -53,14 +53,15 @@ body from `/v1/health`, never a port check.
 
 ## nora-render and the network
 
-`nora-render markdown|report|mermaid|chart|map IN OUT` (`render/`) is Smith's
-renderers as one CLI; the `document-creation` skill tells Nora to use it.
-Measured 2026-10-01 in a throwaway `docker run --network=none` of this image:
+`nora-render chart|mermaid|map IN OUT` (`render/`) is Smith's image
+renderers as one CLI: each makes a picture (SVG or PNG), never a page. A
+document is the document path's (ADR 0020), not the computer's. Measured
+2026-10-01 in a throwaway `docker run --network=none` of this image:
 
 | renderer | needs | offline |
 |---|---|---|
-| `markdown`, `report`, `chart` | nothing (Python in `/opt/nora-render/venv`) | yes |
-| `mermaid` (and ```mermaid in a report) | mermaid-cli and its Chromium, both in the image | yes |
+| `chart` | nothing (standard-library Python) | yes |
+| `mermaid` | mermaid-cli and its Chromium, both in the image | yes |
 | `map` (Smith's `render_map` and `geocode_address`) | `maps.googleapis.com:443` and `GOOGLE_MAPS_API_KEY` | no: exits 3 |
 
 `map` stays refused until the operator allows its one host and gives the VM

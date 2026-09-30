@@ -255,13 +255,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     (2026-09-30, PR B «what she can read»: `rollup_read` against `record_query`
     twice and against `where_been` past its 90 days, and `standing_read` read
     before `standing_revise` and against `note_read`/`note_search`), plus
-    `tool_selection`'s 3 S3a cases (2026-10-01, design/sandbox-runtime §6: an
-    export to a link that must load document-creation first and must not
-    reach `make_artifact`, a `computer_run` task that should load computer-use
-    first, and a `computer_import` of a sent file against `media_fetch`;
-    computer-on arm only); a change to it
+    `tool_selection`'s 2 S3a cases (2026-10-01, design/sandbox-runtime §7: a
+    `computer_run` task that should load computer-use first, and a
+    `computer_import` of a sent file against `media_fetch`; computer-on arm
+    only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 278
-    assert sum(c.active + c.parked for c in totals) == 278
+    assert sum(c.total for c in totals) == 277
+    assert sum(c.active + c.parked for c in totals) == 277

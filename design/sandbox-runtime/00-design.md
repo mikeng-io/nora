@@ -212,6 +212,14 @@ round 2).
 
 ## 6. `make_artifact` ↔ Drop
 
+> **Superseded in part, 2026-10-01 (operator).** S3a is computer-use only.
+> A document people open is the artifact work's (ADR 0020,
+> `design/artifact/00-design.md`: a JSON spec the portal renders), with its
+> own skill; there is no `document-creation` skill over the computer. What
+> survives here: `computer_export` sends FILES (images, charts, CSV, PDF,
+> data), never a web page; an SVG is attached or kept, never linked; and
+> `nora-render` keeps `chart`, `mermaid` and `map`, which make pictures.
+
 **Today:**
 
 - Smith runs inside the sandbox holding a per-job Drop token (minted by

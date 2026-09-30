@@ -86,7 +86,12 @@ from ..domain.computer_events import (
     ComputerEventStore,
     is_live_actor,
 )
-from ..domain.computer_exports import ComputerExport, ComputerExportStore, sniff_export_type
+from ..domain.computer_exports import (
+    NOT_AS_LINK,
+    ComputerExport,
+    ComputerExportStore,
+    sniff_export_type,
+)
 from ..domain.computer_leases import ComputerLeases, Lease, scope_key, session_key
 from ..domain.computer_sessions import (
     EXPIRED,
@@ -13786,15 +13791,16 @@ Args:
         """Send a file from your computer out as a link, a chat attachment or
         a kept copy. Call this when a file you made is ready.
 
-        MUST: for a page, report, chart, map or table people open as a file or
-        link, follow the document-creation skill.
+        MUST: it sends files (images, charts, CSV, PDF, data), never a web
+        page. For a document people open, follow the document skill.
 
         Returns `status`: ok, nothing_found, refused, held_for_review or
         unavailable, with a `note` on how to read it.
         - ok: sent. A link carries `url` and `artifact_id`.
         - nothing_found: there is no such file.
-        - refused: too large, a kind of file that may not leave, an
-          artifact_id this room did not make, or nobody here asked for it.
+        - refused: too large, a kind of file that may not leave (a web page,
+          an SVG as a link), an artifact_id this room did not make, or nobody
+          here asked for it.
         - held_for_review: made, and held by review or this room's cooldown.
         - unavailable: the computer, or where it was going, could not be reached.
 
@@ -13909,9 +13915,15 @@ Args:
             if media_type is None:
                 outcome, row = "refused", {**received, "reason": "type not allowed"}
                 return {"status": "refused", "reason": "not a kind of file that may leave",
-                        "note": "Nothing was sent: only a page, a picture, a PDF or a "
-                                "text, CSV, markdown or JSON file may leave. Render it into "
-                                "one of those first."}
+                        "note": "Nothing was sent: only a picture, a PDF, or a text, CSV, "
+                                "markdown or JSON file may leave, never a web page. A "
+                                "document goes through the document skill."}
+            if to == "link" and media_type in NOT_AS_LINK:
+                outcome, row = "refused", {**received, "media_type": media_type,
+                                           "reason": "svg as a link"}
+                return {"status": "refused", "reason": "an SVG is never published as a link",
+                        "note": "Nothing was sent: an SVG may be attached here or kept, "
+                                "never linked. Send it with to=chat instead."}
             name = path.rsplit("/", 1)[-1] or "file"
             shown_title = cut((title or "").strip() or name, _EXPORT_TITLE_CHARS)
             received = {**received, "media_type": media_type, "title": shown_title}

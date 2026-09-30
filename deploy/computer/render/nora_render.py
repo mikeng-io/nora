@@ -1,41 +1,34 @@
-"""`nora-render`: Smith's renderers as one CLI on Nora's computer
-(design/sandbox-runtime §5, §6; S3a).
+"""`nora-render`: Smith's image renderers as one CLI on Nora's computer
+(design/sandbox-runtime §5; S3a). Each makes a FILE, a picture, never a
+page: a document people open is the document path's (ADR 0020), not this.
 
-    nora-render markdown IN.md  OUT.html   markdown to a page
-    nora-render report   IN.md  OUT.html   markdown plus ```mermaid and
-                                           ```chart blocks and local images,
-                                           all inlined: one self-contained page
-    nora-render mermaid  IN.mmd OUT.svg    a diagram (OUT.png for a picture)
-    nora-render chart    IN.json|IN.csv OUT.svg|OUT.html   a bar or line chart
-    nora-render map      IN.json OUT.png|OUT.html          a static map
+    nora-render chart   IN.json|IN.csv OUT.svg   a bar or line chart
+    nora-render mermaid IN.mmd OUT.svg|OUT.png   a diagram
+    nora-render map     IN.json OUT.png          a static map
 
-Every page is Smith's Mono page shell (`page_shell.py`) with no script in it:
-markdown is rendered with raw HTML ESCAPED (the source is model-written), a
-diagram and a chart are static SVG drawn here, never a live library.
+A chart is static SVG drawn here from the data, and a diagram is drawn by
+mermaid-cli in a local headless Chromium: neither carries a live library.
 
-The computer's network is deny-all. Everything above runs offline except
-`map`, which needs `maps.googleapis.com` (Geocoding for an address, Static
-Maps for the picture) and `GOOGLE_MAPS_API_KEY`, which the VM only sees as an
-sbx placeholder the proxy fills in on requests to that host. Without both it
+The computer's network is deny-all. `chart` and `mermaid` run offline;
+`map` needs `maps.googleapis.com` (Geocoding for an address, Static Maps for
+the picture) and `GOOGLE_MAPS_API_KEY`, which the VM only sees as an sbx
+placeholder the proxy fills in on requests to that host. Without both it
 exits 3 and says so; nothing else is attempted.
 
 Exit codes: 0 done; 2 the input is wrong (the message says what to fix);
 3 a renderer needs something the computer does not have (the network, a key,
-the diagram tool).
+the diagram tool). Standard library only: it runs on the image's python3.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import csv
 import html
 import io
 import json
 import math
-import mimetypes
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -47,15 +40,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from markdown_it import MarkdownIt
-from pygments import highlight
-from pygments.formatters import HtmlFormatter
-from pygments.lexers import get_lexer_by_name, guess_lexer
-from pygments.util import ClassNotFound
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from page_shell import page_shell
-
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 STATIC_MAPS_URL = "https://maps.googleapis.com/maps/api/staticmap"
 MAPS_HOST = "maps.googleapis.com"
@@ -65,135 +49,12 @@ MAPS_HOST = "maps.googleapis.com"
 #: its series apart).
 PALETTE = ("#141414", "#2f6f62", "#b5651d", "#3b5b92", "#8a8a8a")
 
-#: Extra page CSS: diagrams and charts scale to the column.
-_FIGURE_CSS = (
-    "<style>.section svg, .section img { max-width: 100%; height: auto; }"
-    " figure { margin: 0; } figcaption { color: var(--muted); font-size: .9rem; }"
-    "</style>"
-)
-
-
 class InputError(Exception):
     """The input is wrong; the message says what to change (exit 2)."""
 
 
 class MissingCapabilityError(Exception):
     """A renderer needs what the computer does not have (exit 3)."""
-
-
-# -- markdown ----------------------------------------------------------------
-
-_FORMATTER = HtmlFormatter(nowrap=True, cssclass="highlight")
-_CODE_STYLE = f"<style>{_FORMATTER.get_style_defs('.highlight')}</style>"
-_FRONT_MATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
-
-
-def _highlight(code: str, lang: str, _attrs: str) -> str:
-    try:
-        lexer = get_lexer_by_name(lang) if lang else guess_lexer(code)
-    except ClassNotFound:
-        lexer = get_lexer_by_name("text")
-    return f'<pre class="highlight"><code>{highlight(code, lexer, _FORMATTER)}</code></pre>'
-
-
-def _markdown(*, fences: dict[str, Any] | None = None, base: Path | None = None) -> MarkdownIt:
-    # `html: False`: raw HTML in the (model-written) source is escaped, never
-    # rendered, so no script reaches a page (Smith's Global Constraint 1).
-    md = MarkdownIt("commonmark", {"html": False, "highlight": _highlight})
-    md.enable(["table", "strikethrough"])
-    if fences:
-        default_fence = md.renderer.rules["fence"]
-
-        def fence(_self, tokens, idx, options, env):  # type: ignore[no-untyped-def]
-            token = tokens[idx]
-            lang = token.info.strip().split(" ", 1)[0].lower()
-            if lang in fences:
-                return fences[lang](token.content)
-            return default_fence(tokens, idx, options, env)
-
-        md.add_render_rule("fence", fence)
-    if base is not None:
-        default_image = md.renderer.rules["image"]
-
-        def image(_self, tokens, idx, options, env):  # type: ignore[no-untyped-def]
-            token = tokens[idx]
-            src = str(token.attrGet("src") or "")
-            inlined = _inline_image(src, base)
-            if inlined is not None:
-                token.attrSet("src", inlined)
-            return default_image(tokens, idx, options, env)
-
-        md.add_render_rule("image", image)
-    return md
-
-
-def _split_front_matter(text: str) -> tuple[dict[str, str], str]:
-    found = _FRONT_MATTER.match(text)
-    if not found:
-        return {}, text
-    meta: dict[str, str] = {}
-    for line in found.group(1).splitlines():
-        key, sep, value = line.partition(":")
-        if sep:
-            meta[key.strip().lower()] = value.strip().strip("\"'")
-    return meta, text[found.end():]
-
-
-def _title(meta: dict[str, str], text: str, fallback: str) -> str:
-    if meta.get("title"):
-        return meta["title"]
-    for line in text.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return fallback
-
-
-def _accent(meta: dict[str, str]) -> str | None:
-    accent = meta.get("accent") or None
-    if accent is not None and not re.fullmatch(r"#[0-9a-fA-F]{3,8}", accent):
-        raise InputError(f"accent must be a hex colour like #2f6f62, got {accent!r}")
-    return accent
-
-
-def _inline_image(src: str, base: Path) -> str | None:
-    """A local picture as a `data:` URI, so the page carries it. A remote or
-    missing one is left as written."""
-    if not src or re.match(r"^[a-z][a-z0-9+.-]*:", src, re.IGNORECASE):
-        return None
-    path = (base / urllib.parse.unquote(src)).resolve()
-    if not path.is_file():
-        return None
-    media_type = mimetypes.guess_type(path.name)[0] or ""
-    if media_type not in ("image/png", "image/jpeg", "image/gif", "image/webp",
-                          "image/svg+xml"):
-        return None
-    return f"data:{media_type};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
-
-
-def render_markdown_page(text: str, *, fallback_title: str) -> str:
-    meta, body = _split_front_matter(text)
-    return page_shell(
-        title=_title(meta, body, fallback_title),
-        sections=[_CODE_STYLE + _markdown().render(body)],
-        accent=_accent(meta),
-    )
-
-
-def render_report_page(text: str, *, fallback_title: str, base: Path) -> str:
-    """Markdown with its ```mermaid and ```chart blocks drawn as inline SVG
-    and its local pictures inlined: one file that opens anywhere. A block
-    that cannot be drawn stops the render (exit 2 or 3): a report that
-    silently drops a figure is worse than one that says it failed."""
-    meta, body = _split_front_matter(text)
-    fences = {
-        "mermaid": lambda source: f"<figure>{render_mermaid(source, 'svg').decode()}</figure>",
-        "chart": lambda source: f"<figure>{render_chart_svg(_json_spec(source))}</figure>",
-    }
-    return page_shell(
-        title=_title(meta, body, fallback_title),
-        sections=[_FIGURE_CSS + _CODE_STYLE + _markdown(fences=fences, base=base).render(body)],
-        accent=_accent(meta),
-    )
 
 
 # -- mermaid -------------------------------------------------------------------
@@ -430,14 +291,10 @@ def _write(out: Path, data: str | bytes) -> None:
         out.write_bytes(data)
 
 
-def _page(title: str, fragment: str) -> str:
-    return page_shell(title=title, sections=[_FIGURE_CSS + fragment])
-
-
 def run(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="nora-render", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="kind", required=True)
-    for kind in ("markdown", "report", "mermaid", "map"):
+    for kind in ("mermaid", "map"):
         cmd = sub.add_parser(kind)
         cmd.add_argument("input", type=Path)
         cmd.add_argument("output", type=Path)
@@ -455,37 +312,20 @@ def run(argv: Sequence[str]) -> int:
             raise InputError(f"no such input file: {src}")
         text = src.read_text(encoding="utf-8")
         suffix = out.suffix.lower()
-        if args.kind == "markdown":
-            _write(out, render_markdown_page(text, fallback_title=src.stem))
-        elif args.kind == "report":
-            _write(out, render_report_page(text, fallback_title=src.stem,
-                                           base=src.resolve().parent))
-        elif args.kind == "mermaid":
+        if args.kind == "mermaid":
             if suffix not in (".svg", ".png"):
                 raise InputError("a diagram is written as OUT.svg or OUT.png")
             _write(out, render_mermaid(text, suffix[1:]))
         elif args.kind == "chart":
             spec = (_chart_spec_csv(text, args.type, args.title)
                     if src.suffix.lower() == ".csv" else _json_spec(text))
-            svg = render_chart_svg(spec)
-            if suffix == ".svg":
-                _write(out, svg)
-            elif suffix == ".html":
-                _write(out, _page(str(spec.get("title") or src.stem), svg))
-            else:
-                raise InputError("a chart is written as OUT.svg or OUT.html")
+            if suffix != ".svg":
+                raise InputError("a chart is written as OUT.svg")
+            _write(out, render_chart_svg(spec))
         else:
-            spec = _json_spec(text, "map")
-            picture = render_map_png(spec)
-            if suffix == ".png":
-                _write(out, picture)
-            elif suffix == ".html":
-                alt = html.escape(str(spec.get("title") or "map"))
-                encoded = base64.b64encode(picture).decode("ascii")
-                _write(out, _page(str(spec.get("title") or src.stem),
-                                  f'<img src="data:image/png;base64,{encoded}" alt="{alt}"/>'))
-            else:
-                raise InputError("a map is written as OUT.png or OUT.html")
+            if suffix != ".png":
+                raise InputError("a map is written as OUT.png")
+            _write(out, render_map_png(_json_spec(text, "map")))
     except InputError as exc:
         print(f"nora-render {args.kind}: {exc}", file=sys.stderr)
         return 2

@@ -582,9 +582,12 @@ class Computer:
         if prc != 0:
             return {"tmux": None, "tmux_reason": f"tmux exited {prc}: {perr.strip()[:200]}"}
         running: set[str] = set()
+        pane_pids: set[int] = set()
         parents = await asyncio.to_thread(child_parents, self.proc_root)
         for line in pout.splitlines():
             parts = line.split("\t")
+            if len(parts) == 4:
+                pane_pids.add(_int(parts[3], 0))
             if len(parts) == 4 and pane_running(
                 dead=parts[1] == "1", command=parts[2], pid=_int(parts[3], 0), parents=parents,
             ):
@@ -597,19 +600,24 @@ class Computer:
             name, created, attached = parts
             sessions.append({"name": name, "created": _int(created, 0),
                              "attached": _int(attached, 0) > 0, "running": name in running})
-        return {"tmux": sessions}
+        return {"tmux": sessions, "_pane_pids": frozenset(pane_pids)}
 
-    def processes(self, scope: str) -> dict[str, Any]:
+    def processes(self, scope: str, *, panes: frozenset[int] = frozenset()) -> dict[str, Any]:
         """Every process the scope's user owns, from `/proc`: a job started
         any way (`nohup … &` has no tmux session). Isolated, that user is the
         scope's own; not isolated (tests, a non-root computerd), commands run
         as computerd's own user, so that is whose processes are listed.
         `processes` is None (with `processes_reason`) when `/proc` cannot be
-        read: unknown, never none."""
+        read: unknown, never none.
+
+        tmux is judged by its own rule, never here (operator, 2026-10-01): a
+        tmux server and a pane's own process (`panes`, from `list-panes`) are
+        left out, so an idle session is not running; a pane's CHILD is an
+        ordinary process and counts, which is the pane-with-a-child rule."""
         ids = self.owner.ids(scope)
         uid = ids[0] if ids is not None else os.getuid()
         try:
-            found = scope_processes(self.proc_root, uid, time.time())
+            found = scope_processes(self.proc_root, uid, time.time(), exclude=panes)
         except OSError as exc:
             return {"processes": None,
                     "processes_reason": f"{type(exc).__name__}: {exc}"[:200]}
@@ -619,8 +627,10 @@ class Computer:
 
     async def state(self, scope: str, body: dict[str, Any]) -> dict[str, Any]:
         files = await asyncio.to_thread(self.recent_files, scope)
-        procs = await asyncio.to_thread(self.processes, scope)
-        return {"status": "ok", **files, **await self.tmux_sessions(scope), **procs}
+        tmux = await self.tmux_sessions(scope)
+        panes = tmux.pop("_pane_pids", frozenset())
+        procs = await asyncio.to_thread(self.processes, scope, panes=panes)
+        return {"status": "ok", **files, **tmux, **procs}
 
 
 def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
@@ -632,11 +642,14 @@ def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
         os.close(fd)
 
 
-def scope_processes(proc_root: Path, uid: int, now: float) -> list[dict[str, Any]]:
+def scope_processes(
+    proc_root: Path, uid: int, now: float, *, exclude: frozenset[int] = frozenset(),
+) -> list[dict[str, Any]]:
     """Every process whose real uid is `uid`: pid, command (its argv, cut to
     `PROCESS_COMMAND_CHARS`), start (epoch seconds) and elapsed seconds.
-    Kernel threads (no argv; pid 2 and its children) are the only ones
-    left out. Nothing is followed through a link: each `/proc/<pid>` is
+    Left out: kernel threads (no argv; pid 2 and its children), and tmux's
+    own processes, a server (`tmux…` in its name) and each pid in `exclude`
+    (the panes), which tmux's pane rule judges instead. Nothing is followed through a link: each `/proc/<pid>` is
     opened as a directory with `O_NOFOLLOW` and its files read relative to
     it. A process that exits mid-read is skipped. Raises `OSError` when
     `proc_root` itself cannot be listed."""
@@ -669,6 +682,9 @@ def scope_processes(proc_root: Path, uid: int, now: float) -> list[dict[str, Any
         ppid = _int(fields[1], -1) if len(fields) > 1 else -1
         if not argv or pid == 2 or ppid == 2:
             continue  # a kernel thread
+        comm = raw[raw.find("(") + 1:raw.rfind(")")]
+        if pid in exclude or comm.startswith("tmux"):
+            continue  # tmux's own: judged by the pane-with-a-child rule
         command = " ".join(a.decode("utf-8", "replace") for a in argv.split(b"\0") if a)
         start_ticks = _int(fields[19], 0) if len(fields) > 19 else 0
         started = boot + start_ticks / ticks if boot is not None else now

@@ -1,6 +1,12 @@
 """Files leaving Nora's computer (design/sandbox-runtime §6, §7): the record
 of every `computer_export`, and the one rule that types what leaves.
 
+**Files, never documents** (operator, 2026-10-01). What leaves is a picture,
+a chart, a PDF, a CSV or other data. A page people open as a document is the
+document path's (ADR 0020: a JSON spec the portal renders), so HTML never
+leaves here at all, and an SVG, which can carry script, may be attached or
+kept but never published as a link on Drop's origin.
+
 **The VM only produces files; Nora publishes.** `computer_export` fetches the
 bytes out of the VM, and everything that decides what they ARE happens on
 Nora's side, on the bytes she received: the size, the sha256 and the media
@@ -20,9 +26,9 @@ another room made) is refused, not revised.
 extension. The binary formats come from their magic numbers
 (`nora.domain.media.sniff_media_type` for the image four, `%PDF-` for PDF);
 a text file is HTML when it opens the way the WHATWG MIME sniffing standard
-says an HTML document opens (so a `.png` holding a page is typed as the page
-it is), SVG when its root element is `<svg`, JSON when it parses as an object
-or an array. Only a text file that is none of those, plain UTF-8 with no
+says an HTML document opens (so a `.png` holding a page is refused as the
+page it is, never typed as an image), SVG when its root element is `<svg`,
+JSON when it parses as an object or an array. Only a text file that is none of those, plain UTF-8 with no
 markup the standard recognises, takes its subtype (`csv`, `md`, `txt`) from
 the file name, and every one of those three is inert text. Anything else is
 not exportable (`None`).
@@ -44,6 +50,7 @@ from nora.domain.media import sniff_media_type
 __all__ = [
     "DESTINATIONS",
     "EXPORT_MEDIA_TYPES",
+    "NOT_AS_LINK",
     "ComputerExport",
     "ComputerExportStore",
     "normalise_export",
@@ -57,7 +64,6 @@ DESTINATIONS: frozenset[str] = frozenset({"link", "chat", "keep"})
 #: The allowlist: the media types a file may leave the computer as, by the
 #: short name the tool's result and the audit row use.
 EXPORT_MEDIA_TYPES: dict[str, str] = {
-    "html": "text/html",
     "svg": "image/svg+xml",
     "png": "image/png",
     "jpeg": "image/jpeg",
@@ -70,6 +76,10 @@ EXPORT_MEDIA_TYPES: dict[str, str] = {
     "json": "application/json",
 }
 _ALLOWED: frozenset[str] = frozenset(EXPORT_MEDIA_TYPES.values())
+
+#: Allowed out, but never as a Drop link: an SVG can run script, and a link
+#: serves it on Drop's public origin. It may be attached or kept.
+NOT_AS_LINK: frozenset[str] = frozenset({"image/svg+xml"})
 
 #: How far into a text file the markup checks look: the standard's own
 #: "resource header" is 1445 bytes; this reads a little more, in characters.
@@ -133,7 +143,7 @@ def sniff_export_type(data: bytes, path: str) -> str | None:
     text = text.removeprefix("﻿")
     head = text.lstrip(" \t\n\r\f")[:_HEAD_CHARS]
     if _looks_like_html(head):
-        return "text/html"
+        return None  # a page: the document path's, never an export
     if _looks_like_svg(head):
         return "image/svg+xml"
     if head[:1] in ("{", "["):
@@ -189,6 +199,8 @@ class ComputerExport:
             raise ValueError(f"unknown export destination {self.destination!r}")
         if self.media_type not in _ALLOWED:
             raise ValueError(f"media type {self.media_type!r} is not exportable")
+        if self.destination == "link" and self.media_type in NOT_AS_LINK:
+            raise ValueError(f"{self.media_type} is never published as a link")
         if self.destination == "link" and not (self.artifact_id and self.url):
             raise ValueError("a link export carries its artifact_id and url")
         if self.destination != "link" and (self.artifact_id or self.revised):

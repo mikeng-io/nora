@@ -256,11 +256,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # opened by translating the vision reading back, item by item, to the
     # person who had sent it. The tool notes were reframed in the same change;
     # this reaches the answers that read only a transcript placeholder.
-    # v34 (2026-10-01, design/sandbox-runtime §6, S3a): one line in «What you
-    # can actually do». A document people open is made on her computer and
-    # she loads document-creation first: the must-have half of that optional
-    # skill, because an optional skill was skipped in 3 of 6 live turns.
-    "conduct": (34, "e966c67b0f270efec1fbd4182465a0f3ea9f4e53108c4e92d67bf48f7d67c91f"),
+    "conduct": (33, "b1c1de0176fe1f5fe872dab1c66305da8e8c8d37914365dea1c84954a3ea3296"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

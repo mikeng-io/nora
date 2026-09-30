@@ -324,8 +324,8 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     # design/sandbox-runtime §6 (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",
-        "scope": "ab" * 16, "path": f"out/{n}.html", "destination": "link",
-        "sha256": f"{n:064x}", "size_bytes": n, "media_type": "text/html",
+        "scope": "ab" * 16, "path": f"out/{n}.png", "destination": "link",
+        "sha256": f"{n:064x}", "size_bytes": n, "media_type": "image/png",
         "title": f"page {n}", "tag_id": f"t{n}", "operation_id": _uuid("cx-op", n),
         "artifact_id": f"art_{n}", "url": f"https://example.invalid/{n}",
     },

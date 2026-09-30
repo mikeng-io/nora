@@ -35,8 +35,8 @@ def _export(**overrides):
     defaults = {
         "id": uuid4(), "created_at": T0, "platform": "signal",
         "conversation_id": "conv-1", "scope": "ab" * 16,
-        "path": "projects/trip/out/report.html", "destination": "link",
-        "sha256": "c" * 64, "size_bytes": 1234, "media_type": "text/html",
+        "path": "projects/trip/out/chart.png", "destination": "link",
+        "sha256": "c" * 64, "size_bytes": 1234, "media_type": "image/png",
         "title": "Trip report", "tag_id": "tag-1", "operation_id": uuid4(),
         "artifact_id": "art_000001", "url": "https://nora.example.net/drop/abc",
         "revised": False, "blob_key": None, "session_id": uuid4(),
@@ -79,7 +79,7 @@ async def test_a_kept_export_round_trips_with_its_blob_key(store):
 async def test_for_artifact_is_the_first_export_not_the_newest_revision(store):
     first = _export(created_at=T0)
     revision = _export(created_at=T0 + timedelta(hours=1), revised=True,
-                       path="projects/trip/out/report-v2.html")
+                       path="projects/trip/out/chart-v2.png")
     await store.record(revision)
     await store.record(first)
     got = await store.for_artifact(artifact_id="art_000001")
@@ -97,6 +97,10 @@ def test_a_link_row_without_its_url_is_refused_before_any_store():
         _export(url=None)
     with pytest.raises(ValueError, match="not exportable"):
         _export(media_type="application/zip")
+    with pytest.raises(ValueError, match="not exportable"):
+        _export(media_type="text/html")
+    with pytest.raises(ValueError, match="never published as a link"):
+        _export(media_type="image/svg+xml")
 
 
 async def test_the_table_refuses_a_change_to_a_row(pg_url):

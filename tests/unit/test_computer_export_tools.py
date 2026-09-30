@@ -56,6 +56,8 @@ from tests.test_doctrine_loader import write
 GROUP = "g-export"
 OTHER_GROUP = "g-other"
 PAGE = b"<!doctype html>\n<html><body><h1>Trip</h1></body></html>\n"
+#: A picture: what `computer_export` publishes (files, never pages).
+CHART = b"\x89PNG\r\n\x1a\n" + b"\x00\x01" * 40
 
 
 @pytest.fixture
@@ -136,19 +138,19 @@ def _two_rows(world: _World, tool: str) -> tuple:
 
 async def test_a_link_export_publishes_the_bytes_and_records_where_they_went(persons):
     world = _World()
-    world.put(GROUP, "projects/trip/out/report.html", PAGE)
+    world.put(GROUP, "projects/trip/out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](
-        path="projects/trip/out/report.html", to="link", title="Trip",
+        path="projects/trip/out/chart.png", to="link", title="Trip",
     )
     assert out["status"] == "ok"
     assert out["url"].startswith("https://")
     stored = world.ingest.artifacts[out["artifact_id"]]
-    assert (stored["data"], stored["media_type"], stored["title"]) == (PAGE, "text/html", "Trip")
+    assert (stored["data"], stored["media_type"], stored["title"]) == (CHART, "image/png", "Trip")
     [row] = world.exports.exports
     assert (row.destination, row.artifact_id, row.url, row.revised) == (
         "link", out["artifact_id"], out["url"], False)
     assert (row.platform, row.conversation_id, row.path) == (
-        "signal", GROUP, "projects/trip/out/report.html")
+        "signal", GROUP, "projects/trip/out/chart.png")
     _, finished = _two_rows(world, "computer_export")
     assert finished.status == "ok"
     assert finished.result["url"] == out["url"]
@@ -156,16 +158,16 @@ async def test_a_link_export_publishes_the_bytes_and_records_where_they_went(per
 
 async def test_the_same_room_revises_its_link_and_keeps_it(persons):
     world = _World()
-    world.put(GROUP, "out/report.html", PAGE)
+    world.put(GROUP, "out/chart.png", CHART)
     tools = _tools(world, persons)
-    first = await tools["computer_export"](path="out/report.html", to="link")
-    world.put(GROUP, "out/report.html", PAGE.replace(b"Trip", b"Trip v2"))
+    first = await tools["computer_export"](path="out/chart.png", to="link")
+    world.put(GROUP, "out/chart.png", CHART + b"v2")
     second = await tools["computer_export"](
-        path="out/report.html", to="link", artifact_id=first["artifact_id"],
+        path="out/chart.png", to="link", artifact_id=first["artifact_id"],
     )
     assert second["status"] == "ok"
     assert (second["artifact_id"], second["url"]) == (first["artifact_id"], first["url"])
-    assert b"Trip v2" in world.ingest.artifacts[first["artifact_id"]]["data"]
+    assert world.ingest.artifacts[first["artifact_id"]]["data"] == CHART + b"v2"
     assert [e.revised for e in world.exports.exports] == [False, True]
 
 
@@ -173,17 +175,17 @@ async def test_a_room_cannot_revise_another_rooms_artifact(persons):
     """FALSIFIER: the owner check. Remove it and the other room's page is
     overwritten through Drop's PATCH."""
     world = _World()
-    world.put(OTHER_GROUP, "out/theirs.html", PAGE)
+    world.put(OTHER_GROUP, "out/theirs.png", CHART)
     theirs = await _tools(world, persons, conversation_id=OTHER_GROUP)["computer_export"](
-        path="out/theirs.html", to="link",
+        path="out/theirs.png", to="link",
     )
-    world.put(GROUP, "out/mine.html", b"<!doctype html><p>overwritten</p>")
+    world.put(GROUP, "out/mine.png", CHART + b"overwritten")
     out = await _tools(world, persons)["computer_export"](
-        path="out/mine.html", to="link", artifact_id=theirs["artifact_id"],
+        path="out/mine.png", to="link", artifact_id=theirs["artifact_id"],
     )
     assert out["status"] == "refused"
     assert out["note"].strip()
-    assert world.ingest.artifacts[theirs["artifact_id"]]["data"] == PAGE
+    assert world.ingest.artifacts[theirs["artifact_id"]]["data"] == CHART
     assert len(world.exports.exports) == 1
     rows = [e for e in world.events.finished() if e.conversation_id == GROUP]
     assert [(r.status, r.result["reason"]) for r in rows] == [
@@ -192,9 +194,9 @@ async def test_a_room_cannot_revise_another_rooms_artifact(persons):
 
 async def test_an_artifact_the_computer_never_made_is_refused(persons):
     world = _World()
-    world.put(GROUP, "out/page.html", PAGE)
+    world.put(GROUP, "out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](
-        path="out/page.html", to="link", artifact_id="art_made_by_smith",
+        path="out/chart.png", to="link", artifact_id="art_made_by_smith",
     )
     assert out["status"] == "refused"
     assert world.ingest.artifacts == {}
@@ -202,12 +204,12 @@ async def test_an_artifact_the_computer_never_made_is_refused(persons):
 
 async def test_an_unreadable_owner_is_unavailable_not_a_revision(persons):
     world = _World()
-    world.put(GROUP, "out/page.html", PAGE)
+    world.put(GROUP, "out/chart.png", CHART)
     tools = _tools(world, persons)
-    made = await tools["computer_export"](path="out/page.html", to="link")
+    made = await tools["computer_export"](path="out/chart.png", to="link")
     world.exports.fail_read = True
     out = await tools["computer_export"](
-        path="out/page.html", to="link", artifact_id=made["artifact_id"],
+        path="out/chart.png", to="link", artifact_id=made["artifact_id"],
     )
     assert out["status"] == "unavailable"
 
@@ -215,15 +217,45 @@ async def test_an_unreadable_owner_is_unavailable_not_a_revision(persons):
 # -- the media type is the bytes' --------------------------------------------
 
 
-async def test_a_png_name_holding_a_page_leaves_as_the_page_it_is(persons):
+async def test_a_web_page_never_leaves_as_a_link(persons):
+    """FALSIFIER: files, never documents (operator, 2026-10-01). A page is
+    the document path's; `computer_export` refuses it, and never publishes
+    it on Drop's origin."""
+    world = _World()
+    world.put(GROUP, "out/report.html", PAGE)
+    out = await _tools(world, persons)["computer_export"](path="out/report.html", to="link")
+    assert out["status"] == "refused"
+    assert world.ingest.artifacts == {}
+    _, finished = _two_rows(world, "computer_export")
+    assert finished.result["reason"] == "type not allowed"
+
+
+async def test_a_png_name_holding_a_page_is_refused_as_the_page_it_is(persons):
     """FALSIFIER: MIME from the bytes. Typed from the extension, this page
-    would be served as `image/png`."""
+    would be published as `image/png`."""
     world = _World()
     world.put(GROUP, "out/chart.png", PAGE)
     out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
-    assert out["status"] == "ok"
-    assert out["media_type"] == "text/html"
-    assert world.ingest.artifacts[out["artifact_id"]]["media_type"] == "text/html"
+    assert out["status"] == "refused"
+    assert world.ingest.artifacts == {}
+
+
+SVG = b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+
+
+async def test_an_svg_is_never_a_link_but_may_be_attached_or_kept(persons, tmp_path):
+    """FALSIFIER: an SVG can run script, and a link serves it on Drop's
+    public origin."""
+    world = _World()
+    world.put(GROUP, "out/flow.svg", SVG)
+    deliverer, _ = _deliverer(tmp_path, world.records)
+    tools = _tools(world, persons, deliverer=deliverer)
+    link = await tools["computer_export"](path="out/flow.svg", to="link")
+    kept = await tools["computer_export"](path="out/flow.svg", to="keep")
+    sent = await tools["computer_export"](path="out/flow.svg", to="chat")
+    assert (link["status"], kept["status"], sent["status"]) == ("refused", "ok", "ok")
+    assert world.ingest.artifacts == {}
+    assert [e.destination for e in world.exports.exports] == ["keep", "chat"]
 
 
 async def test_a_file_of_no_allowed_type_does_not_leave_whatever_its_name(persons):
@@ -245,8 +277,9 @@ async def test_a_file_of_no_allowed_type_does_not_leave_whatever_its_name(person
     (b"city,temp\nHK,31\n", "data.csv", "text/csv"),
     (b"# Title\n\nbody\n", "notes.md", "text/markdown"),
     (b"# Title\n\nbody\n", "notes.png", "text/plain"),
-    (b"  <P>hello</P>", "x.md", "text/html"),
-    (b"<!-- c -->", "x.txt", "text/html"),
+    (b"  <P>hello</P>", "x.md", None),
+    (b"<!-- c -->", "x.txt", None),
+    (b"<!doctype html><html></html>", "x.png", None),
     (b"\x00\x00binary", "x.txt", None),
     (b"\x00\x00\x00\x18ftypmp42", "x.png", None),
 ])
@@ -303,15 +336,15 @@ async def test_a_runtime_whose_digest_disagrees_with_its_bytes_publishes_nothing
     """FALSIFIER: the sha256 is computed on Nora's side. Trusting the claim,
     the tampered page would be published under the original's digest."""
     world = _World(runtime=_TamperingRuntime())
-    world.put(GROUP, "out/page.html", PAGE)
-    out = await _tools(world, persons)["computer_export"](path="out/page.html", to="link")
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
     assert out["status"] == "unavailable"
     assert world.ingest.artifacts == {}
     assert world.exports.exports == []
     _, finished = _two_rows(world, "computer_export")
-    received = PAGE + b"<script>x</script>"
+    received = CHART + b"<script>x</script>"
     assert finished.result["sha256"] == hashlib.sha256(received).hexdigest()
-    assert finished.result["claimed_sha256"] == hashlib.sha256(PAGE).hexdigest()
+    assert finished.result["claimed_sha256"] == hashlib.sha256(CHART).hexdigest()
 
 
 class _SilentRuntime(FakeSandboxRuntime):
@@ -324,11 +357,11 @@ class _SilentRuntime(FakeSandboxRuntime):
 
 async def test_the_recorded_digest_is_computed_from_the_bytes_received(persons):
     world = _World(runtime=_SilentRuntime())
-    world.put(GROUP, "out/page.html", PAGE)
-    out = await _tools(world, persons)["computer_export"](path="out/page.html", to="link")
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
     assert out["status"] == "ok"
     [row] = world.exports.exports
-    assert row.sha256 == hashlib.sha256(PAGE).hexdigest()
+    assert row.sha256 == hashlib.sha256(CHART).hexdigest()
 
 
 # -- every call audited, two rows, on every path ----------------------------------
@@ -347,19 +380,19 @@ async def test_the_recorded_digest_is_computed_from_the_bytes_received(persons):
 ])
 async def test_every_export_writes_two_rows_whatever_happens(persons, case, status):
     world = _World(ingest=FakeArtifactIngest(fail=case == "drop_down"))
-    world.put(GROUP, "out/page.html", PAGE)
+    world.put(GROUP, "out/chart.png", CHART)
     world.put(GROUP, "out/archive.bin", b"PK\x03\x04\x00\x00")
     world.runtime.down = case == "computer_down"
     kwargs = {
-        "ok": {"path": "out/page.html", "to": "link"},
-        "missing": {"path": "out/nope.html", "to": "link"},
-        "escape": {"path": "../other/page.html", "to": "link"},
+        "ok": {"path": "out/chart.png", "to": "link"},
+        "missing": {"path": "out/nope.png", "to": "link"},
+        "escape": {"path": "../other/chart.png", "to": "link"},
         "zip": {"path": "out/archive.bin", "to": "keep"},
-        "drop_down": {"path": "out/page.html", "to": "link"},
-        "computer_down": {"path": "out/page.html", "to": "link"},
-        "no_drop": {"path": "out/page.html", "to": "link"},
-        "chat_without_a_room_sender": {"path": "out/page.html", "to": "chat"},
-        "artifact_id_on_keep": {"path": "out/page.html", "to": "keep", "artifact_id": "a"},
+        "drop_down": {"path": "out/chart.png", "to": "link"},
+        "computer_down": {"path": "out/chart.png", "to": "link"},
+        "no_drop": {"path": "out/chart.png", "to": "link"},
+        "chat_without_a_room_sender": {"path": "out/chart.png", "to": "chat"},
+        "artifact_id_on_keep": {"path": "out/chart.png", "to": "keep", "artifact_id": "a"},
     }[case]
     tools = _tools(world, persons, ingest=case != "no_drop")
     out = await tools["computer_export"](**kwargs)
@@ -381,7 +414,7 @@ async def test_an_export_with_the_computer_off_is_still_two_rows(persons):
         computer=None, computer_events=world.events, computer_exports=world.exports,
     )
     call = next(s.call for s in specs if s.name == "computer_export")
-    out = await call(path="out/page.html", to="link")
+    out = await call(path="out/chart.png", to="link")
     assert out["status"] == "unavailable"
     _, finished = _two_rows(world, "computer_export")
     assert finished.result["reason"] == "off"
@@ -390,8 +423,8 @@ async def test_an_export_with_the_computer_off_is_still_two_rows(persons):
 async def test_a_failed_record_still_answers_and_is_counted(persons):
     world = _World()
     world.exports.fail_record = True
-    world.put(GROUP, "out/page.html", PAGE)
-    out = await _tools(world, persons)["computer_export"](path="out/page.html", to="link")
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
     assert out["status"] == "ok"
     assert world.metrics.get("nora_computer_audit_failures_total",
                              tool="computer_export", stage="export") == 1
@@ -404,10 +437,10 @@ async def test_a_failed_record_still_answers_and_is_counted(persons):
 
 async def test_a_fire_turn_may_keep_but_never_send(persons):
     world = _World()
-    world.put(GROUP, "out/page.html", PAGE)
+    world.put(GROUP, "out/chart.png", CHART)
     tools = _tools(world, persons, fire_turn=True)
-    link = await tools["computer_export"](path="out/page.html", to="link")
-    kept = await tools["computer_export"](path="out/page.html", to="keep")
+    link = await tools["computer_export"](path="out/chart.png", to="link")
+    kept = await tools["computer_export"](path="out/chart.png", to="keep")
     assert (link["status"], kept["status"]) == ("refused", "ok")
     assert world.ingest.artifacts == {}
 

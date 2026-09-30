@@ -3,7 +3,8 @@ the half of `/v1/state` that sees a job with no tmux session, read from a
 fabricated `/proc` so it runs on any machine.
 
 Pinned: only the scope user's processes; kernel threads (no argv, pid 2 and
-its children) are the only ones left out; a process's command is its argv,
+its children) and tmux's own processes (a server, a pane's shell: tmux's
+pane-with-a-child rule judges those) are the only ones left out; a process's command is its argv,
 cut; start and elapsed come from `starttime` and `btime`; a `/proc/<pid>` that
 is a link is never followed; the read caps at twenty, newest first.
 """
@@ -100,3 +101,23 @@ def test_an_unreadable_proc_is_unknown_not_none_running(computerd, tmp_path):
                               tmux_root=tmp_path / "tm", proc_root=tmp_path / "no-proc")
     got = comp.processes("ab" * 16)
     assert got["processes"] is None and got["processes_reason"]
+
+
+def test_an_idle_tmux_session_is_not_a_running_process(computerd, proc, monkeypatch):
+    """FALSIFIER (operator, 2026-10-01): a tmux server and a bare shell in a
+    pane are tmux's to judge, by the pane-with-a-child rule, never counted
+    as a running process. Counted, a room with a session left open would
+    stay active for days."""
+    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
+    _proc(proc, 50, argv=["tmux", "new-session", "-d", "-s", "job"], comm="tmux: server")
+    _proc(proc, 51, argv=["-bash"], ppid=50, comm="bash")
+    assert computerd.scope_processes(proc, UID, NOW, exclude=frozenset({51})) == []
+
+
+def test_a_panes_child_is_a_running_process(computerd, proc, monkeypatch):
+    monkeypatch.setattr(computerd.os, "sysconf", lambda name: 100)
+    _proc(proc, 50, argv=["tmux", "new-session", "-d", "-s", "job"], comm="tmux: server")
+    _proc(proc, 51, argv=["-bash"], ppid=50, comm="bash")
+    _proc(proc, 52, argv=["python3", "train.py"], ppid=51, comm="python3")
+    got = computerd.scope_processes(proc, UID, NOW, exclude=frozenset({51}))
+    assert [p["pid"] for p in got] == [52]

@@ -303,34 +303,12 @@ cases:
     metadata: {tools: [generate_image], not_tools: [computer_run]}
     snapshot: *room_a
 
-  # --- S3a: files in and out of the computer, and the two computer skills ------
+  # --- S3a: files in and out of the computer, and the computer-use skill -----
   # ON ARM ONLY, like the computer-positive cases above: with `[computer]` off
-  # the tools are withheld and these FAIL by construction.
+  # the tools are withheld and these FAIL by construction. No export-to-link
+  # case: a document is the document path's (ADR 0020, operator 2026-10-01),
+  # not `computer_export`'s.
   #
-  # `make_artifact` still exists while S3a is live (it retires in S3b), so the
-  # export case names it in `not_tools`: the measurement is whether the
-  # computer path wins while both are offered, which is what S3b's retirement
-  # waits on. The `before`/`args_include` pair is the document-creation
-  # reach row ADR 0016 asks for: fails if `computer_export` runs before the
-  # first `skills` call, or the skill is never loaded. A correct turn also
-  # needs `nora-render` in the VM image the subject reaches; on an image
-  # without it the export may never happen, which grades the image, not the
-  # route (check `docker exec`/`sbx exec ... which nora-render` first).
-  - name: route_computer_export_link_loads_document_creation
-    entry: tag
-    expect: reply
-    mention: true
-    input: >-
-      幫我整份網頁報告，用棒形圖比較香港、台北、東京嘅每月平均氣溫（1月16/16/5，
-      4月22/22/14，7月29/30/26，10月26/25/19），整好俾條link我
-    metadata:
-      tools: [computer_export]
-      not_tools: [make_artifact]
-      before: {skills: [computer_export]}
-      args_include:
-        skills: ["document-creation"]
-    snapshot: *room_a
-
   # computer-use's reach row. `computer_run`'s description says SHOULD, not
   # MUST, so this can fail while the route is right: that is the number it
   # exists to show.
