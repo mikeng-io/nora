@@ -1974,9 +1974,15 @@ class FakeSandboxRuntime:
             return OpResult(status=refusal, reason="fake refusal")
         if (conflict := self._conflict(scope, path, reading=False)) is not None:
             return OpResult(status=conflict, reason="fake conflict")
-        self.files_by_scope.setdefault(scope, {})[_fake_path(path) or ""] = data
+        stored = self.files_by_scope.setdefault(scope, {})
+        key = _fake_path(path) or ""
+        before = stored.get(key)
+        stored[key] = data
         digest = hashlib.sha256(data).hexdigest()
-        return OpResult(status=SandboxStatus.OK, size=len(data), sha256=digest)
+        return OpResult(
+            status=SandboxStatus.OK, size=len(data), sha256=digest,
+            previous_sha256=hashlib.sha256(before).hexdigest() if before is not None else None,
+        )
 
     def _conflict(self, scope: str, path: str, *, reading: bool) -> SandboxStatus | None:
         """A file and a directory cannot share a path, as on a filesystem:

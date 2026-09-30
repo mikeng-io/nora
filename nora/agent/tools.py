@@ -70,7 +70,7 @@ from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.computer import ComputerToolSettings, SandboxStatus, computer_scope
-from ..domain.computer_events import AUDIT_OUTPUT_HEAD_CHARS, ComputerEvent, ComputerEventStore
+from ..domain.computer_events import DREAMER_ACTOR_PREFIX, ComputerEvent, ComputerEventStore
 from ..domain.gatherings import (
     RSVP,
     AmbiguousOpenGatheringsError,
@@ -186,7 +186,7 @@ from ..infra.vision.preprocess import (
     video_encode_signature,
 )
 from ..obs.logging import current_tag_id
-from ..obs.tracing import annotate, span
+from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
 from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
@@ -3927,18 +3927,18 @@ def _clip(text: str, limit: int) -> tuple[str, bool]:
     return (text[:limit], True) if len(text) > limit else (text, False)
 
 
-def _audit_safe(value: object) -> object:
-    """A detail value Postgres JSONB will store: text cannot carry a NUL
-    (`\\u0000` is refused by jsonb), and a command or an output head can."""
+def _audit_safe(value: Any) -> Any:
+    """`value` as Postgres JSONB will store it, recursively: text cannot carry
+    a NUL (`\\u0000` is refused by jsonb), and a command or an edit can. The
+    NUL is written as the four characters `\\x00`, so the row still shows it
+    was there."""
     if isinstance(value, str):
         return value.replace("\x00", "\\x00")
+    if isinstance(value, Mapping):
+        return {str(k): _audit_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_audit_safe(v) for v in value]
     return value
-
-
-#: An edit's `old`/`new` go into the audit in full up to this length; beyond
-#: it only their lengths do (design/sandbox-runtime §12: the text of a long
-#: edit is the file's content, not the audit's).
-_AUDIT_EDIT_TEXT_CHARS = 200
 
 
 def build_tool_specs(
@@ -12603,47 +12603,99 @@ Args:
     # key is derived ONCE, here, from the turn: never a model argument (the
     # DEC-24 rule `bound_conversation_id` follows), so no call can name another
     # room's workspace. `computer_scope` hashes it, so no platform id reaches
-    # the VM either.
+    # the VM either. `room` is `None` only when the registry builds the
+    # declared table for its catalogue (no turn); nothing is called on those.
     computer_bounds = computer_settings or ComputerToolSettings()
-    # `room` is `None` only when the registry builds the declared table for
-    # its catalogue (no turn); nothing is ever called on those specs.
     computer_platform = room.platform if room is not None else ""
     bound_computer_scope = computer_scope(computer_platform, bound_conversation_id)
     computer_limits = dict(computer_bounds.limits) or None
+    # WHO, for the audit, from the same provenance `remind` reads: a Dreamer
+    # pass names its adaptor, a fire turn has no tagger, anything else is a
+    # tag. `cognition` and `operator` are reserved actors no path reaches yet.
+    computer_actor = (
+        f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
+        else "fire" if fire_turn else "tag"
+    )
+    # The computer runs only when every call can be recorded in full: the
+    # runtime, the audit row's store AND the blob store the full input and
+    # output go to. Missing any one, every tool answers `unavailable` and
+    # nothing reaches the VM (the operator's complete-trail requirement).
+    computer_ready = (
+        computer is not None and computer_events is not None and blob_store is not None
+    )
+
+    def _computer_requester() -> str | None:
+        tagger = room.tagger if room is not None and not fire_turn and not dream_adaptor else None
+        return tagger.person_id if tagger is not None else None
+
+    async def _computer_blob(tool: str, text: str) -> dict[str, object]:
+        """Put one full input or output in the blob store; return its ref.
+
+        The ref always carries the size and sha256 of the text; `key` is added
+        when the bytes are stored. A failed put is logged and counted
+        (`stage="blob"`) and the ref says so with `stored: false`: the row
+        still records that the output existed and what it hashed to, and the
+        tool still answers."""
+        data = text.encode("utf-8", errors="surrogatepass")
+        ref: dict[str, object] = {
+            "bytes": len(data), "chars": len(text),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        if not data:
+            return ref
+        if blob_store is None:
+            # Offline/eval: no audit row either, so nothing is missing from
+            # a record; with a row store wired it is a wiring fault, counted.
+            if computer_events is not None:
+                metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="blob")
+            ref["stored"] = False
+            return ref
+        try:
+            ref["key"] = await blob_store.put(data=data)
+            ref["stored"] = True
+        except Exception:
+            log.exception("computer audit blob put failed (tool=%s); answering anyway", tool)
+            metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="blob")
+            ref["stored"] = False
+        return ref
 
     async def _computer_audit(
-        tool: str, status: str, detail: dict[str, object], *,
-        exit_code: int | None = None, duration_ms: int | None = None,
+        tool: str, status: str, *, started: datetime, finished: datetime,
+        request: dict[str, object], result: dict[str, object],
+        output_ref: dict[str, object] | None = None,
     ) -> None:
         """Count the call and append its ONE `computer_events` row.
 
         Called once on every return path of every computer tool, before the
         return, `unavailable` included. A failed append is logged and counted
-        on `nora_computer_audit_failures_total` and the tool STILL answers:
-        the audit is the operator's control over the computer, not a gate on
-        the turn, and losing the reply because a log write failed would make
-        the control cost the thing it watches. `computer_events=None` is only
-        ever an offline/eval composition, where the tools also have no
-        runtime (the wiring refuses a runtime without it), so nothing ran.
+        (`stage="row"`) and the tool STILL answers: the audit is the
+        operator's record of the computer, not a gate on the turn, and losing
+        the reply because a log write failed would make the record cost the
+        thing it watches. `computer_events=None` is only ever an offline/eval
+        composition, where the tools also never run (`computer_ready`).
 
-        The log line carries counts only (`_log_call`'s rule): the command
-        and the path are in the audit row, never in the log file.
+        The log line carries counts only (`_log_call`'s rule): the command and
+        the path are in the audit row, never in the log file.
         """
         _record(metrics, tool, status)
         if computer_events is None:
             return
+        trace_id, span_id = current_span_ids()
         try:
             await computer_events.append(ComputerEvent(
-                id=uuid.uuid4(), created_at=now_fn(), platform=computer_platform,
-                conversation_id=bound_conversation_id,
+                id=uuid.uuid4(), created_at=max(now_fn(), finished),
+                started_at=started, finished_at=finished, actor=computer_actor,
+                requester_person_id=_computer_requester(),
+                platform=computer_platform, conversation_id=bound_conversation_id,
                 conversation_type=conversation_type, tag_id=current_tag_id(),
-                scope=bound_computer_scope, tool=tool, status=status,
-                exit_code=exit_code, duration_ms=duration_ms,
-                detail={k: _audit_safe(v) for k, v in detail.items()},
+                scope=bound_computer_scope, tool=tool, path="direct",
+                trace_id=trace_id, span_id=span_id, status=status,
+                request=_audit_safe(request), result=_audit_safe({"status": status, **result}),
+                output_ref=_audit_safe(output_ref or {}),
             ))
         except Exception:
             log.exception("computer_events append failed (tool=%s); answering anyway", tool)
-            metrics.inc("nora_computer_audit_failures_total", tool=tool)
+            metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="row")
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
         """Run a bash command in this conversation's workspace on your own
@@ -12661,31 +12713,40 @@ Args:
             timeout_seconds: Seconds before it is stopped. Defaults to 120;
                 there is a ceiling.
         """
-        detail: dict[str, object] = {"command": command}
-        if computer is None or computer_events is None:
-            detail["reason"] = "off"
-            await _computer_audit("computer_run", "unavailable", detail)
+        started = now_fn()
+        request: dict[str, object] = {"command": command, "timeout_seconds": timeout_seconds}
+        if not computer_ready or computer is None:
+            await _computer_audit(
+                "computer_run", "unavailable", started=started, finished=started,
+                request=request, result={"reason": "off"},
+            )
             return dict(_COMPUTER_OFF)
         asked = computer_bounds.run_timeout_seconds if timeout_seconds is None else timeout_seconds
         timeout_s = max(1, min(int(asked), computer_bounds.max_run_timeout_seconds))
-        detail["timeout_s"] = timeout_s
+        request.update(timeout_s=timeout_s, limits=computer_limits)
         ran = await computer.run(
             scope=bound_computer_scope, command=command, timeout_s=timeout_s,
             limits=computer_limits,
         )
+        finished = now_fn()
         stdout, out_cut = _clip(ran.stdout, computer_bounds.max_output_chars)
         stderr, err_cut = _clip(ran.stderr, computer_bounds.max_output_chars)
         truncated = ran.truncated or out_cut or err_cut
-        detail.update(
-            output_chars=len(ran.stdout) + len(ran.stderr),
-            stdout_head=ran.stdout[:AUDIT_OUTPUT_HEAD_CHARS],
-            stderr_head=ran.stderr[:AUDIT_OUTPUT_HEAD_CHARS],
-            truncated=truncated, reason=ran.reason,
-        )
         status = _computer_status(ran.status)
         await _computer_audit(
-            "computer_run", status, detail,
-            exit_code=ran.exit_code, duration_ms=ran.duration_ms,
+            "computer_run", status, started=started, finished=finished, request=request,
+            result={
+                "exit_code": ran.exit_code, "reason": ran.reason,
+                "duration_ms": ran.duration_ms,
+                # `truncated`: computerd cut the output before sending it, so
+                # the stored blobs are what was RECEIVED, not all it printed.
+                "truncated": ran.truncated, "shown_truncated": out_cut or err_cut,
+                "stdout_chars": len(ran.stdout), "stderr_chars": len(ran.stderr),
+            },
+            output_ref={
+                "stdout": await _computer_blob("computer_run", ran.stdout),
+                "stderr": await _computer_blob("computer_run", ran.stderr),
+            },
         )
         if status == "refused":
             return {
@@ -12726,24 +12787,36 @@ Args:
             path: The file, relative to the workspace folder.
             offset_lines: Lines to skip first, to read on past a cut.
         """
+        started = now_fn()
         offset = max(0, int(offset_lines))
-        detail: dict[str, object] = {"path": path, "offset_lines": offset}
-        if computer is None or computer_events is None:
-            detail["reason"] = "off"
-            await _computer_audit("computer_read", "unavailable", detail)
+        request: dict[str, object] = {"path": path, "offset_lines": offset_lines}
+        if not computer_ready or computer is None:
+            await _computer_audit(
+                "computer_read", "unavailable", started=started, finished=started,
+                request=request, result={"reason": "off"},
+            )
             return dict(_COMPUTER_OFF)
         got = await computer.read(
             scope=bound_computer_scope, path=path, offset=offset,
             limit=computer_bounds.max_read_chars,
         )
+        finished = now_fn()
         content, cut = _clip(got.content, computer_bounds.max_read_chars)
         truncated = got.truncated or cut
-        detail.update(
-            output_chars=len(content), truncated=truncated, binary=got.binary,
-            size=got.size, sha256=got.sha256, reason=got.reason,
-        )
         status = _computer_status(got.status)
-        await _computer_audit("computer_read", status, detail)
+        await _computer_audit(
+            "computer_read", status, started=started, finished=finished, request=request,
+            result={
+                "reason": got.reason, "binary": got.binary, "size": got.size,
+                "sha256": got.sha256, "lines_total": got.lines_total,
+                "truncated": got.truncated, "shown_truncated": cut,
+                "content_chars": len(got.content),
+            },
+            output_ref=(
+                {"content": await _computer_blob("computer_read", got.content)}
+                if got.content else {}
+            ),
+        )
         if status == "nothing_found":
             return {
                 "status": "nothing_found", "reason": got.reason or "",
@@ -12793,18 +12866,26 @@ Args:
             path: The file, relative to the workspace folder. Folders are made.
             content: The whole new text of the file.
         """
-        detail: dict[str, object] = {
-            "path": path, "content_chars": len(content),
-            "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        started = now_fn()
+        # The content is the input too, and can be megabytes: it goes to the
+        # blob store and the row holds its ref, never a copy in JSONB.
+        request: dict[str, object] = {
+            "path": path, "content": await _computer_blob("computer_write", content),
         }
-        if computer is None or computer_events is None:
-            detail["reason"] = "off"
-            await _computer_audit("computer_write", "unavailable", detail)
+        if not computer_ready or computer is None:
+            await _computer_audit(
+                "computer_write", "unavailable", started=started, finished=started,
+                request=request, result={"reason": "off"},
+            )
             return dict(_COMPUTER_OFF)
         wrote = await computer.write_text(scope=bound_computer_scope, path=path, content=content)
-        detail.update(size=wrote.size, reason=wrote.reason)
+        finished = now_fn()
         status = _computer_status(wrote.status)
-        await _computer_audit("computer_write", status, detail)
+        await _computer_audit(
+            "computer_write", status, started=started, finished=finished, request=request,
+            result={"reason": wrote.reason, "size": wrote.size,
+                    "before_sha256": wrote.previous_sha256, "after_sha256": wrote.sha256},
+        )
         if status == "ok":
             return {
                 "status": "ok", "path": path, "size": wrote.size, "sha256": wrote.sha256,
@@ -12840,21 +12921,22 @@ Args:
             old: The exact text to replace, long enough to match once.
             new: The text to put in its place.
         """
-        detail: dict[str, object] = {
-            "path": path, "old_chars": len(old), "new_chars": len(new),
-        }
-        if len(old) <= _AUDIT_EDIT_TEXT_CHARS:
-            detail["old"] = old
-        if len(new) <= _AUDIT_EDIT_TEXT_CHARS:
-            detail["new"] = new
-        if computer is None or computer_events is None:
-            detail["reason"] = "off"
-            await _computer_audit("computer_edit", "unavailable", detail)
+        started = now_fn()
+        request: dict[str, object] = {"path": path, "old": old, "new": new}
+        if not computer_ready or computer is None:
+            await _computer_audit(
+                "computer_edit", "unavailable", started=started, finished=started,
+                request=request, result={"reason": "off"},
+            )
             return dict(_COMPUTER_OFF)
         edited = await computer.edit(scope=bound_computer_scope, path=path, old=old, new=new)
-        detail.update(size=edited.size, sha256=edited.sha256, reason=edited.reason)
+        finished = now_fn()
         status = _computer_status(edited.status)
-        await _computer_audit("computer_edit", status, detail)
+        await _computer_audit(
+            "computer_edit", status, started=started, finished=finished, request=request,
+            result={"reason": edited.reason, "size": edited.size,
+                    "before_sha256": edited.previous_sha256, "after_sha256": edited.sha256},
+        )
         if status == "ok":
             return {
                 "status": "ok", "path": path, "size": edited.size, "sha256": edited.sha256,

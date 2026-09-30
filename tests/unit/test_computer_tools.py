@@ -29,10 +29,16 @@ from nora.domain.computer import (
     SandboxStatus,
     computer_scope,
 )
+from nora.domain.models import PersonRef
 from nora.obs.logging import bind_tag_id, clear_tag_id
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
-from nora.testing import FakeComputerEventStore, FakeRosterSource, FakeSandboxRuntime
+from nora.testing import (
+    FakeBlobStore,
+    FakeComputerEventStore,
+    FakeRosterSource,
+    FakeSandboxRuntime,
+)
 
 GROUP = "g-computer"
 OTHER_GROUP = "g-elsewhere"
@@ -47,18 +53,27 @@ def persons(tmp_path):
     return load_persons(path)
 
 
+_UNSET = object()
+
+
 def _tools(persons, *, computer=None, events=None, settings=None, metrics=None,
-           conversation_id=GROUP):
+           conversation_id=GROUP, blobs=_UNSET, tagger=None, fire_turn=False,
+           dream_adaptor=""):
+    """The four closures. `blobs` defaults to a fresh `FakeBlobStore` whenever
+    a runtime is given (the computer runs only with its full audit wired)."""
+    if blobs is _UNSET:
+        blobs = FakeBlobStore() if computer is not None else None
     room = Room(
         platform="signal", conversation_id=conversation_id,
         roster_source=FakeRosterSource(groups={conversation_id: ()}),
-        persons=persons, self_ids=frozenset({"+85290000100"}),
+        persons=persons, self_ids=frozenset({"+85290000100"}), tagger=tagger,
     )
     specs = build_tool_specs(
         store=None, conversation_id=conversation_id, conversation_type="group",
         persons=persons, honcho=None, deliverer=None,
         metrics=metrics if metrics is not None else Metrics(),
-        room=room, transit_source=None,
+        room=room, transit_source=None, blob_store=blobs,
+        fire_turn=fire_turn, dream_adaptor=dream_adaptor,
         computer=computer, computer_events=events, computer_settings=settings,
     )
     return {s.name: s.call for s in specs if s.name in TOOLS}
@@ -74,8 +89,8 @@ def _calls(tools):
     )
 
 
-def _failures(metrics: Metrics, tool: str) -> float:
-    return metrics.get("nora_computer_audit_failures_total", tool=tool)
+def _failures(metrics: Metrics, tool: str, stage: str) -> float:
+    return metrics.get("nora_computer_audit_failures_total", tool=tool, stage=stage)
 
 
 # -- scope -----------------------------------------------------------------
@@ -111,15 +126,17 @@ async def test_the_workspace_is_the_turns_room_and_the_model_cannot_move_it(pers
 # -- off -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("wired", ["nothing", "runtime_without_audit"])
+@pytest.mark.parametrize("wired", ["nothing", "runtime_without_row_store",
+                                   "runtime_without_blob_store"])
 async def test_off_is_unavailable_with_a_note_for_every_tool(persons, wired):
-    runtime = FakeSandboxRuntime() if wired == "runtime_without_audit" else None
-    tools = _tools(persons, computer=runtime)
+    runtime = None if wired == "nothing" else FakeSandboxRuntime()
+    events = FakeComputerEventStore() if wired == "runtime_without_blob_store" else None
+    tools = _tools(persons, computer=runtime, events=events, blobs=None)
     for call, kwargs in _calls(tools):
         out = await call(**kwargs)
         assert out["status"] == "unavailable"
         assert out["note"].strip()
-    # A runtime with no audit store runs nothing: no call reached it.
+    # A runtime without its full audit runs nothing: no call reached it.
     assert runtime is None or runtime.run_calls == []
 
 
@@ -131,7 +148,7 @@ async def test_off_still_writes_one_audit_row_per_call(persons):
     assert [(e.tool, e.status) for e in events.events] == [
         (t, "unavailable") for t in TOOLS
     ]
-    assert all(e.detail["reason"] == "off" for e in events.events)
+    assert all(e.result["reason"] == "off" for e in events.events)
 
 
 # -- status mapping ----------------------------------------------------------
@@ -161,7 +178,8 @@ async def test_run_timeout_is_unavailable_with_its_reason(persons):
     assert out["reason"] == "timed out after 5s"
     assert out["note"].strip()
     [row] = events.events
-    assert (row.status, row.exit_code, row.duration_ms) == ("unavailable", -9, 5000)
+    assert row.status == "unavailable"
+    assert (row.result["exit_code"], row.result["duration_ms"]) == (-9, 5000)
 
 
 async def test_denied_is_refused_for_every_tool(persons):
@@ -241,43 +259,95 @@ async def test_one_audit_row_per_call_on_every_path_even_when_the_computer_is_do
     assert [e.status for e in events.events[4:]] == ["unavailable"] * 4
 
 
-async def test_the_audit_row_names_the_turn_and_keeps_the_command_not_the_output(persons):
+async def test_the_audit_row_records_who_when_how_and_what(persons):
     runtime = FakeSandboxRuntime()
-    command = "python3 -c 'print(\"x\" * 5000)'"
-    runtime.script(command, RunResult(SandboxStatus.OK, exit_code=0, stdout="x" * 5000,
-                                      duration_ms=40))
+    command = "python3 -c 'print(\"x\" * 50000)' # " + "long " * 400
+    runtime.script(command, RunResult(SandboxStatus.OK, exit_code=0, stdout="x" * 50_000,
+                                      stderr="warn", duration_ms=40))
     events = FakeComputerEventStore()
-    tools = _tools(persons, computer=runtime, events=events)
+    blobs = FakeBlobStore()
+    tagger = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+    tools = _tools(persons, computer=runtime, events=events, blobs=blobs, tagger=tagger,
+                   settings=ComputerToolSettings(max_output_chars=1000))
     bind_tag_id("tag-42")
     try:
-        await tools["computer_run"](command=command)
+        shown = await tools["computer_run"](command=command)
     finally:
         clear_tag_id()
+    assert len(shown["stdout"]) == 1000  # the model's view stays bounded
     [row] = events.events
-    assert row.tag_id == "tag-42"
+    # who
+    assert (row.actor, row.requester_person_id, row.tag_id) == ("tag", "miles", "tag-42")
     assert (row.platform, row.conversation_id, row.conversation_type) == ("signal", GROUP, "group")
     assert row.scope == computer_scope("signal", GROUP)
-    assert (row.exit_code, row.duration_ms) == (0, 40)
-    assert row.detail["command"] == command
-    assert row.detail["output_chars"] == 5000
-    assert row.detail["stdout_head"] == "x" * 500
+    # when
+    assert row.started_at <= row.finished_at <= row.created_at
+    # how
+    assert (row.tool, row.path) == ("computer_run", "direct")
+    assert (row.trace_id, row.span_id) == ("", "")  # no span in this test
+    # what: the WHOLE command, and the WHOLE output behind a blob key
+    assert row.request["command"] == command
+    assert row.result["exit_code"] == 0
+    assert row.result["stdout_chars"] == 50_000
+    stdout_ref = row.output_ref["stdout"]
+    assert blobs.blobs[stdout_ref["key"]] == b"x" * 50_000
+    assert stdout_ref["sha256"] == hashlib.sha256(b"x" * 50_000).hexdigest()
+    assert blobs.blobs[row.output_ref["stderr"]["key"]] == b"warn"
 
 
-async def test_a_write_is_audited_with_its_hash_and_an_edit_with_lengths(persons):
+async def test_the_actor_follows_the_turns_provenance(persons):
     events = FakeComputerEventStore()
-    tools = _tools(persons, computer=FakeSandboxRuntime(), events=events)
-    await tools["computer_write"](path="a.txt", content="hello " * 100)
-    await tools["computer_edit"](path="a.txt", old="hello " * 60, new="bye")
-    write_row, edit_row = events.events
-    assert write_row.detail["sha256"] == hashlib.sha256(("hello " * 100).encode()).hexdigest()
-    assert write_row.detail["content_chars"] == 600
-    assert "content" not in write_row.detail
-    assert edit_row.detail["old_chars"] == 360
-    assert "old" not in edit_row.detail  # long: its length only
-    assert edit_row.detail["new"] == "bye"
+    for kwargs, actor in (
+        ({}, "tag"), ({"fire_turn": True}, "fire"),
+        ({"dream_adaptor": "proactive"}, "dreamer:proactive"),
+    ):
+        tools = _tools(persons, computer=FakeSandboxRuntime(), events=events, **kwargs)
+        await tools["computer_run"](command="true")
+        assert events.events[-1].actor == actor
 
 
-async def test_a_failed_audit_append_still_returns_the_result_and_is_counted(persons):
+async def test_a_read_stores_the_content_it_received_and_says_it_was_cut(persons):
+    """computerd answers at most the limit the tool asks for, so the blob holds
+    exactly what the client received and `truncated` records that the file
+    had more (design: store what was received, never pretend it is all)."""
+    events = FakeComputerEventStore()
+    blobs = FakeBlobStore()
+    tools = _tools(persons, computer=FakeSandboxRuntime(), events=events, blobs=blobs,
+                   settings=ComputerToolSettings(max_read_chars=100))
+    await tools["computer_write"](path="big.txt", content="z" * 5000)
+    await tools["computer_read"](path="big.txt")
+    read_row = events.events[-1]
+    assert (read_row.result["content_chars"], read_row.result["truncated"]) == (100, True)
+    assert blobs.blobs[read_row.output_ref["content"]["key"]] == b"z" * 100
+    assert read_row.result["sha256"] == hashlib.sha256(b"z" * 5000).hexdigest()
+
+
+async def test_a_write_and_an_edit_record_the_full_input_and_before_and_after(persons):
+    events = FakeComputerEventStore()
+    blobs = FakeBlobStore()
+    tools = _tools(persons, computer=FakeSandboxRuntime(), events=events, blobs=blobs)
+    first, second = "hello " * 100, "hello " * 100 + "again"
+    await tools["computer_write"](path="a.txt", content=first)
+    await tools["computer_write"](path="a.txt", content=second)
+    old = "hello " * 60
+    await tools["computer_edit"](path="a.txt", old=old, new="bye")
+    new_file, overwrite, edit_row = events.events
+    sha = lambda text: hashlib.sha256(text.encode()).hexdigest()  # noqa: E731
+    assert blobs.blobs[overwrite.request["content"]["key"]] == second.encode()
+    assert (new_file.result["before_sha256"], new_file.result["after_sha256"]) == (
+        None, sha(first),
+    )
+    assert (overwrite.result["before_sha256"], overwrite.result["after_sha256"]) == (
+        sha(first), sha(second),
+    )
+    after_edit = second.replace(old, "bye", 1)
+    assert edit_row.request == {"path": "a.txt", "old": old, "new": "bye"}
+    assert (edit_row.result["before_sha256"], edit_row.result["after_sha256"]) == (
+        sha(second), sha(after_edit),
+    )
+
+
+async def test_a_failed_row_append_still_returns_the_result_and_is_counted(persons):
     runtime = FakeSandboxRuntime()
     runtime.script("echo hi", RunResult(SandboxStatus.OK, exit_code=0, stdout="hi\n"))
     events = FakeComputerEventStore()
@@ -287,7 +357,23 @@ async def test_a_failed_audit_append_still_returns_the_result_and_is_counted(per
     out = await tools["computer_run"](command="echo hi")
     assert out["status"] == "ok"
     assert out["stdout"] == "hi\n"
-    assert _failures(metrics, "computer_run") == 1
+    assert _failures(metrics, "computer_run", "row") == 1
+
+
+async def test_a_failed_blob_put_still_returns_the_result_and_the_row_says_so(persons):
+    runtime = FakeSandboxRuntime()
+    runtime.script("echo hi", RunResult(SandboxStatus.OK, exit_code=0, stdout="hi\n"))
+    events = FakeComputerEventStore()
+    metrics = Metrics()
+    tools = _tools(persons, computer=runtime, events=events, metrics=metrics,
+                   blobs=FakeBlobStore(fail_on_put=True))
+    out = await tools["computer_run"](command="echo hi")
+    assert out["status"] == "ok"
+    assert out["stdout"] == "hi\n"
+    assert _failures(metrics, "computer_run", "blob") == 1
+    [row] = events.events
+    assert row.output_ref["stdout"]["stored"] is False
+    assert row.output_ref["stdout"]["sha256"] == hashlib.sha256(b"hi\n").hexdigest()
 
 
 # -- limits and bounds -------------------------------------------------------
@@ -331,9 +417,8 @@ async def test_output_and_reads_are_bounded(persons):
 
 async def test_a_nul_in_a_command_reaches_the_audit_as_text(persons):
     runtime = FakeSandboxRuntime()
-    runtime.script("printf 'a\\0b'", RunResult(SandboxStatus.OK, exit_code=0, stdout="a\x00b"))
     events = FakeComputerEventStore()
     tools = _tools(persons, computer=runtime, events=events)
-    await tools["computer_run"](command="printf 'a\\0b'")
-    assert "\x00" not in events.events[0].detail["stdout_head"]
+    await tools["computer_run"](command="echo 'a\x00b'")
+    assert events.events[0].request["command"] == "echo 'a\\x00b'"
 

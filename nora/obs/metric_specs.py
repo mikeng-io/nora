@@ -201,9 +201,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # counter is the only place a missing audit row shows up. Should be zero.
     _CounterSpec(
         "nora_computer_audit_failures_total",
-        "computer_events audit appends that failed, by computer tool. The tool "
-        "call itself still answered; its audit row is missing.",
-        ("tool",),
+        "computer_events audit writes that failed, by computer tool and stage "
+        "(blob: a full input or output could not be put in the blob store, the "
+        "row says so; row: the audit row itself was not appended). The tool "
+        "call itself still answered.",
+        ("tool", "stage"),
     ),
     _CounterSpec(
         "nora_tool_call_log_writes_total",

@@ -61,6 +61,9 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql as pg
 
+from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
+from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
+from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
@@ -4282,10 +4285,13 @@ IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
 
 # `computer_events` — the computer audit log (design/sandbox-runtime §12,
 # DEC-243): one row per computer tool call on every return path, written by
-# Nora's tools, never by `computerd`. `detail` holds the command or path in
-# full, output LENGTHS and a 500-character head of stdout/stderr, never a
-# command's whole output (`nora.domain.computer_events`). Append-only, the
-# `tool_call_log` shape; `created_at` is its system time.
+# Nora's tools, never by `computerd`. Who (`actor`, `requester_person_id`,
+# the room, the tag), when (`started_at`, `finished_at`), how (`tool`,
+# `path`, the OTel ids) and what (`request` the full input, `result`,
+# `output_ref` the full output's blob keys); `nora.domain.computer_events`.
+# Append-only in the database: migration `0080_computer_events` adds a
+# trigger refusing UPDATE and DELETE (and TRUNCATE unless deliberately
+# switched off, the `0068` guard's rule), which METADATA cannot express.
 COMPUTER_EVENTS = sa.Table(
     "computer_events",
     METADATA,
@@ -4294,17 +4300,43 @@ COMPUTER_EVENTS = sa.Table(
         "created_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("now()"),
     ),
+    sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("finished_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("actor", sa.Text, nullable=False),
+    sa.Column("requester_person_id", sa.Text, nullable=True),
     sa.Column("platform", sa.Text, nullable=False),
     sa.Column("conversation_id", sa.Text, nullable=False),
     sa.Column("conversation_type", sa.Text, nullable=False),
     sa.Column("tag_id", sa.Text, nullable=False),
     sa.Column("scope", sa.Text, nullable=False),
     sa.Column("tool", sa.Text, nullable=False),
+    sa.Column("path", sa.Text, nullable=False),
+    sa.Column("trace_id", sa.Text, nullable=False),
+    sa.Column("span_id", sa.Text, nullable=False),
     sa.Column("status", sa.Text, nullable=False),
-    sa.Column("exit_code", sa.Integer, nullable=True),
-    sa.Column("duration_ms", sa.Integer, nullable=True),
     sa.Column(
-        "detail", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+        "request", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column(
+        "result", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column(
+        "output_ref", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    # Both vocabularies read from `nora.domain.computer_events`, never
+    # restated: the migration froze the same sets on 2026-09-30.
+    sa.CheckConstraint(
+        f"actor IN ({', '.join(repr(a) for a in sorted(COMPUTER_ACTORS))}) "
+        f"OR (starts_with(actor, '{DREAMER_ACTOR_PREFIX}') "
+        f"AND length(actor) > {len(DREAMER_ACTOR_PREFIX)})",
+        name="ck_computer_events_actor",
+    ),
+    sa.CheckConstraint(
+        f"path IN ({', '.join(repr(p) for p in sorted(COMPUTER_CALL_PATHS))})",
+        name="ck_computer_events_path",
+    ),
+    sa.CheckConstraint(
+        "finished_at >= started_at", name="ck_computer_events_finished_after_started",
     ),
 )
 

@@ -207,13 +207,18 @@ class Computer:
                 self.owner.chown_fd(fd)
             finally:
                 os.close(fd)
+            # The audit's "before": what the target held just before it is
+            # replaced, hashed through the same no-follow walk. None when there
+            # was no regular file there (new, a link, or a directory).
+            previous = _previous_sha256(dfd, name)
             try:
                 os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
             except OSError:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp, dir_fd=dfd)
                 raise
-        return {"status": "ok", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        return {"status": "ok", "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+                "previous_sha256": previous}
 
     # -- file operations (blocking; run in a worker thread) ---------------
 
@@ -349,6 +354,24 @@ class Computer:
     def _ensure_scope(self, scope: str) -> None:
         with self._dir(scope, [], create=True):
             pass
+
+
+def _previous_sha256(dfd: int, name: str) -> str | None:
+    """sha256 of the regular file `name` in directory `dfd`, opened without
+    following a link, or None when there is none to hash."""
+    try:
+        fd = os.open(name, _READ_FLAGS, dir_fd=dfd)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1 << 20):
+            digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
 
 
 def _bounded(f: IO[bytes], limit: int) -> tuple[str, bool]:

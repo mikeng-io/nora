@@ -5,6 +5,7 @@
 "when" timestamp with time zone,
 $$;
 $$;
+$$;
 );
 );
 );
@@ -400,6 +401,8 @@ AND superseded_at IS NULL;
 AND superseded_at IS NULL;
 AS $$
 AS $$
+AS $$
+BEGIN
 BEGIN
 BEGIN
 CACHE 1
@@ -462,6 +465,9 @@ CONSTRAINT ck_cognition_would_write_outcome CHECK ((outcome = ANY (ARRAY['would_
 CONSTRAINT ck_cognition_would_write_outcome_shape CHECK ((((outcome = 'would_commit'::text) AND (candidate IS NOT NULL)) OR ((outcome = 'refused'::text) AND (refusal_reason IS NOT NULL)))),
 CONSTRAINT ck_cognition_would_write_tier CHECK ((tier = ANY (ARRAY['note'::text, 'event'::text, 'standing'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
+CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_events_finished_after_started CHECK ((finished_at >= started_at)),
+CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text])))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -597,6 +603,7 @@ CONSTRAINT turn_verdict_grounded_has_no_unsupported_check CHECK ((NOT (grounded 
 CONSTRAINT turn_verdict_unsupported_fits_the_list_check CHECK ((cardinality(unsupported) <= 10))
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+CREATE FUNCTION public.computer_events_refuse_change() RETURNS trigger
 CREATE FUNCTION public.nora_row_history() RETURNS trigger
 CREATE FUNCTION public.nora_row_history_refuse_truncate() RETURNS trigger
 CREATE INDEX idx_assess_report_kind_run ON public.assess_report USING btree (kind, run_at_ms);
@@ -756,6 +763,8 @@ CREATE TABLE public.tool_call_log (
 CREATE TABLE public.turn_verdict (
 CREATE TABLE public.version_announcements (
 CREATE TABLE public.video_readings (
+CREATE TRIGGER computer_events_append_only BEFORE DELETE OR UPDATE ON public.computer_events FOR EACH ROW EXECUTE FUNCTION public.computer_events_refuse_change();
+CREATE TRIGGER computer_events_no_truncate BEFORE TRUNCATE ON public.computer_events FOR EACH STATEMENT EXECUTE FUNCTION public.computer_events_refuse_change();
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.analytics_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('deriver_name', 'subject_id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.compute_jobs FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('id');
 CREATE TRIGGER nora_row_history AFTER INSERT OR DELETE OR UPDATE ON public.consolidation_watermark FOR EACH ROW EXECUTE FUNCTION public.nora_row_history('consolidator_name', 'scope_id');
@@ -845,6 +854,8 @@ CREATE UNIQUE INDEX uq_stimulus_time_ref ON public.stimulus USING btree (unit, r
 DECLARE
 END
 END
+END
+END IF;
 END IF;
 END IF;
 END IF;
@@ -855,11 +866,13 @@ END IF;
 END IF;
 END IF;
 END LOOP;
+ERRCODE = 'insufficient_privilege';
 FOREACH col IN ARRAY TG_ARGV LOOP
 IF TG_OP <> 'DELETE' THEN
 IF TG_OP <> 'INSERT' THEN
 IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND new_key <> old_key) THEN
 IF TG_OP = 'DELETE' THEN
+IF TG_OP = 'TRUNCATE' AND current_setting('nora.row_history', true) = 'off' THEN
 IF TG_OP = 'UPDATE' AND new_image = old_image THEN
 IF current_setting('nora.row_history', true) = 'off' THEN
 IF current_setting('nora.row_history', true) = 'off' THEN
@@ -904,6 +917,8 @@ INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 INSERT INTO row_history (id, table_name, row_key, op, image, recorded_at)
 LANGUAGE plpgsql
 LANGUAGE plpgsql
+LANGUAGE plpgsql
+MESSAGE = 'computer_events is append-only: ' || TG_OP || ' refused',
 NO MAXVALUE
 NO MAXVALUE
 NO MAXVALUE
@@ -974,7 +989,9 @@ NO MINVALUE
 NO MINVALUE
 NO MINVALUE
 NO MINVALUE
+RAISE EXCEPTION USING
 RAISE EXCEPTION USING MESSAGE = 'TRUNCATE ' || TG_TABLE_NAME
+RETURN NULL;
 RETURN NULL;
 RETURN NULL;
 RETURN NULL;
@@ -1059,6 +1076,7 @@ WHERE table_name = TG_TABLE_NAME AND row_key = old_key
 accuracy_m double precision,
 act text NOT NULL,
 act text NOT NULL,
+actor text NOT NULL,
 adaptor_name text NOT NULL,
 added_at timestamp with time zone NOT NULL,
 added_by_person_id text NOT NULL,
@@ -1230,7 +1248,6 @@ describe_model text,
 description text DEFAULT ''::text NOT NULL,
 description text NOT NULL,
 description text,
-detail jsonb DEFAULT '{}'::jsonb NOT NULL
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail jsonb DEFAULT '{}'::jsonb NOT NULL,
 detail text DEFAULT ''::text NOT NULL,
@@ -1252,7 +1269,6 @@ duplicate_id uuid NOT NULL,
 duplicate_title text NOT NULL,
 duration_mad_ms bigint,
 duration_median_ms bigint,
-duration_ms integer,
 dwell_ms bigint DEFAULT 0 NOT NULL,
 edits integer NOT NULL,
 eligible_count integer NOT NULL,
@@ -1281,7 +1297,6 @@ exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
 exclude_persons text[] DEFAULT '{}'::text[] NOT NULL,
-exit_code integer,
 expires_at bigint
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
@@ -1292,6 +1307,7 @@ fidelity text DEFAULT 'tentative'::text NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
 fingerprint text NOT NULL,
+finished_at timestamp with time zone NOT NULL,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -1561,6 +1577,7 @@ outcome text NOT NULL,
 outcome text,
 outcome text,
 outings integer NOT NULL,
+output_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
 p50_kmh double precision NOT NULL,
 p90_kmh double precision NOT NULL,
 params_sha256 text NOT NULL,
@@ -1570,6 +1587,7 @@ parent_revision_id uuid,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
+path text NOT NULL,
 path text NOT NULL,
 path text NOT NULL,
 paused boolean NOT NULL,
@@ -1714,12 +1732,15 @@ replies_ab integer NOT NULL,
 replies_ba integer NOT NULL,
 reply_comment_id text,
 reply_text text,
+request jsonb DEFAULT '{}'::jsonb NOT NULL,
 requester_person_id text NOT NULL,
 requester_person_id text NOT NULL,
+requester_person_id text,
 resolved_at timestamp with time zone DEFAULT now() NOT NULL
 responded_at timestamp with time zone NOT NULL,
 responders text[] DEFAULT '{}'::text[] NOT NULL,
 response text NOT NULL,
+result jsonb DEFAULT '{}'::jsonb NOT NULL,
 result_summary text,
 result_url text,
 results jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1782,7 +1803,9 @@ source text NOT NULL,
 source text NOT NULL,
 source_excerpt text,
 source_url text,
+span_id text NOT NULL,
 speed_kmh double precision
+started_at timestamp with time zone NOT NULL,
 started_at timestamp with time zone NOT NULL,
 started_at_ms bigint NOT NULL,
 started_ts bigint NOT NULL,
@@ -1866,6 +1889,7 @@ tool text NOT NULL,
 tool_input jsonb NOT NULL,
 tool_name text NOT NULL,
 tool_result jsonb NOT NULL,
+trace_id text NOT NULL,
 trace_id text,
 tracked integer DEFAULT 0 NOT NULL,
 transcript jsonb NOT NULL,

@@ -85,10 +85,15 @@ class BytesResult:
 
 @dataclass(frozen=True)
 class OpResult:
+    """`sha256` is what the file holds after the write; `previous_sha256`
+    what it held just before (None: there was no regular file there). The
+    pair is the audit's before and after (design/sandbox-runtime §12)."""
+
     status: SandboxStatus
     size: int | None = None
     sha256: str | None = None
     reason: str | None = None
+    previous_sha256: str | None = None
 
 
 @dataclass(frozen=True)

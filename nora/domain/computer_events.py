@@ -11,9 +11,11 @@ Written by Nora's tools, never by `computerd`: the VM is the less-trusted
 side, so its own account of what it ran would be the producer attesting to
 itself.
 
-What a row does NOT hold: a command's full output. `detail` keeps the
-command text in full (it IS the audit), the output's length, and the first
-`AUDIT_OUTPUT_HEAD_CHARS` characters of stdout and stderr.
+A row holds the FULL input (`request`) and points at the FULL output
+(`output_ref`, blobs in the content-addressed `BlobStore`): the operator's
+requirement is a complete trail, who, when, how and what, with Postgres as
+the record of truth. The table is append-only in the database itself: a
+trigger (migration `0080_computer_events`) refuses UPDATE and DELETE.
 
 Every datetime crossing this port is UTC-aware, the rule
 `nora.domain.tool_call_log` states, kept as a separate local helper here for
@@ -23,15 +25,28 @@ the same reason that module gives: the two ports are independent.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
-#: How much of a command's stdout and of its stderr a row keeps. Enough to see
-#: what a command did at a glance, never the whole output (which can be a
-#: page of the web or a file's contents).
-AUDIT_OUTPUT_HEAD_CHARS = 500
+#: Who made a call (`ComputerEvent.actor`). `tag` is a turn somebody tagged
+#: her into, `fire` a fire turn (a reminder, participation, a proactive act),
+#: `dreamer:<adaptor>` a Dreamer pass. `cognition` and `operator` are reserved:
+#: no path reaches the computer tools as either today.
+ACTORS: frozenset[str] = frozenset({"tag", "fire", "cognition", "operator"})
+DREAMER_ACTOR_PREFIX = "dreamer:"
+
+#: How the call reached the computer (`ComputerEvent.path`). `direct` is a
+#: tool call from Nora's own loop; `subagent` is reserved for S4 (a browsing
+#: sub-agent acting on her behalf).
+CALL_PATHS: frozenset[str] = frozenset({"direct", "subagent"})
+
+
+def valid_actor(actor: str) -> bool:
+    return actor in ACTORS or (
+        actor.startswith(DREAMER_ACTOR_PREFIX) and len(actor) > len(DREAMER_ACTOR_PREFIX)
+    )
 
 
 class NaiveComputerEventDatetimeError(ValueError):
@@ -48,35 +63,58 @@ def ensure_utc_event(value: datetime, *, field: str) -> datetime:
 
 @dataclass(frozen=True, slots=True)
 class ComputerEvent:
-    """One computer tool call.
+    """One computer tool call: who, when, how and what.
 
-    `scope` is `nora.domain.computer.computer_scope(platform,
-    conversation_id)`, the workspace the call touched, stored beside the room
-    it was derived from so a row names both. `tag_id` is the turn; empty when
-    the call ran outside a tag (no turn was bound). `exit_code` and
-    `duration_ms` are `computer_run`'s and are `None` for every other tool
-    and for a run that never started. `detail` is the tool's own facts: the
-    command or path, lengths, `truncated`, `reason`, a write's sha256.
+    WHO: `actor` (see `ACTORS`), `requester_person_id` (the tagger's person
+    id when there is one), the room (`platform`, `conversation_id`,
+    `conversation_type`) and the turn (`tag_id`, empty outside a tag).
+    WHEN: `started_at` just before the call reached the runtime,
+    `finished_at` when its answer came back; `created_at` is when the row
+    was written. HOW: `tool`, `path` (`CALL_PATHS`), and the OTel `trace_id`
+    and `span_id` the call ran under (empty when none: the trace is a linked
+    debug view, this row is the record). `scope` is the workspace touched.
+    WHAT: `request` is the FULL input as the model gave it; `result` is how
+    it answered (status, exit code, reason, truncated, sizes, sha256s, and
+    for a write or an edit `before_sha256`/`after_sha256`); `output_ref`
+    points at the full output held in the blob store (key and sha256 per
+    stream), so the row stays small and nothing is dropped.
     """
 
     id: UUID
     created_at: datetime
+    started_at: datetime
+    finished_at: datetime
+    actor: str
+    requester_person_id: str | None
     platform: str
     conversation_id: str
     conversation_type: str
     tag_id: str
     scope: str
     tool: str
+    path: str
+    trace_id: str
+    span_id: str
     status: str
-    exit_code: int | None = None
-    duration_ms: int | None = None
-    detail: Mapping[str, Any] | None = None
+    request: Mapping[str, Any] = field(default_factory=dict)
+    result: Mapping[str, Any] = field(default_factory=dict)
+    output_ref: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not valid_actor(self.actor):
+            raise ValueError(f"unknown computer_events actor {self.actor!r}")
+        if self.path not in CALL_PATHS:
+            raise ValueError(f"unknown computer_events path {self.path!r}")
 
 
 def normalise_computer_event(event: ComputerEvent) -> ComputerEvent:
     return replace(
-        event, created_at=ensure_utc_event(event.created_at, field="created_at"),
-        detail=dict(event.detail or {}),
+        event,
+        created_at=ensure_utc_event(event.created_at, field="created_at"),
+        started_at=ensure_utc_event(event.started_at, field="started_at"),
+        finished_at=ensure_utc_event(event.finished_at, field="finished_at"),
+        request=dict(event.request), result=dict(event.result),
+        output_ref=dict(event.output_ref),
     )
 
 

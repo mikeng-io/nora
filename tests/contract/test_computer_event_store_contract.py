@@ -10,11 +10,14 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+import sqlalchemy as sa
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from nora.domain.computer_events import (
     ComputerEvent,
     ComputerEventStore,
     NaiveComputerEventDatetimeError,
+    normalise_computer_event,
 )
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.engine import create_sql_engine
@@ -25,13 +28,16 @@ EPOCH = datetime(2020, 1, 1, tzinfo=UTC)
 
 
 def _event(**overrides):
+    now = datetime.now(UTC)
     defaults = {
-        "id": uuid4(), "created_at": datetime.now(UTC), "platform": "signal",
+        "id": uuid4(), "created_at": now, "started_at": now, "finished_at": now,
+        "actor": "tag", "requester_person_id": "miles", "platform": "signal",
         "conversation_id": "conv-1", "conversation_type": "group", "tag_id": "tag-1",
-        "scope": "ab" * 16, "tool": "computer_run", "status": "ok",
-        "exit_code": 0, "duration_ms": 12,
-        "detail": {"command": "python3 -c 'print(1)'", "output_chars": 2,
-                   "stdout_head": "1\n", "truncated": False},
+        "scope": "ab" * 16, "tool": "computer_run", "path": "direct",
+        "trace_id": "0" * 31 + "1", "span_id": "0" * 15 + "2", "status": "ok",
+        "request": {"command": "python3 -c 'print(1)'", "timeout_s": 120},
+        "result": {"status": "ok", "exit_code": 0, "truncated": False},
+        "output_ref": {"stdout": {"key": "k" * 64, "sha256": "k" * 64, "bytes": 2}},
     }
     defaults.update(overrides)
     return ComputerEvent(**defaults)
@@ -57,24 +63,14 @@ def test_both_satisfy_the_port():
 async def test_an_appended_event_round_trips_every_field(store):
     event = _event()
     await store.append(event)
-    rows = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
-    assert len(rows) == 1
-    got = rows[0]
-    assert (got.id, got.platform, got.conversation_type, got.tag_id, got.scope) == (
-        event.id, "signal", "group", "tag-1", "ab" * 16,
-    )
-    assert (got.tool, got.status, got.exit_code, got.duration_ms) == ("computer_run", "ok", 0, 12)
-    assert got.detail == event.detail
-    assert got.created_at.tzinfo is not None
-
-
-async def test_nullable_run_fields_stay_null(store):
-    await store.append(_event(tool="computer_read", exit_code=None, duration_ms=None,
-                              detail={"path": "a.txt"}))
     [got] = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
-    assert got.exit_code is None
-    assert got.duration_ms is None
-    assert got.detail == {"path": "a.txt"}
+    assert got == normalise_computer_event(event)
+
+
+async def test_a_nullable_requester_stays_null(store):
+    await store.append(_event(actor="dreamer:proactive", requester_person_id=None))
+    [got] = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
+    assert (got.actor, got.requester_person_id) == ("dreamer:proactive", None)
 
 
 async def test_recent_is_scoped_to_one_conversation(store):
@@ -106,3 +102,56 @@ async def test_recent_orders_newest_first_and_respects_limit(store):
 async def test_append_refuses_a_naive_created_at(store):
     with pytest.raises(NaiveComputerEventDatetimeError):
         await store.append(_event(created_at=datetime(2026, 9, 30, 12, 0, 0)))
+
+
+def test_an_unknown_actor_or_path_is_refused_at_construction():
+    with pytest.raises(ValueError, match="actor"):
+        _event(actor="someone")
+    with pytest.raises(ValueError, match="actor"):
+        _event(actor="dreamer:")
+    with pytest.raises(ValueError, match="path"):
+        _event(path="sideways")
+
+
+# -- append-only, enforced by the database (SQL only) -------------------------
+
+
+@pytest.fixture
+async def sql_engine(pg_url):
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.mark.parametrize("statement", [
+    "UPDATE computer_events SET status = 'unavailable'",
+    "UPDATE computer_events SET request = '{}'::jsonb",
+    "DELETE FROM computer_events",
+    "TRUNCATE computer_events",
+])
+async def test_the_table_refuses_every_rewrite(sql_engine, statement):
+    """The trail cannot be edited after the fact, by any path: an UPDATE, a
+    DELETE and a TRUNCATE are refused by migration 0080's trigger, and the
+    row is still there, unchanged, afterwards."""
+    store = SqlComputerEventStore(sql_engine)
+    event = _event()
+    await store.append(event)
+    with pytest.raises(DBAPIError, match="append-only"):
+        async with sql_engine.begin() as conn:
+            await conn.execute(sa.text(statement))
+    [got] = await store.recent(conversation_id="conv-1", since=EPOCH, limit=10)
+    assert got == normalise_computer_event(event)
+
+
+async def test_the_database_refuses_an_unknown_actor(sql_engine):
+    """The CHECK is a second wall behind the domain's own refusal."""
+    with pytest.raises(IntegrityError):
+        async with sql_engine.begin() as conn:
+            await conn.execute(sa.text(
+                "INSERT INTO computer_events (id, started_at, finished_at, actor, "
+                "platform, conversation_id, conversation_type, tag_id, scope, tool, "
+                "path, trace_id, span_id, status) VALUES (gen_random_uuid(), now(), "
+                "now(), 'someone', 's', 'c', 'group', '', 'x', 'computer_run', "
+                "'direct', '', '', 'ok')"
+            ))

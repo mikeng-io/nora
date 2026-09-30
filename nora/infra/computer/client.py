@@ -247,6 +247,7 @@ def _op_result(reply: Any, sent: str | None) -> OpResult:
     return OpResult(
         status=status, size=_opt_int(reply.get("size")), sha256=stored,
         reason=_opt_str(reply.get("reason")),
+        previous_sha256=_opt_str(reply.get("previous_sha256")),
     )
 
 

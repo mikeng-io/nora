@@ -1,5 +1,6 @@
 """`ComputerEventStore` over SQLAlchemy Core. Shaped like
-`nora.infra.sql.tool_call_log`: insert-only, never updated.
+`nora.infra.sql.tool_call_log`: insert-only. The database enforces it too
+(migration `0080_computer_events`'s trigger refuses UPDATE and DELETE).
 """
 
 from __future__ import annotations
@@ -14,16 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
 from nora.infra.sql.schema import COMPUTER_EVENTS
 
+_FIELDS = (
+    "id", "created_at", "started_at", "finished_at", "actor", "requester_person_id",
+    "platform", "conversation_id", "conversation_type", "tag_id", "scope", "tool",
+    "path", "trace_id", "span_id", "status", "request", "result", "output_ref",
+)
+
 
 def _row_to_event(r: Row[Any]) -> ComputerEvent:
-    return normalise_computer_event(
-        ComputerEvent(
-            id=r.id, created_at=r.created_at, platform=r.platform,
-            conversation_id=r.conversation_id, conversation_type=r.conversation_type,
-            tag_id=r.tag_id, scope=r.scope, tool=r.tool, status=r.status,
-            exit_code=r.exit_code, duration_ms=r.duration_ms, detail=r.detail,
-        )
-    )
+    return normalise_computer_event(ComputerEvent(**{f: getattr(r, f) for f in _FIELDS}))
 
 
 class SqlComputerEventStore:
@@ -34,16 +34,11 @@ class SqlComputerEventStore:
 
     async def append(self, event: ComputerEvent) -> None:
         row = normalise_computer_event(event)
-        stmt = sa.insert(COMPUTER_EVENTS).values(
-            id=row.id, created_at=row.created_at, platform=row.platform,
-            conversation_id=row.conversation_id,
-            conversation_type=row.conversation_type, tag_id=row.tag_id,
-            scope=row.scope, tool=row.tool, status=row.status,
-            exit_code=row.exit_code, duration_ms=row.duration_ms,
-            detail=dict(row.detail or {}),
-        )
+        values = {f: getattr(row, f) for f in _FIELDS}
+        for column in ("request", "result", "output_ref"):
+            values[column] = dict(values[column])
         async with self._engine.begin() as conn:
-            await conn.execute(stmt)
+            await conn.execute(sa.insert(COMPUTER_EVENTS).values(**values))
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
