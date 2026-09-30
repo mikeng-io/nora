@@ -25,6 +25,7 @@ from nora.app.cognition_session import (
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -64,6 +65,15 @@ def _pending(unit: str, n: int = 1) -> tuple[Stimulus, ...]:
     )
 
 
+def _seeded(*wakes: tuple[str, int]) -> InMemoryStimulusStore:
+    """A stimulus store holding the wake these tests hand the hook (an outcome
+    names a wake that exists); by default wake 1 of `unit-1`."""
+    stimuli = InMemoryStimulusStore()
+    for unit, wake_id in wakes or (("unit-1", 1),):
+        stimuli.seed_wake(unit, wake_id)
+    return stimuli
+
+
 def _runner(
     *, session_mode: str = "shadow", agent_runner: FakeCognitionAgentRunner | None = None,
     dry_run_store: InMemoryCognitionDryRunStore | None = None,
@@ -72,10 +82,10 @@ def _runner(
     store = dry_run_store or InMemoryCognitionDryRunStore()
     fake = agent_runner or FakeCognitionAgentRunner()
     runner = CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimuli or InMemoryStimulusStore(),
+        dry_run_store=store, stimulus_store=stimuli or _seeded(),
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
-        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, room: [],
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE",
+        home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(), doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
         open_proposed_events=_async_const2(()), prior_standing=_async_const2(None),
         pending_self_wakes=_async_const(()), pending_mirrored_reminds=_async_const(()),
@@ -111,7 +121,7 @@ def _counting_ref():
 # --------------------------------------------------------------------------
 
 async def test_session_mode_off_makes_no_model_call_and_releases_the_wake():
-    stimuli = InMemoryStimulusStore()
+    stimuli = _seeded()
     runner, store, fake = _runner(session_mode="off", stimuli=stimuli)
     view = UnitView(
         unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
@@ -125,7 +135,7 @@ async def test_session_mode_off_makes_no_model_call_and_releases_the_wake():
 
 
 async def test_an_empty_agenda_makes_no_model_call():
-    stimuli = InMemoryStimulusStore()
+    stimuli = _seeded()
     runner, store, fake = _runner(stimuli=stimuli)
     view = UnitView(unit="unit-1", pending=(), last_activity_ms=None, last_wake=None)
     outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
@@ -136,15 +146,15 @@ async def test_an_empty_agenda_makes_no_model_call():
 
 
 async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_failed():
-    stimuli = InMemoryStimulusStore()
+    stimuli = _seeded(("ghost-unit", 2))
     runner, _store, fake = _runner(stimuli=stimuli)
     view = UnitView(
         unit="ghost-unit", pending=_pending("ghost-unit"), last_activity_ms=None, last_wake=None,
     )
     with pytest.raises(MissingHomeRoomError):
-        await runner.on_wake(unit="ghost-unit", view=view, now_ms=NOW, wake_id=1)
+        await runner.on_wake(unit="ghost-unit", view=view, now_ms=NOW, wake_id=2)
     assert fake.calls == 0
-    assert stimuli.outcomes[1].outcome == "failed"
+    assert stimuli.outcomes[2].outcome == "failed"
 
 
 # --------------------------------------------------------------------------
@@ -153,7 +163,7 @@ async def test_a_unit_with_no_home_room_makes_no_model_call_and_is_recorded_fail
 
 async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_model_once():
     fake = FakeCognitionAgentRunner(script=[])
-    runner, store, fake = _runner(agent_runner=fake)
+    runner, store, fake = _runner(agent_runner=fake, stimuli=_seeded(("unit-1", 42)))
     view = UnitView(
         unit="unit-1", pending=_pending("unit-1", n=3), last_activity_ms=None, last_wake=None,
     )

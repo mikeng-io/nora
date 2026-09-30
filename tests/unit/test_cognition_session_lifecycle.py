@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -34,6 +34,7 @@ from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
 from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -74,6 +75,14 @@ async def close_written(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunR
 
 async def boom(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
     raise RuntimeError("the model loop blew up")
+
+
+async def overflow(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
+    """A failure the AGENDA causes: its prompt does not fit the model's window
+    (`classify_failure`: cause `agenda`, the only cause that strikes)."""
+    from strands.types.exceptions import ContextWindowOverflowException
+
+    raise ContextWindowOverflowException("the agenda does not fit the window")
 
 
 @dataclass
@@ -172,7 +181,8 @@ class Rig:
 def _rig(
     *, agent: ScriptedAgent | None = None, units: tuple[str, ...] = ("u1",),
     timeout: float = 30.0, max_items: int = 12, max_strikes: int = 3,
-    policy: WakePolicy = POLICY, read_tools_for: Callable[[str, Room], list[Any]] | None = None,
+    policy: WakePolicy = POLICY,
+    read_tools_for: Callable[[str, Sequence[Room]], list[Any]] | None = None,
     read_only_tools: frozenset[str] = frozenset(), max_self_wakes: int = 5,
     max_self_wakes_per_day: int = 12,
 ) -> Rig:
@@ -190,9 +200,10 @@ def _rig(
     runner = CognitionSessionRunner(
         dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms=dict.fromkeys(units, HOME),
-        read_tools_for=read_tools_for or (lambda unit, room: []),
+        read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=read_only_tools,
-        skill_text_for=lambda kinds: "", doctrine_text="DOCTRINE", doctrine_sha256="sha",
+        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_proposed_events=_const(()),
         prior_standing=_const(None), pending_self_wakes=_pending,
         pending_mirrored_reminds=_const(()), session_mode="shadow",
@@ -434,7 +445,7 @@ async def test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows
         through_stimulus_id=w2_sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=rig.clock.ms, cut_cooldown=False, at_ms=rig.clock.ms,
         tracked=True,
-    ), recorded_at_ms=rig.clock.ms)
+    ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w2 is not None
 
     # Inside the timeout: more speech arrives, a strong cue, the cooldown long
@@ -1175,6 +1186,19 @@ def test_a_session_budget_that_can_outlive_its_wake_is_refused():
             CognitionSessionRunner(**_runner_kwargs(budget_timeout=too_long, session_timeout=900))
 
 
+def _guard_of(stimuli: Any) -> Any:
+    """The guard a writer that just read the unit would hold: its newest wake
+    and that wake's outcome (a tracked wake is refused without one)."""
+    from nora.domain.stimuli import WakeGuard
+
+    last = stimuli.wakes[-1] if stimuli.wakes else None
+    row = None if last is None else stimuli.outcomes.get(last.id)
+    return WakeGuard(
+        last_wake_id=None if last is None else last.id,
+        last_outcome=None if row is None else row.outcome,
+    )
+
+
 def _runner_kwargs(
     *, units: tuple[str, ...] = ("u1",), home_rooms: dict[str, Room] | None = None,
     budget_timeout: float = 30.0, session_timeout: float = 900.0,
@@ -1183,7 +1207,8 @@ def _runner_kwargs(
     return {
         "dry_run_store": ledger, "stimulus_store": InMemoryStimulusStore(ledger=ledger),
         "agent_runner": ScriptedAgent(), "home_rooms": home_rooms or {"u1": HOME},
-        "read_tools_for": lambda unit, room: [], "skill_text_for": lambda kinds: "",
+        "read_tools_for": lambda unit, rooms: [], "skill_text_for": lambda kinds: "",
+        "grounder": EmptyGrounder(),
         "doctrine_text": "D", "doctrine_sha256": None, "open_note_titles": _const(()),
         "open_proposed_events": _const(()), "prior_standing": _const(None),
         "pending_self_wakes": _const(()), "pending_mirrored_reminds": _const(()),
@@ -1261,7 +1286,7 @@ async def test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake(
         unit="u1", mode="shadow", reason="settled", from_stimulus_id=0,
         through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms, tracked=True,
-    ), recorded_at_ms=rig.clock.ms)
+    ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))
     assert w1 is not None
     rig.clock.advance(900 + 300 + 1)
 

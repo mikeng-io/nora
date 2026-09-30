@@ -28,7 +28,12 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.ports import NewCarry, NewCognitionPace, NewWakeOutcome
+from nora.domain.ports import (
+    NewCarry,
+    NewCognitionPace,
+    NewCognitionRemindMirror,
+    NewWakeOutcome,
+)
 from nora.domain.stimuli import NewStimulus, NewWake, WakeGuard
 from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
 from nora.infra.sql.engine import create_sql_engine
@@ -92,9 +97,22 @@ async def _msgs(stimuli: Any, n: int) -> list[int]:
     ]
 
 
+async def _guard_now(stimuli: Any) -> WakeGuard:
+    """What a tick that just read the unit holds: its newest wake and that
+    wake's outcome. A tracked wake is refused without a guard."""
+    view = await stimuli.view(unit=UNIT, mode="shadow", now_ms=NOW + 10_000, limit=1)
+    last = view.last_wake
+    return WakeGuard(
+        last_wake_id=None if last is None else last.id,
+        last_outcome=None if view.last_session is None else view.last_session.outcome,
+    )
+
+
 async def _wake(
     stimuli: Any, *, through: int, at: int = NOW, tracked: bool = True, guard: Any = None,
 ) -> Any:
+    if tracked and guard is None:
+        guard = await _guard_now(stimuli)
     return await stimuli.record_wake(wake=NewWake(
         unit=UNIT, mode="shadow", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
@@ -104,10 +122,12 @@ async def _wake(
 
 async def _close(
     stimuli: Any, wake_id: int, outcome: str = "closed", *, carries: Any = (),
-    at: int = NOW + 500,
+    at: int = NOW + 500, cause: str = "infra",
 ) -> Any:
     return await stimuli.record_outcome(
-        outcome=NewWakeOutcome(wake_id=wake_id, unit=UNIT, outcome=outcome, at_ms=at),
+        outcome=NewWakeOutcome(
+            wake_id=wake_id, unit=UNIT, outcome=outcome, at_ms=at, cause=cause,
+        ),
         carries=tuple(carries), recorded_at_ms=at,
     )
 
@@ -165,6 +185,76 @@ async def test_a_failed_wake_falls_back_to_the_newest_wake_that_did_not_fail(sto
     assert view.mark.through_stimulus_id == 1
     assert [s.id for s in view.pending] == [2, 3]
     assert view.last_wake.id == bad
+
+
+async def test_consecutive_failures_and_the_mark_of_the_newest_failed_wake(stores):
+    """#637 review, major 1: what the backoff and the strike read. Failed and
+    timed-out wakes count, a shutdown (`cancelled`) neither counts nor ends the
+    run, an EXPIRED wake counts, and one `closed` wake resets it: the same rule
+    in both stores, `nora.domain.stimuli.failure_run`."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 6)
+    assert (await _view(stimuli, stale_before_ms=NOW)).failures == 0
+    good = await _wake(stimuli, through=1, at=NOW)
+    await _close(stimuli, good)
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
+    a = await _wake(stimuli, through=2, at=NOW + 100)
+    await _close(stimuli, a, "failed", cause="agenda")
+    b = await _wake(stimuli, through=3, at=NOW + 200)
+    await _close(stimuli, b, "cancelled")
+    c = await _wake(stimuli, through=4, at=NOW + 300)
+    await _close(stimuli, c, "timeout", cause="agenda")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert view.failures == 2                                  # a and c, b is transparent
+    assert view.agenda_failures == 2
+    assert (view.failed_mark.through_stimulus_id, view.failed_mark.through_ms) == (4, NOW + 300)
+    # a wake that never resolved and is past the timeout is a failure too, and
+    # an INFRASTRUCTURE one (a kill, a crash): it backs off, it is never struck
+    await _wake(stimuli, through=5, at=NOW + 400)
+    stale = await _view(stimuli, stale_before_ms=NOW + 5000)
+    assert stale.failures == 3
+    assert stale.agenda_failures == 2
+    assert stale.failed_mark.through_stimulus_id == 4
+    # ... and while it is still OPEN it neither counts nor ends the run
+    running = await _view(stimuli, stale_before_ms=NOW)
+    assert running.failures == 2
+    # one closed wake resets the run
+    await _close(stimuli, await _open_wake_id(stimuli), "closed")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (0, 0, None)
+    # a reader that tracks no sessions sees none
+    assert (await _view(stimuli)).failures == 0
+
+
+async def test_a_failed_outcome_stores_its_cause_and_only_agenda_counts_toward_a_strike(stores):
+    """DEC-244 (#637 second review): the cause is written with the outcome and
+    read back by the same rule in both stores. `infra` is the default and the
+    reading of anything unrecorded; an unknown cause is refused."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 4)
+    infra = await _wake(stimuli, through=2, at=NOW)
+    await _close(stimuli, infra, "failed")                       # cause defaults to infra
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures, view.failed_mark) == (1, 0, None)
+    agenda = await _wake(stimuli, through=3, at=NOW + 100)
+    await _close(stimuli, agenda, "failed", cause="agenda")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures) == (2, 1)
+    assert view.failed_mark.through_stimulus_id == 3
+    later_infra = await _wake(stimuli, through=4, at=NOW + 200)
+    await _close(stimuli, later_infra, "timeout", cause="infra")
+    view = await _view(stimuli, stale_before_ms=NOW)
+    assert (view.failures, view.agenda_failures) == (3, 1)       # infra is transparent
+    assert view.failed_mark.through_stimulus_id == 3             # ... and never the mark
+    with pytest.raises(ValueError, match="failure cause"):
+        await _close(stimuli, await _wake(stimuli, through=4, at=NOW + 300), "failed",
+                     cause="weather")
+
+
+async def _open_wake_id(stimuli: Any) -> int:
+    view = await _view(stimuli, stale_before_ms=NOW)
+    return int(view.last_wake.id)
 
 
 async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
@@ -465,3 +555,191 @@ async def test_pending_self_wakes_reads_a_bounded_window_by_ref(stores):
     ]
     everything = await ledger.pending_self_wakes(unit=UNIT, since_ms=NOW)
     assert [p.wake_ref for p in everything] == ["old", "kept"]
+
+
+# ---- what a write is refused for (#627 review, minors 2 and 3) -------------
+
+async def test_an_outcome_for_a_wake_nobody_wrote_is_refused(stores):
+    """M2: an outcome keyed by a wake that does not exist is a row no reader
+    finds; both stores refuse it and write nothing."""
+    stimuli, _ledger = stores
+    with pytest.raises(ValueError, match="no cognition wake 999"):
+        await _close(stimuli, 999)
+    await _msgs(stimuli, 1)
+    wake = await _wake(stimuli, through=1)
+    view = await _view(stimuli, stale_before_ms=NOW + 1)
+    assert view.last_session.outcome is None and view.last_wake.id == wake
+
+
+async def test_an_outcome_from_another_units_session_is_refused(stores):
+    """M2: the outcome's unit is the wake's unit. A `closed` written under
+    another unit's name would take that unit's lock and advance nothing."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 1)
+    wake = await _wake(stimuli, through=1)
+    with pytest.raises(ValueError, match="belongs to unit"):
+        await stimuli.record_outcome(
+            outcome=NewWakeOutcome(
+                wake_id=wake, unit="someone-else", outcome="closed", at_ms=NOW + 500,
+            ),
+            carries=(), recorded_at_ms=NOW + 500,
+        )
+    recorded = await _close(stimuli, wake)
+    assert (recorded.outcome, recorded.written) == ("closed", True)
+
+
+async def test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is_not(stores):
+    """M3: a tracked wake is the one whose fate a session settles, so it is
+    written under the unit's lock or not at all; an untracked wake (no hook)
+    has nothing to race and needs none."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 2)
+    new = NewWake(
+        unit=UNIT, mode="shadow", reason="settled", from_stimulus_id=0,
+        through_stimulus_id=2, stimulus_count=2, eligible_count=2,
+        oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW, tracked=True,
+    )
+    with pytest.raises(ValueError, match="WakeGuard"):
+        await stimuli.record_wake(wake=new, recorded_at_ms=NOW)
+    assert (await _view(stimuli)).last_wake is None
+    assert await _wake(stimuli, through=2, tracked=False) is not None
+
+
+# ---- the per-unit lock, against real Postgres only --------------------------
+#
+# A double cannot hold a lock, and the lock is the whole reason a guarded wake
+# and a close cannot both commit (a guard reading «no outcome» while a close
+# reads «no later wake»). So these two run on the SQL store alone.
+
+@pytest.fixture
+async def sql_stores(request: Any) -> AsyncIterator[tuple[Any, Any, Any]]:
+    engine = create_sql_engine(request.getfixturevalue("_lifecycle_db"))
+    try:
+        yield SqlStimulusStore(engine), SqlCognitionDryRunStore(engine), engine
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(f"truncate {ALL_TABLES} restart identity"))
+        await engine.dispose()
+
+
+async def test_a_wake_write_and_a_close_wait_for_the_units_lock(sql_stores):
+    """M1, the deterministic half: with the unit's advisory lock held by
+    another transaction, neither the guarded wake write nor the close may
+    finish; both finish once it is released. A no-op lock lets them through
+    while it is held. The lock is taken with the store's own key spelling
+    (`_LOCK_CLASS`, `hashtext(unit)`), so a lock keyed on anything else does
+    not block them either."""
+    import asyncio
+
+    from nora.infra.sql.stimuli import _LOCK_CLASS
+
+    stimuli, _ledger, engine = sql_stores
+    await _msgs(stimuli, 2)
+    first = await _wake(stimuli, through=1)
+    guard = await _guard_now(stimuli)
+
+    async with engine.connect() as holder:
+        await holder.execute(sa.text(
+            "select pg_advisory_xact_lock(:c, hashtext(:u))"
+        ), {"c": _LOCK_CLASS, "u": UNIT})
+        write = asyncio.ensure_future(_wake(stimuli, through=2, at=NOW + 10, guard=guard))
+        close = asyncio.ensure_future(_close(stimuli, first))
+        await asyncio.wait({write, close}, timeout=0.5)
+        assert not write.done(), "a guarded wake write ran while the unit's lock was held"
+        assert not close.done(), "a close ran while the unit's lock was held"
+        await holder.rollback()
+    await asyncio.wait_for(asyncio.gather(write, close), timeout=10)
+
+
+@pytest.mark.parametrize("round_", range(12))
+async def test_a_guarded_wake_and_a_close_never_both_take_the_same_stimuli(sql_stores, round_):
+    """M1, the race: a second wake written under a guard that read «wake 1 has
+    no outcome» RACES the close of wake 1. Under the lock exactly one order
+    happened: the close first (the guard then sees a new outcome and refuses
+    the write), or the write first (the close then finds a later wake, is
+    recorded `timeout` and writes no carries). Never both: a new wake that
+    claimed the range AND a `closed` with carries over it."""
+    import asyncio
+
+    stimuli, _ledger, _engine = sql_stores
+    await _msgs(stimuli, 2)
+    first = await _wake(stimuli, through=1)
+    guard = await _guard_now(stimuli)
+
+    wrote, closed = await asyncio.gather(
+        _wake(stimuli, through=2, at=NOW + 10, guard=guard),
+        _close(stimuli, first, carries=[_carry(1)]),
+    )
+    view = await _view(stimuli)
+    if wrote is None:
+        assert (closed.outcome, closed.written) == ("closed", True)
+        assert view.last_wake.id == first and view.carry == {1: 1}
+    else:
+        assert (closed.outcome, closed.written) == ("timeout", True)
+        assert view.last_wake.id == wrote and view.carry == {}
+
+
+# ---- the mirrored reminds a session reads to dedupe and to move (step 3a-iii) --
+
+def _mirror(**kw: Any) -> NewCognitionRemindMirror:
+    base: dict[str, Any] = {
+        "session_id": None, "unit": UNIT, "verb": "remind", "reminder_ref": "r1",
+        "platform": "signal", "conversation_id": "g1", "intent": "tell",
+        "subject_rows": ("note:1",), "at_ms": NOW + 1000, "why": None,
+        "outcome": "recorded",
+    }
+    base.update(kw)
+    return NewCognitionRemindMirror(**base)
+
+
+async def test_a_pending_mirrored_remind_is_read_back_by_the_next_session(stores):
+    """Without this read a session's `remind_move`/`remind_cancel` answer
+    `not_found` for every reminder and the dedupe rule never fires: the
+    session's pending list is what it was handed, and it was handed none."""
+    _stimuli, ledger = stores
+    await ledger.record_remind_mirror(mirror=_mirror(), recorded_at_ms=NOW)
+    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 10)
+    assert [(p.reminder_ref, p.platform, p.conversation_id, p.subject_rows)
+            for p in pending] == [("r1", "signal", "g1", ("note:1",))]
+    assert await ledger.pending_mirrored_reminds(unit="other", now_ms=NOW + 10) == ()
+
+
+async def test_a_cancelled_moved_due_or_refused_remind_is_read_at_its_latest_state(stores):
+    _stimuli, ledger = stores
+    for m in (
+        _mirror(reminder_ref="cancelled", subject_rows=("note:1",)),
+        _mirror(verb="remind_cancel", reminder_ref="cancelled", subject_rows=(),
+                intent=None, at_ms=None, why="no longer needed"),
+        _mirror(reminder_ref="moved", subject_rows=("note:2",), at_ms=NOW + 50),
+        _mirror(verb="remind_move", reminder_ref="moved", subject_rows=(), intent=None,
+                at_ms=NOW + 5000, why="dinner moved"),
+        _mirror(reminder_ref="due", subject_rows=("note:3",), at_ms=NOW + 50),
+        # Set for later, then moved to a time that has passed: due, so no longer
+        # pending, though its FIRST link was still in the future.
+        _mirror(reminder_ref="moved_earlier", subject_rows=("note:5",), at_ms=NOW + 5000),
+        _mirror(verb="remind_move", reminder_ref="moved_earlier", subject_rows=(), intent=None,
+                at_ms=NOW + 50, why="dinner moved earlier"),
+        _mirror(reminder_ref=None, subject_rows=("note:4",), outcome="refused",
+                refusal_reason="duplicate_pending", at_ms=None),
+        _mirror(verb="remind_move", reminder_ref="moved", subject_rows=(), intent=None,
+                outcome="refused", refusal_reason="not_own", at_ms=None),
+    ):
+        await ledger.record_remind_mirror(mirror=m, recorded_at_ms=NOW)
+    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
+    assert [p.reminder_ref for p in pending] == ["moved"]
+
+
+async def test_a_remind_due_exactly_now_is_due_not_pending(stores):
+    """`fold_pending_reminds`' docstring says a due remind is no longer pending
+    (nothing fires in shadow, so its time having come is what would have been
+    sent) and the fire path treats `at <= now` as due: at the boundary instant
+    it is due. It read `at >= now`, one millisecond of a dedupe rule refusing a
+    second reminder on the same rows (#637 review, minor)."""
+    _stimuli, ledger = stores
+    for ref, at in (("edge", NOW + 100), ("after", NOW + 101), ("before", NOW + 99)):
+        await ledger.record_remind_mirror(
+            mirror=_mirror(reminder_ref=ref, subject_rows=(f"note:{ref}",), at_ms=at),
+            recorded_at_ms=NOW,
+        )
+    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
+    assert [p.reminder_ref for p in pending] == ["after"]

@@ -226,8 +226,8 @@
  {
   "name": "stimuli: the cooldown actually runs from the session's end",
   "file": "nora/domain/stimuli.py",
-  "old": "    elif session.ended_at_ms is not None:\n        base = session.ended_at_ms",
-  "new": "    elif session.ended_at_ms is not None:\n        base = wake.at_ms",
+  "old": "    if session.ended_at_ms is not None:\n        return session.ended_at_ms",
+  "new": "    if session.ended_at_ms is not None:\n        return wake.at_ms",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_the_cooldown_runs_from_the_sessions_end_not_from_the_wake"
  },
  {

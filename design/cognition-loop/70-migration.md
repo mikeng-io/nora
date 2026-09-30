@@ -497,4 +497,19 @@ verbs and self-wakes in shadow, the `remind` act mirrored and held and read
 against the live proactive pass's decisions, and `tool_selection` on the
 cognition catalogue — the rest of this table's own 3a row.
 
-Step 3a-ii and steps 4–8 remain design only.
+**Step 3a-ii built 2026-09-29** (DEC-242, #627): the session loop, the pace
+verbs, the mirrored and held `remind`, `nora cognition compare`; unwired.
+
+**Step 3a-iii built 2026-09-30** (DEC-244; migration `0080_cognition_outcome_cause`): the composition root
+builds the shadow session under `[cognition] session_mode = "shadow"`
+(off builds nothing), hands its hook to the wake evaluator and stops it at
+shutdown; the session rides the Dreamer's model and takes its budget from
+`[dreamer.budgets.cognition]`; its read tools are the catalogue's that exist
+(`rollup_read`, `memo_read`, `character_read`, `standing_read` and
+`social_items` are not built yet); its instruction is
+`nora/dreamer/objectives/cognition.md`; the tool_selection corpus runs through
+`CognitionSessionRunner.probe`. Nothing has run against a live model: a
+shadow week is the measurement, and the `tool_selection_cognition` eval runs
+first.
+
+Steps 4–8 remain design only.

@@ -2344,6 +2344,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("state",),
     ),
     _CounterSpec(
+        "nora_cognition_stimuli_struck_total",
+        "Stimuli code struck (retracted) so a unit stops re-waking on input it "
+        "cannot process, by reason: failed is the stimuli the failing wakes "
+        "claimed, struck once a unit has failed max_consecutive_failures "
+        "sessions in a row (#637 review, major 1). A count of stimuli, not of "
+        "wakes; one strike event increments by however many it struck.",
+        ("reason",),
+    ),
+    _CounterSpec(
         "nora_cognition_wake_deferred_total",
         "Unit-ticks where a wake trigger held and a brake stopped it, by "
         "brake ("
@@ -2395,6 +2404,15 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # it: nora's belief on one side, the controller's own report on the
     # other. Both 1 = agreement. expected=1 with controller=0 sustained is
     # the shape that went unnoticed for days.
+    _GaugeSpec(
+        "nora_cognition_session_units",
+        "Units the wake evaluator watches, by whether a Cognition session can "
+        "run for them: state=runnable (a home_room = true room in policy.toml) "
+        "or no_home_room (would-wakes are recorded, no session ever starts). "
+        "Set at boot with [cognition] session_mode = shadow; a non-zero "
+        "no_home_room is a unit the shadow week silently does not cover.",
+        ("state",),
+    ),
     _GaugeSpec(
         "nora_music_expected_playing",
         "1 when nora believes a track is currently playing for the guild.",

@@ -3395,6 +3395,24 @@ class CognitionConfig(BaseModel):
     #: The pending cap alone does not bound a session that re-arms itself on
     #: every pass, because a fired wake frees its slot.
     max_self_wakes_per_day: int = Field(default=12, ge=1)
+    #: #637 review, major 1 (DEC-244 (7)): a unit whose sessions fail is not
+    #: woken again every `cooldown_seconds`, for ever. The next wake after `n`
+    #: consecutive failed or timed-out sessions waits `cooldown_seconds *
+    #: 2 ** (n - 1)` (a `closed` session resets it), capped at
+    #: `backoff_max_seconds` (6 h); after `max_consecutive_failures` the stimuli
+    #: those sessions claimed are struck (reason `failed`) so an always-failing
+    #: agenda stops. Both are starting values a shadow week sizes.
+    backoff_max_seconds: float = Field(default=21600.0, gt=0)
+    max_consecutive_failures: int = Field(default=5, ge=1)
+    #: #637 review, major 2 (DEC-244 (8)): how much of a session's prompt the
+    #: Record rows and Register index lines may spend. `record_chars` is shared
+    #: across the agenda's items by what each needs; `message_chars` clips one
+    #: message; `register_lines` caps the index lines listed per kind. When an
+    #: item's messages do not fit, the OLDEST are dropped and the prompt says
+    #: how many. Starting values.
+    record_chars: int = Field(default=8000, ge=500)
+    message_chars: int = Field(default=400, ge=40)
+    register_lines: int = Field(default=40, ge=1)
 
     @field_validator("time_floors")
     @classmethod
@@ -4222,6 +4240,40 @@ class Config(BaseModel):
                 f"[standing] max_slot_hold_seconds "
                 f"({self.standing.max_slot_hold_seconds:g}). Lower a timeout or "
                 f"raise the budget deliberately; do not leave them disagreeing."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cognition_sessions_need_the_dreamer(self) -> Config:
+        """A Cognition session borrows the Dreamer's model source, tool source
+        and objective corpus (migration step 3a-iii), so `[cognition]
+        session_mode = "shadow"` with `[dreamer] enabled = false` would build
+        an evaluator whose hook has nothing to run on. Refused at load, where
+        the operator is looking, not discovered as a session that never
+        starts."""
+        if self.cognition.session_mode == "shadow" and not self.dreamer.enabled:
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs [dreamer] enabled = true: "
+                "a session runs on the Dreamer's model, tools and objectives"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cognition_sessions_need_their_own_budget(self) -> Config:
+        """`[cognition] session_mode = "shadow"` REFUSES to load without an
+        explicit `[dreamer.budgets.cognition]` block (#637 review, minor 4).
+        `budget_for` answers an adaptor with no block from the class defaults
+        (6 turns, 40k tokens, 120 s), which is a budget nobody chose for a
+        session that reads and writes across up to `max_items` items: the
+        review found a live config with no block, silently running on it. The
+        block is in `config.example.toml`; a deployment that turns sessions on
+        copies it, or sizes its own."""
+        if self.cognition.session_mode == "shadow" and "cognition" not in self.dreamer.budgets:
+            raise ValueError(
+                "[cognition] session_mode = \"shadow\" needs an explicit "
+                "[dreamer.budgets.cognition] block: without one the session silently "
+                "runs on the class defaults (6 turns, 40k tokens, 120 s). Copy the block "
+                "from config.example.toml or size your own"
             )
         return self
 
