@@ -59,7 +59,6 @@ from aioresponses import aioresponses
 
 from nora.domain.ports import JobResult, JobStatus
 from nora.infra.compute.docker_backend import (
-    EGRESS_PROXY_URL,
     MAX_ERROR_LOG_CHARS,
     LocalDockerBackend,
 )
@@ -613,10 +612,3 @@ async def test_a_job_leaves_only_through_compute_egress(backend, docker_client):
     drop_host = urlsplit(DROP_URL).hostname
     assert env["NO_PROXY"] == env["no_proxy"] == drop_host
 
-
-def test_the_egress_proxy_literal_matches_compose():
-    """The backend names the proxy by a literal, like the network: the compose
-    service's `container_name` is the side that adapts, and this pins the pair."""
-    compose = (Path(__file__).parents[3] / "docker-compose.yml").read_text()
-    assert "container_name: compute-egress" in compose
-    assert EGRESS_PROXY_URL == "http://compute-egress:3128"

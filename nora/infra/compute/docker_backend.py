@@ -53,6 +53,30 @@ MAX_ERROR_LOG_CHARS = 2000
 # adapts. `tests/infra/compute/test_docker_backend.py` pins it.
 EGRESS_PROXY_URL = "http://compute-egress:3128"
 
+# What `compute-egress` lets a job reach: (scheme, host, port, path prefix).
+# `deploy/compute-egress/squid.conf` encodes exactly this set, and
+# `tests/infra/compute/test_compute_egress.py` parses that file and compares,
+# so the two cannot drift. `egress_refusal` is how composition checks, at
+# BOOT, that the model and tracing endpoints it hands a job are on this list:
+# otherwise pointing `[llm] base_url` somewhere new would fail every job with a
+# proxy 403 in front of the group instead of in the operator's terminal.
+EGRESS_ALLOWLIST: tuple[tuple[str, str, int, str], ...] = (
+    ("http", "host.docker.internal", 20128, "/v1/"),        # OmniRoute, Smith's model
+    ("http", "host.docker.internal", 4318, "/v1/traces"),   # OTLP collector
+    ("https", "maps.googleapis.com", 443, ""),              # render_map, geocode
+)
+
+
+def egress_refusal(url: str) -> str | None:
+    """None when a job may reach `url` through `compute-egress`, else why not."""
+    parts = urlsplit(url)
+    port = parts.port or {"http": 80, "https": 443}.get(parts.scheme, 0)
+    for scheme, host, allowed_port, prefix in EGRESS_ALLOWLIST:
+        if (parts.scheme, parts.hostname, port) == (scheme, host, allowed_port) \
+                and parts.path.startswith(prefix):
+            return None
+    return f"{url} is not on the compute-egress allowlist ({EGRESS_ALLOWLIST})"
+
 
 def _unexpected(exc: BaseException) -> str:
     """An unexpected failure's error string. Carries the exception TYPE, not

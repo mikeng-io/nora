@@ -801,6 +801,13 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - ./deploy/compute-egress/squid.conf:/etc/squid/squid.conf:ro
+    healthcheck:
+      # Down, every compute job fails on a ProxyError; this makes it visible
+      # in `docker ps` before a job finds out.
+      test: ["CMD", "squid", "-k", "check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
@@ -1120,7 +1127,9 @@ networks:
     # INTERNAL, with the bridge's IPv4 inhibited (S0, design/sandbox-runtime
     # §0). Internal alone still left the gateway address on the bridge, and a
     # probe from inside reached the host's sshd on it; inhibiting IPv4 removes
-    # that address, so a job reaches only `drop` and `compute-egress`.
+    # that address, so a job reaches only `drop`, `compute-egress` and any
+    # other job running at the same time (ICC stays on: turning it off would
+    # also cut jobs off from `drop` and the proxy).
     # Measured 2026-09-30 before this change: a job read Honcho unauthenticated
     # and reached the host, the LAN and Tailscale.
     internal: true
