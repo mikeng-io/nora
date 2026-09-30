@@ -59,8 +59,34 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 4 | **Cut over** | the Cognition adaptor commits; the clocks, note-candidates, note-curation, note-merge, the proactive adaptor and the ingest Standing fold retired (with `rollup_max_folds` and its metric); the culture adaptor becomes the Character adaptor's room case, on its wake rule, with culture migrated to the sectioned account and written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the room-Character corpus meets its gate; the latency falsifier ([00](00-intent.md) §6) |
 | 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; `social_items`; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
 | 6 | **Faces** | detector, embedder, templates keyed by workspace; labels by reference photos, the portal and `face_label`; face co-appearance; the custody and face checks | precision on the held-out labelled set ([60](60-faces.md) §6) |
-| 7 | **Memos** | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
+| 7 | **Memos** (moved: E1b, built right after step 3's shadow week as the first kind on the entry, gated on its corpus, written only by Cognition, DEC-249; the «記低» routing is a strong-cue hand-off, not a tag-path `memo_write`) | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
 | 8 | **Character, Lessons and Standing** (whole) | the Character adaptor generalised to the unit, persons and Nora; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **the Lessons adaptor**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
+
+**The data model's convergence** ([05](05-data-model.md) §9, operator
+2026-10-01, DEC-249). **E1a gates step 4**: the `citation` table widened to
+events and every Notebook kind as citing stores and to Rollup keys as cited,
+with a `part` column for per-field lineage; events brought into the cascade;
+event lineage written from its field citations. **E1b: memo is the first kind
+built on the entry**, right after step 3's shadow week (it moves up from step
+7, row 7 below), gated on the memo corpus, and may land after step 4: the
+entry store and chain, `about` and `links`, the generic verbs, the one View
+builder serving `<memos>` and `memo_read`, written only by Cognition. **E1c is
+a precondition of E2**: every tool call and its result, every status, keyed to
+the turn, and her Instagram comment replies, recorded in the Record. **E2, one
+writer per tier**: at or right after the cut-over the tag path's `note_create`,
+`note_update` and event verbs and the debrief's Standing write move behind
+Cognition, replaced by the `handoff` stimulus ([20](20-observe.md) §3), with
+the tag tools' text and the «記低» doctrine changed under `tool_selection` and
+the eval; `remember`, `remind` and `cancel_reminder` stay on the tag turn.
+Character of a person, the unit and Nora, Lessons, and unit and person
+Standing are born on the entry at step 8; culture, room Standing, events and
+notes converge as each is next touched, under render parity measured after
+the fire turn's withdrawal fix, their tables kept. **Step 4 needs**: E1a; E1c
+and the `handoff` stimulus before the tag-path writes are withdrawn; the
+grounding and the tag turn's blocks agreeing on withdrawal and lineage.
+**Nothing live changes shape before its kind converges**: the debrief and
+ingest fold through `standing_revise` (DEC-239), the tag path's note and event
+verbs, the `<notes>` and `standing` blocks, history capture, the cascade.
 
 **`nora snapshot --at T`** builds an eval sandbox holding Nora as of T. It
 extends `nora/infra/sql/snapshot.py`, which today makes five reads for one
@@ -68,7 +94,7 @@ room at one instant (the transcript, standing through `read_as_of`, culture,
 notes, and pending reminders through `_reminders`), omits cancelled
 reminders because cancelling records no time, and reads four of a note's
 loop columns as they are now (its own docstring and `nora/subject/sandbox.py`
-list the gaps), to every store's as-of-T view, and seeds the per-case sandbox
+list the gaps), to every store's as-of-T state, and seeds the per-case sandbox
 database `nora/subject/sandbox.py` already clones from the blank template.
 It adds the doctrine, skills, config and model route in force at T, and the
 Rollup at T (rebuilt at watermark T once step 2 makes it replayable; before
@@ -170,6 +196,7 @@ rule 4); DEC-213 (note body schema).
 | strands-agents 1.50.2 → 1.57.1 | its own PR, measured before and after |
 | game-specific sources (CS2, Valorant, Apex) | after step 5; each a source feeding play samples |
 | DEC numbers | taken at merge (`nora-decision`) |
+| when culture moves onto the entry (step 4 or step 8); whether the entry's two-value basis replaces the six reasoning modes; the portal's events page and per-room visibility | the operator; [05](05-data-model.md) §10 |
 | populating `I hold open` and `I owe` from the model (step 3b, DEC-239) | a doctrine change to `nora/dreamer/objectives/standing-debrief.md` asking for the two new JSON keys, gated by its own eval read-back (`AGENTS.md`, gate-prompt-changes-need-the-eval-suite) — not this migration step, which ships the schema, the write verb and the render but leaves both sections `None` on every row it writes |
 | per-section `as_of`/`last_supported_at`/`support_count` on room Standing (12-schemas.md §8) | step 3b keeps these at the ROW level (unchanged from before this step); per-section age is deferred to whichever step gives Character the same columns (step 8), so room Standing gets it once rather than twice |
 | `standing_revise`'s `mode` argument for the two live callers (step 3b) | both default `"deduced"` today (no caller yet asserts `abduced` or `said`); revisited once the debrief/rollup objectives are taught to pick a mode themselves, alongside the `I hold open`/`I owe` population row above |
@@ -186,8 +213,8 @@ place today, read from its store's code, and what it becomes under
 |---|---|---|
 | `messages` (`nora/infra/sql/audit.py`) | delivery status and `person_id` (adoption) updated; rows deleted by `prune_all` | status and adoption as transition rows; prune hides (§9) |
 | `note_candidate` (`notes.py`) | occurrence counts upserted | occurrence rows, appended; retired with note-candidates at step 4 |
-| `note` (`nora/infra/sql/notes.py`) | seven columns: head pointer, `strikes`, `revisit_at`, `last_wake_revision_id`, and the retirement trio (`nora/infra/sql/snapshot.py` lists them) | transition rows; the head a view over `note_revision` |
-| `culture`, `standing` (`culture.py`, `standing.py`) | heads upserted over their chains | heads become views over `culture_revision` and `standing_revision` |
+| `note` (`nora/infra/sql/notes.py`) | seven columns: head pointer, `strikes`, `revisit_at`, `last_wake_revision_id`, and the retirement trio (`nora/infra/sql/snapshot.py` lists them) | transition rows; the head derived from `note_revision` |
+| `culture`, `standing` (`culture.py`, `standing.py`) | heads upserted over their chains | heads derived from `culture_revision` and `standing_revision` |
 | `events`, `event_rsvps` (`gatherings.py`; `add_rsvp` upserts) | updated in place and upserted | `event_revision` and RSVP transition rows (**2b**) |
 | `reminders` (`reminders.py`) | status, `fired_at`, outcome updated | transition rows |
 | `compute_jobs`, `instagram_summons`, `version_announcements` | status updated | transition rows |

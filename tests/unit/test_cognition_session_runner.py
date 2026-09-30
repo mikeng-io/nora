@@ -12,6 +12,7 @@ loop, with none of the SDK machinery.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -29,6 +30,12 @@ from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
+
+
+def iso(ms: int) -> str:
+    """A session verb's time: ISO 8601 with an offset (M5)."""
+    return datetime.fromtimestamp(ms / 1000, UTC).isoformat()
+
 HOME = Room("signal", "home-room")
 BUDGET = AdaptorBudget(turns=4, total_tokens=20_000, output_tokens=2_000, timeout_seconds=30.0)
 
@@ -230,7 +237,7 @@ async def test_a_would_write_call_is_recorded_against_this_sessions_id():
 
 async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
     fake = FakeCognitionAgentRunner(script=[(
-        "wake_at", {"subject_rows": ["event:1"], "at_ms": NOW + 3_600_000, "why": "check it"},
+        "wake_at", {"subject_rows": ["event:1"], "at": iso(NOW + 3_600_000), "why": "check it"},
     )])
     runner, store, fake = _runner(agent_runner=fake)
     view = UnitView(
@@ -246,8 +253,8 @@ async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
 async def test_a_remind_call_is_recorded_and_never_reaches_a_send_path():
     fake = FakeCognitionAgentRunner(script=[(
         "remind", {
-            "room_platform": "signal", "room_conversation_id": "home-room",
-            "intent": "tell", "subject_rows": ["note:1"], "at_ms": NOW + 60_000,
+            "room": "signal:home-room",
+            "intent": "tell", "subject_rows": ["note:1"], "at": iso(NOW + 60_000),
         },
     )])
     runner, store, fake = _runner(agent_runner=fake)

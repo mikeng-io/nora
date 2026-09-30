@@ -366,10 +366,15 @@ async def dry_run_standing_revise(
     platform: str, conversation_id: str, prior: Standing | None,
     where_it_stands: str, working_set: Sequence[WorkingSetItem] = (),
     hold_open: str | None = None, i_owe: str | None = None, mode: str = "deduced",
-    base_revision_id: int | None = None, now_ms: int,
+    base_revision_id: str | None = None, prior_revision_id: str | None = None,
+    now_ms: int,
 ) -> WouldWrite:
-    """`standing_revise` in shadow. Calls the exact three pure checks
-    `nora.infra.sql.standing_revise.standing_revise` (the LIVE verb) calls,
+    """`standing_revise` in shadow. `base_revision_id` is the
+    `standing_revision.id` the session's `standing_read` showed and
+    `prior_revision_id` the id of the row that is the head now (M6, DEC-250):
+    the caller read both with `prior`, this function reads nothing. Calls the
+    exact three pure checks `nora.infra.sql.standing_revise.standing_revise`
+    (the LIVE verb) calls,
     imported from `nora.domain.standing_revise` — this function is that
     module's async half restated with a ledger write where the live verb
     has `store.write`."""
@@ -399,14 +404,14 @@ async def dry_run_standing_revise(
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     stale_refusal = check_stale_base(
         base_revision_id=base_revision_id,
-        current_fold_count=prior.fold_count if prior is not None else None,
+        current_revision_id=prior_revision_id,
     )
     if stale_refusal is not None:
         write = WouldWrite(
             tier="standing", verb="standing_revise", platform=platform,
             conversation_id=conversation_id, args=args, outcome="refused",
             refusal_reason=stale_refusal.reason, refusal_detail=stale_refusal.detail,
-            base_revision_id=None if base_revision_id is None else str(base_revision_id),
+            base_revision_id=base_revision_id,
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     candidate: dict[str, object] = {
@@ -420,7 +425,6 @@ async def dry_run_standing_revise(
     write = WouldWrite(
         tier="standing", verb="standing_revise", platform=platform,
         conversation_id=conversation_id, args=args, outcome="would_commit",
-        candidate=candidate,
-        base_revision_id=None if base_revision_id is None else str(base_revision_id),
+        candidate=candidate, base_revision_id=base_revision_id,
     )
     return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)

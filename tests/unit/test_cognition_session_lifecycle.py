@@ -38,6 +38,13 @@ from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
+
+
+def iso(ms: int) -> str:
+    """A session verb's time: ISO 8601 with an offset (M5)."""
+    return dt.datetime.fromtimestamp(ms / 1000, HK).isoformat()
+
+
 T = int(dt.datetime(2026, 9, 28, 15, 0, tzinfo=HK).timestamp() * 1000)
 S = 1000
 HOME = Room("signal", "home")
@@ -66,10 +73,11 @@ async def ok(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
 
 
 async def close_written(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-    """Closes every agenda item `written`, so nothing returns to the next one."""
+    """Closes every agenda item, so nothing returns to the next one. `no_change`,
+    not `written`: a `written` close needs a write of the session's own (B3)."""
     by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
     for i in range(len(agent.prompts[-1].splitlines())):
-        await by["close"](item_index=i, reason="written")
+        await by["close"](item_index=i, reason="no_change")
     return CognitionRunResult(stop_reason="end_turn")
 
 
@@ -627,7 +635,7 @@ async def test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike()
     async def close_all(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         for i in (0, 1):
-            await by["close"](item_index=i, reason="written")
+            await by["close"](item_index=i, reason="no_change")
         return CognitionRunResult(stop_reason="end_turn")
 
     agent = ScriptedAgent(script=[close_all, ok])
@@ -869,8 +877,8 @@ async def test_two_concurrent_wake_at_calls_cannot_both_pass_the_pending_cap():
     async def two_at_once(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         answers.extend(await asyncio.gather(
-            by["wake_at"](subject_rows=["event:1"], at_ms=T + 3_600_000, why="a"),
-            by["wake_at"](subject_rows=["event:2"], at_ms=T + 3_600_000, why="b"),
+            by["wake_at"](subject_rows=["event:1"], at=iso(T + 3_600_000), why="a"),
+            by["wake_at"](subject_rows=["event:2"], at=iso(T + 3_600_000), why="b"),
         ))
         return CognitionRunResult(stop_reason="end_turn")
 
@@ -895,7 +903,7 @@ async def test_wake_at_is_capped_per_unit_per_day_and_yesterdays_do_not_count():
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         for n in range(3):
             answers.append(await by["wake_at"](
-                subject_rows=[f"event:{n}"], at_ms=holder[0].clock.ms + 3_600_000, why="w",
+                subject_rows=[f"event:{n}"], at=iso(holder[0].clock.ms + 3_600_000), why="w",
             ))
         return CognitionRunResult(stop_reason="end_turn")
 
@@ -930,7 +938,7 @@ def _wake_script(rig_holder: list[Rig]) -> tuple[list[dict[str, object]], Behavi
     async def set_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         answers.append(await by["wake_at"](
-            subject_rows=["event:1"], at_ms=rig_holder[0].clock.ms + 3_600_000, why="venue",
+            subject_rows=["event:1"], at=iso(rig_holder[0].clock.ms + 3_600_000), why="venue",
         ))
         return CognitionRunResult(stop_reason="end_turn")
 
@@ -986,7 +994,7 @@ async def test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old
     async def move_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         moved = await by["wake_move"](
-            wake_id="ref1", at_ms=holder[0].clock.ms + 3 * 3600_000, why="pushed back",
+            wake_id="ref1", at=iso(holder[0].clock.ms + 3 * 3600_000), why="pushed back",
         )
         assert moved == {"status": "ok"}, moved
         return CognitionRunResult(stop_reason="end_turn")
@@ -1032,9 +1040,9 @@ async def test_a_superseded_self_wake_is_retracted_so_only_the_replacement_fires
 
     async def replace_it(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-        await by["wake_at"](subject_rows=["event:1"], at_ms=holder[0].clock.ms + 3_600_000,
+        await by["wake_at"](subject_rows=["event:1"], at=iso(holder[0].clock.ms + 3_600_000),
                             why="first")
-        await by["wake_at"](subject_rows=["event:1"], at_ms=holder[0].clock.ms + 7_200_000,
+        await by["wake_at"](subject_rows=["event:1"], at=iso(holder[0].clock.ms + 7_200_000),
                             why="second")
         return CognitionRunResult(stop_reason="end_turn")
 
@@ -1074,9 +1082,9 @@ def _carried_self_wake_rig(
 
     async def first(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         tool = tools_of(tools)
-        await tool("close")(item_index=0, reason="written")
+        await tool("close")(item_index=0, reason="no_change")
         answer = await tool("wake_at")(
-            subject_rows=["event:1"], at_ms=holder[0].clock.ms + 3_600_000, why="venue",
+            subject_rows=["event:1"], at=iso(holder[0].clock.ms + 3_600_000), why="venue",
         )
         assert answer["status"] == "ok", answer
         return CognitionRunResult(stop_reason="end_turn")
@@ -1084,7 +1092,7 @@ def _carried_self_wake_rig(
     async def then(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
         tool = tools_of(tools)
         await second(tool, holder[0])
-        await tool("close")(item_index=0, reason="written")
+        await tool("close")(item_index=0, reason="no_change")
         return CognitionRunResult(stop_reason="end_turn")
 
     rig = _rig(agent=ScriptedAgent(script=[first, then, close_written]), max_items=1)
@@ -1127,7 +1135,7 @@ async def test_a_self_wake_cancelled_while_carried_never_fires_through_carry():
 async def test_a_self_wake_moved_while_carried_fires_once_at_its_new_time_only():
     async def move(tool: Callable[[str], Any], rig: Rig) -> None:
         answer = await tool("wake_move")(
-            wake_id="ref1", at_ms=rig.clock.ms + 3 * 3_600_000, why="pushed back",
+            wake_id="ref1", at=iso(rig.clock.ms + 3 * 3_600_000), why="pushed back",
         )
         assert answer == {"status": "ok"}, answer
 
@@ -1163,7 +1171,7 @@ async def test_the_per_day_cap_counts_back_from_the_call_not_from_the_sessions_s
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         for n in range(2):
             answers.append(await by["wake_at"](
-                subject_rows=[f"event:{n}"], at_ms=holder[0].clock.ms + 3 * 86_400_000,
+                subject_rows=[f"event:{n}"], at=iso(holder[0].clock.ms + 3 * 86_400_000),
                 why="w",
             ))
         return CognitionRunResult(stop_reason="end_turn")
@@ -1172,7 +1180,7 @@ async def test_the_per_day_cap_counts_back_from_the_call_not_from_the_sessions_s
         by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
         holder[0].clock.advance(2 * 3600)
         answers.append(await by["wake_at"](
-            subject_rows=["event:9"], at_ms=holder[0].clock.ms + 3_600_000, why="w",
+            subject_rows=["event:9"], at=iso(holder[0].clock.ms + 3_600_000), why="w",
         ))
         return CognitionRunResult(stop_reason="end_turn")
 
