@@ -85,7 +85,7 @@ async def test_a_missing_file_is_nothing_found_not_an_empty_ok(runtime):
         assert result.status is SandboxStatus.NOTHING_FOUND
 
 
-@pytest.mark.parametrize("path", ["../escape.txt", "/etc/passwd", "a/../../b", ""])
+@pytest.mark.parametrize("path", ["../escape.txt", "/etc/passwd", "a/../../b", "", ".", "a/.."])
 async def test_a_path_outside_the_workspace_is_denied(runtime, path):
     wrote = await runtime.write_text(scope=SCOPE, path=path, content="x")
     assert wrote.status is SandboxStatus.DENIED
@@ -148,3 +148,27 @@ async def test_a_read_honours_offset_and_limit(runtime):
     read = await runtime.read(scope=SCOPE, path="lines.txt", offset=1, limit=3)
     assert read.content == "b\nc"
     assert read.truncated is True
+
+
+async def test_the_default_listing_includes_top_level_files(runtime):
+    """`**/*` needs a literal slash in fnmatch, so it once dropped every
+    top-level file, and both runtimes shared the bug."""
+    await runtime.write_text(scope=SCOPE, path="top.txt", content="1")
+    await runtime.write_text(scope=SCOPE, path="d/sub.txt", content="2")
+    listed = await runtime.files(scope=SCOPE)
+    assert sorted(e.path for e in listed.entries) == ["d/sub.txt", "top.txt"]
+
+
+async def test_megabyte_transfers_round_trip_whole(runtime):
+    """A 5 MB put once stored 130 KB and answered ok, and a 5 MB fetch failed
+    its digest check: one socket read is not the whole body."""
+    data = bytes(range(256)) * (5 * 1024 * 1024 // 256)
+    stored = await runtime.put(scope=SCOPE, path="big.bin", data=data)
+    assert stored.status is SandboxStatus.OK and stored.size == len(data)
+    fetched = await runtime.fetch(scope=SCOPE, path="big.bin", max_bytes=len(data))
+    assert fetched.status is SandboxStatus.OK and fetched.data == data
+
+
+async def test_a_read_limit_of_zero_means_the_default(runtime):
+    await runtime.write_text(scope=SCOPE, path="z.txt", content="abc")
+    assert (await runtime.read(scope=SCOPE, path="z.txt", limit=0)).content == "abc"

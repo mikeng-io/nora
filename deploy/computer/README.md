@@ -30,7 +30,7 @@ timer stops at logout.
 | want | run |
 |---|---|
 | state | `nora-computer status` |
-| logs | `journalctl --user -u nora-computer -n 50`; computerd's own: `sbx exec nora-computer cat /tmp/computerd.log` |
+| logs | `journalctl --user -u nora-computer -n 50`; computerd's own: `sbx exec -u root nora-computer cat /var/log/computerd.log` |
 | new image | `nora-computer build`, then `nora-computer destroy`; the timer recreates it within a minute. **Destroy deletes /workspace**: export what matters first |
 | what the network refused | `sbx policy log nora-computer` |
 

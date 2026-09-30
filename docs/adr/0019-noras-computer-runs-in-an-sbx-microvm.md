@@ -51,7 +51,13 @@ always the disposable side. That is the split taken here.
 2. **computerd** (`deploy/computer/computerd.py`) is the VM's only interface:
    an HTTP API on a port published to docker0, with a bearer token, and Nora
    as its only client. Calls go one way: Nora calls in, and the VM's deny-all
-   egress means it can call nothing of Nora's.
+   egress means it can call nothing of Nora's. **computerd runs as root and
+   every command as `computer`**, and it listens on port 80. A command
+   therefore cannot read computerd's token, kill it, or bind its port with an
+   impostor, which is what makes its results and digests computerd's own
+   rather than whatever the code it ran wanted to report. The file operations
+   never follow a symlink: every path is walked from the scope directory with
+   `O_NOFOLLOW`.
 3. **`SandboxRuntime` is the port** (`nora/domain/ports.py`).
    `ComputerdRuntime` speaks computerd and knows nothing about sbx; it never
    raises, and every result carries `ok` / `nothing_found` / `denied` /

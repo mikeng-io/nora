@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
-import posixpath
 import re
 from collections.abc import Sequence
 from dataclasses import replace
@@ -1866,6 +1865,8 @@ class FakeSandboxRuntime:
     ) -> FileResult:
         if (refusal := self._refusal(scope, path)) is not None:
             return FileResult(status=refusal, reason="fake refusal")
+        if (conflict := self._conflict(scope, path, reading=True)) is not None:
+            return FileResult(status=conflict, reason="fake conflict")
         data = self.files_by_scope.get(scope, {}).get(_fake_path(path) or "")
         if data is None:
             return FileResult(status=SandboxStatus.NOTHING_FOUND, reason="no such file")
@@ -1878,7 +1879,9 @@ class FakeSandboxRuntime:
             )
         lines = text.splitlines(keepends=True)
         chosen = "".join(lines[max(offset, 0):])
-        cap = limit if limit is not None else len(chosen)
+        # computerd's rule: absent or not positive means its ceiling.
+        cap = limit if limit is not None and limit > 0 else FAKE_MAX_READ_CHARS
+        cap = min(cap, FAKE_MAX_READ_CHARS)
         return FileResult(
             status=SandboxStatus.OK, content=chosen[:cap], size=len(data), sha256=digest,
             truncated=len(chosen) > cap, lines_total=len(lines),
@@ -1912,7 +1915,7 @@ class FakeSandboxRuntime:
         entries = tuple(
             FileEntry(path=p, size=len(d))
             for p, d in sorted(self.files_by_scope.get(scope, {}).items())
-            if fnmatch.fnmatch(p, pattern) or fnmatch.fnmatch(p.rsplit("/", 1)[-1], pattern)
+            if _fake_matches(p, pattern)
         )
         status = SandboxStatus.OK if entries else SandboxStatus.NOTHING_FOUND
         return ListResult(status=status, entries=entries)
@@ -1931,9 +1934,35 @@ class FakeSandboxRuntime:
     async def put(self, *, scope: str, path: str, data: bytes) -> OpResult:
         if (refusal := self._refusal(scope, path)) is not None:
             return OpResult(status=refusal, reason="fake refusal")
+        if (conflict := self._conflict(scope, path, reading=False)) is not None:
+            return OpResult(status=conflict, reason="fake conflict")
         self.files_by_scope.setdefault(scope, {})[_fake_path(path) or ""] = data
         digest = hashlib.sha256(data).hexdigest()
         return OpResult(status=SandboxStatus.OK, size=len(data), sha256=digest)
+
+    def _conflict(self, scope: str, path: str, *, reading: bool) -> SandboxStatus | None:
+        """A file and a directory cannot share a path, as on a filesystem:
+        a file under a file is refused like computerd's walk refuses it, and
+        a directory where a file is asked for is not a regular file."""
+        key = _fake_path(path) or ""
+        stored = self.files_by_scope.get(scope, {})
+        parts = key.split("/")
+        if any("/".join(parts[:i]) in stored for i in range(1, len(parts))):
+            return SandboxStatus.DENIED
+        if any(other.startswith(key + "/") for other in stored):
+            return SandboxStatus.DENIED
+        return None
+
+def _fake_matches(rel: str, pattern: str) -> bool:
+    """computerd's `_matches`: no pattern, `*`, `**` or `**/*` list everything."""
+    if pattern in ("", "*", "**", "**/*"):
+        return True
+    name = rel.rsplit("/", 1)[-1]
+    if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(name, pattern):
+        return True
+    return pattern.startswith("**/") and fnmatch.fnmatch(rel, pattern[3:])
+
+FAKE_MAX_READ_CHARS = 200_000  # computerd's MAX_READ_CHARS
 
 
 def _fake_path(path: str) -> str | None:
@@ -1941,7 +1970,7 @@ def _fake_path(path: str) -> str | None:
     no `..` that climbs out after normalisation."""
     if not path or path.startswith("/") or "\x00" in path:
         return None
-    normal = posixpath.normpath(path)
-    if normal == ".." or normal.startswith("../") or normal == ".":
+    parts = [p for p in path.split("/") if p not in ("", ".")]
+    if not parts or ".." in parts:
         return None
-    return normal
+    return "/".join(parts)

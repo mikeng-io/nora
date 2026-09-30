@@ -12,7 +12,7 @@
 # `ensure` is idempotent and is what the timer runs every minute. Health is an
 # HTTP BODY from computerd: under sbx a TCP connect succeeds to any address,
 # so a connect check proves nothing (spike round 2).
-set -uo pipefail
+set -uo pipefail   # no -e: every step checks its own result and exits with a named code
 
 NAME=${NORA_COMPUTER_NAME:-nora-computer}
 IMAGE=${NORA_COMPUTER_IMAGE:-nora-computer:latest}
@@ -22,6 +22,7 @@ MEMORY=${NORA_COMPUTER_MEMORY:-3g}
 CPUS=${NORA_COMPUTER_CPUS:-2}
 ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
 HERE=$(cd "$(dirname "$0")" && pwd)
+LOCK=${XDG_RUNTIME_DIR:-/tmp}/nora-computer.lock
 
 # The desktop keyring is locked on a headless host; point sbx at nothing and
 # it falls back to its file store (spike round 1).
@@ -29,8 +30,39 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 
 log() { echo "$(date -Is) nora-computer: $*"; }
 
+# computerd answers /v1/health, parsed as JSON rather than grepped for spacing.
 healthy() {
-    curl -fsS -m 3 "http://$HOST_IP:$HOST_PORT/v1/health" 2>/dev/null | grep -q '"service": "computerd"'
+    curl -fsS -m 3 "http://$HOST_IP:$HOST_PORT/v1/health" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    body = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if body.get("service") == "computerd" and body.get("status") == "ok" else 1)'
+}
+
+# Healthy AND holding the current token: after a rotation the old process
+# still answers /v1/health, so ask it something that needs the token. 401 means
+# it runs with a stale one and must be restarted.
+authorised() {
+    local code
+    code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' \
+        -H "Authorization: Bearer $COMPUTERD_TOKEN" -H 'Content-Type: application/json' \
+        -d '{"scope": "0000000000000000", "pattern": "*"}' \
+        "http://$HOST_IP:$HOST_PORT/v1/files")
+    [ "$code" = 200 ]
+}
+
+published() {
+    sbx ports "$NAME" --json </dev/null 2>/dev/null | python3 -c '
+import json, sys
+try:
+    ports = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+want = (sys.argv[1], int(sys.argv[2]))
+sys.exit(0 if any((p.get("host_ip"), p.get("host_port")) == want for p in ports) else 1)' \
+        "$HOST_IP" "$HOST_PORT"
 }
 
 sandbox_state() {
@@ -45,7 +77,10 @@ else:
 }
 
 load_token() {
-    COMPUTERD_TOKEN=$(grep -E '^NORA_COMPUTER_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -n 1 | cut -d= -f2-)
+    # The last assignment wins, as in a shell or compose; surrounding quotes
+    # and a CR from a file edited elsewhere are stripped.
+    COMPUTERD_TOKEN=$(grep -E '^NORA_COMPUTER_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -n 1 \
+        | cut -d= -f2- | tr -d '\r' | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//')
     [ -n "$COMPUTERD_TOKEN" ] || { log "NORA_COMPUTER_TOKEN is not set in $ENV_FILE"; exit 3; }
     export COMPUTERD_TOKEN
 }
@@ -65,29 +100,44 @@ cmd_build() {
 
 cmd_ensure() {
     load_token
+    # One ensure at a time: the timer and a hand-run must not race a create.
+    exec 9>"$LOCK"
+    flock -w 60 9 || { log "another ensure holds $LOCK"; exit 75; }
     if [ "$(sandbox_state)" = absent ]; then
         log "creating $NAME from $IMAGE"
         sbx create --name "$NAME" -m "$MEMORY" --cpus "$CPUS" -q --pull never -t "$IMAGE" shell \
             </dev/null || { log "create failed"; exit 6; }
     fi
-    if ! sbx ports "$NAME" --json </dev/null 2>/dev/null | grep -q "\"host_port\": $HOST_PORT"; then
-        sbx ports "$NAME" --publish "$HOST_IP:$HOST_PORT:8080" </dev/null >/dev/null \
+    if ! published; then
+        sbx ports "$NAME" --publish "$HOST_IP:$HOST_PORT:80" </dev/null >/dev/null \
             || { log "publish failed"; exit 7; }
     fi
-    healthy && exit 0
-    # `sbx exec` also starts a stopped sandbox. `-e COMPUTERD_TOKEN` passes the
-    # value from this environment, so it never appears on a command line.
+    if healthy && authorised; then exit 0; fi
+    if healthy; then
+        log "computerd holds a stale token; restarting it"
+        sbx exec -u root "$NAME" pkill -f /opt/computerd/computerd.py </dev/null || true
+        sleep 1
+    fi
+    # As root, so commands (run as `computer`) cannot read its token, kill it
+    # or take its port 80. `-e COMPUTERD_TOKEN` passes the value from this
+    # environment, so it never appears on a command line. `sbx exec` also
+    # starts a stopped sandbox.
     log "starting computerd"
-    sbx exec -e COMPUTERD_TOKEN "$NAME" bash -c \
-        'nohup /opt/computerd/venv/bin/python /opt/computerd/computerd.py --root /workspace \
-            >/tmp/computerd.log 2>&1 &' </dev/null || { log "exec failed"; exit 8; }
-    for _ in 1 2 3 4 5 6 7 8 9 10; do healthy && { log "computerd healthy"; exit 0; }; sleep 1; done
-    log "computerd did not answer /v1/health"; exit 9
+    sbx exec -u root -e COMPUTERD_TOKEN "$NAME" bash -c \
+        'nohup /opt/computerd/venv/bin/python /opt/computerd/computerd.py \
+            --root /workspace --port 80 --run-as computer >/var/log/computerd.log 2>&1 &' \
+        </dev/null || { log "exec failed"; exit 8; }
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if healthy && authorised; then log "computerd healthy"; exit 0; fi
+        sleep 1
+    done
+    log "computerd did not answer with the current token"; exit 9
 }
 
 cmd_status() {
     local health=down
-    healthy && health=healthy
+    load_token
+    healthy && health=up && authorised && health=healthy
     echo "sandbox=$(sandbox_state) computerd=$health endpoint=http://$HOST_IP:$HOST_PORT"
 }
 
