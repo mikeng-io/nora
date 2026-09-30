@@ -26,7 +26,7 @@ describe("proxyDocumentMedia", () => {
     // Literal values, not the constant they come from: a test over the constant it pins cannot fail.
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).toContain("sandbox");
-    expect(res.headers.get("cache-control")).toMatch(/^private/);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
   });
 
@@ -63,7 +63,8 @@ describe("proxyDocumentMedia", () => {
 
   it("answers Nora's not-found as one 404 and 'could not check' as a 503, never the reverse", async () => {
     expect((await call({}, upstream({ status: 404, type: "application/json", body: "{}" }))).status).toBe(404);
-    expect((await call({}, upstream({ status: 400, type: "application/json", body: "{}" }))).status).toBe(404);
+    // Nora refusing the person (a roster that drifted from ours) is "could not check", not "nothing".
+    expect((await call({}, upstream({ status: 400, type: "application/json", body: "{}" }))).status).toBe(503);
     expect((await call({}, upstream({ status: 503, type: "application/json", body: "{}" }))).status).toBe(503);
     expect((await call({}, upstream({ status: 500, type: "application/json", body: "{}" }))).status).toBe(503);
     const down = (async () => {

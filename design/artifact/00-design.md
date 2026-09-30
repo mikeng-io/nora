@@ -960,11 +960,12 @@ the bytes are in the blob store, and the bytes THEMSELVES are a PNG, JPEG, GIF o
 bytes, never the media index's label or the sender's, so an SVG, which can carry script, is refused however
 it was labelled). A blob store that cannot be read, or none configured, is `503` «could not check», never a
 `404`. It is sent with `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src
-'none'`, `Cache-Control: private, max-age=300` and `Content-Disposition: inline`. The portal:
+'none'`, `Cache-Control: private, no-store` (a picture kept for minutes would outlive a sign-out on a shared
+browser profile and a room removal; found by the review) and `Content-Disposition: inline`. The portal:
 `/api/v1/documents/<id>/media/<sha>` (more specific than the JSON catch-all, which never carries bytes)
 checks the session, refuses any id that is not a UUID or sha that is not 64 lower-case hex before making a
-request, sends the SESSION's person id (never the browser's), passes on only a raster content type, and
-repeats the headers. `Dependencies` gains `blobs` for this (57 fields).
+request, sends the SESSION's person id (never the browser's), passes on only a raster content type, repeats the headers, and reads a `400` from Nora (the two sides
+disagreeing about who the viewer is) as `503`, never «not found». `Dependencies` gains `blobs` for this (57 fields).
 
 **Not built here.** Search (⌘K, trigram), the skill, revision history. `[documents] enabled` stays off:
 until it is on, nothing publishes, so the pages are empty for everyone.

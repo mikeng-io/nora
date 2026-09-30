@@ -342,7 +342,7 @@ async def test_a_picture_is_served_so_that_it_can_never_run(media_client):
     resp = await client.get(_url(world, world.shas["png"]))
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
     assert "sandbox" in resp.headers["Content-Security-Policy"]
-    assert resp.headers["Cache-Control"].startswith("private")
+    assert resp.headers["Cache-Control"] == "private, no-store"
 
 
 async def test_a_person_the_room_does_not_name_cannot_read_its_pictures(media_client):

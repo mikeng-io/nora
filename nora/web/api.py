@@ -696,7 +696,7 @@ def register_web_routes(
             headers={
                 "X-Content-Type-Options": "nosniff",
                 "Content-Security-Policy": "sandbox; default-src 'none'",
-                "Cache-Control": "private, max-age=300",
+                "Cache-Control": "private, no-store",
                 "Content-Disposition": "inline",
             },
         )

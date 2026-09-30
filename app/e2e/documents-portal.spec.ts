@@ -88,7 +88,7 @@ test("the picture route serves a raster with the headers that keep it inert, and
   expect(ok.headers()["content-type"]).toBe("image/png");
   expect(ok.headers()["x-content-type-options"]).toBe("nosniff");
   expect(ok.headers()["content-security-policy"]).toContain("sandbox");
-  expect(ok.headers()["cache-control"]).toMatch(/^private/);
+  expect(ok.headers()["cache-control"]).toBe("private, no-store");
   // Not named by the document, not readable by Miles, not an id, not a sha: all 404.
   for (const url of [
     `/api/v1/documents/${LISBON}/media/${"c".repeat(64)}`,

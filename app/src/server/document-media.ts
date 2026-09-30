@@ -11,7 +11,8 @@
 //     else, so a wrong answer upstream still cannot put script on this origin;
 //   - the response is labelled `nosniff` and `Content-Security-Policy: sandbox`;
 //   - Nora's "not found" (unreadable, not named, gone, not a picture) is one 404 here,
-//     and "could not check" is a 503, never a 404.
+//     and "could not check" is a 503, never a 404. A 400 from Nora cannot be a bad id
+//     (checked above), so it is the two sides disagreeing about who the viewer is: 503.
 
 export const DOCUMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const MEDIA_SHA = /^[0-9a-f]{64}$/;
@@ -20,7 +21,9 @@ export const RASTER_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "im
 export const PICTURE_HEADERS = {
   "x-content-type-options": "nosniff",
   "content-security-policy": "sandbox; default-src 'none'",
-  "cache-control": "private, max-age=300",
+  // Never kept: a picture cached for five minutes outlives a sign-out on a shared browser
+  // profile and a removal from a room, which Nora enforces on the next read.
+  "cache-control": "private, no-store",
   "content-disposition": "inline",
 } as const;
 
@@ -54,7 +57,7 @@ export async function proxyDocumentMedia(args: {
   } catch {
     return json(503, { error: "unavailable" });
   }
-  if (res.status === 404 || res.status === 400) {
+  if (res.status === 404) {
     await res.body?.cancel();
     return json(404, { error: "not found" });
   }
