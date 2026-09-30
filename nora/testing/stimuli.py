@@ -18,7 +18,8 @@ from typing import Any
 
 from nora.domain.ports import CARRY_STATES, NewCarry, NewWakeOutcome, RecordedOutcome
 from nora.domain.stimuli import (
-    FAILURE_CAUSES,
+    NO_CAUSE,
+    OUTCOME_CAUSES,
     WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
@@ -28,6 +29,7 @@ from nora.domain.stimuli import (
     WakeRow,
     Watermark,
     failure_run,
+    stored_cause,
     wake_state,
 )
 
@@ -129,10 +131,13 @@ class InMemoryStimulusStore:
                 mark_wake = wake
                 break
         mark = Watermark.of(mark_wake)
+        # The range read: the watermark's OWN test (id and time), which does not
+        # know the wake's `unclaimed` list, limited like the SQL read.
         pending = [
             s for s in self.stimuli
             if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)
-            and s.pending_since_ms <= now_ms and not mark.consumed(s)
+            and s.pending_since_ms <= now_ms
+            and not (s.id <= mark.through_stimulus_id and s.pending_since_ms <= mark.through_ms)
         ][:limit]
         current: dict[int, NewCarry] = {}
         for _, wake_id, carry in self.carries:
@@ -141,11 +146,18 @@ class InMemoryStimulusStore:
         carried = {
             i: c for i, c in current.items() if c.state == "carried" and self._live(i)
         }
+        # The two side doors past the range read: what a closed session carried
+        # and what the watermark's wake left unclaimed. Then ONE bound, oldest
+        # first: the same as `SqlStimulusStore.view`.
         have = {s.id for s in pending}
         for s in self.stimuli:
-            if s.unit == unit and s.id in carried and s.id not in have:
-                pending.append(replace(s, waits=True) if carried[s.id].waits else s)
+            if s.unit != unit or s.id in have or not self._live(s.id):
+                continue
+            if s.id in carried or s.id in mark.unclaimed:
+                waits = s.id in carried and carried[s.id].waits
+                pending.append(replace(s, waits=True) if waits else s)
         pending.sort(key=lambda x: x.id)
+        del pending[limit:]
         activity = [
             s.recorded_at_ms for s in self.stimuli
             if s.unit == unit and s.kind == "message" and s.id not in self.uncommitted
@@ -169,8 +181,10 @@ class InMemoryStimulusStore:
         # The same argument checks the SQL store makes before its transaction.
         if outcome.outcome not in WAKE_OUTCOMES:
             raise ValueError(f"unknown wake outcome {outcome.outcome!r}")
-        if outcome.cause not in FAILURE_CAUSES:
+        if outcome.cause not in OUTCOME_CAUSES:
             raise ValueError(f"unknown failure cause {outcome.cause!r}")
+        if outcome.cause == NO_CAUSE and outcome.outcome in ("failed", "timeout"):
+            raise ValueError(f"a {outcome.outcome} outcome names its cause, not {NO_CAUSE!r}")
         if carries and outcome.outcome != "closed":
             raise ValueError("carry rows are written only with a `closed` outcome")
         for carry in carries:
@@ -211,11 +225,21 @@ class InMemoryStimulusStore:
         self.outcomes[outcome.wake_id] = OutcomeRow(
             wake_id=outcome.wake_id, unit=outcome.unit, outcome=value,
             at_ms=outcome.at_ms, detail=detail, session_id=outcome.session_id,
-            cause=cause,
+            cause=stored_cause(value, cause),
         )
         for carry in rows:
             self.carries.append((len(self.carries) + 1, outcome.wake_id, carry))
         return RecordedOutcome(outcome=value, written=True)
+
+    async def count_rollup(
+        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
+    ) -> int:
+        self._check("count_rollup")
+        return sum(
+            1 for s in self.stimuli
+            if s.unit == unit and s.kind == "rollup" and s.person_id == person_id
+            and s.item.startswith(item_prefix) and from_ms <= s.at_ms < to_ms
+        )
 
     async def retract(
         self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
@@ -261,6 +285,7 @@ class InMemoryStimulusStore:
             oldest_pending_ms=wake.oldest_pending_ms,
             cut_cooldown=wake.cut_cooldown, at_ms=wake.at_ms,
             recorded_at_ms=recorded_at_ms, detail=dict(wake.detail), tracked=wake.tracked,
+            unclaimed_ids=tuple(sorted(wake.unclaimed_ids)),
         )
         self.wakes.append(row_)
         return row_.id

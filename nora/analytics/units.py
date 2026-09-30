@@ -66,7 +66,7 @@ log = logging.getLogger("nora.analytics.units")
 
 _DAY_MS = 86_400_000
 
-StimulusOutcome = Literal["raised", "duplicate", "unhealthy"]
+StimulusOutcome = Literal["raised", "duplicate", "unhealthy", "capped"]
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,10 @@ class UnitConfig:
     response_window_seconds: float = 3600.0
     stimulus_horizon_seconds: float = 3600.0
     deviation_silence_days: int = 2
+    #: D3 (DEC-245): at most this many deviation stimuli per person per local
+    #: day. A session cannot read the rows behind a rollup yet (`rollup_read`),
+    #: so an unbounded deviation feed would be items it cannot judge.
+    deviation_stimuli_per_person_per_day: int = 1
     health_max_poll_gap_seconds: float = 900.0
     tz_name: str = "Asia/Hong_Kong"
 
@@ -257,11 +261,30 @@ class UnitRollups:
                 out.append(("deviation", "unhealthy"))
                 self._count("deviation", "unhealthy")
                 continue
+            if await self._capped(sink, unit.unit, deviation):
+                out.append(("deviation", "capped"))
+                self._count("deviation", "capped")
+                continue
             out.append(("deviation", await self._append(
                 sink, unit.unit, "deviation", item=f"deviation_{deviation.kind}", ref=deviation.ref,
                 at_ms=deviation.end_ms, person_id=deviation.person_id,
             )))
         return out
+
+    async def _capped(self, sink: StimulusStore, unit: str, deviation: Deviation) -> bool:
+        """D3: the person already has `deviation_stimuli_per_person_per_day`
+        deviation stimuli on the local day this one falls on (its `at_ms`, the
+        day the stimulus is raised for), raised by this run or an earlier one.
+        The stimulus already on record for THIS deviation counts, so a deviation
+        raised earlier reads as capped again on every later run (as it read as a
+        duplicate)."""
+        day = local_date(deviation.end_ms, self._cfg.tz_name)
+        start, end = local_day_bounds(day, self._cfg.tz_name)
+        raised = await sink.count_rollup(
+            unit=unit, person_id=deviation.person_id, item_prefix="deviation_",
+            from_ms=start, to_ms=end,
+        )
+        return raised >= self._cfg.deviation_stimuli_per_person_per_day
 
     def _deviations(
         self, unit: str, members: Sequence[str], as_of: int,

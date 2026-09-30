@@ -122,7 +122,7 @@ async def _session(
     rooms: tuple[Room, ...] = (A,), records: Mapping[str, RecordItem] | None = None,
     roster: Mapping[str, str] | str | None = "default",
     head: StandingHead | None = None, reads: list[Any] | None = None,
-    cooldown: float = 300.0,
+    cooldown: float = 300.0, own_sends: Mapping[int, tuple[RecordItem, ...]] | None = None,
 ) -> tuple[InMemoryCognitionDryRunStore, Any]:
     store = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=store)
@@ -142,7 +142,9 @@ async def _session(
         read_tools_for=lambda unit, rs: list(reads or []),
         read_only_tools=frozenset(t.tool_name for t in (reads or [])),
         skill_text_for=lambda kinds: "",
-        grounder=StaticGrounder(Grounding(records=dict(records or RECORDS))) if records != {}
+        grounder=StaticGrounder(Grounding(
+            records=dict(records or RECORDS), own_sends=dict(own_sends or {}),
+        )) if records != {}
         else EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
         open_proposed_events=_const(()), prior_standing=_const(head),
@@ -369,6 +371,19 @@ async def test_a_line_naming_someone_who_did_not_write_the_message_it_cites_is_r
 
 async def test_a_line_citing_one_of_noras_own_messages_is_refused():
     answer, _ = await _note("## Decided\n## Open\n- which place [301]\n")
+    assert answer["status"] == "refused" and answer["reason"] == "cites_nora"
+
+
+async def test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown():
+    """D1 (#646): her own sends in an item's window are shown, marked hers. A
+    note citing one is `cites_nora`; were it unknown it would read as a stray id."""
+    mine = RecordItem(
+        ref="messages:401", kind="message", message_id=401, room=A, author="the assistant",
+        at_ms=NOW, text="sent", own=True,
+    )
+    answer, _ = await _note(
+        "## Decided\n## Open\n- which place [401]\n", own_sends={0: (mine,)},
+    )
     assert answer["status"] == "refused" and answer["reason"] == "cites_nora"
 
 

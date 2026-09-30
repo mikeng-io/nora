@@ -1466,6 +1466,10 @@ class AnalyticsConfig(BaseModel):
     stimulus_horizon_seconds: float = Field(default=3600.0, gt=0)
     # 25 §4's «silent in every room and at home for N days».
     deviation_silence_days: int = Field(default=2, ge=1)
+    # D3 (DEC-245): at most this many deviation stimuli per person per local
+    # day, until `rollup_read` lets a session read the rows behind them. A
+    # deviation past it is counted (`outcome="capped"`) and not raised.
+    deviation_stimuli_per_person_per_day: int = Field(default=1, ge=1)
     # «The collector's recorded polls succeeded» (20 §3) means polled at
     # least this often across the span: three still-cadence polls (300 s,
     # `[presence] cadence_still_seconds`). A longer gap is an outage.
@@ -3576,6 +3580,12 @@ class CognitionConfig(BaseModel):
     record_chars: int = Field(default=8000, ge=500)
     message_chars: int = Field(default=400, ge=40)
     register_lines: int = Field(default=40, ge=1)
+    #: D1 (DEC-245): Nora's own sends in each message item's window are shown,
+    #: marked as hers. The window opens `own_send_lookback_seconds` before the
+    #: item's oldest message and runs to now; at most `own_sends_max` (the newest)
+    #: per item. They share `record_chars` with the messages. Starting values.
+    own_send_lookback_seconds: float = Field(default=1800.0, ge=0)
+    own_sends_max: int = Field(default=6, ge=0)
     #: DEC-244 (third review): a context overflow is the AGENDA's (and may strike
     #: human stimuli) only when it is proven: the prompt's token estimate (a
     #: lower bound) is at least `overflow_window_fraction` of THIS model's window

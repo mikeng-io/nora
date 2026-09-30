@@ -232,3 +232,39 @@ async def test_record_remind_mirror_refused(store):
         recorded_at_ms=NOW,
     )
     assert mirror_id is not None
+
+
+# ---- m1 (DEC-245): a jsonb column holds an object, not a string OF one -------
+
+
+async def test_the_session_and_would_write_columns_are_jsonb_objects_not_strings(store):
+    """SQL only: `json.dumps` handed to a `JSONB` column stored a JSON STRING that
+    contained the JSON, so `situation->'grounding'` was NULL in every query and
+    each reader had to decode twice."""
+    if not isinstance(store, SqlCognitionDryRunStore):
+        pytest.skip("a column type is a property of the SQL store")
+    session_id = await store.record_session(
+        session=_session(situation={"unit": "u", "grounding": {"records": [1]}},
+                         agenda={"items": [{"kind": "message"}]}),
+        recorded_at_ms=NOW,
+    )
+    await store.record_would_write(
+        write=NewCognitionWouldWrite(
+            session_id=session_id, unit="unit-1", tier="note", verb="note_create",
+            platform="signal", conversation_id="room-a", args={"title": "t"},
+            outcome="would_commit", candidate={"body": "b"},
+        ),
+        recorded_at_ms=NOW,
+    )
+    async with store._engine.connect() as conn:
+        row = (await conn.execute(sa.text(
+            "SELECT jsonb_typeof(situation) AS s, jsonb_typeof(agenda) AS a, "
+            "jsonb_typeof(skill_versions) AS k, situation->'grounding'->'records'->>0 AS g "
+            "FROM cognition_session WHERE id = :i"
+        ), {"i": session_id})).one()
+        write = (await conn.execute(sa.text(
+            "SELECT jsonb_typeof(args) AS a, jsonb_typeof(candidate) AS c, args->>'title' AS ttl "
+            "FROM cognition_would_write WHERE session_id = :i"
+        ), {"i": session_id})).one()
+    assert (row.s, row.a, row.k, row.g) == ("object", "object", "object", "1")
+    assert (write.a, write.c, write.ttl) == ("object", "object", "t")

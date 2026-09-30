@@ -4025,7 +4025,7 @@ COGNITION_WAKE_OUTCOME = sa.Table(
         name="ck_cognition_wake_outcome_outcome",
     ),
     sa.CheckConstraint(
-        "cause IN ('infra', 'agenda')", name="ck_cognition_wake_outcome_cause",
+        "cause IN ('infra', 'agenda', 'none')", name="ck_cognition_wake_outcome_cause",
     ),
 )
 

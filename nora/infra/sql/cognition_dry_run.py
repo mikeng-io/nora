@@ -48,8 +48,13 @@ def _rows(raw: Any) -> list[str]:
     return [str(x) for x in raw]
 
 
-def _json(value: dict[str, Any] | list[Any]) -> str:
-    return json.dumps(value)
+def _json(value: dict[str, Any] | list[Any]) -> dict[str, Any] | list[Any]:
+    """The value for a `jsonb` column, AS ITSELF. SQLAlchemy's `JSONB` serializes
+    what it is handed; handing it `json.dumps(value)` stored a JSON STRING that
+    contained the JSON (`jsonb_typeof = 'string'`), so `situation->'grounding'`
+    read NULL and every reader had to decode twice (m1, 2026-09-30 review). Rows
+    written before this fix are still strings: `_rows` reads either."""
+    return value
 
 
 class SqlCognitionDryRunStore:

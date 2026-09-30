@@ -215,5 +215,19 @@
   "old": "        return not (name in DREAMER_ONLY_TOOLS and not self.dreamer)",
   "new": "        return True",
   "target": "tests/unit/test_tool_catalogue.py::test_a_tag_catalogue_holds_no_dreamer_only_line"
+ },
+ {
+  "name": "M3: her own sends in the window are not shown to the validator",
+  "file": "nora/app/cognition_session.py",
+  "old": "                *(r for sends in grounding.own_sends.values() for r in sends),\n",
+  "new": "                *(),\n",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown"
+ },
+ {
+  "name": "M3: her own sends are not marked hers",
+  "file": "nora/app/cognition_session.py",
+  "old": "is_nora=r.own or r.author in self._nora_names,",
+  "new": "is_nora=r.author in self._nora_names,",
+  "target": "tests/unit/test_cognition_session_verbs_c.py::test_one_of_her_own_sends_shown_in_the_window_is_refused_as_hers_not_as_unknown"
  }
 ]
