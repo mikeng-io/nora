@@ -6,13 +6,14 @@
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
 // on this theme (design/artifact/00-design.md §13). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
-import { Children, useId, useState, type ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { nestedToFlat } from "@json-render/core";
 import ReactMarkdown from "react-markdown";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { TabList, TabPanel, Tabs as PortalTabs } from "@/components/ui/tabs";
 import { ChartBlock, DocumentIdContext, ImageBlock, MapBlock, MermaidBlock } from "./blocks";
 import { cn } from "@/lib/cn";
 import { catalog, parseDocument, type DocumentSpec, type components } from "@/lib/documents/catalog";
@@ -185,55 +186,26 @@ const { registry } = defineRegistry(catalog, {
         </pre>
       </figure>
     ),
-    // The labels are derived from the Tab children in toFlatSpec, so the stored
-    // form has one source for them (the Tab), never a second list to keep equal.
-    Tabs: function Tabs({ props, children }: { props: { labels?: string[] }; children?: ReactNode }) {
-      const [active, setActive] = useState(0);
-      const uid = useId();
-      const panels = Children.toArray(children);
+    // The portal's own Radix tabs (ui/tabs.tsx): roving tabindex, arrow keys,
+    // Home and End, `aria-controls` and `aria-labelledby` come from Radix, where
+    // a first version of this block hand-wrote them. The labels are derived from
+    // the Tab children in toFlatSpec, so the stored form has one source for them.
+    Tabs: function DocumentTabs({ props, children }: { props: { labels?: string[] }; children?: ReactNode }) {
       const labels = props.labels ?? [];
-      const move = (to: number) => {
-        const next = (to + labels.length) % labels.length;
-        setActive(next);
-        document.getElementById(`${uid}-tab-${next}`)?.focus();
-      };
+      const panels = Children.toArray(children);
       return (
-        <div className="flex flex-col gap-4">
-          <div
-            role="tablist"
-            className="inline-flex max-w-full self-start overflow-x-auto rounded-control bg-hoodie p-1"
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight") { e.preventDefault(); move(active + 1); }
-              else if (e.key === "ArrowLeft") { e.preventDefault(); move(active - 1); }
-              else if (e.key === "Home") { e.preventDefault(); move(0); }
-              else if (e.key === "End") { e.preventDefault(); move(labels.length - 1); }
-            }}
-          >
-            {labels.map((label, i) => (
-              <button
-                key={i}
-                id={`${uid}-tab-${i}`}
-                role="tab"
-                type="button"
-                aria-selected={i === active}
-                aria-controls={`${uid}-panel-${i}`}
-                tabIndex={i === active ? 0 : -1}
-                onClick={() => setActive(i)}
-                className={cn(
-                  "shrink-0 rounded-control px-3 py-1 text-meta font-medium transition-colors duration-100",
-                  i === active ? "bg-surface text-ink" : "text-ink-muted",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <PortalTabs defaultValue="t0" className="flex flex-col gap-4">
+          <TabList
+            label={labels.join(" / ")}
+            className="mx-0 px-0"
+            items={labels.map((label, i) => ({ value: `t${i}`, label }))}
+          />
           {panels.map((panel, i) => (
-            <div key={i} id={`${uid}-panel-${i}`} role="tabpanel" aria-labelledby={`${uid}-tab-${i}`} tabIndex={0} hidden={i !== active}>
+            <TabPanel key={i} value={`t${i}`}>
               {panel}
-            </div>
+            </TabPanel>
           ))}
-        </div>
+        </PortalTabs>
       );
     },
     Tab: ({ children }: { children?: ReactNode }) => <div className="flex flex-col gap-4">{children}</div>,

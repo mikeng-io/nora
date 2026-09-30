@@ -148,22 +148,30 @@ test("an image with a UUID asks for exactly its own media path, and falls back w
   expect(requested).toEqual(["/api/v1/documents/0b9d9f6e-3c0a-4f57-9a43-0d6f3a1c2e11/media/a1b2c3d4e5f6"]);
 });
 
-test("tabs follow the ARIA pattern: one tab stop, arrows move, panels are labelled", async ({ page }) => {
+test("tabs follow the ARIA pattern: the list is one tab stop, arrows move, panels are labelled", async ({ page }) => {
   await signIn(page);
   await page.goto("/en/documents/spike?demo=runbook");
   const first = page.getByRole("tab", { name: "From the host" });
   const second = page.getByRole("tab", { name: "From the portal" });
-  await expect(first).toHaveAttribute("tabindex", "0");
-  await expect(second).toHaveAttribute("tabindex", "-1");
-  await first.focus();
+  // Radix roving focus: Tab from the page enters the list on the SELECTED tab
+  // and the next Tab leaves it; the other tab is not a stop.
+  await page.getByRole("link", { name: "runbook" }).focus();
+  for (let i = 0; i < 40 && !(await first.evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(first).toBeFocused();
+  await expect(first).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("ArrowRight");
   await expect(second).toBeFocused();
   await expect(second).toHaveAttribute("aria-selected", "true");
   const controls = await second.getAttribute("aria-controls");
   await expect(page.locator(`[id="${controls}"]`)).toHaveAttribute("role", "tabpanel");
   await expect(page.locator(`[id="${controls}"]`)).toBeVisible();
+  await expect(page.locator(`[id="${controls}"]`)).toHaveAttribute("aria-labelledby", /.+/);
   await page.keyboard.press("Home");
   await expect(first).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(second).toBeFocused();
 });
 
 test("a diagram that fails leaves nothing on the page and a dense one does not freeze it", async ({ page }) => {

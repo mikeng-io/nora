@@ -218,7 +218,8 @@ Replaces Smith's doctrine and six skills for this case. Short, because the catal
 - the data-shape → `Chart.kind` table;
 - "write `spec.json`; do not write HTML";
 - the catalog prompt fragment, **generated from the catalog**;
-- run the checker locally and read its findings before export.
+- export, read the findings if the check refuses it, fix the file and export again (there is no
+  checker inside the VM; see §23).
 
 Per the sandbox design's must-have rule, the one-line rule also lives in doctrine and in
 `computer_export`'s description, since `image-generation` was skipped 3 times in 6 live turns.
@@ -737,3 +738,26 @@ rooms they came from.** Recorded as an open decision below.
 
 **Open decision 9.** Render Mermaid in the sandbox instead of the page? Recommend not yet, for the
 reasons above, and revisit at the W4 visibility work, when the audience becomes real.
+
+## 23. No checker in the VM; Tabs on the portal's Radix tabs (2026-10-01)
+
+**No VM-side checker.** §10 had the skill run a local check (`nora-artifact-check`) before export.
+Dropped. The authoritative check has to run in Nora's container, because the VM is untrusted, so a
+second copy inside the VM would be another implementation to keep in step with it, and two validators
+reading one schema already cost three disagreements (§22). Instead `computer_export(to="document")`
+runs the one check and returns **structured findings** on a refusal (a path into the document, what
+was wrong, which rule). Nora fixes the file with `computer_edit` and exports again. The skill says so.
+The catalog's JSON Schema and the prompt fragment still ship to the model as text; only a runnable
+copy of the checker is not shipped.
+
+**Tabs reuse the portal's Radix tabs** (`app/src/components/ui/tabs.tsx`, `@radix-ui/react-tabs`,
+already a dependency) instead of the hand-written ARIA and arrow-key handling the first version
+carried. Radix supplies the roving focus, Home and End, `aria-controls` and `aria-labelledby`. A
+consequence worth knowing: the inactive panel is not mounted, and the tab list is one keyboard stop
+that lands on the selected tab (the first version made every tab a stop). The e2e now asserts that
+behaviour instead of the `tabindex` attributes the hand-written version happened to set.
+
+**Who builds what from here.** W3 (the checker, with structured findings) and W4 (the `documents`
+table, visibility by room, the read API) are next and are this session's. `computer_export` and the
+`to="document"` change are the sandbox session's; the findings shape is the contract between them
+and is specified in the W3 PR, not in their file.
