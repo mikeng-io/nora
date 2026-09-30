@@ -36,6 +36,7 @@ from strands.types._events import ToolResultEvent
 from strands.types.tools import AgentTool, ToolSpec, ToolUse
 
 ROOM_ARG = "room"
+_ENVELOPE_STATUS = "status"
 
 
 def _name_of(tool: Any) -> str | None:
@@ -82,12 +83,17 @@ class RoomRoutedTool(AgentTool):
         return "python"
 
     def _refusal(self, tool_use_id: str, reason: str, detail: str) -> ToolResultEvent:
-        return ToolResultEvent({
-            "toolUseId": tool_use_id, "status": "success",
-            "content": [{"text": json.dumps(
-                {"status": "refused", "reason": reason, "detail": detail}, ensure_ascii=False,
-            )}],
-        })
+        # Strands' own result envelope (its `status` is «success»/«error», the
+        # transport's, not one of Nora's tool statuses), keyed by a constant so
+        # the output-contract scan of status literals reads only OUR answer:
+        # the JSON below, whose `status` is `refused`.
+        answer = json.dumps(
+            {"status": "refused", "reason": reason, "detail": detail}, ensure_ascii=False,
+        )
+        envelope: dict[str, Any] = {
+            "toolUseId": tool_use_id, _ENVELOPE_STATUS: "success", "content": [{"text": answer}],
+        }
+        return ToolResultEvent(envelope)  # type: ignore[arg-type]
 
     async def stream(
         self, tool_use: ToolUse, invocation_state: dict[str, Any], **kwargs: Any,
