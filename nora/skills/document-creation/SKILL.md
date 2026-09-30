@@ -69,7 +69,8 @@ publish again. Do not argue with a finding, and do not report a document as made
 
 ## Tell the room where it is, once
 
-After a publish that returned `ok`, give the `url` it returned, exactly, in one line, and say it opens
-in the web app for people who are signed in. The url is the answer to «send me the link»; what does
-not exist is a link anyone can open without signing in. Do not retell the document; do name which
+After a publish that returned `ok`, say in one line that it is under Documents in the web app for
+people who are signed in, and name its title so they can find it. Never write the document's id or its
+path into a reply: a reply that carries an id is blocked, and then nobody hears anything. When somebody
+asks for the link, say there is none to send and where it is. Do not retell the document; do name which
 pictures went in.
