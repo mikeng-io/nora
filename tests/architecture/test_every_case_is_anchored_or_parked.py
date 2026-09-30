@@ -268,9 +268,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     criterion on an id no sandbox holds, so it measures reading first), plus 3
     `tool_selection` cases for `media_search`'s room scope (DEC-138 amended
     2026-10-01: the photos from last week's dinner in English and Cantonese, and
-    a photo in view that stays on `media_fetch`); a change to it
+    a photo in view that stays on `media_fetch`), plus 1 `tool_selection` case
+    for `<documents>` (2026-10-01, design/artifact §27: changing a document whose id
+    is in the block and nowhere else, seeded into the room with `metadata.documents`;
+    documents-on arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 287
-    assert sum(c.active + c.parked for c in totals) == 287
+    assert sum(c.total for c in totals) == 288
+    assert sum(c.active + c.parked for c in totals) == 288
