@@ -26,7 +26,7 @@ can drop the trigger. Tamper-proofing against the owner would need a
 separate role or an external copy; that is not built.
 `nora.infra.sql.history.APPEND_ONLY` names its system time, `created_at`.
 
-Revision ID: 0080_computer_events
+Revision ID: 0081_computer_events
 Revises: 0079_cognition_pace_remind
 Create Date: 2026-09-30
 """
@@ -37,8 +37,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql as pg
 
-revision = "0080_computer_events"
-down_revision = "0079_cognition_pace_remind"
+revision = "0081_computer_events"
+down_revision = "0080_cognition_outcome_cause"
 branch_labels = None
 depends_on = None
 

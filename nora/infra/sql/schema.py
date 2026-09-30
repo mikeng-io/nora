@@ -4297,7 +4297,7 @@ IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
 # `path`, the OTel ids) and what (`request` the full input, `result`,
 # `output_ref` the full output's blob keys); `nora.domain.computer_events`.
 # Two rows per operation (`phase` started/finished, one `operation_id`).
-# Migration `0080_computer_events` adds a trigger refusing UPDATE and DELETE
+# Migration `0081_computer_events` adds a trigger refusing UPDATE and DELETE
 # (and TRUNCATE unless deliberately switched off, the `0068` guard's rule),
 # which METADATA cannot express; it guards against bugs, not the owner role.
 COMPUTER_EVENTS = sa.Table(

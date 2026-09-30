@@ -1,6 +1,6 @@
 """`ComputerEventStore` over SQLAlchemy Core. Shaped like
 `nora.infra.sql.tool_call_log`: insert-only. The database enforces it too
-(migration `0080_computer_events`'s trigger refuses UPDATE and DELETE).
+(migration `0081_computer_events`'s trigger refuses UPDATE and DELETE).
 """
 
 from __future__ import annotations
