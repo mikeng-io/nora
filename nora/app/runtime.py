@@ -131,6 +131,32 @@ async def prune_loop(store: _PrunableStore, metrics: Metrics, *, interval_second
             metrics.inc("nora_errors_total", stage="prune")
 
 
+class _SweepsComputerSessions(Protocol):
+    """The one method `computer_sweep_loop` needs
+    (`nora.app.computer_sweeper.ComputerSessionSweeper`)."""
+
+    async def sweep_once(self) -> int: ...
+
+
+async def computer_sweep_loop(
+    sweeper: _SweepsComputerSessions, metrics: Metrics, *, interval_seconds: float,
+) -> None:
+    """Expire idle computer sessions (design/sandbox-runtime §15.2), `prune_loop`'s
+    shape and discipline: sleep, sweep, log a non-zero count, and on failure
+    log + count `nora_errors_total{stage=computer_sweep}` and keep looping.
+    Started only while `[computer] enabled`. Expiry never deletes anything;
+    `ComputerSessionSweeper` says what it does."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            expired = await sweeper.sweep_once()
+            if expired:
+                log.info("expired %d computer sessions", expired)
+        except Exception:
+            log.exception("computer session sweep failed")
+            metrics.inc("nora_errors_total", stage="computer_sweep")
+
+
 async def debounce_sweep_loop(
     debounce: tag_module.Debounce,
     metrics: Metrics,

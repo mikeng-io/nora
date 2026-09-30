@@ -203,9 +203,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_computer_audit_failures_total",
         "computer_events audit writes that failed, by computer tool and stage "
         "(blob: a full input or output could not be put in the blob store, the "
-        "row says so; row: the audit row itself was not appended). The tool "
-        "call itself still answered.",
+        "row says so; row: the audit row itself was not appended; session: the "
+        "call's computer session could not be continued or opened; lease: a "
+        "lease's started row was not appended). The tool call itself still "
+        "answered.",
         ("tool", "stage"),
+    ),
+    # design/sandbox-runtime §15.2: the session sweeper's expiries, by reason
+    # (`nora.domain.computer_sessions.EXPIRY_REASONS`). `running_past_limit`
+    # is the flag: a tmux job still running after `max_running_days` without
+    # a computer call, left running for a person to look at.
+    _CounterSpec(
+        "nora_computer_session_expiries_total",
+        "Computer sessions the sweeper expired, by reason (idle, "
+        "resources_gone, running_past_limit: a job still running past "
+        "max_running_days, flagged and not killed).",
+        ("reason",),
     ),
     _CounterSpec(
         "nora_tool_call_log_writes_total",

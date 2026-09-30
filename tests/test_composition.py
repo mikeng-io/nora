@@ -2228,3 +2228,17 @@ async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cf
     assert deps.metrics.get("nora_cognition_session_units", state="runnable") == 1
     assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
     assert "wedding" in list(deps.wake_evaluator._units())
+
+
+async def test_the_computer_sweeper_is_built_only_while_the_computer_is_on(cfg, monkeypatch):
+    """Design/sandbox-runtime §15.2: composition builds the session sweeper
+    (and `__main__` spawns its loop) only under `[computer] enabled`."""
+    assert (await build_dependencies(cfg)).computer_sweeper is None
+    monkeypatch.setenv(cfg.computer.token_env, "t")
+    on = override_config(cfg, {
+        "computer.enabled": True, "heartbeat.enabled": False,
+        "computer.sessions.sweep_interval_seconds": 42.0,
+    })
+    deps = await build_dependencies(on)
+    assert deps.computer_sweeper is not None
+    assert deps.computer_sweep_seconds == 42.0

@@ -23,7 +23,7 @@ import logging
 import os
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -73,6 +73,7 @@ from nora.app.cognition_wiring import (
     require_session_hook,
     units_with_home_rooms,
 )
+from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -1219,6 +1220,11 @@ class Dependencies:
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     wake_tick_seconds: float = 30.0
+    # The computer session sweeper (design/sandbox-runtime §15.2): `None`
+    # unless `[computer] enabled`. `nora/__main__.py` spawns
+    # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
+    computer_sweeper: ComputerSessionSweeper | None = None
+    computer_sweep_seconds: float = 300.0
     # Platform adapter health transitions as Record (20 §1). ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
     # for the span» must be answerable for the whole history, not only from
@@ -3427,8 +3433,6 @@ async def build_dependencies(
     # `fire_path`: a summons speaks into no room. Spawned, never awaited;
     # `cancel_all` stops it at shutdown with every other background loop.
     if summons_wired and summons_runner is not None and social_subjects is not None:
-        from datetime import timedelta
-
         from nora.app.summons import SummonsOccasion
         from nora.app.summons_consumer import SummonsConsumer
         from nora.infra.social.summons_client import InstagramSummonsClient
@@ -4547,6 +4551,19 @@ async def build_dependencies(
         cognition_runner=cognition_runner,
         cognition_shutdown=cognition_shutdown,
         wake_tick_seconds=cfg.cognition.tick_seconds,
+        computer_sweeper=(
+            ComputerSessionSweeper(
+                sessions=computer_sessions, events=computer_events,
+                runtime=computer, leases=computer_leases,
+                rules=SweepRules(
+                    idle_expiry=timedelta(hours=cfg.computer.sessions.idle_expiry_hours),
+                    max_running=timedelta(days=cfg.computer.sessions.max_running_days),
+                    idle_after=timedelta(minutes=cfg.computer.sessions.idle_after_minutes),
+                ),
+                clock=lambda: datetime.now(UTC), metrics=metrics,
+            ) if computer is not None else None
+        ),
+        computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
