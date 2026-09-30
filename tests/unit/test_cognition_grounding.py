@@ -276,7 +276,7 @@ def _runner(
         read_only_tools=frozenset(),                # NO record_query, no read tool at all
         skill_text_for=lambda kinds: "", grounder=grounder,
         doctrine_text="D", doctrine_sha256="sha",
-        open_note_titles=_none, open_proposed_events=_none, prior_standing=_none,
+        open_note_titles=_none, open_events=_none, prior_standing=_none,
         pending_self_wakes=_none, pending_mirrored_reminds=_none, session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
@@ -569,6 +569,19 @@ async def test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed():
     on = await _pushed([_note("withdrawn", lineage=_OWN, unsupported_at=5)], [], mode="on",
                        rooms=_ONE_ROOM)
     assert on.notes == ()
+
+
+async def test_an_event_the_withdrawal_cascade_marked_unsupported_is_not_shown():
+    """Withdrawal is not a lineage question: in every mode, including `off`, the
+    grounding drops a withdrawn event as it drops a withdrawn note, even when the
+    caller's own read let it through (the seam's guard, fix PR D)."""
+    import dataclasses
+
+    live = _event("live", origin="room-a")
+    gone = dataclasses.replace(_event("gone", origin="room-a"), unsupported_at=5)
+    for mode in ("off", "shadow", "on"):
+        g = await _pushed([], [live, gone], mode=mode, rooms=_ONE_ROOM)
+        assert [e.title for e in g.events] == ["event live"], mode
 
 
 async def test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_read():

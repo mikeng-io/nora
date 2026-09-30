@@ -306,6 +306,11 @@ def build_grounder(
                 platform=room.platform, conversation_id=room.conversation_id,
             )
             for e in await events_in(unit, room.conversation_id):
+                if e.unsupported_at is not None:
+                    # Withdrawn (`nora.app.withdrawal`), dropped here too and in
+                    # every mode, exactly as a note is: the composition's read
+                    # already leaves it out, and this is the seam's own guard.
+                    continue
                 if applies and not all(visible_sections(
                     e.lineage, _EVENT_SHOWN_FIELDS, target,
                     origin=room_key(room.platform, room.conversation_id),

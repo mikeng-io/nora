@@ -88,7 +88,7 @@ from nora.agent.prefill import (
     build_tag_message,
 )
 from nora.agent.registry import ToolRegistry
-from nora.agent.room import Room
+from nora.agent.room import Room, trigger_message_ids
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
@@ -704,6 +704,12 @@ class EngagementPipeline:
                 # absent when Honcho could not answer as well as when it is
                 # switched off, and `about` must do the real lookup in both.
                 tagger_card_injected=bool(ctx.tagger_card),
+                # The Record row(s) this turn answers: what an event it writes
+                # cites (`GatheringService._tag_evidence`), so the withdrawal
+                # cascade can reach the event if that message is withdrawn.
+                trigger_message_ids=trigger_message_ids(
+                    ctx.transcript, sender_id=msg.sender_id, timestamp=msg.timestamp,
+                ),
             )
             surface = self._tool_registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.

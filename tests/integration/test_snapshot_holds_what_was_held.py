@@ -233,6 +233,12 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
         "created_by": "p", "status": "proposed", "created_at": T0,
     },
+    # 0086_event_citations: an event's edges are replaced per field, a DELETE the
+    # trigger keeps; the table moved here from APPEND.
+    "citation": lambda i: {
+        "id": 500 + i, "citing_store": "event", "citing_key": _uuid("event", i),
+        "cited_store": "message", "cited_id": str(1000 + i), "part": "start",
+    },
     # design/sandbox-runtime §15.2 (0082): one open session per scope.
     "computer_sessions": lambda i: {
         "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
@@ -284,6 +290,7 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_tie": ("replies_ba", lambda i: 1 + i),
     "rollup_response": ("outcome", lambda i: "responded"),
     "events": ("status", lambda i: "confirmed"),
+    "citation": ("part", lambda i: "place"),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
@@ -370,11 +377,6 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "event_rsvps": lambda n: {
         "id": _uuid("rsvp", n), "event_id": _uuid("event", 0), "person_id": f"p{n}",
         "response": "yes", "responded_at": T0,
-    },
-    # Step 2c (0075_withdrawal): the citation edge table.
-    "citation": lambda n: {
-        "citing_store": "note", "citing_key": _uuid("note", n),
-        "cited_store": "message", "cited_id": f"{n}",
     },
     # Step 3 (0077_assess_report): the Assess adaptor's one store.
     "assess_report": lambda n: {

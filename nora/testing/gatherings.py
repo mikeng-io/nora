@@ -8,19 +8,23 @@ every call the same way (CLAUDE.md's rule)."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from uuid import UUID, uuid4
 
 from nora.domain.gatherings import (
     RSVP,
     DuplicateGatheringError,
+    EventCitation,
+    EventEvidence,
     EventRevision,
     Gathering,
     GatheringStatus,
     StaleEventRevisionError,
+    event_lineage,
     normalise_gathering,
 )
+from nora.domain.lineage import Lineage
 
 
 def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventRevision:
@@ -33,20 +37,64 @@ def _revision_of(event: Gathering, *, parent_revision_id: UUID | None) -> EventR
         venue_maps_url=event.venue_maps_url, people=event.people,
         reasoning=event.reasoning, confidence=event.confidence,
         lineage=event.lineage, as_of=event.as_of, body=None,
-        written_by="tag", written_at=event.created_at,
+        written_by="tag", written_at=event.created_at, field_meta=event.field_meta,
     )
 
 
 class FakeGatheringStore:
-    def __init__(self) -> None:
+    """`message_rooms` is the Record the real store looks a cited message up
+    in (id to the room key it was said in); `rollup_lineages` the current
+    Rollup rows (key to their lineage). `citations` is what the edge table
+    would hold."""
+
+    def __init__(
+        self, *, message_rooms: Mapping[int, str] | None = None,
+        rollup_lineages: Mapping[str, Lineage] | None = None,
+    ) -> None:
         self._events: dict[UUID, Gathering] = {}
         self._rsvps: list[RSVP] = []
         self._revisions: dict[UUID, list[EventRevision]] = {}
+        self._message_rooms = dict(message_rooms or {})
+        self._rollup_lineages = dict(rollup_lineages or {})
+        self.citations: list[tuple[str, EventCitation]] = []
 
-    async def create(self, event: Gathering) -> Gathering:
+    def _with_evidence(
+        self, row: Gathering, held: Lineage, evidence: EventEvidence | None,
+    ) -> Gathering:
+        if evidence is None:
+            return row
+        lineage = event_lineage(
+            held, evidence, message_rooms=self._message_rooms,
+            rollup_lineages=self._rollup_lineages,
+            origin=evidence.room or row.conversation_id,
+        )
+        # The real store's rule (`record_event_citations`): a part the write
+        # restates has its edges REPLACED, the rest are kept.
+        restated = set(evidence.parts) | {c.part for c in evidence.citations}
+        self.citations = [
+            (k, c) for k, c in self.citations if k != str(row.id) or c.part not in restated
+        ]
+        for c in evidence.citations:
+            if (str(row.id), c) not in self.citations:
+                self.citations.append((str(row.id), c))
+        return replace(row, lineage=lineage)
+
+    def mark_unsupported(self, event_id: UUID, at_ms: int) -> None:
+        """What the withdrawal cascade does to the head (the real store's is
+        `nora.app.withdrawal`'s UPDATE)."""
+        self._events[event_id] = replace(self._events[event_id], unsupported_at=at_ms)
+
+    def clear_unsupported(self, event_id: UUID) -> None:
+        """What `nora person unforget --clear-unsupported` does to the head."""
+        self._events[event_id] = replace(self._events[event_id], unsupported_at=None)
+
+    async def create(
+        self, event: Gathering, *, evidence: EventEvidence | None = None,
+    ) -> Gathering:
         row = normalise_gathering(event)
         if row.id in self._events:
             raise DuplicateGatheringError(row.id)
+        row = self._with_evidence(row, row.lineage, evidence)
         revision = _revision_of(row, parent_revision_id=None)
         stored = replace(row, head_revision_id=revision.id)
         self._events[row.id] = stored
@@ -56,26 +104,46 @@ class FakeGatheringStore:
     async def get(self, event_id: UUID) -> Gathering | None:
         return self._events.get(event_id)
 
+    async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
+        return next(
+            (e for e in self._events.values() if e.reminder_id == reminder_id), None,
+        )
+
+    async def unsupported_reminder_ids(
+        self, reminder_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        wanted = set(reminder_ids)
+        return frozenset(
+            e.reminder_id for e in self._events.values()
+            if e.reminder_id in wanted and e.unsupported_at is not None
+        )
+
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
+        include_unsupported: bool = False,
     ) -> Sequence[Gathering]:
         out = [
             e for e in self._events.values()
             if e.conversation_id == conversation_id
             and (status is None or e.status == status)
+            and (include_unsupported or e.unsupported_at is None)
         ]
         return sorted(out, key=lambda e: e.created_at)
 
-    async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]:
+    async def list_for_person(
+        self, *, person_id: str, include_unsupported: bool = False,
+    ) -> Sequence[Gathering]:
         rsvpd_ids = {r.event_id for r in self._rsvps if r.person_id == person_id}
         out = [
             e for e in self._events.values()
-            if e.created_by == person_id or e.id in rsvpd_ids
+            if (e.created_by == person_id or e.id in rsvpd_ids)
+            and (include_unsupported or e.unsupported_at is None)
         ]
         return sorted(out, key=lambda e: e.created_at)
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
+        evidence: EventEvidence | None = None,
     ) -> Gathering:
         row = normalise_gathering(event)
         current = self._events.get(row.id)
@@ -83,6 +151,9 @@ class FakeGatheringStore:
             return row
         if base_revision_id is not None and current.head_revision_id != base_revision_id:
             raise StaleEventRevisionError(row.id, current)
+        row = self._with_evidence(row, current.lineage, evidence)
+        # Only the cascade sets the mark: a row read before it cannot undo it.
+        row = replace(row, unsupported_at=current.unsupported_at)
         revision = _revision_of(row, parent_revision_id=current.head_revision_id)
         stored = replace(row, head_revision_id=revision.id)
         self._events[row.id] = stored
@@ -116,6 +187,8 @@ class FakeGatheringStore:
         legacy_room_ids = frozenset(room_ids)
         out = []
         for e in self._events.values():
+            if e.unsupported_at is not None:
+                continue
             in_unit = e.unit_id == unit_id
             in_legacy_room = e.unit_id == "" and e.conversation_id in legacy_room_ids
             if not (in_unit or in_legacy_room):
