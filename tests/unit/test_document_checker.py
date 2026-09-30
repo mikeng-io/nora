@@ -686,3 +686,155 @@ def test_the_isolation_contract_names_every_package_beside_documents() -> None:
         and p.name not in {"documents", "py.typed", "version.json"}
     }
     assert names <= forbidden, sorted(names - forbidden)
+
+
+# ============================== third review of PR 648: stripping belongs before judging
+def test_colour_codes_are_stripped_before_the_text_is_judged() -> None:
+    # `_strip_ansi` ran after the schema and normalisation, so a Code block that was
+    # only a colour code passed `minLength` as "" and then failed its own re-check, and
+    # stripping joined characters NFC had not seen together, giving two hashes.
+    only_colour = check_document(_page({"type": "Code", "props": {"text": "\x1b[31m"}}))
+    assert only_colour.status == "refused"
+    assert "minLength" in _rules(only_colour)
+
+    for pasted in ("ᄀ\x1b[0mᅡ", "a\x1b[0m̊", "e\x1b[0ḿx"):
+        first = check_document(_page({"type": "Code", "props": {"text": pasted}}))
+        assert first.status in {"ok", "refused"}
+        if first.ok:
+            again = check_document(first.canonical)
+            assert again.ok, pasted
+            assert again.sha256 == first.sha256, pasted
+            assert again.canonical == first.canonical, pasted
+            assert unicodedata.is_normalized(
+                "NFC", json.loads(first.canonical)["root"]["children"][0]["props"]["text"]
+            )
+
+
+def test_a_stored_document_always_passes_its_own_check_with_the_same_hash() -> None:
+    # The invariant both regressions broke: what is stored is what was judged.
+    samples = [
+        _page({"type": "Code", "props": {"language": "text", "text": "\x1b[1mbold\x1b[0m é"}}),
+        _page({"type": "Badge", "props": {"text": "क़" * 20}}, title="Café"),
+        _page({"type": "Markdown", "props": {"text": "K; x"}}),
+        *(CORPUS["valid"][k] for k in sorted(CORPUS["valid"])),
+    ]
+    for doc in samples:
+        first = check_document(doc)
+        assert first.ok, first.summary()
+        again = check_document(first.canonical)
+        assert again.ok, again.summary()
+        assert again.sha256 == first.sha256
+
+
+def test_idempotence_holds_for_adversarial_strings() -> None:
+    # The class of bug both regressions belonged to: a step that changes a string after
+    # it was judged. A seeded fuzz over characters that normalise, compose, grow or
+    # strip (combining marks, jamo, singletons, ESC sequences, CJK, bidi, NUL), through
+    # every string-carrying component: whenever the verdict is `ok`, the stored form
+    # must pass its own check with the same hash, and nothing may raise. Each kind has
+    # its own generator and seed, so adding a kind cannot shuffle the others and
+    # silently stop them finding what they found (measured: one shared stream did).
+    import random
+
+    alphabet = [
+        "a",
+        "e",
+        "\u0301",
+        "\u030a",
+        "\u0344",
+        "\u0f73",
+        "\u0958",
+        "\ufb2c",
+        "\u212a",
+        "\u037e",
+        "\u2126",
+        "\u1100",
+        "\u1161",
+        "\u11a8",
+        "\ud55c",
+        "\x1b[0m",
+        "\x1b[31m",
+        "\x1b",
+        "\x00",
+        "\u202e",
+        "\u200b",
+        "\n",
+        "\t",
+        " ",
+        "[",
+        "]",
+        "(",
+        ")",
+        "*",
+        "#",
+        "\u6f22",
+        "\u5b57",
+        "\U0001f600",
+        "x",
+        "1",
+        ".",
+        "-",
+    ]
+    # Marks that compose with what is next to them, and colour codes that can sit between.
+    joiners = [
+        "\u1100",
+        "\u1161",
+        "\u11a8",
+        "a",
+        "e",
+        "\u0301",
+        "\u030a",
+        "\u0344",
+        "\x1b[0m",
+        "\x1b[31m",
+    ]
+
+    def word(rng: random.Random, pool: list[str], top: int = 14) -> str:
+        return "".join(rng.choice(pool) for _ in range(rng.randint(1, top)))
+
+    def build(kind: str, rng: random.Random) -> dict[str, Any]:
+        title = word(rng, alphabet)[:200]
+        match kind:
+            case "Code":
+                props: dict[str, Any] = {
+                    "text": word(rng, joiners, 8),
+                    "language": word(rng, alphabet)[:20],
+                }
+            case "Edge":
+                # At and around a limit, in characters that GROW under NFC: a value that
+                # passes at 40 must not be 80 once stored.
+                grow = rng.choice(["\u0958", "\ufb2c", "\u0344", "\u0f73", "\u2126", "\u212a"])
+                props = {"text": grow * rng.choice([19, 20, 21, 39, 40, 41])}
+                kind = "Badge"
+            case "Badge":
+                props = {"text": word(rng, alphabet)[:40]}
+            case "Markdown":
+                props = {"text": word(rng, alphabet)}
+            case "Callout":
+                props = {"title": word(rng, alphabet)[:120], "text": word(rng, alphabet)}
+            case "KeyValue":
+                props = {"items": [{"key": word(rng, alphabet)[:80], "value": word(rng, alphabet)}]}
+            case "Timeline":
+                props = {
+                    "items": [{"label": word(rng, alphabet)[:60], "title": word(rng, alphabet)}]
+                }
+            case _:
+                props = {"columns": [word(rng, alphabet)[:80]], "rows": [[word(rng, alphabet)]]}
+        return _page({"type": kind, "props": props}, title=title)
+
+    kinds = ["Code", "Edge", "Badge", "Markdown", "Callout", "KeyValue", "Timeline", "Table"]
+    oks = 0
+    for kind in kinds:
+        rng = random.Random(f"20261001-{kind}")
+        for _ in range(600):
+            doc = build(kind, rng)
+            first = check_document(doc)
+            assert first.status in {"ok", "refused"}, (first.status, doc)
+            if first.ok:
+                oks += 1
+                again = check_document(first.canonical)
+                assert again.ok, (doc, again.summary())
+                assert again.sha256 == first.sha256, doc
+                assert again.canonical == first.canonical, doc
+                assert "\x1b" not in first.canonical and "\x00" not in first.text
+    assert oks > 400, oks  # the fuzz must reach the accepting path, not only refusals

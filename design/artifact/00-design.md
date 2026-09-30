@@ -809,3 +809,20 @@ had introduced a wrong `ok`** plus one pattern still slow.
 
 Not changed: a dict subclass that lies in `items()` is judged on what it wrote, so callers store
 `Checked.canonical`, never the object they passed in (documented on `_to_bytes`).
+
+### Third pass on the checker (same day): the same bug class, twice; now guarded as a class
+
+The reviewer's third pass found that **`_strip_ansi` had the same flaw as the NFC ordering**: it ran
+after normalisation and the schema, so a Code block that was only a colour code passed `minLength` as an
+empty string (and failed its own re-check), and stripping joined characters that NFC had not seen side
+by side, so one document had two hashes. Both regressions were a step that changes a string after it was
+judged.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 17 | `_strip_ansi` after the schema and NFC. | Strip right after the character scan, before normalising and validating, on a tree nothing is assumed about yet. | a test on the emptied text and the joined jamo, red on the previous version. |
+| 18 | The invariant was checked only case by case. | **A property test**: a seeded fuzz of 1,500 documents over characters that normalise, compose, grow or strip (combining marks, jamo, singletons, ESC sequences, bidi, NUL, CJK) through seven string-carrying components; whenever the verdict is `ok` the stored form re-checks `ok` with the same hash and canonical form, and nothing raises. | It fails on the version before the NFC fix (`bd3f8270`) and on the one before this fix (`6642e7a7`), each found by the fuzz and not by a hand-written case. Two first drafts of it were not good enough, and are recorded: it passed on `bd3f8270` because no string sat at a length limit (a boundary kind was added), and after that it passed on `6642e7a7` because adding a kind reshuffled one shared random stream and stopped generating the colour-code cases. Each kind now has its own generator and seed. |
+
+The pipeline is now, in this order and for this reason: parse, shape, characters, strip terminal codes,
+normalise, schema, rules, then text and the canonical form. Every step that changes a string runs
+before the step that judges it, so what is stored is what was judged.

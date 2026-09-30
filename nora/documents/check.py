@@ -402,14 +402,23 @@ def _normalise(document: Any) -> tuple[Any, Finding | None]:
     return box["root"], None
 
 
-def _strip_ansi(document: dict[str, Any]) -> Finding | None:
+def _strip_ansi(document: Any) -> Finding | None:
     """Terminal colour and cursor sequences are removed from a Code block's text;
-    an ESC that is not part of one is refused. Anywhere else ESC was refused already."""
-    for node, where, _ in _walk(document["root"], "/root"):
-        if node.get("type") != "Code":
+    an ESC that is not part of one is refused. Anywhere else ESC was refused already.
+    It runs BEFORE normalisation and the schema, so the text that is validated,
+    normalised and hashed is the text that is stored: run after them, stripping left
+    an empty string that passed `minLength`, and joined characters that NFC had not
+    seen side by side, so the same document hashed two ways (review, 2026-10-01).
+    Nothing is assumed about the tree yet: the schema has not run."""
+    root = document.get("root") if isinstance(document, dict) else None
+    for node, where, _ in _walk(root, "/root"):
+        props = node.get("props")
+        if node.get("type") != "Code" or not isinstance(props, dict):
             continue
-        props = node.get("props") or {}
-        cleaned = _ANSI.sub("", props["text"])
+        text = props.get("text")
+        if not isinstance(text, str):
+            continue
+        cleaned = _ANSI.sub("", text)
         if "\x1b" in cleaned:
             return Finding(
                 f"{where}/props/text",
@@ -530,7 +539,7 @@ def check_document(raw: bytes | str | dict[str, Any]) -> Checked:
         document, problem = _parse(data)
         if problem:
             return _refused(problem)
-        problem = _shape(document) or _characters(document)
+        problem = _shape(document) or _characters(document) or _strip_ansi(document)
         if problem:
             return _refused(problem)
         document, problem = _normalise(document)
@@ -542,9 +551,6 @@ def check_document(raw: bytes | str | dict[str, Any]) -> Checked:
         findings = _rule_findings(document)
         if findings:
             return Checked(status="refused", findings=tuple(findings[:MAX_FINDINGS]))
-        problem = _strip_ansi(document)
-        if problem:
-            return _refused(problem)
         text = _text(document)
         if text is None:
             limit = f"more than {MAX_TEXT_CHARS} characters of text"
