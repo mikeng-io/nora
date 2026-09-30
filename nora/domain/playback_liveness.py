@@ -81,6 +81,14 @@ def judge_playback(
     position cannot be distinguished from a track that just began. The first
     poll can still return ENDED or WEDGED-by-autopause, which need no delta.
     """
+    if previous is not None and previous.playback_id != current.playback_id:
+        # A position is only comparable within ONE playback. After an
+        # autoplay advance the old track's last reading (e.g. 195 s) sits
+        # against the new track's first (e.g. 7 s), which reads as "went
+        # backwards" and was judged WEDGED — the stream was torn down and
+        # re-resolved, restarting the song from 0 (live 2026-09-30, every
+        # track boundary).
+        previous = None
     if not believed_playing:
         # No claim, so nothing to falsify — not even an unreachable
         # controller is a problem when nora is not asserting anything.

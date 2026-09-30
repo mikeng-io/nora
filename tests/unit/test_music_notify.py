@@ -239,6 +239,18 @@ async def test_a_forbidden_send_falls_back_instead_of_raising():
     assert started.sent == [("Now playing: x — u", True)]
 
 
+async def test_a_send_with_an_unknown_outcome_is_not_repeated_in_the_fallback_channel():
+    """A 5xx or a dropped connection can follow a message that DID post.
+    Retrying it in the session's own channel would show it twice."""
+    flaky = _Channel(MUSIC_CHANNEL, raises=discord.HTTPException(_Response(502), "bad gateway"))
+    started = _Channel(STARTED_IN)
+    client = _Client(flaky, started)
+
+    await _notify(client, routes_to=MUSIC_CHANNEL)("Now playing: x — u")
+
+    assert started.sent == []
+
+
 async def test_both_channels_refusing_the_send_still_does_not_raise():
     both_forbidden = _Client(
         _Channel(MUSIC_CHANNEL, raises=discord.Forbidden(_Response(403), "nope")),
