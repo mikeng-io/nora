@@ -34,7 +34,7 @@ nora-compute`, `host.docker.internal:host-gateway`) got an **unauthenticated
 (`:8000/v3/workspaces/list`). It also reached OmniRoute, Langfuse, Ollama,
 Neo4j, sshd, norty's Tailscale address, the LAN router and the internet.
 `nora-compute` is `Internal=false`, and Smith is handed Nora's own OmniRoute
-key. S0 (§13) closes this before anything else is built.
+key. S0 (§13) closes this before anything else is built: PR #631, with #632 (Smith holds Nora's key) and #633 (Honcho open on the LAN) tracked separately.
 
 ## 1. Threat model: content, not users
 
@@ -275,10 +275,11 @@ computer_export(path, to="link", title, artifact_id?)
   real POSIX for pip, sqlite, git and Chromium profiles; no FUSE.
 - **Published artifacts:** go to Drop, and so to RustFS (§6).
 - **Private exports** (kept, not linked): `fetch` → `BlobStore.put`, keyed by
-  content hash, with a manifest row. `BlobStore` is filesystem-backed today by
-  a recorded decision ("swap to RustFS when there is a second consumer");
-  **this computer is that second consumer**. The swap is one constructor in
-  the composition root, taken when export volume shows it is needed.
+  content hash, with a manifest row. **This is RustFS already.**
+  `RustfsBlobStore` exists (DEC-136) and is live on norty
+  (`[media.rustfs] enabled = true`, bucket `nora-media`, read 2026-09-30).
+  So published and private files both land in RustFS, through Drop and
+  through `BlobStore` respectively, and Nora needs no new client.
 - **Import:** `computer_import(ref)` → `BlobStore.get` or a media ref →
   `SandboxRuntime.put` into `inbox/`. The VM never needs a route to RustFS.
 - **Backup:** a nightly job tars each room's `projects/` (not `browser/`,
@@ -349,9 +350,9 @@ week.
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
 | tools + manifest table + `tool_selection` before/after | 2 days |
 | `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
-| retire Smith, `make_artifact`, `LocalDockerBackend`, `ComputeBackend`/`ComputeJobPoller`/`compute_jobs`, `/api/tokens`, `nora-compute`, `docker.sock` | 1 day |
+| retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute`, `docker.sock`, and the ComputeJob path. The last one reaches further than the tool: `ComputeBackend`, `compute_poller.py`, `compute_jobs` + migrations, `fire.py`'s compute occasions, `agent/relay.py` and `registry.py`, `subject/knowledge.py`, the `nora_compute_jobs_delivered_total` metric, and their tests | 2 days |
 
-This totals about 8 days. The figures are estimates, not measured.
+This totals about 9 days. The figures are estimates, not measured.
 
 ## 11. Inside vs outside
 
