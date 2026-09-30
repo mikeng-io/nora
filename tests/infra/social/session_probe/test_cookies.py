@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -133,3 +134,32 @@ def test_newest_session_cookie_wins_across_hosts() -> None:
     new = ck.ChromeCookie(".x.com", "auth_token", "NEW", datetime(2026, 6, 1, tzinfo=UTC), None)
     assert ck.session_value([old, new], "x") == "NEW"
     assert ck.session_value([new, old], "x") == "NEW"
+
+
+def test_a_copy_with_a_hot_journal_reads_the_committed_rows(tmp_path: Path) -> None:
+    """Copy db + journal while a transaction is mid-write (pages spilled to the
+    db file, originals in the journal). The private copy is opened read-write,
+    so SQLite rolls the hot journal back to the last commit."""
+    live = tmp_path / "live"
+    live.mkdir()
+    db = live / "Cookies"
+    created = webkit(datetime(2026, 9, 1, tzinfo=UTC))
+    make_db(db, [(".instagram.com", "sessionid", f"committed-{i}", b"", created, 0)
+                 for i in range(200)])
+    writer = sqlite3.connect(db, isolation_level=None)
+    writer.execute("PRAGMA journal_mode=DELETE")
+    writer.execute("PRAGMA cache_size=1")
+    writer.execute("BEGIN")
+    writer.execute("UPDATE cookies SET value = 'UNCOMMITTED-' || value || hex(randomblob(400))")
+    journal = live / "Cookies-journal"
+    assert journal.exists() and journal.stat().st_size > 0, "could not build a hot journal"
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    shutil.copy2(db, snap / "Cookies")
+    shutil.copy2(journal, snap / "Cookies-journal")
+    writer.execute("ROLLBACK")
+    writer.close()
+
+    jar = ck.read_cookies(snap / "Cookies", ["instagram"])
+    assert len(jar) == 200
+    assert all(c.value.startswith("committed-") for c in jar)

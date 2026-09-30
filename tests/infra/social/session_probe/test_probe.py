@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from nora.infra.social.session_probe import probe as probe_mod
 from nora.infra.social.session_probe.alerts import AlertBridgeSink, AlertMessage
 from nora.infra.social.session_probe.cookies import ChromeCookie, CookieError, fingerprint
 from nora.infra.social.session_probe.probe import Probe, ProbeConfig
@@ -32,6 +34,11 @@ class FakeWorld:
         #: (the real SIGTERM handler: gw.Shutdown() -> flushCookies()).
         self.bridge_memory: dict[str, str] = {"sessionid": BRIDGE_SID, "mid": "keep-me"}
         self.running = True
+        #: a `docker stop` that returns non-zero (e.g. timeout, rc 124) but is
+        #: still completed by the daemon.
+        self.stop_lands_despite_rc = False
+        self.crash_after_stop = False
+        self.crash_on_start = False
         self.whoami: dict[str, RunResult] = {}
         self.calls: list[list[str]] = []
         self.sleeps: list[float] = []
@@ -42,14 +49,20 @@ class FakeWorld:
     def run(self, argv: Sequence[str], timeout: float, stdin: str | None) -> RunResult:
         self.calls.append(list(argv))
         if argv[:2] == ["docker", "exec"] and "curl" in argv:
+            if not self.running:  # exec into a stopped container fails
+                return RunResult(1, "", "container is not running")
             return RunResult(self.health_rc, self.health)
         if argv[:2] == ["docker", "stop"]:
-            if self.stop_rc == 0:
+            if self.stop_rc == 0 or self.stop_lands_despite_rc:
                 self.running = False
                 if self.bridge_dir is not None:
                     (self.bridge_dir / "cookies.json").write_text(json.dumps(self.bridge_memory))
+                if self.crash_after_stop:
+                    raise RuntimeError("probe killed after docker stop")
             return RunResult(self.stop_rc)
         if argv[:2] == ["docker", "start"]:
+            if self.crash_on_start:
+                raise RuntimeError("probe killed at docker start")
             if self.start_rc == 0:
                 self.running = True
             return RunResult(self.start_rc)
@@ -306,6 +319,159 @@ def test_backups_are_pruned_to_five(world, bridge_dir, tmp_path):
         p.run_once()
         world.health = '{"session":"logged_out"}'
     assert len(list(bridge_dir.glob("cookies.json.bak-*"))) == 5
+
+
+# ---- the bridge must never stay stopped by the probe -----------------------
+
+def marker(cfg: ProbeConfig) -> Path:
+    return cfg.state_file.parent / "bridge-stopped-by-probe"
+
+
+def starts(world: FakeWorld) -> int:
+    return sum(1 for c in world.calls if c[:2] == ["docker", "start"])
+
+
+def test_marker_is_written_before_the_stop_and_cleared_after_a_good_start(
+    world, bridge_dir, tmp_path
+):
+    world.health = '{"session":"logged_out"}'
+    p, cfg = make(world, bridge_dir, tmp_path)
+    seen: list[bool] = []
+    real = world.run
+
+    def spy(argv, timeout, stdin):  # type: ignore[no-untyped-def]
+        if list(argv[:2]) == ["docker", "stop"]:
+            seen.append(marker(cfg).exists())
+            assert stat.S_IMODE(marker(cfg).stat().st_mode) == 0o600
+        return real(argv, timeout, stdin)
+
+    p._run = spy  # type: ignore[assignment]
+    p.run_once()
+    assert seen == [True]
+    assert not marker(cfg).exists()
+
+
+def test_failed_start_is_recovered_by_the_next_run(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    world.start_rc = 1
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["sync"] == "start_failed:rc=1"
+    assert not world.running and marker(cfg).exists()
+    world.start_rc = 0
+    world.health = '{"session":"authenticated"}'
+    world.now = NOW + timedelta(minutes=10)
+    starts_before = starts(world)
+    verdict, rec = p.run_once()
+    assert starts(world) == starts_before + 1
+    assert world.running and not marker(cfg).exists()
+    assert rec["recovery_start"] == "ok" and rec["bridge_session"] == "authenticated"
+    assert verdict == "PASS"
+
+
+def test_a_start_that_keeps_failing_keeps_the_marker_and_alerts_loudly(
+    world, bridge_dir, tmp_path
+):
+    world.health = '{"session":"logged_out"}'
+    world.start_rc = 1
+    p, cfg = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    world.now = NOW + timedelta(minutes=10)
+    verdict, rec = p.run_once()  # recovery start fails again
+    assert verdict == "ERROR"
+    assert marker(cfg).exists()
+    assert rec["recovery_start"] == "start_failed:rc=1"
+    assert {"action": "error", "reason": "bridge_stopped_by_probe_start_failed"} in rec["decisions"]
+    assert any(m.reason == "bridge_stopped_by_probe_start_failed" for m in world.sent)
+
+
+@pytest.mark.parametrize("crash", ["crash_after_stop", "crash_on_start"])
+def test_a_probe_killed_between_stop_and_start_is_recovered(world, bridge_dir, tmp_path, crash):
+    world.health = '{"session":"logged_out"}'
+    setattr(world, crash, True)
+    p, cfg = make(world, bridge_dir, tmp_path)
+    with pytest.raises(RuntimeError):
+        p.run_once()
+    assert not world.running and marker(cfg).exists()
+    setattr(world, crash, False)
+    world.health = '{"session":"authenticated"}'
+    world.now = NOW + timedelta(minutes=10)
+    verdict, rec = p.run_once()
+    assert world.running and not marker(cfg).exists()
+    assert rec["recovery_start"] == "ok" and verdict == "PASS"
+
+
+def test_a_stop_that_times_out_but_lands_is_recovered(world, bridge_dir, tmp_path):
+    world.health = '{"session":"logged_out"}'
+    world.stop_rc = 124
+    world.stop_lands_despite_rc = True
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["sync"] == "stop_failed:rc=124"
+    assert not world.running and marker(cfg).exists()
+    world.stop_rc, world.stop_lands_despite_rc = 0, False
+    world.health = '{"session":"authenticated"}'
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert world.running and not marker(cfg).exists()
+
+
+def _fail_cookie_write(monkeypatch):  # type: ignore[no-untyped-def]
+    real = os.replace
+
+    def replace(src, dst, *a, **k):  # type: ignore[no-untyped-def]
+        if Path(dst).name == "cookies.json":
+            raise OSError("disk full")
+        return real(src, dst, *a, **k)
+
+    monkeypatch.setattr(probe_mod.os, "replace", replace)
+
+
+def test_write_failure_restarts_the_bridge_and_clears_the_marker(
+    world, bridge_dir, tmp_path, monkeypatch
+):
+    world.health = '{"session":"logged_out"}'
+    _fail_cookie_write(monkeypatch)
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["sync"] == "write_failed:OSError"
+    assert starts(world) == 1 and world.running
+    assert not marker(cfg).exists()
+
+
+def test_write_failure_then_failed_start_keeps_the_marker_and_next_run_recovers(
+    world, bridge_dir, tmp_path, monkeypatch
+):
+    world.health = '{"session":"logged_out"}'
+    world.start_rc = 1
+    _fail_cookie_write(monkeypatch)
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["sync"] == "write_failed:OSError"
+    assert starts(world) == 1 and not world.running      # the write-failed start was tried
+    assert marker(cfg).exists()
+    monkeypatch.undo()
+    world.start_rc = 0
+    world.health = '{"session":"authenticated"}'
+    world.now = NOW + timedelta(minutes=10)
+    p.run_once()
+    assert world.running and not marker(cfg).exists()
+
+
+def test_a_bridge_a_human_stopped_is_not_started_by_the_probe(world, bridge_dir, tmp_path):
+    world.running = False           # stopped by hand: no marker exists
+    p, cfg = make(world, bridge_dir, tmp_path)
+    verdict, rec = p.run_once()
+    assert verdict == "ERROR" and rec["bridge_session"] == "unreachable"
+    assert {"action": "error", "reason": "bridge_unreachable"} in rec["decisions"]
+    assert starts(world) == 0 and not world.running
+    assert "recovery_start" not in rec and not marker(cfg).exists()
+
+
+def test_the_marker_is_not_written_when_no_sync_happens(world, bridge_dir, tmp_path):
+    p, cfg = make(world, bridge_dir, tmp_path)
+    p.run_once()
+    assert not marker(cfg).exists()
 
 
 # ---- live checks -----------------------------------------------------------

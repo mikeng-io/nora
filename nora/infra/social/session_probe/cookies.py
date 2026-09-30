@@ -2,8 +2,10 @@
 
 Chrome's `Cookies` SQLite file is copied to a temp path and the COPY is
 opened: Chrome holds it open and writes it live, and opening it in place
-risks a lock or a torn read (and, on a writable open, corruption). The copy is
-deleted before this module returns.
+risks a lock or a torn read (and, on a writable open, corruption). The COPY is
+opened read-write so a copied hot journal can roll back; only the copy is ever
+written. If the copy is still torn, the query fails and that is a
+`CookieError`, never a partial jar. The copy is deleted before this module returns.
 
 Decryption is Chrome-on-Linux with no keyring (the norty case, headed Chrome
 under a plain VNC session): a `v10` blob is AES-128-CBC, key =
@@ -128,10 +130,15 @@ def read_cookies(db_path: Path, networks: Sequence[Network]) -> list[ChromeCooki
             shutil.copy2(db_path, copy)
             copy.chmod(0o600)
             journal = db_path.with_name(db_path.name + "-journal")
-            if journal.is_file():  # a hot-journal makes a mid-write copy consistent
+            # A hot journal copied beside the db lets SQLite roll back a
+            # mid-write copy to its last commit, but only on a READ-WRITE open
+            # (a read-only open cannot roll back: "attempt to write a readonly
+            # database"). The copy is a throwaway in a private 0700 dir, so it
+            # is opened read-write; the original is never opened.
+            if journal.is_file():
                 shutil.copy2(journal, tmpdir / "Cookies-journal")
                 (tmpdir / "Cookies-journal").chmod(0o600)
-            con = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
+            con = sqlite3.connect(str(copy))
         except (OSError, sqlite3.Error) as exc:
             raise CookieError(f"cannot copy or open cookie db: {type(exc).__name__}") from exc
         try:

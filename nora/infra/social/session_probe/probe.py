@@ -62,6 +62,8 @@ OPENCLI_SITE: dict[Network, str] = {
 _LOGGED_OUT_TEXT = re.compile(r"not logged in|log ?in required|logged.?out", re.I)
 _RATE_LIMIT_TEXT = re.compile(r"\b429\b|too many requests|rate.?limit", re.I)
 KEEP_BACKUPS = 5
+STOP_MARKER = "bridge-stopped-by-probe"
+START_FAILED_REASON = "bridge_stopped_by_probe_start_failed"
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,11 @@ class ProbeConfig:
     @property
     def cookies_json(self) -> Path:
         return self.bridge_dir / "cookies.json"
+
+    @property
+    def marker(self) -> Path:
+        """Present exactly while the probe may have left the bridge stopped."""
+        return self.state_file.parent / STOP_MARKER
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -197,8 +204,17 @@ class Probe:
         in-memory (old, rejected) jar back over cookies.json, so the write must
         land AFTER the process is gone and BEFORE it starts again."""
         target = self._cfg.cookies_json
+        # The marker goes down BEFORE the stop: a crash, a timeout or a failed
+        # start from here on leaves it behind, and the next run restarts what
+        # this probe stopped (and only that).
+        try:
+            self._write_marker()
+        except OSError as exc:
+            return f"marker_failed:{type(exc).__name__}"  # nothing stopped yet
         stopped = self._run(["docker", "stop", self._cfg.container], 60.0, None)
         if stopped.rc != 0:
+            # rc 124 = timeout, and the daemon may still finish the stop; the
+            # marker stays so the next run's recovery start covers it.
             return f"stop_failed:rc={stopped.rc}"
         try:
             if target.exists():
@@ -219,10 +235,45 @@ class Probe:
             os.replace(tmp, target)
         except OSError as exc:
             # The bridge is down: bring it back before reporting the failure.
-            self._run(["docker", "start", self._cfg.container], 60.0, None)
+            # If THIS start fails too, the marker stays for the next run.
+            revived = self._run(["docker", "start", self._cfg.container], 60.0, None)
+            if revived.rc == 0:
+                self._clear_marker()
             return f"write_failed:{type(exc).__name__}"
         started = self._run(["docker", "start", self._cfg.container], 60.0, None)
-        return "ok" if started.rc == 0 else f"start_failed:rc={started.rc}"
+        if started.rc != 0:
+            return f"start_failed:rc={started.rc}"
+        self._clear_marker()
+        return "ok"
+
+    # ---- the stop marker --------------------------------------------------
+    def _write_marker(self) -> None:
+        path = self._cfg.marker
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(self._now().isoformat())
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+
+    def _clear_marker(self) -> None:
+        self._cfg.marker.unlink(missing_ok=True)
+
+    def _recover(self, record: dict[str, Any]) -> ErrorAction | None:
+        """A marker means a previous run stopped the bridge and never confirmed
+        the start. Start it (idempotent); clear the marker only on rc 0.
+        Nothing here touches a bridge a human stopped: no marker, no start."""
+        if not self._cfg.marker.exists():
+            return None
+        res = self._run(["docker", "start", self._cfg.container], 60.0, None)
+        if res.rc == 0:
+            self._clear_marker()
+            record["recovery_start"] = "ok"
+            return None
+        record["recovery_start"] = f"start_failed:rc={res.rc}"
+        return ErrorAction(START_FAILED_REASON)
 
     def _emit_alerts(
         self, actions: list[Action], carry: dict[str, Any], now: datetime
@@ -236,7 +287,10 @@ class Probe:
                 msg = AlertMessage("instagram", "sync_capped",
                                    f"{a.attempts} syncs in a row did not restore the bridge")
             elif isinstance(a, ErrorAction):
-                msg = AlertMessage("probe", a.reason, f"the probe could not measure: {a.reason}")
+                msg = AlertMessage(
+                    "probe", a.reason,
+                    _HUMAN.get(a.reason, f"the probe could not measure: {a.reason}"),
+                )
             else:
                 continue
             key = f"{msg.network}:{msg.reason}"
@@ -256,6 +310,8 @@ class Probe:
         now = self._now()
         carry = self._last_carry()
         record: dict[str, Any] = {"ts": now.isoformat()}
+
+        recovery_error = self._recover(record)  # before any health read or decision
 
         chrome_cookies: list[ChromeCookie] = []
         try:
@@ -288,6 +344,8 @@ class Probe:
         history = History(int(carry.get("attempts", 0)))
         actions = decide(Snapshot(now, chrome, BridgeState(bridge_session), differs, history, live))
 
+        if recovery_error is not None:
+            actions.append(recovery_error)
         sync_result: str | None = None
         synced = False
         for a in actions:
@@ -328,6 +386,8 @@ class Probe:
 
 
 _HUMAN = {
+    START_FAILED_REASON: "the probe stopped the instagram bridge and could not start it "
+    "again; start it by hand (docker start instagram-bridge)",
     "chrome_session_missing": "no session cookie in Chrome; log in by hand over VNC",
     "chrome_session_expired": "the session cookie in Chrome has expired; log in by hand over VNC",
     "chrome_session_near_expiry": "Chrome's session expires within 72h; renew the login over VNC",
