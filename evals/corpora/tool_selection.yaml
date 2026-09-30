@@ -372,13 +372,19 @@ cases:
     metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
     snapshot: *room_a
 
-  - name: route_document_publish_room_summary
+  # Was `route_document_publish_room_summary` («write up what we decided about
+  # the trip»). Measured 2026-10-01, n=5, on the room A anchor: 0 of 5, every
+  # draw searched memory and the transcript for decisions the room does not hold
+  # until the repeat guard stopped it, and none reached a write. The expectation
+  # measured the anchor (no recorded decision), not the route, so the input now
+  # asks for a written piece that needs nothing recalled.
+  - name: route_document_publish_comparison
     entry: tag
     expect: reply
     mention: true
     input: >-
-      write up what we decided about the December trip as a proper document
-      I can open later, with a section per day
+      write a proper document I can open later comparing Tokyo and Osaka for a
+      week in December: a section for each, then which one you would pick
     metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
     snapshot: *room_a
 
