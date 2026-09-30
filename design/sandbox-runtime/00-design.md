@@ -555,8 +555,39 @@ from what is *intended*, and neither is rewritten by a model.
    </computer>
    ```
    Nora resumes by passing the session id to `computer_browse`.
-4. **A per-room lock.** Two turns in one room never drive the same workspace
-   at once; the second waits briefly, then answers `unavailable`.
+4. **Concurrency: the live turn first, then the background loop.** Two
+   callers want the computer: the *conscious* path (a tag turn, someone waiting
+   on a reply) and the *subconscious* one (the Cognition and Dreamer passes,
+   which run with nobody waiting). The rules:
+   - **Every call carries its actor** (`tag`, `cognition`, `dreamer:<adaptor>`),
+     both in `computer_events` and on `computer_sessions`, so what ran on whose
+     behalf re-derives from the rows.
+   - **Lock the thing being changed, not the room.** Each session owns its
+     `projects/<slug>/`, its tmux name and its browser context. A lease is
+     per session (a lease id, a TTL and a heartbeat). Reads and observed-state
+     reads take no lock. A free-form `computer_run` with no session takes a
+     short room lease.
+   - **The live turn never queues behind the background.** The subconscious
+     side takes a lease with `try_acquire` and, when busy, defers to its next
+     pass. That is the same rule the heartbeat and compute poller already
+     follow for the conversation slot, so a reminder never waits behind a tag.
+     The conscious side waits briefly. If a background holder is in the way, it
+     signals a cancel: the browser sub-agent checks between steps, and a
+     background run is killed at its next step boundary. It then marks its
+     session `paused` with where it stopped, so the work resumes rather than
+     being lost.
+   - **Parallel where nothing is shared.** Different sessions run at once:
+     separate project directories, and separate CDP browser contexts (their
+     own cookies) in one Chromium. A logged-in browser profile is one shared
+     context, so work on it is serialised per profile. A cap of 2 concurrent
+     runs matches the VM's 2 vCPUs. Background runs are `nice`d below live
+     ones.
+   - **What the subconscious may do is a policy question, not a technical
+     one.** Proposed: the background side may observe, check a running job,
+     and resume a session a live turn started. It may not start new work with
+     side effects on its own initiative until that is measured and decided.
+     This follows the rule that social reads do not run in a turn nobody
+     asked for (DEC-201).
 
 The block renders only in rooms that have used the computer, so every other
 room's prompt is unchanged. How to measure it: a turn that follows an open
@@ -571,3 +602,6 @@ session names it, and does not restart the task from scratch.
    measured durations), or keep it for a future background task?
 5. Session expiry: how long an untouched `computer_sessions` row stays open
    (proposed 24 h, and closed at once when its tab or tmux is gone).
+6. What the background loops (Cognition, Dreamer) may do on the computer:
+   proposed observe, check and resume only, with no new side-effecting work
+   of their own until measured (§15.4).
