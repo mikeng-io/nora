@@ -81,12 +81,7 @@ def judge_playback(
     position cannot be distinguished from a track that just began. The first
     poll can still return ENDED or WEDGED-by-autopause, which need no delta.
     """
-    if (
-        previous is not None
-        and previous.playback_id is not None
-        and current.playback_id is not None
-        and previous.playback_id != current.playback_id
-    ):
+    if previous is not None and previous.playback_id != current.playback_id:
         # A position is only comparable within ONE playback. After an
         # autoplay advance the old track's last reading (e.g. 195 s) sits
         # against the new track's first (e.g. 7 s), which reads as "went

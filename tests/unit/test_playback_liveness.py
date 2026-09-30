@@ -111,6 +111,15 @@ def test_a_new_playback_is_not_compared_against_the_previous_tracks_position() -
     assert verdict is PlaybackVerdict.OK
 
 
+def test_a_reading_without_an_id_is_not_compared_across_playbacks_either() -> None:
+    """Only one side naming a playback is still not provably the same playback."""
+    old_track = _reading(status="playing", position_ms=195_680)
+    new_track = _reading(status="playing", position_ms=7_400, playback_id="pb-new")
+
+    verdict = judge_playback(previous=old_track, current=new_track, believed_playing=True)
+    assert verdict is PlaybackVerdict.OK
+
+
 def test_a_frozen_position_within_one_playback_is_still_WEDGED_with_ids() -> None:
     """The guard must not blunt the real detection: same playback, no delta."""
     frozen = _reading(status="playing", position_ms=50_000, playback_id="pb-1")

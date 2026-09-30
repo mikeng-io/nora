@@ -21,6 +21,8 @@ import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+import pytest
+
 from nora.domain.music import MusicSession
 from nora.domain.playback_liveness import PlaybackReading, PlaybackVerdict
 from nora.domain.ports import ResolvedTrack, TrackSource
@@ -1132,6 +1134,31 @@ async def test_a_retried_track_finished_for_the_same_playback_advances_only_once
 
     assert first is True
     assert retry is False
+    assert notify.messages == ["Now playing: Track B — locator-b"]
+
+
+async def test_a_finish_whose_advance_raised_is_retried_not_swallowed_as_a_duplicate() -> None:
+    """B7: a raising transition is left unconsumed so the outbox redelivers the
+    SAME playback. The once-per-playback mark must not turn that redelivery into
+    a "duplicate" — the queue would never advance and the room would go silent."""
+    manager, notify = await _playing_a_and_b(playback_probe=lambda _guild_id: "pb-1")
+    player = manager._players["guild-1"]  # type: ignore[attr-defined]
+    real = player.prepare_advance
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("store failure")
+        return await real()
+
+    player.prepare_advance = flaky  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        await manager.on_track_finished("guild-1", playback_id="pb-1")
+
+    retry = await manager.on_track_finished("guild-1", playback_id="pb-1")
+
+    assert retry is True
     assert notify.messages == ["Now playing: Track B — locator-b"]
 
 

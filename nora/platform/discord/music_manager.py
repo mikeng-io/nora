@@ -302,13 +302,28 @@ class MusicPlayerManager:
             # A track that ended on its own clears whatever retry budget it
             # spent, so a later failure on a DIFFERENT track starts fresh.
             self._stream_retries.pop(guild_id, None)
-            pending = await player.prepare_advance()
-        status = await self._commit_and_finish(guild_id, player, pending)
+            try:
+                pending = await player.prepare_advance()
+            except BaseException:
+                self._release_finish(guild_id, playback_id)
+                raise
+        try:
+            status = await self._commit_and_finish(guild_id, player, pending)
+        except BaseException:
+            # B7: a transition that RAISES is left unconsumed so the outbox
+            # retry gets a genuine second attempt; the consumed mark must not
+            # turn that retry into a "duplicate" and leave the room silent.
+            self._release_finish(guild_id, playback_id)
+            raise
         # This is the ONE transition with no slash-command reply of its own
         # — a track ending naturally and the next one auto-starting is
         # otherwise silent in Discord.
         await self._notify_now_playing(guild_id, status)
         return True
+
+    def _release_finish(self, guild_id: str, playback_id: str | None) -> None:
+        if playback_id is not None and self._finish_consumed.get(guild_id) == playback_id:
+            del self._finish_consumed[guild_id]
 
     def _take_stream_retry(self, guild_id: str, locator: str) -> bool:
         """Spend one attempt from `locator`'s budget, or report that it is
