@@ -382,6 +382,6 @@
   "file": "nora/app/events_backfill.py",
   "old": "            conversation_id=convo.primary_id, include_unsupported=True,\n",
   "new": "            conversation_id=convo.primary_id,\n",
-  "target": "tests/unit/test_events_backfill.py::test_a_legacy_event_the_withdrawal_cascade_marked_is_re_homed_too_and_stays_marked"
+  "target": "tests/unit/test_events_backfill.py::test_a_legacy_event_the_cascade_marked_is_re_homed_too_and_stays_marked"
  }
 ]
