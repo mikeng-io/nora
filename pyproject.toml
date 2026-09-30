@@ -41,6 +41,7 @@ dependencies = [
     # and formatting; tomli_w would strip every rationale comment in a
     # 75KB config. Runtime dependency: the CLI ships in the image.
     "tomlkit>=0.13",
+    "jsonschema>=4.26.0",
 ]
 
 [project.optional-dependencies]
@@ -258,7 +259,8 @@ layers = [
     "nora.skills | nora.instructions",
     "nora.obs",
     "nora.infra | nora.testing",
-    "nora.domain",
+    # Pure: stdlib and jsonschema, the generated schema beside it, nothing of ours.
+    "nora.domain | nora.documents",
 ]
 
 [[tool.importlinter.contracts]]
@@ -274,7 +276,7 @@ source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
     "nora.infra", "nora.testing", "nora.ingest", "nora.engagement",
-    "nora.skills", "nora.instructions",
+    "nora.skills", "nora.instructions", "nora.documents",
 ]
 forbidden_modules = ["nora.config"]
 
@@ -329,7 +331,6 @@ dev = [
     "aioresponses>=0.7.9",
     "boto3-stubs[s3]>=1.43.78",
     "import-linter>=2.0",
-    "jsonschema>=4.26.0",
     "mcp>=1.29.0",
     "mypy>=1.11",
     "pytest>=8.0",
