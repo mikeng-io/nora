@@ -24,6 +24,7 @@ from datetime import datetime
 
 from nora.domain.documents import DocumentStore
 from nora.domain.documents_context import DOCUMENTS_SHOWN, DocumentLine, DocumentsView
+from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.documents.context")
 
@@ -35,7 +36,7 @@ class DocumentsContextReader:
         store: DocumentStore,
         room_ids: Callable[[str, str], frozenset[str]],
         clock: Callable[[], datetime],
-        metrics: object,
+        metrics: Metrics,
         shown: int = DOCUMENTS_SHOWN,
         timeout: float = 1.0,
     ) -> None:
@@ -58,9 +59,7 @@ class DocumentsContextReader:
             )
         except Exception:
             log.exception("documents context read failed; rendering no block")
-            inc = getattr(self._metrics, "inc", None)
-            if inc is not None:
-                inc("nora_errors_total", stage="documents_context", platform=platform)
+            self._metrics.inc("nora_errors_total", stage="documents_context", platform=platform)
             return None
         if not found:
             return None

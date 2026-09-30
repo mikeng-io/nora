@@ -6,8 +6,9 @@ every line**: whether to revise an existing document or start a new one turns on
 was last touched (AGENTS.md, the spine).
 
 A title is a model's words and a member's words shaped them, so it is collapsed to one
-line, cut to `TITLE_CHARS`, and escaped by `render_bullets` like every record: it can
-neither forge a line nor close the tag.
+line, cut to `TITLE_CHARS`, stripped of the straight quote its line wraps it in, and
+escaped by `render_bullets` like every record: it can neither forge a line, forge a
+field nor close the tag.
 """
 
 from __future__ import annotations
@@ -18,7 +19,9 @@ from ..domain.documents_context import TITLE_CHARS, DocumentLine, DocumentsView
 
 
 def _title(text: str) -> str:
-    one = " ".join(text.split())
+    # A straight quote would close the quote the line wraps the title in, and what
+    # follows it could then pose as the id field (review of this block: `x" · id <uuid>`).
+    one = " ".join(text.replace('"', "'").split())
     return one if len(one) <= TITLE_CHARS else one[: TITLE_CHARS - 1].rstrip() + "…"
 
 

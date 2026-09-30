@@ -1028,7 +1028,7 @@ tools) and only when the room has a document; otherwise it costs nothing.
 and the block never shows an id it did not read. The block's own description says no block does not mean
 no document exists.
 
-**What it says.** A title is data a model wrote: collapsed to one line, cut to 50 characters, escaped.
+**What it says.** A title is data a model wrote: collapsed to one line, cut to 50 characters, stripped of the straight quote its line wraps it in (review: `x" · id <uuid>` closed the quote and forged an id field), escaped.
 The description tells her to `document_read` then `document_publish` with `base_revision`, and to use an
 id only in those calls (a UUID in a reply is blocked at egress; people read titles), matching the skill.
 
