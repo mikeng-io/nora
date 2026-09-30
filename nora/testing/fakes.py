@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import hashlib
 import json
@@ -1667,18 +1668,38 @@ class FakeComputerEventStore:
     `nora.infra.sql.computer_events.SqlComputerEventStore` by
     `tests/contract/test_computer_event_store_contract.py`.
 
-    `fail = True` makes `append` raise, the storage-failure case the
-    computer tools must survive without losing the turn's result.
+    `fail` names the phases whose append raises: `{"started"}` is the case
+    where a tool must refuse to run, `{"finished"}` the one where it must
+    still answer. `(operation_id, phase)` is unique, as in the table.
     """
 
     def __init__(self) -> None:
         self.events: list[ComputerEvent] = []
-        self.fail = False
+        self.fail: set[str] = set()
+        # Set to an unset `asyncio.Event` to make a `finished` append wait on
+        # it: a slow write a second cancellation can land on.
+        self.hold_finished: asyncio.Event | None = None
 
     async def append(self, event: ComputerEvent) -> None:
-        if self.fail:
+        if event.phase == "finished" and self.hold_finished is not None:
+            await self.hold_finished.wait()
+        if event.phase in self.fail:
             raise RuntimeError("fake computer_events append failure")
+        if any((e.operation_id, e.phase) == (event.operation_id, event.phase)
+               for e in self.events):
+            raise RuntimeError("duplicate (operation_id, phase)")
         self.events.append(normalise_computer_event(event))
+
+    async def orphaned_starts(self, *, older_than: datetime, limit: int) -> list[ComputerEvent]:
+        done = {e.operation_id for e in self.events if e.phase == "finished"}
+        rows = [e for e in self.events if e.phase == "started"
+                and e.operation_id not in done and e.created_at < older_than]
+        rows.sort(key=lambda e: e.created_at)
+        return rows[:limit]
+
+    def finished(self) -> list[ComputerEvent]:
+        """The `finished` rows, in order: what a test asserts outcomes on."""
+        return [e for e in self.events if e.phase == "finished"]
 
     async def recent(
         self, *, conversation_id: str, since: datetime, limit: int,
@@ -1873,6 +1894,9 @@ class FakeSandboxRuntime:
         # reads to see the timeout and the reserved `limits` slot.
         self.run_calls: list[dict[str, object]] = []
         self.down = False
+        # Set to an unset `asyncio.Event` to make `run` wait on it: a slow
+        # command a test can cancel mid-call.
+        self.hold: asyncio.Event | None = None
         self._scripted: dict[str, RunResult] = {}
 
     def script(self, command: str, result: RunResult) -> None:
@@ -1896,6 +1920,8 @@ class FakeSandboxRuntime:
         if (refusal := self._refusal(scope)) is not None:
             return RunResult(status=refusal, reason="fake refusal")
         self.runs.append((scope, command))
+        if self.hold is not None:
+            await self.hold.wait()
         return self._scripted.get(command, RunResult(status=SandboxStatus.OK, exit_code=0))
 
     async def read(

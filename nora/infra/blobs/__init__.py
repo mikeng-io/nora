@@ -11,6 +11,14 @@ the `boto3` client itself is built at the composition root and handed in),
 `nora.domain`. Not `nora.obs` (layers contract) — metrics are injected at the
 call site, not here; neither store counts anything and therefore needs
 nothing injected.
+
+NO BLOB IS EVER DELETED TODAY, and a future garbage collector must keep
+every referenced key. Beyond media custody, the computer audit trail
+references blobs from Postgres (design/sandbox-runtime §12):
+`computer_events.output_ref` (a run's full stdout/stderr, a read's full
+content) and `computer_events.request` (a write's full content), each as
+`{"key": ..., "sha256": ...}`. A GC that treated a blob no media row names as
+garbage would silently hollow out that audit record.
 """
 
 from nora.infra.blobs.filesystem import FilesystemBlobStore

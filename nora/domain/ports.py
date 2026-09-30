@@ -1355,7 +1355,10 @@ class MediaSource(Protocol):
 @runtime_checkable
 class BlobStore(Protocol):
     """Content-addressed byte custody. `put` returns the key it computed; there
-    is no `delete` on this port — see module docstring."""
+    is no `delete` on this port — see module docstring. Keys are referenced
+    from media rows AND from the computer audit (`computer_events.request`,
+    `.output_ref`); any future GC must keep every referenced key
+    (`nora/infra/blobs/__init__.py`)."""
 
     async def put(self, *, data: bytes) -> str: ...
 

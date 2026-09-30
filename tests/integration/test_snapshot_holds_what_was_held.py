@@ -306,7 +306,8 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "tag_id": f"t{n}", "tool_name": "now", "tool_input": {}, "tool_result": {"n": n},
     },
     "computer_events": lambda n: {
-        "id": _uuid("ce", n), "started_at": T0, "finished_at": T0, "actor": "tag",
+        "id": _uuid("ce", n), "operation_id": _uuid("ce-op", n), "phase": "finished",
+        "started_at": T0, "finished_at": T0, "actor": "tag",
         "platform": "signal", "conversation_id": "g1", "conversation_type": "group",
         "tag_id": f"t{n}", "scope": "ab" * 16, "tool": "computer_run", "path": "direct",
         "trace_id": "", "span_id": "", "status": "ok",

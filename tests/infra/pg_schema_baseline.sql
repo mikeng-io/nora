@@ -240,6 +240,7 @@ ADD CONSTRAINT tag_debounce_state_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT tag_trace_pkey PRIMARY KEY (id);
 ADD CONSTRAINT tool_call_log_pkey PRIMARY KEY (id);
 ADD CONSTRAINT turn_verdict_pkey PRIMARY KEY (tag_id);
+ADD CONSTRAINT uq_computer_events_operation_phase UNIQUE (operation_id, phase);
 ADD CONSTRAINT uq_music_queue_guild_position UNIQUE (guild_id, "position");
 ADD CONSTRAINT uq_occupancy_bin UNIQUE (subject_id, place_id, hour_of_week);
 ADD CONSTRAINT version_announcements_pkey PRIMARY KEY (version, platform, conversation_id);
@@ -264,6 +265,7 @@ ALTER TABLE ONLY public.cognition_wake_outcome
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.cognition_would_write
 ALTER TABLE ONLY public.compute_jobs
+ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.computer_events
 ALTER TABLE ONLY public.config_revision
 ALTER TABLE ONLY public.consolidation_watermark
@@ -466,8 +468,9 @@ CONSTRAINT ck_cognition_would_write_outcome_shape CHECK ((((outcome = 'would_com
 CONSTRAINT ck_cognition_would_write_tier CHECK ((tier = ANY (ARRAY['note'::text, 'event'::text, 'standing'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text])))
 CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
-CONSTRAINT ck_computer_events_finished_after_started CHECK ((finished_at >= started_at)),
-CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text])))
+CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text]))),
+CONSTRAINT ck_computer_events_phase CHECK ((phase = ANY (ARRAY['finished'::text, 'started'::text]))),
+CONSTRAINT ck_computer_events_phase_times CHECK ((((phase = 'started'::text) AND (finished_at IS NULL)) OR ((phase = 'finished'::text) AND (finished_at IS NOT NULL) AND (finished_at >= started_at))))
 CONSTRAINT ck_corridor_speed_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
 CONSTRAINT ck_derived_places_kind CHECK ((kind = ANY (ARRAY['home'::text, 'work'::text, 'unlabeled'::text])))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
@@ -1307,7 +1310,7 @@ fidelity text DEFAULT 'tentative'::text NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
 fingerprint text NOT NULL,
-finished_at timestamp with time zone NOT NULL,
+finished_at timestamp with time zone,
 fired_at timestamp with time zone,
 first_seen timestamp with time zone DEFAULT now() NOT NULL,
 first_seen_at bigint NOT NULL,
@@ -1566,6 +1569,7 @@ op text NOT NULL,
 open integer DEFAULT 0 NOT NULL
 open integer DEFAULT 0 NOT NULL
 open_stay jsonb,
+operation_id uuid NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
 outcome text NOT NULL,
@@ -1610,6 +1614,7 @@ person_id text,
 person_id text,
 persons text[] NOT NULL,
 persons text[] NOT NULL,
+phase text NOT NULL,
 place_id integer NOT NULL,
 place_id integer NOT NULL,
 place_id integer,

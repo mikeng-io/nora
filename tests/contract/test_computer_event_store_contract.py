@@ -30,7 +30,8 @@ EPOCH = datetime(2020, 1, 1, tzinfo=UTC)
 def _event(**overrides):
     now = datetime.now(UTC)
     defaults = {
-        "id": uuid4(), "created_at": now, "started_at": now, "finished_at": now,
+        "id": uuid4(), "operation_id": uuid4(), "phase": "finished",
+        "created_at": now, "started_at": now, "finished_at": now,
         "actor": "tag", "requester_person_id": "miles", "platform": "signal",
         "conversation_id": "conv-1", "conversation_type": "group", "tag_id": "tag-1",
         "scope": "ab" * 16, "tool": "computer_run", "path": "direct",
@@ -149,9 +150,41 @@ async def test_the_database_refuses_an_unknown_actor(sql_engine):
     with pytest.raises(IntegrityError):
         async with sql_engine.begin() as conn:
             await conn.execute(sa.text(
-                "INSERT INTO computer_events (id, started_at, finished_at, actor, "
-                "platform, conversation_id, conversation_type, tag_id, scope, tool, "
-                "path, trace_id, span_id, status) VALUES (gen_random_uuid(), now(), "
-                "now(), 'someone', 's', 'c', 'group', '', 'x', 'computer_run', "
-                "'direct', '', '', 'ok')"
+                "INSERT INTO computer_events (id, operation_id, phase, started_at, "
+                "finished_at, actor, platform, conversation_id, conversation_type, "
+                "tag_id, scope, tool, path, trace_id, span_id, status) VALUES "
+                "(gen_random_uuid(), gen_random_uuid(), 'finished', now(), now(), "
+                "'someone', 's', 'c', 'group', '', 'x', 'computer_run', 'direct', "
+                "'', '', 'ok')"
             ))
+
+
+def test_a_started_row_has_no_finished_time_and_a_finished_row_has_one():
+    with pytest.raises(ValueError, match="finished_at"):
+        _event(phase="started")
+    with pytest.raises(ValueError, match="finished_at"):
+        _event(phase="finished", finished_at=None)
+    with pytest.raises(ValueError, match="phase"):
+        _event(phase="halfway")
+
+
+async def test_orphaned_starts_are_starts_with_no_finished_row(store):
+    """The crash marker: a started row whose operation never finished.
+    Oldest first; a start newer than `older_than` (maybe still running) and a
+    start that finished are both left out."""
+    t = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+    done, crashed, running = uuid4(), uuid4(), uuid4()
+    for op, at in ((done, t), (crashed, t.replace(minute=5)), (running, t.replace(hour=13))):
+        await store.append(_event(operation_id=op, phase="started", status="started",
+                                  finished_at=None, created_at=at, started_at=at, result={}))
+    await store.append(_event(operation_id=done, created_at=t.replace(minute=1),
+                              started_at=t, finished_at=t.replace(minute=1)))
+    orphans = await store.orphaned_starts(older_than=t.replace(hour=12, minute=30), limit=10)
+    assert [o.operation_id for o in orphans] == [crashed]
+
+
+async def test_one_operation_has_at_most_one_row_per_phase(store):
+    op = uuid4()
+    await store.append(_event(operation_id=op))
+    with pytest.raises(Exception):  # noqa: B017 - IntegrityError (SQL), RuntimeError (fake)
+        await store.append(_event(operation_id=op))

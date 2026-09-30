@@ -64,6 +64,7 @@ from sqlalchemy.dialects import postgresql as pg
 from nora.domain.computer_events import ACTORS as COMPUTER_ACTORS
 from nora.domain.computer_events import CALL_PATHS as COMPUTER_CALL_PATHS
 from nora.domain.computer_events import DREAMER_ACTOR_PREFIX
+from nora.domain.computer_events import PHASES as COMPUTER_PHASES
 from nora.domain.decision_log import REASON_MAX_CHARS, VERDICTS, WRITERS
 from nora.domain.facts import (
     FACT_PREDICATE_CEILING_CHARS,
@@ -4284,24 +4285,27 @@ IDX_ASSESS_REPORT_KIND_RUN = sa.Index(
 
 
 # `computer_events` — the computer audit log (design/sandbox-runtime §12,
-# DEC-243): one row per computer tool call on every return path, written by
+# DEC-243): two rows per computer tool call on every path, written by
 # Nora's tools, never by `computerd`. Who (`actor`, `requester_person_id`,
 # the room, the tag), when (`started_at`, `finished_at`), how (`tool`,
 # `path`, the OTel ids) and what (`request` the full input, `result`,
 # `output_ref` the full output's blob keys); `nora.domain.computer_events`.
-# Append-only in the database: migration `0080_computer_events` adds a
-# trigger refusing UPDATE and DELETE (and TRUNCATE unless deliberately
-# switched off, the `0068` guard's rule), which METADATA cannot express.
+# Two rows per operation (`phase` started/finished, one `operation_id`).
+# Migration `0080_computer_events` adds a trigger refusing UPDATE and DELETE
+# (and TRUNCATE unless deliberately switched off, the `0068` guard's rule),
+# which METADATA cannot express; it guards against bugs, not the owner role.
 COMPUTER_EVENTS = sa.Table(
     "computer_events",
     METADATA,
     sa.Column("id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("operation_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("phase", sa.Text, nullable=False),
     sa.Column(
         "created_at", sa.DateTime(timezone=True), nullable=False,
         server_default=sa.text("now()"),
     ),
     sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
-    sa.Column("finished_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
     sa.Column("actor", sa.Text, nullable=False),
     sa.Column("requester_person_id", sa.Text, nullable=True),
     sa.Column("platform", sa.Text, nullable=False),
@@ -4336,7 +4340,17 @@ COMPUTER_EVENTS = sa.Table(
         name="ck_computer_events_path",
     ),
     sa.CheckConstraint(
-        "finished_at >= started_at", name="ck_computer_events_finished_after_started",
+        f"phase IN ({', '.join(repr(p) for p in sorted(COMPUTER_PHASES))})",
+        name="ck_computer_events_phase",
+    ),
+    sa.CheckConstraint(
+        "(phase = 'started' AND finished_at IS NULL) OR "
+        "(phase = 'finished' AND finished_at IS NOT NULL "
+        "AND finished_at >= started_at)",
+        name="ck_computer_events_phase_times",
+    ),
+    sa.UniqueConstraint(
+        "operation_id", "phase", name="uq_computer_events_operation_phase",
     ),
 )
 

@@ -16,7 +16,8 @@ from nora.domain.computer_events import ComputerEvent, normalise_computer_event
 from nora.infra.sql.schema import COMPUTER_EVENTS
 
 _FIELDS = (
-    "id", "created_at", "started_at", "finished_at", "actor", "requester_person_id",
+    "id", "operation_id", "phase", "created_at", "started_at", "finished_at", "actor",
+    "requester_person_id",
     "platform", "conversation_id", "conversation_type", "tag_id", "scope", "tool",
     "path", "trace_id", "span_id", "status", "request", "result", "output_ref",
 )
@@ -50,6 +51,25 @@ class SqlComputerEventStore:
                 COMPUTER_EVENTS.c.created_at >= since,
             )
             .order_by(COMPUTER_EVENTS.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_event(r) for r in rows]
+
+    async def orphaned_starts(self, *, older_than: datetime, limit: int) -> list[ComputerEvent]:
+        finished = COMPUTER_EVENTS.alias("finished")
+        stmt = (
+            sa.select(COMPUTER_EVENTS)
+            .where(
+                COMPUTER_EVENTS.c.phase == "started",
+                COMPUTER_EVENTS.c.created_at < older_than,
+                ~sa.exists().where(
+                    finished.c.operation_id == COMPUTER_EVENTS.c.operation_id,
+                    finished.c.phase == "finished",
+                ),
+            )
+            .order_by(COMPUTER_EVENTS.c.created_at)
             .limit(limit)
         )
         async with self._engine.connect() as conn:

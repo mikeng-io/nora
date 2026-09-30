@@ -70,7 +70,13 @@ from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_
 
 from ..domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from ..domain.computer import ComputerToolSettings, SandboxStatus, computer_scope
-from ..domain.computer_events import DREAMER_ACTOR_PREFIX, ComputerEvent, ComputerEventStore
+from ..domain.computer_events import (
+    CANCELLED,
+    DREAMER_ACTOR_PREFIX,
+    STARTED,
+    ComputerEvent,
+    ComputerEventStore,
+)
 from ..domain.gatherings import (
     RSVP,
     AmbiguousOpenGatheringsError,
@@ -3902,6 +3908,22 @@ class NoteCollaborator(Protocol):
 #: name is in this file.
 
 
+#: A computer call refused because its `started` audit row (or, for a write,
+#: its input) could not be recorded: an operation without a record must not
+#: happen (design/sandbox-runtime §12).
+_COMPUTER_UNRECORDED: Mapping[str, object] = MappingProxyType({
+    "status": "unavailable",
+    "reason": "the call could not be recorded, so it was not made",
+    "note": "I couldn't use my computer just now, and nothing was done. Say "
+            "so; don't describe a result you never got.",
+})
+
+#: Nora's computer tools (design/sandbox-runtime §4). `ToolRegistry` withholds
+#: all four from every surface when no runtime is wired.
+COMPUTER_TOOLS: frozenset[str] = frozenset({
+    "computer_run", "computer_read", "computer_write", "computer_edit",
+})
+
 #: Every computer tool's answer while `[computer]` is off, or while its audit
 #: store is not wired (the tools never run a call they cannot audit).
 _COMPUTER_OFF: Mapping[str, object] = MappingProxyType({
@@ -3912,15 +3934,19 @@ _COMPUTER_OFF: Mapping[str, object] = MappingProxyType({
 })
 
 
-def _computer_status(status: SandboxStatus) -> str:
-    """The port's status in R-27's words: `denied` is `refused` (asked for
-    something the computer will not do, which calling again unchanged cannot
-    fix), and anything unrecognised is `unavailable`, never `ok`."""
-    return {
+def _computer_status(status: SandboxStatus, *, found: bool) -> str:
+    """The port's status in the words the MODEL is told: `denied` is
+    `refused` (asked for something the computer will not do, which calling
+    again unchanged cannot fix); `nothing_found` only for a tool that has
+    something to find (`found`: read and edit), else `unavailable`; anything
+    unrecognised is `unavailable`, never `ok`. The audit row records this
+    mapped status, so the row says what the model was told."""
+    mapped = {
         SandboxStatus.OK: "ok",
-        SandboxStatus.NOTHING_FOUND: "nothing_found",
+        SandboxStatus.NOTHING_FOUND: "nothing_found" if found else "unavailable",
         SandboxStatus.DENIED: "refused",
-    }.get(status, "unavailable")
+    }
+    return mapped.get(status, "unavailable")
 
 
 def _clip(text: str, limit: int) -> tuple[str, bool]:
@@ -12632,10 +12658,9 @@ Args:
         """Put one full input or output in the blob store; return its ref.
 
         The ref always carries the size and sha256 of the text; `key` is added
-        when the bytes are stored. A failed put is logged and counted
-        (`stage="blob"`) and the ref says so with `stored: false`: the row
-        still records that the output existed and what it hashed to, and the
-        tool still answers."""
+        and `stored` is true when the bytes are stored. A failed put is logged
+        and counted (`stage="blob"`) and the ref says `stored: false`: the row
+        still records that the text existed and what it hashed to."""
         data = text.encode("utf-8", errors="surrogatepass")
         ref: dict[str, object] = {
             "bytes": len(data), "chars": len(text),
@@ -12659,20 +12684,63 @@ Args:
             ref["stored"] = False
         return ref
 
-    async def _computer_audit(
-        tool: str, status: str, *, started: datetime, finished: datetime,
-        request: dict[str, object], result: dict[str, object],
-        output_ref: dict[str, object] | None = None,
-    ) -> None:
-        """Count the call and append its ONE `computer_events` row.
+    def _computer_row(
+        tool: str, operation_id: UUID, phase: str, status: str, *, started: datetime,
+        finished: datetime | None, request: Mapping[str, object] | None = None,
+        result: Mapping[str, object] | None = None,
+        output_ref: Mapping[str, object] | None = None,
+    ) -> ComputerEvent:
+        trace_id, span_id = current_span_ids()
+        return ComputerEvent(
+            id=uuid.uuid4(), operation_id=operation_id, phase=phase,
+            created_at=max(now_fn(), finished or started), started_at=started,
+            finished_at=finished, actor=computer_actor,
+            requester_person_id=_computer_requester(),
+            platform=computer_platform, conversation_id=bound_conversation_id,
+            conversation_type=conversation_type, tag_id=current_tag_id(),
+            scope=bound_computer_scope, tool=tool, path="direct",
+            trace_id=trace_id, span_id=span_id, status=status,
+            request=_audit_safe(request or {}),
+            result=_audit_safe({"status": status, **(result or {})}) if phase == "finished"
+            else {},
+            output_ref=_audit_safe(output_ref or {}),
+        )
 
-        Called once on every return path of every computer tool, before the
-        return, `unavailable` included. A failed append is logged and counted
-        (`stage="row"`) and the tool STILL answers: the audit is the
-        operator's record of the computer, not a gate on the turn, and losing
-        the reply because a log write failed would make the record cost the
-        thing it watches. `computer_events=None` is only ever an offline/eval
-        composition, where the tools also never run (`computer_ready`).
+    async def _computer_begin(
+        tool: str, operation_id: UUID, *, started: datetime, request: Mapping[str, object],
+    ) -> bool:
+        """Append the operation's `started` row, BEFORE the call reaches the
+        computer. False when it could not be written: the caller then refuses
+        the call, because an operation without a record must not happen. The
+        failure is logged and counted (`stage="row"`)."""
+        if computer_events is None:
+            return False
+        try:
+            await computer_events.append(_computer_row(
+                tool, operation_id, "started", STARTED, started=started, finished=None,
+                request=request,
+            ))
+        except Exception:
+            log.exception("computer_events started append failed (tool=%s); refusing", tool)
+            metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="row")
+            _record(metrics, tool, "unavailable")
+            return False
+        return True
+
+    async def _computer_finish(
+        tool: str, operation_id: UUID, status: str, *, started: datetime,
+        finished: datetime | None, result: Mapping[str, object],
+        output_ref: Mapping[str, object] | None = None,
+    ) -> None:
+        """Count the call and append its `finished` row.
+
+        Called from each tool's `finally`, so it runs on every path out of a
+        call that began, cancellation included. The append runs as its own
+        task behind `asyncio.shield`: a second cancellation of the turn while
+        it is in flight cannot interrupt the write, only the wait for it. A
+        failed append is logged and counted (`stage="row"`) and the tool
+        STILL answers: the call already ran, and losing the reply because a
+        log write failed would make the record cost the thing it watches.
 
         The log line carries counts only (`_log_call`'s rule): the command and
         the path are in the audit row, never in the log file.
@@ -12680,22 +12748,29 @@ Args:
         _record(metrics, tool, status)
         if computer_events is None:
             return
-        trace_id, span_id = current_span_ids()
         try:
-            await computer_events.append(ComputerEvent(
-                id=uuid.uuid4(), created_at=max(now_fn(), finished),
-                started_at=started, finished_at=finished, actor=computer_actor,
-                requester_person_id=_computer_requester(),
-                platform=computer_platform, conversation_id=bound_conversation_id,
-                conversation_type=conversation_type, tag_id=current_tag_id(),
-                scope=bound_computer_scope, tool=tool, path="direct",
-                trace_id=trace_id, span_id=span_id, status=status,
-                request=_audit_safe(request), result=_audit_safe({"status": status, **result}),
-                output_ref=_audit_safe(output_ref or {}),
-            ))
+            row = _computer_row(
+                tool, operation_id, "finished", status, started=started,
+                finished=finished or now_fn(), result=result, output_ref=output_ref,
+            )
+            await asyncio.shield(asyncio.ensure_future(computer_events.append(row)))
+        except asyncio.CancelledError:
+            raise
         except Exception:
-            log.exception("computer_events append failed (tool=%s); answering anyway", tool)
+            log.exception("computer_events finished append failed (tool=%s); answering anyway",
+                          tool)
             metrics.inc("nora_computer_audit_failures_total", tool=tool, stage="row")
+
+    async def _computer_off(
+        tool: str, operation_id: UUID, *, started: datetime, request: Mapping[str, object],
+    ) -> None:
+        """Both rows of a call that never reached a computer (none is wired,
+        or the audit is incomplete): recorded when the row store is wired."""
+        if await _computer_begin(tool, operation_id, started=started, request=request):
+            await _computer_finish(tool, operation_id, "unavailable", started=started,
+                                   finished=started, result={"reason": "off"})
+        elif computer_events is None:
+            _record(metrics, tool, "unavailable")
 
     async def computer_run(command: str, timeout_seconds: int | None = None) -> dict:
         """Run a bash command in this conversation's workspace on your own
@@ -12714,40 +12789,52 @@ Args:
                 there is a ceiling.
         """
         started = now_fn()
-        request: dict[str, object] = {"command": command, "timeout_seconds": timeout_seconds}
-        if not computer_ready or computer is None:
-            await _computer_audit(
-                "computer_run", "unavailable", started=started, finished=started,
-                request=request, result={"reason": "off"},
-            )
-            return dict(_COMPUTER_OFF)
+        operation_id = uuid.uuid4()
         asked = computer_bounds.run_timeout_seconds if timeout_seconds is None else timeout_seconds
         timeout_s = max(1, min(int(asked), computer_bounds.max_run_timeout_seconds))
-        request.update(timeout_s=timeout_s, limits=computer_limits)
-        ran = await computer.run(
-            scope=bound_computer_scope, command=command, timeout_s=timeout_s,
-            limits=computer_limits,
-        )
-        finished = now_fn()
-        stdout, out_cut = _clip(ran.stdout, computer_bounds.max_output_chars)
-        stderr, err_cut = _clip(ran.stderr, computer_bounds.max_output_chars)
-        truncated = ran.truncated or out_cut or err_cut
-        status = _computer_status(ran.status)
-        await _computer_audit(
-            "computer_run", status, started=started, finished=finished, request=request,
-            result={
+        request: dict[str, object] = {
+            "command": command, "timeout_seconds": timeout_seconds,
+            "timeout_s": timeout_s, "limits": computer_limits,
+        }
+        if not computer_ready or computer is None:
+            await _computer_off("computer_run", operation_id, started=started, request=request)
+            return dict(_COMPUTER_OFF)
+        if not await _computer_begin("computer_run", operation_id, started=started,
+                                     request=request):
+            return dict(_COMPUTER_UNRECORDED)
+        status, finished = CANCELLED, None
+        result: dict[str, object] = {"reason": "cancelled before the computer answered"}
+        output_ref: dict[str, object] = {}
+        try:
+            ran = await computer.run(
+                scope=bound_computer_scope, command=command, timeout_s=timeout_s,
+                limits=computer_limits,
+            )
+            finished = now_fn()
+            stdout, out_cut = _clip(ran.stdout, computer_bounds.max_output_chars)
+            stderr, err_cut = _clip(ran.stderr, computer_bounds.max_output_chars)
+            truncated = ran.truncated or out_cut or err_cut
+            result = {
                 "exit_code": ran.exit_code, "reason": ran.reason,
                 "duration_ms": ran.duration_ms,
                 # `truncated`: computerd cut the output before sending it, so
                 # the stored blobs are what was RECEIVED, not all it printed.
                 "truncated": ran.truncated, "shown_truncated": out_cut or err_cut,
                 "stdout_chars": len(ran.stdout), "stderr_chars": len(ran.stderr),
-            },
-            output_ref={
+            }
+            output_ref = {
                 "stdout": await _computer_blob("computer_run", ran.stdout),
                 "stderr": await _computer_blob("computer_run", ran.stderr),
-            },
-        )
+            }
+            # What the MODEL is told, decided before the row records it.
+            status = _computer_status(ran.status, found=False)
+        except BaseException as exc:
+            if not isinstance(exc, asyncio.CancelledError):
+                status, result = "unavailable", {**result, "reason": type(exc).__name__}
+            raise
+        finally:
+            await _computer_finish("computer_run", operation_id, status, started=started,
+                                   finished=finished, result=result, output_ref=output_ref)
         if status == "refused":
             return {
                 "status": "refused", "reason": ran.reason or "",
@@ -12788,35 +12875,42 @@ Args:
             offset_lines: Lines to skip first, to read on past a cut.
         """
         started = now_fn()
+        operation_id = uuid.uuid4()
         offset = max(0, int(offset_lines))
         request: dict[str, object] = {"path": path, "offset_lines": offset_lines}
         if not computer_ready or computer is None:
-            await _computer_audit(
-                "computer_read", "unavailable", started=started, finished=started,
-                request=request, result={"reason": "off"},
-            )
+            await _computer_off("computer_read", operation_id, started=started, request=request)
             return dict(_COMPUTER_OFF)
-        got = await computer.read(
-            scope=bound_computer_scope, path=path, offset=offset,
-            limit=computer_bounds.max_read_chars,
-        )
-        finished = now_fn()
-        content, cut = _clip(got.content, computer_bounds.max_read_chars)
-        truncated = got.truncated or cut
-        status = _computer_status(got.status)
-        await _computer_audit(
-            "computer_read", status, started=started, finished=finished, request=request,
-            result={
+        if not await _computer_begin("computer_read", operation_id, started=started,
+                                     request=request):
+            return dict(_COMPUTER_UNRECORDED)
+        status, finished = CANCELLED, None
+        result: dict[str, object] = {"reason": "cancelled before the computer answered"}
+        output_ref: dict[str, object] = {}
+        try:
+            got = await computer.read(
+                scope=bound_computer_scope, path=path, offset=offset,
+                limit=computer_bounds.max_read_chars,
+            )
+            finished = now_fn()
+            content, cut = _clip(got.content, computer_bounds.max_read_chars)
+            truncated = got.truncated or cut
+            result = {
                 "reason": got.reason, "binary": got.binary, "size": got.size,
                 "sha256": got.sha256, "lines_total": got.lines_total,
                 "truncated": got.truncated, "shown_truncated": cut,
                 "content_chars": len(got.content),
-            },
-            output_ref=(
-                {"content": await _computer_blob("computer_read", got.content)}
-                if got.content else {}
-            ),
-        )
+            }
+            if got.content:
+                output_ref = {"content": await _computer_blob("computer_read", got.content)}
+            status = _computer_status(got.status, found=True)
+        except BaseException as exc:
+            if not isinstance(exc, asyncio.CancelledError):
+                status, result = "unavailable", {**result, "reason": type(exc).__name__}
+            raise
+        finally:
+            await _computer_finish("computer_read", operation_id, status, started=started,
+                                   finished=finished, result=result, output_ref=output_ref)
         if status == "nothing_found":
             return {
                 "status": "nothing_found", "reason": got.reason or "",
@@ -12826,8 +12920,9 @@ Args:
         if status == "refused":
             return {
                 "status": "refused", "reason": got.reason or "",
-                "note": "That path is outside this conversation's workspace, or "
-                        "not a file. Use a path relative to the workspace.",
+                "note": "The computer would not read that path: it is outside "
+                        "the workspace, a link, or not a file. Use a path "
+                        "relative to the workspace.",
             }
         if status != "ok":
             return {
@@ -12867,25 +12962,37 @@ Args:
             content: The whole new text of the file.
         """
         started = now_fn()
+        operation_id = uuid.uuid4()
         # The content is the input too, and can be megabytes: it goes to the
         # blob store and the row holds its ref, never a copy in JSONB.
-        request: dict[str, object] = {
-            "path": path, "content": await _computer_blob("computer_write", content),
-        }
+        content_ref = await _computer_blob("computer_write", content)
+        request: dict[str, object] = {"path": path, "content": content_ref}
         if not computer_ready or computer is None:
-            await _computer_audit(
-                "computer_write", "unavailable", started=started, finished=started,
-                request=request, result={"reason": "off"},
-            )
+            await _computer_off("computer_write", operation_id, started=started, request=request)
             return dict(_COMPUTER_OFF)
-        wrote = await computer.write_text(scope=bound_computer_scope, path=path, content=content)
-        finished = now_fn()
-        status = _computer_status(wrote.status)
-        await _computer_audit(
-            "computer_write", status, started=started, finished=finished, request=request,
-            result={"reason": wrote.reason, "size": wrote.size,
-                    "before_sha256": wrote.previous_sha256, "after_sha256": wrote.sha256},
-        )
+        # A write whose input could not be kept is an operation without a
+        # full record: refused like one whose `started` row failed.
+        if (content and content_ref.get("stored") is not True) or not await _computer_begin(
+            "computer_write", operation_id, started=started, request=request,
+        ):
+            return dict(_COMPUTER_UNRECORDED)
+        status, finished = CANCELLED, None
+        result: dict[str, object] = {"reason": "cancelled before the computer answered"}
+        try:
+            wrote = await computer.write_text(
+                scope=bound_computer_scope, path=path, content=content,
+            )
+            finished = now_fn()
+            result = {"reason": wrote.reason, "size": wrote.size,
+                      "before_sha256": wrote.previous_sha256, "after_sha256": wrote.sha256}
+            status = _computer_status(wrote.status, found=False)
+        except BaseException as exc:
+            if not isinstance(exc, asyncio.CancelledError):
+                status, result = "unavailable", {**result, "reason": type(exc).__name__}
+            raise
+        finally:
+            await _computer_finish("computer_write", operation_id, status, started=started,
+                                   finished=finished, result=result)
         if status == "ok":
             return {
                 "status": "ok", "path": path, "size": wrote.size, "sha256": wrote.sha256,
@@ -12922,21 +13029,29 @@ Args:
             new: The text to put in its place.
         """
         started = now_fn()
+        operation_id = uuid.uuid4()
         request: dict[str, object] = {"path": path, "old": old, "new": new}
         if not computer_ready or computer is None:
-            await _computer_audit(
-                "computer_edit", "unavailable", started=started, finished=started,
-                request=request, result={"reason": "off"},
-            )
+            await _computer_off("computer_edit", operation_id, started=started, request=request)
             return dict(_COMPUTER_OFF)
-        edited = await computer.edit(scope=bound_computer_scope, path=path, old=old, new=new)
-        finished = now_fn()
-        status = _computer_status(edited.status)
-        await _computer_audit(
-            "computer_edit", status, started=started, finished=finished, request=request,
-            result={"reason": edited.reason, "size": edited.size,
-                    "before_sha256": edited.previous_sha256, "after_sha256": edited.sha256},
-        )
+        if not await _computer_begin("computer_edit", operation_id, started=started,
+                                     request=request):
+            return dict(_COMPUTER_UNRECORDED)
+        status, finished = CANCELLED, None
+        result: dict[str, object] = {"reason": "cancelled before the computer answered"}
+        try:
+            edited = await computer.edit(scope=bound_computer_scope, path=path, old=old, new=new)
+            finished = now_fn()
+            result = {"reason": edited.reason, "size": edited.size,
+                      "before_sha256": edited.previous_sha256, "after_sha256": edited.sha256}
+            status = _computer_status(edited.status, found=True)
+        except BaseException as exc:
+            if not isinstance(exc, asyncio.CancelledError):
+                status, result = "unavailable", {**result, "reason": type(exc).__name__}
+            raise
+        finally:
+            await _computer_finish("computer_edit", operation_id, status, started=started,
+                                   finished=finished, result=result)
         if status == "ok":
             return {
                 "status": "ok", "path": path, "size": edited.size, "sha256": edited.sha256,

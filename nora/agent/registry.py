@@ -76,6 +76,7 @@ from .room import Room
 from .shelf_hook import ShelfLoader
 from .surface import ToolScope, ToolShelf, ToolSurface
 from .tools import (
+    COMPUTER_TOOLS,
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
@@ -236,8 +237,13 @@ class ToolRegistry:
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
         # unconfigured tool costs no prompt and cannot be routed to.
+        # The four computer tools likewise without a runtime (`[computer]
+        # enabled = false`, the shipped default): they could only answer
+        # `unavailable`, so offering them would spend prompt on a tool the
+        # model can route to and never use.
         self._withheld: frozenset[str] = (
-            frozenset() if record is not None else frozenset({"record_query"})
+            (frozenset() if record is not None else frozenset({"record_query"}))
+            | (frozenset() if computer is not None else COMPUTER_TOOLS)
         )
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no

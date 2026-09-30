@@ -135,7 +135,7 @@ APPEND_ONLY: dict[str, str] = {
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",
     # design/sandbox-runtime §12 (0080_computer_events): the computer audit,
-    # one row per computer tool call, never changed after insert.
+    # two rows (started, finished) per computer tool call, never changed.
     "computer_events": "created_at",
     "revision_blob": "recorded_at",
     "doctrine_revision": "recorded_at",

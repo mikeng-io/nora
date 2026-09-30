@@ -16,8 +16,10 @@ set; output is bounded.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -140,15 +142,16 @@ async def test_off_is_unavailable_with_a_note_for_every_tool(persons, wired):
     assert runtime is None or runtime.run_calls == []
 
 
-async def test_off_still_writes_one_audit_row_per_call(persons):
+async def test_off_still_records_both_rows_of_every_call(persons):
     events = FakeComputerEventStore()
     tools = _tools(persons, events=events)
     for call, kwargs in _calls(tools):
         await call(**kwargs)
-    assert [(e.tool, e.status) for e in events.events] == [
-        (t, "unavailable") for t in TOOLS
+    assert [(e.tool, e.phase, e.status) for e in events.events] == [
+        (t, phase, status) for t in TOOLS
+        for phase, status in (("started", "started"), ("finished", "unavailable"))
     ]
-    assert all(e.result["reason"] == "off" for e in events.events)
+    assert all(e.result["reason"] == "off" for e in events.finished())
 
 
 # -- status mapping ----------------------------------------------------------
@@ -177,7 +180,7 @@ async def test_run_timeout_is_unavailable_with_its_reason(persons):
     assert out["status"] == "unavailable"
     assert out["reason"] == "timed out after 5s"
     assert out["note"].strip()
-    [row] = events.events
+    [row] = events.finished()
     assert row.status == "unavailable"
     assert (row.result["exit_code"], row.result["duration_ms"]) == (-9, 5000)
 
@@ -245,7 +248,7 @@ async def test_a_binary_file_comes_back_without_content(persons):
 # -- audit -----------------------------------------------------------------
 
 
-async def test_one_audit_row_per_call_on_every_path_even_when_the_computer_is_down(persons):
+async def test_two_rows_per_call_on_every_path_even_when_the_computer_is_down(persons):
     runtime = FakeSandboxRuntime()
     events = FakeComputerEventStore()
     tools = _tools(persons, computer=runtime, events=events)
@@ -255,8 +258,14 @@ async def test_one_audit_row_per_call_on_every_path_even_when_the_computer_is_do
     for call, kwargs in _calls(tools):  # down: unavailable on every tool
         out = await call(**kwargs)
         assert out["status"] == "unavailable"
-    assert [e.tool for e in events.events] == list(TOOLS) * 2
-    assert [e.status for e in events.events[4:]] == ["unavailable"] * 4
+    assert [(e.tool, e.phase) for e in events.events] == [
+        (t, phase) for t in list(TOOLS) * 2 for phase in ("started", "finished")
+    ]
+    assert [e.status for e in events.finished()[4:]] == ["unavailable"] * 4
+    by_operation: dict = {}
+    for e in events.events:
+        by_operation.setdefault(e.operation_id, []).append(e.phase)
+    assert all(phases == ["started", "finished"] for phases in by_operation.values())
 
 
 async def test_the_audit_row_records_who_when_how_and_what(persons):
@@ -275,18 +284,22 @@ async def test_the_audit_row_records_who_when_how_and_what(persons):
     finally:
         clear_tag_id()
     assert len(shown["stdout"]) == 1000  # the model's view stays bounded
-    [row] = events.events
+    start, row = events.events
+    # the started row: written first, the full request, no result yet
+    assert (start.phase, start.status, start.finished_at) == ("started", "started", None)
+    assert start.operation_id == row.operation_id
+    assert start.request["command"] == command
+    assert row.request == {}
     # who
     assert (row.actor, row.requester_person_id, row.tag_id) == ("tag", "miles", "tag-42")
     assert (row.platform, row.conversation_id, row.conversation_type) == ("signal", GROUP, "group")
     assert row.scope == computer_scope("signal", GROUP)
     # when
-    assert row.started_at <= row.finished_at <= row.created_at
+    assert start.started_at == row.started_at <= row.finished_at <= row.created_at
     # how
     assert (row.tool, row.path) == ("computer_run", "direct")
     assert (row.trace_id, row.span_id) == ("", "")  # no span in this test
-    # what: the WHOLE command, and the WHOLE output behind a blob key
-    assert row.request["command"] == command
+    # what: the WHOLE output behind a blob key
     assert row.result["exit_code"] == 0
     assert row.result["stdout_chars"] == 50_000
     stdout_ref = row.output_ref["stdout"]
@@ -303,7 +316,7 @@ async def test_the_actor_follows_the_turns_provenance(persons):
     ):
         tools = _tools(persons, computer=FakeSandboxRuntime(), events=events, **kwargs)
         await tools["computer_run"](command="true")
-        assert events.events[-1].actor == actor
+        assert {e.actor for e in events.events[-2:]} == {actor}
 
 
 async def test_a_read_stores_the_content_it_received_and_says_it_was_cut(persons):
@@ -316,7 +329,7 @@ async def test_a_read_stores_the_content_it_received_and_says_it_was_cut(persons
                    settings=ComputerToolSettings(max_read_chars=100))
     await tools["computer_write"](path="big.txt", content="z" * 5000)
     await tools["computer_read"](path="big.txt")
-    read_row = events.events[-1]
+    read_row = events.finished()[-1]
     assert (read_row.result["content_chars"], read_row.result["truncated"]) == (100, True)
     assert blobs.blobs[read_row.output_ref["content"]["key"]] == b"z" * 100
     assert read_row.result["sha256"] == hashlib.sha256(b"z" * 5000).hexdigest()
@@ -331,9 +344,10 @@ async def test_a_write_and_an_edit_record_the_full_input_and_before_and_after(pe
     await tools["computer_write"](path="a.txt", content=second)
     old = "hello " * 60
     await tools["computer_edit"](path="a.txt", old=old, new="bye")
-    new_file, overwrite, edit_row = events.events
+    new_file, overwrite, edit_row = events.finished()
+    started = [e for e in events.events if e.phase == "started"]
     sha = lambda text: hashlib.sha256(text.encode()).hexdigest()  # noqa: E731
-    assert blobs.blobs[overwrite.request["content"]["key"]] == second.encode()
+    assert blobs.blobs[started[1].request["content"]["key"]] == second.encode()
     assert (new_file.result["before_sha256"], new_file.result["after_sha256"]) == (
         None, sha(first),
     )
@@ -341,17 +355,43 @@ async def test_a_write_and_an_edit_record_the_full_input_and_before_and_after(pe
         sha(first), sha(second),
     )
     after_edit = second.replace(old, "bye", 1)
-    assert edit_row.request == {"path": "a.txt", "old": old, "new": "bye"}
+    assert started[2].request == {"path": "a.txt", "old": old, "new": "bye"}
     assert (edit_row.result["before_sha256"], edit_row.result["after_sha256"]) == (
         sha(second), sha(after_edit),
     )
 
 
-async def test_a_failed_row_append_still_returns_the_result_and_is_counted(persons):
+async def test_a_call_whose_started_row_fails_is_refused_and_never_runs(persons):
+    runtime = FakeSandboxRuntime()
+    events = FakeComputerEventStore()
+    events.fail = {"started"}
+    metrics = Metrics()
+    tools = _tools(persons, computer=runtime, events=events, metrics=metrics)
+    for call, kwargs in _calls(tools):
+        out = await call(**kwargs)
+        assert out["status"] == "unavailable"
+        assert out["note"].strip()
+    assert runtime.run_calls == []
+    assert runtime.files_by_scope == {}
+    assert _failures(metrics, "computer_run", "row") == 1
+
+
+async def test_a_write_whose_input_cannot_be_kept_is_refused(persons):
+    runtime = FakeSandboxRuntime()
+    events = FakeComputerEventStore()
+    tools = _tools(persons, computer=runtime, events=events,
+                   blobs=FakeBlobStore(fail_on_put=True))
+    out = await tools["computer_write"](path="a.txt", content="important")
+    assert out["status"] == "unavailable"
+    assert runtime.files_by_scope == {}
+    assert events.events == []
+
+
+async def test_a_failed_finished_row_still_returns_the_result_and_is_counted(persons):
     runtime = FakeSandboxRuntime()
     runtime.script("echo hi", RunResult(SandboxStatus.OK, exit_code=0, stdout="hi\n"))
     events = FakeComputerEventStore()
-    events.fail = True
+    events.fail = {"finished"}
     metrics = Metrics()
     tools = _tools(persons, computer=runtime, events=events, metrics=metrics)
     out = await tools["computer_run"](command="echo hi")
@@ -371,7 +411,7 @@ async def test_a_failed_blob_put_still_returns_the_result_and_the_row_says_so(pe
     assert out["status"] == "ok"
     assert out["stdout"] == "hi\n"
     assert _failures(metrics, "computer_run", "blob") == 1
-    [row] = events.events
+    [row] = events.finished()
     assert row.output_ref["stdout"]["stored"] is False
     assert row.output_ref["stdout"]["sha256"] == hashlib.sha256(b"hi\n").hexdigest()
 
@@ -422,3 +462,92 @@ async def test_a_nul_in_a_command_reaches_the_audit_as_text(persons):
     await tools["computer_run"](command="echo 'a\x00b'")
     assert events.events[0].request["command"] == "echo 'a\\x00b'"
 
+
+
+# -- cancellation and crashes ------------------------------------------------
+
+
+async def _cancel_mid_run(persons, events):
+    runtime = FakeSandboxRuntime()
+    runtime.hold = asyncio.Event()
+    tools = _tools(persons, computer=runtime, events=events)
+    task = asyncio.create_task(tools["computer_run"](command="sleep 999"))
+    for _ in range(100):
+        if runtime.run_calls:
+            break
+        await asyncio.sleep(0)
+    assert runtime.run_calls, "the run never reached the computer"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_a_call_cancelled_mid_run_leaves_a_started_and_a_cancelled_row(persons):
+    """The tag loop's deadline cancels the turn mid-call. The trail still
+    shows the call began and how it ended, and the cancellation propagates."""
+    events = FakeComputerEventStore()
+    await _cancel_mid_run(persons, events)
+    start, end = events.events
+    assert (start.phase, end.phase) == ("started", "finished")
+    assert start.operation_id == end.operation_id
+    assert start.request["command"] == "sleep 999"
+    assert end.status == "cancelled"
+    assert end.result["status"] == "cancelled"
+    assert "cancelled" in end.result["reason"]
+    assert end.finished_at is not None
+
+
+async def test_a_started_row_with_no_finished_row_is_found_as_an_orphan(persons):
+    """A crash between the two rows leaves a started row alone: the visible
+    mark the operator's query finds. Simulated by failing the finished
+    append, which is what a restart mid-call looks like in the table."""
+    events = FakeComputerEventStore()
+    events.fail = {"finished"}
+    tools = _tools(persons, computer=FakeSandboxRuntime(), events=events)
+    await tools["computer_run"](command="echo crashed")
+    events.fail = set()
+    await tools["computer_run"](command="echo fine")
+    far = datetime.now(UTC) + timedelta(days=1)
+    [orphan] = await events.orphaned_starts(older_than=far, limit=10)
+    assert orphan.request["command"] == "echo crashed"
+    assert await events.orphaned_starts(older_than=datetime(2020, 1, 1, tzinfo=UTC),
+                                        limit=10) == []
+
+
+async def test_the_row_records_the_status_the_model_was_told(persons):
+    """A run has nothing to find: a `nothing_found` from the port reaches the
+    model as `unavailable`, and the row says `unavailable` too."""
+    runtime = FakeSandboxRuntime()
+    runtime.script("x", RunResult(SandboxStatus.NOTHING_FOUND, reason="odd"))
+    events = FakeComputerEventStore()
+    tools = _tools(persons, computer=runtime, events=events)
+    out = await tools["computer_run"](command="x")
+    [row] = events.finished()
+    assert out["status"] == row.status == row.result["status"] == "unavailable"
+
+
+async def test_a_second_cancellation_cannot_interrupt_the_finished_row(persons):
+    """The turn is cancelled mid-call, and cancelled AGAIN while the
+    `finished` row is being written. The write is shielded, so it still
+    lands once the store answers; only the wait for it was cut short."""
+    runtime = FakeSandboxRuntime()
+    runtime.hold = asyncio.Event()
+    events = FakeComputerEventStore()
+    events.hold_finished = asyncio.Event()
+    tools = _tools(persons, computer=runtime, events=events)
+    task = asyncio.create_task(tools["computer_run"](command="sleep 999"))
+    for _ in range(100):
+        if runtime.run_calls:
+            break
+        await asyncio.sleep(0)
+    task.cancel()          # the deadline: into the finally, the append starts
+    for _ in range(10):
+        await asyncio.sleep(0)
+    task.cancel()          # a second cancel lands on the in-flight append
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    events.hold_finished.set()
+    for _ in range(10):
+        await asyncio.sleep(0)
+    [end] = events.finished()
+    assert end.status == "cancelled"

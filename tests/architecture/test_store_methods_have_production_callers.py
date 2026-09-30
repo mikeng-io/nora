@@ -230,6 +230,13 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "`rollup_read` (design/cognition-loop/30-cognition.md §2), not built "
         "in step 2a.",
     ),
+    ("computer_events.py", "orphaned_starts"): _Pin(
+        "read_back_affordance",
+        "The computer audit's crash marker (design/sandbox-runtime §12): "
+        "`started` rows with no `finished` row, a call interrupted by a crash "
+        "or a restart. The operator's query, pinned by the contract suite; no "
+        "daemon consumer is designed (a reaper or an alert is S2b-2's).",
+    ),
     ("notes.py", "note_by_id"): _Pin(
         "read_back_affordance",
         "Retired-note lookup; no consumer designed.",
