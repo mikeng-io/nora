@@ -24,6 +24,7 @@ CPUS=${NORA_COMPUTER_CPUS:-2}
 ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
 HERE=$(cd "$(dirname "$0")" && pwd)
 LOCK=${XDG_RUNTIME_DIR:-/tmp}/nora-computer.lock
+UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$HOME/.local/state/nora-computer/unused-workspace-$NAME}
 
 # The desktop keyring is locked on a headless host; point sbx at nothing and
 # it falls back to its file store (spike round 1).
@@ -102,9 +103,20 @@ cmd_build() {
 # Create or start the sandbox and publish computerd's port. Idempotent.
 prepare() {
     if [ "$(sandbox_state)" = absent ]; then
-        log "creating $NAME from $IMAGE"
-        sbx create --name "$NAME" -m "$MEMORY" --cpus "$CPUS" -q --pull never -t "$IMAGE" shell \
-            </dev/null || { log "create failed"; exit 6; }
+        # DETACHED (`sbx run -d`), and only at creation: sandboxd stops a
+        # non-detached local sandbox 30 s after its last session disconnects,
+        # whatever still runs inside (measured 2026-09-30, 73 of 73 stops at
+        # 30.06-30.12 s; not configurable, TTL is cloud-only). A detached one
+        # is never auto-stopped ("session disconnected (detached; not
+        # auto-stopping)"). The flag is set at create time only, so a sandbox
+        # made by `sbx create` must be destroyed and recreated.
+        # `sbx run` needs a primary workspace, read-write by rule: an empty
+        # dedicated host directory that nothing on the host ever reads.
+        mkdir -p "$UNUSED_WORKSPACE" && chmod 700 "$UNUSED_WORKSPACE"
+        log "creating $NAME (detached) from $IMAGE"
+        sbx run -d --name "$NAME" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
+            -p "$HOST_IP:$HOST_PORT:80" shell "$UNUSED_WORKSPACE" \
+            </dev/null >/dev/null || { log "create failed"; exit 6; }
     fi
     # A published port survives a stop, and `sbx ports` lists nothing while
     # the sandbox is stopped, so a publish can answer 409 "already
@@ -118,13 +130,10 @@ prepare() {
 }
 
 # The long-running mode systemd supervises (nora-computer.service,
-# Restart=always). computerd runs in the FOREGROUND of an `sbx exec` session,
-# and that open session is what keeps the sandbox running: sbx stops a
-# sandbox soon after its last exec session ends, whatever is still running in
-# the background (measured 2026-09-30: a nohup-started computerd left the
-# sandbox flapping stopped/started every minute; held in a foreground exec it
-# stayed running). If computerd exits, the exec ends, this process ends, and
-# systemd restarts it. A token change takes effect on
+# Restart=always). computerd runs in the foreground of an `sbx exec` session,
+# so systemd sees it die and restarts it. The sandbox itself is detached (see
+# `prepare`), so its life no longer depends on this session: killing this
+# process ends computerd, not the VM. A token change takes effect on
 # `systemctl --user restart nora-computer`.
 cmd_serve() {
     load_token

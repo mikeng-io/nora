@@ -24,11 +24,15 @@ systemctl --user daemon-reload && systemctl --user enable --now nora-computer.se
 User lingering must be on (`loginctl show-user "$USER" -p Linger`), or the
 service stops at logout.
 
-**Why a long-running service, not a timer:** sbx stops a sandbox soon after
-its last `sbx exec` session ends, even with computerd still running inside
-(measured 2026-09-30: a nohup-started computerd left it flapping every
-minute). `serve` keeps computerd in a foreground exec, and systemd restarts
-the whole thing if computerd exits.
+**Why detached, and why a long-running service:** sandboxd stops a local
+sandbox 30 s after its last session disconnects, whatever still runs inside,
+unless the sandbox was created detached (`sbx run -d`). The flag is set at
+creation only, so a sandbox made by `sbx create` must be destroyed and
+recreated (measured 2026-09-30). The service runs computerd in the foreground
+of an `sbx exec` so systemd restarts it if it exits; the VM's life no longer
+depends on that session. `sbx run` needs a read-write primary workspace: an
+empty dedicated host directory under `~/.local/state/nora-computer/`, which
+nothing on the host reads.
 
 ## Operating it
 
