@@ -11,14 +11,21 @@ and digest are Nora's; and it never raises.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from datetime import UTC, datetime
 
+import pytest
+
 from nora.agent.computer_workspace import WorkspaceReader
 from nora.domain.computer import BytesResult, SandboxStatus, computer_scope
-from nora.domain.computer_leases import ComputerLeases, scope_key
+from nora.domain.computer_leases import ComputerLeases, lease_key
 from nora.obs.metrics import Metrics
-from nora.testing import FakeComputerEventStore, FakeSandboxRuntime
+from nora.testing import (
+    FakeComputerEventStore,
+    FakeComputerSessionStore,
+    FakeSandboxRuntime,
+)
 
 ROOM, OTHER = "g-docs", "g-other"
 SPEC = b'{"type": "document", "blocks": []}'
@@ -123,18 +130,65 @@ async def test_the_cap_holds_against_a_runtime_that_ignores_it():
     assert _rows(events)[1].status == "denied"
 
 
-async def test_a_background_reader_never_waits_on_a_busy_room():
-    leases = ComputerLeases()
-    held = await leases.acquire(scope_key(computer_scope("signal", ROOM)), live=True)
+async def _session_held_like_computer_write(sessions, leases):
+    """What `computer_write` holds in a room with an open session: the
+    SESSION's key (`lease_key`), not the scope's."""
+    session, _ = await sessions.continue_or_open(
+        platform="signal", conversation_id=ROOM, scope=computer_scope("signal", ROOM),
+        objective="write the spec", actor="tag", tag_id="t", now=NOW,
+    )
+    return await leases.acquire(lease_key(computer_scope("signal", ROOM), session.id),
+                                live=True)
+
+
+async def test_a_background_reader_defers_while_a_write_holds_the_session():
+    """FALSIFIER (review S1): the reader locks the key the tools lock. On the
+    scope's key it read mid-write while `computer_write` held the session's."""
+    leases, sessions = ComputerLeases(), FakeComputerSessionStore()
+    held = await _session_held_like_computer_write(sessions, leases)
     runtime = _CountingRuntime()
-    reader, _, events = _reader(runtime=runtime, leases=leases)
+    reader = WorkspaceReader(runtime=runtime, events=FakeComputerEventStore(), leases=leases,
+                             sessions=sessions, metrics=Metrics(), clock=lambda: NOW)
     _put(runtime, ROOM, "projects/p/doc.json", SPEC)
     got = await _read(reader, actor="dreamer:proactive")
     assert (got.status, got.reason) == (SandboxStatus.UNAVAILABLE, "busy")
     assert runtime.fetches == 0
-    _rows(events)
     leases.release(held)
     assert (await _read(reader, actor="dreamer:proactive")).status is SandboxStatus.OK
+
+
+async def test_a_live_reader_waits_for_the_write_then_reads():
+    leases, sessions = ComputerLeases(live_wait_seconds=2.0), FakeComputerSessionStore()
+    held = await _session_held_like_computer_write(sessions, leases)
+    runtime = _CountingRuntime()
+    reader = WorkspaceReader(runtime=runtime, events=FakeComputerEventStore(), leases=leases,
+                             sessions=sessions, metrics=Metrics(), clock=lambda: NOW)
+    _put(runtime, ROOM, "projects/p/doc.json", SPEC)
+    reading = asyncio.create_task(_read(reader, actor="tag"))
+    await asyncio.sleep(0.05)
+    assert not reading.done() and runtime.fetches == 0  # waiting on the write
+    leases.release(held)
+    got = await reading
+    assert got.status is SandboxStatus.OK and runtime.fetches == 1
+
+
+async def test_a_read_never_opens_a_session():
+    sessions = FakeComputerSessionStore()
+    runtime = FakeSandboxRuntime()
+    reader = WorkspaceReader(runtime=runtime, events=FakeComputerEventStore(),
+                             leases=ComputerLeases(), sessions=sessions, metrics=Metrics(),
+                             clock=lambda: NOW)
+    _put(runtime, ROOM, "projects/p/doc.json", SPEC)
+    assert (await _read(reader)).status is SandboxStatus.OK
+    assert sessions.sessions == {}
+
+
+@pytest.mark.parametrize("max_bytes", [0, -1])
+async def test_a_cap_that_is_not_positive_is_denied(max_bytes):
+    reader, runtime, _ = _reader()
+    _put(runtime, ROOM, "projects/p/doc.json", SPEC)
+    got = await _read(reader, max_bytes=max_bytes)
+    assert got.status is SandboxStatus.DENIED and got.data == b""
 
 
 async def test_it_never_raises_and_still_writes_both_rows():

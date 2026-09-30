@@ -8,8 +8,11 @@ computer call carries. This does them, once, for any caller:
 - **the scope is derived here**, with `computer_scope(platform,
   conversation_id)`, from the caller's room, never from a model argument;
 - **the lease is taken** the way the computer tools take it
-  (design/sandbox-runtime §15.4): on the scope's key, waiting its bound for a
-  live actor, never waiting for a background one;
+  (design/sandbox-runtime §15.4), on the SAME key by the same function
+  (`lease_key`): the room's open session's key when it has one, else the
+  scope's; a live actor waits its bound, a background one never waits. The
+  read continues an open session, as `computer_read` does, and never opens
+  one (a read is not a task);
 - **two `computer_events` rows** are written, `started` BEFORE the computer
   is asked and `finished` after, on every path, with `tool` set to the
   calling operation (`document_publish`) and `actor` who is asking (`tag`,
@@ -32,6 +35,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from ..domain.computer import BytesResult, SandboxStatus, computer_scope
 from ..domain.computer_events import (
@@ -42,7 +46,8 @@ from ..domain.computer_events import (
     is_live_actor,
     valid_actor,
 )
-from ..domain.computer_leases import ComputerLeases, scope_key
+from ..domain.computer_leases import ComputerLeases, lease_key
+from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.ports import SandboxRuntime
 from ..obs.logging import current_tag_id
 from ..obs.metrics import Metrics
@@ -69,9 +74,11 @@ class WorkspaceReader:
     def __init__(
         self, *, runtime: SandboxRuntime | None, events: ComputerEventStore | None,
         leases: ComputerLeases | None, metrics: Metrics,
+        sessions: ComputerSessionStore | None = None,
         clock: Callable[[], datetime] = _now,
     ) -> None:
         self._runtime = runtime
+        self._sessions = sessions
         self._events = events
         self._leases = leases
         self._metrics = metrics
@@ -105,7 +112,10 @@ class WorkspaceReader:
     ) -> BytesResult:
         if not valid_actor(actor):
             return BytesResult(SandboxStatus.DENIED, reason=f"unknown actor {actor!r}")
+        if max_bytes <= 0:
+            return BytesResult(SandboxStatus.DENIED, reason="max_bytes must be positive")
         scope = computer_scope(platform, conversation_id)
+        session_id = await self._session(platform, conversation_id, scope, actor, operation)
         started = self._clock()
         operation_id = uuid.uuid4()
         request = {"path": path, "max_bytes": max_bytes}
@@ -123,6 +133,7 @@ class WorkspaceReader:
                 span_id=span_id, status=status,
                 request=request if phase == STARTED else {},
                 result={"status": status, **(result or {})} if phase != STARTED else {},
+                session_id=session_id,
             )
 
         if self._events is None:
@@ -137,7 +148,8 @@ class WorkspaceReader:
                                reason="the read could not be recorded, so it was not made")
         status, outcome = CANCELLED, {"reason": "cancelled before the computer answered"}
         try:
-            got = await self._leased_fetch(scope, path, max_bytes, live=is_live_actor(actor))
+            got = await self._leased_fetch(lease_key(scope, session_id), scope, path, max_bytes,
+                                           live=is_live_actor(actor))
             status = got.status.value
             outcome = {"reason": got.reason, "size": len(got.data), "sha256": got.sha256}
             return got
@@ -149,14 +161,36 @@ class WorkspaceReader:
         finally:
             await self._finish(row("finished", status, outcome), operation)
 
+    async def _session(
+        self, platform: str, conversation_id: str, scope: str, actor: str, operation: str,
+    ) -> UUID | None:
+        """The room's open session, continued (never opened), or None: the
+        tools' own rule, so the lease key below is theirs. A failure is
+        logged and counted and the read runs under the scope's key, as a
+        tool call does when its session cannot be read."""
+        if self._sessions is None:
+            return None
+        try:
+            found = await self._sessions.continue_or_open(
+                platform=platform, conversation_id=conversation_id, scope=scope,
+                objective="", actor=actor, tag_id=current_tag_id(), now=self._clock(),
+                open_new=False,
+            )
+        except Exception:
+            log.exception("read_workspace_bytes: session continue failed")
+            self._metrics.inc("nora_computer_audit_failures_total", tool=operation,
+                              stage="session")
+            return None
+        return found[0].id if found is not None else None
+
     async def _leased_fetch(
-        self, scope: str, path: str, max_bytes: int, *, live: bool,
+        self, key: str, scope: str, path: str, max_bytes: int, *, live: bool,
     ) -> BytesResult:
         if self._runtime is None:
             return BytesResult(SandboxStatus.UNAVAILABLE, reason="the computer is off here")
         lease = None
         if self._leases is not None:
-            lease = await self._leases.acquire(scope_key(scope), live=live)
+            lease = await self._leases.acquire(key, live=live)
             if lease is None:
                 return BytesResult(SandboxStatus.UNAVAILABLE, reason="busy")
         try:

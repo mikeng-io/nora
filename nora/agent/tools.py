@@ -92,7 +92,7 @@ from ..domain.computer_exports import (
     ComputerExportStore,
     sniff_export_type,
 )
-from ..domain.computer_leases import ComputerLeases, Lease, scope_key, session_key
+from ..domain.computer_leases import ComputerLeases, Lease, lease_key
 from ..domain.computer_sessions import (
     EXPIRED,
     OBJECTIVE_CHARS,
@@ -13302,7 +13302,7 @@ Args:
         if computer_leases is None:
             yield None
             return
-        key = session_key(session_id) if session_id is not None else scope_key(bound_computer_scope)
+        key = lease_key(bound_computer_scope, session_id)
         asked = now_fn()
         lease: Lease | None = await computer_leases.acquire(key, live=computer_live)
         request = {"key": key, "for_tool": tool, "for_operation": str(operation_id)}
