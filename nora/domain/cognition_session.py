@@ -41,7 +41,7 @@ the wake evaluator makes) and the caller's own `now_ms`/`home_room`/
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from nora.domain.stimuli import Stimulus
@@ -205,28 +205,35 @@ def _surprise(kind: str, cues: tuple[str, ...], count: int) -> float:
 
 def build_agenda(
     pending: Sequence[Stimulus], *, home_room: Room, max_items: int = DEFAULT_MAX_ITEMS,
+    strikes: Mapping[int, int] | None = None,
 ) -> Agenda:
     """Group `pending` into agenda items, order by surprise (ties broken by
     the group's oldest stimulus id, so the ordering is a pure function of its
-    input — no dict-iteration-order dependency), and cap at `max_items`. The
+    input — no dict-iteration-order dependency), and cap at `max_items`.
+    `strikes` maps a stimulus id a CLOSED session returned to this agenda onto
+    its strike (`UnitView.carry`, 30 §2). A strike belongs to an ITEM: the
+    strike is part of the grouping key, so a returning item stays its own item
+    with its own count and a fresh stimulus of the same room never joins it
+    (it would inherit a strike it never earned, and be struck with it). The
     caller passes `pending` as the stimuli one wake claims (its
     `through_stimulus_id` range, already computed by
     `nora.domain.stimuli.decide`); this function claims nothing itself.
     """
-    groups: dict[tuple[str, Room, str], list[Stimulus]] = {}
+    carried = strikes or {}
+    groups: dict[tuple[str, Room, str, int], list[Stimulus]] = {}
     for stimulus in pending:
-        key = _group_key(stimulus, home_room=home_room)
+        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))
         groups.setdefault(key, []).append(stimulus)
 
     items: list[AgendaItem] = []
-    for (kind, room, item_key), rows in groups.items():
+    for (kind, room, item_key, strike), rows in groups.items():
         ids = tuple(sorted(s.id for s in rows))
         cues = tuple(sorted({cue for s in rows for cue in s.cues}))
         summary = _summary(kind, room, item_key, len(rows))
         surprise = _surprise(kind, cues, len(rows))
         items.append(AgendaItem(
             kind=kind, room=room, summary=summary,
-            stimulus_ids=ids, cues=cues, surprise=surprise,
+            stimulus_ids=ids, cues=cues, surprise=surprise, strike=strike,
         ))
 
     # Order by (surprise desc, oldest stimulus id asc): deterministic, and
@@ -243,12 +250,15 @@ def build_agenda(
 def build_situation(
     *, unit: str, pending: Sequence[Stimulus], home_room: Room, now_ms: int,
     last_session_ms: int | None, max_items: int = DEFAULT_MAX_ITEMS,
+    strikes: Mapping[int, int] | None = None,
 ) -> Situation:
     """The one entry point: `pending` in, `Situation` out, no store, no
     model. `nora.app.cognition_session` (the async half, deferred past 3a-i
     per `70-migration.md`'s split) is the only intended caller in
     production; every other caller in this tree is a test."""
-    agenda = build_agenda(pending, home_room=home_room, max_items=max_items)
+    agenda = build_agenda(
+        pending, home_room=home_room, max_items=max_items, strikes=strikes,
+    )
     return Situation(
         unit=unit, now_ms=now_ms, last_session_ms=last_session_ms, agenda=agenda,
     )

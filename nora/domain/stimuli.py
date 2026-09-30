@@ -26,18 +26,45 @@ the watermark. The second bound is what keeps a `self` or `time`
 stimulus due at 19:40 pending across a wake at 15:00 (20 §3: «pending only from
 its due time»).
 
-**Single-flight and cooldown are derived from that same row.** In shadow no
-session runs, so a would-wake is treated as a session that lasts
-`session_seconds` (a stated assumption, sized from step 3's real sessions):
-the unit is in flight until `at + session_seconds`, then cools down for
-`cooldown_seconds`. A restart recomputes all of it from the rows; nothing lives
-only in memory.
+**Single-flight and cooldown are derived from durable rows.** With NO session
+hook (`[cognition] session_mode = "off"`) no session runs, so a would-wake is
+treated as a session that lasts `session_seconds` (a stated assumption): the
+unit is in flight until `at + session_seconds`, then cools down for
+`cooldown_seconds`. With a hook (step 3a-ii, `UnitView.tracked`) the assumption
+is gone, and a wake's fate is ONE durable fact (DEC-242, second review of #627).
+
+**The wake state machine (tracked wakes).** A wake written with a hook wired
+carries `tracked = true` on its own row; its outcome is at most one
+`cognition_wake_outcome` row keyed by the wake's id (first write stands):
+
+- OPEN: no outcome row, recorded less than `session_timeout_seconds` ago. The
+  unit is in flight (single-flight, the concurrency bound) and the wake's range
+  is claimed: it is the watermark, so no later wake can take its stimuli.
+- CLOSED: outcome `closed`. The watermark; its carry rows count. Written in
+  ONE transaction with those carry rows, so a session is either closed with
+  its carries or not closed at all.
+- FAILED: outcome `failed`, `timeout` or `cancelled`. Skipped by the
+  watermark, so its stimuli are pending again; carries none.
+- EXPIRED: no outcome row, recorded `session_timeout_seconds` ago or more (a
+  crash, a kill, an exit before anything was written, an outcome write that
+  failed). Read exactly as FAILED.
+
+A later wake is recorded only when the newest is not OPEN (`decide`'s
+single-flight), and `record_wake` re-checks that under a per-unit lock
+(`WakeGuard`), so a wake never swallows the range of one still unresolved;
+a `closed` outcome is refused (written `timeout`, no carries) for a wake a
+later wake already superseded, so an expired session that finishes late
+cannot close over stimuli another session took. An UNTRACKED wake (no hook)
+has no outcome and is a watermark as in step 1. A restart recomputes all of
+it from the rows; nothing lives only in memory. `UnitView.carry` holds the
+stimuli a CLOSED wake returned to the next agenda with a strike (30 §2).
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal, get_args
+from typing import Literal, Protocol, get_args
 
 from .cues import is_strong
 
@@ -135,6 +162,9 @@ class WakeRow:
     at_ms: int
     recorded_at_ms: int
     detail: dict[str, object] = field(default_factory=dict)
+    #: Written with a session hook wired: the wake awaits an outcome row and
+    #: is EXPIRED (read as failed) when it has none past the session timeout.
+    tracked: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,6 +180,25 @@ class NewWake:
     cut_cooldown: bool
     at_ms: int
     detail: dict[str, object] = field(default_factory=dict)
+    tracked: bool = False
+
+
+@dataclass(frozen=True)
+class WakeGuard:
+    """What `record_wake` re-checks under the unit's lock before it writes: the
+    unit's newest wake in the mode is still `last_wake_id` (None: none), and
+    that wake's outcome is still `last_outcome` (None: no row). The view the
+    decision was computed from is then still true, so the new wake's range is
+    the one `decide` meant (a wake the view read as EXPIRED cannot close in
+    between and have its stimuli processed twice)."""
+
+    last_wake_id: int | None
+    last_outcome: str | None
+
+
+#: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances
+#: the watermark; the other three return the wake's stimuli to pending.
+WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -188,18 +237,89 @@ class WakePolicy:
     cooldown_seconds: float = 300.0
     max_concurrent_sessions: int = 2
     session_seconds: float = 60.0
+    #: How long a TRACKED wake may stay OPEN (no outcome row) before it is
+    #: EXPIRED, read as failed: it stops holding its unit and its stimuli
+    #: return. A session's own wall clock ends a margin before it.
+    session_timeout_seconds: float = 900.0
+
+
+SessionState = Literal["running", "closed", "failed"]
+
+
+@dataclass(frozen=True)
+class LastSession:
+    """A unit's NEWEST wake's state, as its rows say (the module docstring's
+    state machine): `running` (OPEN), `closed`, or `failed` (FAILED or
+    EXPIRED). `started_at_ms` is the wake row's own `recorded_at` (the clock
+    the timeout runs on, whether or not a session row was ever written);
+    `outcome` is the outcome row's value, None when there is none. None as a
+    whole: the newest wake is untracked."""
+
+    state: SessionState
+    started_at_ms: int
+    ended_at_ms: int | None = None
+    outcome: str | None = None
+
+
+def wake_state(
+    *, tracked: bool, recorded_at_ms: int, outcome: str | None,
+    outcome_at_ms: int | None, stale_before_ms: int | None,
+) -> LastSession | None:
+    """ONE wake's state from its rows: the rule both `StimulusStore`
+    implementations apply (the SQL store spells it as a predicate in
+    `nora.infra.sql.stimuli._failed_wake`, bound to this by the contract
+    suite). `stale_before_ms` None: the reader tracks no sessions, so a wake
+    with no outcome row is a plain watermark."""
+    if outcome is not None:
+        return LastSession(
+            state="closed" if outcome == "closed" else "failed",
+            started_at_ms=recorded_at_ms, ended_at_ms=outcome_at_ms, outcome=outcome,
+        )
+    if not tracked or stale_before_ms is None:
+        return None
+    if recorded_at_ms < stale_before_ms:
+        return LastSession(state="failed", started_at_ms=recorded_at_ms)
+    return LastSession(state="running", started_at_ms=recorded_at_ms)
 
 
 @dataclass(frozen=True)
 class UnitView:
     """What one tick reads for one unit: its pending stimuli (due, not
     consumed, ascending id), when its rooms last saw a person's item, and its
-    newest wake in this mode."""
+    newest wake in this mode.
+
+    `mark` is the watermark: the newest wake that did not fail or expire
+    (None: derive it from `last_wake`, the pre-session behaviour).
+    `last_session` is the newest wake's state, `tracked` and `live` the
+    reader's (see the module docstring); `carry` maps a stimulus id a closed
+    wake returned to the next agenda onto its strike."""
 
     unit: str
     pending: tuple[Stimulus, ...]
     last_activity_ms: int | None
     last_wake: WakeRow | None
+    mark: Watermark | None = None
+    last_session: LastSession | None = None
+    tracked: bool = False
+    live: bool = False
+    carry: Mapping[int, int] = field(default_factory=dict)
+
+    @property
+    def watermark(self) -> Watermark:
+        return self.mark if self.mark is not None else Watermark.of(self.last_wake)
+
+
+class WakeHook(Protocol):
+    """The ONE typed shape of the evaluator's `on_wake` extension point
+    (`nora.app.wake.WakeEvaluator`) and of what fills it
+    (`nora.app.cognition_session.CognitionSessionRunner.wake_hook`). Keyword
+    only, so neither side can drift into a positional order the other does
+    not share. `now_ms` is the tick's clock, the same instant the wake row
+    was decided at."""
+
+    def __call__(
+        self, *, unit: str, view: UnitView, wake_id: int, now_ms: int,
+    ) -> Awaitable[object]: ...
 
 
 @dataclass(frozen=True)
@@ -218,18 +338,48 @@ class Verdict:
 
 
 def in_flight(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> bool:
-    """Whether the unit's last (would-)session is still running at `now_ms`."""
+    """Whether the unit's last (would-)session is still running at `now_ms`,
+    by the SHADOW assumption (`session_seconds`). Only meaningful with no
+    session hook; `unit_in_flight` is the one the evaluator asks."""
     return (
         last_wake is not None
         and now_ms < last_wake.at_ms + int(policy.session_seconds * 1000)
     )
 
 
-def _cooling(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> bool:
-    if last_wake is None:
+def unit_in_flight(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    """Single-flight's question. Untracked (no hook): the shadow assumption.
+    Tracked: the newest wake is OPEN (no outcome row, younger than
+    `session_timeout_seconds`), or (`live`) its task is alive in this
+    process."""
+    if not view.tracked:
+        return in_flight(view.last_wake, policy, now_ms)
+    if view.live:
+        return True
+    # The view's state already applied the timeout (`wake_state`, with the
+    # reader's `stale_before_ms`). A second clock comparison here would open
+    # a gap at its boundary: a wake the view still claims (its range under
+    # the watermark) read as not in flight, so a new wake could be decided
+    # over a range that expires a moment later.
+    session = view.last_session
+    return session is not None and session.state == "running"
+
+
+def _cooling(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
+    wake = view.last_wake
+    if wake is None:
         return False
-    ends = last_wake.at_ms + int((policy.session_seconds + policy.cooldown_seconds) * 1000)
-    return now_ms < ends
+    cooldown_ms = int(policy.cooldown_seconds * 1000)
+    if not view.tracked:
+        return now_ms < wake.at_ms + int(policy.session_seconds * 1000) + cooldown_ms
+    session = view.last_session
+    if session is None:
+        base = wake.at_ms
+    elif session.ended_at_ms is not None:
+        base = session.ended_at_ms
+    else:
+        base = session.started_at_ms + int(policy.session_timeout_seconds * 1000)
+    return now_ms < base + cooldown_ms
 
 
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
@@ -288,10 +438,10 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     reason = _trigger(view, policy, now_ms)
     if reason is None:
         return Verdict()
-    if in_flight(view.last_wake, policy, now_ms):
+    if unit_in_flight(view, policy, now_ms):
         return Verdict(brake="single_flight")
     cut = False
-    if _cooling(view.last_wake, policy, now_ms):
+    if _cooling(view, policy, now_ms):
         strong = any(is_strong(s.cues) for s in view.pending if not s.waits)
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
@@ -311,7 +461,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
         # set the watermark to its id would re-open every stimulus between,
         # resurrecting them as pending.
         through_stimulus_id=max(
-            Watermark.of(view.last_wake).through_stimulus_id,
+            view.watermark.through_stimulus_id,
             max(s.id for s in view.pending),
         ),
         stimulus_count=len(view.pending),

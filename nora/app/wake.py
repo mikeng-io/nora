@@ -36,10 +36,11 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import inspect
 import logging
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from nora.domain.ports import StimulusStore
@@ -48,12 +49,13 @@ from nora.domain.stimuli import (
     NewWake,
     UnitView,
     Verdict,
+    WakeGuard,
+    WakeHook,
     WakeMode,
     WakePolicy,
     WakeReason,
-    Watermark,
     decide,
-    in_flight,
+    unit_in_flight,
 )
 
 log = logging.getLogger("nora.app.wake")
@@ -100,6 +102,7 @@ class WakeEvaluator:
         pending_limit: int = DEFAULT_PENDING_LIMIT,
         settle_seconds: float | None = None,
         clock: Callable[[], float] = time.time,
+        on_wake: WakeHook | None = None,
     ) -> None:
         """`settle_seconds` (default: twice `store_timeout_seconds`) is how
         far behind the clock the pending read looks. Ids are assigned at
@@ -110,7 +113,39 @@ class WakeEvaluator:
         timeout, so a stimulus recorded before `now - settle` has committed or
         failed; the read takes only those, and the wake's `at_ms` — the
         watermark's time bound — is that cutoff, so a stimulus recorded after
-        it stays pending whatever its id."""
+        it stays pending whatever its id.
+
+        `on_wake` (migration step 3a-ii, `[cognition] session_mode`): an
+        OPTIONAL extension point typed by ONE Protocol, `nora.domain.stimuli.
+        WakeHook` (keyword-only: `unit`, `view`, `wake_id`, `now_ms`), which
+        `nora.app.cognition_session.CognitionSessionRunner.wake_hook` also
+        returns, so the two sides cannot drift apart (they did once: this
+        module called it positionally, the runner took keywords). Called right
+        after a would-wake is recorded, awaited in a background task, and
+        never imported by name, so this module's own `nora` imports stay
+        `{nora.domain.ports, nora.domain.stimuli}`
+        (`tests/architecture/test_the_wake_evaluator_cannot_act.py`'s
+        invariant: the evaluator still imports nothing that can act, it only
+        offers a slot the composition root may fill with something that
+        does). `session_mode = "off"` is exactly "the composition root never
+        passes `on_wake`": `tick` then behaves as before this parameter
+        existed, including the SHADOW assumption that a would-wake occupies
+        its unit for `session_seconds`.
+
+        **With a hook the brakes count REAL sessions** (20 §3: single-flight
+        and `max_concurrent_sessions`; `nora.domain.stimuli`'s state
+        machine). Every wake is written `tracked`; a unit is in flight while
+        its task is alive in this process or its newest wake is OPEN (no
+        outcome row, younger than `session_timeout_seconds`; a restart
+        recomputes it from the rows), whether or not a session row was ever
+        written, and it cools down from the outcome. The watermark is the
+        newest wake that did not fail or expire, so a failed, timed-out,
+        cancelled or never-recorded session's stimuli are pending again. The
+        wake row is written under a `WakeGuard`: if, between this tick's read
+        and its write, the unit's newest wake or its outcome changed, nothing
+        is written and the unit is read again next tick. A hook that raises is
+        logged, counted and contained: it never aborts the tick for another
+        unit."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -125,6 +160,15 @@ class WakeEvaluator:
         self._settle_ms = int(
             (2 * store_timeout_seconds if settle_seconds is None else settle_seconds) * 1000
         )
+        self._on_wake = on_wake
+        #: Held so a background task is never garbage-collected mid-flight
+        #: (the classic "Task was destroyed but it is pending" loss) and so
+        #: tests can drain them deterministically instead of sleeping.
+        self._background: set[asyncio.Task[None]] = set()
+        #: The unit -> its live session task. Single-flight's in-process truth:
+        #: a session whose row is not yet written (or whose task is alive
+        #: past what the rows can say) still holds its unit.
+        self._live: dict[str, asyncio.Task[None]] = {}
 
     async def tick(self) -> list[int]:
         """Evaluate every unit; return the ids of the wake rows written."""
@@ -136,7 +180,8 @@ class WakeEvaluator:
             view = await self._read(unit, now_ms, cutoff_ms)
             if view is not None:
                 views.append(view)
-        flying = sum(in_flight(v.last_wake, self._policy, now_ms) for v in views)
+        flying = {v.unit for v in views if unit_in_flight(v, self._policy, now_ms)}
+        flying |= {u for u, t in self._live.items() if not t.done()}
         written: list[int] = []
         for view in views:
             self._publish_age(view, now_ms)
@@ -146,7 +191,7 @@ class WakeEvaluator:
                 continue
             if verdict.reason is None:
                 continue
-            if flying >= self._policy.max_concurrent_sessions:
+            if len(flying) >= self._policy.max_concurrent_sessions:
                 # The global bound (20 §3; 06-trigger.md §6). The unit stays
                 # pending and is looked at again next tick.
                 self._metrics.inc("nora_cognition_wake_deferred_total", brake="concurrency")
@@ -154,8 +199,65 @@ class WakeEvaluator:
             wake_id = await self._record(view, verdict, verdict.reason, cutoff_ms)
             if wake_id is not None:
                 written.append(wake_id)
-                flying += 1
+                flying.add(view.unit)
+                self._schedule_on_wake(view, wake_id, now_ms)
         return written
+
+    def _schedule_on_wake(self, view: UnitView, wake_id: int, now_ms: int) -> None:
+        hook = self._on_wake
+        if hook is None:
+            return
+        unit = view.unit
+        try:
+            outcome = hook(unit=unit, view=view, wake_id=wake_id, now_ms=now_ms)
+        except Exception:
+            # A hook that raises WHILE BEING CALLED (not one that fails inside
+            # its awaited body) must not abort the tick for the units after
+            # this one: their would-wakes are already decided.
+            log.exception("cognition wake hook raised (unit=%s wake_id=%s)", unit, wake_id)
+            self._metrics.inc("nora_errors_total", stage="cognition_session")
+            return
+        if not inspect.isawaitable(outcome):
+            return
+
+        async def _run() -> None:
+            try:
+                await outcome
+            except Exception:
+                log.exception("cognition wake hook failed (unit=%s wake_id=%s)", unit, wake_id)
+                self._metrics.inc("nora_errors_total", stage="cognition_session")
+
+        task = asyncio.ensure_future(_run())
+        self._background.add(task)
+        self._live[unit] = task
+
+        def _done(finished: asyncio.Task[None]) -> None:
+            self._background.discard(finished)
+            if self._live.get(unit) is finished:
+                del self._live[unit]
+
+        task.add_done_callback(_done)
+
+    async def cancel_in_flight(self) -> None:
+        """Cancel every session task this evaluator started and wait for them
+        to unwind (shutdown). The hook records its wake `cancelled` while it
+        unwinds (`CognitionSessionRunner.on_wake`); a task cancelled before
+        its first step writes nothing, and its wake stays OPEN until it
+        expires, which reads as failed: its stimuli are never consumed
+        unseen. The composition root must call this at shutdown (DEC-242,
+        open choice (a))."""
+        tasks = tuple(self._background)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def drain(self) -> None:
+        """Wait for every background `on_wake` task this evaluator has
+        scheduled so far. Tests only — production never awaits its own
+        background work, by design (see `on_wake`'s own docstring)."""
+        if self._background:
+            await asyncio.gather(*tuple(self._background), return_exceptions=True)
 
     def _floor_stimuli(self, unit: str, now_ms: int) -> list[NewStimulus]:
         """The floors whose instant passed within the grace, today's and
@@ -186,11 +288,19 @@ class WakeEvaluator:
                 )
                 if sid is not None:
                     self._metrics.inc("nora_stimulus_total", kind="time", cue="none")
-            return await asyncio.wait_for(
-                self._store.view(unit=unit, mode=self._mode, now_ms=cutoff_ms,
-                                 limit=self._limit),
+            tracked = self._on_wake is not None
+            view = await asyncio.wait_for(
+                self._store.view(
+                    unit=unit, mode=self._mode, now_ms=cutoff_ms, limit=self._limit,
+                    stale_before_ms=(
+                        now_ms - int(self._policy.session_timeout_seconds * 1000)
+                        if tracked else None
+                    ),
+                ),
                 timeout=self._timeout,
             )
+            live = unit in self._live and not self._live[unit].done()
+            return replace(view, tracked=tracked, live=live)
         except Exception:
             log.exception("wake evaluator: could not read unit %s; skipped this tick", unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
@@ -207,19 +317,20 @@ class WakeEvaluator:
         self, view: UnitView, verdict: Verdict, reason: WakeReason, at_ms: int,
     ) -> int | None:
         """`at_ms` is the read's cutoff: the watermark's time bound."""
-        mark = Watermark.of(view.last_wake)
+        mark = view.watermark
         items: dict[str, int] = {}
         cues: set[str] = set()
         for s in view.pending:
             items[f"{s.kind}:{s.item}"] = items.get(f"{s.kind}:{s.item}", 0) + 1
             cues.update(s.cues)
+        tracked = self._on_wake is not None
         wake = NewWake(
             unit=view.unit, mode=self._mode, reason=reason,
             from_stimulus_id=mark.through_stimulus_id,
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms,
-            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms,
+            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms, tracked=tracked,
             detail={
                 "items": items,
                 "cues": sorted(cues),
@@ -227,14 +338,32 @@ class WakeEvaluator:
                 "rooms": len({s.conversation_id for s in view.pending if s.conversation_id}),
             },
         )
+        # Tracked: the write re-checks, under the unit's lock, that the view
+        # this verdict came from still holds (`WakeGuard`).
+        guard = None
+        if tracked:
+            last = view.last_wake
+            guard = WakeGuard(
+                last_wake_id=None if last is None else last.id,
+                last_outcome=None if view.last_session is None else view.last_session.outcome,
+            )
         try:
             wake_id = await asyncio.wait_for(
-                self._store.record_wake(wake=wake, recorded_at_ms=int(self._clock() * 1000)),
+                self._store.record_wake(
+                    wake=wake, recorded_at_ms=int(self._clock() * 1000), guard=guard,
+                ),
                 timeout=self._timeout,
             )
         except Exception:
             log.exception("wake evaluator: could not record a would-wake for %s", view.unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
+            return None
+        if wake_id is None:
+            log.info(
+                "wake evaluator: %s changed between its read and its write; read again "
+                "next tick", view.unit,
+            )
+            self._metrics.inc("nora_cognition_wake_deferred_total", brake="single_flight")
             return None
         self._metrics.inc(
             "nora_cognition_wake_total", reason=reason, mode=self._mode,

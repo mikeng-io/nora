@@ -306,6 +306,12 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_decide": "dreamer",
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
+    # S2 over the Cognition catalogue (design/cognition-loop/30-cognition.md
+    # §2/§4; migration step 3a-ii). `entry: dreamer` is loadable/censusable
+    # today; running it needs a registered `cognition` Dreamer adaptor,
+    # which this step does not add (`nora.app.cognition_session` is a
+    # standalone runner) — see the corpus file's own header.
+    "tool_selection_cognition": "dreamer",
     # design/self-awareness/05: what she says about WHERE she is. A tag, and
     # judged — "did she reply" says nothing about whether the reply named the
     # right networks, or recited them unasked.
@@ -322,7 +328,7 @@ CORPUS_ENTRY: dict[str, str] = {
 #: (`design/tool-catalogue/05-measurement.md` §2c). One grader only:
 #: `sample_read` groups every evaluator's labels under one case, so adding
 #: `MeetsGrader` here would let a reply verdict blur a routing one.
-ROUTED_CORPORA = frozenset({"tool_selection"})
+ROUTED_CORPORA = frozenset({"tool_selection", "tool_selection_cognition"})
 
 #: S3 (grounding)/S9 (injection) — "did she reply" is structural; "was the
 #: reply right" needs a judge (`10-the-scenario-map.md` §3). Every case in

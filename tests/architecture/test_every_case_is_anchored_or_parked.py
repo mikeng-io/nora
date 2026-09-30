@@ -234,9 +234,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     (2026-09-28, design/27 §4.4 M1), plus `tool_selection`'s 3
     `record_query` cases (2026-09-29, design/cognition-loop/15-map.md §4: a
     past day, who mentioned a thing, an English interval, each naming the
-    neighbour it could lose to); a change to it
+    neighbour it could lose to), plus the new `tool_selection_cognition`
+    corpus's 13 (2026-09-29, migration step 3a-ii: the Cognition catalogue's
+    own confusable pairs — note_create/update, event_propose/revise/
+    set_status, wake_at/move/cancel, remind/move/cancel, close, and
+    record_query/rollup_read one layer over); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 250
-    assert sum(c.active + c.parked for c in totals) == 250
+    assert sum(c.total for c in totals) == 263
+    assert sum(c.active + c.parked for c in totals) == 263

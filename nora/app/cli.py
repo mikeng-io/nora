@@ -55,6 +55,9 @@ from nora.app import config_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
+from nora.app.cognition_compare import CompareWindow
+from nora.app.cognition_compare import render as cognition_compare_render
+from nora.app.cognition_compare import run_compare as cognition_run_compare
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -394,6 +397,29 @@ def add_subcommands(
         help="print the report without writing it",
     )
     run_nightly.set_defaults(func=cmd_assess_run_nightly)
+
+    # `cognition compare` (design/cognition-loop/30-cognition.md §2;
+    # migration step 3a-ii): matched / cognition-only / proactive-only,
+    # over a window — read-only, off the live path (`nora.app.
+    # cognition_compare`'s own docstring).
+    cognition = subparsers.add_parser(
+        "cognition", parents=[parent], help="the Cognition adaptor, shadow (operator only)",
+    )
+    cognition_sub = cognition.add_subparsers(dest="cognition_command", required=True)
+    compare = cognition_sub.add_parser(
+        "compare", parents=[parent],
+        help="cognition's mirrored `remind` calls vs the live proactive "
+             "pass's decisions, over a window",
+    )
+    compare.add_argument(
+        "--since", required=True,
+        help="ISO 8601, timezone-aware (e.g. 2026-09-29T00:00:00+08:00)",
+    )
+    compare.add_argument(
+        "--until", default=None,
+        help="ISO 8601, timezone-aware; defaults to now",
+    )
+    compare.set_defaults(func=cmd_cognition_compare)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -837,6 +863,27 @@ async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
     for line in assess_render(outcome.report):
         print(line)
     return 1 if outcome.report.failing_checks or outcome.report.errored_checks else 0
+
+
+async def cmd_cognition_compare(args: argparse.Namespace) -> int:
+    """`nora cognition compare --since <ISO> [--until <ISO>]` (migration
+    step 3a-ii). Read-only: it never fires a reminder, never writes a row.
+    Exit code is always 0 — a difference between the two arms is the
+    finding this command exists to surface, not a failure."""
+    cfg = _config(args)
+    since = _cutover(args.since)
+    until = _cutover(args.until) if args.until else datetime.now(UTC)
+    window = CompareWindow(
+        since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
+    )
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await cognition_run_compare(engine, window)
+    finally:
+        await engine.dispose()
+    for line in cognition_compare_render(result, window):
+        print(line)
+    return 0
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:
