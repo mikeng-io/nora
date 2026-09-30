@@ -89,6 +89,12 @@ FORCE_OFF: tuple[str, ...] = (
     "obs.tracing.enabled", "obs.errors.enabled",
     "analytics.enabled", "heartbeat.enabled", "presence.enabled",
     "media.rustfs.enabled", "evals.langfuse.enabled",
+    # make_artifact's Smith jobs are containers on the deploy host's
+    # `nora-compute` network, which a host-run subject cannot reach, and since
+    # #631 composition refuses to start when the model URL it would hand a job
+    # (here the host's 127.0.0.1) is off the compute-egress allowlist. Off, the
+    # tool answers `unavailable`, which is what a sandbox can honestly offer.
+    "compute.enabled",
 )
 
 _KEY = re.compile(r"^(\s*)([A-Za-z_][\w-]*)(\s*=\s*)(.*)$")
@@ -214,6 +220,9 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
     "presence.enabled": "reads a live location feed no anchor can reconstruct",
     "media.rustfs.enabled": "its endpoint resolves only inside the deploy network",
     "evals.langfuse.enabled": "as above, and a run would write its own traces back",
+    "compute.enabled":
+        "Smith jobs need the deploy host's nora-compute network, and composition "
+        "refuses a host-side model URL for them (#631)",
 }
 
 
