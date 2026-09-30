@@ -1174,7 +1174,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 async def _fire_path_with_tiers(
     persons, record_store, memory_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive",
+    notes=None, policy="permissive", culture=None, standing=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1187,7 +1187,7 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes,
+        notes=notes, culture=culture, standing=standing,
         policy=permissive_policy() if policy == "permissive" else None,
     )
 
@@ -1225,6 +1225,65 @@ async def test_the_fire_path_reads_the_note_index(
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
 
     assert [n.title for n in ctx.notes] == ["Raft roadmap"]
+
+
+async def _withdrawal_ctx(
+    persons, record_store, memory_store, doctrine_store, metrics, *,
+    withdrawn: bool,
+):
+    """One fire turn's context over a room holding a Standing head AND a
+    culture head, both marked withdrawn (`unsupported_at`) or both supported."""
+    import dataclasses
+
+    from nora.domain.standing import Standing
+    from nora.testing import InMemoryStandingStore
+    from nora.testing.culture_store import InMemoryCultureStore
+
+    occasion = reminder_occasion([_reminder()])
+    standing = InMemoryStandingStore()
+    await standing.write(standing=Standing(
+        platform=occasion.platform, conversation_id=occasion.conversation_id,
+        body="a position", fold_count=1, updated_at=1,
+        unsupported_at=123 if withdrawn else None,
+    ))
+    culture = InMemoryCultureStore()
+    revision = await culture.append(
+        key=occasion.conversation_id, body="an account", written_at=1,
+        established_by="fold",
+    )
+    if withdrawn:
+        culture._revisions[revision.id] = dataclasses.replace(
+            revision, unsupported_at=456)
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        culture=culture, standing=standing,
+    )
+    return await fire.build_context(occasion)
+
+
+async def test_a_withdrawn_standing_and_culture_do_not_render_in_a_fire_turn(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """Withdrawal cascade (DEC-238, step 2c): the tag path drops a head whose
+    `unsupported_at` is set; the fire path read the same stores and did not,
+    so a withdrawn position rendered into every reminder-fired turn. Both now
+    go through `nora.domain.withdrawal.render_supported`."""
+    ctx = await _withdrawal_ctx(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        withdrawn=True)
+    assert ctx.standing is None
+    assert ctx.culture is None
+
+
+async def test_a_supported_standing_and_culture_do_render_in_a_fire_turn(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """The positive half: the filter drops only the withdrawn head."""
+    ctx = await _withdrawal_ctx(
+        persons, record_store, memory_store, doctrine_store, metrics,
+        withdrawn=False)
+    assert ctx.standing is not None and ctx.standing.body == "a position"
+    assert ctx.culture is not None and ctx.culture.body == "an account"
 
 
 async def test_a_failed_note_read_is_counted_not_silent(
