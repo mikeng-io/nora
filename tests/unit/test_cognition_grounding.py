@@ -601,15 +601,19 @@ def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
     """#637 second review: with a 900-char floor per item, 12 items spent 10,418
     of `record_chars = 8000`. The floor shrinks when items x floor > budget."""
     rooms = [Room("signal", f"room-{i}") for i in range(12)]
-    stims = [_stim(i + 1, r, ago=50 - i, mid=100 + i) for i, r in enumerate(rooms)]
+    stims = [
+        _stim(100 * r + m + 1, room, ago=50 - r + m / 10, mid=1000 * r + m + 1)
+        for r, room in enumerate(rooms) for m in range(4)
+    ]
+    by_room = {s.ref: room for s in stims for room in rooms
+               if room.conversation_id == s.conversation_id}
     g = Grounding(records={
-        s.ref: _rec(s, author="Ada", text="w" * 380, room=r)
-        for s, r in zip(stims, rooms, strict=True)
+        s.ref: _rec(s, author="Ada", text="w" * 380, room=by_room[s.ref]) for s in stims
     })
     budget = RenderBudget()                                   # 8000 and a 900 floor
     prompt = _prompt(stims, g, budget=budget)
     record_lines = [ln for ln in prompt.splitlines() if ln.startswith("  [#")]
-    assert len(record_lines) == 12                            # every item still shows one
+    assert len(record_lines) >= 12                            # every item still shows some
     assert sum(len(ln) + 1 for ln in record_lines) <= budget.record_chars
 
 

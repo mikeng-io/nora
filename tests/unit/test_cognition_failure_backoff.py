@@ -282,6 +282,20 @@ async def test_five_agenda_failures_strike_and_an_infrastructure_one_between_doe
     ]
 
 
+async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
+    """Six failures in a row, five of them the world's: the failures count backs
+    the unit off, but the AGENDA's count is one, so nothing is struck (the
+    range one agenda-failed wake claimed included)."""
+    rig = _rig(agent=ScriptedAgent(script=[overflow, boom, boom, boom, boom, boom, boom]))
+    for _ in range(3):
+        await rig.say()
+    while rig.agent.calls < 7:
+        await _run(rig, ticks=1, chatty=False)
+    assert rig.stimuli.retracted == set()
+    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    assert (view.failures, view.agenda_failures) == (7, 1)
+
+
 async def test_the_session_runner_records_why_it_failed():
     rig = _rig(agent=ScriptedAgent(script=[boom, overflow]))
     await rig.say()

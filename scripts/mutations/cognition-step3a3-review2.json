@@ -39,7 +39,7 @@
     "file": "nora/app/wake.py",
     "old": "            or view.agenda_failures < self._policy.max_consecutive_failures",
     "new": "            or view.failures < self._policy.max_consecutive_failures",
-    "target": "tests/unit/test_cognition_failure_backoff.py::test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_nothing"
+    "target": "tests/unit/test_cognition_failure_backoff.py::test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_nothing tests/unit/test_cognition_failure_backoff.py::test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike"
   },
   {
     "name": "major: the session records every failure as infra",
