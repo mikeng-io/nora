@@ -7,9 +7,9 @@ import fnmatch
 import hashlib
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -27,6 +27,9 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    StateFile,
+    StateResult,
+    TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
 from nora.domain.media import (
@@ -1885,10 +1888,24 @@ class FakeSandboxRuntime:
     It cannot execute anything, so `run` answers what a test scripted with
     `script(command, result)`, and `ok` with exit 0 and no output otherwise.
     Set `down = True` for the computer-unreachable case.
+
+    The observed state (`state`) is what was written, with the mtime `clock`
+    gave each write (strictly increasing, as a filesystem's would be for
+    writes in sequence), dot-paths hidden as computerd hides them. tmux
+    sessions exist only when a test starts one with `start_tmux`: the fake
+    runs nothing, so a `run("tmux new ...")` starts none. `tmux_unknown =
+    True` is computerd without a tmux it can list (`tmux` None). There is
+    deliberately no delete of any kind: nothing on Nora's side removes a file.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self.files_by_scope: dict[str, dict[str, bytes]] = {}
+        self.mtimes: dict[str, dict[str, datetime]] = {}
+        self.tmux_by_scope: dict[str, dict[str, TmuxSession]] = {}
+        self.tmux_unknown = False
+        self.killed: list[tuple[str, str]] = []
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._last_mtime: datetime | None = None
         self.runs: list[tuple[str, str]] = []
         # Every `run` call as it arrived, refused ones included: what a test
         # reads to see the timeout and the reserved `limits` slot.
@@ -2004,11 +2021,58 @@ class FakeSandboxRuntime:
         key = _fake_path(path) or ""
         before = stored.get(key)
         stored[key] = data
+        self.mtimes.setdefault(scope, {})[key] = self._stamp()
         digest = hashlib.sha256(data).hexdigest()
         return OpResult(
             status=SandboxStatus.OK, size=len(data), sha256=digest,
             previous_sha256=hashlib.sha256(before).hexdigest() if before is not None else None,
         )
+
+    def start_tmux(
+        self, scope: str, name: str, *, running: bool = True,
+        created: datetime | None = None,
+    ) -> None:
+        self.tmux_by_scope.setdefault(scope, {})[name] = TmuxSession(
+            name=name, created=created or self._clock(), attached=False, running=running,
+        )
+
+    async def state(self, *, scope: str) -> StateResult:
+        if (refusal := self._refusal(scope)) is not None:
+            return StateResult(status=refusal, reason="fake refusal")
+        stamped = self.mtimes.get(scope, {})
+        visible = [
+            StateFile(path=p, size=len(d), mtime=stamped[p])
+            for p, d in self.files_by_scope.get(scope, {}).items()
+            if not any(part.startswith(".") for part in p.split("/"))
+            and not any(part in FAKE_STATE_SKIP_DIRS for part in p.split("/")[:-1])
+        ]
+        visible.sort(key=lambda f: (f.mtime, f.path), reverse=True)
+        tmux = None if self.tmux_unknown else tuple(
+            sorted(self.tmux_by_scope.get(scope, {}).values(), key=lambda t: t.created)
+        )
+        return StateResult(
+            status=SandboxStatus.OK, files=tuple(visible[:FAKE_MAX_STATE_FILES]),
+            tmux=tmux, tmux_reason="tmux is not installed" if tmux is None else None,
+        )
+
+    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
+        if (refusal := self._refusal(scope)) is not None:
+            return OpResult(status=refusal, reason="fake refusal")
+        if not re.fullmatch(r"[^\x00-\x1f\x7f:.]{1,128}", name):
+            return OpResult(status=SandboxStatus.DENIED, reason="not a tmux session name")
+        if self.tmux_unknown:
+            return OpResult(status=SandboxStatus.UNAVAILABLE, reason="tmux is not installed")
+        if self.tmux_by_scope.get(scope, {}).pop(name, None) is None:
+            return OpResult(status=SandboxStatus.NOTHING_FOUND, reason="no such tmux session")
+        self.killed.append((scope, name))
+        return OpResult(status=SandboxStatus.OK)
+
+    def _stamp(self) -> datetime:
+        now = self._clock()
+        if self._last_mtime is not None and now <= self._last_mtime:
+            now = self._last_mtime + timedelta(microseconds=1)
+        self._last_mtime = now
+        return now
 
     def _conflict(self, scope: str, path: str, *, reading: bool) -> SandboxStatus | None:
         """A file and a directory cannot share a path, as on a filesystem:
@@ -2033,6 +2097,8 @@ def _fake_matches(rel: str, pattern: str) -> bool:
     return pattern.startswith("**/") and fnmatch.fnmatch(rel, pattern[3:])
 
 FAKE_MAX_READ_CHARS = 200_000  # computerd's MAX_READ_CHARS
+FAKE_MAX_STATE_FILES = 50  # computerd's MAX_STATE_FILES
+FAKE_STATE_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})  # STATE_SKIP_DIRS
 
 
 def _fake_path(path: str) -> str | None:

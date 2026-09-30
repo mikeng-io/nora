@@ -8,14 +8,25 @@ speak, not a double of one of them. The other is `FakeSandboxRuntime`.
 What both must hold: a scope is a hex key; a path outside the workspace is
 `denied`; a missing file is `nothing_found`, never an empty `ok`; an edit
 changes exactly one match or refuses; caps are `denied`; a write reads back
-byte for byte, with the sha256 of what was written.
+byte for byte, with the sha256 of what was written. The observed-state read
+(`state`, design §15.1) lists the newest files newest first and hides what
+no one would name; tmux sessions are per room, a job reads as running and a
+shell at its prompt does not, and a kill takes one exact name.
+
+The tmux half needs a real `tmux` for the computerd side and is SKIPPED
+where there is none (the Mac this repo is developed on has none); the image
+installs it (`deploy/computer/Dockerfile`).
 """
 
 from __future__ import annotations
 
+import asyncio
+import glob
 import hashlib
 import importlib.util
+import shutil
 import sys
+import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 from types import ModuleType
@@ -45,18 +56,56 @@ def load_computerd() -> ModuleType:
     return module
 
 
+def short_tmux_root() -> Path:
+    """A tmux root short enough for a Unix socket path (about 104 bytes),
+    which a pytest `tmp_path` is not."""
+    return Path(tempfile.mkdtemp(prefix="ct", dir="/tmp"))
+
+
 @pytest.fixture(params=["fake", "computerd"])
 async def runtime(request, tmp_path: Path) -> AsyncIterator[SandboxRuntime]:
     if request.param == "fake":
         yield FakeSandboxRuntime()
         return
-    app = load_computerd().create_app(root=tmp_path, token=TOKEN)
+    tmux_root = short_tmux_root()
+    app = load_computerd().create_app(root=tmp_path, token=TOKEN, tmux_root=tmux_root)
     server = TestServer(app)
     await server.start_server()
     try:
         yield ComputerdRuntime(base_url=str(server.make_url("")), token=TOKEN)
     finally:
         await server.close()
+        await _kill_tmux_servers(tmux_root)
+        shutil.rmtree(tmux_root, ignore_errors=True)
+
+
+async def _kill_tmux_servers(tmux_root: Path) -> None:
+    """Every tmux server a test started under `tmux_root`, ended."""
+    if shutil.which("tmux") is None:
+        return
+    for sock in glob.glob(f"{tmux_root}/*/tmux-*/default"):
+        proc = await asyncio.create_subprocess_exec(
+            "tmux", "-S", sock, "kill-server",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+
+
+async def start_job(runtime: SandboxRuntime, scope: str, name: str, *, running: bool) -> None:
+    """A tmux session in `scope`: a job (`sleep`) or a bare shell. The fake
+    runs nothing, so it is told; computerd gets the command a model would run."""
+    if isinstance(runtime, FakeSandboxRuntime):
+        runtime.start_tmux(scope, name, running=running)
+        return
+    command = f"tmux new-session -d -s {name}" + (" 'sleep 60'" if running else "")
+    ran = await runtime.run(scope=scope, command=command, timeout_s=10)
+    assert ran.status is SandboxStatus.OK and ran.exit_code == 0, ran
+    await asyncio.sleep(0.3)  # the shell reaches its prompt
+
+
+def needs_tmux(runtime: SandboxRuntime) -> None:
+    if not isinstance(runtime, FakeSandboxRuntime) and shutil.which("tmux") is None:
+        pytest.skip("no tmux on this machine; the computer image installs it")
 
 
 def test_both_satisfy_the_port():
@@ -187,3 +236,79 @@ async def test_megabyte_transfers_round_trip_whole(runtime):
 async def test_a_read_limit_of_zero_means_the_default(runtime):
     await runtime.write_text(scope=SCOPE, path="z.txt", content="abc")
     assert (await runtime.read(scope=SCOPE, path="z.txt", limit=0)).content == "abc"
+
+
+# -- the observed state (design/sandbox-runtime §15.1) ---------------------
+
+
+async def test_state_lists_the_newest_files_first_with_size_and_age(runtime):
+    await runtime.write_text(scope=SCOPE, path="projects/a/old.csv", content="1,2\n")
+    await asyncio.sleep(0.02)
+    await runtime.write_text(scope=SCOPE, path="new.txt", content="hello")
+    state = await runtime.state(scope=SCOPE)
+    assert state.status is SandboxStatus.OK
+    assert [(f.path, f.size) for f in state.files] == [("new.txt", 5), ("projects/a/old.csv", 4)]
+    assert state.files[0].mtime > state.files[1].mtime
+    assert state.files[0].mtime.tzinfo is not None
+
+
+async def test_state_hides_dot_paths_and_tool_caches(runtime):
+    await runtime.write_text(scope=SCOPE, path="kept.py", content="x")
+    for hidden in (".bashrc", ".venv/lib/a.py", "p/node_modules/m/i.js", "p/__pycache__/c.pyc"):
+        await runtime.write_text(scope=SCOPE, path=hidden, content="x")
+    state = await runtime.state(scope=SCOPE)
+    assert [f.path for f in state.files] == ["kept.py"]
+
+
+async def test_state_of_an_unused_room_is_ok_and_empty(runtime):
+    state = await runtime.state(scope=OTHER)
+    assert state.status is SandboxStatus.OK
+    assert state.files == ()
+
+
+async def test_state_caps_the_file_list_at_fifty(runtime):
+    for i in range(55):
+        await runtime.write_text(scope=SCOPE, path=f"f{i:02}.txt", content="x")
+    assert len((await runtime.state(scope=SCOPE)).files) == 50
+
+
+@pytest.mark.parametrize("scope", ["Room-A", "../x", ""])
+async def test_state_refuses_a_scope_that_is_not_a_hex_key(runtime, scope):
+    assert (await runtime.state(scope=scope)).status is SandboxStatus.DENIED
+    assert (await runtime.tmux_kill(scope=scope, name="job")).status is SandboxStatus.DENIED
+
+
+async def test_a_tmux_job_is_listed_as_running_and_a_shell_is_not(runtime):
+    needs_tmux(runtime)
+    await start_job(runtime, SCOPE, "scrape", running=True)
+    await start_job(runtime, SCOPE, "shell", running=False)
+    state = await runtime.state(scope=SCOPE)
+    assert state.tmux is not None
+    listed = {t.name: t.running for t in state.tmux}
+    assert listed == {"scrape": True, "shell": False}
+    assert all(t.created.tzinfo is not None for t in state.tmux)
+
+
+async def test_tmux_sessions_are_per_room(runtime):
+    needs_tmux(runtime)
+    await start_job(runtime, SCOPE, "mine", running=True)
+    other = await runtime.state(scope=OTHER)
+    assert other.tmux == ()
+    assert (await runtime.tmux_kill(scope=OTHER, name="mine")).status \
+        is SandboxStatus.NOTHING_FOUND
+
+
+async def test_a_kill_ends_exactly_the_named_session(runtime):
+    needs_tmux(runtime)
+    await start_job(runtime, SCOPE, "job", running=True)
+    await start_job(runtime, SCOPE, "job2", running=True)
+    assert (await runtime.tmux_kill(scope=SCOPE, name="job")).status is SandboxStatus.OK
+    state = await runtime.state(scope=SCOPE)
+    assert [t.name for t in state.tmux or ()] == ["job2"]
+    assert (await runtime.tmux_kill(scope=SCOPE, name="job")).status \
+        is SandboxStatus.NOTHING_FOUND
+
+
+@pytest.mark.parametrize("name", ["", "a:b", "a.b", "x\ny"])
+async def test_a_kill_refuses_a_name_tmux_cannot_hold(runtime, name):
+    assert (await runtime.tmux_kill(scope=SCOPE, name=name)).status is SandboxStatus.DENIED

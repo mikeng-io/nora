@@ -210,6 +210,7 @@ from nora.domain.computer import FileResult as FileResult
 from nora.domain.computer import ListResult as ListResult
 from nora.domain.computer import OpResult as OpResult
 from nora.domain.computer import RunResult as RunResult
+from nora.domain.computer import StateResult as StateResult
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
@@ -1915,6 +1916,18 @@ class SandboxRuntime(Protocol):
     async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult: ...
 
     async def put(self, *, scope: str, path: str, data: bytes) -> OpResult: ...
+
+    async def state(self, *, scope: str) -> StateResult:
+        """What the computer holds for `scope` now: its newest files and its
+        tmux sessions (design/sandbox-runtime §15.1). Read fresh on every
+        call, never cached, so it cannot go stale. Takes no lock."""
+        ...
+
+    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
+        """End one tmux session of `scope` by its exact name: `ok`, or
+        `nothing_found` when there is none by that name. Only the sweeper
+        calls it, and only on a session with nothing running in it."""
+        ...
 
 
 @runtime_checkable

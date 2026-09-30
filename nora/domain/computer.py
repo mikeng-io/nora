@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -94,6 +95,46 @@ class OpResult:
     sha256: str | None = None
     reason: str | None = None
     previous_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class StateFile:
+    """One recently changed file in a scope: `mtime` is UTC-aware."""
+
+    path: str
+    size: int
+    mtime: datetime
+
+
+@dataclass(frozen=True)
+class TmuxSession:
+    """One tmux session in a scope. `running` is true when a pane has a
+    foreground command that is not a shell at its prompt: a job, as opposed
+    to a shell left open. `created` is UTC-aware."""
+
+    name: str
+    created: datetime
+    attached: bool
+    running: bool
+
+
+@dataclass(frozen=True)
+class StateResult:
+    """What the computer holds for one scope, read fresh (design/sandbox-runtime
+    §15.1): the newest files, newest first, and the tmux sessions.
+
+    `tmux` is None when the sessions could not be listed (`tmux_reason` says
+    why). A reader must take None as UNKNOWN, never as «nothing is running»:
+    the sweeper skips a scope it cannot see rather than expire a session a
+    live job still holds. `files_truncated` says the walk stopped at its cap,
+    so a newer file may be missing."""
+
+    status: SandboxStatus
+    files: tuple[StateFile, ...] = ()
+    files_truncated: bool = False
+    tmux: tuple[TmuxSession, ...] | None = None
+    tmux_reason: str | None = None
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

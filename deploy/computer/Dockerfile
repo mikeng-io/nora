@@ -14,7 +14,7 @@ FROM ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378
 
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        bash ca-certificates coreutils curl file git jq less procps sqlite3 unzip zip \
+        bash ca-certificates coreutils curl file git jq less procps sqlite3 tmux unzip zip \
         python3 python3-venv python3-pip \
         nodejs npm \
         ffmpeg imagemagick pandoc poppler-utils \

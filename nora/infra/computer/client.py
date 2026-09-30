@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import aiohttp
@@ -36,6 +37,9 @@ from nora.domain.computer import (
     OpResult,
     RunResult,
     SandboxStatus,
+    StateFile,
+    StateResult,
+    TmuxSession,
 )
 
 log = logging.getLogger("nora.computer")
@@ -213,6 +217,38 @@ class ComputerdRuntime:
             return _op_result(reply, sent)
         return await _guard(body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why))
 
+    async def state(self, *, scope: str) -> StateResult:
+        async def body() -> StateResult:
+            reply = await self._post_json("state", {"scope": scope})
+            raw_files = reply.get("files")
+            files = tuple(
+                StateFile(path=f["path"], size=f["size"], mtime=_epoch(f.get("mtime")))
+                for f in (raw_files if isinstance(raw_files, list) else [])
+                if isinstance(f, dict) and isinstance(f.get("path"), str)
+                and _opt_int(f.get("size")) is not None
+                and isinstance(f.get("mtime"), (int, float))
+            )
+            raw_tmux = reply.get("tmux")
+            # None stays None: «could not list» is not «nothing running».
+            tmux = None if not isinstance(raw_tmux, list) else tuple(
+                TmuxSession(
+                    name=t["name"], created=_epoch(t.get("created")),
+                    attached=t.get("attached") is True, running=t.get("running") is True,
+                )
+                for t in raw_tmux
+                if isinstance(t, dict) and isinstance(t.get("name"), str)
+            )
+            return StateResult(
+                status=_status(reply.get("status")), files=files,
+                files_truncated=reply.get("files_truncated") is True, tmux=tmux,
+                tmux_reason=_opt_str(reply.get("tmux_reason")),
+                reason=_opt_str(reply.get("reason")),
+            )
+        return await _guard(body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why))
+
+    async def tmux_kill(self, *, scope: str, name: str) -> OpResult:
+        return await self._op("tmux-kill", {"scope": scope, "name": name}, None)
+
     # -- plumbing ---------------------------------------------------------
 
     async def _op(self, op: str, payload: dict[str, Any], sent: str | None) -> OpResult:
@@ -235,6 +271,12 @@ class ComputerdRuntime:
         if not isinstance(reply, dict):
             raise _UnavailableError("computerd returned a non-object JSON body")
         return reply
+
+
+def _epoch(raw: Any) -> datetime:
+    """Epoch seconds from computerd as a UTC-aware datetime (0 when absent)."""
+    seconds = float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else 0.0
+    return datetime.fromtimestamp(seconds, tz=UTC)
 
 
 def _op_result(reply: Any, sent: str | None) -> OpResult:
