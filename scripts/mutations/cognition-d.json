@@ -1,0 +1,247 @@
+[
+ {
+  "name": "M2: an event's citations are not checked against what the session saw",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    ids, keys = check_citations(cited_ids, shown, what=verb)\n    return meta, ids, keys",
+  "new": "    return meta, (), ()",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_a_proposal_citing_a_message_it_was_never_shown_is_refused_unknown_id tests/unit/test_cognition_session_events_d.py::test_a_rollup_row_is_citable_only_once_the_session_read_it tests/unit/test_cognition_session_events_d.py::test_a_message_the_session_fetched_with_record_query_is_citable"
+ },
+ {
+  "name": "M2: an event may cite nothing",
+  "file": "nora/domain/note_body.py",
+  "old": "    if not ids and not keys:\n        raise NoteBodyError(\n            \"uncited\", f\"{what} cites nothing;",
+  "new": "    if False:\n        raise NoteBodyError(\n            \"uncited\", f\"{what} cites nothing;",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_a_proposal_with_no_citation_or_one_of_nora_s_own_messages_is_refused tests/unit/test_event_evidence_d.py::test_anything_else_is_refused_with_the_rule_a_note_would_name"
+ },
+ {
+  "name": "M2: an abduced proposal is written as a stated event",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if reasoning == \"abduced\":\n        write = WouldWrite(\n            tier=\"event\", verb=\"event_propose\"",
+  "new": "    if False:\n        write = WouldWrite(\n            tier=\"event\", verb=\"event_propose\"",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_an_abduced_proposal_creates_no_event_and_records_the_question"
+ },
+ {
+  "name": "M2: an abduced revision changes the event",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if reasoning == \"abduced\":\n        write = WouldWrite(\n            tier=\"event\", verb=verb",
+  "new": "    if False:\n        write = WouldWrite(\n            tier=\"event\", verb=verb",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_an_abduced_revision_leaves_the_event_as_it_was_and_asks"
+ },
+ {
+  "name": "M2: the event tier allows any mode",
+  "file": "nora/domain/gatherings.py",
+  "old": "            raise InvalidEventFieldModeError(\"field\", self.field)\n        validate_event_field_mode(self.reasoning)",
+  "new": "            raise InvalidEventFieldModeError(\"field\", self.field)\n        pass",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_a_mode_the_event_tier_does_not_allow_is_refused tests/unit/test_event_evidence_d.py::test_a_field_carries_only_a_mode_and_a_confidence_the_event_tier_allows"
+ },
+ {
+  "name": "M2: a revision forgets which fields it restated",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "            field_meta=merge_field_meta(current.field_meta, meta),",
+  "new": "            field_meta=meta,",
+  "target": "tests/unit/test_event_evidence_d.py::test_a_write_restates_its_own_fields_and_leaves_the_rest tests/unit/test_cognition_session_events_d.py::test_a_staged_or_confirmed_event_can_be_revised"
+ },
+ {
+  "name": "M4: a session reads proposed events only",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "if e.status in OPEN_STATUSES",
+  "new": "if e.status == \"proposed\"",
+  "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
+ },
+ {
+  "name": "M4: a session reads withdrawn events",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "            e for e in await store.list_for_conversation(conversation_id=conversation_id)\n",
+  "new": "            e for e in await store.list_for_conversation(conversation_id=conversation_id, include_unsupported=True)\n",
+  "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
+ },
+ {
+  "name": "M4: a staged or confirmed event blocks a proposal",
+  "file": "nora/app/cognition_session.py",
+  "old": "                if e.status is GatheringStatus.PROPOSED\n            ]\n            write = await dry_run_event_propose(",
+  "new": "                if True\n            ]\n            write = await dry_run_event_propose(",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_a_staged_event_is_a_proposal_the_room_has_not_made_and_does_not_block_one"
+ },
+ {
+  "name": "M4: a finished event can be moved",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if current.status in TERMINAL_STATUSES:\n        # 40 §3",
+  "new": "    if False:\n        # 40 §3",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_an_unknown_event_reads_not_found_and_a_finished_one_does_not_move"
+ },
+ {
+  "name": "M4: lapsed needs a citation",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "            may_be_uncited=str(field_changes.get(\"status\")) == GatheringStatus.LAPSED,",
+  "new": "            may_be_uncited=False,",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_a_move_to_lapsed_may_cite_nothing_but_no_other_may"
+ },
+ {
+  "name": "M4: an event is born in any status",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if event_kwargs.get(\"status\") not in (GatheringStatus.STAGED, GatheringStatus.PROPOSED):",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_session_events_d.py::test_an_event_can_be_proposed_or_staged_and_nothing_later"
+ },
+ {
+  "name": "E1a: the store writes no edge",
+  "file": "nora/infra/sql/event_evidence.py",
+  "old": "    await record_event_citations(conn, event_id=str(event.id), citations=evidence.citations)",
+  "new": "    pass",
+  "target": "tests/infra/test_event_citations.py::test_a_create_leaves_one_edge_per_part_and_a_recite_adds_none tests/infra/test_event_citations.py::test_a_rollup_key_is_an_edge_of_the_rollup_store"
+ },
+ {
+  "name": "E1a: create ignores its evidence",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "                if evidence is not None:\n                    lineage, as_of = await apply_evidence(\n                        conn, event=row, held=row.lineage, evidence=evidence,",
+  "new": "                if False:\n                    lineage, as_of = await apply_evidence(\n                        conn, event=row, held=row.lineage, evidence=evidence,",
+  "target": "tests/infra/test_event_citations.py::test_a_create_leaves_one_edge_per_part_and_a_recite_adds_none tests/infra/test_event_citations.py::test_lineage_is_computed_per_field_from_the_rooms_the_citations_were_said_in"
+ },
+ {
+  "name": "E1a: update ignores its evidence",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "            if evidence is not None:\n                # The lineage the row holds NOW",
+  "new": "            if False:\n                # The lineage the row holds NOW",
+  "target": "tests/infra/test_event_citations.py::test_a_revision_replaces_the_fields_it_states_and_keeps_the_rest"
+ },
+ {
+  "name": "E1a: the edge is unique without its part",
+  "file": "nora/infra/sql/migrations/versions/0086_event_citations.py",
+  "old": "        [\"citing_store\", \"citing_key\", \"cited_store\", \"cited_id\", \"part\"],\n        postgresql_nulls_not_distinct=True,",
+  "new": "        [\"citing_store\", \"citing_key\", \"cited_store\", \"cited_id\"],",
+  "target": "tests/infra/test_event_citations.py::test_a_create_leaves_one_edge_per_part_and_a_recite_adds_none"
+ },
+ {
+  "name": "E1a: a whole-row edge collapses only when its part is non-null",
+  "file": "nora/infra/sql/migrations/versions/0086_event_citations.py",
+  "old": "        postgresql_nulls_not_distinct=True,",
+  "new": "        postgresql_nulls_not_distinct=False,",
+  "target": "tests/infra/test_event_citations.py::test_a_whole_row_edge_is_still_one_edge_and_a_part_makes_it_another"
+ },
+ {
+  "name": "m6: a revision unions the field's old lineage into its new one",
+  "file": "nora/domain/gatherings.py",
+  "old": "        sections[part] = entries or [unresolved(origin)]",
+  "new": "        sections[part] = sections.get(part, []) + (entries or [unresolved(origin)])",
+  "target": "tests/unit/test_event_evidence_d.py::test_a_restated_field_is_replaced_and_an_untouched_one_is_kept tests/infra/test_event_citations.py::test_a_revision_replaces_the_fields_it_states_and_keeps_the_rest"
+ },
+ {
+  "name": "m6: a citation that cannot be resolved widens to the room it was cited from",
+  "file": "nora/domain/gatherings.py",
+  "old": "                entries.append(message(room) if room else unresolved(origin))",
+  "new": "                entries.append(message(room or origin or \"\"))",
+  "target": "tests/unit/test_event_evidence_d.py::test_what_cannot_be_resolved_is_unresolved_at_the_origin_never_widened tests/infra/test_event_citations.py::test_a_citation_that_cannot_be_resolved_is_unresolved_never_widened"
+ },
+ {
+  "name": "m6: a rollup row contributes nothing of its own lineage",
+  "file": "nora/domain/gatherings.py",
+  "old": "            reached = [] if row is None else [e for _, es in row.sections for e in es]",
+  "new": "            reached = []",
+  "target": "tests/unit/test_event_evidence_d.py::test_a_rollup_row_contributes_the_entries_its_own_lineage_holds tests/infra/test_event_citations.py::test_a_rollup_row_brings_its_own_lineage"
+ },
+ {
+  "name": "m6: a rollup key of another unit resolves",
+  "file": "nora/infra/sql/event_evidence.py",
+  "old": "        if not unit or unit_part != unit or not members:",
+  "new": "        if not members:",
+  "target": "tests/infra/test_event_citations.py::test_a_rollup_row_brings_its_own_lineage"
+ },
+ {
+  "name": "m6: the tag path records no room",
+  "file": "nora/app/gatherings.py",
+  "old": "    if not parts:\n        return None\n    return EventEvidence(",
+  "new": "    return None\n    return EventEvidence(",
+  "target": "tests/infra/test_event_citations.py::test_the_tag_path_writes_record_the_room_and_no_edge"
+ },
+ {
+  "name": "E1a: the cascade skips events",
+  "file": "nora/app/withdrawal.py",
+  "old": "    if by_store.get(\"event\"):",
+  "new": "    if False:",
+  "target": "tests/infra/test_event_citations.py::test_withdrawing_a_cited_message_marks_the_event_and_only_once tests/infra/test_event_citations.py::test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it"
+ },
+ {
+  "name": "E1a: a revision writes the mark back",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "        \"field_meta\": field_meta_to_json(event.field_meta),\n        # `unsupported_at` is deliberately NOT written",
+  "new": "        \"field_meta\": field_meta_to_json(event.field_meta),\n        \"unsupported_at\": event.unsupported_at,\n        # `unsupported_at` is deliberately NOT written",
+  "target": "tests/infra/test_event_citations.py::test_a_later_revision_cannot_undo_the_mark"
+ },
+ {
+  "name": "E1a: the operator lever cannot lift an event",
+  "file": "nora/app/person_forget.py",
+  "old": "        if event_ids:\n            await conn.execute(",
+  "new": "        if False:\n            await conn.execute(",
+  "target": "tests/infra/test_event_citations.py::test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it"
+ },
+ {
+  "name": "reader: a room's list shows a withdrawn event",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "            stmt = stmt.where(EVENTS.c.status == status.value)\n        if not include_unsupported:",
+  "new": "            stmt = stmt.where(EVENTS.c.status == status.value)\n        if False:",
+  "target": "tests/infra/test_event_citations.py::test_the_stores_readers_leave_a_withdrawn_event_out tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
+ },
+ {
+  "name": "reader: a person's list (the portal) shows a withdrawn event",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "            .order_by(EVENTS.c.created_at)\n        )\n        if not include_unsupported:",
+  "new": "            .order_by(EVENTS.c.created_at)\n        )\n        if False:",
+  "target": "tests/infra/test_event_citations.py::test_the_stores_readers_leave_a_withdrawn_event_out"
+ },
+ {
+  "name": "reader: event_search shows a withdrawn event",
+  "file": "nora/infra/sql/gatherings.py",
+  "old": "        stmt = sa.select(EVENTS).where(unit_clause, EVENTS.c.unsupported_at.is_(None))",
+  "new": "        stmt = sa.select(EVENTS).where(unit_clause)",
+  "target": "tests/infra/test_event_citations.py::test_the_stores_readers_leave_a_withdrawn_event_out tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
+ },
+ {
+  "name": "reader: the tag path can revise or RSVP a withdrawn event",
+  "file": "nora/app/gatherings.py",
+  "old": "        if event.unsupported_at is not None:\n            # Withdrawn (`nora.app.withdrawal`): the tag path's revise",
+  "new": "        if False:\n            # Withdrawn (`nora.app.withdrawal`): the tag path's revise",
+  "target": "tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
+ },
+ {
+  "name": "reader: the portal's event page shows a withdrawn event",
+  "file": "nora/app/gatherings.py",
+  "old": "        if event is None or event.unsupported_at is not None:\n            # A withdrawn event reads as unknown",
+  "new": "        if event is None:\n            # A withdrawn event reads as unknown",
+  "target": "tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
+ },
+ {
+  "name": "reader: get_event shows a withdrawn event",
+  "file": "nora/app/gatherings.py",
+  "old": "        return None if event is None or event.unsupported_at is not None else event",
+  "new": "        return event",
+  "target": "tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
+ },
+ {
+  "name": "reader: the cognition grounding shows a withdrawn event",
+  "file": "nora/app/cognition_grounding.py",
+  "old": "                if e.unsupported_at is not None:\n                    # Withdrawn (`nora.app.withdrawal`), dropped here too",
+  "new": "                if False:\n                    # Withdrawn (`nora.app.withdrawal`), dropped here too",
+  "target": "tests/unit/test_cognition_grounding.py::test_an_event_the_withdrawal_cascade_marked_unsupported_is_not_shown"
+ },
+ {
+  "name": "reader: the fire screen lets a withdrawn event's reminder through",
+  "file": "nora/app/gathering_screen.py",
+  "old": "        if event is not None and event.unsupported_at is not None:",
+  "new": "        if False:",
+  "target": "tests/infra/test_event_citations.py::test_the_fire_screen_cancels_the_reminder_of_a_withdrawn_event tests/unit/test_event_evidence_d.py::test_the_heartbeat_cancels_a_withdrawn_gatherings_reminder_and_fires_a_standing_one"
+ },
+ {
+  "name": "reader: the fire screen fires on an unreadable event",
+  "file": "nora/app/gathering_screen.py",
+  "old": "            return ReminderState.FAILED, FAILED_ERROR",
+  "new": "            return None",
+  "target": "tests/infra/test_event_citations.py::test_the_fire_screen_fails_closed_when_the_event_cannot_be_read"
+ },
+ {
+  "name": "reader: the heartbeat never asks the gathering screen",
+  "file": "nora/app/heartbeat.py",
+  "old": "            if row.kind == GATHERING_KIND and self._gatherings is not None:",
+  "new": "            if False:",
+  "target": "tests/unit/test_event_evidence_d.py::test_the_heartbeat_cancels_a_withdrawn_gatherings_reminder_and_fires_a_standing_one"
+ }
+]

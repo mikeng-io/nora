@@ -43,7 +43,7 @@ from nora.agent.dreamer import (
     cognition_grant,
 )
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
-from nora.domain.gatherings import Gathering
+from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionDryRunStore, StimulusStore
 from nora.domain.standing import StandingHead
@@ -320,6 +320,22 @@ def units_with_home_rooms(
     return wakeable, [u for u in units if u not in homes]
 
 
+def open_events_reader(
+    store: GatheringStore,
+) -> Callable[[str], Awaitable[Sequence[Gathering]]]:
+    """A room's events a session may still move, and is shown: every status
+    before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
+    confirmed event can reach `happened` or `cancelled` (M4 of the 2026-09-30
+    review: it read PROPOSED only, and a confirmed event stayed confirmed for
+    ever). A withdrawn one (`unsupported_at`) is left out by the store."""
+    async def read(conversation_id: str) -> Sequence[Gathering]:
+        return [
+            e for e in await store.list_for_conversation(conversation_id=conversation_id)
+            if e.status in OPEN_STATUSES
+        ]
+    return read
+
+
 def build_cognition_runner(
     *,
     cfg: Any,
@@ -331,7 +347,7 @@ def build_cognition_runner(
     dry_run_store: CognitionDryRunStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
-    proposed_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
+    open_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
     nora_names: frozenset[str] = NORA_NAMES,
@@ -384,7 +400,7 @@ def build_cognition_runner(
         )
 
     async def open_events(unit: str, conversation_id: str) -> Sequence[Gathering]:
-        return await proposed_events_in(conversation_id)
+        return await open_events_in(conversation_id)
 
     async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)
@@ -400,7 +416,7 @@ def build_cognition_runner(
         skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
         grounder=grounder, render_budget=render_budget, person_known=person_known,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
-        open_note_titles=note_titles, open_proposed_events=open_events,
+        open_note_titles=note_titles, open_events=open_events,
         prior_standing=prior, pending_self_wakes=self_wakes,
         pending_mirrored_reminds=pending_reminds, session_mode="shadow",
         budget=budget, cooldown_seconds=cfg.cognition.cooldown_seconds,

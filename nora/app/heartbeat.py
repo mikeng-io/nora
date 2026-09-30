@@ -58,6 +58,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Protocol
 
+from nora.app.gathering_screen import GATHERING_KIND, GatheringScreen
 from nora.app.proactive_screen import PROACTIVE_KIND, ProactiveScreen
 from nora.domain.reminders import Reminder, ReminderState, ReminderStore
 from nora.engagement.slots import ConversationSlots, Key
@@ -137,6 +138,7 @@ class HeartbeatLoop:
         tick_seconds: float,
         fire: Callable[[Sequence[Reminder]], Awaitable[str]],
         proactive: ProactiveScreen | None = None,
+        gatherings: GatheringScreen | None = None,
     ) -> None:
         self._store = store
         self._slots = slots
@@ -151,6 +153,10 @@ class HeartbeatLoop:
         # cancels it. `None` (no proactive adaptor composed) FAILS every
         # proactive row `failed_policy` rather than firing it unscreened.
         self._proactive = proactive
+        # The `kind="gathering"` screen: an event whose evidence was withdrawn
+        # is not announced (`nora.app.gathering_screen`). `None` (every
+        # construction that predates it) screens nothing, as before.
+        self._gatherings = gatherings
         # Seeded at construction, not left None: before the first tick the
         # honest reading is "this long since we started", which climbs like any
         # other stall. A None-guarded gauge that publishes 0 until the first
@@ -299,6 +305,12 @@ class HeartbeatLoop:
                 )
                 await self._resolve_all([row], state, outcome=outcome, now=now)
                 continue
+            if row.kind == GATHERING_KIND and self._gatherings is not None:
+                gathering_refusal = await self._gatherings.refusal(row)
+                if gathering_refusal is not None:
+                    state, outcome = gathering_refusal
+                    await self._resolve_all([row], state, outcome=outcome, now=now)
+                    continue
             if self._policy.is_allowed(
                 platform=row.platform,
                 conversation_id=row.conversation_id,

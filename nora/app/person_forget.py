@@ -64,7 +64,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.app.withdrawal import WithdrawalReport, withdraw_messages
-from nora.infra.sql.schema import CITATION, CULTURE, MESSAGES, NOTE, STANDING
+from nora.infra.sql.schema import CITATION, CULTURE, EVENTS, MESSAGES, NOTE, STANDING
 
 __all__ = [
     "ClearUnsupportedReport",
@@ -228,12 +228,20 @@ async def clear_unsupported(engine: AsyncEngine, *, apply: bool) -> ClearUnsuppo
                 _no_hidden_or_dangling_citation("culture", CULTURE.c.key),
             )
         )).scalars().all()
+        event_ids = (await conn.execute(
+            sa.select(EVENTS.c.id).where(
+                EVENTS.c.unsupported_at.is_not(None),
+                _no_hidden_or_dangling_citation("event", sa.cast(EVENTS.c.id, sa.Text)),
+            )
+        )).scalars().all()
     if note_ids:
         report.cleared["note"] = [str(i) for i in note_ids]
     if standing_rows:
         report.cleared["standing"] = [f"{r.platform}:{r.conversation_id}" for r in standing_rows]
     if culture_keys:
         report.cleared["culture"] = list(culture_keys)
+    if event_ids:
+        report.cleared["event"] = [str(i) for i in event_ids]
     if not apply or not report.total_cleared:
         return report
     async with engine.begin() as conn:
@@ -253,6 +261,11 @@ async def clear_unsupported(engine: AsyncEngine, *, apply: bool) -> ClearUnsuppo
         if culture_keys:
             await conn.execute(
                 sa.update(CULTURE).where(CULTURE.c.key.in_(culture_keys))
+                .values(unsupported_at=None)
+            )
+        if event_ids:
+            await conn.execute(
+                sa.update(EVENTS).where(EVENTS.c.id.in_(event_ids))
                 .values(unsupported_at=None)
             )
     return report

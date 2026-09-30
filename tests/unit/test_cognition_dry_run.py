@@ -124,6 +124,7 @@ async def test_note_update_without_a_parent_revision_is_refused():
 async def test_event_propose_would_commit_a_well_formed_event():
     ledger = InMemoryCognitionDryRunStore()
     write = await dry_run_event_propose(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", now_ms=1000, id=uuid.uuid4(), title="dinner",
         created_by="p_ada", when=None, venue_text=None, venue_place_id=None,
@@ -139,13 +140,14 @@ async def test_event_propose_would_commit_a_well_formed_event():
 async def test_event_propose_refuses_a_bad_reasoning_mode():
     ledger = InMemoryCognitionDryRunStore()
     write = await dry_run_event_propose(
+        shown=SHOWN, reasoning="not-a-real-mode", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", now_ms=1000, id=uuid.uuid4(), title="dinner",
         created_by="p_ada", when=None, venue_text=None, venue_place_id=None,
         venue_name=None, venue_address=None, venue_rating=None,
         venue_price_level="", venue_maps_url=None, venue_resolved_at=None,
         status=GatheringStatus.PROPOSED, reminder_id=None,
-        created_at=datetime(2026, 9, 29, tzinfo=UTC), reasoning="not-a-real-mode",
+        created_at=datetime(2026, 9, 29, tzinfo=UTC),
     )
     assert write.outcome == "refused"
     assert write.refusal_reason == "bad_reasoning"
@@ -155,6 +157,7 @@ async def test_event_revise_would_commit_against_the_current_head():
     ledger = InMemoryCognitionDryRunStore()
     current = _gathering()
     write = await dry_run_event_revise(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", current=current,
         base_revision_id=str(current.head_revision_id), now_ms=1000,
@@ -168,6 +171,7 @@ async def test_event_revise_refuses_a_stale_base_with_the_current_row():
     ledger = InMemoryCognitionDryRunStore()
     current = _gathering()
     write = await dry_run_event_revise(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", current=current,
         base_revision_id=str(uuid.uuid4()), now_ms=1000, title="dinner, moved",
@@ -180,6 +184,7 @@ async def test_event_revise_with_no_base_revision_id_always_passes_staleness():
     ledger = InMemoryCognitionDryRunStore()
     current = _gathering()
     write = await dry_run_event_revise(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", current=current, base_revision_id=None,
         now_ms=1000, title="dinner, moved",
@@ -191,6 +196,7 @@ async def test_event_set_status_would_commit_a_cancellation():
     ledger = InMemoryCognitionDryRunStore()
     current = _gathering()
     write = await dry_run_event_set_status(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", current=current,
         base_revision_id=str(current.head_revision_id),
@@ -353,6 +359,7 @@ async def test_event_propose_refuses_two_open_proposed_events_the_same_way_the_l
         _gathering(when=None), _gathering(when=None),
     )
     write = await dry_run_event_propose(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", now_ms=1000, id=uuid.uuid4(), title="dinner",
         created_by="p_ada", when=None, venue_text=None, venue_place_id=None,
@@ -372,6 +379,7 @@ async def test_event_propose_ignores_open_events_already_in_the_past():
     past = datetime(2020, 1, 1, tzinfo=UTC)
     open_events = (_gathering(when=past), _gathering(when=past))
     write = await dry_run_event_propose(
+        shown=SHOWN, reasoning="told", confidence="high", cited_ids=["1"],
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", now_ms=1_700_000_000_000, id=uuid.uuid4(),
         title="dinner", created_by="p_ada", when=None, venue_text=None,

@@ -9,7 +9,7 @@ write methods raises.
 **The type-level half.** `CognitionSessionRunner.__init__` (`nora.app.
 cognition_session`) takes `dry_run_store: CognitionDryRunStore` — never a
 live `NoteCollaborator`/`GatheringStore`/`StandingStore` — and its read
-seams (`open_note_titles`, `open_proposed_events`, `prior_standing`, …)
+seams (`open_note_titles`, `open_events`, `prior_standing`, …)
 are narrow callables returning plain data, not store objects. There is no
 parameter on this class a caller could widen into a live write: the tool
 closures in `_build_tools` only ever call `nora.agent.cognition_dry_run`/
@@ -64,7 +64,7 @@ class ExplodingLiveStore:
         self.read_calls += 1
         return ()
 
-    async def open_proposed_events(self, unit: str, conversation_id: str) -> tuple[Any, ...]:
+    async def open_events(self, unit: str, conversation_id: str) -> tuple[Any, ...]:
         self.read_calls += 1
         return ()
 
@@ -150,7 +150,7 @@ async def test_a_scripted_session_writes_nothing_to_a_live_store_and_sends_nothi
         agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, rs: [],
         skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
-        open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
+        open_note_titles=live.open_note_titles, open_events=live.open_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="shadow",
         budget=BUDGET, cooldown_seconds=300.0, units=("unit-1",),
@@ -191,7 +191,7 @@ async def test_session_mode_off_never_constructs_a_live_read_either():
         agent_runner=agent, home_rooms={"unit-1": HOME}, read_tools_for=lambda u, rs: [],
         skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
-        open_note_titles=live.open_note_titles, open_proposed_events=live.open_proposed_events,
+        open_note_titles=live.open_note_titles, open_events=live.open_events,
         prior_standing=live.prior_standing, pending_self_wakes=live.pending_self_wakes,
         pending_mirrored_reminds=live.pending_mirrored_reminds, session_mode="off",
         budget=BUDGET, cooldown_seconds=300.0, units=("unit-1",),

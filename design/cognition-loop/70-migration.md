@@ -299,7 +299,12 @@ are identified by that deploy row. The daemon writes all four
   than guesses at. `reasoning` and
   `lineage` follow `0073`'s row-level simplification (`lineage` sectioned by
   FIELD name, reusing `nora.domain.lineage.Lineage`); no writer states either
-  yet (step 3 is the first). `event_search(place?, person?, interval?)`
+  yet (step 3 is the first). **Step 3's first writer (DEC-252, migration
+  `0086_event_citations`, the E1a slice step 4 is gated on):** the event verbs
+  carry `cited_ids`, `reasoning` and `confidence`, the `citation` table admits
+  events, Rollup keys and a `part`, the store writes the edges and the
+  per-field lineage, and the withdrawal cascade and every event reader honour
+  `events.unsupported_at`. `event_search(place?, person?, interval?)`
   reads the unit when `unit_id` resolves and falls back to `list_events`'s
   old per-room scope otherwise (a choice the design left open).
 - **Culture → sectioned Character.** Old revisions stay readable; the next

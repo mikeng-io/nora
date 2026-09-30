@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "An event whose supporting message was deleted, or whose person was forgotten, is no longer listed, revised, shown on the portal or announced.",
+  "details": [
+    "Events written by the Cognition session's verbs (which still only record what they would write) now carry the ids they cite, a stated reasoning and a confidence for each field, and an abduced value is kept as a question to ask rather than written as fact.",
+    "A withdrawal marks an event whose citations reach the withdrawn message, the way it already marks a note, a room position or a culture account; event_search, a room's event list, the portal and the tag path's event tools read a marked event as unknown, and a due gathering reminder for one is cancelled instead of spoken.",
+    "An event written on a tag turn now records the room it was said in, so it no longer reads as having no known source."
+  ],
+  "limitations": [
+    "An event written on a tag turn cites no message, so a withdrawal cannot reach it yet.",
+    "The Cognition session stays in shadow: nothing it validates is committed, and per-field reasoning is not yet rendered to Nora."
+  ]
+}

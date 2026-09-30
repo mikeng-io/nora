@@ -1769,6 +1769,13 @@ EVENTS = sa.Table(
         "exclude_persons", pg.ARRAY(sa.Text), nullable=False,
         server_default=sa.text("'{}'"),
     ),
+    # 0086_event_citations: each field's own reasoning/confidence/as_of, keyed
+    # by field name (10 §3, 40 §4), and the withdrawal mark (0075's, for the
+    # fourth head that cites).
+    sa.Column(
+        "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
+    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.Column(
         # No FK, deliberately, `note.head_revision_id`'s precedent exactly:
         # `create` mints and inserts `events` and `event_revision` in one
@@ -1792,6 +1799,9 @@ EVENTS = sa.Table(
     ),
     sa.CheckConstraint(
         "jsonb_typeof(lineage) = 'object'", name="ck_events_lineage_shape",
+    ),
+    sa.CheckConstraint(
+        "jsonb_typeof(field_meta) = 'object'", name="ck_events_field_meta_shape",
     ),
 )
 
@@ -1844,6 +1854,9 @@ EVENT_REVISION = sa.Table(
         "lineage", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
     ),
     sa.Column("as_of", sa.BigInteger, nullable=True),
+    sa.Column(
+        "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
+    ),
     sa.Column("body", sa.Text, nullable=True),
     sa.Column("written_by", sa.Text, nullable=False, server_default=sa.text("'tag'")),
     sa.Column("written_at", sa.DateTime(timezone=True), nullable=False),
@@ -1865,6 +1878,9 @@ EVENT_REVISION = sa.Table(
     ),
     sa.CheckConstraint(
         "jsonb_typeof(lineage) = 'object'", name="ck_event_revision_lineage_shape",
+    ),
+    sa.CheckConstraint(
+        "jsonb_typeof(field_meta) = 'object'", name="ck_event_revision_field_meta_shape",
     ),
 )
 
@@ -3423,13 +3439,21 @@ CITATION = sa.Table(
     sa.Column("citing_key", sa.Text, nullable=False),
     sa.Column("cited_store", sa.Text, nullable=False, server_default="message"),
     sa.Column("cited_id", sa.Text, nullable=False),
+    # The field or section the edge supports (migration `0086_event_citations`):
+    # `NULL` for a whole-row edge (every note, Standing and culture edge), a
+    # field name (`what`, `start`, `end`, `place`, `people`, `status`) for an
+    # event's.
+    sa.Column("part", sa.Text, nullable=True),
     _recorded_at(),
     sa.CheckConstraint(
-        "citing_store in ('note', 'standing', 'culture')",
+        "citing_store in ('note', 'standing', 'culture', 'event')",
         name="citation_citing_store_is_known_check",
     ),
     sa.CheckConstraint(
-        "cited_store in ('message')", name="citation_cited_store_is_known_check",
+        "cited_store in ('message', 'rollup')", name="citation_cited_store_is_known_check",
+    ),
+    sa.CheckConstraint(
+        "part is null or length(btrim(part)) > 0", name="citation_part_is_not_blank_check",
     ),
     sa.CheckConstraint(
         "length(btrim(citing_key)) > 0", name="citation_has_a_citing_key_check",
@@ -3438,8 +3462,8 @@ CITATION = sa.Table(
         "length(btrim(cited_id)) > 0", name="citation_has_a_cited_id_check",
     ),
     sa.UniqueConstraint(
-        "citing_store", "citing_key", "cited_store", "cited_id",
-        name="citation_edge_unique",
+        "citing_store", "citing_key", "cited_store", "cited_id", "part",
+        name="citation_edge_unique", postgresql_nulls_not_distinct=True,
     ),
 )
 

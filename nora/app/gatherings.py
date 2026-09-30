@@ -26,6 +26,7 @@ from nora.agent.security import screen_and_resolve_place
 from nora.domain.gatherings import (
     RSVP,
     TERMINAL_STATUSES,
+    EventEvidence,
     Gathering,
     GatheringStatus,
     GatheringStore,
@@ -53,6 +54,7 @@ from nora.domain.reminders import (
     ReminderStore,
     ensure_utc,
 )
+from nora.domain.rollup import room_key
 
 #: 40-register.md §3's lifecycle, minus the two the tag path's
 #: `event_set_status` tool never offers: `staged`/`proposed` are
@@ -88,6 +90,23 @@ class _Honcho(Protocol):
         self, *, peer_id: str, query: str, reasoning_level: str = "low",
         target: str | None = None, conversation_id: str | None = None,
     ) -> str | None: ...
+
+
+def _tag_evidence(
+    parts: set[str], platform: str, conversation_id: str,
+) -> EventEvidence | None:
+    """What a tag-path write rests on: the turn itself, said in this room, and
+    no row it could cite (the tag path's event verbs take no `cited_ids`, so it
+    records NO `citation` edge; 12 §3's `Plan` and the edges arrive with the
+    Cognition adaptor's live verbs). Its lineage is `message:<this room>` for
+    the fields it states, `note_revision_lineage`'s `evidence_room` rule, so an
+    event a tag turn wrote is not unknown-and-hidden under `[lineage] mode =
+    on`. No fields, no evidence."""
+    if not parts:
+        return None
+    return EventEvidence(
+        parts=frozenset(parts), citations=(), room=room_key(platform, conversation_id),
+    )
 
 
 class GatheringService:
@@ -179,7 +198,12 @@ class GatheringService:
         # `create` mints the first revision and returns the row WITH its
         # `head_revision_id` populated (10-tiers.md §3's compare-and-swap
         # value) — the local `event` built above never had one.
-        return await self._store.create(event)
+        return await self._store.create(event, evidence=_tag_evidence(
+            {"what", "status"}
+            | ({"start"} if when is not None else set())
+            | ({"place"} if venue_text is not None else set()),
+            platform, conversation_id,
+        ))
 
     async def update_event(
         self, *, event_id: UUID, conversation_id: str,
@@ -213,11 +237,18 @@ class GatheringService:
         # checked against the row THIS CALL read, not re-read after
         # `_link_reminder`/`_resolve_venue`, matching every other refusal
         # here being decided on the state `_require_in_conversation` read.
-        return await self._store.update(updated, base_revision_id=base_revision_id)
+        return await self._store.update(
+            updated, base_revision_id=base_revision_id,
+            evidence=_tag_evidence(
+                ({"start"} if when is not None else set())
+                | ({"place"} if venue_text is not None else set()),
+                platform, conversation_id,
+            ),
+        )
 
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
-        base_revision_id: UUID | None = None,
+        base_revision_id: UUID | None = None, platform: str | None = None,
     ) -> Gathering:
         """The general lifecycle move `event_set_status` backs (40-register.md
         §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
@@ -233,7 +264,12 @@ class GatheringService:
                 current.reminder_id, conversation_id=current.conversation_id,
             )
         updated = replace(current, status=status)
-        return await self._store.update(updated, base_revision_id=base_revision_id)
+        return await self._store.update(
+            updated, base_revision_id=base_revision_id,
+            evidence=None if platform is None else _tag_evidence(
+                {"status"}, platform, conversation_id,
+            ),
+        )
 
     async def rsvp(
         self, *, event_id: UUID, conversation_id: str, person_id: str,
@@ -298,7 +334,11 @@ class GatheringService:
         )
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
-        return await self._store.get(event_id)
+        """A reader: a withdrawn event (`unsupported_at`, the cascade's mark,
+        `nora.app.withdrawal`) reads as absent, like an id that does not
+        exist."""
+        event = await self._store.get(event_id)
+        return None if event is None or event.unsupported_at is not None else event
 
     async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike
@@ -318,7 +358,9 @@ class GatheringService:
         tools, applied here to event-level participation instead of
         conversation membership."""
         event = await self._store.get(event_id)
-        if event is None:
+        if event is None or event.unsupported_at is not None:
+            # A withdrawn event reads as unknown, the portal's 404: nothing
+            # the person sees distinguishes it from an id that never existed.
             return None
         if event.created_by == person_id:
             return event
@@ -400,6 +442,13 @@ class GatheringService:
         room" message that would confirm a stranger's event id is real."""
         event = await self._require(event_id)
         if event.conversation_id != conversation_id:
+            raise GatheringNotFoundError(event_id)
+        if event.unsupported_at is not None:
+            # Withdrawn (`nora.app.withdrawal`): the tag path's revise, status,
+            # RSVP and venue reads see it as it sees an unknown id. It cannot
+            # be revised into standing again by a model that was never shown it
+            # (`event_search` and the room's list leave it out); a room that
+            # still wants the gathering proposes it afresh.
             raise GatheringNotFoundError(event_id)
         return event
 

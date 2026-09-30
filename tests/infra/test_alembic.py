@@ -659,3 +659,54 @@ def test_0085_rewrites_no_outcome_row_and_a_downgrade_survives_a_none_row(pg_url
             ), {"w": wake}).scalar_one() == "none"           # not rewritten on the way down
     finally:
         engine.dispose()
+
+
+def test_0086_downgrade_drops_what_the_old_vocabulary_cannot_hold_and_reapplies(pg_url):
+    """`0086_event_citations` widens `citation` (an event edge, a Rollup edge, a
+    `part`) and adds `events.unsupported_at`/`field_meta`. Going back down removes
+    the edges the old vocabulary refuses and the columns, keeps every whole-row
+    edge written before it, and the chain reaches the same head when re-applied."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO citation (citing_store, citing_key, cited_store, cited_id, part) "
+                "VALUES ('note', 'n1', 'message', '7', NULL), "
+                "('event', 'e1', 'message', '7', 'what'), "
+                "('event', 'e1', 'message', '7', 'place'), "
+                "('event', 'e1', 'rollup', 'stay|p|a/b', 'people')"
+            ))
+            # A part-less note edge twice is one edge, a part makes another.
+            dup = conn.execute(sa.text(
+                "INSERT INTO citation (citing_store, citing_key, cited_store, cited_id) "
+                "VALUES ('note', 'n1', 'message', '7') ON CONFLICT DO NOTHING RETURNING id"
+            )).all()
+            assert dup == []
+    finally:
+        engine.dispose()
+
+    alembic_command.downgrade(alembic_config(pg_url), "0085_cognition_cause_none")
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            kept = conn.execute(sa.text(
+                "SELECT citing_store, citing_key, cited_id FROM citation"
+            )).all()
+            columns = {
+                (r.table_name, r.column_name) for r in conn.execute(sa.text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_name IN ('citation', 'events', 'event_revision')"
+                ))
+            }
+    finally:
+        engine.dispose()
+    assert [tuple(r) for r in kept] == [("note", "n1", "7")]
+    assert ("citation", "part") not in columns
+    assert ("events", "unsupported_at") not in columns
+    assert ("events", "field_meta") not in columns
+    assert ("event_revision", "field_meta") not in columns
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()

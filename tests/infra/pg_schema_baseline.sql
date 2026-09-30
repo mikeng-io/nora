@@ -136,7 +136,7 @@ ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
 ADD CONSTRAINT artifacts_slug_key UNIQUE (slug);
 ADD CONSTRAINT assess_report_pkey PRIMARY KEY (id);
-ADD CONSTRAINT citation_edge_unique UNIQUE (citing_store, citing_key, cited_store, cited_id);
+ADD CONSTRAINT citation_edge_unique UNIQUE NULLS NOT DISTINCT (citing_store, citing_key, cited_store, cited_id, part);
 ADD CONSTRAINT citation_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_carry_pkey PRIMARY KEY (id);
 ADD CONSTRAINT cognition_remind_mirror_pkey PRIMARY KEY (id);
@@ -459,10 +459,11 @@ CACHE 1
 CACHE 1
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
-CONSTRAINT citation_cited_store_is_known_check CHECK ((cited_store = 'message'::text)),
-CONSTRAINT citation_citing_store_is_known_check CHECK ((citing_store = ANY (ARRAY['note'::text, 'standing'::text, 'culture'::text]))),
+CONSTRAINT citation_cited_store_is_known_check CHECK ((cited_store = ANY (ARRAY['message'::text, 'rollup'::text]))),
+CONSTRAINT citation_citing_store_is_known_check CHECK ((citing_store = ANY (ARRAY['note'::text, 'standing'::text, 'culture'::text, 'event'::text]))),
 CONSTRAINT citation_has_a_cited_id_check CHECK ((length(btrim(cited_id)) > 0)),
-CONSTRAINT citation_has_a_citing_key_check CHECK ((length(btrim(citing_key)) > 0))
+CONSTRAINT citation_has_a_citing_key_check CHECK ((length(btrim(citing_key)) > 0)),
+CONSTRAINT citation_part_is_not_blank_check CHECK (((part IS NULL) OR (length(btrim(part)) > 0)))
 CONSTRAINT ck_assess_report_kind CHECK ((kind = 'nightly_dq'::text)),
 CONSTRAINT ck_assess_report_results_shape CHECK ((jsonb_typeof(results) = 'array'::text))
 CONSTRAINT ck_cognition_carry_state CHECK ((state = ANY (ARRAY['carried'::text, 'released'::text, 'struck'::text])))
@@ -500,11 +501,13 @@ CONSTRAINT ck_document_revision_positive CHECK ((revision >= 1)),
 CONSTRAINT ck_document_revision_sha256 CHECK ((sha256 ~ '^[0-9a-f]{64}$'::text)),
 CONSTRAINT ck_document_revision_spec_size CHECK ((octet_length((spec)::text) <= 1048576))
 CONSTRAINT ck_event_revision_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_event_revision_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object'::text)),
 CONSTRAINT ck_event_revision_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_event_revision_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
 CONSTRAINT ck_event_revision_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
 CONSTRAINT ck_event_rsvps_response CHECK ((response = ANY (ARRAY['yes'::text, 'no'::text, 'maybe'::text])))
 CONSTRAINT ck_events_confidence_is_a_level CHECK (((confidence IS NULL) OR (confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))),
+CONSTRAINT ck_events_field_meta_shape CHECK ((jsonb_typeof(field_meta) = 'object'::text)),
 CONSTRAINT ck_events_lineage_shape CHECK ((jsonb_typeof(lineage) = 'object'::text)),
 CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoning = ANY (ARRAY['told'::text, 'deduced'::text, 'abduced'::text])))),
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
@@ -1372,6 +1375,8 @@ fact_id uuid NOT NULL,
 fact_id uuid NOT NULL,
 fetch_token text NOT NULL,
 fidelity text DEFAULT 'tentative'::text NOT NULL,
+field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
+field_meta jsonb DEFAULT '{}'::jsonb NOT NULL,
 file text NOT NULL,
 files jsonb NOT NULL,
 fingerprint text NOT NULL,
@@ -1661,6 +1666,7 @@ params_sha256 text NOT NULL,
 parent_revision_id uuid,
 parent_revision_id uuid,
 parent_revision_id uuid,
+part text,
 part_of_speech text,
 participants text[] NOT NULL,
 participants text[] NOT NULL,
@@ -2026,6 +2032,7 @@ unit text NOT NULL,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
+unsupported_at bigint,
 unsupported_at bigint,
 unsupported_at bigint,
 unsupported_at bigint,

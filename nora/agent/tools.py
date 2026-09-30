@@ -4030,7 +4030,7 @@ class EventsCollaborator(Protocol):
 
     async def set_event_status(
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
-        base_revision_id: UUID | None = None,
+        base_revision_id: UUID | None = None, platform: str | None = None,
     ) -> Gathering: ...
 
     async def list_events(
@@ -11768,6 +11768,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 event_id=UUID(event_id), conversation_id=bound_conversation_id,
                 status=parsed_status,
                 base_revision_id=UUID(base_revision_id) if base_revision_id else None,
+                platform=room.platform,
             )
         except GatheringNotFoundError:
             _record(metrics, "event_set_status", "refused", reason="not_found")

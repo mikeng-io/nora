@@ -4,13 +4,16 @@
 **What it does.** Given one or more withdrawn Record item ids (a message
 deleted or unsent, the PII scrub, a person leaving a unit — 70 §9), it walks
 the `citation` edge table (`nora.infra.sql.schema.CITATION`) to find every
-`note`, `standing` and `culture` HEAD row whose citation chain reaches one of
-them, and marks it `unsupported_at` (epoch ms) — **it never parses a body**
+`note`, `standing`, `culture` and `events` HEAD row whose citation chain reaches
+one of them, and marks it `unsupported_at` (epoch ms) — **it never parses a body**
 (10 §2 rule 7's own words). Marking is the only effect: the row is neither
 deleted nor rewritten, "stops rendering" is the readers' job
 (`nora.infra.sql.notes.SqlNoteStore.standing`/`.search`,
 `nora.engagement.context`'s culture/standing render reads — see each site's
-own comment for why it filters there and not in the store's general `read`),
+own comment for why it filters there and not in the store's general `read`;
+for an event, `SqlGatheringStore.search`/`.list_for_conversation`/
+`.list_for_person`, `GatheringService`'s by-id reads, the cognition grounding,
+and the heartbeat's `GatheringScreen` for the reminder that would announce it),
 and re-deriving it is the writer's next session's job (10 §2 rule 7's last
 clause) — a job the Cognition and Character adaptors do not exist to do yet
 (step 3+), so an unsupported row today simply stays unsupported until an
@@ -37,11 +40,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from nora.infra.sql.schema import CITATION, CULTURE, NOTE, STANDING
+from nora.infra.sql.schema import CITATION, CULTURE, EVENTS, NOTE, STANDING
 
 __all__ = ["WithdrawalReport", "withdraw_message", "withdraw_messages"]
 
@@ -90,6 +94,10 @@ async def withdraw_messages(
         marked = await _mark_culture(conn, by_store["culture"], now_ms)
         if marked:
             report.marked["culture"] = marked
+    if by_store.get("event"):
+        marked = await _mark_event(conn, by_store["event"], now_ms)
+        if marked:
+            report.marked["event"] = marked
     return report
 
 
@@ -149,3 +157,26 @@ async def _mark_culture(
         .returning(CULTURE.c.key)
     )
     return [r.key for r in result.all()]
+
+
+async def _mark_event(
+    conn: AsyncConnection, keys: Sequence[str], now_ms: int,
+) -> list[str]:
+    """`keys` are `events.id` as text (`citation.citing_key`'s shape for this
+    store). A key that is not a UUID names no event and is skipped, never an
+    error that aborts the cascade over the stores after it."""
+    ids: list[UUID] = []
+    for key in keys:
+        try:
+            ids.append(UUID(key))
+        except ValueError:
+            continue
+    if not ids:
+        return []
+    result = await conn.execute(
+        sa.update(EVENTS)
+        .where(EVENTS.c.id.in_(ids), EVENTS.c.unsupported_at.is_(None))
+        .values(unsupported_at=now_ms)
+        .returning(EVENTS.c.id)
+    )
+    return [str(r.id) for r in result.all()]
