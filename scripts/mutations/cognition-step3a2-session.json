@@ -135,15 +135,15 @@
  {
   "name": "cognition_session: an empty agenda actually makes no model call",
   "file": "nora/app/cognition_session.py",
-  "old": "        if situation.agenda.is_empty:\n            self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")\n            return None",
-  "new": "        if False:\n            self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")\n            return None",
+  "old": "            if situation.agenda.is_empty:\n                self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")",
+  "new": "            if False:\n                self._inc(\"nora_cognition_session_skipped_total\", reason=\"empty_agenda\")",
   "target": "tests/unit/test_cognition_session_runner.py -k test_an_empty_agenda_makes_no_model_call"
  },
  {
   "name": "cognition_session: session_mode off actually makes no model call",
   "file": "nora/app/cognition_session.py",
-  "old": "        if self._session_mode != \"shadow\":\n            return None",
-  "new": "        if False:\n            return None",
+  "old": "        if self._session_mode != \"shadow\":\n            # Belt and braces only",
+  "new": "        if False:\n            # Belt and braces only",
   "target": "tests/unit/test_cognition_session_writes_nothing_live.py -k test_session_mode_off_never_constructs_a_live_read_either"
  },
  {
@@ -170,9 +170,9 @@
  {
   "name": "cognition_session: a failed session is actually recorded failed (not only logged)",
   "file": "nora/app/cognition_session.py",
-  "old": "            await self._end(session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500])\n            raise",
+  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n            )\n            raise",
   "new": "            raise",
-  "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged"
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged tests/unit/test_cognition_session_lifecycle.py::test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wake"
  },
  {
   "name": "wake: a hook that raises synchronously actually cannot abort the tick for other units",
@@ -203,18 +203,18 @@
   "target": "tests/unit/test_cognition_agent_runner.py"
  },
  {
-  "name": "stimuli sql: the watermark actually skips a wake whose session failed",
+  "name": "stimuli sql: the watermark actually skips a wake that did not close",
   "file": "nora/infra/sql/stimuli.py",
   "old": "                if last_session is None or last_session.state != \"failed\":",
   "new": "                if True:",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_session_that_did_not_close_does_not_advance_the_watermark"
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_wake_that_did_not_close_does_not_advance_the_watermark"
  },
  {
-  "name": "stimuli sql: a session with no end row past the timeout is actually dead",
+  "name": "stimuli sql: an expired tracked wake is actually skipped by the mark query",
   "file": "nora/infra/sql/stimuli.py",
   "old": "    if stale_before_ms is None:\n        return ended_badly",
   "new": "    if True:\n        return ended_badly",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_session_with_no_end_row_is_running_then_dead_past_the_timeout"
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k 'test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout or test_an_expired_wake_under_a_closed_one_is_skipped_by_the_mark'"
  },
  {
   "name": "stimuli: single-flight actually reads the real session, not the wake's age",
@@ -240,7 +240,7 @@
  {
   "name": "cognition_session: a waiting item actually returns to the next agenda",
   "file": "nora/app/cognition_session.py",
-  "old": "                    await self._carry(state, sid, close.strike, \"carried\", waits=True)",
+  "old": "                    carry(sid, close.strike, \"carried\", waits=True)",
   "new": "                    pass",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
  },
@@ -254,8 +254,8 @@
  {
   "name": "cognition_session (domain): a returning item actually carries its strike",
   "file": "nora/domain/cognition_session.py",
-  "old": "        strike = max((carried.get(i, 0) for i in ids), default=0)",
-  "new": "        strike = 0",
+  "old": "        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))",
+  "new": "        key = (*_group_key(stimulus, home_room=home_room), 0)",
   "target": "tests/unit/test_cognition_session_lifecycle.py::test_items_past_max_items_come_back_on_the_next_agenda_with_a_strike tests/unit/test_cognition_session_lifecycle.py::test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
  },
  {
@@ -275,14 +275,14 @@
  {
   "name": "stimuli sql: the newest carry row actually decides",
   "file": "nora/infra/sql/stimuli.py",
-  "old": "        COGNITION_CARRY.c.unit == unit, COGNITION_CARRY.c.state == \"carried\", ~superseded,",
-  "new": "        COGNITION_CARRY.c.unit == unit, COGNITION_CARRY.c.state == \"carried\",",
+  "old": "        _counted_carry(COGNITION_CARRY), ~superseded,",
+  "new": "        _counted_carry(COGNITION_CARRY),",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_the_newest_carry_row_decides_and_released_or_struck_is_not_carried"
  },
  {
   "name": "cognition_session: a cancelled session is actually recorded cancelled",
   "file": "nora/app/cognition_session.py",
-  "old": "            await self._end(session_id, \"cancelled\", \"the session task was cancelled\")\n            raise",
+  "old": "            await self._shielded_finish(\n                wake_id, unit, session_id, \"cancelled\", \"the session task was cancelled\",\n            )\n            raise",
   "new": "            raise",
   "target": "tests/unit/test_cognition_session_lifecycle.py::test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled tests/unit/test_cognition_session_lifecycle.py::test_the_evaluator_can_cancel_its_in_flight_sessions_too"
  },
@@ -331,22 +331,22 @@
  {
   "name": "cognition_pace: wake_cancel actually retracts the standing stimulus",
   "file": "nora/agent/cognition_pace.py",
-  "old": "            stimuli, unit=unit, reason=\"cancelled\", now_ms=now_ms,\n            stimulus_id=None if row is None else row.stimulus_id,",
-  "new": "            stimuli, unit=unit, reason=\"cancelled\", now_ms=now_ms,\n            stimulus_id=None,",
+  "old": "        await stimuli.retract_self(\n            unit=unit, wake_ref=wake_ref, keep=None, reason=\"cancelled\",",
+  "new": "        await stimuli.retract_self(\n            unit=unit, wake_ref=\"\", keep=None, reason=\"cancelled\",",
   "target": "tests/unit/test_cognition_pace.py::test_wake_cancel_retracts_the_standing_stimulus_so_nothing_wakes tests/unit/test_cognition_session_lifecycle.py::test_a_cancelled_self_wake_never_fires_and_an_uncancelled_one_does"
  },
  {
   "name": "cognition_pace: wake_move actually retracts the old stimulus",
   "file": "nora/agent/cognition_pace.py",
-  "old": "        stimulus_id=None if old is None else old.stimulus_id,",
-  "new": "        stimulus_id=None,",
+  "old": "            unit=unit, wake_ref=wake_ref, keep=stimulus_id, reason=\"moved\",",
+  "new": "            unit=unit, wake_ref=\"\", keep=stimulus_id, reason=\"moved\",",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old"
  },
  {
   "name": "cognition_pace: a superseding wake_at actually retracts the displaced stimulus",
   "file": "nora/agent/cognition_pace.py",
-  "old": "            stimulus_id=None if displaced is None else displaced.stimulus_id,",
-  "new": "            stimulus_id=None,",
+  "old": "            unit=unit, wake_ref=supersedes, keep=None, reason=\"superseded\",",
+  "new": "            unit=unit, wake_ref=\"\", keep=None, reason=\"superseded\",",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_superseded_self_wake_is_retracted"
  },
  {
@@ -373,22 +373,22 @@
  {
   "name": "cognition_session: wake_at actually counts the day's created wakes",
   "file": "nora/app/cognition_session.py",
-  "old": "                created_today = await self._created_since(unit, now_ms - _DAY_MS)",
+  "old": "                created_today = await self._created_since(unit, call_ms - _DAY_MS)",
   "new": "                created_today = 0",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_wake_at_is_capped_per_unit_per_day"
  },
  {
   "name": "cognition_session: the pace call actually holds the unit's lock",
   "file": "nora/app/cognition_session.py",
-  "old": "            async with self._lock(unit):\n                pending = await self._pending_self_wakes(unit)\n                created_today",
-  "new": "            if True:\n                pending = await self._pending_self_wakes(unit)\n                created_today",
+  "old": "            async with self._lock(unit):\n                # The REAL clock",
+  "new": "            if True:\n                # The REAL clock",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_two_concurrent_wake_at_calls_cannot_both_pass_the_pending_cap"
  },
  {
   "name": "cognition_session: a self-wake set by an earlier session can actually be cancelled",
   "file": "nora/app/cognition_session.py",
-  "old": "                    now_ms=now_ms, pending=pending, created_by_session_id=None,\n                )\n            return _answer(answer)\n\n        async def remind(",
-  "new": "                    now_ms=now_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            return _answer(answer)\n\n        async def remind(",
+  "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            return _answer(answer)\n\n        async def remind(",
+  "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            return _answer(answer)\n\n        async def remind(",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_cancelled_self_wake_never_fires"
  },
  {
@@ -436,15 +436,225 @@
  {
   "name": "stimuli sql: a retracted stimulus is actually never pending",
   "file": "nora/infra/sql/stimuli.py",
-  "old": "    base = (STIMULUS.c.unit == unit, since <= now_ms, ~retracted)",
+  "old": "    base = (STIMULUS.c.unit == unit, since <= now_ms, live_stimulus(STIMULUS.c.id))",
   "new": "    base = (STIMULUS.c.unit == unit, since <= now_ms)",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_is_never_pending_and_retracting_twice_is_a_no_op"
  },
  {
-  "name": "cognition_dry_run sql: one end per session, the first stands",
+  "name": "stimuli sql: one outcome per wake, the first stands",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "            if existing is not None:\n                return RecordedOutcome(outcome=str(existing.outcome), written=False)",
+  "new": "            if False:\n                return RecordedOutcome(outcome=str(existing.outcome), written=False)",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_one_outcome_per_wake_and_the_first_stands"
+ },
+ {
+  "name": "stimuli (domain): a tracked wake with no outcome actually expires past the timeout",
+  "file": "nora/domain/stimuli.py",
+  "old": "    if recorded_at_ms < stale_before_ms:\n        return LastSession(state=\"failed\", started_at_ms=recorded_at_ms)",
+  "new": "    if False:\n        return LastSession(state=\"failed\", started_at_ms=recorded_at_ms)",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows_it tests/unit/test_cognition_session_lifecycle.py::test_a_session_task_cancelled_before_its_first_step_loses_nothing tests/unit/test_cognition_session_lifecycle.py::test_an_exit_whose_failure_cannot_be_recorded_waits_out_the_timeout"
+ },
+ {
+  "name": "stimuli (domain): a tracked wake with no outcome is actually OPEN (in flight, claimed), not a plain watermark",
+  "file": "nora/domain/stimuli.py",
+  "old": "    if not tracked or stale_before_ms is None:\n        return None",
+  "new": "    if True:\n        return None",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows_it"
+ },
+ {
+  "name": "wake: the evaluator actually writes its wakes tracked when a hook is wired",
+  "file": "nora/app/wake.py",
+  "old": "            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms, tracked=tracked,",
+  "new": "            cut_cooldown=verdict.cut_cooldown, at_ms=at_ms,",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_an_exit_whose_failure_cannot_be_recorded_waits_out_the_timeout tests/unit/test_cognition_session_lifecycle.py::test_a_session_task_cancelled_before_its_first_step_loses_nothing"
+ },
+ {
+  "name": "stimuli sql: only a TRACKED wake with no outcome actually expires",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "        wake.c.tracked == 1,",
+  "new": "        sa.true(),",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_an_untracked_wake_is_a_watermark_with_or_without_a_clock"
+ },
+ {
+  "name": "wake: the evaluator actually writes under a guard (a late close between read and write refuses the wake)",
+  "file": "nora/app/wake.py",
+  "old": "                    wake=wake, recorded_at_ms=int(self._clock() * 1000), guard=guard,",
+  "new": "                    wake=wake, recorded_at_ms=int(self._clock() * 1000),",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake"
+ },
+ {
+  "name": "stimuli sql: the guard actually checks the unit's newest wake",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "                if newest != guard.last_wake_id:\n                    return None",
+  "new": "                if False:\n                    return None",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_guarded_wake_is_written_only_while_the_view_it_came_from_holds"
+ },
+ {
+  "name": "stimuli sql: the guard actually checks the newest wake's outcome is unchanged",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "                    if now_outcome != guard.last_outcome:\n                        return None",
+  "new": "                    if False:\n                        return None",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_guarded_wake_is_written_only_while_the_view_it_came_from_holds"
+ },
+ {
+  "name": "stimuli double: the guard actually checks the unit's newest wake, as the SQL does",
+  "file": "nora/testing/stimuli.py",
+  "old": "            if (max(mine) if mine else None) != guard.last_wake_id:\n                return None",
+  "new": "            if False:\n                return None",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_guarded_wake_is_written_only_while_the_view_it_came_from_holds"
+ },
+ {
+  "name": "cognition_session: a unit with no home room is actually refused when the runner is built",
+  "file": "nora/app/cognition_session.py",
+  "old": "        check_home_rooms(units, home_rooms)\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_unit_with_no_home_room_is_refused_when_the_runner_is_built"
+ },
+ {
+  "name": "cognition_session: a wake for a unit with no home room is actually recorded failed, not returned from",
+  "file": "nora/app/cognition_session.py",
+  "old": "                raise MissingHomeRoomError(f\"no home room configured for unit {unit!r}\")",
+  "new": "                return None",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_wake_for_a_unit_with_no_home_room_is_recorded_failed_not_consumed"
+ },
+ {
+  "name": "cognition_session: a budget that can outlive its wake is actually refused at startup",
+  "file": "nora/app/cognition_session.py",
+  "old": "        check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_session_budget_that_can_outlive_its_wake_is_refused"
+ },
+ {
+  "name": "cognition_session: the budget check actually keeps a margin under the wake's timeout",
+  "file": "nora/app/cognition_session.py",
+  "old": "    if budget_timeout_seconds > session_timeout_seconds - SESSION_TIMEOUT_MARGIN_SECONDS:",
+  "new": "    if budget_timeout_seconds > session_timeout_seconds:",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_session_budget_that_can_outlive_its_wake_is_refused"
+ },
+ {
+  "name": "stimuli sql: a close for a superseded wake is actually recorded timeout with no carry",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "                if later is not None:\n                    value, rows = \"timeout\", []",
+  "new": "                if False:\n                    value, rows = \"timeout\", []",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_carry"
+ },
+ {
+  "name": "stimuli double: a close for a superseded wake is actually recorded timeout with no carry",
+  "file": "nora/testing/stimuli.py",
+  "old": "            if later is not None:\n                value, rows = \"timeout\", []",
+  "new": "            if False:\n                value, rows = \"timeout\", []",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_carry"
+ },
+ {
+  "name": "cognition_session: a failed `closed` write actually raises so the wake is recorded failed at once",
+  "file": "nora/app/cognition_session.py",
+  "old": "            if outcome == \"closed\":\n                raise\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_failed_close_is_recorded_failed_and_its_stimuli_return_with_no_strike"
+ },
+ {
+  "name": "stimuli sql: the closed outcome and its carries are actually one transaction",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "            if rows:\n                await conn.execute(sa.insert(COGNITION_CARRY), [",
+  "new": "            await conn.commit()\n            if rows:\n                await conn.execute(sa.insert(COGNITION_CARRY), [",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_close_that_fails_part_way_writes_nothing"
+ },
+ {
+  "name": "stimuli sql: a retracted stimulus actually never returns through carry",
+  "file": "nora/infra/sql/stimuli.py",
+  "old": "        live_stimulus(COGNITION_CARRY.c.stimulus_id),\n    )",
+  "new": "    )",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_retracted_stimulus_never_returns_through_carry"
+ },
+ {
+  "name": "stimuli double: a retracted stimulus actually never returns through carry",
+  "file": "nora/testing/stimuli.py",
+  "old": "            i: c for i, c in current.items() if c.state == \"carried\" and self._live(i)",
+  "new": "            i: c for i, c in current.items() if c.state == \"carried\"",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_self_wake_cancelled_while_carried_never_fires_through_carry tests/unit/test_cognition_session_lifecycle.py::test_a_self_wake_moved_while_carried_fires_once_at_its_new_time_only"
+ },
+ {
+  "name": "cognition_dry_run sql: a self-wake whose stimulus is retracted is actually not pending",
   "file": "nora/infra/sql/cognition_dry_run.py",
-  "old": ").on_conflict_do_nothing(index_elements=[COGNITION_SESSION_END.c.session_id])",
-  "new": ").on_conflict_do_update(index_elements=[COGNITION_SESSION_END.c.session_id], set_={\"outcome\": end.outcome})",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_one_end_per_session_and_the_first_stands"
+  "old": "                retracted=bool(r.retracted),",
+  "new": "                retracted=False,",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_self_wake_whose_stimulus_is_retracted_is_not_pending"
+ },
+ {
+  "name": "cognition_pace (domain): the fold actually drops a self-wake whose stimulus is retracted",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "    return tuple(w for ref, w in live.items() if not retracted.get(ref, False))",
+  "new": "    return tuple(live.values())",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_self_wake_whose_stimulus_is_retracted_is_not_pending tests/unit/test_cognition_pace.py::test_a_cancel_whose_record_fails_still_never_fires_and_reads_not_pending"
+ },
+ {
+  "name": "cognition_pace: wake_move actually appends before it retracts",
+  "file": "nora/agent/cognition_pace.py",
+  "old": "    stimulus_id = await stimuli.append(\n        stimulus=NewStimulus(\n            unit=unit, kind=\"self\", item=wake_ref, ref=f\"self:{wake_ref}:{at_ms}\",\n            at_ms=now_ms, due_ms=at_ms,\n        ),\n        recorded_at_ms=now_ms,\n    )\n    try:\n        await stimuli.retract_self(\n            unit=unit, wake_ref=wake_ref, keep=stimulus_id, reason=\"moved\",\n            recorded_at_ms=now_ms,\n        )\n    except Exception:\n        await _take_back(stimuli, unit=unit, stimulus_id=stimulus_id, now_ms=now_ms)\n        raise",
+  "new": "    await stimuli.retract_self(\n        unit=unit, wake_ref=wake_ref, keep=None, reason=\"moved\",\n        recorded_at_ms=now_ms,\n    )\n    stimulus_id = await stimuli.append(\n        stimulus=NewStimulus(\n            unit=unit, kind=\"self\", item=wake_ref, ref=f\"self:{wake_ref}:{at_ms}\",\n            at_ms=now_ms, due_ms=at_ms,\n        ),\n        recorded_at_ms=now_ms,\n    )",
+  "target": "tests/unit/test_cognition_pace.py::test_a_move_whose_append_fails_leaves_the_old_time_live"
+ },
+ {
+  "name": "cognition_pace: a move whose retract fails actually takes the new time back",
+  "file": "nora/agent/cognition_pace.py",
+  "old": "    except Exception:\n        await _take_back(stimuli, unit=unit, stimulus_id=stimulus_id, now_ms=now_ms)\n        raise",
+  "new": "    except Exception:\n        raise",
+  "target": "tests/unit/test_cognition_pace.py::test_a_move_whose_retract_fails_takes_the_new_time_back"
+ },
+ {
+  "name": "cognition_pace: a wake_at whose record fails actually takes its stimulus back",
+  "file": "nora/agent/cognition_pace.py",
+  "old": "    except Exception:\n        await _take_back(\n",
+  "new": "    except Exception:\n        raise\n        await _take_back(\n",
+  "target": "tests/unit/test_cognition_pace.py::test_a_wake_at_whose_record_fails_leaves_no_orphan_stimulus"
+ },
+ {
+  "name": "cognition_pace: a superseding wake_at actually retracts the displaced ref only after its own record",
+  "file": "nora/agent/cognition_pace.py",
+  "old": "    answer = await _record_or_take_back(\n        ledger, stimuli, new_stimulus_id=stimulus_id, session_id=session_id, unit=unit,",
+  "new": "    if supersedes is not None:\n        await stimuli.retract_self(\n            unit=unit, wake_ref=supersedes, keep=None, reason=\"superseded\",\n            recorded_at_ms=now_ms,\n        )\n    answer = await _record_or_take_back(\n        ledger, stimuli, new_stimulus_id=stimulus_id, session_id=session_id, unit=unit,",
+  "target": "tests/unit/test_cognition_pace.py::test_a_superseding_wake_at_whose_record_fails_keeps_the_displaced_one"
+ },
+ {
+  "name": "cognition_session (domain): a strike is actually the item's (a fresh stimulus does not inherit one)",
+  "file": "nora/domain/cognition_session.py",
+  "old": "        key = (*_group_key(stimulus, home_room=home_room), carried.get(stimulus.id, 0))\n        groups.setdefault(key, []).append(stimulus)\n\n    items: list[AgendaItem] = []\n    for (kind, room, item_key, strike), rows in groups.items():\n        ids = tuple(sorted(s.id for s in rows))",
+  "new": "        key = (*_group_key(stimulus, home_room=home_room), 0)\n        groups.setdefault(key, []).append(stimulus)\n\n    items: list[AgendaItem] = []\n    for (kind, room, item_key, _), rows in groups.items():\n        ids = tuple(sorted(s.id for s in rows))\n        strike = max((carried.get(i, 0) for i in ids), default=0)",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strikes"
+ },
+ {
+  "name": "cognition_session: wake_at actually reads the clock at the call, not the session's start",
+  "file": "nora/app/cognition_session.py",
+  "old": "                call_ms = self._now_ms()\n                pending = await self._pending(unit, call_ms)\n                created_today",
+  "new": "                call_ms = now_ms\n                pending = await self._pending(unit, call_ms)\n                created_today",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_the_per_day_cap_counts_back_from_the_call_not_from_the_sessions_start"
+ },
+ {
+  "name": "cognition_dry_run sql: the pending self-wakes read is actually bounded",
+  "file": "nora/infra/sql/cognition_dry_run.py",
+  "old": "            t.c.unit == unit, t.c.outcome == \"recorded\", t.c.wake_ref.in_(recent),",
+  "new": "            t.c.unit == unit, t.c.outcome == \"recorded\",",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_pending_self_wakes_reads_a_bounded_window_by_ref"
+ },
+ {
+  "name": "cognition_dry_run double: the pending self-wakes read is actually bounded, as the SQL is",
+  "file": "nora/testing/cognition_dry_run_store.py",
+  "old": "            for p, _ in mine if p.wake_ref in recent",
+  "new": "            for p, _ in mine",
+  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_pending_self_wakes_reads_a_bounded_window_by_ref"
+ },
+ {
+  "name": "cognition_session: the cancelled outcome write is actually shielded from a second cancel",
+  "file": "nora/app/cognition_session.py",
+  "old": "        await asyncio.shield(write)",
+  "new": "        await write",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_second_cancel_cannot_interrupt_the_cancelled_outcome_write"
+ },
+ {
+  "name": "stimuli (domain): single-flight actually reads the OPEN state (a wake still running holds its unit)",
+  "file": "nora/domain/stimuli.py",
+  "old": "    return session is not None and session.state == \"running\"",
+  "new": "    return False",
+  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_session_still_running_after_a_restart_still_holds_its_unit tests/unit/test_cognition_session_lifecycle.py::test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows_it"
  }
 ]

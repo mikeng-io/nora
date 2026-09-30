@@ -51,7 +51,7 @@
   {
     "name": "#1 a wake's watermark falls to its highest pending id (resurrects consumed stimuli)",
     "file": "nora/domain/stimuli.py",
-    "old": "        through_stimulus_id=max(\n            Watermark.of(view.last_wake).through_stimulus_id,\n            max(s.id for s in view.pending),\n        ),",
+    "old": "        through_stimulus_id=max(\n            view.watermark.through_stimulus_id,\n            max(s.id for s in view.pending),\n        ),",
     "new": "        through_stimulus_id=max(s.id for s in view.pending),",
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed"
   },
@@ -93,7 +93,7 @@
   {
     "name": "concurrency bound dropped: every unit wakes at once",
     "file": "nora/app/wake.py",
-    "old": "            if flying >= self._policy.max_concurrent_sessions:",
+    "old": "            if len(flying) >= self._policy.max_concurrent_sessions:",
     "new": "            if False:",
     "target": "tests/unit/test_wake_evaluator.py::test_at_most_max_concurrent_sessions_across_units"
   },
