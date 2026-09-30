@@ -10,14 +10,15 @@ description: >-
 
 # Making a document
 
-## Write a document only for something a person will open again
+## Somebody who asks for a document gets one
 
-Ask who will read it and when. An answer they need now belongs in the chat. A file they want to hand
+When somebody asks for a document by name, make it, however short it turns out. When nobody did, judge
+who will read it and when, without asking them. An answer they need now belongs in the chat. A file they want to hand
 on (a spreadsheet, a PDF, a script's output) is made on your computer and sent with
 `computer_export`; a document is never a file, and your computer never publishes a page. A document
 is what people come back to, share with someone who was not here, or read on a bigger screen than a
-chat: a write-up, a plan, a comparison, a summary of what the room decided. When the honest answer
-is three sentences, send the three sentences.
+chat: a write-up, a plan, a comparison, a summary of what the room decided. When nobody asked for one
+and the honest answer is three sentences, send the three sentences.
 
 ## Read the catalog before you write a line
 
@@ -32,21 +33,23 @@ as a slide. Use the component that fits the content (a table for things compared
 things in order, a callout for a deadline or a warning, a chart for one measured series) and plain
 prose everywhere else. Do not paste the chat in, and do not repeat one fact in three places.
 
-Anything you looked up carries its source and the date you read it, in `Sources`. A number you did
-not compute and cannot source is left out, not rounded into something that looks certain.
+Anything you looked up carries its source and the date you read it, in `Sources`. A number somebody
+in the room gave you is sourced to them: say whose. A number you did not compute, were not given and
+cannot source is left out, not rounded into something that looks certain.
 
 ## Numbers and charts come from your computer, not from your head
 
 When a document needs a calculation, a simulation or a chart's data, run it on your computer first,
 read the result, and place that result in the spec. The computer gives you the numbers; the document
-is yours to compose. Never publish a figure you did not see come out of a run or a source.
+is yours to compose. Never publish a figure that did not come out of a run, a source or the room.
 
 ## Name the pictures that went in
 
 Use pictures that are already in view: the `[image ...]` markers in the recent messages, and pictures
 you made in this room. Before you place one, read what it shows with `media_fetch` (its code, and an
 empty `question`), so the caption and `alt` describe the picture that is there. Put the code in the
-`Image`; the store resolves it in this room only.
+`Image`. The picture has to come from this room; once it is in the document, everyone who can open
+the document sees it.
 
 Say in your reply which pictures went in, by what they show. A picture from before the recent window
 is out of reach: say so and leave it out, and never guess a code.
@@ -66,5 +69,7 @@ publish again. Do not argue with a finding, and do not report a document as made
 
 ## Tell the room where it is, once
 
-After a publish that returned `ok`, say where to open it in one line: it opens in the web app for
-people who are signed in, and there is no public link. Add nothing the document already says.
+After a publish that returned `ok`, give the `url` it returned, exactly, in one line, and say it opens
+in the web app for people who are signed in. The url is the answer to «send me the link»; what does
+not exist is a link anyone can open without signing in. Do not retell the document; do name which
+pictures went in.
