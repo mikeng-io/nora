@@ -264,8 +264,9 @@ async def _none(*a: Any, **k: Any) -> Any:
     return ()
 
 
-def _runner(agent: _Agent, grounder: Any, **kw: Any) -> tuple[CognitionSessionRunner, InMemoryStimulusStore,
-                                                     InMemoryCognitionDryRunStore]:
+def _runner(
+    agent: _Agent, grounder: Any, **kw: Any,
+) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionDryRunStore]:
     ledger = InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     stimuli.seed_wake("u", 1)
@@ -901,7 +902,7 @@ def test_a_send_of_hers_from_another_room_is_never_rendered_under_an_item():
     assert "the other room's line" not in prompt and "Nora (you)" not in prompt
 
 
-# ---- M1 (strongest-tier review of #646): grounded AFTER the skip -----------------------------------
+# ---- M1 (strongest-tier review of #646): grounded AFTER the skip ------------------------------
 
 def _known_person(person_id: str) -> bool:
     return person_id in _PERSONS.by_person
@@ -921,7 +922,7 @@ async def _wake_through_the_real_grounder(
     return agent.prompts[0], ledger.sessions[0][1]
 
 
-async def test_an_unreadable_rollup_sorting_first_does_not_shift_her_own_sends_onto_the_wrong_room():
+async def test_an_unreadable_rollup_sorting_first_does_not_shift_own_sends_onto_the_wrong_room():
     """Own sends are keyed by the agenda index the grounder saw. The skip rebuilt
     the agenda AFTER the grounding, so with an unreadable rollup at index 0 every
     room item moved up one and read the neighbour's sends (or none). Two rooms,

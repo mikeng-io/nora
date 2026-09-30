@@ -383,7 +383,9 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
 
 @pytest.mark.parametrize("seed", range(12))
 @pytest.mark.parametrize("limit", [3, 1000])
-async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus(store, seed, limit):
+async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus(
+    store, seed, limit,
+):
     """The same invariant under what production does to it (the strongest-tier
     review of #646): TRACKED wakes (each awaits an outcome), 30% of which FAIL and
     10% of which EXPIRE (no outcome row: a kill), closes that CARRY stimuli back
@@ -507,7 +509,7 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
         recorded_at_ms=NOW + 11,
     )
     view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=limit)
-    assert [s.id for s in view.pending] == (ids + [r6])[:limit]
+    assert [s.id for s in view.pending] == [*ids, r6][:limit]
 
 
 async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_reads(store):
