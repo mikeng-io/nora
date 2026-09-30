@@ -4,10 +4,13 @@ review, major).
 Five consecutive failures used to strike every stimulus the failing wakes
 claimed, so a ~90-minute provider outage retracted real human messages. Each
 failed outcome now records its CAUSE when it is written: `infra` (the world
-failed: provider, network, database, a kill, a timeout, anything unclassified)
-backs the unit off and never strikes; `agenda` (the agenda itself cannot be
-processed: context overflow, a reply cut at max_tokens, a deterministic
-grounding fault) is the only cause that counts toward a strike.
+failed: provider, network, database, a kill, a timeout, a cut reply, anything
+unclassified) backs the unit off and never strikes; `agenda` (the agenda itself cannot be
+processed, PROVEN: a context overflow whose prompt is a known fraction of the
+model's window and that repeated on the same agenda, or an `AgendaError`) is the
+only cause that counts toward a strike. (Docstring corrected by the third review
+of #637: a reply cut at max_tokens and a grounding read failure are `infra`; the
+column and its check are unchanged.)
 
 The column is NOT NULL with the default `infra`, so every row written before
 this migration reads as `infra`: history can never strike anything after the

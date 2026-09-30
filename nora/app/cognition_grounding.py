@@ -31,10 +31,12 @@ not the tool is on, and a session with the tool off still sees who said what.
   `unsupported_at` is dropped here as well as in the store's read (the seam is
   injected, so the rule is held where the line is built), and a note or an
   event is shown only when lineage permits it for EVERY room on the agenda
-  (`nora.agent.lineage`, the tag path's own predicates; `[lineage] mode = "off"`
-  applies none, exactly as the tag path). A row naming `exclude_persons` is
-  withheld: the session has no live roster to check it against, and unknown
-  denies.
+  (`nora.agent.lineage`, the tag path's own predicates). `[lineage] mode` reads
+  as it does on the tag path: `on` removes, `shadow` computes the same answer,
+  removes NOTHING and logs what it would have, `off` applies none. Under `on`,
+  a row naming `exclude_persons` is withheld: the session has no live roster
+  to check it against, and unknown denies (withdrawal is not a lineage
+  question and applies in every mode).
 - *Names.* An author is the identity-canonical name (`Persons.name_transcript`)
   else the self-set profile name, never a platform id (R-18), and what a photo
   shows arrives through the ONE media join every transcript builder shares.
@@ -183,18 +185,28 @@ def build_grounder(
             lineage.render_room(platform=r.platform, conversation_id=r.conversation_id)
             for r in agenda_rooms
         ]
+        # `on` removes, `shadow` only REPORTS what it would have removed (a log
+        # line with the counts) and `off` applies nothing: the tag path's own
+        # reading (`nora.agent.prefill._enforced`: `shadow` computes the same
+        # answer and only reports it).
         applies = lineage.mode != "off"
-        notes = tuple(
-            NoteLine(id=n.id, title=n.title, description=n.description)
-            for n in await note_index(unit)
-            # WITHDRAWN: dropped here too. LINEAGE: shown only where it passes
-            # for every room the session reads.
-            if n.unsupported_at is None and (
-                not applies or all(derived_view(
-                    notes=(n,), standing=None, culture=None, target=t,
-                ).notes for t in targets)
-            )
-        )
+        enforced = lineage.mode == "on"
+        withheld = {"notes": 0, "events": 0}
+        notes_out: list[NoteLine] = []
+        for n in await note_index(unit):
+            # WITHDRAWN: dropped here too, in every mode (not a lineage
+            # question). LINEAGE: shown only where it passes for every room the
+            # session reads.
+            if n.unsupported_at is not None:
+                continue
+            if applies and not all(derived_view(
+                notes=(n,), standing=None, culture=None, target=t,
+            ).notes for t in targets):
+                withheld["notes"] += 1
+                if enforced:
+                    continue
+            notes_out.append(NoteLine(id=n.id, title=n.title, description=n.description))
+        notes = tuple(notes_out)
         events: list[EventLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
@@ -208,13 +220,20 @@ def build_grounder(
                     origin=room_key(room.platform, room.conversation_id),
                     exclude_persons=e.exclude_persons,
                 ).values()):
-                    continue
+                    withheld["events"] += 1
+                    if enforced:
+                        continue
                 events.append(EventLine(
                     id=str(e.id), room=room, title=e.title,
                     when_ms=None if e.when is None else int(e.when.timestamp() * 1000),
                     venue=e.venue_name or e.venue_text or "", status=e.status.value,
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
+        if lineage.mode == "shadow" and any(withheld.values()):
+            log.info(
+                "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
+                "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
+            )
         return Grounding(records=records_out, notes=notes, events=tuple(events))
 
     return ground

@@ -36,10 +36,10 @@ from tests.unit.test_cognition_session_lifecycle import (
     S,
     ScriptedAgent,
     _rig,
+    agenda_fault,
     boom,
     close_written,
     ok,
-    overflow,
 )
 
 TICK = 30
@@ -152,7 +152,7 @@ async def test_an_always_failing_static_agenda_stops_after_five_sessions():
     """Three messages that always fail: 5 sessions (300 + 600 + 1200 + 2400 s
     apart), then the three stimuli are struck with reason `failed` and nothing
     more wakes for them, that day or after."""
-    rig = _rig(agent=ScriptedAgent(script=[overflow]))
+    rig = _rig(agent=ScriptedAgent(script=[agenda_fault]))
     for _ in range(3):
         await rig.say()
     await _run(rig, ticks=DAY_TICKS, chatty=False)
@@ -168,7 +168,7 @@ async def test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_d
     """The worst case: something new is always pending. The first day is the
     backoff climbing (300, 600, 1200, 2400, 4800, 9600 s, then 6 h), and every
     later day is the 6 h cap: 4 sessions."""
-    rig = _rig(agent=ScriptedAgent(script=[overflow]))
+    rig = _rig(agent=ScriptedAgent(script=[agenda_fault]))
     await _run(rig, ticks=DAY_TICKS, chatty=True)
     day_one = rig.agent.calls
     assert day_one == 10
@@ -180,7 +180,7 @@ async def test_an_always_failing_chatty_room_is_10_sessions_on_day_one_and_4_a_d
 
 
 async def test_a_stimulus_that_arrived_after_the_failed_wakes_is_not_struck_unseen():
-    rig = _rig(agent=ScriptedAgent(script=[overflow]))
+    rig = _rig(agent=ScriptedAgent(script=[agenda_fault]))
     await rig.say()
     await _run(rig, ticks=int(4500 / TICK) + 2, chatty=False)    # five failures in
     assert rig.agent.calls == 5
@@ -244,12 +244,14 @@ async def test_a_strong_cue_does_not_cut_a_backoff():
     (ConnectionError("provider unreachable"), "infra"),
     (asyncio.CancelledError(), "infra"),
     (KeyError("unclassified"), "infra"),
-    (AgendaError("a grounding read that fails for this agenda, deterministically"), "agenda"),
-    (type("ContextWindowOverflowException", (Exception,), {})("window"), "agenda"),
-    (type("MaxTokensReachedException", (Exception,), {})("cut"), "agenda"),
-    (type("PartialReplyError", (Exception,), {})("cut"), "agenda"),
-    # a SUBCLASS of an agenda class is the agenda's too
-    (type("Mine", (type("ContextWindowOverflowException", (Exception,), {}),), {})("w"), "agenda"),
+    (AgendaError("an overflow proven to be this agenda's"), "agenda"),
+    # a SUBCLASS of AgendaError is the agenda's too
+    (type("Mine", (AgendaError,), {})("w"), "agenda"),
+    # an SDK class alone proves nothing (DEC-244, third review): see
+    # tests/unit/test_cognition_failure_cause.py for the proof each needs
+    (type("ContextWindowOverflowException", (Exception,), {})("window"), "infra"),
+    (type("MaxTokensReachedException", (Exception,), {})("cut"), "infra"),
+    (type("PartialReplyError", (Exception,), {})("cut"), "infra"),
 ])
 def test_the_classification_is_narrow_and_unknown_is_infrastructure(exc, cause):
     assert classify_failure(exc) == cause
@@ -283,7 +285,9 @@ async def test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_not
 
 
 async def test_five_agenda_failures_strike_and_an_infrastructure_one_between_does_not_reset():
-    rig = _rig(agent=ScriptedAgent(script=[overflow, overflow, boom, overflow, overflow, overflow]))
+    rig = _rig(agent=ScriptedAgent(
+        script=[agenda_fault, agenda_fault, boom, agenda_fault, agenda_fault, agenda_fault],
+    ))
     for _ in range(3):
         await rig.say()
     await _run(rig, ticks=DAY_TICKS * 2, chatty=False)
@@ -298,7 +302,7 @@ async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
     """Six failures in a row, five of them the world's: the failures count backs
     the unit off, but the AGENDA's count is one, so nothing is struck (the
     range one agenda-failed wake claimed included)."""
-    rig = _rig(agent=ScriptedAgent(script=[overflow, boom, boom, boom, boom, boom, boom]))
+    rig = _rig(agent=ScriptedAgent(script=[agenda_fault, boom, boom, boom, boom, boom, boom]))
     for _ in range(3):
         await rig.say()
     await _until_calls(rig, 7)
@@ -308,7 +312,7 @@ async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
 
 
 async def test_the_session_runner_records_why_it_failed():
-    rig = _rig(agent=ScriptedAgent(script=[boom, overflow]))
+    rig = _rig(agent=ScriptedAgent(script=[boom, agenda_fault]))
     await rig.say()
     await _until_calls(rig, 2)
     assert [o.cause for _, o in sorted(rig.stimuli.outcomes.items())] == ["infra", "agenda"]

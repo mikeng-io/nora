@@ -170,7 +170,7 @@
  {
   "name": "cognition_session: a failed session is actually recorded failed (not only logged)",
   "file": "nora/app/cognition_session.py",
-  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n            )\n            raise",
+  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n                cause=classify_failure(exc),\n            )\n            raise",
   "new": "            raise",
   "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged tests/unit/test_cognition_session_lifecycle.py::test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wake"
  },
@@ -534,15 +534,15 @@
  {
   "name": "stimuli sql: a close for a superseded wake is actually recorded timeout with no carry",
   "file": "nora/infra/sql/stimuli.py",
-  "old": "                if later is not None:\n                    value, rows = \"timeout\", []",
-  "new": "                if False:\n                    value, rows = \"timeout\", []",
+  "old": "                if later is not None:\n                    value, rows, cause = \"timeout\", [], \"infra\"",
+  "new": "                if False:\n                    value, rows, cause = \"timeout\", [], \"infra\"",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_carry"
  },
  {
   "name": "stimuli double: a close for a superseded wake is actually recorded timeout with no carry",
   "file": "nora/testing/stimuli.py",
-  "old": "            if later is not None:\n                value, rows = \"timeout\", []",
-  "new": "            if False:\n                value, rows = \"timeout\", []",
+  "old": "            if later is not None:\n                value, rows, cause = \"timeout\", [], \"infra\"",
+  "new": "            if False:\n                value, rows, cause = \"timeout\", [], \"infra\"",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_a_close_for_a_wake_a_later_wake_superseded_is_timeout_with_no_carry"
  },
  {

@@ -445,6 +445,8 @@ def build_cognition_runner(
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
         model_id=model_id, model_route=model_route, metrics=metrics, clock=clock,
         tz=ZoneInfo(cfg.cognition.timezone),
+        model_window_tokens=cfg.cognition.model_window_tokens,
+        overflow_window_fraction=cfg.cognition.overflow_window_fraction,
     )
 
 

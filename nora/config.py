@@ -3413,6 +3413,17 @@ class CognitionConfig(BaseModel):
     record_chars: int = Field(default=8000, ge=500)
     message_chars: int = Field(default=400, ge=40)
     register_lines: int = Field(default=40, ge=1)
+    #: DEC-244 (third review): a context overflow is the AGENDA's (and may strike
+    #: human stimuli) only when it is proven: the prompt's token estimate (a
+    #: lower bound) is at least `overflow_window_fraction` of THIS model's window
+    #: AND the same agenda overflowed on the attempt before. `None` (the
+    #: default) is «window unknown»: no overflow is ever the agenda's, every one
+    #: is `infra` (backs off, never strikes). Strands raises the overflow class
+    #: for any provider message containing «context length» or «too many
+    #: tokens», a 503 and a per-minute token limit included, so the class alone
+    #: proves nothing.
+    model_window_tokens: int | None = Field(default=None, ge=1000)
+    overflow_window_fraction: float = Field(default=0.8, gt=0, le=1)
 
     @field_validator("time_floors")
     @classmethod
