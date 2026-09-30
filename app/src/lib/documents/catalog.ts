@@ -21,7 +21,27 @@ import { z } from "zod";
 const text = (max: number) => z.string().min(1).max(max);
 const tone = z.enum(["neutral", "info", "success", "warning", "danger"]);
 // A link is http(s) only: no `javascript:`, no `data:`, no relative path.
-const link = z.string().max(2048).regex(/^https?:\/\/[^\s]+$/, "an http(s) URL");
+const link = z.string().max(2048).regex(/^https?:\/\/[^\s]+(?![\s\S])/, "an http(s) URL");
+
+// A Mermaid source is plain drawing instructions or it is refused. Mermaid 12
+// takes configuration from frontmatter, `%%{init}%%`, `click`/`link`/`callback`
+// statements and CSS (`style`, `classDef`, `linkStyle`), and it inserts the SVG
+// into the live page to measure it, so a `url(https://…)` or an <a href> there
+// is a request or a link before any check of the output can run (found by
+// review and reproduced in e2e on 2026-09-30). The renderer applies this same
+// pattern before it calls mermaid. Case-folded by hand, not with an `i` flag,
+// because a JSON Schema `pattern` cannot carry flags and the Python checker
+// reads that schema alone.
+const ci = (word: string) => [...word].map((c) => `[${c.toLowerCase()}${c.toUpperCase()}]`).join("");
+const LINE = "(?:^|\\n)[ \\t\\uFEFF]*";
+export const MERMAID_PLAIN = new RegExp(
+  "^" +
+    `(?![\\s\\S]*${LINE}---)` +
+    "(?![\\s\\S]*%%\\{)" +
+    `(?![\\s\\S]*${LINE}(?:${["click", "link", "callback", "call", "style", "classDef", "linkStyle"].map(ci).join("|")})\\b)` +
+    `(?![\\s\\S]*(?:${ci("url")}\\(|${ci("image-set")}\\(|@${ci("import")}|${ci("expression")}\\(|${ci("javascript")}:))` +
+    "[\\s\\S]*(?![\\s\\S])",
+);
 
 export const components = {
   Page: {
@@ -107,12 +127,11 @@ export const components = {
   },
   Mermaid: {
     props: z.strictObject({
-      // No `%%{` init directive: the renderer's security level is fixed, not the author's.
-      source: z.string().min(1).max(4000).regex(/^(?![\s\S]*%%\{)[\s\S]*$/, "no %%{ directive"),
+      source: z.string().min(1).max(4000).regex(MERMAID_PLAIN, "plain diagram source: no frontmatter, directive, click, style or url"),
       caption: text(200),
     }),
     description:
-      "A diagram written as Mermaid source (flowchart, sequence, state). Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows.",
+      "A diagram written as plain Mermaid source (flowchart, sequence, state). No frontmatter, `%%{` directive, `click`, `link`, `style`, `classDef` or `url(`: the page styles it. Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows.",
   },
   Map: {
     props: z.strictObject({
@@ -140,7 +159,7 @@ export const components = {
     props: z.strictObject({
       // A media code from an [image ...] marker in the room, or its full sha256.
       // Never a URL: a picture comes from custody, so a document cannot call a third party.
-      media: z.string().regex(/^[0-9a-f]{6,64}$/, "a media code or sha256"),
+      media: z.string().regex(/^[0-9a-f]{6,64}(?![\s\S])/, "a media code or sha256"),
       alt: text(300),
       caption: text(200).optional(),
     }),
@@ -167,7 +186,7 @@ export const components = {
           z.strictObject({
             title: text(200),
             url: link,
-            asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD").optional(),
+            asOf: z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\s\S])/, "YYYY-MM-DD").optional(),
             note: text(300).optional(),
           }),
         )
@@ -215,7 +234,10 @@ export interface DocumentNode {
   children?: DocumentNode[];
 }
 
-const MAX_CHILDREN = 200;
+export const MAX_CHILDREN = 200;
+/** Page is depth 0; the deepest node is at this depth. A Tab counts as a level. */
+export const MAX_DEPTH = 8;
+export const MAX_NODES = 500;
 
 const block = (name: ComponentName): z.ZodType =>
   CONTAINERS.has(name)
@@ -260,3 +282,37 @@ export const documentSchema = z.strictObject({
 });
 
 export type DocumentSpec = z.infer<typeof documentSchema>;
+
+export type ParseResult = { ok: true; doc: DocumentSpec } | { ok: false; reason: string };
+
+/**
+ * The one way to read a stored document. It never throws and never recurses on
+ * untrusted depth: a document 1,200 levels deep used to make `safeParse` raise
+ * a RangeError (review, 2026-09-30), so depth and size are measured first, with
+ * an explicit stack, and only a tree within the caps reaches Zod. Zod then
+ * applies the defaults, which the renderer relies on (a Badge without `tone`).
+ */
+export function parseDocument(input: unknown): ParseResult {
+  try {
+    const root = (input as { root?: unknown } | null)?.root;
+    const stack: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 0 }];
+    let nodes = 0;
+    while (stack.length) {
+      const { node, depth } = stack.pop()!;
+      if (typeof node !== "object" || node === null) continue; // Zod names the fault
+      if (++nodes > MAX_NODES) return { ok: false, reason: `more than ${MAX_NODES} nodes` };
+      if (depth > MAX_DEPTH) return { ok: false, reason: `nested deeper than ${MAX_DEPTH}` };
+      const kids = (node as { children?: unknown }).children;
+      if (Array.isArray(kids)) {
+        if (kids.length > MAX_CHILDREN) return { ok: false, reason: `more than ${MAX_CHILDREN} children in one node` };
+        for (const k of kids) stack.push({ node: k, depth: depth + 1 });
+      }
+    }
+    const r = documentSchema.safeParse(input);
+    if (r.success) return { ok: true, doc: r.data };
+    const i = r.error.issues[0];
+    return { ok: false, reason: `${i?.path.join(".") || "document"}: ${i?.message ?? "invalid"}` };
+  } catch {
+    return { ok: false, reason: "the document could not be read" };
+  }
+}

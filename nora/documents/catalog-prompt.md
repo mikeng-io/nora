@@ -2,7 +2,7 @@
 
 A document is ONE JSON object: `{ "version": 1, "root": <Page> }`. `root` is a Page; every node is
 `{ "type", "props", "children"? }` with `children` a nested array (no ids, no references).
-Nothing else exists: no classes, styles, HTML, scripts, state or actions, and no URL except in `Sources`.
+Nothing else exists: no classes, styles, HTML, scripts, state or actions. A link is an http(s) address in `Sources` or in Markdown text; no other prop takes a URL.
 Unknown types, unknown props and extra keys are rejected, so do not invent them.
 
 Components:
@@ -21,7 +21,7 @@ Components:
 - **Tabs** {  } — Switchable panels. Its children are Tab nodes and nothing else; use it to compare options or split one topic by audience, not to hide the main content. children: Tab nodes only.
 - **Tab** { label: string (max 60) } — One panel of a Tabs: a label and the blocks inside it. Only valid directly inside Tabs. children: blocks; only valid inside Tabs.
 - **Chart** { kind: "bar" | "line", title?: string (max 120), unit?: string (max 20), caption: string (max 200), data: [{ label: string (max 40), value: number }] (max 60) } — One measure, one axis: `bar` ranks or compares categories, `line` shows a change over an ordered `label` axis (days, months). `caption` states what the chart shows. Two measures of different scale are two charts, never one; a single number is a Stat, not a chart. No children.
-- **Mermaid** { source: string (max 4000), caption: string (max 200) } — A diagram written as Mermaid source (flowchart, sequence, state). Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows. No children.
+- **Mermaid** { source: string (max 4000), caption: string (max 200) } — A diagram written as plain Mermaid source (flowchart, sequence, state). No frontmatter, `%%{` directive, `click`, `link`, `style`, `classDef` or `url(`: the page styles it. Show a mechanism or a route, label every arrow, and let `caption` say what the picture shows. No children.
 - **Map** { caption: string (max 200), places: [{ name: string (max 80), lat: number -90..90, lng: number -180..180 }] (max 50), route?: [{ lat: number -90..90, lng: number -180..180 }] (max 200) } — A map of named places, and optionally the path between them. Coordinates only: look an address up first, then write its lat and lng. No children.
 - **Image** { media: media code (hex, 6 to 64), alt: string (max 300), caption?: string (max 200) } — A picture that was shared in this room or made by Nora, named by its media code. Never a web address. No children.
 - **Callout** { tone?: "neutral" | "info" | "success" | "warning" | "danger", title: string (max 120), text?: string (max 1000) } — A highlighted note: a warning, a deadline, a thing not to miss. No children.

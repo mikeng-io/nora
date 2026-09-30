@@ -648,3 +648,33 @@ and "no longer available" if the bytes are gone; it never issues a request it kn
   done; the route is the open part.
 - Charts with more than one series are not offered: the dataviz rules then require a validated
   categorical palette and a legend, which is its own piece of work.
+
+## 22. Review of PR #644 and what it changed (2026-09-30)
+
+An independent reviewer (a fresh Opus subagent, told to try to break the schema and to check the
+claims) found four things confirmed by running them and two from reading. Each was reproduced
+here before it was fixed, and each fix has a test that failed first.
+
+| # | Finding | Fix | Proven by |
+|---|---|---|---|
+| 1 | **Mermaid 12 takes configuration from frontmatter and requests from `click`, `style` and `classDef`.** A source that passed the `%%{` rule could turn HTML labels back on, put `url(https://…)` in the SVG's `<style>` and add an `<a href>` to any site. Worse than the reviewer saw: mermaid draws into the live page to measure, so the request fires **before** any check of its output. A post-render filter alone still let `i.png` and the font url through (measured). | The schema and the renderer both refuse a source with frontmatter, `%%{`, `click`/`link`/`callback`/`call`, `style`/`classDef`/`linkStyle`, `url(`, `image-set(`, `@import`, `expression(` or `javascript:`, before mermaid sees it. A second wall checks the output is passive (no `foreignObject`, `a`, `image`, `on*`, external `href` or `url()`). | e2e with six hostile sources and a route on `evil.example`: red twice (5 active elements, then 4 outside requests), green after. |
+| 2 | **The JSON Schema disagreed with Zod.** Defaulted props were *required* in the schema but *optional* in the prompt. Python's `$` matches before a trailing newline and `\d` matches other scripts' digits, so a link or date with a trailing newline, or Arabic-Indic digits, passed. | Emit with `io: "input"`; anchors are `(?![\s\S])` and `[0-9]`. | `tests/unit/test_document_schema.py` (in `make gate`): reverting the three anchors turns 7 tests red; restored emitted files are byte-identical. |
+| 3 | **The Python checker's time grew exponentially with nesting.** `anyOf` makes `jsonschema` validate every failing branch in full: 18 s at depth 10, `RecursionError` deeper. | The schema is an `if type == X then …` chain, unrolled to the depth cap (8) instead of recursive. | Depths 9, 12, 60 and 400 are refused in under 2 s; a wide document at the cap validates in linear time. |
+| 4 | **`safeParse` throws `RangeError`** on a 1,200-deep document. | `parseDocument` measures depth and size with an explicit stack first (caps: 8 levels, 500 nodes, 200 children) and never throws. | documents.test.ts. |
+| 5 | **`documentId` went into an image path unchecked.** | Only a UUID is used, and the path is encoded. | e2e: `../../x?y=1` makes no request; a UUID asks for exactly its own media path. |
+| 6 | **Tabs ignored the ARIA pattern.** | `aria-controls`/`aria-labelledby`, one tab stop, arrow keys, Home and End. | e2e. |
+
+**Found while fixing, not by the reviewer.** The differential test (Zod against the JSON Schema on
+one corpus) immediately caught my own rewrite letting no `Tabs` through: the generic `children`
+rule also applied to a Tabs, so its `Tab` children failed. And an image that fails before React
+attaches `onError` (server-rendered, then hydrated) never reports it and stays a broken icon; the
+404 came back and nothing changed. Both are fixed and covered.
+
+**Corrections to earlier text.** The prompt said "no URL except in `Sources`" while Markdown links
+were accepted; a link costs a click, not a request, so Markdown links stay and the wording now says
+so. The PR body said 16 rejected shapes; the corpus has 54 refused and 14 accepted documents. The fixture route, schema size (now 102 KB,
+unrolled) and the prompt fragment (about 1,750 tokens) are restated in the PR.
+
+**Still not covered.** No Content-Security-Policy on the portal, so the renderer and schema are
+the only walls; a CSP for the document route belongs with the W5 routes. The Python checker does not
+yet exist; this schema and corpus are what it will be built against.

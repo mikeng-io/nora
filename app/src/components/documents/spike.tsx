@@ -4,6 +4,7 @@
 // `?demo=<name>` picks one; `sink` is a hostile-markdown fixture the e2e reads.
 // Deleted with the route when W5 ships the real pages.
 import Link from "next/link";
+import { MermaidBlock } from "./blocks";
 import { DocumentView } from "./registry";
 import { DEMOS, DEMO_NAMES } from "@/lib/documents/demos";
 import type { DocumentSpec } from "@/lib/documents/catalog";
@@ -30,25 +31,58 @@ const SINK: DocumentSpec = {
   },
 };
 
-const MERMAID_SINK: DocumentSpec = {
+// Sources that the SCHEMA refuses, rendered straight through MermaidBlock so the
+// renderer's own defence is tested without the schema in front of it. Each one
+// tries a request to evil.example (an image, a font url, a link) or a script.
+export const HOSTILE_MERMAID: Record<string, string> = {
+  "frontmatter html labels":
+    '---\nconfig:\n  htmlLabels: true\n---\nflowchart LR\n  A["<img src=https://evil.example/i.png><a href=https://evil.example/a>x</a>"]-->B',
+  "frontmatter font url":
+    '---\nconfig:\n  fontFamily: "x;background:url(https://evil.example/ff)"\n---\nflowchart LR\n  A-->B',
+  "click link": 'flowchart LR\n  A-->B\n  click B "//evil.example/p"',
+  "style url": 'flowchart LR\n  A-->B\n  style A fill:url(https://evil.example/s)',
+  "classdef url": 'flowchart LR\n  A-->B\n  classDef x background:url(https://evil.example/c)\n  class A x',
+  "label html": 'flowchart LR\n  A["<img src=x onerror=alert(1)>"]-->B',
+};
+
+const IMAGE_DOC: DocumentSpec = {
   version: 1,
   root: {
     type: "Page",
-    props: { title: "Mermaid sink" },
-    children: [
-      {
-        type: "Mermaid",
-        props: {
-          source: "flowchart LR\n  A[<img src=x onerror=alert(1)>] --> B\n  click A href \"javascript:alert(1)\"\n  click B call alert(1)",
-          caption: "hostile",
-        },
-      },
-    ],
+    props: { title: "Image path" },
+    children: [{ type: "Image", props: { media: "a1b2c3d4e5f6", alt: "a door" } }],
   },
 };
 
 export function DocumentsSpike({ demo }: { demo: string }) {
-  const doc = demo === "sink" ? SINK : demo === "mermaid-sink" ? MERMAID_SINK : (DEMOS[demo] ?? DEMOS[DEMO_NAMES[0]]);
+  if (demo === "invalid") {
+    // A document the schema refuses: the viewer must say so, not draw it.
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-6" data-testid="spike">
+        <DocumentView doc={{ version: 1, root: { type: "Page", props: { title: "T", className: "fixed inset-0" }, children: [] } }} />
+      </div>
+    );
+  }
+  if (demo === "image-hostile-id" || demo === "image-uuid") {
+    const id = demo === "image-uuid" ? "0b9d9f6e-3c0a-4f57-9a43-0d6f3a1c2e11" : "../../x?y=1";
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-6" data-testid="spike">
+        <DocumentView doc={IMAGE_DOC} documentId={id} />
+      </div>
+    );
+  }
+  if (demo === "mermaid-sink") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6" data-testid="spike">
+        {Object.entries(HOSTILE_MERMAID).map(([name, source]) => (
+          <div key={name} data-case={name}>
+            <MermaidBlock source={source} caption={`hostile: ${name}`} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const doc = demo === "sink" ? SINK : (DEMOS[demo] ?? DEMOS[DEMO_NAMES[0]]);
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-6 sm:px-6" data-testid="spike">
       <nav aria-label="Demo documents" className="flex flex-wrap gap-3 text-meta text-ink-muted">

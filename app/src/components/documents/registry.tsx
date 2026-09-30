@@ -6,7 +6,7 @@
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
 // on this theme (design/artifact/00-design.md §13). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
-import { Children, useState, type ReactNode } from "react";
+import { Children, useId, useState, type ReactNode } from "react";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { nestedToFlat } from "@json-render/core";
 import ReactMarkdown from "react-markdown";
@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { ChartBlock, DocumentIdContext, ImageBlock, MapBlock, MermaidBlock } from "./blocks";
 import { cn } from "@/lib/cn";
-import { catalog, type DocumentSpec, type components } from "@/lib/documents/catalog";
+import { catalog, parseDocument, type DocumentSpec, type components } from "@/lib/documents/catalog";
 import type { z } from "zod";
 
 type Props<N extends keyof typeof components> = z.infer<(typeof components)[N]["props"]>;
@@ -189,17 +189,35 @@ const { registry } = defineRegistry(catalog, {
     // form has one source for them (the Tab), never a second list to keep equal.
     Tabs: function Tabs({ props, children }: { props: { labels?: string[] }; children?: ReactNode }) {
       const [active, setActive] = useState(0);
+      const uid = useId();
       const panels = Children.toArray(children);
       const labels = props.labels ?? [];
+      const move = (to: number) => {
+        const next = (to + labels.length) % labels.length;
+        setActive(next);
+        document.getElementById(`${uid}-tab-${next}`)?.focus();
+      };
       return (
         <div className="flex flex-col gap-4">
-          <div role="tablist" className="inline-flex max-w-full self-start overflow-x-auto rounded-control bg-hoodie p-1">
+          <div
+            role="tablist"
+            className="inline-flex max-w-full self-start overflow-x-auto rounded-control bg-hoodie p-1"
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") { e.preventDefault(); move(active + 1); }
+              else if (e.key === "ArrowLeft") { e.preventDefault(); move(active - 1); }
+              else if (e.key === "Home") { e.preventDefault(); move(0); }
+              else if (e.key === "End") { e.preventDefault(); move(labels.length - 1); }
+            }}
+          >
             {labels.map((label, i) => (
               <button
                 key={i}
+                id={`${uid}-tab-${i}`}
                 role="tab"
                 type="button"
                 aria-selected={i === active}
+                aria-controls={`${uid}-panel-${i}`}
+                tabIndex={i === active ? 0 : -1}
                 onClick={() => setActive(i)}
                 className={cn(
                   "shrink-0 rounded-control px-3 py-1 text-meta font-medium transition-colors duration-100",
@@ -211,7 +229,7 @@ const { registry } = defineRegistry(catalog, {
             ))}
           </div>
           {panels.map((panel, i) => (
-            <div key={i} role="tabpanel" hidden={i !== active}>
+            <div key={i} id={`${uid}-panel-${i}`} role="tabpanel" aria-labelledby={`${uid}-tab-${i}`} hidden={i !== active}>
               {panel}
             </div>
           ))}
@@ -282,11 +300,23 @@ export function toFlatSpec(doc: DocumentSpec) {
   return spec;
 }
 
-export function DocumentView({ doc, documentId = null }: { doc: DocumentSpec; documentId?: string | null }) {
+/** Renders a stored document. It validates first, every time: the renderer is
+ * the last line of defence, so it never draws what the schema would refuse, and
+ * it is here that the defaults (a Badge's tone) are applied. */
+export function DocumentView({ doc, documentId = null }: { doc: unknown; documentId?: string | null }) {
+  const parsed = parseDocument(doc);
+  if (!parsed.ok) {
+    return (
+      <div role="alert" className="rounded-panel border border-hairline border-l-4 border-l-danger bg-surface px-4 py-3">
+        <p className="text-title font-semibold text-ink">This document cannot be shown</p>
+        <p className="mt-0.5 text-body text-ink-soft">{parsed.reason}</p>
+      </div>
+    );
+  }
   return (
     <DocumentIdContext.Provider value={documentId}>
       <JSONUIProvider registry={registry}>
-        <Renderer spec={toFlatSpec(doc)} registry={registry} />
+        <Renderer spec={toFlatSpec(parsed.doc)} registry={registry} />
       </JSONUIProvider>
     </DocumentIdContext.Provider>
   );

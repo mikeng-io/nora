@@ -40,9 +40,13 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
 2. **The catalog is the one definition.** The renderer, the JSON Schema Nora's checker validates
    against (`nora/documents/document.schema.json`) and the prompt fragment the skill embeds are all
    generated from it, and a test fails when either file is stale.
-3. **Every prop list is strict.** No component takes `className`, a style, raw HTML, or a URL
-   except `Sources` links (http(s) only). A picture is named by a media code and resolved to a sha256
-   by Nora, never a URL. A chart has one axis. A diagram's source cannot carry a `%%{` directive.
+3. **Every prop list is strict.** No component takes `className`, a style or raw HTML. A link is an
+   http(s) address in `Sources`, or in Markdown text where it costs a click and nothing more. A picture
+   is named by a media code and resolved to a sha256 by Nora, never a URL. A chart has one axis. A
+   diagram's source is plain drawing instructions: no frontmatter, `%%{` directive, `click`/`link`,
+   `style`/`classDef`/`linkStyle` or `url(`, because Mermaid 12 reads configuration and CSS from those and
+   draws into the live page, so a request happens before any output check can run.
+   Nesting is capped at 8 levels and a document at 500 nodes.
 4. **Documents render inside the portal**, behind sign-in, on the portal's theme, through
    `@json-render/core` and `/react` with components written on the portal's own primitives.
    `@json-render/shadcn` is not used.
@@ -69,7 +73,14 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
 - **Old public links stop being the model.** The 4 existing HTML documents need a decision
   (keep Drop read-only until they expire is the working answer).
 - **The checker is not built yet.** Until it is, the schema exists and nothing enforces it on
-  a model's output.
+  a model's output. The renderer validates every document before drawing it, so a bad one is
+  reported, not shown.
+- **The portal sends no Content-Security-Policy** (`app/next.config.ts`). Documents rely on the
+  schema, the renderer's own checks and the Mermaid source rule; a CSP for the document route would
+  be a second wall and is not built here.
+- **Two validators read one schema.** Zod validates in the app and Python's `jsonschema` will in the
+  checker, and their regex engines differ (`$` before a trailing newline, `\d`). One corpus is run
+  through Zod, ajv and Python, and the schema uses `(?![\s\S])` and `[0-9]` so they agree.
 
 ## Rejected
 

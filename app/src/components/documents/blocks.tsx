@@ -5,13 +5,16 @@
 // <figure> with a caption that states one claim (artifact-diagramming), and each
 // fails visibly rather than drawing nothing.
 import dynamic from "next/dynamic";
-import { createContext, useContext, useEffect, useId, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { BarList } from "@/components/charts/bars";
 import { TimeChart } from "@/components/charts/time-chart";
 import { cn } from "@/lib/cn";
+import { MERMAID_PLAIN } from "@/lib/documents/catalog";
 
 /** The stored document's id, so an Image can name its bytes. Absent for fixtures. */
 export const DocumentIdContext = createContext<string | null>(null);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const FIG = "flex flex-col gap-2 rounded-panel border border-hairline bg-surface p-4";
 
@@ -81,6 +84,32 @@ function useThemeName() {
   return name;
 }
 
+// What the renderer refuses to put on the page, whatever the source did to
+// mermaid's configuration. Mermaid 12 reads config from frontmatter and `click`
+// statements even at its strict level: a source can turn HTML labels back on,
+// put `url(https://…)` into the SVG's own <style>, or add an <a href> to any
+// site (found by review, reproduced in e2e). The schema refuses those sources,
+// and this is the second wall: nothing that can load, link or run may survive.
+const FORBIDDEN_ELEMENTS = "script, foreignObject, image, a, iframe, object, embed, video, audio, link, meta";
+
+/** The SVG if it is passive and self-contained, else null. */
+export function passiveSvg(svg: string): string | null {
+  // `url(#id)` is how a marker or gradient refers to itself; any other url(),
+  // and any @import, is a request.
+  if (/url\(\s*(?!["']?#)/i.test(svg) || /@import/i.test(svg) || /javascript:/i.test(svg)) return null;
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) return null;
+  if (doc.querySelector(FORBIDDEN_ELEMENTS)) return null;
+  for (const el of Array.from(doc.querySelectorAll("*"))) {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("on")) return null;
+      if ((name === "href" || name === "xlink:href") && !attr.value.startsWith("#")) return null;
+    }
+  }
+  return svg;
+}
+
 export function MermaidBlock({ source, caption }: { source: string; caption: string }) {
   const id = "mmd" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const theme = useThemeName();
@@ -91,6 +120,9 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
     let live = true;
     setFailed(false);
     (async () => {
+      // Before mermaid sees it: it draws into the live page, so a request made
+      // while measuring happens before any check of its output.
+      if (!MERMAID_PLAIN.test(source)) throw new Error("the source is not plain");
       const mermaid = (await import("mermaid")).default;
       // Strict: no click handlers, no HTML in labels, and an init directive in
       // the source cannot lift it (it is also refused by the schema).
@@ -116,7 +148,9 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
         },
       });
       const out = await mermaid.render(id, source);
-      if (live) setSvg(out.svg);
+      const safe = passiveSvg(out.svg);
+      if (!safe) throw new Error("the diagram is not passive");
+      if (live) setSvg(safe);
     })().catch(() => live && setFailed(true));
     return () => {
       live = false;
@@ -191,7 +225,18 @@ export function MapBlock(props: {
 export function ImageBlock({ media, alt, caption }: { media: string; alt: string; caption?: string }) {
   const documentId = useContext(DocumentIdContext);
   const [broken, setBroken] = useState(false);
-  const showPlaceholder = !documentId || broken;
+  // The id goes into a path, so only a UUID is used (a `../` or a `?` in it
+  // would point the request elsewhere on this origin), and it is encoded anyway.
+  const usable = documentId !== null && UUID.test(documentId);
+  const showPlaceholder = !usable || broken;
+  // A picture that failed before React attached `onError` (server-rendered, then
+  // hydrated) never reports it, and stays a broken-image icon. Found by e2e:
+  // the 404 came back and nothing changed. So look once after mount as well.
+  const img = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const el = img.current;
+    if (el && el.complete && el.naturalWidth === 0) setBroken(true);
+  }, [usable]);
   return (
     <figure className="flex flex-col gap-2">
       {showPlaceholder ? (
@@ -205,7 +250,8 @@ export function ImageBlock({ media, alt, caption }: { media: string; alt: string
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`/api/v1/documents/${documentId}/media/${media}`}
+          ref={img}
+          src={`/api/v1/documents/${encodeURIComponent(documentId as string)}/media/${encodeURIComponent(media)}`}
           alt={alt}
           loading="lazy"
           decoding="async"

@@ -1,9 +1,9 @@
 import type { DocumentSpec } from "../catalog";
-import { comparison } from "./comparison";
-import { evening } from "./evening";
-import { report } from "./report";
-import { runbook } from "./runbook";
-import { trip } from "./trip";
+import { comparison } from "./comparison.ts";
+import { evening } from "./evening.ts";
+import { report } from "./report.ts";
+import { runbook } from "./runbook.ts";
+import { trip } from "./trip.ts";
 
 /** Demo documents: invented content, one per scenario in the design (§14). They
  * are fixtures for the viewer and the examples the skill shows, and every one

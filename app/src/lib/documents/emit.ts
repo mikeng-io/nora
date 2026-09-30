@@ -3,7 +3,16 @@
 // document-creation skill embeds. Pure functions (packages only, no `@/…`) so
 // scripts/emit-document-schema.mjs and documents.test.ts call the same code.
 import { z } from "zod";
-import { CHILDREN, COMPONENT_NAMES, CONTAINERS, components, documentSchema, type DocumentSpec } from "./catalog.ts";
+import {
+  CHILDREN,
+  COMPONENT_NAMES,
+  CONTAINERS,
+  DOCUMENT_VERSION,
+  MAX_CHILDREN,
+  MAX_DEPTH,
+  components,
+  type DocumentSpec,
+} from "./catalog.ts";
 
 export const EXAMPLE: DocumentSpec = {
   version: 1,
@@ -42,9 +51,91 @@ export const EXAMPLE: DocumentSpec = {
   },
 };
 
+type Json = Record<string, unknown>;
+
+// The JSON Schema is built here, not taken from `z.toJSONSchema(documentSchema)`.
+// That output is an `anyOf` over every component, and Python's `jsonschema`
+// validates every failing branch in full, children included, so a 600-byte
+// chain of nested Grids took 18 seconds at depth 10 and a deeper one raised
+// RecursionError (review, 2026-09-30). This shape is an `if type == X then ...`
+// chain, which stops at the first mismatch and is linear, and its nesting is
+// UNROLLED to MAX_DEPTH levels rather than recursive, so depth is capped by the
+// schema itself. Each prop list still comes from its Zod schema, so a prop is
+// described once. The two validators are compared on a shared corpus in
+// documents.test.ts (ajv) and tests/unit/test_document_schema.py (Python).
+const ref = (name: string): Json => ({ $ref: `#/$defs/${name}` });
+const NODE_TYPES = COMPONENT_NAMES.filter((n) => n !== "Page" && n !== "Tab");
+
+export function buildSchema(): Json {
+  const defs: Record<string, Json> = {};
+  for (const name of COMPONENT_NAMES) {
+    // `io: "input"`: a defaulted prop (a Badge's `tone`) is OPTIONAL to the
+    // author. The default-as-output form listed it as required and rejected
+    // the very document the prompt fragment tells the model to write.
+    const { $schema: _omit, ...schema } = z.toJSONSchema(components[name].props, {
+      target: "draft-2020-12",
+      io: "input",
+    }) as Json;
+    defs[`props_${name}`] = schema;
+  }
+  const kids = (next: string | null): Json =>
+    next ? { type: "array", maxItems: MAX_CHILDREN, items: ref(next) } : { type: "array", maxItems: 0 };
+
+  for (let d = 1; d <= MAX_DEPTH; d++) {
+    const last = d === MAX_DEPTH;
+    const types = NODE_TYPES.filter((n) => !(last && n === "Tabs")); // its Tab children would be one level too deep
+    defs[`n${d}`] = {
+      type: "object",
+      required: ["type", "props"],
+      additionalProperties: false,
+      // `children` is constrained per type below; here it is only "an array", so a
+      // Tabs can hold Tab nodes without also having to be a general node.
+      properties: { type: { enum: types }, props: { type: "object" }, children: { type: "array" } },
+      allOf: types.map((name) => ({
+        if: { properties: { type: { const: name } }, required: ["type"] },
+        then:
+          name === "Tabs"
+            ? {
+                properties: {
+                  props: ref(`props_${name}`),
+                  children: { type: "array", minItems: 1, maxItems: 12, items: ref(`tab${d + 1}`) },
+                },
+                required: ["children"],
+              }
+            : CONTAINERS.has(name)
+              ? { properties: { props: ref(`props_${name}`), children: kids(last ? null : `n${d + 1}`) } }
+              : { properties: { props: ref(`props_${name}`) }, not: { required: ["children"] } },
+      })),
+    };
+    if (d >= 2) {
+      defs[`tab${d}`] = {
+        type: "object",
+        required: ["type", "props", "children"],
+        additionalProperties: false,
+        properties: { type: { const: "Tab" }, props: ref("props_Tab"), children: kids(d === MAX_DEPTH ? null : `n${d + 1}`) },
+      };
+    }
+  }
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    required: ["version", "root"],
+    additionalProperties: false,
+    properties: {
+      version: { const: DOCUMENT_VERSION },
+      root: {
+        type: "object",
+        required: ["type", "props", "children"],
+        additionalProperties: false,
+        properties: { type: { const: "Page" }, props: ref("props_Page"), children: kids("n1") },
+      },
+    },
+    $defs: defs,
+  };
+}
+
 export function emitSchema(): string {
-  const json = z.toJSONSchema(documentSchema, { target: "draft-2020-12" });
-  return JSON.stringify(json, null, 2) + "\n";
+  return JSON.stringify(buildSchema(), null, 2) + "\n";
 }
 
 type JsonSchema = {
@@ -79,8 +170,8 @@ function describe(s: JsonSchema): string {
     return `${s.type}${range}`;
   }
   if (s.pattern?.startsWith("^https?")) return "http(s) URL";
-  if (s.pattern === "^[0-9a-f]{6,64}$") return "media code (hex, 6 to 64)";
-  if (s.pattern?.includes("\\d{4}-\\d{2}-\\d{2}")) return "YYYY-MM-DD";
+  if (s.pattern?.startsWith("^[0-9a-f]{6,64}")) return "media code (hex, 6 to 64)";
+  if (s.pattern?.includes("[0-9]{4}-[0-9]{2}-[0-9]{2}")) return "YYYY-MM-DD";
   return s.maxLength ? `string (max ${s.maxLength})` : "string";
 }
 
@@ -101,7 +192,7 @@ export function emitPrompt(): string {
     "",
     "A document is ONE JSON object: `{ \"version\": 1, \"root\": <Page> }`. `root` is a Page; every node is",
     "`{ \"type\", \"props\", \"children\"? }` with `children` a nested array (no ids, no references).",
-    "Nothing else exists: no classes, styles, HTML, scripts, state or actions, and no URL except in `Sources`.",
+    "Nothing else exists: no classes, styles, HTML, scripts, state or actions. A link is an http(s) address in `Sources` or in Markdown text; no other prop takes a URL.",
     "Unknown types, unknown props and extra keys are rejected, so do not invent them.",
     "",
     "Components:",
@@ -115,4 +206,9 @@ export function emitPrompt(): string {
     "```",
     "",
   ].join("\n");
+}
+
+/** The corpus for the Python test, which cannot import TypeScript. */
+export function emitCorpus(corpus: { valid: Record<string, unknown>; invalid: Array<[string, unknown]> }): string {
+  return JSON.stringify({ valid: corpus.valid, invalid: corpus.invalid.map(([label, doc]) => ({ label, doc })) }, null, 1) + "\n";
 }
