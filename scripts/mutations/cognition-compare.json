@@ -37,8 +37,8 @@
  {
   "name": "a note create needs the same anchor",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "            return c.anchor is not None and c.anchor == w.anchor",
-  "new": "            return True",
+  "old": "            if c.anchor is None or c.anchor != w.anchor:",
+  "new": "            if c.anchor is None:",
   "target": "tests/infra/test_cognition_shadow_compare_read.py -k another_room_or_with_another_anchor"
  },
  {
@@ -79,8 +79,8 @@
  {
   "name": "an unreadable tier's counts are absent, not zero",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "                WriterVerdict(writer=w, status=\"error\", matched=None)",
-  "new": "                WriterVerdict(writer=w, status=\"error\", matched=0)",
+  "old": "                WriterVerdict(writer=w, status=\"error\", matched=None, coincident=None)",
+  "new": "                WriterVerdict(writer=w, status=\"error\", matched=0, coincident=None)",
   "target": "tests/infra/test_cognition_shadow_compare_read.py -k unreadable_source"
  },
  {

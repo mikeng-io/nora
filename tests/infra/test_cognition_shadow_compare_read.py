@@ -214,9 +214,9 @@ async def test_a_create_is_read_at_the_anchor_the_revision_wrote_not_the_notes_c
 async def test_a_create_in_another_room_or_with_another_anchor_does_not_match(engine):
     await _note(engine, by="dream:note-candidates:k:1", at=T0, anchor_date=20260930)
     await _would(engine, T0, "note", "note_create", room="room-b", candidate={
-        "anchor_date": 20260930, "anchor_entity_ids": []})
+        "anchor_date": 20260930, "anchor_entity_ids": [], "title": "t"})
     await _would(engine, T0, "note", "note_create", candidate={
-        "anchor_date": 20261001, "anchor_entity_ids": []})
+        "anchor_date": 20261001, "anchor_entity_ids": [], "title": "t"})
     tier, w = _writer(await _run(engine), "note", "note-candidates")
     assert w.matched == 0 and len(w.clocked_only) == 1 and len(tier.cognition_only) == 2
 
