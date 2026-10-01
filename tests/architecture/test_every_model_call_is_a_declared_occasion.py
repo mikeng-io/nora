@@ -153,7 +153,6 @@ KNOWN_HAND_BUILT = {
 #: comment) or `hand_built` (text written by hand inside a runner, from
 #: KNOWN_HAND_BUILT).
 PENDING: dict[tuple[str, str], str] = {
-    ("nora/language/cognition_render.py", "undeclared"): "step 3",
     ("nora/domain/summons.py", "undeclared"): "step 4",
     ("nora/app/fire.py", "hand_built"): "step 4",
     ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",
@@ -162,7 +161,7 @@ PENDING: dict[tuple[str, str], str] = {
 #: The ledger's size, pinned exactly. Pay one down and this test fails until
 #: you lower the number in the same diff; add one and it fails until you raise
 #: it, which should never be done.
-CEILING = 4
+CEILING = 3
 
 
 def _rel(path: Path) -> str:

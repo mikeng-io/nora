@@ -65,6 +65,11 @@ CONVERTED = {
         "here, because `accept()` joins the model's `message_ids` onto it",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
+    "nora/language/cognition_render.py":
+        "the Cognition session's agenda: each item's messages through "
+        "`render_row_window` (`n` is the message's own id, so what the model "
+        "reads is what `note_create` requires) and its Rollup rows through "
+        "`render_elements`",
 }
 
 #: **Transcript builders still on `render_rows`** — the census this gate was
@@ -107,6 +112,11 @@ _NOT_A_TRANSCRIPT = {
     # render.py`'s own reason one tier over: it renders no message, so the
     # transcript rule does not apply.
     "nora/language/standing_render.py": "renders the working set, not a transcript",
+    # THE EVENT INDEX, not a transcript — one element per recorded event (id,
+    # status, when, venue, revision, the title as content), through the same
+    # `render_elements` the transcripts use. `note_render.py`'s own reason one
+    # index over: it renders no message (design/context-assembly/04 §5 step 3b).
+    "nora/language/event_render.py": "renders the event index, not a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

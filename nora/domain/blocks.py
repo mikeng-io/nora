@@ -901,6 +901,60 @@ def render_elements(
     return "\n".join(out)
 
 
+def render_group(
+    tag: str, attrs: Sequence[tuple[str, str | None]], inner: str,
+) -> str:
+    """One element that CONTAINS other rendered elements: an agenda's `<item>`
+    around its `<m>` rows, an event listing's `<room_events>` around its
+    `<event>` rows (step 3b of `design/context-assembly/04-every-occasion.md`).
+
+    **The nesting is what lets a block say what it is ONCE.** One `ContextBlock`
+    per item repeated its type's description and field glosses on every item
+    (about 1.7k characters each, 43k against 12k for twelve items); one block
+    whose body is these groups says it a single time. The wrapper lives here and
+    not in the occasion for the reason every tag does (`ContextBlock.render`
+    owns the opening tag): a module that opens and closes an element by hand is
+    what `tests/architecture/test_one_block_injector.py` exists to find.
+
+    `inner` is rendered elements, already escaped by whatever built them
+    (`render_row_window`, `render_elements`), so it is NOT escaped again and is
+    the caller's to build from the shared renderers. The attributes are
+    `render_elements`' own: collapsed to one line, escaped, and DROPPED when
+    `None` or empty after the collapse. An empty `inner` renders self-closing,
+    `<item .../>`: a group with nothing in it is still a group.
+
+    The tag and every attribute NAME are checked as `ContextBlock` checks a
+    block's, because a name is written raw.
+    """
+    for name in (tag, *(k for k, _ in attrs)):
+        if not _ATTR_NAME.match(name):
+            raise ValueError(
+                f"{name!r} is not a legal element or attribute name: it is "
+                "written into the tag RAW, so only `[A-Za-z_][\\w.-]*` may be."
+            )
+    keys = [k for k, _ in attrs]
+    twice = sorted({k for k in keys if keys.count(k) > 1})
+    if twice:
+        raise ValueError(
+            f"<{tag}> is given {twice} twice: two of one name on an element is not "
+            "well-formed XML, and the first is the one most readers take."
+        )
+    for key in keys:
+        if key in _DERIVED_ATTRS:
+            raise ValueError(
+                f"<{tag}> is given `{key}`, which a block's TYPE writes "
+                f"({_DERIVED_ATTRS[key]}) and an element must not carry a second."
+            )
+    rendered = "".join(
+        f' {key}="{escape_attr(collapsed)}"'
+        for key, collapsed in ((k, one_line(v)) for k, v in attrs if v is not None)
+        if collapsed
+    )
+    if not inner:
+        return f"<{tag}{rendered}/>"
+    return f"<{tag}{rendered}>\n{inner}\n</{tag}>"
+
+
 class _Spoken(Protocol):
     """A row that carries who said it — `TranscriptRow`'s two name fields, read
     by attribute because this module cannot import the model that has them."""
