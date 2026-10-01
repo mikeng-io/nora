@@ -76,6 +76,11 @@ _SHARED_BUILDER_NAMES = {
     # `nora.language.culture_render` (DEC-207): every occasion that carries a
     # room's account renders it through this one builder.
     "render_culture": "culture",
+    # `nora.language.note_render.today_block` (context-assembly step 1): the
+    # one-line day note-merge, note-candidates and the curator each built for
+    # themselves. It always builds `today`, and the caller stamps its row with
+    # `restamp`, so this is the same shape as the five above.
+    "today_block": "today",
 }
 
 

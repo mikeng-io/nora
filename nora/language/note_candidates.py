@@ -258,9 +258,9 @@ from typing import ClassVar, Protocol
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
-    render_elements,
+    render_row_window,
     restamp,
-    speaker_name,
+    row_speaker,
 )
 from nora.domain.models import TranscriptRow
 from nora.domain.note_body import (
@@ -294,7 +294,12 @@ from nora.domain.notes import (
 from nora.domain.ports import CultureReader, DreamSink, Proposal
 from nora.domain.prompt import escape
 from nora.language.culture_render import read_culture, render_culture
-from nora.language.note_render import FORM_LEGACY, FORM_NOT_SHOWN, open_note_parts
+from nora.language.note_render import (
+    FORM_LEGACY,
+    FORM_NOT_SHOWN,
+    open_note_parts,
+    today_block,
+)
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.candidates")
@@ -888,24 +893,24 @@ def _render_line(row: TranscriptRow, *, room: str, tz: _dt.tzinfo) -> str:
             other_ts / 1000, tz=tz,
         ).strftime(_LINE_TIME_FORMAT)
 
-    def _attrs(r: TranscriptRow, _i: int) -> tuple[tuple[str, str | None], ...]:
-        # `n` IS THE ROW ID HERE, not the position — `accept()` validates the
-        # model's `message_ids` against this batch and drops any item naming an
-        # id outside it ("an invented id is fabricated provenance"). A
-        # positional index would fail that join silently and empty the pass.
+    def _attrs(r: TranscriptRow) -> tuple[tuple[str, str | None], ...]:
+        # `n` IS THE ROW ID (`render_row_window` puts it first), not the
+        # position — `accept()` validates the model's `message_ids` against this
+        # batch and drops any item naming an id outside it ("an invented id is
+        # fabricated provenance"). A positional index would fail that join
+        # silently and empty the pass.
         return (
-            ("n", str(r.id)),
             ("at", _dt.datetime.fromtimestamp(
                 r.ts / 1000, tz=tz).strftime(_LINE_TIME_FORMAT) if r.ts else None),
             # `or "unknown"`, NOT `or row.sender_id` — the raw id is an E.164
             # or an ACI, and this block is a prompt (R-18, DEC-80).
-            ("from", speaker_name(r.person_name, r.sender_name)),
+            ("from", row_speaker(r)),
             ("room", room),
             ("reply_to", None if r.quoted_ts is None else _when(r.quoted_ts)),
         )
 
-    return render_elements(
-        [row], tag="m", attrs=_attrs,
+    return render_row_window(
+        [row], row_id=lambda r: r.id, attrs=_attrs,
         body=lambda r: r.body or _media_placeholder(r),
     )
 
@@ -926,7 +931,7 @@ def _shown_by(rendered: Sequence[TranscriptRow]) -> Shown:
     is `unknown_owner` or `misattributed` without it."""
     shown = tuple(
         ShownMessage(
-            id=row.id, sender=speaker_name(row.person_name, row.sender_name),
+            id=row.id, sender=row_speaker(row),
             person_id=row.person_id, is_nora=row.is_nora,
         )
         for row in rendered
@@ -1304,14 +1309,7 @@ class NoteCandidateAdaptor:
         self._carried[key] = frozenset(carried)
         if not blocks:
             return []
-        today_order, today_key = _ROW["today"]
-        return [
-            ContextBlock(
-                name="today", order=today_order, key=today_key,
-                body=escape(f"{today:%Y-%m-%d %a}"),
-            ).render(),
-            *blocks,
-        ]
+        return [restamp(today_block(today), _ROW).render(), *blocks]
 
     # -- accept -----------------------------------------------------------
 

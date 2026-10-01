@@ -55,7 +55,7 @@ from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.sampling import Sampler
 from opentelemetry.trace import Span
 from strands.telemetry import StrandsTelemetry
@@ -80,6 +80,87 @@ _STOP_REASON_FROM_FINISH_REASON: dict[str, StopReason] = {
     "tool_calls": "end_turn",
     "function_call": "end_turn",
 }
+
+
+#: Langfuse drops a session id longer than this, or with a non-ASCII character,
+#: silently (langfuse.com/docs/observability/features/sessions).
+_SESSION_ID_MAX = 200
+
+#: The attribute a span carries its room under, WHEN IT IS STARTED WITH IT:
+#: the roots and stages that pass it to `nora.obs.tracing.span`. Strands spans
+#: never start with it: Strands opens a span and sets `trace_attributes` after,
+#: past `on_start`, so they take their session from the parent instead (read
+#: from the installed `strands/telemetry/tracer.py`, review of #680).
+_CONVERSATION_KEYS = ("nora.conversation_id",)
+
+#: First match wins. Langfuse's recognised `langfuse.observation.type` values;
+#: a span not in the table is left to Langfuse, which types the model calls,
+#: agents and tools from their GenAI attributes. What goes here is the plumbing
+#: UNDER a model call that R-76 keeps on purpose, so an operator can filter a
+#: trace to the LLM work without reading span names.
+_OBSERVATION_TYPES: tuple[tuple[str, str], ...] = (
+    ("engagement.admission", "guardrail"),
+    ("store.", "retriever"),
+    ("engagement.", "chain"),
+    ("agent.prefill", "chain"),
+    ("execute_event_loop_cycle", "chain"),
+)
+
+
+def _session_id_for(span: Any, parent_context: Any) -> str | None:
+    """The room a span belongs to: its own start attribute, else its parent's stamp.
+
+    A session id is valid when Langfuse will keep it. One it would drop is not
+    stamped, so the trace's absence from a session is in the data, not a
+    silent loss downstream."""
+    attrs = getattr(span, "attributes", None) or {}
+    for key in _CONVERSATION_KEYS:
+        value = attrs.get(key)
+        if value is not None:
+            return _valid_session_id(str(value))
+    parent = trace.get_current_span(parent_context)
+    parent_attrs = getattr(parent, "attributes", None) or {}
+    inherited = parent_attrs.get("session.id")
+    return _valid_session_id(str(inherited)) if inherited is not None else None
+
+
+def _valid_session_id(value: str) -> str | None:
+    if not value or len(value) > _SESSION_ID_MAX or not value.isascii():
+        return None
+    return value
+
+
+class TraceIdentityProcessor(SpanProcessor):
+    """Stamp every span with its conversation and its observation type.
+
+    **One seam, not a stamp at each of the ~15 call sites.** Read back from
+    Langfuse 2026-10-01: zero sessions, every `sessionId` null, although every
+    engagement root already carried `nora.conversation_id`. OTel GenAI names the
+    same thing `gen_ai.conversation.id` ("session, thread"); Langfuse reads
+    `session.id`, and asks for it on each span rather than only the root. A
+    child inherits from its parent at start, so the Strands spans and the
+    `store.*` reads, which never carry the id themselves, end up in the same
+    session.
+
+    **Never load-bearing**, the rule `nora.obs.tracing.span` and provider setup
+    hold: a failure here costs the stamp, never the span or the turn.
+    """
+
+    def on_start(self, span: Any, parent_context: Any = None) -> None:
+        try:
+            session = _session_id_for(span, parent_context)
+            if session is not None:
+                span.set_attribute("session.id", session)
+                span.set_attribute("gen_ai.conversation.id", session)
+            attrs = getattr(span, "attributes", None) or {}
+            if "langfuse.observation.type" not in attrs:
+                name = getattr(span, "name", "") or ""
+                for prefix, kind in _OBSERVATION_TYPES:
+                    if name.startswith(prefix):
+                        span.set_attribute("langfuse.observation.type", kind)
+                        break
+        except Exception:
+            log.debug("trace identity not stamped", exc_info=True)
 
 
 def setup_agent_tracing(
@@ -130,6 +211,10 @@ def setup_agent_tracing(
         resource=Resource.create({"service.name": service_name}),
         sampler=sampler,
     )
+    # First, so the stamp is on the span before any processor can read it; and
+    # on the provider itself, so it reaches the Strands spans and Nora's own
+    # alike (tests/unit/test_trace_identity.py reads it through the registered one).
+    provider.add_span_processor(TraceIdentityProcessor())
     telemetry = StrandsTelemetry(tracer_provider=provider)
     if exporter == "console":
         telemetry.setup_console_exporter()
