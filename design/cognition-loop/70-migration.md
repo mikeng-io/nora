@@ -421,10 +421,11 @@ step's PR:
   directory beside their folder that the loader skips, and their templates
   are flagged hidden in the template index. Everything stays in history, so `nora snapshot --at T`
   restores completely; `nora person unforget <id>` makes it visible again.
-  **Documents** (ADR 0020, DEC-256, operator 2026-10-01): every document the person
+  **Documents** (ADR 0020, DEC-259, operator 2026-10-01): every document the person
   **created** is soft-deleted through the `DocumentStore` port (a `document_state` row, `set_by`
-  `forget:<person>`), never one they only took part in; `unforget` does not restore them, a
-  room restores one by asking Nora.
+  `forget:<person>`), never one they only took part in. They stay forgotten: Nora and the portal
+  cannot restore them and their titles leave her context; `unforget` does not restore them, only
+  the operator, in the database.
   Memory cannot hide a row, so the person's conclusions and peer are deleted
   in each Honcho workspace they are in (memory is not restorable anyway).
   Langfuse is not read by Nora; its traces are left to Langfuse's retention,

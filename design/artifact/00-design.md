@@ -1145,22 +1145,34 @@ portal restore of a deleted document. The decision row is DEC-255.
 Operator rulings of 2026-10-01 on the open items after §31. Parked and NOT built: a present view, print,
 a revision-history view, and `delegate_task`.
 
-**`nora person forget` reaches documents (DEC-256).** A document is the forgotten person's when they
+**`nora person forget` reaches documents (DEC-259).** A document is the forgotten person's when they
 CREATED it (`created_by`); one they only appear in as a participant of its room is not theirs. Each is
 soft-deleted through the `DocumentStore` port: one `document_state` row, `deleted`, `set_by` =
 `forget:<person_id>`, so a reader can tell the forget from a person's own delete. Nothing is purged and
-every revision stays, so a document restores by one more state row (Nora's `document_set_status`). The
-command is idempotent (a document already `deleted` is not written again) and its summary reports
-`deleted N document(s)` (`would delete` in a dry run) beside the message count. `unforget` does not
-restore documents: a document's delete has no marker it could read back without also undoing a person's
-own delete, so the operator restores one by asking Nora in its room.
+every revision stays. The command is idempotent (a document already `deleted` is not written again) and its
+summary reports `deleted N document(s)` (`would delete` in a dry run) beside the message count.
 
-**Search (DEC-257).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
+**It stays forgotten (review of the PR, operator ruling 2026-10-01).** A document whose LATEST state row's
+`set_by` starts with `forget:` (`DocumentSummary.forgotten`) cannot be restored or archived by Nora or the portal:
+`DocumentService.set_state` refuses it for every caller and state, and a revision of it, answering exactly like an
+unknown id (not "restore it first", which would confirm it exists); `<documents>` put-away leaves it out
+(`list_room(hide_forgotten=True)`) so its title leaves her context. Only a state row written by someone else, in the
+database, brings it back; `unforget` does not. The portal was already closed (`get_visible` hides `deleted`) and
+its write refuses it too.
+
+**Race and failure.** `DocumentStore.set_state(only_if_state=)` checks the state under the `FOR UPDATE` lock the write
+takes, so forget never overwrites a change made since its snapshot (it counts only rows it wrote and reports the
+ones skipped); a failure part-way is printed with what was done and the command exits non-zero, so a re-run
+completes it. A two-connection Postgres test covers the wait.
+
+**Search (DEC-260).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
 title or search text (migration 0084's `text` column). It is `list_visible(query=)`, not a second read, so
 the visibility predicate and the state filter that already hide archived and deleted documents are in the
 same SQL statement, and a document a list would not show is never a match (`total` counts the matches).
-The query is text: `%`, `_` and the escape character are escaped, inner whitespace is collapsed, a blank
-one is no search and one over 200 characters is a 400. Plain `ILIKE`: the match only runs over one person's
+The query is text: `%`, `_` and the escape character are escaped, inner whitespace is collapsed (in the stored
+text too: the checker joins a document's parts with a newline, so the comparison collapses both sides), case is folded
+with `lower()` as Postgres does (the fake no longer uses `casefold()`), a blank one is no search, and one over 200
+characters or with a control character is a 400 (a NUL straight to Nora's API was a 500). Plain `ILIKE`: the match only runs over one person's
 visible documents, so no trigram index and no migration were added; one is the answer if a measured listing
 is slow. The portal's list has a debounced search box that keeps the Archived filter. No Nora tool was added
 for search: `document_read` and the room's `<documents>` block already cover finding a document from chat.
@@ -1180,8 +1192,12 @@ a deleted document answer alike.
   renderer as `chrome` (`DocumentView`), drawn right under the document's own H1 inside its Page, and after the
   refusal when a stored spec cannot be shown, so they stay reachable. Nothing sits above the title but the back link.
 - *The tab names the document.* A client effect sets `document.title` to `<title> · Nora` (the layout's own template)
-  once the document is read and puts the server's title back on leaving. Server-side `generateMetadata` was not used:
-  it would need a second signed-in read of the same document just for `<title>`.
+  once the document is read and puts the section's title back on leaving. Server-side `generateMetadata` was not used:
+  it would need a second signed-in read of the same document just for `<title>`. **Verified, and it did break
+  (review):** entering a document whose data was cached rendered at once, the effect ran, and Next then wrote the
+  route's own title over it (the tab even read "" while it swapped its `<title>`), so the second visit stayed
+  "Documents · Nora". The page now takes its title back while the address is still the document's
+  (`shouldReassertTitle`) and never fights the next page's, and an e2e navigates in, out and to another section.
 - *A new list is not drawn as the old one.* A new filter, page or search keeps the last rows on screen
   (`keepPreviousData`); while it loads they are dimmed, `aria-busy`, and a status line says the list is updating
   (`freshness`: `loading`). The selected filter is a filled segment, not only `aria-pressed`.
@@ -1191,6 +1207,11 @@ a deleted document answer alike.
   moves focus to Cancel, Escape or Cancel returns focus to Delete, and a finished delete goes to
   `/documents?deleted=1`, where the list says it can be restored by asking Nora in the chat. A delete only marks the
   cached document stale (it does not refetch it), so the page it leaves never flashes "out of date" on its own 404.
+  A failed delete keeps the panel open with the error and returns focus into it; an archive or restore that completes
+  closes the panel and moves focus to the button that replaced the one pressed. And a 404 on the document's read
+  switches the page to not-found even when a cached copy exists (`detailView`), so a gone document never keeps live
+  Archive and Delete buttons; only a failure that says nothing about it (network, 5xx) leaves the copy up, marked
+  "may be out of date".
 - *The row* shows the title, who made it and in which room (the room's label, else the platform), the relative time
   with the absolute date on hover, a revision badge and an Archived badge.
 - *Wider.* Both pages use the shell's `default` frame (1080px) instead of `narrow` (760px).
