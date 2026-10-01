@@ -1930,7 +1930,6 @@ class FirePath:
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 param_names=self._registry.tool_param_names(),
                 audience=audience,
-                own_links=self._registry.own_link_check(),
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,

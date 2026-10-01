@@ -2740,9 +2740,10 @@ class DocumentPublisher(Protocol):
         document_id: UUID | None = None, state: str, handle: str = "",
     ) -> Any: ...
 
-    async def unknown_document_link(
-        self, platform: str, conversation_id: str, text: str,
-    ) -> str | None: ...
+    @property
+    def link_base(self) -> str:
+        """The public origin documents are linked under (`[documents] public_url`), or `""`."""
+        ...
 
 
 class RollupReadSource(Protocol):
@@ -4618,6 +4619,10 @@ def build_tool_specs(
     # the default is only ever taken by a caller with no `Deliverer` to share
     # with — the offline/eval compositions and every test that does not care.
     link_carry = links if links is not None else LinkCarry()
+    if documents is not None:
+        # R-100: arm the carrier with the origin documents are linked under, so a link to one of
+        # ours that no tool handed her this turn is removed from the reply (nora.agent.links).
+        link_carry.claim_documents(getattr(documents, "link_base", ""))
     # The tag's conversation, captured once. It is the ONLY thing that decides
     # which rows `load_transcript` returns — see DEC-24 for why the model is no
     # longer asked for it. Task 1's cross-group read leak was this value being
@@ -13171,7 +13176,7 @@ Args:
             The hold is not about the text, so a shorter rewrite will not get
             through. Do not call this tool again.
           - `refused`: a guard stopped it and it will not go. The same text will
-            be refused again. When it says why, fix that and send again.
+            be refused again.
 
         Args:
             text: One message, in your own voice. An @ right before the name the
@@ -13232,11 +13237,6 @@ Args:
             "ok" if sent else ("held" if status == HELD else "refused"),
             chars=len(text or ""),
         )
-        note = getattr(deliverer, "refusal_note", "")
-        if status == REFUSED and note:
-            # R-100 is the one refusal she can act on, so it says why; every other guard keeps
-            # the bare word (a leak or an identifier is not something to coach around).
-            return f"{status}. {note}"
         return status
 
     gif_candidates: dict[str, GifCandidate] = {}
@@ -14608,12 +14608,13 @@ Args:
                             "title, for people signed in. Never write a path, a host or "
                             "the `document_id` in a reply.",
                 }
+            link_carry.mint_document(out.url, published=True)
             return {
                 "status": "ok", "document_id": str(out.document_id),
                 "revision": out.revision, "url": out.url,
-                "note": "Stored. Give the room this `url` verbatim on its own line: it "
-                        "opens the document in the web app for people signed in, not "
-                        "for anyone else. Never write the `document_id` in a reply.",
+                "note": "Stored. The link to it is added to your reply for you: say it is "
+                        "saved and by what title, and for people signed in to the web app. "
+                        "Never write a link or the `document_id` yourself.",
             }
         if out.status == "conflict":
             _record(metrics, tool, "bad_arguments", reason="conflict")
@@ -14706,7 +14707,10 @@ Args:
             "revision": out.revision, "title": out.title,
         }
         if out.url:  # no public origin configured = no link, and none is invented
+            link_carry.mint_document(out.url, published=False)
             result["url"] = out.url
+            result["link_note"] = ("You may repeat this `url` exactly as given; a document link "
+                                   "you did not get from a tool this turn is removed.")
         if getattr(out, "state", "active") != "active":
             result["state"] = out.state
         if len(body) > _DOCUMENT_READ_CHARS:
@@ -14792,6 +14796,7 @@ Args:
             else f"It was already {out.state}; nothing changed.",
         }
         if out.url and out.changed and out.state == "active":
+            link_carry.mint_document(out.url, published=False)
             result["url"] = out.url
         return result
 
