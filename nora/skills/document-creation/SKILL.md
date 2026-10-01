@@ -102,8 +102,7 @@ stand in for it. An archived or deleted document cannot be changed until it is s
 ## A refusal is an instruction
 
 The findings are plain sentences that name where the spec is wrong. Fix exactly those places and
-publish again. Do not argue with a finding, and do not report a document as made until the publish
-returned `ok`.
+publish again. Do not argue with a finding. Send `spec` as an object, never as text.
 
 ## Tell the room where it is, once
 

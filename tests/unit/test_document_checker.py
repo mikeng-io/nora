@@ -838,3 +838,29 @@ def test_idempotence_holds_for_adversarial_strings() -> None:
                 assert again.canonical == first.canonical, doc
                 assert "\x1b" not in first.canonical and "\x00" not in first.text
     assert oks > 400, oks  # the fuzz must reach the accepting path, not only refusals
+
+
+def test_a_json_break_in_long_text_says_where_so_the_writer_can_fix_it() -> None:
+    """2026-10-02: a 10,000-character spec sent as text broke at character 7,247 and the finding
+    said only «Expecting ',' delimiter: line 1 column 7248». The model had nothing to fix, saved the
+    draft elsewhere, and told the room the document was made."""
+    good = (
+        '{"version": 1, "root": {"type": "Page", "props": {"title": "T"}, "children": '
+        '[{"type": "Markdown", "props": {"text": "%s"}}]}}'
+    )
+    bad = good % ("a" * 400 + '他說"好" 然後' + "b" * 400)  # an unescaped straight quote
+    result = check_document(bad)
+    assert result.status == "refused"
+    (finding,) = result.findings
+    assert finding.rule == "json"
+    assert "at character" in finding.message and "<<HERE>>" in finding.message
+    assert "他說" in finding.message, "the characters around the break are shown"
+    assert "double quote" in finding.message, "the usual cause is named"
+    assert len(finding.message) <= 330
+
+
+def test_a_json_break_marks_the_character_the_parser_stopped_on() -> None:
+    result = check_document('{"version": 1, "root": {"type": "Page" "props": {}}}')
+    (finding,) = result.findings
+    before, _, after = finding.message.partition("<<HERE>>")
+    assert before.rstrip().endswith('"Page"') and after.lstrip().startswith('"props"')

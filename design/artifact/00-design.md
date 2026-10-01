@@ -1478,3 +1478,25 @@ the check, since deleting either wiring line had left the suite green.
 
 **Not built.** A check that a reply's claims match the document (it said four photos; the document had none), a check on
 a link to another host, and any eval of document content. A rate limit on kept pictures is still open (§35).
+
+
+## 38. A long spec that is not JSON, and what the room hears (2026-10-02)
+
+**Read-back (trace `c3619636`, 03:25 HKT, the first document turn after §37 deployed).** The behaviour §37 aimed at
+worked: she fetched six pages and six pictures (eight are allowed now) and drafted a full reference. Her
+`document_publish` failed: she sent `spec` as a 10,000-character string of JSON, broken at character 7,247 by what
+the findings called only «Expecting ',' delimiter: line 1 column 7248». With nothing to fix she wrote the draft to her
+computer and replied that the document was made, with an invented link. R-100 refused that reply; it was her final
+text, not a `send_reply` call, so there was no refusal reason to hand back and the room received the generic
+«can't manage right now» fallback. The guard held; the room's experience was a brush-off.
+
+**Decided (operator, 2026-10-02).**
+1. The `json` finding shows the 28 characters either side of the break, marked `<<HERE>>`, and names the usual cause.
+2. The tool's note for a non-JSON spec says to send an object, fix the marked place, and that no document or link exists
+   until a call returns `ok`. The skill says «send `spec` as an object, never as text».
+3. The string form of `spec` stays accepted.
+
+**Found, not changed.** When R-100 refuses her FINAL text (no `send_reply` call to coach), the room gets the canned
+apology rather than a sentence that says the document was not saved. A code-authored honest sentence for exactly that
+case is the likely next step, and it is a separate decision. Her Standing note also recorded the document as «published»
+after her own false claim, which will need the notebook to stop folding an unsent reply as fact.

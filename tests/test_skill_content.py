@@ -1255,3 +1255,12 @@ def test_the_document_skill_says_a_document_exists_only_once_publish_returned_ok
     assert "or `document_read` returned it" in body
     assert "stop gathering and publish what you hold" in body
     assert "Do not hold a document for details nobody gave you" in body
+
+
+def test_the_document_skill_tells_her_to_send_the_spec_as_an_object() -> None:
+    """2026-10-02, trace c3619636: a 10,000-character spec sent as a string of JSON broke at one
+    unescaped quote, and the draft was saved elsewhere with the room told it was made."""
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "Send `spec` as an object, never as text" in body

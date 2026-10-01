@@ -543,3 +543,21 @@ async def test_a_refusal_for_a_made_up_document_link_tells_the_model_why() -> No
 
 async def test_every_other_refusal_keeps_the_bare_word() -> None:
     assert await _send_with(_RefusingDeliverer(""), "see the link") == "refused"
+
+
+async def test_a_spec_that_is_not_json_is_told_to_send_an_object_and_not_claim_it() -> None:
+    """2026-10-02, trace c3619636: a long spec sent as text broke at one quote; she saved the draft
+    elsewhere and said the document was made. The note names the fix and the claim."""
+    broken = '{"version": 1, "root": {"type": "Page" "props": {"title": "T"}}}'
+    out = await _tools(_service())["document_publish"](spec=broken)
+    assert out["status"] == "bad_arguments"
+    assert "not valid JSON" in out["note"] and "as an object" in out["note"]
+    assert "do not tell anybody it was made" in out["note"]
+    assert any("<<HERE>>" in f for f in out["findings"]), "the break is marked for her"
+
+
+async def test_a_schema_refusal_keeps_its_own_note() -> None:
+    bad = {"version": 1, "root": {"type": "Nonsense", "props": {}}}
+    out = await _tools(_service())["document_publish"](spec=bad)
+    assert out["status"] == "bad_arguments" and "not valid JSON" not in out["note"]
+    assert "Fix each finding" in out["note"]
