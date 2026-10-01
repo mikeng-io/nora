@@ -1922,6 +1922,50 @@ class SidecarEntry(SpeechEntryConfigBase):
         return value
 
 
+class SpeechTtsFormatConfig(BaseModel):
+    """`[speech.tts.format]` — the speech formatter (design/voice-channel/08,
+    `nora.agent.speech_format`): fits a spoken reply to the TTS voice after
+    her words are final, on the spoken copy only.
+
+    `mode`:
+    - `off` (the default): the reply reaches MiniMax exactly as she wrote it,
+      byte-identical to before this section existed.
+    - `normalise`: emoji, markdown markers and stray symbols are removed
+      deterministically; no model call, no added latency.
+    - `model`: `normalise`, then one cheap model call may add pauses and
+      interjection tags. Its output is spoken only when a code check finds
+      every letter and digit of her reply unchanged and in order; anything
+      else, a timeout included, speaks the normalised reply.
+
+    `model` empty inherits `[llm] model`. `timeout_seconds` bounds the whole
+    call and is time added before she is heard, so it is sized on measured
+    latency (the design note has the numbers). A reply with fewer than
+    `min_chars` letters and digits, or more than `max_chars`, skips the model:
+    too short to pace, or too long to format inside the timeout.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["off", "normalise", "model"] = "off"
+    model: str = ""
+    reasoning_effort: Literal[
+        "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "none"
+    timeout_seconds: float = Field(default=2.0, gt=0, le=10)
+    max_tokens: int = Field(default=1024, ge=64)
+    min_chars: int = Field(default=12, ge=0)
+    max_chars: int = Field(default=200, ge=1)
+
+    @model_validator(mode="after")
+    def _bounds_are_ordered(self) -> SpeechTtsFormatConfig:
+        if self.min_chars > self.max_chars:
+            raise ValueError(
+                "[speech.tts.format] min_chars is above max_chars, so no reply "
+                "would ever be formatted"
+            )
+        return self
+
+
 class SpeechTtsConfig(BaseModel):
     """`[speech.tts]` — outbound speech: voice-channel TTS (design/voice-
     channel/01 §5).
@@ -1964,12 +2008,28 @@ class SpeechTtsConfig(BaseModel):
     pitch: int = Field(default=0, ge=-12, le=12)
     vol: float = Field(default=1.0, ge=0.1, le=10.0)
     # `emotion` one of the model's spoken-emotion styles (t2a_v2 enum:
-    # happy/sad/angry/fearful/disgusted/surprised/calm/fluent/whisper; the
-    # operator's "fluent" is实测-successful on speech-2.8-turbo, see
-    # /tmp/tts-3_emotion_fluent.mp3). Literal guards the wire against a
-    # silent-voice outage from a typo the vendor would reject.
+    # happy/sad/angry/fearful/disgusted/surprised/calm/fluent/whisper). The
+    # adapter's model is `speech-2.8-turbo`, and the vendor's page (read
+    # 2026-10-01) says speech-2.8 does NOT support `whisper`, so it is not
+    # accepted here: a value the vendor would refuse is a silent-voice outage
+    # (every synthesis fails and the reply falls back to text). Empty keeps
+    # the field off the wire, and the vendor says the model then matches the
+    # emotion to the text itself. The operator's "fluent" synthesizes on
+    # speech-2.8-turbo (measured 2026-09-16 and 2026-10-01).
     emotion: Literal["", "happy", "sad", "angry", "fearful", "disgusted",
-                     "surprised", "calm", "fluent", "whisper"] = ""
+                     "surprised", "calm", "fluent"] = ""
+    # `voice_setting.text_normalization`: the vendor's own Chinese/English
+    # normalization, which it says improves how digits are read at a small
+    # latency cost. Off by default, the vendor's default.
+    text_normalization: bool = False
+    # `pronunciation_dict.tone`: static replacements applied to every
+    # synthesis, each "original/replacement" (the replacement is text, IPA,
+    # or tone-numbered romanisation in parentheses, e.g. "RV/(aa1)(wai1)").
+    # Empty (the default) keeps the field off the wire. Validated below so a
+    # malformed entry is refused at load, not by the vendor mid-turn.
+    pronunciation: list[str] = Field(default_factory=list)
+    # The speech formatter (design/voice-channel/08): see SpeechTtsFormatConfig.
+    format: SpeechTtsFormatConfig = SpeechTtsFormatConfig()
     duck_gain: float = Field(default=0.25, gt=0, lt=1)
     duck_ramp_ms: int = Field(default=150, gt=0)
     # Each guild's audio-controller, as a LIST of `{guild, endpoint}` entries
@@ -2020,6 +2080,21 @@ class SpeechTtsConfig(BaseModel):
         the list the parity gate needs. Duplicate guilds are refused at load,
         so this never silently drops one."""
         return {entry.guild: entry.endpoint for entry in self.sidecars}
+
+    @field_validator("pronunciation")
+    @classmethod
+    def _pronunciation_entries_are_pairs(cls, value: list[str]) -> list[str]:
+        """Each entry is exactly `original/replacement`, both sides non-empty.
+        MiniMax splits on the slash; an entry without one, or with two, has no
+        reading the operator can predict."""
+        for entry in value:
+            original, sep, replacement = entry.partition("/")
+            if not sep or not original.strip() or not replacement.strip() or "/" in replacement:
+                raise ValueError(
+                    f"[speech.tts] pronunciation entry {entry!r} is not "
+                    "'original/replacement' (one slash, both sides non-empty)"
+                )
+        return value
 
     @model_validator(mode="after")
     def _no_guild_is_listed_twice(self) -> SpeechTtsConfig:
