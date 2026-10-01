@@ -13,10 +13,18 @@ writer, the smallest honest one:
   before the db is healthy more often than not).
 - **Postgres is the record of truth.** `sql` turns the spool into INSERTs into
   `computer_events` (actor `operator`, a value `ck_computer_events_actor` already
-  allows, so no migration), `ON CONFLICT (operation_id, phase) DO NOTHING`, so
-  replaying the whole spool is idempotent and a sync can be run any time. The
-  table's append-only triggers are untouched: an INSERT that conflicts is skipped
-  before any UPDATE could happen, and nothing here ever updates or deletes.
+  allows, so no migration), `ON CONFLICT DO NOTHING` with no conflict target, so
+  a row that is already there is skipped whichever unique key it collides on
+  (the primary key too: two syncs racing to insert the same event must not make
+  one of them fail). The table's append-only triggers are untouched: an INSERT
+  that conflicts is skipped before any UPDATE could happen, and nothing here
+  ever updates or deletes.
+- **A sync sends only what is new.** A state file next to the spool holds the
+  byte offset the last successful sync reached; `sql` reads from there, and `mark`
+  moves it forward after psql succeeded. A line that is not an event (corrupt, or
+  hand-edited) is logged to stderr and skipped, never raised: one bad line must
+  not park every later event behind it. A final line with no newline is a write
+  still in progress; it is left for the next sync, not read as corrupt.
 - **Never the token.** A rotation is recorded as the first 12 hex characters of
   the token's SHA-256, enough to tell two tokens apart and to show a rotation
   happened, not enough to recover one.
@@ -25,7 +33,8 @@ stdlib only: it runs under the host's `python3` with no virtualenv.
 
     lifecycle_event.py record --spool FILE --event NAME [--status ok|failed]
                               [--name VM] [--detail key=value ...]
-    lifecycle_event.py sql    --spool FILE
+    lifecycle_event.py sql    --spool FILE [--state FILE] [--all]
+    lifecycle_event.py mark   --state FILE --offset N
     lifecycle_event.py fingerprint            (reads the token from stdin)
 """
 
@@ -123,24 +132,92 @@ def insert_sql(event: Mapping[str, Any]) -> str:
         f"'finished', {when}::timestamptz, {when}::timestamptz, {when}::timestamptz, "
         f"{_quote(ACTOR)}, NULL, '', '', '', '', '', {_quote(TOOL)}, 'direct', '', '', "
         f"{_quote(str(event['status']))}, {_quote(request)}::jsonb, {_quote(result)}::jsonb, "
-        "'{}'::jsonb, NULL) ON CONFLICT (operation_id, phase) DO NOTHING;"
+        "'{}'::jsonb, NULL) ON CONFLICT DO NOTHING;"
     )
 
 
-def read_spool(path: Path) -> list[dict[str, Any]]:
-    """Every event in the spool. A line that is not an event is an ERROR, not
-    skipped: a spool that silently drops a line is an audit that does."""
+REQUIRED = ("id", "operation_id", "at", "event", "status", "name", "host", "detail")
+
+
+def _valid(event: Any) -> str | None:
+    """Why `event` cannot be inserted, or None."""
+    if not isinstance(event, dict):
+        return "not a JSON object"
+    missing = [k for k in REQUIRED if k not in event]
+    if missing:
+        return f"missing {', '.join(missing)}"
+    if event["event"] not in EVENTS or event["status"] not in STATUSES:
+        return "unknown event or status"
+    if not isinstance(event["detail"], dict):
+        return "detail is not an object"
+    try:
+        uuid.UUID(str(event["id"]))
+        uuid.UUID(str(event["operation_id"]))
+        datetime.fromisoformat(str(event["at"]))
+        insert_sql(event)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def read_spool(path: Path, start: int = 0) -> tuple[list[dict[str, Any]], int]:
+    """The events in the spool from byte `start`, and the offset reached.
+
+    Only COMPLETE lines (ending in a newline) are read: a last line with none is
+    a write in progress, and the offset stops before it so the next sync reads it
+    whole. A complete line that is not a valid event is logged to stderr and
+    skipped, with the offset moved past it, so one bad line never parks every later
+    event behind it (psql would stop at it, and a sync that raised on it would
+    retry it forever)."""
     if not path.exists():
-        return []
-    events = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip():
+        return [], 0
+    data = path.read_bytes()
+    if start > len(data):
+        print(f"{path}: shorter than the synced offset {start}; reading it from the start",
+              file=sys.stderr)
+        start = 0
+    events: list[dict[str, Any]] = []
+    offset = start
+    while True:
+        end = data.find(b"\n", offset)
+        if end == -1:
+            break
+        raw = data[offset:end]
+        offset = end + 1
+        if not raw.strip():
             continue
         try:
-            events.append(json.loads(line))
+            event = json.loads(raw.decode("utf-8"))
         except ValueError as exc:
-            raise ValueError(f"{path}:{number}: not a lifecycle event ({exc})") from exc
-    return events
+            print(f"{path}: skipping a line that is not an event ({exc}): {raw[:60]!r}",
+                  file=sys.stderr)
+            continue
+        why = _valid(event)
+        if why is not None:
+            print(f"{path}: skipping an invalid event ({why})", file=sys.stderr)
+            continue
+        events.append(event)
+    return events, offset
+
+
+def read_offset(state: Path | None) -> int:
+    if state is None or not state.exists():
+        return 0
+    try:
+        return max(0, int(state.read_text().strip()))
+    except ValueError:
+        return 0
+
+
+def write_offset(state: Path, offset: int) -> None:
+    """Move the synced offset forward, never back (two syncs may finish in either
+    order), atomically."""
+    if offset <= read_offset(state):
+        return
+    state.parent.mkdir(parents=True, exist_ok=True)
+    tmp = state.with_name(state.name + ".tmp")
+    tmp.write_text(f"{offset}\n")
+    tmp.replace(state)
 
 
 def _parse_detail(pairs: list[str]) -> dict[str, str]:
@@ -165,6 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--detail", action="append", default=[])
     sql = sub.add_parser("sql")
     sql.add_argument("--spool", type=Path, required=True)
+    sql.add_argument("--state", type=Path, default=None)
+    sql.add_argument("--all", action="store_true")
+    mark = sub.add_parser("mark")
+    mark.add_argument("--state", type=Path, required=True)
+    mark.add_argument("--offset", type=int, required=True)
     sub.add_parser("fingerprint")
     args = parser.parse_args(argv)
 
@@ -183,8 +265,13 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(json.dumps(event, sort_keys=True) + "\n")
         print(event["id"])
         return 0
-    for event in read_spool(args.spool):
+    if args.command == "mark":
+        write_offset(args.state, args.offset)
+        return 0
+    events, offset = read_spool(args.spool, 0 if args.all else read_offset(args.state))
+    for event in events:
         print(insert_sql(event))
+    print(f"-- offset={offset}")
     return 0
 
 

@@ -45,8 +45,10 @@ def test_the_first_serve_records_a_create_then_a_computerd_start(fresh: Host) ->
     sql = fresh.psql_sql()
     ids = [e["id"] for e in fresh.events()]
     assert len(ids) == 2 and all(i in sql for i in ids)
-    assert len({s for s in sql.splitlines() if s.startswith("INSERT")}) == 2
-    assert "ON CONFLICT (operation_id, phase) DO NOTHING" in sql
+    # Each event is sent ONCE: a sync reads from the offset the last one reached,
+    # not the whole history.
+    assert sql.count("INSERT INTO computer_events") == 2
+    assert "ON CONFLICT DO NOTHING" in sql
 
 
 def test_a_restart_of_the_unit_is_a_computerd_start_and_not_a_create(fresh: Host) -> None:
@@ -155,3 +157,43 @@ def test_a_destroy_that_could_not_be_recorded_does_not_look_audited(fresh: Host)
     result = fresh.run("destroy", NORA_COMPUTER_STATE_DIR="/dev/null/nope")
     assert result.returncode == 5, result.stdout + result.stderr
     assert "could NOT be recorded" in result.stdout + result.stderr
+
+
+def test_a_later_sync_sends_only_the_events_since_the_last_good_one(fresh: Host) -> None:
+    fresh.run("serve")
+    sent = fresh.psql_sql().count("INSERT INTO computer_events")
+    fresh.run("policy-log")
+    assert fresh.psql_sql().count("INSERT INTO computer_events") == sent + 1
+    assert int((fresh.state_dir / "lifecycle-events.synced").read_text()) == \
+        fresh.spool_path.stat().st_size
+
+
+def test_a_sync_that_failed_does_not_advance_the_offset(fresh: Host) -> None:
+    fresh.run("serve", STUB_DB_FAIL="1")
+    assert not (fresh.state_dir / "lifecycle-events.synced").exists()
+    (fresh.dir / "psql.sql").unlink()
+    assert fresh.run("sync-events").returncode == 0
+    assert fresh.psql_sql().count("INSERT INTO computer_events") == 2
+    assert int((fresh.state_dir / "lifecycle-events.synced").read_text()) == \
+        fresh.spool_path.stat().st_size
+
+
+def test_sync_events_all_replays_the_whole_history(fresh: Host) -> None:
+    fresh.run("serve")
+    (fresh.dir / "psql.sql").unlink()
+    assert fresh.run("sync-events").returncode == 0
+    assert fresh.psql_sql() == ""                       # nothing new: psql is not even called
+    assert fresh.run("sync-events", "--all").returncode == 0
+    assert fresh.psql_sql().count("INSERT INTO computer_events") == 2
+
+
+def test_a_corrupt_line_in_the_spool_does_not_stop_later_events_reaching_postgres(
+    fresh: Host,
+) -> None:
+    fresh.run("serve")
+    with fresh.spool_path.open("a") as fh:
+        fh.write("{half a line\n")
+    result = fresh.run("policy-log")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "policy_log_read" in fresh.psql_sql()
+    assert "skipping a line that is not an event" in result.stderr

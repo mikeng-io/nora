@@ -91,10 +91,18 @@ the way the tools do; it keeps a **host-side spool first** and replays it into
 - The spool is `~/.local/state/nora-computer/lifecycle-events.jsonl`, one JSON
   line per event, written before anything else. It survives Postgres being down
   at boot, which is the ordinary case: the unit starts before the db is healthy.
-- Each event is then replayed into `computer_events` through
-  `docker compose exec db psql` (`ON CONFLICT (operation_id, phase) DO NOTHING`,
-  so replaying the whole spool is safe at any time). A db that is not up yet
-  logs `not yet in Postgres`; `nora-computer sync-events` replays it by hand.
+- Each event is then synced into `computer_events` through
+  `docker compose exec db psql` (`ON CONFLICT DO NOTHING` with no conflict target,
+  so a row already there is skipped on whichever unique key it hits, and two
+  syncs racing on the same event cannot fail each other). A sync sends only what
+  is **after the offset the last good sync reached** (`lifecycle-events.synced`
+  beside the spool, moved forward only after psql succeeded), not the whole
+  history. A db that is not up yet logs `not yet in Postgres` and leaves the
+  offset alone; `nora-computer sync-events` retries by hand, and
+  `sync-events --all` replays everything. A line in the spool that is not a valid
+  event is logged and skipped, never raised, so one bad line cannot park the
+  events after it; a last line with no newline is a write in progress and is left
+  for the next sync.
 - Rows have `actor = 'operator'` (a value the table's constraint already
   allowed: no migration), `tool = 'computer_vm'`, and the event in `request`
   (`{"event": ..., "name": ..., "host": ...}`) with its facts in `result`. The

@@ -79,7 +79,7 @@ def test_replaying_the_whole_spool_is_a_no_op(pg_url, tmp_path) -> None:
 
 
 def _sql_of(spool) -> list[str]:
-    return [lifecycle.insert_sql(e) for e in lifecycle.read_spool(spool)]
+    return [lifecycle.insert_sql(e) for e in lifecycle.read_spool(spool)[0]]
 
 
 def test_a_row_carries_when_it_happened_not_when_it_was_synced(pg_url) -> None:
@@ -133,3 +133,25 @@ def test_the_event_and_operation_ids_are_uuids_the_table_accepts() -> None:
     uuid.UUID(made["id"])
     uuid.UUID(made["operation_id"])
     assert made["id"] != made["operation_id"]
+
+
+def test_two_syncs_racing_to_insert_the_same_event_do_not_fail(pg_url) -> None:
+    """The same event arrives twice as a concurrent sync would send it: the second
+    insert collides on the primary key AND the operation key. With a conflict
+    TARGET naming only (operation_id, phase), a collision that surfaced on the
+    primary key first would raise; bare DO NOTHING takes whichever unique key it is."""
+    dsn = _dsn(pg_url)
+    made = lifecycle.make_event("computerd_start")
+    _run(dsn, [lifecycle.insert_sql(made)])
+    _run(dsn, [lifecycle.insert_sql(made)])
+    assert len(_rows(dsn)) == 1
+
+
+def test_a_collision_on_the_primary_key_alone_is_skipped_too(pg_url) -> None:
+    dsn = _dsn(pg_url)
+    first = lifecycle.make_event("create")
+    other = {**lifecycle.make_event("destroy"), "id": first["id"]}      # same id, new operation
+    _run(dsn, [lifecycle.insert_sql(first)])
+    _run(dsn, [lifecycle.insert_sql(other)])                            # must not raise
+    (row,) = _rows(dsn)
+    assert row["request"]["event"] == "create"

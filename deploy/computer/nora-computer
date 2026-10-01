@@ -45,6 +45,7 @@ UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$
 # record of truth it is replayed into; COMPOSE_DIR is where `docker compose exec
 # db` finds the stack. See lifecycle_event.py.
 SPOOL=$STATE_DIR/lifecycle-events.jsonl
+SPOOL_STATE=$STATE_DIR/lifecycle-events.synced     # the byte offset a sync has reached
 COMPOSE_DIR=${NORA_COMPOSE_DIR:-$(dirname "$ENV_FILE")}
 
 # The VM's egress, and the ONLY egress it has. sbx's policy is deny-all
@@ -74,16 +75,22 @@ export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 
 log() { echo "$(date -Is) nora-computer: $*" >&2; }
 
-# Replay the whole spool into computer_events. Idempotent (ON CONFLICT DO
-# NOTHING, so a row already there is skipped and nothing is ever updated), so it
-# is safe to run after every event and by hand. A db that is not up yet is the
+# Replay what is new in the spool into computer_events, from the offset the last
+# successful sync reached (`sync-events --all` replays everything). Idempotent
+# (ON CONFLICT DO NOTHING, so a row already there is skipped and nothing is ever
+# updated), so it is safe to run after every event, concurrently, and by hand. A db that is not up yet is the
 # ordinary reason it fails at boot; the spool keeps the event until it is.
 sync_events() {
-    local sql
+    local out offset
     [ -s "$SPOOL" ] || return 0
-    sql=$(python3 "$HERE/lifecycle_event.py" sql --spool "$SPOOL") || return 1
-    printf '%s\n' "$sql" | (cd "$COMPOSE_DIR" && timeout 30 docker compose exec -T db \
-        psql -U nora -d nora -v ON_ERROR_STOP=1 -q) >/dev/null 2>&1
+    out=$(python3 "$HERE/lifecycle_event.py" sql --spool "$SPOOL" --state "$SPOOL_STATE" "$@") || return 1
+    offset=$(printf '%s\n' "$out" | tail -n 1 | sed -n 's/^-- offset=//p')
+    [ -n "$offset" ] || return 1
+    if printf '%s\n' "$out" | grep -q '^INSERT'; then
+        printf '%s\n' "$out" | (cd "$COMPOSE_DIR" && timeout 30 docker compose exec -T db \
+            psql -U nora -d nora -v ON_ERROR_STOP=1 -q) >/dev/null 2>&1 || return 1
+    fi
+    python3 "$HERE/lifecycle_event.py" mark --state "$SPOOL_STATE" --offset "$offset"
 }
 
 # record_event EVENT STATUS [key=value ...]: one audit event, spool first. The
@@ -656,7 +663,7 @@ case "${1:-}" in
     status) cmd_status ;;
     egress) shift; cmd_egress "$@" ;;
     policy-log) shift; cmd_policy_log "$@" ;;
-    sync-events) sync_events; exit $? ;;
+    sync-events) shift; sync_events "$@"; exit $? ;;
     backup) cmd_backup ;;
     restore) shift; cmd_restore "$@" ;;
     stop) sbx stop "$NAME" </dev/null ;;
