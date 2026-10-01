@@ -231,10 +231,18 @@ async def test_the_probe_reads_an_unreachable_computerd_as_down(metrics, observe
     assert _up(metrics) == 0.0
 
 
-async def test_the_probe_reads_a_200_that_is_not_computerd_as_down(metrics, observer):
-    """A captive page or a proxy answering 200 with something else."""
+@pytest.mark.parametrize(
+    "body",
+    ["<html>welcome</html>", '{"service": "something-else"}', '{"status": "unauthorised"}', "[]"],
+)
+async def test_the_probe_reads_a_200_that_is_not_computerds_answer_as_down(
+    metrics, observer, body,
+):
+    """A captive page or a proxy answering 200 with something else. The JSON
+    bodies are the ones a parse alone does not reject: only a status in the
+    port's own words makes it an answer."""
     async def handler(_: web.Request) -> web.Response:
-        return web.Response(text="<html>welcome</html>")
+        return web.Response(text=body)
 
     server = await _stub(handler)
     try:
