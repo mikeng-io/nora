@@ -40,9 +40,10 @@ and the last step of the plan deletes the ledger and this paragraph with it.
 
   - text a module hand-builds INSIDE a RUNNER or a MECHANISM. The net knows a
     module runs a prompt, not that it also writes one. KNOWN_HAND_BUILT is the
-    by-hand record of the ones found by reading (fire's headers, the debrief's
-    `_prompt`, the vision summarizer's unframed text): each is a ledger entry
-    like any other, but a NEW one is found by a person, not by this test;
+    by-hand record of the ones found by reading (fire's headers, the vision
+    summarizer's unframed text; the debrief's `_prompt` was one until step 2b
+    moved it into its renderer): each is a ledger entry like any other, but a
+    NEW one is found by a person, not by this test;
   - a model door this file does not know. Honcho's `chat` (a dialectic query
     to a memory service's own model) and image generation are not matched;
   - a model call reached only through an imported helper (the net is
@@ -126,7 +127,7 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
         ("nora/domain/cognition_render.py",), "dispatched",
     ),
     "nora/engagement/stages/debrief.py": (
-        ("nora/engagement/debrief_render.py",), "dispatched",
+        ("nora/engagement/debrief_render.py",), "imports",
     ),
 }
 
@@ -139,10 +140,6 @@ KNOWN_HAND_BUILT = {
         "five header paragraphs (_fire_header, _gathering_header, "
         "_proactive_header, _compute_header, _participation_header) built "
         "from f-strings, outside any block"
-    ),
-    "nora/engagement/stages/debrief.py": (
-        "_prompt and _consolidate_prompt hand-join the debrief's system and "
-        "user text, including the rendered input and the model's own answer"
     ),
     "nora/infra/vision/comprehend.py": (
         "summarize sends a voice note's transcript or a video's chunk text, "
@@ -157,19 +154,15 @@ KNOWN_HAND_BUILT = {
 #: KNOWN_HAND_BUILT).
 PENDING: dict[tuple[str, str], str] = {
     ("nora/domain/cognition_render.py", "undeclared"): "step 3",
-    ("nora/language/note_merge.py", "undeclared"): "step 2",
-    ("nora/engagement/debrief_render.py", "undeclared"): "step 2",
-    ("nora/agent/reaction.py", "undeclared"): "step 2",
     ("nora/domain/summons.py", "undeclared"): "step 4",
     ("nora/app/fire.py", "hand_built"): "step 4",
-    ("nora/engagement/stages/debrief.py", "hand_built"): "step 2",
     ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",
 }
 
 #: The ledger's size, pinned exactly. Pay one down and this test fails until
 #: you lower the number in the same diff; add one and it fails until you raise
 #: it, which should never be done.
-CEILING = 8
+CEILING = 4
 
 
 def _rel(path: Path) -> str:

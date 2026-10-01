@@ -58,11 +58,19 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Literal, get_args
 from urllib.parse import unquote
 
-from nora.domain.blocks import ContextBlock, render_elements, speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    render_elements,
+    restamp,
+    speaker_name,
+)
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import age, escape
@@ -70,6 +78,57 @@ from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
 from nora.obs.metrics import Metrics
+
+#: What this renderer carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) instead of left as the
+#: f-strings and `"\n".join`s that wrote `render_debrief_input`,
+#: `render_rollup_input` and `render_debrief_turn`.
+#:
+#: **Two folds share one table, and a table cannot say «nested».** The tag
+#: fold's input is `culture`, `standing_prior`, `standing_working_set_prior`,
+#: then ONE `turn`; the event fold's (the rollup's) is the same three and then
+#: ONE `conversation` instead, which is why `turn` and `conversation` share an
+#: `order`: an input never carries both. Those are the blocks `assemble()` walks
+#: at the top, joined by a blank line, so their `order` IS the order the model
+#: reads (the numbers are the order the f-strings wrote them, step 2b of
+#: `design/context-assembly/04-every-occasion.md`; the goldens in
+#: `tests/unit/test_step2b_assembly_goldens.py` pin it byte for byte).
+#:
+#: The rest are text INSIDE one of those, never in the list `assemble` sorts
+#: at the top: `what_happened`, `transcript` and `steps` are `turn`'s body, and
+#: `stretch` is `conversation`'s, each walked by a second `assemble` (one
+#: newline apart; the stretch is alone). Their `order` records the sequence a
+#: reader meets them reading INTO the block.
+#:
+#: **`key="turn"` throughout, and `when_empty="render"` on every block.** The
+#: debrief's own contract is that a block is ALWAYS rendered, empty or not
+#: (`_standing_prior`: an absent block and one the fold failed to read look
+#: identical from inside the prompt), and the hand join kept a window with no
+#: rows, a turn with no steps, or a body that escapes to nothing as an empty
+#: pair. `assemble` would drop them, which this step is not allowed to do.
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("culture", 10, "turn"),
+    ("standing_prior", 20, "turn"),
+    ("standing_working_set_prior", 30, "turn"),
+    ("turn", 40, "turn"),
+    ("conversation", 40, "turn"),
+    ("what_happened", 50, "turn"),
+    ("transcript", 60, "turn"),
+    ("steps", 70, "turn"),
+    ("stretch", 60, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
+def _stamp(block: ContextBlock) -> ContextBlock:
+    """A block at its row in `_BLOCKS`, and kept when its body is empty."""
+    return replace(restamp(block, _ROW), when_empty="render")
+
 
 #: The scope clause every «sent nothing» gloss carries. ONE constant, spliced
 #: into all four of them, so the four cannot drift into saying four different
@@ -242,6 +301,28 @@ def _speaker(row: TranscriptRow, display_name: str) -> str:
 def _transcript(
     rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None
 ) -> str:
+    """The turn's or the stretch's messages — ONE function behind both blocks
+    (`<transcript>` in `render_debrief_turn`, `<stretch>` in
+    `render_rollup_input`), so the delivery mark can never ship apart from the
+    sentence explaining it (the block's own `fields=`).
+
+    **The two blocks are two TYPES because ONE description was false in two of
+    five callers** (audit, 2026-09-17). `<transcript>` says «the messages of
+    THIS TURN», which is right for the fold's turn render and wrong for the
+    rollup render, which has no turn: the event fold runs after an untagged
+    stretch. `delivery`'s clause reconciles the mark against «a turn's
+    outcome», and 362 characters of that landed in an 890-character rollup
+    document that has no turn and no outcome. So `<stretch>` is its own type:
+    same rows, same renderer, same mark, a description that is true of what it
+    wraps. This is the `<batch>`/`<now>` split a third time, found by reading
+    the RENDER rather than the registry.
+
+    **There is no legend block.** It was a SIBLING of the transcript whose whole
+    body was prose describing the transcript's fields (everything between the
+    transcript's tags is a message somebody sent, so a sentence of ours cannot
+    go in there). Its content is the type's own `fields=` now (#314): the thing
+    that renders `delivery` is the thing that says what `delivery` means.
+    """
     by_ts = {row.ts: row for row in rows}
 
     def _replying(row: TranscriptRow) -> str:
@@ -285,61 +366,6 @@ def _transcript(
     return render_elements(rows, tag="m", attrs=_attrs, body=lambda row: row.body)
 
 
-def _transcript_block(
-    rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None,
-    name: str = "transcript",
-) -> str:
-    """The turn's or the stretch's messages — one function, so the delivery
-    mark and the sentence explaining it can never ship apart.
-
-    **`name` exists because ONE description was false in two of five callers**
-    (audit, 2026-09-17). `<transcript>` says «the messages of THIS TURN», which
-    is right for the fold's turn render — and wrong for the rollup render,
-    whose own docstring says «there IS no turn: the event fold runs after an
-    untagged stretch». Their wrapper called the same
-    messages «the batch» one line above. Two names for one thing, in one
-    document, adjacent.
-
-    Worse, `delivery`'s clause reconciles the mark against «a turn's outcome»,
-    and 362 characters of that landed in an 890-character rollup-verdict
-    document that has no turn and no outcome — 41% of the prompt explaining a
-    reconciliation it cannot contain.
-
-    So `<stretch>` is its own type. Same rows, same renderer, same mark; a
-    description that is true of what it wraps. This is the `<batch>`/`<now>`
-    split a third time, and the third time it was found by reading the RENDER
-    rather than the registry — the registry sees names, and one name is exactly
-    what hid it.
-
-    Every renderer in this module goes through here. A delivery mark in the
-    tag fold's transcript and a bare one in the rollup's would be the same
-    token meaning two things to the same model, which is the drift the
-    `_speaker` docstring one function up already names for names.
-
-    **The legend is a SIBLING of `<transcript>`, never a line inside it**, and
-    that is not cosmetic. Everything between those two tags is a message
-    somebody sent; a sentence of ours in there is a line the model — and
-    anything else that splits the block on newlines — has to work out is not
-    one. Putting an explanation where the evidence goes is a smaller version of
-    the defect this whole module is being changed for.
-    """
-    # THE LEGEND IS GONE, and its content is the block's own `fields=` (#314).
-    # It was a block whose entire body was prose describing a SIBLING's fields,
-    # which existed only because a field's meaning had nowhere to live. It now
-    # travels with the type in `nora.domain.block_types`, so the thing that
-    # renders `delivery` is the thing that says what `delivery` means — and a
-    # renderer adding a field cannot ship it unexplained.
-    #
-    # That also retires the reason the two were separate blocks: the legend was
-    # OURS and the transcript the room's, so they had to carry opposite markers.
-    # There are no markers now, and the explanation is an attribute of the block
-    # it explains rather than a sibling of it.
-    return ContextBlock(
-        name=name,
-        body=_transcript(rows, display_name=display_name, tz=tz),
-    ).render()
-
-
 #: **There is no indent helper, and there was one for about ten minutes.** The
 #: fold's nested blocks used to be hand-written two spaces in, so the first cut
 #: of this conversion added `_indent` to keep the bytes where they were. It
@@ -352,7 +378,7 @@ def _transcript_block(
 #: same lines to any string operation. So the nesting is flat now.
 
 
-def _standing_prior(prior: Standing | None, *, now_ms: int) -> str:
+def _standing_prior(prior: Standing | None, *, now_ms: int) -> ContextBlock:
     """Her previous position, or the sentence saying there is none.
 
     This is HER fold from a previous turn, and the type says so — «yours to
@@ -371,22 +397,22 @@ def _standing_prior(prior: Standing | None, *, now_ms: int) -> str:
     uses on the tag turn.
     """
     if prior is None or not prior.body.strip():
-        return ContextBlock(
+        return _stamp(ContextBlock(
             name="standing_prior",
             body="(no position yet — this is the first fold for this conversation)",
-        ).render()
-    return ContextBlock(
+        ))
+    return _stamp(ContextBlock(
         name="standing_prior",
         attrs=(("written", age(
             prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),
         )),),
         body=escape(prior.body.strip()),
-    ).render()
+    ))
 
 
 def _standing_working_set_prior(
     working_set: tuple[WorkingSetItem, ...], *, now_ms: int,
-) -> str:
+) -> ContextBlock:
     """Her current working set, exactly as `_standing_prior` shows the
     paragraph — ALWAYS rendered, even empty, `_standing_prior`'s own reason:
     an absent block and a block the fold failed to read look identical from
@@ -403,10 +429,10 @@ def _standing_working_set_prior(
     rather than pre-editing it for staleness.
     """
     if not working_set:
-        return ContextBlock(
+        return _stamp(ContextBlock(
             name="standing_working_set_prior",
             body="(no working set yet)",
-        ).render()
+        ))
     now = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
     body = render_elements(
         working_set, tag="item",
@@ -417,17 +443,19 @@ def _standing_working_set_prior(
         ),
         body=lambda item: item.what,
     )
-    return ContextBlock(name="standing_working_set_prior", body=body).render()
+    return _stamp(ContextBlock(name="standing_working_set_prior", body=body))
 
 
-def _conversation(block: str, *, at: str) -> str:
-    """The event-path fold's envelope around an already-rendered transcript.
+def _conversation(inner: Sequence[ContextBlock], *, at: str) -> ContextBlock:
+    """The event-path fold's envelope around its `<stretch>`, walked by
+    `assemble` like the `<turn>`'s three, so the one nested row is walked too.
 
     `at` is when this fold runs. The rollup has no `<turn at=…>`, so without it
     the fold is told to write dates and shown no «now» to write them from."""
-    return ContextBlock(
-        name="conversation", attrs=(("at", at),), body=block,
-    ).render()
+    return _stamp(ContextBlock(
+        name="conversation", attrs=(("at", at),),
+        body=assemble(inner, sep="\n"),
+    ))
 
 
 def _clip(
@@ -705,17 +733,30 @@ def render_debrief_turn(
     `order` number, which existed only because a field's meaning had nowhere to
     live. Travelling WITH the block is what a sibling could never do.
     """
+    return _turn_block(
+        trace=trace, display_name=display_name, metrics=metrics,
+        since_rows=since_rows, tz=tz,
+    ).render()
+
+
+def _turn_block(
+    *, trace: TagTrace, display_name: str, metrics: Metrics,
+    since_rows: Sequence[TranscriptRow], tz: tzinfo | None,
+) -> ContextBlock:
+    """`render_debrief_turn`'s `<turn>`, as the block `render_debrief_input`
+    assembles."""
     rows = _fold_rows(trace, since_rows)
     gloss = _OUTCOME_GLOSS.get(trace.outcome, trace.outcome)
     at = datetime.fromtimestamp(trace.created_at / 1000, tz=tz).strftime(
         "%Y-%m-%d %H:%M %Z"
     ).strip()
-    inner = "\n".join((
-        (ContextBlock(
-            name="what_happened", body=escape(gloss),
-        ).render()),
-        _transcript_block(rows, display_name=display_name, tz=tz),
-        (ContextBlock(
+    inner = assemble([
+        _stamp(ContextBlock(name="what_happened", body=escape(gloss))),
+        _stamp(ContextBlock(
+            name="transcript",
+            body=_transcript(rows, display_name=display_name, tz=tz),
+        )),
+        _stamp(ContextBlock(
             name="steps",
             # MARKED, because a tool result is the room's words. `load_transcript`
             # and `who_said` hand back member-authored bodies and self-set
@@ -724,15 +765,15 @@ def render_debrief_turn(
             # classification names "a tool result" in the marked class; this
             # block was the exception to a rule the tree states in writing.
             body=_steps(trace.messages, metrics=metrics),
-        ).render()),
-    ))
-    return ContextBlock(
+        )),
+    ], sep="\n")
+    return _stamp(ContextBlock(
         name="turn", attrs=(("outcome", trace.outcome), ("at", at)),
         # The ENVELOPE is this process's own record of a turn. The
         # member-authored text inside it is `<transcript>`, which carries its
         # own marker.
         body=inner,
-    ).render()
+    ))
 
 
 def render_debrief_input(
@@ -771,26 +812,32 @@ def render_debrief_input(
     working_set_prior_block = _standing_working_set_prior(
         prior.working_set if prior is not None else (), now_ms=trace.created_at,
     )
-    turn = render_debrief_turn(
+    turn = _turn_block(
         trace=trace, display_name=display_name, metrics=metrics,
         since_rows=since_rows, tz=tz,
     )
-    return _with_culture(
-        culture,
-        f"{prior_block}\n\n{working_set_prior_block}\n\n{turn}",
-        now_ms=trace.created_at,
+    return assemble(
+        [
+            *_culture_blocks(culture, now_ms=trace.created_at),
+            prior_block, working_set_prior_block, turn,
+        ],
+        sep=_SEP,
     )
 
 
-def _with_culture(
-    culture: CultureRevision | None, rendered: str, *, now_ms: int,
-) -> str:
-    """`rendered` with the room's `<culture>` on top, or unchanged when the
-    room has no account (`render_culture`'s «no block, not an empty one»).
-    Its age is measured against the same instant the rest of the prompt uses."""
+#: The blank line the f-strings put between this input's top-level blocks.
+_SEP = "\n\n"
+
+
+def _culture_blocks(
+    culture: CultureRevision | None, *, now_ms: int,
+) -> list[ContextBlock]:
+    """The room's `<culture>` to put on top, or nothing when the room has no
+    account (`render_culture`'s «no block, not an empty one»). Its age is
+    measured against the same instant the rest of the prompt uses."""
     block = render_culture(
         culture, now=datetime.fromtimestamp(now_ms / 1000, tz=UTC))
-    return rendered if block is None else f"{block.render()}\n\n{rendered}"
+    return [] if block is None else [_stamp(block)]
 
 
 def render_rollup_input(
@@ -827,12 +874,150 @@ def render_rollup_input(
     )
     at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(
         "%Y-%m-%d %H:%M %Z").strip()
-    block = _transcript_block(
-        rows, display_name=display_name, tz=tz, name="stretch",
+    block = _stamp(ContextBlock(
+        name="stretch", body=_transcript(rows, display_name=display_name, tz=tz),
+    ))
+    return assemble(
+        [
+            *_culture_blocks(culture, now_ms=now_ms),
+            prior_block, working_set_prior_block,
+            _conversation([block], at=at),
+        ],
+        sep=_SEP,
     )
-    return _with_culture(
-        culture,
-        f"{prior_block}\n\n{working_set_prior_block}\n\n"
-        + _conversation(block, at=at),
-        now_ms=now_ms,
+
+
+# ---------------------------------------------------------------------------
+# The text the fold SENDS around the rendered input
+# ---------------------------------------------------------------------------
+#
+# Moved here from `nora.engagement.stages.debrief` (`_prompt`,
+# `_consolidate_prompt`, `_working_set_rule`) by step 2b of
+# `design/context-assembly/04-every-occasion.md`: the stage runs the call and
+# this module is the one place that says what the model reads. Two kinds of
+# text, kept apart on purpose.
+#
+# * CONTEXT is the rendered input above (`render_debrief_input`,
+#   `render_rollup_input`), built from blocks, and it is the USER message.
+# * AUTHORED TEXT is the objective the operator wrote and the length rules this
+#   module words, and it is the SYSTEM message: `system_prompt` below. None of
+#   it is a block, because none of it is context: it tells the model what to
+#   do, and a block's job is to say what something IS.
+#
+# Both folds (the tag fold in `stages.debrief`, the event fold in
+# `nora.ingest.stages.standing_event`) call these, so the two cannot word the
+# length rules differently.
+
+
+def _working_set_rule(*, working_set_max_items: int, working_set_max_chars: int) -> str:
+    """The working set's own length rule — `working_set_max_chars`/`_max_items`'s
+    sentence, stated in both `fold_prompt` and `consolidate_prompt` the same way
+    `max_chars`' rule already is, so the system message is consistent across
+    the fold and its retry (design/standing-compact/30-working-set.md §1)."""
+    return (
+        f"The working set can hold at most {working_set_max_items} items "
+        f"and must fit inside {working_set_max_chars} characters combined, "
+        f"rendered as JSON. Leave it empty, or omit the key, when there is "
+        f"nothing to carry."
+    )
+
+
+def system_prompt(
+    *, instructions: str, max_chars: int,
+    working_set_max_items: int, working_set_max_chars: int,
+) -> str:
+    """The SYSTEM message of both the fold and its retry: the objective, then
+    the position's length rule, then the working set's."""
+    rule = _working_set_rule(
+        working_set_max_items=working_set_max_items,
+        working_set_max_chars=working_set_max_chars,
+    )
+    return (
+        f"{instructions}\n\n"
+        f"The position you write must be at most {max_chars} characters.\n\n"
+        f"{rule}"
+    )
+
+
+def fold_prompt(
+    *, instructions: str, rendered: str, max_chars: int,
+    working_set_max_items: int, working_set_max_chars: int,
+) -> tuple[str, str]:
+    """`(system, user)` — the objective and its length rule in the SYSTEM
+    role, the turn being folded in the USER role.
+
+    They were one concatenated string. That is not merely untidy: the rendered
+    half is a transcript of what people typed, so with both in one user
+    message an instruction written by a member sits in the same role as the
+    operator's, and nothing downstream can tell which is which.
+    """
+    return (
+        system_prompt(
+            instructions=instructions, max_chars=max_chars,
+            working_set_max_items=working_set_max_items,
+            working_set_max_chars=working_set_max_chars,
+        ),
+        rendered,
+    )
+
+
+def consolidate_prompt(
+    *, instructions: str, rendered: str, max_chars: int, over: str,
+    working_set_max_items: int, working_set_max_chars: int,
+) -> tuple[str, str]:
+    """The retry, and it is a RETRY rather than a truncation.
+
+    The model is shown its own over-long answer and the number it missed, which
+    is what makes the failure model-resolvable: it can decide what to drop.
+    Nothing here decides that for it — the moment this module picks, the tier
+    has silently become a recency slice.
+
+    **TWO ordering rules, and the SECOND one is the OVERRIDE.** The position
+    prefers what Nora CONCLUDED over what the room said (issue #78 Phase 2's
+    tiebreak reversal): room-said belongs in the transcript, and a shrink that
+    drops her synthesis first leaves the tier carrying other people's words
+    wearing her name. Recency alone cannot govern the tie, because the most
+    recent thing in a position is just as likely to be a room quote as one of
+    her judgements — so recency is scoped to a tie between two things of the
+    SAME KIND, and the synthesis rule outranks it when the kinds differ.
+
+    Since 2026-09-24 there is a THIRD kind between the two: what she FOUND on
+    a turn and has not shared (design/standing-compact/10 §4). It ranks below
+    what she concluded or owes, because it is the part of the position most
+    harmless to lose, and above what the room said, because the transcript
+    keeps the room's words and nothing keeps an unsent tool result. Without a
+    rank it was always the most recent clause and so the last one dropped,
+    which evicted older commitments first (review 2026-09-24).
+
+    The rule ran the OPPOSITE way until 2026-08-29 — «what the room SAID
+    outranks what you concluded about it» — and that phrasing is part of why a
+    recap-shaped standing row survived: the shrink was taught to prefer exactly
+    the clauses that made it a recap (the falsifier and the flip condition live
+    in `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
+    """
+    # `(system, user)`: the objective, the length rule and the consolidation
+    # rules are the OPERATOR's and go in the system role; the turn and the
+    # model's own over-long answer are the material being worked on.
+    #
+    # `over` is the model's own previous output, and it is appended exactly as
+    # it came back: neither escaped nor wrapped in a block. That is what the
+    # hand-built text did, and wrapping it is a model-visible change that
+    # belongs in a step that says so, not in the one that moved this.
+    return (
+        system_prompt(
+            instructions=instructions, max_chars=max_chars,
+            working_set_max_items=working_set_max_items,
+            working_set_max_chars=working_set_max_chars,
+        ),
+        f"{rendered}\n\n"
+        f"Your previous answer was {len(over)} characters, which is over the "
+        f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
+        f"and answer again, within the limit. Drop the oldest and least "
+        f"consequential thing in it, never the most recent. "
+        f"What you CONCLUDED or COMMITTED to outranks what you FOUND and have "
+        f"not shared, and what you found outranks what the room SAID: drop in "
+        f"the reverse of that order, even when the thing you drop is the more "
+        f"recent. Recency decides only between two things of the same "
+        f"kind.\n\n"
+        f"Your previous answer was:\n{over}"
     )

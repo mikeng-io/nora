@@ -37,8 +37,8 @@
  {
   "name": "#199 A1 the rollup render goes through the same block, mark and legend",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    block = _transcript_block(\n        rows, display_name=display_name, tz=tz, name=\"stretch\",\n    )\n    return (\n        f\"{prior_block}\\n\\n\" + _conversation(block, at=at)\n    )\n",
-  "new": "    block = \"\\n\".join(row.body for row in rows)\n    return (\n        f\"{prior_block}\\n\\n\" + _conversation(block, at=at)\n    )\n",
+  "old": "        name=\"stretch\", body=_transcript(rows, display_name=display_name, tz=tz),\n",
+  "new": "        name=\"stretch\", body=\"\\n\".join(row.body for row in rows),\n",
   "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
  },
  {

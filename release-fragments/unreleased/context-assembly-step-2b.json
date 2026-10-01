@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Internal: note-merge, the reaction picker and the debrief declare their blocks and are built through assemble; the prompts the models read are byte-identical.", "details": [], "limitations": []}

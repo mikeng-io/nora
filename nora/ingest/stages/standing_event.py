@@ -71,7 +71,7 @@ from nora.domain.standing import (
     DEFAULT_WORKING_SET_MAX_ITEMS,
     Standing,
 )
-from nora.engagement.debrief_render import render_rollup_input
+from nora.engagement.debrief_render import fold_prompt, render_rollup_input
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import (
     OBJECTIVE,
@@ -83,9 +83,6 @@ from nora.engagement.stages.debrief import (
 )
 from nora.engagement.stages.debrief import (
     _complete as _debrief_complete,
-)
-from nora.engagement.stages.debrief import (
-    _prompt as _debrief_prompt,
 )
 from nora.engagement.stages.debrief import (
     _working_set as _debrief_working_set,
@@ -143,7 +140,7 @@ class Wiring:
     culture_key: Callable[[str, str], str | None] | None = None
     # `working_set`'s own two operating caps (design/standing-compact/
     # 30-working-set.md, issue #445) — `debrief.Wiring`'s own fields, since
-    # this fold shares its `_prompt`. The rollup has no `<steps>`, so its
+    # this fold shares its `fold_prompt`. The rollup has no `<steps>`, so its
     # write path (`_fold_batch`) can only ever CARRY the prior working set
     # forward, never source a new item from it — but the shared objective
     # states this budget on every call, this one included, so the numbers
@@ -383,7 +380,7 @@ async def _fold_batch(
     )
 
     async def _standing() -> tuple[str | None, list[Any] | None, str]:
-        system, user = _debrief_prompt(
+        system, user = fold_prompt(
             instructions=instructions, rendered=rendered, max_chars=wiring.max_chars,
             working_set_max_items=wiring.working_set_max_items,
             working_set_max_chars=wiring.working_set_max_chars,
