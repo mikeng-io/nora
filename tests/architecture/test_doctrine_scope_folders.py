@@ -57,7 +57,7 @@ DOCTRINE_DIR = ROOT / "nora" / "doctrine"
 # is the source; this tuple is asserted against it below rather than
 # hand-duplicated silently.
 _HER_AUDIENCES = frozenset({"tag", "heartbeat", "participation", "proactive"})
-_INSTRUMENT_AUDIENCES = frozenset({"relevance_gate", "reaction", "dreamer"})
+_INSTRUMENT_AUDIENCES = frozenset({"relevance_gate", "reaction", "dreamer", "speech_format"})
 # The public surface: a turn of hers, but one strangers read (design/
 # instagram-adoption/19). Its own set, so `rooms/` can never draw from it.
 _PUBLIC_AUDIENCES = frozenset({"summons"})

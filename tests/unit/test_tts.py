@@ -12,12 +12,15 @@ answering every request the same way.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
+from nora.agent.speech_format import SpeechFormatter
 from nora.domain.ports import SpeakResult
 from nora.infra.tts import MiniMaxTtsSpeaker
+from nora.obs.metrics import Metrics
 
 _CLIP = b"\xff\xfb\x90\x00fake-mp3-frames"
 
@@ -240,3 +243,86 @@ async def test_the_live_endpoint_speaks_cantonese():
     assert result.available is True, f"live synthesis failed: {result.reason}"
     assert result.audio
     assert result.media_type == "audio/mpeg"
+
+
+# -- the speech formatter seam and the two request knobs (design/voice-
+#    channel/08). The formatter here is the REAL `SpeechFormatter` over a
+#    scripted model, so what reaches the wire is what production would send.
+
+class _Said:
+    def __init__(self, content: str) -> None:
+        self.content, self.finish_reason = content, "stop"
+
+
+class _ScriptedModel:
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+
+    async def complete(self, *, system: str, prompt: str) -> _Said:
+        return _Said(self.answer)
+
+
+class _Instruction:
+    def get(self, *, applies_to: str = "speech_format") -> SimpleNamespace:
+        return SimpleNamespace(doctrine_text="# What you are reading\nPace it.")
+
+
+def _formatter(answer: str) -> SpeechFormatter:
+    return SpeechFormatter(
+        client=_ScriptedModel(answer), prompts=_Instruction(), metrics=Metrics(),
+        timeout_seconds=1.0, min_chars=1, max_chars=200,
+    )
+
+
+async def test_with_no_formatter_the_reply_reaches_the_wire_exactly_as_written():
+    """`mode = "off"`: emoji and all, byte-identical to before the formatter."""
+    server = _Server()
+    await _speaker(server).speak(text="好呀😂 **聽日**見")
+    body = json.loads(server.requests[0].content)
+    assert body["text"] == "好呀😂 **聽日**見"
+    assert "pronunciation_dict" not in body
+    assert "text_normalization" not in body["voice_setting"]
+
+
+async def test_the_formatters_passed_text_is_what_is_synthesized():
+    server = _Server()
+    paced = "好呀(laughs) 聽日三點<#0.30#>喺旺角等"
+    speaker = _speaker(server, formatter=_formatter(paced))
+    await speaker.speak(text="好呀😂 聽日三點喺旺角等")
+    assert json.loads(server.requests[0].content)["text"] == paced
+
+
+async def test_a_formatter_that_rewrites_a_word_never_reaches_the_wire():
+    server = _Server()
+    speaker = _speaker(server, formatter=_formatter("好呀 聽日四點喺旺角等"))
+    await speaker.speak(text="好呀😂 聽日三點喺旺角等")
+    assert json.loads(server.requests[0].content)["text"] == "好呀 聽日三點喺旺角等"
+
+
+async def test_a_formatter_that_raises_speaks_the_reply_as_written():
+    class _Broken:
+        async def format(self, *, text: str) -> str:
+            raise RuntimeError("contract broken")
+
+    server = _Server()
+    result = await _speaker(server, formatter=_Broken()).speak(text="好呀")
+    assert result.available is True
+    assert json.loads(server.requests[0].content)["text"] == "好呀"
+
+
+async def test_a_reply_of_only_emoji_is_empty_and_never_billed():
+    server = _Server()
+    result = await _speaker(server, formatter=_formatter("")).speak(text="😂👍")
+    assert result == SpeakResult(available=False, reason="empty")
+    assert server.requests == []
+
+
+async def test_text_normalization_and_pronunciation_ride_the_wire_when_set():
+    server = _Server()
+    speaker = _speaker(
+        server, text_normalization=True, pronunciation=("RV/(aa1)(wai1)",),
+    )
+    await speaker.speak(text="架 RV 好正")
+    body = json.loads(server.requests[0].content)
+    assert body["voice_setting"]["text_normalization"] is True
+    assert body["pronunciation_dict"] == {"tone": ["RV/(aa1)(wai1)"]}

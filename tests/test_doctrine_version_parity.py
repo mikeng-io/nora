@@ -286,6 +286,14 @@ PINNED: dict[str, tuple[int, str]] = {
     "reaction": (
         3, "df6960012a6c4610e80d1cbbbd0c597885853625d78d7a306c7c68321ffc41d2",
     ),
+    # The speech formatter's instruction (design/voice-channel/08). v1 was
+    # measured on norty over 68 replies x 3 uncached draws (check passed
+    # 202/204 on nora-gate) with the phrase «a Hong Kong friend group»; the
+    # pinned text drops «Hong Kong», as reaction v3 did, and that one-phrase
+    # change was not re-measured.
+    "speech-format": (
+        1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
+    ),
     "participation-conduct": (
         1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",
     ),
