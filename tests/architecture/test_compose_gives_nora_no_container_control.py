@@ -49,10 +49,21 @@ def test_the_nora_service_is_found_so_the_checks_below_can_fail():
     assert _mount_sources(_compose()["services"]["nora"]), "no volumes parsed for nora"
 
 
-def test_the_nora_service_mounts_no_docker_socket():
-    nora = _compose()["services"]["nora"]
-    sockets = [s for s in _mount_sources(nora) if "docker.sock" in s]
-    assert not sockets, f"the nora service mounts the host Docker socket: {sockets}"
+def test_no_service_mounts_a_docker_socket():
+    """Every service, not only nora: nothing in this stack controls the daemon."""
+    found = {
+        name: [s for s in _mount_sources(service) if "docker.sock" in s]
+        for name, service in _compose()["services"].items()
+    }
+    found = {k: v for k, v in found.items() if v}
+    assert not found, f"services mounting the host Docker socket: {found}"
+
+
+def test_the_nora_service_sets_no_docker_host():
+    """A `DOCKER_HOST` would point her at a daemon (a socket proxy, tcp://)."""
+    env = _compose()["services"]["nora"].get("environment") or []
+    names = set(env) if isinstance(env, dict) else {e.split("=", 1)[0] for e in env}
+    assert "DOCKER_HOST" not in names, "DOCKER_HOST is set in nora's environment"
 
 
 def test_the_nora_service_is_not_in_the_docker_group():
