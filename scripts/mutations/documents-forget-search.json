@@ -2,8 +2,8 @@
   {
     "name": "forget: the documents loop never writes, so a forgotten person's documents stay readable",
     "file": "nora/app/person_forget.py",
-    "old": "    for document_id in live:\n        if await documents.set_state(",
-    "new": "    for document_id in []:\n        if await documents.set_state(",
+    "old": "        for document_id, seen in live:\n",
+    "new": "        for document_id, seen in []:\n",
     "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
   },
   {
@@ -30,8 +30,8 @@
   {
     "name": "forget: set_by names the person, not the forget",
     "file": "nora/app/person_forget.py",
-    "old": "            set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\",\n",
-    "new": "            set_by=person_id,\n",
+    "old": "set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\", only_if_state=(seen,),\n",
+    "new": "set_by=person_id, only_if_state=(seen,),\n",
     "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
   },
   {
@@ -58,8 +58,8 @@
   {
     "name": "service read: a deleted document is read",
     "file": "nora/app/documents_service.py",
-    "old": "        if current is None or current.summary.state == \"deleted\":",
-    "new": "        if current is None:",
+    "old": "        if current is None or current.summary.state == \"deleted\" or current.summary.forgotten:",
+    "new": "        if current is None or current.summary.forgotten:",
     "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
   },
   {
@@ -86,8 +86,8 @@
   {
     "name": "sql search: the query is a LIKE pattern, so % matches everything",
     "file": "nora/infra/sql/documents.py",
-    "old": "        _R.title.icontains(needle, autoescape=True),\n        _R.text.icontains(needle, autoescape=True),\n",
-    "new": "        _R.title.ilike(f\"%{needle}%\"),\n        _R.text.ilike(f\"%{needle}%\"),\n",
+    "old": "        _spaced(_R.title).icontains(needle, autoescape=True),\n        _spaced(_R.text).icontains(needle, autoescape=True),\n",
+    "new": "        _spaced(_R.title).ilike(f\"%{needle}%\"),\n        _spaced(_R.text).ilike(f\"%{needle}%\"),\n",
     "target": "tests/contract/test_document_store_contract.py::test_a_query_is_text_never_a_pattern[sql]"
   },
   {
@@ -107,8 +107,8 @@
   {
     "name": "route: a query longer than the bound is cut to nothing instead of refused",
     "file": "nora/web/api.py",
-    "old": "        if len(query) > DOCUMENT_QUERY_MAX:\n",
-    "new": "        if False:\n",
+    "old": "        if len(query) > DOCUMENT_QUERY_MAX or any(\n",
+    "new": "        if False or any(\n",
     "target": "tests/web/test_documents_search_api.py::test_a_blank_search_is_the_whole_list_and_a_long_one_is_refused"
   },
   {
