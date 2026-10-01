@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "When someone speaks to Nora in a Discord voice channel, her music controls are already loaded, so a spoken request to play, stop, change the volume, move a track up or check what is playing no longer waits for an extra lookup step first.",
+  "details": [
+    "Which tools stay loaded on spoken turns is declared on each tool and chosen from measured use: five music controls were called on 14 of 26 spoken turns between 17 and 30 September.",
+    "Typed turns are unchanged, in every room."
+  ],
+  "limitations": [
+    "Skipping a track was never asked for by voice in that window, so it still loads on demand.",
+    "Each spoken turn carries about 660 more tokens of tool descriptions, and spoken and typed turns no longer share the same cached prompt prefix; the latency and cost effect has been estimated from recorded turns, not yet measured before and after."
+  ]
+}
