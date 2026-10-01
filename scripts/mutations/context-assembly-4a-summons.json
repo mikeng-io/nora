@@ -40,5 +40,40 @@
     "old": "body=escape(text),",
     "new": "body=text,",
     "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a review (a): a day is a calendar day, not 86400 seconds",
+    "file": "nora/domain/summons.py",
+    "old": "        return f\"{delta // 86400}d ago\"",
+    "new": "        return f\"{(now.date() - then.date()).days}d ago\"",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a review (a): an hour age stops at midnight, not at 24 hours",
+    "file": "nora/domain/summons.py",
+    "old": "    if delta < 86400:\n        return f\"{delta // 3600}h ago\"",
+    "new": "    if then.date() == now.date():\n        return f\"{delta // 3600}h ago\"",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a review (b): the date is taken in UTC, not in the stamp's own zone",
+    "file": "nora/domain/summons.py",
+    "old": "    return \"on \" + then.strftime(\"%Y-%m-%d\")",
+    "new": "    return \"on \" + then.astimezone(UTC).strftime(\"%Y-%m-%d\")",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a review (c): a row's key is changed in the table (the turn's message in a cached prefix)",
+    "file": "nora/domain/summons.py",
+    "old": "    (\"social_post\", 20, \"turn\", \"comments under that post\"),",
+    "new": "    (\"social_post\", 20, \"global\", \"comments under that post\"),",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_table_is_what_it_was_declared_to_be tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
+  },
+  {
+    "name": "4a review (c): a block is built with a key other than its row's",
+    "file": "nora/domain/summons.py",
+    "old": "        order=order, key=key, when_empty=\"render\",\n",
+    "new": "        order=order, key=\"global\", when_empty=\"render\",\n",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
   }
 ]

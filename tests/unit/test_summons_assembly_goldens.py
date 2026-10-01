@@ -349,6 +349,64 @@ def _age_zone() -> SummonsContext:
     )
 
 
+#: Ages that sit one second or one minute either side of a 24h, 48h and 30d
+#: bucket edge, read from three clock times. A bucket is `seconds // 86400`, not
+#: a count of calendar days: at 00:30 a comment 23h59m old is from the day
+#: before, and at 23:30 one 24h01m old is two calendar days back, so the two
+#: readings differ for most of these and every golden above (all an exact
+#: multiple of a day from 12:00) sees none of it.
+_EDGES: dict[str, timedelta] = {
+    "23h59m": timedelta(hours=23, minutes=59), "24h01m": timedelta(hours=24, minutes=1),
+    "47h59m": timedelta(hours=47, minutes=59), "48h01m": timedelta(hours=48, minutes=1),
+    "29d+1s": timedelta(seconds=86400 * 29 + 1), "30d-1s": timedelta(seconds=86400 * 30 - 1),
+}
+_CLOCKS: dict[str, datetime] = {
+    "0030": datetime(2026, 9, 25, 0, 30, tzinfo=UTC),
+    "1200": datetime(2026, 9, 25, 12, 0, tzinfo=UTC),
+    "2330": datetime(2026, 9, 25, 23, 30, tzinfo=UTC),
+}
+
+for _clock_label, _clock in _CLOCKS.items():
+    for _edge_label, _edge in _EDGES.items():
+        def _edge_case(now: datetime = _clock, delta: timedelta = _edge) -> SummonsContext:
+            then = now - delta
+            return _ctx(
+                now=now, summoned_at=then, post_taken_at=_epoch(then),
+                thread=(ThreadRow("u1", "an older comment", then, False),
+                        ThreadRow("miles_example", "@noraexample ok", then, True)),
+            )
+        CASES[f"age-edge-{_edge_label}-at-{_clock_label}"] = _edge_case
+
+
+#: Times whose calendar date is not the same in their own offset as in UTC, each
+#: older than the 60 days after which an age is said as a date. The date is the
+#: stamp's own (`then.strftime`), so `01:30 +08:00` is the 2nd, though in UTC it
+#: is still the 1st.
+_ZONED = (
+    ("hkt-0130", datetime(2026, 5, 2, 1, 30, tzinfo=HKT)),
+    ("minus10-2330", datetime(2026, 5, 2, 23, 30, tzinfo=timezone(timedelta(hours=-10)))),
+    ("nepal-0300", datetime(2026, 5, 2, 3, 0, tzinfo=timezone(timedelta(hours=5, minutes=45)))),
+    ("plus14-0010", datetime(2026, 5, 2, 0, 10, tzinfo=timezone(timedelta(hours=14)))),
+    ("minus12-2000", datetime(2026, 5, 2, 20, 0, tzinfo=timezone(timedelta(hours=-12)))),
+)
+
+
+@_case("age-on-date-is-the-stamps-own-zone-in-a-thread")
+def _age_own_zone_thread() -> SummonsContext:
+    return _ctx(thread=(
+        *(ThreadRow(f"u_{label}", label, then, False) for label, then in _ZONED),
+        ThreadRow("miles_example", "@noraexample ok", NOW, True),
+    ))
+
+
+for _zone_label, _zone_then in _ZONED:
+    def _zone_case(then: datetime = _zone_then) -> SummonsContext:
+        return _ctx(summoned_at=then, thread=(
+            ThreadRow("u1", "old", then, False), ThreadRow("miles_example", "ok", NOW, True),
+        ))
+    CASES[f"age-on-date-summoned-at-{_zone_label}"] = _zone_case
+
+
 # =============================================================================
 # the question: the summons comment without her handle
 # =============================================================================
@@ -618,25 +676,39 @@ def _spy(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     return seen
 
 
+#: What the table says, written out and not read back from `_BLOCKS`: a row that
+#: moved or changed its key (`global` would put the turn's own message in a
+#: cached prefix) must be a decision somebody makes here too, not an edit the
+#: test follows.
+_PINNED_ROWS = (
+    ("social_post", 10, "turn", "the instagram post"),
+    ("social_post", 20, "turn", "comments under that post"),
+    ("social_post", 30, "turn", "what the comment that tagged you asks"),
+)
+
+
+def test_the_table_is_what_it_was_declared_to_be():
+    assert summons_domain._BLOCKS == _PINNED_ROWS
+
+
 def test_every_block_assemble_is_handed_carries_its_rows_order_and_key(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """The goldens cannot see a block left at the default `order=0`: the three
     sort by list position when their orders tie, and the list is written in the
-    table's order, so the bytes agree either way. The table is what the model
-    reads only if the blocks that reach `assemble` carry it, so that is checked
-    directly: each block carries the `order` and `key` of the row for its
-    `source`, and every row is walked."""
+    table's order, so the bytes agree either way. Nor can they see a `key`.
+    The table is what the model reads only if the blocks that reach `assemble`
+    carry it, so that is checked directly against the rows written out above,
+    not against `_BLOCKS` itself (a changed row would agree with itself)."""
     seen = _spy(monkeypatch)
     render_summons(CASES["thread-many-rows-and-elided-comments"]())
     assert len(seen) == 3
-    rows = {source: (order, key) for _, order, key, source in summons_domain._BLOCKS}
-    for block in seen:
-        assert block.name == "social_post"
-        assert (block.order, block.key) == rows[dict(block.attrs)["source"]], block.attrs
-        assert block.when_empty == "render"
-    assert {dict(b.attrs)["source"] for b in seen} == set(rows)
+    pinned = {source: (name, order, key) for name, order, key, source in _PINNED_ROWS}
+    got = {
+        dict(b.attrs)["source"]: (b.name, b.order, b.key) for b in seen
+    }
+    assert got == pinned
+    assert all(b.when_empty == "render" for b in seen)
     assert [dict(b.attrs)["source"] for b in sorted(seen, key=lambda b: b.order)] == [
-        "the instagram post", "comments under that post",
-        "what the comment that tagged you asks",
+        source for _, _, _, source in _PINNED_ROWS
     ]
