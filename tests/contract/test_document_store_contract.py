@@ -655,3 +655,32 @@ async def test_a_state_change_waits_for_a_revision_in_flight(request):
         assert (await s.get(document_id=doc)).summary.state == "deleted"
     finally:
         await engine.dispose()
+
+
+async def test_list_created_by_is_the_creators_documents_in_the_states_asked_for(store):
+    mine = await _make(store, created_by="ken", title="mine")
+    shelved = await _make(store, created_by="ken", title="shelved")
+    gone = await _make(store, created_by="ken", title="gone")
+    # Made by somebody else in the creator's own room: a participant's, never theirs.
+    theirs = await _make(store, created_by="mei", title="theirs")
+    assert await store.set_state(document_id=shelved, state="archived", set_by="ken")
+    assert await store.set_state(document_id=gone, state="deleted", set_by="ken")
+
+    default = await store.list_created_by(person_id="ken", limit=10)
+    assert {d.id for d in default} == {mine, shelved} and theirs not in {d.id for d in default}
+    only_deleted = await store.list_created_by(person_id="ken", states=("deleted",), limit=10)
+    assert [d.id for d in only_deleted] == [gone] and only_deleted[0].state == "deleted"
+    assert await store.list_created_by(person_id="nobody", limit=10) == ()
+    assert await store.list_created_by(person_id="ken", states=(), limit=10) == ()
+
+
+async def test_list_created_by_pages_in_a_stable_order_and_is_bounded(store):
+    made = {await _make(store, created_by="ken", title=f"d{i}") for i in range(5)}
+    first = await store.list_created_by(person_id="ken", limit=2, offset=0)
+    second = await store.list_created_by(person_id="ken", limit=2, offset=2)
+    third = await store.list_created_by(person_id="ken", limit=2, offset=4)
+    seen = [d.id for d in (*first, *second, *third)]
+    assert len(seen) == 5 and set(seen) == made, "pages tile the set with no gap or repeat"
+    assert seen == sorted(seen, key=str), "ordered by id"
+    assert await store.list_created_by(person_id="ken", limit=0) == ()
+    assert await store.list_created_by(person_id="ken", limit=5, offset=2**40) == ()

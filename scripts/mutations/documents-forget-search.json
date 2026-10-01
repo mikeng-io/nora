@@ -1,0 +1,44 @@
+[
+  {
+    "name": "forget: the documents loop never writes, so a forgotten person's documents stay readable",
+    "file": "nora/app/person_forget.py",
+    "old": "    for document_id in live:\n        if await documents.set_state(",
+    "new": "    for document_id in []:\n        if await documents.set_state(",
+    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
+  },
+  {
+    "name": "sql list_created_by: created_by is dropped, so forget would delete every document",
+    "file": "nora/infra/sql/documents.py",
+    "old": "            .where(_D.created_by == person_id, _state().in_(states))\n",
+    "new": "            .where(_state().in_(states))\n",
+    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
+  },
+  {
+    "name": "fake list_created_by: created_by is dropped",
+    "file": "nora/testing/fakes.py",
+    "old": "             and d.summary.created_by == person_id and d.summary.state in states),\n",
+    "new": "             and d.summary.state in states),\n",
+    "target": "tests/contract/test_document_store_contract.py::test_list_created_by_is_the_creators_documents_in_the_states_asked_for[fake]"
+  },
+  {
+    "name": "forget: an already deleted document is written again, so a re-run is not idempotent",
+    "file": "nora/app/person_forget.py",
+    "old": "    live = await _documents_created_by(documents, person_id, (\"active\", \"archived\"))\n",
+    "new": "    live = await _documents_created_by(documents, person_id, (\"active\", \"archived\", \"deleted\"))\n",
+    "target": "tests/infra/test_forget_documents.py::test_a_document_the_person_already_deleted_keeps_their_own_set_by"
+  },
+  {
+    "name": "forget: set_by names the person, not the forget",
+    "file": "nora/app/person_forget.py",
+    "old": "            set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\",\n",
+    "new": "            set_by=person_id,\n",
+    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
+  },
+  {
+    "name": "forget: a dry run goes on to write the documents",
+    "file": "nora/app/person_forget.py",
+    "old": "        report.documents = len(live)\n        return report\n",
+    "new": "        report.documents = len(live)\n",
+    "target": "tests/infra/test_forget_documents.py::test_a_dry_run_counts_and_writes_nothing_and_a_rerun_is_idempotent"
+  }
+]

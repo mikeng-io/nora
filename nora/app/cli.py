@@ -101,6 +101,7 @@ from nora.infra.sql import (
     create_sql_engine,
     snapshot_at,
 )
+from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -359,8 +360,8 @@ def add_subcommands(
     person_sub = person.add_subparsers(dest="person_command", required=True)
     forget = person_sub.add_parser(
         "forget", parents=[parent],
-        help="hide a person's messages and mark whatever cites them unsupported "
-             "(a dry run unless --apply)",
+        help="hide a person's messages, soft-delete the documents they created, and "
+             "mark whatever cites them unsupported (a dry run unless --apply)",
     )
     forget.add_argument("person_id", help="the identity.toml person id")
     forget.add_argument(
@@ -827,7 +828,8 @@ async def cmd_person_forget(args: argparse.Namespace) -> int:
     engine = create_sql_engine(_database_url(cfg))
     try:
         result = await forget_person(
-            engine, person_id=args.person_id, apply=bool(args.apply),
+            engine, documents=SqlDocumentStore(engine), person_id=args.person_id,
+            apply=bool(args.apply),
             now_ms=int(datetime.now(UTC).timestamp() * 1000),
         )
     finally:

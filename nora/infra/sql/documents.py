@@ -231,6 +231,29 @@ class SqlDocumentStore:
         async with self._engine.connect() as conn:
             return await self._one(conn, document_id)
 
+    async def list_created_by(
+        self,
+        *,
+        person_id: str,
+        states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        limit = min(max(limit, 0), _MAX_LIMIT)
+        offset = min(max(offset, 0), _MAX_OFFSET)
+        if limit == 0 or not states:
+            return ()
+        stmt = (
+            _current()
+            .where(_D.created_by == person_id, _state().in_(states))
+            .order_by(_D.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(_summary(r, r.created_at) for r in rows)
+
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         stmt = (
             sa.select(_R.revision, _R.title, _R.sha256, _R.written_by, _R.recorded_at)

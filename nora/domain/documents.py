@@ -188,6 +188,20 @@ class DocumentStore(Protocol):
         that publishes into a room, never for a reader."""
         ...
 
+    async def list_created_by(
+        self,
+        *,
+        person_id: str,
+        states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        """The documents `person_id` CREATED (`created_by`, never a room they merely read)
+        whose current state is in `states`, ordered by id so a page is stable, at most
+        `limit` from `offset`. No visibility check and no spec: this is the operator's read
+        for `nora person forget`, never a reader's."""
+        ...
+
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         """Every revision, oldest first."""
         ...

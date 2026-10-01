@@ -2403,6 +2403,25 @@ class FakeDocumentStore:
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         return self._stored(document_id)
 
+    async def list_created_by(
+        self, *, person_id: str, states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int, offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        mine = sorted(
+            (d.summary for doc_id in self._rooms
+             if (d := self._stored(doc_id)) is not None
+             and d.summary.created_by == person_id and d.summary.state in states),
+            key=lambda s: str(s.id),
+        )
+        limit = min(max(limit, 0), 1_000)
+        offset = min(max(offset, 0), 2**31 - 1)
+        return tuple(mine[offset : offset + limit]) if limit > 0 else ()
+
+    def set_by_of(self, document_id: UUID) -> list[str]:
+        """Who made each change of state, oldest first: what a test reads to show a
+        change was the forget's, not a person's (the SQL store's `document_state.set_by`)."""
+        return [by for _, by in self._states.get(document_id, [])]
+
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         return tuple(
             RevisionRecord(

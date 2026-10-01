@@ -899,7 +899,7 @@ well as in the service; the list endpoint clamps `limit` and `offset` (and the p
 100,000) so an absurd value answers a page, not a 500. A room is matched by its conversation id alone, not by
 platform, because conversation ids are unique across platforms by the same convention `media_fetch` relies
 on; if that ever stops being true, the room key here must gain the platform. Not covered: `nora person
-forget` does not reach documents, and a message the platform deleted may still be resolvable by `recent`;
+forget` did not reach documents (it does now, §32), and a message the platform deleted may still be resolvable by `recent`;
 these are issues #655 and #656.
 
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
@@ -1139,3 +1139,18 @@ the verb in one paragraph so she never hand-rolls a delete as an empty revision.
 
 **Not built.** Search (still §25's "not built"), a purge (a hard delete is a separate decision), and a
 portal restore of a deleted document. The decision row is DEC-255.
+
+## 32. Forgetting, reading by link, search, and the portal's rough edges (2026-10-01)
+
+Operator rulings of 2026-10-01 on the open items after §31. Parked and NOT built: a present view, print,
+a revision-history view, and `delegate_task`.
+
+**`nora person forget` reaches documents (DEC-256).** A document is the forgotten person's when they
+CREATED it (`created_by`); one they only appear in as a participant of its room is not theirs. Each is
+soft-deleted through the `DocumentStore` port: one `document_state` row, `deleted`, `set_by` =
+`forget:<person_id>`, so a reader can tell the forget from a person's own delete. Nothing is purged and
+every revision stays, so a document restores by one more state row (Nora's `document_set_status`). The
+command is idempotent (a document already `deleted` is not written again) and its summary reports
+`deleted N document(s)` (`would delete` in a dry run) beside the message count. `unforget` does not
+restore documents: a document's delete has no marker it could read back without also undoing a person's
+own delete, so the operator restores one by asking Nora in its room.
