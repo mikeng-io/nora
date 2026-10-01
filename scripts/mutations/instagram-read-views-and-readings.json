@@ -198,8 +198,8 @@
   {
     "name": "a story frame's reading is persisted like a post's",
     "file": "nora/agent/tools.py",
-    "old": "            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], not story))",
-    "new": "            token = _MEDIA_READ.set((MEDIA_FETCH_CALLERS[1], True))",
+    "old": "            media_fetch, caller=\"instagram_read\", persist=not story,",
+    "new": "            media_fetch, caller=\"instagram_read\", persist=True,",
     "target": "tests/unit/test_instagram_read_readings.py -k never_written_to_a_cache"
   },
   {
@@ -226,8 +226,8 @@
   {
     "name": "the turn gets a fresh set of slots per call instead of one shared",
     "file": "nora/agent/tools.py",
-    "old": "            fetch=fetch, slots=_instagram_slots,",
-    "new": "            fetch=fetch,",
+    "old": "            max_video_seconds=float(video_chunk_seconds), slots=_instagram_slots,",
+    "new": "            max_video_seconds=float(video_chunk_seconds),",
     "target": "tests/unit/test_instagram_read_readings.py -k batched_calls_share"
   },
   {
@@ -380,8 +380,8 @@
   {
     "name": "the post read note says an item with no shows line was not seen",
     "file": "nora/infra/social/render.py",
-    "old": "    \"how it looks, not as fact. An item with no shows line says why, and \"\n    \"where it can be read; every item's link is in items, in the same order, \"",
-    "new": "    \"how it looks, not as fact. An item with no shows line was not seen, and \"\n    \"where it can be read; every item's link is in items, in the same order, \"",
+    "old": "    \"shows line as how it looks, not as fact. Whoever shared or linked the \"\n    \"post has usually seen it. An item with no shows line says why, and \"",
+    "new": "    \"shows line as how it looks, not as fact. Whoever shared or linked the \"\n    \"post has usually seen it. An item with no shows line was not seen, and \"",
     "target": "tests/unit/test_instagram_views.py -k does_not_contradict"
   },
   {

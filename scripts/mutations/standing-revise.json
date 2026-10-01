@@ -23,15 +23,15 @@
  {
   "name": "standing-revise: a stale base_revision_id is actually refused",
   "file": "nora/domain/standing_revise.py",
-  "old": "    if base_revision_id != current_fold_count:\n        return Refusal(\n            reason=\"stale_base\",",
+  "old": "    if base_revision_id != current_revision_id:\n        return Refusal(\n            reason=\"stale_base\",",
   "new": "    if False:\n        return Refusal(\n            reason=\"stale_base\",",
   "target": "tests/unit/test_standing_revise.py -k test_a_base_behind_the_current_revision_is_stale"
  },
  {
   "name": "standing-revise: a base against a room with no revision yet is actually refused",
   "file": "nora/domain/standing_revise.py",
-  "old": "    if current_fold_count is None:\n        return Refusal(\n            reason=\"stale_base\",\n            detail=\"no revision exists yet for this room\",\n        )",
-  "new": "    if False:\n        return Refusal(\n            reason=\"stale_base\",\n            detail=\"no revision exists yet for this room\",\n        )",
+  "old": "    if current_revision_id is None:\n        return Refusal(\n            reason=\"stale_base\",\n            detail=\"this room's Standing has no revision to write against; \"\n                   \"read it again\",\n        )",
+  "new": "    if False:\n        return Refusal(\n            reason=\"stale_base\",\n            detail=\"this room's Standing has no revision to write against; \"\n                   \"read it again\",\n        )",
   "target": "tests/unit/test_standing_revise.py -k test_a_base_against_a_room_with_no_revision_yet_is_stale"
  },
  {

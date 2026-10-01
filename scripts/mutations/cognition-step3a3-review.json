@@ -79,15 +79,15 @@
  {
   "name": "major 2: the session is not grounded",
   "file": "nora/app/cognition_session.py",
-  "old": "            grounding = await self._grounder(unit, situation.agenda.items, view.pending)",
+  "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
   "new": "            grounding = Grounding()",
   "target": "tests/unit/test_cognition_grounding.py::test_a_session_with_no_record_query_tool_still_reads_who_said_what tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
  },
  {
   "name": "major 2: a grounding read that fails is swallowed into an empty one",
   "file": "nora/app/cognition_session.py",
-  "old": "            grounding = await self._grounder(unit, situation.agenda.items, view.pending)",
-  "new": "            try:\n                grounding = await self._grounder(unit, situation.agenda.items, view.pending)\n            except Exception:\n                grounding = Grounding()",
+  "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
+  "new": "            try:\n                grounding = await self._grounder(unit, situation.agenda.items, pending)\n            except Exception:\n                grounding = Grounding()",
   "target": "tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
  },
  {
@@ -212,8 +212,8 @@
  {
   "name": "minor 1: the hook runs for an untracked would-wake",
   "file": "nora/app/wake.py",
-  "old": "                if view.tracked:\n                    self._schedule_on_wake(view, wake_id, now_ms)",
-  "new": "                if True:\n                    self._schedule_on_wake(view, wake_id, now_ms)",
+  "old": "                if view.tracked:\n                    # The session sees what the wake CLAIMED",
+  "new": "                if True:\n                    # The session sees what the wake CLAIMED",
   "target": "tests/unit/test_cognition_session_units.py"
  },
  {

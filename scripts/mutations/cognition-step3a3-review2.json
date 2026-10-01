@@ -79,7 +79,7 @@
   {
     "name": "major: the SQL store drops the cause it was given",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "at_ms=outcome.at_ms, cause=cause,",
+    "old": "at_ms=outcome.at_ms, cause=stored_cause(value, cause),",
     "new": "at_ms=outcome.at_ms,",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },
@@ -93,14 +93,14 @@
   {
     "name": "major: the in-memory store drops the cause it was given",
     "file": "nora/testing/stimuli.py",
-    "old": "            cause=cause,\n        )\n        for carry in rows:",
+    "old": "            cause=stored_cause(value, cause),\n        )\n        for carry in rows:",
     "new": "        )\n        for carry in rows:",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },
   {
     "name": "major: an unknown cause is accepted",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "    if outcome.cause not in FAILURE_CAUSES:\n        raise ValueError(f\"unknown failure cause {outcome.cause!r}\")\n",
+    "old": "    if outcome.cause not in OUTCOME_CAUSES:\n        raise ValueError(f\"unknown failure cause {outcome.cause!r}\")\n",
     "new": "",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },

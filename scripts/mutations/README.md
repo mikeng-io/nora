@@ -7,6 +7,14 @@ the record of what a branch proved, not a gate that runs forever.
     uv run python scripts/mutate.py scripts/mutations/<name>.json
     make mutate TABLE=scripts/mutations/<name>.json
 
+`make gate` does not RUN the tables, but it does check that they still ANCHOR:
+`tests/architecture/test_mutation_tables_anchor_to_their_source.py` fails when
+any entry's `old` no longer occurs exactly once in its `file`, when `new` equals
+`old`, or when the file or test it names is gone. A refactor that moves guarded
+code therefore has to re-anchor the entry (same intent), re-point it at the
+code's new home, or delete it and say why in the commit. It does not say the
+named test still goes red; only `make mutate` does.
+
 Write the table while doing the work — one entry per fix you intend to claim —
 and run it before reporting. `make gate` green says the suite passes; the sweep
 says the suite would have NOTICED the bug you just fixed. Reporting the second

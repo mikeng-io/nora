@@ -70,17 +70,24 @@
     "target": "tests/test_media_fetch.py -k stored_reading_says_so"
   },
   {
-    "name": "any cover sighting marks the handle, not every sighting",
-    "file": "nora/agent/tools.py",
-    "old": "                        covers[sha] = covers.get(sha, True) and (",
-    "new": "                        covers[sha] = covers.get(sha, False) or (",
-    "target": "tests/test_media_fetch.py -k also_sent_as_a_photo"
+    "name": "a newer cover sighting does not take back the earlier photo's: the handle is a cover only if EVERY sighting was",
+    "file": "nora/domain/media.py",
+    "old": "            elif old.cover and not is_cover:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
+    "new": "            elif False:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
+    "target": "tests/test_media_fetch.py -k sent_as_a_photo"
+  },
+  {
+    "name": "an older cover sighting marks the handle although a newer photo of the same bytes is in view",
+    "file": "nora/domain/media.py",
+    "old": "            elif old.cover and is_cover and not old.cover_body:\n                seen[blob.sha256] = replace(old, cover_body=row.body or \"\")",
+    "new": "            elif is_cover:\n                seen[blob.sha256] = replace(old, cover=True, cover_body=row.body or \"\")",
+    "target": "tests/test_media_fetch.py -k sent_as_a_photo"
   },
   {
     "name": "an ordinary photo is called a cover (role check dropped)",
-    "file": "nora/agent/tools.py",
-    "old": "                            blob.get(\"role\") == COVER_ROLE\n",
-    "new": "                            True\n",
+    "file": "nora/domain/media.py",
+    "old": "            is_cover = blob.role == COVER_ROLE",
+    "new": "            is_cover = True",
     "target": "tests/test_media_fetch.py -k ordinary_photo_carries_no_cover_note"
   },
   {

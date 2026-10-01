@@ -198,7 +198,7 @@
     "comment": "First sweep found this GREEN against a test parametrized over SPEAKING_AUDIENCES itself -- shrinking the set shrank the test with it, which is a target that can only agree with whatever the code says. The target is now the call-site walk: narrow the Literal and `fire.py` is passing values the declaration no longer contains.",
     "file": "nora/domain/audience.py",
     "new": "SpeakingAudience = Literal[\"tag\", \"participation\"]",
-    "old": "SpeakingAudience = Literal[\"tag\", \"heartbeat\", \"participation\", \"proactive\"]",
+    "old": "SpeakingAudience = Literal[\"tag\", \"heartbeat\", \"participation\", \"proactive\", \"summons\"]",
     "target": "tests/architecture/test_the_path_vocabulary_matches_the_call_sites.py -k test_every_audience_a_call_site_can_pass_is_declared"
   },
   {

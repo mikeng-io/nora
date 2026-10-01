@@ -2,8 +2,8 @@
   {
     "name": "#211 _preferred_recipient is platform-aware (a snowflake is accepted on discord)",
     "file": "nora/agent/outbound.py",
-    "old": "    if platform == \"discord\":\n        snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))\n        return snowflakes[0] if snowflakes else None\n    uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))",
-    "new": "    uuids = sorted(v for v in ids if _UUID_RE.fullmatch(v))",
+    "old": "    if platform == \"discord\":\n        snowflakes = sorted(v for v in ids if _SNOWFLAKE_RE.fullmatch(v))\n        return snowflakes[0] if snowflakes else None\n",
+    "new": "",
     "target": "tests/unit/test_outbound_composer.py -k discord_snowflake_is_accepted_as_the_preferred_recipient_form"
   },
   {

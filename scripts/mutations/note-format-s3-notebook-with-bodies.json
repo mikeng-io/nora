@@ -72,8 +72,8 @@
   {
     "name": "the notebook's head reads are declared",
     "file": "nora/language/note_candidates.py",
-    "old": "STORE_CALLS_PER_TICK = 14\n",
-    "new": "STORE_CALLS_PER_TICK = 13\n",
+    "old": "STORE_CALLS_PER_TICK = 15",
+    "new": "STORE_CALLS_PER_TICK = 14",
     "target": "tests/architecture/test_dream_store_calls_are_declared.py"
   },
   {
