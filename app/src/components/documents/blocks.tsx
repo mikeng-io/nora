@@ -5,6 +5,7 @@
 // <figure> with a caption that states one claim (artifact-diagramming), and each
 // fails visibly rather than drawing nothing.
 import dynamic from "next/dynamic";
+import { useTranslations } from "next-intl";
 import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { BarList } from "@/components/charts/bars";
 import { TimeChart } from "@/components/charts/time-chart";
@@ -26,6 +27,7 @@ export function ChartBlock(props: {
   caption: string;
   data: Array<{ label: string; value: number }>;
 }) {
+  const t = useTranslations("documents.renderer");
   const unit = props.unit ? ` ${props.unit}` : "";
   const fmt = (v: number) => `${Number.isInteger(v) ? v : v.toFixed(1)}${unit}`;
   return (
@@ -47,12 +49,12 @@ export function ChartBlock(props: {
       )}
       <figcaption className="text-meta text-ink-muted">{props.caption}</figcaption>
       <details className="text-meta text-ink-soft">
-        <summary className="cursor-pointer text-ink-muted">Show the data</summary>
+        <summary className="cursor-pointer text-ink-muted">{t("showData")}</summary>
         <table className="mt-2 w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-hairline">
-              <th scope="col" className="py-1 pr-4 font-semibold">Label</th>
-              <th scope="col" className="py-1 font-semibold">Value</th>
+              <th scope="col" className="py-1 pr-4 font-semibold">{t("dataLabel")}</th>
+              <th scope="col" className="py-1 font-semibold">{t("dataValue")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
@@ -120,6 +122,7 @@ function removeMermaidScratch(id: string) {
 }
 
 export function MermaidBlock({ source, caption }: { source: string; caption: string }) {
+  const t = useTranslations("documents.renderer");
   const id = "mmd" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const theme = useThemeName();
   const [svg, setSvg] = useState<string | null>(null);
@@ -183,8 +186,8 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
     <figure className={FIG}>
       {failed ? (
         <div role="note" className="flex flex-col gap-2">
-          <p className="text-meta text-danger">This diagram could not be drawn. Its source:</p>
-          <pre className="overflow-x-auto font-mono text-meta text-ink" role="region" aria-label="Diagram source" tabIndex={0}>
+          <p className="text-meta text-danger">{t("diagramFailed")}</p>
+          <pre className="overflow-x-auto font-mono text-meta text-ink" role="region" aria-label={t("diagramSource")} tabIndex={0}>
             {source}
           </pre>
         </div>
@@ -245,6 +248,7 @@ export function MapBlock(props: {
 
 // ------------------------------------------------------------------ Image
 export function ImageBlock({ media, alt, caption }: { media: string; alt: string; caption?: string }) {
+  const t = useTranslations("documents.renderer");
   const documentId = useContext(DocumentIdContext);
   const [broken, setBroken] = useState(false);
   // The id goes into a path, so only a UUID is used (a `../` or a `?` in it
@@ -267,7 +271,7 @@ export function ImageBlock({ media, alt, caption }: { media: string; alt: string
           aria-label={alt}
           className={cn("flex min-h-32 items-center justify-center rounded-panel border border-hairline bg-hoodie px-4 text-center text-meta text-ink-muted")}
         >
-          {broken ? "This picture is no longer available." : alt}
+          {broken ? t("pictureGone") : alt}
         </div>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
