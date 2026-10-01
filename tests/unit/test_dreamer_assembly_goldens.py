@@ -780,3 +780,27 @@ def test_the_cases_cover_the_cut_short_and_budget_edges():
     assert "evidence: NONE" in GOLDEN["curator-no-evidence-at-all"]
     assert "more messages" in long
     assert FORM_NOT_SHOWN in long
+
+
+# =============================================================================
+# the one place the text is NOT byte-identical, pinned so nobody calls it so
+# =============================================================================
+
+
+async def test_a_body_that_escapes_to_nothing_is_dropped_like_the_tag_path():
+    """A block whose body is non-empty but escapes to NOTHING (control
+    characters only; `\\x01\\x08` is storable, `\\x00` is not in Postgres) used
+    to render as an empty `<previous_account>` pair, because a hand join keeps
+    every string it is handed. `assemble` drops an empty body, as the tag turn
+    already does, so the empty pair is gone. That is a change to what the model
+    reads, for input no person produces; step 2a accepts it rather than
+    carrying a `when_empty` flag for every block that can come out empty
+    (found by the independent review of #683). The goldens above cover none of
+    these inputs, so this pins the decision."""
+    store = InMemoryCultureStore()
+    await store.append(
+        key=cul.KEY, body="\x01\x08", written_at=cul.T0, established_by="t",
+    )
+    text = await cul._adaptor(store).inputs(key=cul.KEY, batch=(cul._row("hi"),))
+    assert "<previous_account" not in text
+    assert "<room " in text  # the rest of the prompt is still there

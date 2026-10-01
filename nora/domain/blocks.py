@@ -444,7 +444,11 @@ def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     `<room label="..."/>` of culture and note-candidates), and proactive's
     `loop_decisions`, `""` when no decision log is wired (a hand join leaves its
     separators, `assemble` would not). Each opts in; do not assume `sep` is a
-    drop-in for a join whose pieces can be empty.
+    drop-in for a join whose pieces can be empty. **One difference is accepted,
+    not carried:** a body that is non-empty but ESCAPES to nothing (control
+    characters only) used to render as an empty pair and is now dropped, as the
+    tag turn already drops it; no person produces that input
+    (`tests/unit/test_dreamer_assembly_goldens.py` pins it).
     """
     chosen = sorted(
         (b for b in blocks if b.body or b.when_empty != "drop"),
