@@ -400,10 +400,15 @@ this in its own comment: *"a repeat every few minutes is how an alert channel
 becomes a muted one."* A new alert would have joined the noise; a check that
 fails the deploy does not compete for attention that is already spent.
 
-**Open, and an operator call:** whether `PlatformSilent`'s 900s threshold
-should be raised or scoped. Discord reached a 1487s age in the 7 days to
-2026-09-16 and Signal 42954s, so the rule fires on ordinary quiet as well as on
-a wedged listener.
+**Resolved 2026-10-01: Signal's age now counts the keep-alive.** `PlatformSilent`
+fired on ordinary quiet because Signal's `last_event_at` moved only on a
+message: 108 episodes in 14 days, Signal firing about 140 hours of them, each
+resolved when a message finally arrived (read back from Prometheus on norty).
+signal-cli sends a `:` comment line about every 18 seconds (5 in 90 seconds,
+probed the same day), and `SignalListener` discarded it. It now advances
+`last_event_at` without reaching `on_event`, as the WhatsApp and Instagram
+heartbeats already do, so an age over 900 seconds on any platform means a
+silent socket, not a quiet room. The same clock feeds `state_of`'s `stale`.
 
 (An earlier version of this paragraph said the metric carries **no `signal`
 series at all**. That was wrong: Signal emitted continuously 09-09 to 09-16

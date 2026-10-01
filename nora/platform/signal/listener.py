@@ -67,6 +67,13 @@ class SignalListener:
             log.info("SSE connected to %s", self._url)
             async for raw in resp.content:
                 line = raw.decode("utf-8", "replace").strip()
+                if line.startswith(":"):
+                    # signal-cli's keep-alive comment (about every 18s). It is
+                    # the only evidence a quiet room's socket is alive, so it
+                    # advances `last_event_at` — the one clock `PlatformSilent`
+                    # reads — and it is not a message, so it goes no further.
+                    self.last_event_at = self._clock()
+                    continue
                 if not line.startswith("data:"):
                     continue
                 payload = line[5:].strip()
