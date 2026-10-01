@@ -14460,7 +14460,8 @@ Args:
         Call this before changing a document, or to see what you published.
 
         Args:
-            document_id: The `document_id` a publish gave you.
+            document_id: The `document_id` a publish gave you, or the 12-hex code
+                at the end of its link.
         """
         tool = "document_read"
         if documents is None:
@@ -14470,7 +14471,8 @@ Args:
                 "note": "I can't read documents right now. Say you could not check.",
             }
         target = _document_id(document_id)
-        if target is None:
+        handle = str(document_id or "").strip().lower()
+        if target is None and not _is_document_handle(handle):
             _record(metrics, tool, "not_found", reason="bad_id")
             return {"status": "not_found",
                     "note": "That is not a document id, so nothing was read."}
@@ -14478,6 +14480,7 @@ Args:
             out = await documents.read(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id, document_id=target,
+                handle="" if target is not None else handle,
             )
         except Exception:
             log.exception("document_read failed")

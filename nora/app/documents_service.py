@@ -267,28 +267,68 @@ class DocumentService:
         that has not seen the catalog can learn it from the tool, not from memory."""
         return catalog_prompt()
 
-    async def read(self, *, platform: str, conversation_id: str, document_id: UUID) -> ReadResult:
-        """The current revision of a document made in THIS room. Another room's
-        document answers exactly like an unknown id (`no_such_document`)."""
-        try:
-            current = await self._store.get(document_id=document_id)
-        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
-            return ReadResult("unavailable", note="The document could not be read right now.")
+    async def _in_room(
+        self,
+        *,
+        platform: str,
+        conversation_id: str,
+        document_id: UUID | None,
+        handle: str,
+    ) -> StoredDocument | None:
+        """The document named by `document_id`, or by the 12-hex `handle` a link carries,
+        when it was made in THIS room (any id the room answers to), in ANY state; else `None`.
+
+        The ONE resolution `read` and `set_state` share. A handle is matched among this
+        room's documents only, and one that matches none or more than one, like another
+        room's document or an unknown id, is the same `None`: it is never picked."""
         here = self._room_ids(platform, conversation_id) | {conversation_id}
+        current: StoredDocument | None = None
+        if document_id is not None:
+            current = await self._store.get(document_id=document_id)
+        elif is_handle(handle):
+            mine = [
+                d
+                for d in await self._store.find_by_handle(handle=handle)
+                if d.summary.platform == platform and d.summary.conversation_id in here
+            ]
+            current = mine[0] if len(mine) == 1 else None  # two is never picked
         if (
             current is None
             or current.summary.platform != platform
             or current.summary.conversation_id not in here
-            or current.summary.state == "deleted"  # gone from every read; `set_state` restores
         ):
+            return None
+        return current
+
+    async def read(
+        self,
+        *,
+        platform: str,
+        conversation_id: str,
+        document_id: UUID | None = None,
+        handle: str = "",
+    ) -> ReadResult:
+        """The current revision of a document made in THIS room, named by its id or by the
+        12-hex handle its link carries. Another room's document, an unknown id, a handle
+        that fits none or two of this room's documents, and a deleted document all answer
+        exactly alike (`no_such_document`)."""
+        try:
+            current = await self._in_room(
+                platform=platform, conversation_id=conversation_id,
+                document_id=document_id, handle=handle,
+            )
+        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
+            return ReadResult("unavailable", note="The document could not be read right now.")
+        if current is None or current.summary.state == "deleted":
+            # gone from every read; `set_state` restores
             return ReadResult("refused", findings=_no_such_document().findings)
         return ReadResult(
             "ok",
-            document_id=document_id,
+            document_id=current.summary.id,
             revision=current.summary.revision,
             title=current.summary.title,
             spec=current.spec,
-            url=self._link(document_id),
+            url=self._link(current.summary.id),
             state=current.summary.state,
         )
 
@@ -325,22 +365,11 @@ class DocumentService:
             )
         wanted = cast(DocumentState, state)  # checked against DOCUMENT_STATES just above
         try:
-            here = self._room_ids(platform, conversation_id) | {conversation_id}
-            current: StoredDocument | None = None
-            if document_id is not None:
-                current = await self._store.get(document_id=document_id)
-            elif is_handle(handle):
-                mine = [
-                    d
-                    for d in await self._store.find_by_handle(handle=handle)
-                    if d.summary.platform == platform and d.summary.conversation_id in here
-                ]
-                current = mine[0] if len(mine) == 1 else None  # two is never picked
-            if (
-                current is None
-                or current.summary.platform != platform
-                or current.summary.conversation_id not in here
-            ):
+            current = await self._in_room(
+                platform=platform, conversation_id=conversation_id,
+                document_id=document_id, handle=handle,
+            )
+            if current is None:
                 return StateResult("refused", findings=_no_such_document().findings)
             previous = current.summary.state
             target = current.summary.id

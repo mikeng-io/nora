@@ -40,5 +40,33 @@
     "old": "        report.documents = len(live)\n        return report\n",
     "new": "        report.documents = len(live)\n",
     "target": "tests/infra/test_forget_documents.py::test_a_dry_run_counts_and_writes_nothing_and_a_rerun_is_idempotent"
+  },
+  {
+    "name": "document_read: the handle is never passed to the service, so a link's code reads nothing",
+    "file": "nora/agent/tools.py",
+    "old": "                conversation_id=bound_conversation_id, document_id=target,\n                handle=\"\" if target is not None else handle,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
+    "new": "                conversation_id=bound_conversation_id, document_id=target,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
+    "target": "tests/unit/test_document_tools.py::test_a_document_is_read_by_the_handle_its_link_carries_and_by_that_alone"
+  },
+  {
+    "name": "service: a handle is resolved across every room, so another room's document reads",
+    "file": "nora/app/documents_service.py",
+    "old": "                if d.summary.platform == platform and d.summary.conversation_id in here\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked",
+    "new": "            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked",
+    "target": "tests/unit/test_document_tools.py::test_a_handle_another_room_shares_is_resolved_among_this_rooms_documents_only"
+  },
+  {
+    "name": "service: a handle two documents share is picked (the first), not refused",
+    "file": "nora/app/documents_service.py",
+    "old": "            current = mine[0] if len(mine) == 1 else None  # two is never picked",
+    "new": "            current = mine[0] if mine else None",
+    "target": "tests/unit/test_document_tools.py::test_a_handle_two_documents_of_the_room_share_is_refused_never_picked"
+  },
+  {
+    "name": "service read: a deleted document is read",
+    "file": "nora/app/documents_service.py",
+    "old": "        if current is None or current.summary.state == \"deleted\":",
+    "new": "        if current is None:",
+    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
   }
 ]
