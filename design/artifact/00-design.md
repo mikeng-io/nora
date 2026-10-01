@@ -1450,6 +1450,9 @@ only. The check is the live read-back: the same prompt, then the trace.
 
 ## 37. A document link must exist, and the turn must be able to publish (2026-10-02)
 
+> **Item 1 below (R-100 as a refusal with a store lookup) is SUPERSEDED by §39 the same day: a link to our documents is
+> minted by a tool and a made-up one is removed. Items 2 and 3 stand.**
+
 **Read-back (traces `8dc5551b`, `7983a050`, `1acce721`, 2026-10-01).** Asked for an itinerary document, Nora fetched
 pages and looked at four pictures, made fourteen further `media_fetch` calls the per-turn ceiling of four refused, and
 ended the turn without sending a spec to `document_publish` (her one call had no spec, which returns the catalog and
@@ -1500,3 +1503,43 @@ text, not a `send_reply` call, so there was no refusal reason to hand back and t
 apology rather than a sentence that says the document was not saved. A code-authored honest sentence for exactly that
 case is the likely next step, and it is a separate decision. Her Standing note also recorded the document as «published»
 after her own false claim, which will need the notebook to stop folding an unsent reply as fact.
+
+
+## 39. A link to our documents is minted, not authored (2026-10-02)
+
+**Why §37's guard was replaced.** R-100 as first built refused a reply that linked a document that did not exist: a
+store lookup in `Deliverer`, a refusal reason passed back through `send_reply`, wiring through the registry,
+`deliver.build` and two callers, and an architecture test to keep the wiring. It was 15 files and about 460 lines for
+one idea. A review found two bugs in it. In use it was worse for the room: her final text after a failed publish was
+refused, and the room received the canned «can't manage right now» apology (§38). The operator asked for the guard to be
+simplified from first principles.
+
+**The one fact.** Only `document_publish`, `document_read` and `document_set_status` return a document URL, and the
+`<documents>` block she reads carries a title and an id, never a URL (`nora.language.documents_render`). So she never needs
+to write a link; she only ever copies one she was handed.
+
+**Decided (operator, 2026-10-02: «let go for C»).**
+1. `LinkCarry` (DEC-89's carrier, already shared by the tools and `Deliverer`) is armed with `[documents] public_url` when a
+   documents tool is built, so the rule holds even in a turn where no publish succeeds.
+2. In `apply`, which already runs before R-6 and R-18, a document link whose handle no tool returned this turn is removed
+   (a Markdown link keeps its label), and the link of each document published this turn is appended unless the reply carries
+   it. A read or a restore only lets her repeat the link.
+3. A reply that was only a made-up link is empty afterwards and is refused as `empty_reply`; nothing blank is sent.
+4. The skill's «tell the room where it is» section shrinks to one instruction: the link is added for you, never write one.
+
+**What is gone.** `unknown_document_link`, `refusal_note` and its stale-reason bug, the `send_reply` reason branch,
+`own_links` on `Deliverer` and `deliver.build`, `ToolRegistry.own_link_check`, the two caller lines, and the architecture test
+that guarded them. The skill body went from 1,495 to 1,468 tokens, which the parked `Map` change needs.
+
+**Not built.** A check that her prose claim «the document is made» matches a publish. The link is the receipt: with no link in
+the room, nothing was saved. Re-linking an older document needs a `document_read` first.
+
+
+**Review of #701 (independent).** Two blocking findings, both fixed. The link was appended to every message of a turn,
+the canned fallback included: a message that carried it now settles it (`LinkCarry.mark_sent`), and one due but not sent
+stays due. And the skill said never to write a link while a `document_read` result let her pass one on: the skill now says
+to repeat a `url` exactly as a document tool returned it this turn, and `document_read` says so. Also fixed: the recorded
+copy of a GIF caption kept a made-up link (`LinkCarry.scrub`), the `appended` counter moved for a document link (now
+`document_added`), the removal reflowed her whole reply (now only the blank lines it leaves), and `www.`, an explicit port
+and a locale with more than one subtag were not matched. Left alone, as adversarial or unlikely: percent-encoding,
+zero-width characters in the host, a handle shorter than six digits.

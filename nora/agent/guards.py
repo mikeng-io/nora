@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -131,7 +131,6 @@ class Deliverer:
         composer: OutboundComposer | None = None,
         links: LinkCarry | None = None,
         send_permitted: bool = True,
-        own_links: Callable[[str, str, str], Awaitable[str | None]] | None = None,
     ) -> None:
         self._store = store
         self._adapter = adapter
@@ -224,20 +223,6 @@ class Deliverer:
         # every tool call site reads, and widening it there to serve two review
         # paths would change a contract that is right everywhere else.
         self._last_outcome = ""
-        # R-100: the check that a link to one of OUR documents in a reply names a document that
-        # exists in this room, and the sentence that says why when it does not. `None` is the
-        # rule OFF (`[documents]` disabled, a test about something else). `refusal_note` is set
-        # only by this rule, so `send_reply` can tell the model WHY it was refused: a bare
-        # `refused` read as «a guard stopped it», and she answered the next message the same way.
-        self._own_links = own_links
-        self._refusal_note = ""
-
-    @property
-    def refusal_note(self) -> str:
-        """Why the last `deliver` was refused, when the reason is one she can act on (R-100);
-        `""` for every other outcome, which keep the bare word."""
-        return self._refusal_note
-
     @property
     def last_outcome(self) -> str:
         """How the last `deliver` ended — `"sent"`, or the reason it did not.
@@ -357,9 +342,6 @@ class Deliverer:
         quote: OutboundQuote | None = None,
     ) -> bool:
         self._send_calls += 1
-        # R-100's reason belongs to THIS call only: cleared first, so an earlier refusal's note can
-        # never ride a later R-2, R-4, R-6 or R-18 refusal out through `send_reply`.
-        self._refusal_note = ""
         if self.exhausted:                                     # R-2
             log.warning(
                 "delivery refused: %d message(s) already spent of %d (tag=%s)",
@@ -409,9 +391,30 @@ class Deliverer:
         #     LEAVE. A text transformation sitting in front of a fail-closed
         #     guard without the guard seeing its output is the exact hole the
         #     2026-08-10 audit found in DEC-82's first cut.
+        if record_text is not None:
+            # R-100: the recorded copy of a GIF caption never keeps a link the room did not see.
+            record_text = self._links.scrub(record_text)
+        stripped_before, documents_before = self._links.stripped, self._links.documents_added
         text, carried = self._links.apply(text)
-        if carried:
+        documents = self._links.documents_added - documents_before
+        if carried - documents > 0:
             self._metrics.inc("nora_reply_links_carried_total", outcome="appended")
+        if documents:
+            self._metrics.inc("nora_reply_links_carried_total", outcome="document_added")
+        if self._links.stripped > stripped_before:
+            # R-100: a link to one of our documents that no tool handed her this turn.
+            self._metrics.inc("nora_reply_links_carried_total", outcome="stripped")
+            if not text.strip() and not attachments:
+                # R-4 again, on what is left: a reply that was nothing but a made-up link is now
+                # empty, and a blank message must not go out in its place.
+                log.warning("delivery refused: empty after removing a made-up link (tag=%s)",
+                            self._tag_id)
+                self._metrics.inc(
+                    "nora_silent_failures_total", reason="empty_reply",
+                    platform=self._target.platform, audience=self._audience,
+                )
+                self._last_outcome = "empty_reply"
+                return False
 
         # DEC-82: ONE interpretation of this reply, and `styled` is the only
         # model of it from here on. `render_markdown` both removes the emphasis
@@ -479,28 +482,6 @@ class Deliverer:
             )
             self._last_outcome = "egress_block"
             return False
-
-        # R-100 — a link to one of OUR documents must name a document that exists in this room.
-        # After R-18 so the identifier floor has measured the same bytes, before the cooldown and
-        # the audit row so a made-up link is never recorded as something she said. BOTH forms, as
-        # R-6 and R-18 above: the rendered text drops Markdown link syntax, the draft keeps it.
-        if self._own_links is not None:
-            note = (
-                await self._own_links(self._target.platform, self._target.conversation_id,
-                                      styled.text)
-                or await self._own_links(self._target.platform, self._target.conversation_id,
-                                         drafted)
-            )
-            if note:
-                log.error("unknown_document_link (tag=%s)", self._tag_id)
-                self._metrics.inc("nora_guard_vetoes_total", rule="R-100")
-                self._metrics.inc(
-                    "nora_silent_failures_total", reason="unknown_document_link",
-                    platform=self._target.platform, audience=self._audience,
-                )
-                self._last_outcome = "unknown_document_link"
-                self._refusal_note = note
-                return False
 
         # The participation SEND cooldown (design/dreamer-agent-loop/35 §10.3),
         # placed AFTER every guard above has measured the text — a held message
@@ -629,6 +610,9 @@ class Deliverer:
                 "nora_silent_failures_total", reason="send_failed",
                 platform=self._target.platform, audience=self._audience,
             )
+        if result.ok:
+            # R-100: a document link that went out in this message is not added to the next one.
+            self._links.mark_sent(text)
         self._last_outcome = "sent" if result.ok else "send_failed"
         return result.ok
 

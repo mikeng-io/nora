@@ -106,9 +106,9 @@ publish again. Do not argue with a finding. Send `spec` as an object, never as t
 
 ## Tell the room where it is, once
 
-After a publish that returned `ok`, say in one line that it is in the web app for people who are signed
-in, and name its title. If the result carries a `url`, give it verbatim on a line of its own: it is
-the link. If it carries none there is no link yet: say it is under Documents, by its title, and do not
-make one up. Never write the document's id in a reply (a reply that carries an id is blocked, and then
-nobody hears anything), and never a path or a host you were not given. Do not retell the document; do
-name which pictures went in.
+After a publish that returned `ok`, say in one line that it is saved, by its title, in the web app for
+people who are signed in. The link is added to your reply for you: never write a path, a host or the
+document's id, and never make up a link. To give a link yourself, repeat a `url` exactly as a document
+tool returned it this turn: any other document link is removed. If the result carries no `url`, there is
+no link yet: say it is under Documents, by its title. Do not retell the document; do name which pictures
+went in.
