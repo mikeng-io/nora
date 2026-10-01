@@ -357,6 +357,9 @@ class Deliverer:
         quote: OutboundQuote | None = None,
     ) -> bool:
         self._send_calls += 1
+        # R-100's reason belongs to THIS call only: cleared first, so an earlier refusal's note can
+        # never ride a later R-2, R-4, R-6 or R-18 refusal out through `send_reply`.
+        self._refusal_note = ""
         if self.exhausted:                                     # R-2
             log.warning(
                 "delivery refused: %d message(s) already spent of %d (tag=%s)",
@@ -481,7 +484,6 @@ class Deliverer:
         # After R-18 so the identifier floor has measured the same bytes, before the cooldown and
         # the audit row so a made-up link is never recorded as something she said. BOTH forms, as
         # R-6 and R-18 above: the rendered text drops Markdown link syntax, the draft keeps it.
-        self._refusal_note = ""
         if self._own_links is not None:
             note = (
                 await self._own_links(self._target.platform, self._target.conversation_id,

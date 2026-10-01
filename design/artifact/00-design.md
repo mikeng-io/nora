@@ -1468,5 +1468,13 @@ with no picture, after skipping the skill.
    given. The skill also says to publish with what she has, to state an assumption instead of holding a document for details
    nobody gave, and that a document exists only once a publish returned `ok`.
 
+**Review of #698 (independent, run against the real pattern and `Deliverer`).** Three changes before merge. The first
+pattern used `\\w` and `\\b`, which count a Chinese character as a word character, so a link written with no space beside
+Cantonese matched nothing and walked through: the boundaries are ASCII now. The refusal reason was cleared only after R-2,
+R-4, R-6 and R-18, so a later refusal by one of those carried the earlier sentence out through `send_reply`: it is cleared
+first. A locale-prefixed portal link (`/zh-HK/documents/<handle>`) and a hex run that is not exactly twelve digits (a UUID
+without dashes) are now checked too. A new architecture test requires every room-facing `deliver.build` call to be given
+the check, since deleting either wiring line had left the suite green.
+
 **Not built.** A check that a reply's claims match the document (it said four photos; the document had none), a check on
 a link to another host, and any eval of document content. A rate limit on kept pictures is still open (§35).

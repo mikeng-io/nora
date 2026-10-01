@@ -972,3 +972,15 @@ def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
     # rewrite that happens to drop this one.
     assert dreamer - tag == {"search_memory_workspace"}
     assert tag - dreamer == set()
+
+
+def test_the_registry_hands_over_the_documents_link_check_only_when_documents_exist() -> None:
+    assert ToolRegistry().own_link_check() is None
+
+    class _Documents:
+        async def unknown_document_link(self, platform: str, conversation_id: str, text: str):
+            return None
+
+    documents = _Documents()
+    check = ToolRegistry(documents=documents).own_link_check()  # type: ignore[arg-type]
+    assert check == documents.unknown_document_link

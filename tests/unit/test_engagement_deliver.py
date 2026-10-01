@@ -471,3 +471,18 @@ async def test_with_no_check_wired_a_document_link_is_not_looked_at():
     adapter = _FakeAdapter()
     d = _deliverer_with(None, adapter, Metrics())
     assert await d.deliver("https://nora.example/documents/deadbeef0000") is True
+
+
+async def test_a_stale_reason_never_rides_a_later_refusal_out():
+    """Review of #698: the note was cleared only after R-2, R-4, R-6 and R-18, so a later call
+    refused by one of THOSE carried the earlier R-100 sentence out through `send_reply`."""
+    async def check(platform: str, conversation_id: str, text: str) -> str | None:
+        return "no such document" if "documents/" in text else None
+
+    d = _deliverer_with(check, _FakeAdapter(), Metrics())
+    assert await d.deliver("https://nora.example/documents/deadbeef0000") is False
+    assert d.refusal_note == "no such document"
+    assert await d.deliver("call me on +85298765432") is False        # R-18
+    assert d.last_outcome == "egress_block" and d.refusal_note == ""
+    assert await d.deliver("   ") is False                            # R-4
+    assert d.last_outcome == "empty_reply" and d.refusal_note == ""

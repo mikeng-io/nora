@@ -880,3 +880,40 @@ def test_the_catalog_opens_with_the_rules_a_skipped_skill_would_have_given() -> 
     assert text.startswith("Write a finished reference, not notes")
     assert "`media_fetch`" in text and "only once `document_publish` returns `ok`" in text
     assert "Page" in text and "Mermaid" in text, "the catalog itself still follows"
+
+
+async def test_a_made_up_link_written_beside_cantonese_is_still_caught() -> None:
+    """Python's `\\w` and `\\b` count a Chinese character as a word character, so the first
+    version of the pattern let a link with no space beside Cantonese walk through (review of
+    #698)."""
+    svc, _ = _service(public_url=PUBLIC)
+    for text in (
+        "份文件喺https://nora.example/documents/8e2f4b1a9c00呢度",
+        "份文件喺nora.example/documents/8e2f4b1a9c00 ok",
+        "連結：nora.example/documents/8e2f4b1a9c00。",
+    ):
+        assert await _link_check(svc, text) is not None, text
+
+
+async def test_a_real_link_beside_cantonese_still_passes() -> None:
+    svc, _ = _service(public_url=PUBLIC)
+    made = await _publish(svc, _doc(title="Real"))
+    link = f"{PUBLIC}/documents/{handle_of(made.document_id)}"
+    assert await _link_check(svc, f"份文件喺{link}呢度") is None
+
+
+async def test_a_locale_prefixed_link_is_checked_like_any_other() -> None:
+    svc, _ = _service(public_url=PUBLIC)
+    assert await _link_check(svc, f"{PUBLIC}/zh-HK/documents/8e2f4b1a9c00") is not None
+    made = await _publish(svc, _doc(title="Real"))
+    assert await _link_check(svc, f"{PUBLIC}/zh-HK/documents/{handle_of(made.document_id)}") is None
+
+
+async def test_a_handle_that_is_not_twelve_digits_is_not_cut_down_to_twelve() -> None:
+    """A UUID without dashes, or a longer hex run, starts with 12 digits that could be a real
+    handle; it is a made-up link all the same and must not pass on its prefix."""
+    svc, _ = _service(public_url=PUBLIC)
+    made = await _publish(svc, _doc(title="Real"))
+    real = handle_of(made.document_id)
+    assert await _link_check(svc, f"{PUBLIC}/documents/{real}{'0' * 20}") is not None
+    assert await _link_check(svc, f"{PUBLIC}/documents/{real}") is None

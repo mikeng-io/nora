@@ -167,11 +167,18 @@ _CATALOG_RULES = (
 
 
 def _own_link_pattern(public_url: str) -> re.Pattern[str]:
-    """`<public_url>/documents/<12-hex handle>`, scheme optional, any case: the shape
-    `DocumentService` builds a link in, and the only one a reply is checked for."""
+    """`<public_url>/[locale/]documents/<hex run>`, scheme optional, any case: the shape
+    `DocumentService` builds a link in (the portal serves it under a locale prefix too), and the
+    only one a reply is checked for. The boundaries are ASCII on purpose: Python's `\\w` and `\\b`
+    count a Chinese character as a word character, so a link written with no space beside Cantonese
+    («份文件喺https://…/documents/8e2f4b1a9c00呢度») would not match and would walk through. The
+    handle is captured as the whole hex run, so a run that is not exactly 12 digits is read as a
+    made-up handle instead of being cut to its first twelve."""
     host = public_url.split("://", 1)[-1].strip("/")
     return re.compile(
-        rf"(?<![\w.-])(?:https?://)?{re.escape(host)}/documents/([0-9a-f]{{12}})\b", re.IGNORECASE
+        rf"(?<![A-Za-z0-9.-])(?:https?://)?{re.escape(host)}/(?:[a-z]{{2}}(?:-[A-Za-z]{{2,4}})?/)?"
+        rf"documents/([0-9a-f]{{6,}})(?![0-9A-Za-z])",
+        re.IGNORECASE,
     )
 
 
@@ -312,6 +319,8 @@ class DocumentService:
         handles = {m.group(1).lower() for m in pattern.finditer(text)}
         for handle in sorted(handles):
             try:
+                # `_in_room` answers `None` for anything that is not a 12-digit handle, so a longer
+                # hex run (a UUID without dashes) is refused here without a second rule.
                 found = await self._in_room(
                     platform=platform, conversation_id=conversation_id,
                     document_id=None, handle=handle,
