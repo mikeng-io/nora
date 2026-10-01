@@ -1,1 +1,1 @@
-{"type": "none", "reason": "Documents are still off ([documents] enabled=false), so no one reaches the Image resolver yet.", "details": [], "limitations": []}
+{"type": "none", "reason": "Documents are still off ([documents] enabled=false), so no one reaches the Image resolver yet. Superseded: documents went live on 2026-10-01, and `documents-live` carries the user-facing note.", "details": [], "limitations": []}

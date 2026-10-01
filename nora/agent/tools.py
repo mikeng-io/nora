@@ -4152,7 +4152,7 @@ _COMPUTER_UNRECORDED: Mapping[str, object] = MappingProxyType({
 })
 
 #: Nora's computer tools (design/sandbox-runtime §4, §15.2). `ToolRegistry`
-#: withholds all five from every surface when no runtime is wired.
+#: withholds all seven from every surface when no runtime is wired.
 COMPUTER_TOOLS: frozenset[str] = frozenset({
     "computer_run", "computer_read", "computer_write", "computer_edit",
     "computer_export", "computer_import", "computer_session_list",
@@ -4161,8 +4161,8 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
-#: The document tools (design/artifact §26). `ToolRegistry` withholds both from
-#: every surface unless `[documents] enabled`.
+#: The document tools (design/artifact §26). `ToolRegistry` withholds all three
+#: from every surface unless `[documents] enabled`.
 DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status"}
 )

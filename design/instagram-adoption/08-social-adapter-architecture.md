@@ -217,6 +217,12 @@ timeouts are indistinguishable from a broken probe.
 
 **So isolation holds, and it is one layer.** Three things follow:
 
+> **Retired 2026-10-01 (DEC-254):** `make_artifact`, Smith, the `nora-compute` network and `drop`'s
+> membership of it are gone, so the path in item 1 (`make_artifact` to the Smith sandbox) and the
+> dual-homing in item 3 no longer exist. The measurement and the argument for a frozen allowlist stand; the
+> sandbox is now the computer (`design/sandbox-runtime/00-design.md` §1, §8), which has its own egress
+> rule, and this probe was not repeated against it.
+
 1. **The reachable path is the OpenCLI bridge, and there the design works.**
    `make_artifact` → the Smith sandbox → `run_python` → arbitrary sockets
    reaches `172.17.0.1:19826` unauthenticated. `READ_ONLY_ALLOWLIST` refuses
