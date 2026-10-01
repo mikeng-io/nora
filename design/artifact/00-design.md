@@ -1543,3 +1543,29 @@ copy of a GIF caption kept a made-up link (`LinkCarry.scrub`), the `appended` co
 `document_added`), the removal reflowed her whole reply (now only the blank lines it leaves), and `www.`, an explicit port
 and a locale with more than one subtag were not matched. Left alone, as adversarial or unlikely: percent-encoding,
 zero-width characters in the host, a handle shorter than six digits.
+
+
+## 40. A Map names its places; the service looks them up (2026-10-02)
+
+**The gap (issue #695).** The `Map` block took `places: [{name, lat, lng}]`, and nothing Nora can call returns a coordinate
+for a named place: the resolver holds `lat`/`lng` as working state that DEC-24 keeps out of every model-facing schema, and
+`place_info` builds its map link from the asked name, never from a coordinate (R-28). The catalog told her to «look an address up
+first, then write its lat and lng», which no tool does. Her first itinerary (2026-10-01) used no Map. Until now the skill told her to
+list each place with its `place_info` link.
+
+**Decided (operator, 2026-10-02: «name only»).** The model writes a place's name and nothing else; the service finds where it is.
+1. `DocumentService.publish` calls `_ground_maps` after the picture codes are resolved. Every distinct place name goes through
+   `screen_and_locate_place`: the outbound screen `place_info` uses (identifier, coordinate, a known person's name: refused before
+   any call), `RouteClient.locate`, and the return-path screen on the name. At most five run at once.
+2. Whatever `lat`, `lng` or `route` the spec carried is discarded and the looked-up pair written into the stored spec, so a person's
+   position from `where_is` or `reverse_geocode` cannot enter a document through a Map.
+3. An unknown, ambiguous or refused place is a finding naming it (`place_unknown`, `place_ambiguous`, `place_refused`). A locator
+   that is down, or `[route]` off, makes a document with a Map `unavailable`: it is never stored without its coordinates.
+4. `document_read` strips each Map's coordinates and route before the model sees the spec; publishing it back re-looks the names up.
+5. The catalog makes `lat`, `lng` optional (the service fills them); the portal draws the places that have a pair and lists all of them.
+
+**Cost.** One billed Places call per distinct name per publish, bounded by the 50-place schema cap and the concurrency of five. A
+revision re-looks every name up again. No lookup is cached.
+
+**Not built.** A route line between the places (`route` is discarded), a cache, and a way to say which of two ambiguous places was meant
+other than naming it more fully.

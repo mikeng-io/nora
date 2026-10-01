@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 import pytest
@@ -114,6 +114,7 @@ def _service(
     filler: int = 0,
     public_url: str = "",
     new_id: Callable[[], UUID] = uuid4,
+    places: Any = None,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
@@ -130,6 +131,7 @@ def _service(
         now_ms=lambda: NOW,
         public_url=public_url,
         new_id=new_id,
+        place_locator=places,
     )
     return svc, store
 
@@ -817,3 +819,97 @@ def test_the_catalog_opens_with_the_rules_a_skipped_skill_would_have_given() -> 
 def test_the_service_says_which_origin_a_link_is_built_under() -> None:
     assert _service(public_url="https://nora.example/")[0].link_base == "https://nora.example"
     assert _service()[0].link_base == ""
+
+
+# ---- Map: the model names places, the service looks them up (design/artifact §40) ---------------
+
+
+class _Places:
+    """A locator that knows a few public places and records every name it was asked for."""
+
+    KNOWN: ClassVar[dict[str, dict[str, Any]]] = {
+        "Senso-ji": {"status": "ok", "name": "Senso-ji", "lat": 35.7148, "lng": 139.7967},
+        "Fushimi Inari": {"status": "ok", "name": "Fushimi Inari", "lat": 34.9671, "lng": 135.7727},
+        "Central": {"status": "ambiguous", "could_be": ["Central, HK", "Central, Tokyo"]},
+    }
+
+    def __init__(self, *, down: bool = False) -> None:
+        self.asked: list[str] = []
+        self.down = down
+
+    async def locate(self, name: str) -> dict[str, Any]:
+        self.asked.append(name)
+        if self.down:
+            raise RuntimeError("places are down")
+        return dict(self.KNOWN.get(name, {"status": "not_found"}))
+
+
+def _map(*places: dict[str, Any], **props: Any) -> dict[str, Any]:
+    return {"type": "Map", "props": {"caption": "Where", "places": list(places), **props}}
+
+
+async def test_a_map_place_is_looked_up_by_name_and_stored_with_its_coordinate() -> None:
+    places = _Places()
+    svc, store = _service(places=places)
+    result = await _publish(svc, _doc(_map({"name": "Senso-ji"}, {"name": "Fushimi Inari"})))
+    assert result.status == "ok", result
+    stored = (await store.get(document_id=result.document_id)).spec
+    got = stored["root"]["children"][0]["props"]["places"]
+    assert got[0] == {"name": "Senso-ji", "lat": 35.7148, "lng": 139.7967}
+    assert got[1]["lat"] == 34.9671
+
+
+async def test_a_coordinate_or_route_the_model_wrote_is_discarded_never_kept() -> None:
+    """DEC-24: whatever pair a spec carries is thrown away and looked up again, so a person's
+    position taken from `where_is` cannot enter a document through a Map."""
+    places = _Places()
+    svc, store = _service(places=places)
+    spec = _doc(_map({"name": "Senso-ji", "lat": 22.3, "lng": 114.2},
+                     route=[{"lat": 22.3, "lng": 114.2}, {"lat": 22.4, "lng": 114.3}]))
+    result = await _publish(svc, spec)
+    assert result.status == "ok", result
+    props = (await store.get(document_id=result.document_id)).spec["root"]["children"][0]["props"]
+    assert props["places"][0]["lat"] == 35.7148 and "route" not in props
+
+
+async def test_a_place_that_does_not_resolve_to_exactly_one_is_refused_and_named() -> None:
+    svc, _ = _service(places=_Places())
+    unknown = await _publish(svc, _doc(_map({"name": "Nowhereville"})))
+    assert unknown.status == "refused"
+    assert [f.rule for f in unknown.findings] == ["place_unknown"]
+    ambiguous = await _publish(svc, _doc(_map({"name": "Central"})))
+    assert [f.rule for f in ambiguous.findings] == ["place_ambiguous"]
+
+
+async def test_a_person_a_coordinate_or_an_identifier_is_refused_before_any_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    result = await _publish(
+        svc, _doc(_map({"name": "Mei's home"}, {"name": "22.4106, 114.1245"})),
+        person_names=frozenset({"mei"}),
+    )
+    assert result.status == "refused"
+    assert [f.rule for f in result.findings] == ["place_refused", "place_refused"]
+    assert places.asked == [], "a screened name must never leave the host"
+
+
+async def test_a_down_locator_is_unavailable_never_a_stored_map_without_coordinates() -> None:
+    for locator in (_Places(down=True), None):
+        svc, _ = _service(places=locator)
+        result = await _publish(svc, _doc(_map({"name": "Senso-ji"})))
+        assert result.status == "unavailable", locator
+        assert result.document_id is None, "nothing was stored"
+
+
+async def test_a_document_with_no_map_never_asks_the_locator() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    assert (await _publish(svc, _doc())).status == "ok"
+    assert places.asked == []
+
+
+async def test_a_name_used_twice_is_looked_up_once() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    await _publish(svc, _doc(_map({"name": "Senso-ji"}), _map({"name": "Senso-ji"})))
+    assert places.asked == ["Senso-ji"]

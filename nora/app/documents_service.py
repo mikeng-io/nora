@@ -37,6 +37,7 @@ what was made there.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import re
 import time
@@ -45,6 +46,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
+from nora.agent.security import PlaceLocator, screen_and_locate_place
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
 from nora.domain.documents import (
@@ -166,6 +168,24 @@ _CATALOG_RULES = (
 )
 
 
+def _maps(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Every Map node and its JSON Pointer, in document order (see `_images`)."""
+    found: list[tuple[str, dict[str, Any]]] = []
+    stack: list[tuple[dict[str, Any], str]] = [(document["root"], "/root")]
+    while stack:
+        node, where = stack.pop()
+        if node.get("type") == "Map":
+            found.append((where, node))
+        for index, child in enumerate(node.get("children") or []):
+            stack.append((child, f"{where}/children/{index}"))
+    return sorted(found, key=lambda pair: pair[0])
+
+
+#: How many places one publish looks up at once. Each is a billed Places call, so the
+#: fan-out is bounded even though a Map may name up to 50.
+_LOCATE_CONCURRENCY = 5
+
+
 class DocumentService:
     def __init__(
         self,
@@ -179,6 +199,7 @@ class DocumentService:
         new_id: Callable[[], UUID] = uuid4,
         now_ms: Callable[[], int] = _wall_ms,
         public_url: str = "",
+        place_locator: PlaceLocator | None = None,
     ) -> None:
         self._store = store
         self._records = records
@@ -195,6 +216,9 @@ class DocumentService:
         self._now_ms = now_ms
         # Empty means no link is ever built (`[documents] public_url`).
         self._public_url = public_url.rstrip("/")
+        # Looks a named place up for a `Map` (design/artifact §40). `None` while `[route]` is
+        # off, and then a document with a Map is `unavailable`, never stored without one.
+        self._place_locator = place_locator
 
     # ------------------------------------------------------------------ media
     async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
@@ -286,6 +310,71 @@ class DocumentService:
     def link_base(self) -> str:
         """The public origin a document link is built under; `""` while none is configured."""
         return self._public_url
+
+
+    async def _ground_maps(
+        self, document: dict[str, Any], person_names: frozenset[str] | None
+    ) -> tuple[dict[str, Any], list[Finding], bool]:
+        """Fill every Map place's coordinate from its NAME (design/artifact §40, issue #695).
+
+        The model writes names and never a coordinate (DEC-24), so whatever `lat`, `lng` or
+        `route` a spec carries is DISCARDED and the pair is looked up here, through the same
+        outbound and return-path screens `place_info` runs: a person's name, an identifier or a
+        coordinate in the name is refused before any call. A place that does not resolve to
+        exactly one is a finding that names it, never a guess. Returns the document, the
+        findings, and whether the locator was down."""
+        rewritten = copy.deepcopy(document)
+        maps = _maps(rewritten)
+        if not maps:
+            return rewritten, [], False
+        findings: list[Finding] = []
+        resolved: dict[str, dict[str, Any] | None] = {}
+        gate = asyncio.Semaphore(_LOCATE_CONCURRENCY)
+
+        async def look(name: str) -> None:
+            async with gate:
+                got = await screen_and_locate_place(
+                    name, place_locator=self._place_locator, person_names=person_names
+                )
+            resolved[name] = got.data if got.status == "resolved" else {"status": got.status}
+            if got.status == "refused":
+                resolved[name] = {"status": "refused", "reason": got.reason}
+
+        names = sorted({str(p.get("name", "")) for _, m in maps for p in m["props"]["places"]})
+        await asyncio.gather(*(look(n) for n in names))
+        if any((resolved[n] or {}).get("status") == "unavailable" for n in names):
+            return document, [], True
+        for where, node in maps:
+            props = node["props"]
+            props.pop("route", None)
+            for index, place in enumerate(props["places"]):
+                got = resolved[str(place.get("name", ""))] or {}
+                path = f"{where}/props/places/{index}"
+                status = got.get("status")
+                if status == "ok" and "lat" in got and "lng" in got:
+                    place["lat"], place["lng"] = got["lat"], got["lng"]
+                    continue
+                place.pop("lat", None)
+                place.pop("lng", None)
+                name = str(place.get("name", ""))
+                if status == "ambiguous":
+                    could = ", ".join(str(c) for c in got.get("could_be", [])[:3])
+                    findings.append(Finding(
+                        path, "place_ambiguous",
+                        f"{name!r} matches several places ({could}); name it more fully",
+                    ))
+                elif status == "refused":
+                    findings.append(Finding(
+                        path, "place_refused",
+                        "a Map shows public places by name; a person's home or position, an "
+                        "identifier or a coordinate cannot be mapped",
+                    ))
+                else:
+                    findings.append(Finding(
+                        path, "place_unknown",
+                        f"no place found for {name!r}; name a place a map knows",
+                    ))
+        return rewritten, findings, False
 
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:
@@ -478,6 +567,7 @@ class DocumentService:
         written_by: str,
         document_id: UUID | None = None,
         base_revision: int | None = None,
+        person_names: frozenset[str] | None = None,
     ) -> PublishResult:
         if not self._is_person(person_id):
             return PublishResult(
@@ -514,6 +604,13 @@ class DocumentService:
         if down:
             return PublishResult(
                 "unavailable", note="The room's pictures could not be read, so nothing was saved."
+            )
+        if findings:
+            return PublishResult("refused", findings=tuple(findings))
+        rewritten, findings, down = await self._ground_maps(rewritten, person_names)
+        if down:
+            return PublishResult(
+                "unavailable", note="The places could not be looked up, so nothing was saved."
             )
         if findings:
             return PublishResult("refused", findings=tuple(findings))

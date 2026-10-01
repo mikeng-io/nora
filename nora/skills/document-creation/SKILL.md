@@ -45,16 +45,16 @@ The catalog is the whole set, and it is there to be used. Things compared are a 
 in order are a Timeline. One measured series is a Chart. A mechanism, or a route between steps, is a
 Mermaid diagram. Facts about one thing are KeyValue, a headline figure is a Stat, and a status or tag is a Badge. A
 deadline or a warning is a Callout. Code or terminal output is Code. Things to prepare are a Checklist. Detail a reader may skip is an Accordion.
-Pictures are Image, where something came from is Sources, and where things are is a Map once you hold
-coordinates you may use (next section). Markdown is for prose only: a document made of Markdown blocks where
+Pictures are Image, where something came from is Sources, and where things are is a Map. Markdown is for prose only: a document made of Markdown blocks where
 a component fits is a note, not a document.
 
-## Show where things are with what you can ground
+## Put places on a map by name
 
-A Map takes coordinates. No tool gives you coordinates for a named place, so never write them from memory.
-A coordinate from `where_is`, `where_been` or `reverse_geocode` is a person's position: it never goes in a
-document. When position matters and you hold no coordinates you may use, name each place in Markdown text
-with its map link, the `maps_url` from `place_info`.
+A Map takes the names of public places, each unambiguous, and nothing else: never a coordinate or a
+route, because the service looks each name up. A person's home or position cannot
+be mapped, and a coordinate from `where_is`, `where_been` or `reverse_geocode` never goes in a document. Fix
+a refused name and publish again. If places cannot be looked up, say so and name each place in Markdown
+text with its `maps_url` from `place_info`.
 
 ## Numbers and charts come from your computer, not from your head
 

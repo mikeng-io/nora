@@ -526,3 +526,30 @@ async def test_a_schema_refusal_keeps_its_own_note() -> None:
     out = await _tools(_service())["document_publish"](spec=bad)
     assert out["status"] == "bad_arguments" and "not valid JSON" not in out["note"]
     assert "Fix each finding" in out["note"]
+
+
+async def test_a_map_is_grounded_on_publish_and_the_model_never_reads_a_coordinate_back() -> None:
+    """DEC-24: the stored Map carries the looked-up pair, but `document_read` hands the model
+    the names alone, so a coordinate can neither be learned from nor copied out of a document."""
+
+    class _Places:
+        async def locate(self, name: str) -> dict[str, Any]:
+            return {"status": "ok", "name": name, "lat": 35.7148, "lng": 139.7967}
+
+    service = DocumentService(
+        store=FakeDocumentStore(), records=_Rows(),  # type: ignore[arg-type]
+        media=FakeMediaObjectStore((), fail=False), media_window=50,
+        room_ids=lambda platform, cid: frozenset({cid}),
+        is_person=lambda person_id: person_id == "miles", place_locator=_Places(),
+    )
+    tools = _tools(service)
+    spec = _doc()
+    spec["root"]["children"] = [{"type": "Map", "props": {
+        "caption": "Where", "places": [{"name": "Senso-ji"}]}}]
+    made = await tools["document_publish"](spec=spec)
+    assert made["status"] == "ok", made
+    stored = (await service._store.get(document_id=UUID(made["document_id"]))).spec
+    assert stored["root"]["children"][0]["props"]["places"][0]["lat"] == 35.7148
+    seen = await tools["document_read"](document_id=made["document_id"])
+    place = seen["spec"]["root"]["children"][0]["props"]["places"][0]
+    assert place == {"name": "Senso-ji"} and "35.71" not in json.dumps(seen)

@@ -161,8 +161,9 @@ export const components = {
         .array(
           z.strictObject({
             name: text(80),
-            lat: z.number().min(-90).max(90),
-            lng: z.number().min(-180).max(180),
+            // Written by Nora's service from the name (design/artifact §40), never by the model.
+            lat: z.number().min(-90).max(90).optional(),
+            lng: z.number().min(-180).max(180).optional(),
           }),
         )
         .min(1)
@@ -174,7 +175,7 @@ export const components = {
         .optional(),
     }),
     description:
-      "A map of named places, and optionally the path between them. Coordinates only: look an address up first, then write its lat and lng.",
+      "A map of named public places. Give each place's name, as a map would know it, and nothing else: leave out lat, lng and route, because the coordinates are looked up for you. A person's home or position cannot be mapped.",
   },
   Image: {
     props: z.strictObject({

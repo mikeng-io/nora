@@ -427,9 +427,7 @@
               }
             },
             "required": [
-              "name",
-              "lat",
-              "lng"
+              "name"
             ],
             "additionalProperties": false
           }

@@ -226,26 +226,33 @@ const NoraMap = dynamic(() => import("@/components/map/nora-map").then((m) => m.
 
 export function MapBlock(props: {
   caption: string;
-  places: Array<{ name: string; lat: number; lng: number }>;
+  places: Array<{ name: string; lat?: number; lng?: number }>;
   route?: Array<{ lat: number; lng: number }>;
 }) {
+  // The service writes each place's coordinate from its name (design/artifact §40), so a stored
+  // document has both. A place without them (a revision stored before that) is listed, not drawn.
+  const located = props.places.filter(
+    (p): p is { name: string; lat: number; lng: number } => typeof p.lat === "number" && typeof p.lng === "number",
+  );
   const coords: Array<[number, number]> = [
-    ...props.places.map((p) => [p.lng, p.lat] as [number, number]),
+    ...located.map((p) => [p.lng, p.lat] as [number, number]),
     ...(props.route ?? []).map((p) => [p.lng, p.lat] as [number, number]),
   ];
   return (
     <figure className={FIG}>
-      <div className="h-80 overflow-hidden rounded-control border border-hairline">
-        <NoraMap
-          className="h-full w-full"
-          ariaLabel={props.caption}
-          places={props.places}
-          lines={props.route ? [{ id: "route", personId: "document", coords: props.route.map((p) => [p.lng, p.lat]) }] : []}
-          fitTo={coords}
-          frameKey={JSON.stringify(coords)}
-          padding={{ top: 32, bottom: 32, left: 32, right: 32 }}
-        />
-      </div>
+      {located.length > 0 ? (
+        <div className="h-80 overflow-hidden rounded-control border border-hairline">
+          <NoraMap
+            className="h-full w-full"
+            ariaLabel={props.caption}
+            places={located}
+            lines={props.route ? [{ id: "route", personId: "document", coords: props.route.map((p) => [p.lng, p.lat]) }] : []}
+            fitTo={coords}
+            frameKey={JSON.stringify(coords)}
+            padding={{ top: 32, bottom: 32, left: 32, right: 32 }}
+          />
+        </div>
+      ) : null}
       <figcaption className="text-meta text-ink-muted">{props.caption}</figcaption>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-meta text-ink-soft">
         {props.places.map((p, i) => (
