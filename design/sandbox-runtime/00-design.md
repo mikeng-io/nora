@@ -1,27 +1,41 @@
 ---
 type: design
 title: "Nora's computer — a coding agent's toolkit, executed in a microVM"
-description: "Early study. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host unit owns lifecycle. Smith and the make_artifact tool are to be retired; the deferred-job outbox stays for delegate_task (decision 4, 2026-09-30): artifacts become a runtime skill over the computer tools, published by computer_export(to=link) through the existing ArtifactIngest port to Drop, revised in place from a persistent workspace. Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
+description: "Partly built. Nora stays a trusted container; the computer-use tools run in one persistent Docker Sandboxes (sbx) microVM that serves a small HTTP API (computerd) with Nora as its only client. A host systemd unit (nora-computer.service, running `nora-computer serve`) supervises computerd. S0, S2a, S2b-1, S2b-2 and S3 (S3a, S3b) are merged and live (#631, #636, #639, #645, #649, #672); S1 (Chromium RSS) and S4 (the browser) are not built. Smith, make_artifact and the docker socket were retired 2026-10-01 (DEC-254); the deferred-job outbox stays for delegate_task. Files leave the VM through computer_export to link, chat or keep; documents are the document tool's (ADR 0020). Threat model follows content, not users. Includes the live exposure and two sbx spike rounds, all measured 2026-09-30."
 tags: [nora, compute, sandbox, sbx, computer-use, smith, drop, rustfs]
-timestamp: '2026-09-30'
-status: draft
+timestamp: '2026-10-01'
+status: partly-built
 ---
 
 # Nora's computer
 
-Status: **early study for computer use; direction set, open decisions listed at the end.** Operator direction
-(2026-09-30):
+Status (2026-10-01): **partly built.** S0, S2a, S2b-1, S2b-2, S3a and S3b are
+merged and live (#631, #636, #639, #645, #649, #672). **S1 (Chromium RSS) and
+S4 (the browser, `computer_browse`) are not built.** Where a line below
+describes something that was not built that way, it says so and the code wins;
+the original study text is kept, marked, where it records how the design got
+here. Open decisions: none; the five decided on 2026-10-01 are at the end,
+and Chromium RSS is a measurement still to take (S1).
+Operator direction (2026-09-30):
 
 - **Nora remains a container** and stays the trusted control plane. She is
   not moved into a VM (§1 says why that would protect the wrong thing).
 - **Only the computer-use tools run in the microVM.** Nora gets a coding
   agent's toolkit (run commands, read, write and edit files, drive a browser,
   build and share an artifact), executed somewhere she can afford to lose.
+  Built: run, read, write, edit, export, import and the session list; the
+  browser is S4, not built.
 - **Smith is deprecated, and `make_artifact` becomes a skill** (`document-creation`)
   over the computer tools, with Drop behind `computer_export` (§6).
+  *As built:* Smith and `make_artifact` were retired in S3b (#672, DEC-254).
+  `computer_export` carries FILES; a document is the document tool's, under
+  the `document-creation` skill of ADR 0020, and not a skill over the
+  computer tools (the amendment at the top of §6).
 - **Target runtime: Docker Sandboxes (sbx)**, behind a `SandboxRuntime` port;
   spike round 2 passed every gate it tested, three untested (§9); the login
-  was accepted as a dependency (ADR 0019).
+  was accepted as a dependency (ADR 0019). Login expiry is not tested; the
+  decided handling is an alert and a re-login by the operator (decision 7),
+  and no alert rule for it exists yet.
 - **Files: RustFS is reused** through Drop for published artifacts and
   through the `BlobStore` port for private exports. The VM's disk is the
   working disk.
@@ -35,7 +49,7 @@ nora-compute`, `host.docker.internal:host-gateway`) got an **unauthenticated
 (`:8000/v3/workspaces/list`). It also reached OmniRoute, Langfuse, Ollama,
 Neo4j, sshd, norty's Tailscale address, the LAN router and the internet.
 `nora-compute` is `Internal=false`, and Smith is handed Nora's own OmniRoute
-key. S0 (§13) closes this before anything else is built: PR #631, with #632 (Smith holds Nora's key) and #633 (Honcho open on the LAN) tracked separately.
+key. S0 (§13) closed this before anything else was built: PR #631 (merged), with #632 (Smith holds Nora's key) and #633 (Honcho open on the LAN) tracked separately. #632 closed with S3b (#672), which removed Smith and `nora-compute`; #633 is still open.
 
 ## 1. Threat model: content, not users
 
@@ -77,39 +91,55 @@ nora container                     norty host                        microVM "no
 computer_* tool
   → SandboxRuntime port
   → HTTP + bearer token ─────────→ sbx published port ────────────→ computerd (HTTP API)
-                                    (docker-bridge IP only)            /workspace/<room>/...
-  ← typed result ←──────────────────────────────────────────────────  Chromium (kept warm)
+                                    172.17.0.1:18765 → 80              /workspace/<scope>/...
+  ← typed result ←──────────────────────────────────────────────────  (Chromium: S4, not built)
 
 computer_export(to="link")
   → ArtifactIngest (existing port) → drop:8081 (nora network) → RustFS + artifacts row
 
 lifecycle (never on the data path)
-  computer-lifecycle.service ── sbx create / start / stop / rm  (ensure, idle-stop, recreate)
+  nora-computer.service ── `nora-computer serve`, Restart=always:
+                           sbx run -d if absent, publish the port, computerd in the foreground
 ```
 
 - **Direction:** Nora calls the VM; the VM can call nothing of Nora's.
   `computerd` is a server with no client credentials of its own.
-- **`computerd`:** about 300 lines (FastAPI + Playwright), baked into the
-  image. It keeps Chromium alive across calls, which is why a long-lived
-  server beats one `sbx exec` per call. Its bearer token is set at `sbx
-  create` and held by Nora. A token inside the VM is acceptable, because it
-  only authorises calls *into* the VM.
-- **Published port:** `sbx ports --publish 172.17.0.1:P:8080` (docker0, the
-  address measured in §9 round 2), so it is reachable from the nora container
+- **`computerd`** (`deploy/computer/computerd.py`) is one file of the
+  standard library and aiohttp, in its own venv in the image (`/opt/computerd/venv`).
+  It is not FastAPI and has no Playwright: the browser is S4 and does not
+  exist. A long-lived server still beats one `sbx exec` per call, and it is
+  where S4's Chromium will be kept warm. Its bearer token is
+  `NORA_COMPUTER_TOKEN` from norty's `.env`: `nora-computer serve` passes it to
+  computerd with `sbx exec -e`, and Nora's `[computer] token_env` names the
+  same variable. computerd runs as root and each command as its scope's own
+  user, so no command can read the token. A token inside the VM is acceptable,
+  because it only authorises calls *into* the VM.
+- **Published port:** `172.17.0.1:18765` on the host maps to port 80 in the
+  VM (`nora-computer`: `-p $HOST_IP:$HOST_PORT:80`; docker0, the address
+  measured in §9 round 2), so it is reachable from the nora container
   but not from the LAN or Tailscale. It
-  is not bound on `0.0.0.0` (§0 shows what that exposes).
-- **Lifecycle unit** (host systemd, the only thing that runs `sbx`):
-  `ensure` (create from image if absent, start if stopped), stop after N idle
-  minutes, and recreate on a failed health check or an image upgrade. Nora
-  asks it to ensure over a unix socket and never holds the sbx or Docker
-  socket.
+  is not bound on `0.0.0.0` (§0 shows what that exposes). The earlier study's
+  `:8080` is not what was built.
+- **Lifecycle unit** (`deploy/computer/nora-computer.service`, a user unit for
+  the account that ran `sbx login`, the only thing that runs `sbx`):
+  `Restart=always`, `RestartSec=5`, running `nora-computer serve`. `serve`
+  takes a lock, creates the sandbox **detached** (`sbx run -d`) if it is
+  absent, publishes the port, kills a stale computerd and runs computerd in the
+  foreground of an `sbx exec`, so when computerd exits the unit exits and
+  systemd restarts it. The other subcommands are `build`, `status`, `stop` and
+  `destroy`. **Not built, though the study planned them:** an `ensure` verb, a
+  unix socket from Nora to the unit, an idle stop and a recreate on a failed
+  health check or an image upgrade. An image upgrade is `build`, `destroy`,
+  restart, by hand (`deploy/computer/README.md`). Nora never holds the sbx or
+  Docker socket.
 - **`computerd` is started by the unit, not the image.** sbx's `shell` agent
-  overrides the image `ENTRYPOINT`, and `sbx exec` **auto-starts** a stopped
-  sandbox. So a start the unit did not make still happens, and the unit
-  (re)starts `computerd` with `sbx exec` whenever it finds the VM running
-  without it.
+  overrides the image `ENTRYPOINT`, so `serve` starts computerd with `sbx
+  exec`. The sandbox is created detached because sandboxd stops a non-detached
+  one 30 s after its last session disconnects (`nora-computer`, `prepare`).
 - **The health check reads an HTTP body** from `computerd`, never a TCP
-  connect, which succeeds to any address under sbx (§9 round 2).
+  connect, which succeeds to any address under sbx (§9 round 2):
+  `nora-computer status` parses `/v1/health` and then asks for something that
+  needs the token.
 
 ## 3. `SandboxRuntime` port
 
@@ -117,25 +147,39 @@ It has the same shape as `ComputeBackend`. It **never raises**, and results
 keep R-27's states: `ok` / `nothing_found` / `unavailable` / `denied`. A
 non-zero exit is `ok` carrying the exit code, and a timeout is `unavailable`.
 
+As built (`nora/domain/ports.py`, `SandboxRuntime`; every parameter is
+keyword-only):
+
 ```python
 class SandboxRuntime(Protocol):
-    async def run(self, scope: Scope, command: str, *, timeout_s: int = 120) -> RunResult: ...
-    async def read(self, scope: Scope, path: str, *, offset: int = 0, limit: int = 2000) -> FileResult: ...
-    async def write(self, scope: Scope, path: str, data: bytes) -> OpResult: ...
-    async def edit(self, scope: Scope, path: str, old: str, new: str) -> OpResult: ...
-    async def files(self, scope: Scope, pattern: str = "**/*") -> ListResult: ...   # Nora's code only (state, export); no model tool
-    async def fetch(self, scope: Scope, path: str, *, max_bytes: int) -> BytesResult: ...  # out of the VM
-    async def put(self, scope: Scope, path: str, data: bytes) -> OpResult: ...            # into the VM
-    # S4: the browser is reached over a CDP proxy through computerd; the
-    # sub-agent's steps travel there, not through a port method per action (§14).
-    async def status(self) -> RuntimeStatus: ...
+    async def run(self, *, scope: str, command: str, timeout_s: float, limits: Mapping[str, int] | None = None) -> RunResult: ...
+    async def read(self, *, scope: str, path: str, offset: int = 0, limit: int | None = None) -> FileResult: ...
+    async def write_text(self, *, scope: str, path: str, content: str) -> OpResult: ...
+    async def edit(self, *, scope: str, path: str, old: str, new: str) -> OpResult: ...
+    async def files(self, *, scope: str, pattern: str = "**/*") -> ListResult: ...   # Nora's code only (state, export); no model tool
+    async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult: ...  # out of the VM
+    async def put(self, *, scope: str, path: str, data: bytes) -> OpResult: ...            # into the VM
+    async def state(self, *, scope: str) -> StateResult: ...   # §15.1: newest files, tmux sessions, processes; read fresh, takes no lock
+    # S4, not built: the browser is reached over a CDP proxy through computerd;
+    # the sub-agent's steps travel there, not through a port method per action (§14).
 ```
 
-- `Scope = (room_id, turn_id)`. **Nora's code picks the room from the turn,
-  never the model.** `computerd` resolves paths under `/workspace/<room>/` and
-  refuses any that escape. That is disclosure hygiene (one room's files do
-  not surface in another), not a security boundary, because everything shares
-  one VM.
+There is no `status()` and no `Scope` type; the study's sketch had both.
+
+- **`scope` is `scope: str`, a room hash:** `computer_scope(platform,
+  conversation_id)` (`nora/domain/computer.py`) is the first 32 hex digits of
+  the SHA-256 of `platform:conversation_id`, so no platform id reaches the VM.
+  The study's `Scope = (room_id, turn_id)` was not built; there is no turn in
+  it. **Nora's code picks the scope from the turn, never the model.**
+  `computerd` resolves paths under `/workspace/<scope>/` and refuses any that
+  escape. **Between rooms the boundary is a user, not only a directory:**
+  computerd runs as root and runs each scope's commands as its own system user
+  `c-<first 12 hex of the scope>`, created on first use, with the scope's
+  directory `0o700` and owned by that user (`deploy/computer/computerd.py`,
+  module docstring). One room's command cannot read another room's files. It
+  is still one kernel in one VM, so a kernel or root escalation crosses it
+  (the same docstring says so): rooms are not a boundary against a hostile
+  escalation, and the VM is the boundary against Nora's side.
 - Output is bounded (head/tail, reusing `LOG_TAIL_LINES` /
   `MAX_ERROR_LOG_CHARS`), and the full stream is kept by key.
 - Implementations: `ComputerdRuntime` (HTTP client, sbx-agnostic: the same
@@ -161,9 +205,14 @@ VM is the boundary.
 | `computer_read(path, offset?, limit?)` | text as a tagged, bounded block; instead of `cat` for a file you will act on. Later: images to her vision path |
 | `computer_write(path, content)` | a whole file, byte for byte, with no shell quoting; instead of a heredoc or `echo` |
 | `computer_edit(path, old, new)` | one exact replacement, refused when `old` is missing or ambiguous; instead of `sed` |
-| `computer_browse(objective, session?)` | S4: one call delegates a whole browser task to a sub-agent (§14) |
-| `computer_import(ref)` | S3: chat attachment, media ref or blob key → `inbox/` |
-| `computer_export(path, to, title?, artifact_id?)` | S3: `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7) |
+| `computer_browse(objective, session?)` | S4, **not built**: one call delegates a whole browser task to a sub-agent (§14) |
+| `computer_import(code)` | S3a, built: a file sent in this chat (named by its media code) → `inbox/` |
+| `computer_export(path, to, title?, artifact_id?)` | S3a, built: `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7). Files only: never a page (the §6 amendment) |
+
+**As built (2026-10-01): seven tools**, `COMPUTER_TOOLS` in
+`nora/agent/tools.py`: the four above (S2b-1, #639), `computer_session_list`
+(S2b-2, #645), and `computer_export` and `computer_import` (S3a, #649).
+`computer_browse` is the one tool of this table that does not exist.
 
 Why the file tools are separate from `computer_run` (bearing from the three
 agents, not copied): writing through bash means escaping (quotes, `$`,
@@ -177,14 +226,13 @@ The **`computer-use` runtime skill** carries the judgement across these
 tools (the write, run, read-the-error, edit loop; `projects/<slug>/` with a
 lockfile; tmux for long jobs; when not to use the computer at all). Its
 must-have rules also live in the tool descriptions and doctrine, because an
-optional skill gets skipped (image-generation: 3 of 6 live turns). It lands
-after the tools, written against the failures real tasks show (ADR 0016).
+optional skill gets skipped (image-generation: 3 of 6 live turns). It exists
+(`nora/skills/computer-use/`, added 2026-10-01 after the tools; ADR 0016).
 **Per-command limits** are a reserved config slot, deliberately not applied:
 the operator judged the environment semi-trusted, and the audit log (§12) is
 the required control.
 
-`make_artifact` is **to stop being a tool** (S3). The deferred-job outbox and its poller stay, as the delivery path for a future `delegate_task` (decision 4). It becomes the `document-creation` runtime
-skill (§6).
+`make_artifact` **stopped being a tool** (S3b, #672, DEC-254). The deferred-job outbox and its poller stay, as the delivery path for a future `delegate_task` (decision 4). The study had it become a `document-creation` skill over the computer tools; as built, that skill is the document tool's (ADR 0020), not the computer's (§6).
 
 - **Stay as they are:** `web_fetch`, `calculate`, `generate_image` and
   `media_*`. They are cheaper, and none of them needs a computer.
@@ -195,20 +243,27 @@ skill (§6).
 
 ## 5. The VM image
 
-It is a Dockerfile, like Smith's today. It does **not** need to start `FROM
+It is a Dockerfile (`deploy/computer/Dockerfile`), built on the host and loaded
+into sbx by `nora-computer build`. It does **not** need to start `FROM
 docker/sandbox-templates:*`: Smith's own image booted as a template (§9
-round 2).
+round 2). **As built (2026-10-01):**
 
-- Ubuntu base, Python 3.12 + uv, Node, bash/coreutils/git/curl/jq, sqlite.
-- ffmpeg, imagemagick, pandoc, poppler (PDF to text).
-- Chromium + Playwright + Xvfb, **Noto CJK fonts** (otherwise every Cantonese
-  page renders as boxes).
-- **Smith's renderers, carried over as CLIs:** `nora-render
-  mermaid|markdown|map|report IN OUT`, so Nora or a plain script
-  can all use them through `computer_run`. `render_map` needs the Google Maps
-  key, which enters as an sbx placeholder (§8).
-- `computerd`, started by the lifecycle unit through `sbx exec` (§2), since
-  the entrypoint does not run.
+- Ubuntu base (pinned by digest), the system `python3` and `python3-venv`, uv
+  (pinned by digest), Node and npm, bash, coreutils, git, curl, jq, sqlite3,
+  tmux, zip and unzip.
+- ffmpeg, imagemagick, pandoc and poppler (`poppler-utils`, PDF to text).
+- **Noto CJK fonts** (otherwise every Cantonese page renders as boxes) and Noto
+  color emoji.
+- **Not built:** Chromium + Playwright + Xvfb for the browser (S4). The only
+  Chromium in the image is the one mermaid-cli installs for itself.
+- **Smith's image renderers, carried over as one CLI:** `nora-render
+  chart|mermaid IN OUT`, so Nora or a plain script can use them through
+  `computer_run`. Each makes a picture, never a page. **There is no map
+  renderer** (`deploy/computer/README.md`), so no Google Maps key, no
+  placeholder for one and no Google host allowed. The study's `markdown`,
+  `map` and `report` renderers were withdrawn with the §6 amendment.
+- `computerd` in its own venv, started by `nora-computer serve` through `sbx
+  exec` (§2), since the entrypoint does not run.
 
 ## 6. `make_artifact` ↔ Drop
 
@@ -236,20 +291,32 @@ round 2).
 > both paths are live: a document published through the document tool, and a
 > file sent through `computer_export`.
 
-**Today:**
+**Status (2026-10-01): both paths went live and S3b retired the old one
+(#672, DEC-254).** The paragraphs below this note, down to §7, are the
+study's text. Where they say Smith runs, that `document-creation` is a skill
+over the computer tools, or that html and svg may go to a link, they are
+**superseded by the amendment above and by what was built**; they are kept as
+the record of how the design got here. What was built: `computer_export` to
+`link`, `chat` or `keep` for FILES, through `DropArtifactIngest` (S3a, #649);
+Smith, `make_artifact`, `LocalDockerBackend`, the `docker.sock` mount,
+`nora-compute` and Drop's `POST /api/tokens` removed (S3b, #672).
 
-- Smith runs inside the sandbox holding a per-job Drop token (minted by
+**Was, until S3b (superseded):**
+
+- Smith ran inside the sandbox holding a per-job Drop token (minted by
   `LocalDockerBackend` through `POST /api/tokens`).
-- Smith POSTs or PATCHes `/api/artifacts` on Drop directly, over
+- Smith POSTed or PATCHed `/api/artifacts` on Drop directly, over
   `nora-compute`.
-- It writes `url.txt`, which Nora reads back on trust.
-- Drop stores the bytes in RustFS and the row in the `artifacts` table.
+- It wrote `url.txt`, which Nora read back on trust.
+- Drop stored the bytes in RustFS and the row in the `artifacts` table.
 
-So the sandbox needs a network path to Drop and a credential for it, and
-Nora never sees the bytes she is linking to.
+So the sandbox needed a network path to Drop and a credential for it, and
+Nora never saw the bytes she was linking to.
 
-**Proposed: `make_artifact` becomes a skill, and Drop sits behind
-`computer_export(to="link")`. The VM only produces files; Nora publishes.**
+**Proposed in the study (the `document-creation` skill over the computer tools
+is superseded by the amendment; the export path is what was built): `make_artifact`
+becomes a skill, and Drop sits behind `computer_export(to="link")`. The VM only
+produces files; Nora publishes.**
 
 `make_artifact` stops being a tool. Building an artifact is a *procedure*
 over the computer tools, so it becomes the `document-creation` runtime skill (ADR
@@ -272,7 +339,9 @@ Revising an artifact is the same skill with `artifact_id`.
 - **Must-have rule, not only in the skill.** A skill that is optional gets
   skipped: `image-generation` was skipped 3 times in 6 live turns. So
   `computer_export`'s description says "to give people a file they open by
-  link, follow the `document-creation` skill", and doctrine carries the one-line rule.
+  link, follow the `document-creation` skill", and doctrine carries the one-line rule. (As built, the pointer for a
+  document is `document_publish`'s own description, and `computer_export` says
+  it sends files, never a page; see the amendment.)
 - **It fits in one turn: measured, but small n.**
   - 15 artifacts have ever been made (2026-08-12 → 09-04; none in the 26 days
     since).
@@ -298,28 +367,32 @@ computer_export(path, to="link", title, artifact_id?)
   1. SandboxRuntime.fetch(scope, path, max_bytes)   bytes out of the VM
   2. validate on Nora's side:
        size cap · MIME sniffed from bytes (not the extension) · type allowlist
-       (html, svg, png, jpeg, pdf, csv, md, json) · sha256 computed HERE
+       (as built: `html` is refused on its sniffed bytes and `svg` never goes
+       to a link; `sniff_export_type`, `NOT_AS_LINK`) · sha256 computed HERE
   3. ArtifactIngest.register(data, title, media_type)      new link
      ArtifactIngest.update(artifact_id, data, …)           same link, new bytes
   4. manifest row: room, path, sha256, artifact_id, url, turn
   5. return {status: ok, url, artifact_id}
 ```
 
-- **The publishing code already exists:**
+- **The publishing code already existed, and now has its caller:**
   - The `ArtifactIngest` port and `nora.infra.drop.DropArtifactIngest`
     (register + update, contract-tested against `FakeArtifactIngest`) were
     built for Compute.
-  - Their docstring records **no caller yet**, because Smith talks to Drop
+  - Their docstring recorded **no caller yet**, because Smith talked to Drop
     directly instead.
-  - This design is that caller. Nora already reaches `drop:8081` over the
-    `nora` network for the link shortener.
+  - `computer_export` is that caller (S3a, #649; `nora/app/composition.py`
+    builds `DropArtifactIngest` when the computer is on). Nora already reaches
+    `drop:8081` over the `nora` network for the link shortener, and
+    `[shortener]`'s base URL and token are what it uses.
 - **Drop stays the single writer** of the artifacts bucket in RustFS and of
   the `artifacts` table, and the only public server (`/drop/{slug}` with its
   existing hardening). Nothing else writes RustFS for published artifacts.
-- **To retire in S3:** `POST /api/tokens` (its only caller is
-  `LocalDockerBackend._mint_token`), Drop's membership of `nora-compute`, and
-  `url.txt`/`summary.txt`. The sha256 Nora computed is the provenance, so the
-  VM's claim about what it built is never trusted.
+- **Retired in S3b (#672, DEC-254):** `POST /api/tokens` (its only caller was
+  `LocalDockerBackend._mint_token`), Drop's membership of `nora-compute` (the
+  network itself went too), and `url.txt`/`summary.txt` with Smith. The sha256
+  Nora computed is the provenance, so the VM's claim about what it built is
+  never trusted.
 - **Revision gets better.** `artifact_id` → manifest → the workspace path and
   project that built it. "Make the chart blue" becomes: open the same project,
   edit, re-share with the same `artifact_id`, and the link stays the same.
@@ -330,7 +403,13 @@ computer_export(path, to="link", title, artifact_id?)
 
 ## 7. Files: the VM disk for work, RustFS at the edges
 
-- **Working disk:** the VM's own disk under `/workspace/<room>/`. It needs
+**As built (S3a, #649):** the manifest is the `computer_exports` table
+(migration `0083_computer_exports`, insert-only; `nora/domain/computer_exports.py`),
+`computer_import` takes a media code, and the nightly backup below is not built
+(no code in the tree does it).
+
+- **Working disk:** the VM's own disk under `/workspace/<scope>/` (the scope
+  is the room's hash, §3). It needs
   real POSIX for pip, sqlite, git and Chromium profiles; no FUSE.
 - **Published artifacts:** go to Drop, and so to RustFS (§6).
 - **Private exports** (kept, not linked): `fetch` → `BlobStore.put`, keyed by
@@ -339,7 +418,7 @@ computer_export(path, to="link", title, artifact_id?)
   (`[media.rustfs] enabled = true`, bucket `nora-media`, read 2026-09-30).
   So published and private files both land in RustFS, through Drop and
   through `BlobStore` respectively, and Nora needs no new client.
-- **Import:** `computer_import(ref)` → `BlobStore.get` or a media ref →
+- **Import:** `computer_import(code)` → a media ref in the room →
   `SandboxRuntime.put` into `inbox/`. The VM never needs a route to RustFS.
 - **Backup:** a nightly job tars each room's `projects/` (not `browser/`,
   which holds cookies) through `fetch` into the blob store. It is on the same
@@ -349,7 +428,7 @@ computer_export(path, to="link", title, artifact_id?)
   missing from the VM is `unavailable`, never an empty answer.
 
 ```text
-/workspace/<room>/
+/workspace/<scope>/
 ├── inbox/              imports (read-only)
 ├── projects/<slug>/    code + data + out; .venv with a lockfile persists here
 └── browser/<profile>/  Chromium user-data-dir (a credential store; never backed up)
@@ -359,13 +438,21 @@ computer_export(path, to="link", title, artifact_id?)
 
 - **Network:** `sbx policy init deny-all`, then `sbx policy allow network`
   for package mirrors, and the public web for browsing. `sbx policy log
-  --json` supplies the network half of the audit.
-- **Credentials:** `sbx secret set-custom --sandbox nora-computer --host
-  maps.googleapis.com --env GOOGLE_MAPS_API_KEY --value …`. The VM sees a
+  --json` supplies the network half of the audit. **Decided 2026-10-01
+  (decision 8):** the VM may fetch from `pypi.org` and the Ubuntu archives.
+  The decision allows it; writing the policy rules is an implementation PR's,
+  and this text does not say what norty's live policy holds today (read it
+  with `sbx policy ls`).
+- **Credentials:** the mechanism is `sbx secret set-custom --sandbox
+  nora-computer --host <host> --env <NAME> --value …`: the VM sees a
   placeholder, and sbx's proxy substitutes the real key only on requests to
-  that host.
-- **Browser logins** are the exception: cookies live in the VM. Use Nora's
-  own low-value accounts only, one profile per room.
+  that host. The study's example was a Google Maps key for `render_map`;
+  **there is no map renderer** (`deploy/computer/README.md`), so no key and no
+  Google host are needed today.
+- **Browser logins** were the exception: cookies live in the VM. **Decided
+  2026-10-01 (decision 3): no browser logins are allowed for now.** That
+  matters only for S4, which is not built; the persistent profiles of §7 and
+  §14 wait on a new ruling.
 
 ## 9. sbx spike, 2026-09-30 (norty, sbx v0.46.0)
 
@@ -405,7 +492,7 @@ leaves norty at `default-deny-all`.
 | persistence | a file written, `sbx stop` (0.6 s), then `sbx exec` **auto-starts** the sandbox (2.0 s) and the file is intact | timed |
 | published port | `sbx ports --publish 172.17.0.1:18099:8080` → 200 from the host, from a container, and **from the `nora` container itself**; not reachable on the host's LAN IP | `curl`, urllib |
 | custom image | `docker save smith:latest` → `sbx template load` → `create -t smith:latest --pull never` → rc 0 in 14 s, Strands importable. **A non-Docker-derived image works.** It ran as root (the image's user), and sbx's `shell` agent **overrides the image's entrypoint**, so `computerd` must be started by an exec (a `nohup … &` via `sbx exec` stayed up and served) or by a kit | `exec` |
-| login lapse | **untested.** `sbx logout`'s help says it stops running local sandboxes; what an *expired* token or a Docker outage does to a running sandbox is unknown | `--help` |
+| login lapse | **untested, and by decision 7 (2026-10-01) not to be tested.** `sbx logout`'s help says it stops running local sandboxes; what an *expired* token or a Docker outage does to a running sandbox is unknown. If the login lapses, an alert goes to the alert channel and the operator logs in again | `--help` |
 | Chromium RSS, a disk cap beyond the 20 GB root | untested | — |
 
 **What round 2 changes in this study:**
@@ -421,8 +508,9 @@ leaves norty at `default-deny-all`.
 - **A health check must not treat a TCP connect as proof of anything**, in
   either direction.
 
-The one open risk is the login: decision 1 below, plus a deliberate
-token-expiry test before anything depends on it.
+The one open risk was the login: decision 1 below. The deliberate
+token-expiry test this paragraph asked for is **dropped** (decision 7,
+2026-10-01): a lapse is handled by an alert and a re-login, not by a test.
 
 **Fallback** if the Docker-account dependency is unacceptable: the same
 `computerd` image under Kata, Firecracker, or Docker + gVisor, with a small
@@ -434,15 +522,16 @@ week.
 
 | step | estimate |
 |---|---|
-| token-expiry test + Chromium RSS | 0.5 day |
+| token-expiry test (dropped, decision 7) + Chromium RSS (open) | 0.5 day |
 | image + `computerd` (run/read/write/edit/files/fetch/put; browse is S4) | 2 days |
-| lifecycle unit (ensure, idle-stop, recreate, health) | 0.5 day |
+| lifecycle unit (ensure, idle-stop, recreate, health) | 0.5 day; built as `serve`/`build`/`status`/`stop`/`destroy`, with no ensure, idle-stop or recreate (§2) |
 | `SandboxRuntime` port, `ComputerdRuntime`, fake + contract suite | 1 day |
 | tools + manifest table + `tool_selection` before/after | 2 days |
-| `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day |
+| `computer_export` (link/chat/keep) on `ArtifactIngest`; `document-creation` skill + doctrine line | 1 day; built, but the skill and the doctrine line are the document tool's (ADR 0020, the §6 amendment) |
 | retire Smith, `make_artifact`, `LocalDockerBackend`, `/api/tokens`, `nora-compute` and `docker.sock`. The job outbox, poller and `compute_jobs` STAY for `delegate_task` (decision 4); only the Smith-specific `ComputeBackend` adapter goes | 1 day |
 
-This totals about 8 days for the core (S2a to S3). It excludes the audit
+This totals about 8 days for the core (S2a to S3), all of it merged by
+2026-10-01 except the Chromium RSS measurement. It excludes the audit
 trail (§12), sessions (§15) and the browser (S4), which are sized when they
 are built. The figures are estimates, not measured.
 
@@ -454,7 +543,7 @@ are built. The figures are estimates, not measured.
 | **Drop** | the only writer of published artifacts (RustFS + `artifacts`), the public renderer |
 | **lifecycle unit** | `sbx` create/start/stop/rm; no data path |
 | **sbx daemon** | microVM, egress policy, placeholder secrets |
-| **nora-computer VM** | `computerd`, files under `/workspace/<room>`, processes, toolchains, Chromium + profiles |
+| **nora-computer VM** | `computerd`, files under `/workspace/<scope>`, processes, toolchains (Chromium + profiles: S4, not built) |
 | **never in the VM** | Nora's model key, a Drop credential, any route to Honcho/Postgres/RustFS/Drop, the docker or sbx sockets |
 
 ## 12. Audit: a complete trail, Postgres as the record
@@ -486,35 +575,51 @@ with who, when, how and what, as a full trail for auditing.**
   `policy log --json` egress records. S3 adds import and export. S4 adds
   every browser sub-agent step (action, element, URL, screenshot key). An
   operation with no row is a gap in the trail, and is treated as a defect.
+  **As of 2026-10-01** the rows are the tools' (`started` and `finished` per
+  call, `nora/domain/computer_events.py`), the session rows and the sweeper's.
+  The host unit's lifecycle events and sbx's egress log are read from the
+  unit's journal and `sbx policy log` (`deploy/computer/README.md`), not from
+  this table.
 
 ## 13. Sequence
 
-- **S0: close §0 now, independent of all of this.** Make `nora-compute`
+- **S0: close §0 now, independent of all of this. Landed, #631.** Make `nora-compute`
   `internal: true` behind an allowlist (OmniRoute, OTLP, Drop,
   `maps.googleapis.com`), put auth on Honcho or bind it off `0.0.0.0`, and
   give Smith its own key. Falsifier: rerun the §0 probe, and every
-  non-allowlisted row is refused.
-- **S1:** the token-expiry test and Chromium RSS (the spike's untested rows).
-- **S2a:** image + `computerd` + lifecycle unit + port, inert (landed, #636).
-- **S2b-1:** the four tools, `[computer]` config, `computer_events` (the
+  non-allowlisted row is refused. (S3b later removed `nora-compute` and Smith
+  altogether; Honcho's own exposure is #633, still open.)
+- **S1: not built.** The token-expiry test is dropped (decision 7, 2026-10-01).
+  Chromium RSS (the spike's other untested row) stays open and only matters
+  for the browser (S4).
+- **S2a: landed, #636.** Image + `computerd` + lifecycle unit + port, inert.
+- **S2b-1: landed, #639.** The four tools, `[computer]` config, `computer_events` (the
   audit), the per-command limits slot.
-- **S2b-2:** sessions (§15): the observed-state read, `computer_sessions`, the
+- **S2b-2: landed, #645.** Sessions (§15): the observed-state read, `computer_sessions`, the
   `<computer>` block, leases, pre-emption and concurrency.
-- **S3:** `computer_export` on `ArtifactIngest` + the `document-creation` skill.
-  Then retire `make_artifact`, Smith, `LocalDockerBackend`, `/api/tokens` and
-  `docker.sock`. The job outbox, its poller and `compute_jobs` stay as the
-  delivery path for a future `delegate_task` (background sub-agent,
-  decision 4).
+- **S3: landed as S3a (#649) and S3b (#672).** `computer_export` on
+  `ArtifactIngest` (plus `computer_import`), for FILES; the
+  `document-creation` skill the study put here became the document tool's
+  (ADR 0020, the §6 amendment). Then retire `make_artifact`, Smith,
+  `LocalDockerBackend`, `/api/tokens` and `docker.sock`. The job outbox, its
+  poller and `compute_jobs` stay as the delivery path for a future
+  `delegate_task` (background sub-agent, decision 4).
   Measure `output_tokens` on the first real artifact turns.
-- **S3b, landed 2026-10-01 (DEC-254):** `make_artifact`, Smith,
+- **S3b, landed 2026-10-01 (#672, DEC-254):** `make_artifact`, Smith,
   `LocalDockerBackend`, the `docker.sock` mount, `nora-compute` with
   `compute-egress`, and Drop's `POST /api/tokens` are retired; the job outbox,
   poller, `ComputeBackend` port and `compute_jobs` stay wired but idle (decision
   4). Drop's artifact read path and link shortener stay.
-- **S4:** the browser spike (§14), then `computer_browse`, then persistent
-  browser profiles per room.
+- **S4: not built.** The browser spike (§14), then `computer_browse`, then
+  persistent browser profiles per room (which wait on a ruling on browser
+  logins: decision 3).
 
 ## 14. Browser: agent-as-tool, not a tool per click
+
+**Status (2026-10-01): not built (S4).** There is no `computer_browse`, no
+browser in the image and no CDP proxy in computerd. **No browser logins are
+allowed for now** (decision 3), so the spike's task 3 below (a table behind a
+login) and persistent logged-in profiles wait for a new ruling.
 
 A tool call per click would send Nora's whole prompt through a model round
 trip for every action. Her turn allows 20 model turns and 12,000 output
@@ -610,8 +715,11 @@ from what is *intended*, and neither is rewritten by a model.
      `next_step`, evidence (screenshot keys, file sha256s) and where it
      stopped (tab URL, tmux name).
    - Code writes that into a row keyed by session id (the room is an
-     attribute; a room can hold several sessions), with provenance (tag id,
-     time). The model fills in one task's result and never folds the history.
+     attribute; **a room holds ONE open session at a time**: migration
+     `0082_computer_sessions` makes `uq_computer_sessions_open_scope` a unique
+     index on the scope where the status is `open`, and the release notes say
+     the same; the study's "several sessions per room" was not built), with
+     provenance (tag id, time). The model fills in one task's result and never folds the history.
    - The rows live in Nora's Postgres, not the VM, where a hostile page could
      rewrite them.
    - **What a session is** (decision 5): one task in progress across turns,
@@ -701,15 +809,30 @@ session names it, and does not restart the task from scratch.
 
 1. **Accepted, 2026-09-30:** a Docker account login is a dependency (ADR 0019,
    DEC-243).
+2. **Decided, 2026-10-01 (was open):** **one VM PER SOCIAL UNIT is the intended
+   grain** (friends, ridgeline, wedding), so a unit's rooms share a machine and
+   two units never do. **It is not built:** today there is one VM
+   (`nora-computer`) with a directory and a user per room scope (§3), and one
+   VM per unit is tracked as issue #678.
+3. **Decided, 2026-10-01 (was open):** **no browser logins are allowed for
+   now.** No account may stay logged in inside the browser. It matters only
+   for S4, which is not built, and §8's "Nora's own low-value accounts, one
+   profile per room" is withdrawn until a new ruling.
 4. **Decided, 2026-09-30:** retire `make_artifact`, Smith, `LocalDockerBackend`,
    `/api/tokens` and `docker.sock`. **Keep** the job outbox, poller and
-   `compute_jobs` as the delivery path for a future `delegate_task`.
+   `compute_jobs` as the delivery path for a future `delegate_task`. Done in S3b
+   (#672, DEC-254).
 5. **Decided, 2026-09-30:** a session is one task across turns (§15.2). It
    expires on inactivity or on its resources being gone, and never deletes
    work. The numbers live in `[computer.sessions]` in `config.toml`.
 6. **Decided, 2026-09-30:** the containment line (§15.4).
+7. **Decided, 2026-10-01:** **Docker login expiry is NOT tested.** If the
+   login lapses, an alert goes to the alert channel and the operator logs in
+   again. S1's login test is dropped; Chromium RSS stays open (S1's other row).
+   No alert rule for it exists yet.
+8. **Decided, 2026-10-01:** the VM may fetch from `pypi.org` and the Ubuntu
+   archives (egress allowed, §8). The sbx policy is an implementation PR's.
+9. **Decided, 2026-10-01:** recovery from a host reboot is **out of scope** of this design: nothing here designs or builds it.
 
-## Open decisions (operator)
-
-2. One VM with a directory per room (proposed), or one VM per room?
-3. Which accounts, if any, may stay logged in inside the browser?
+**Open:** Chromium RSS (a measurement, S1), and everything S4 needs. No open
+decision is left in this design.
