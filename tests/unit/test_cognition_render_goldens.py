@@ -1,13 +1,14 @@
-"""Step 3a of `design/context-assembly/04-every-occasion.md` §5: the Cognition
-session's prompt renderer moves out of `nora/domain` into `nora/language`
-(step 3b makes it use the `nora.language` renderers, and a domain module may
-not import them), and NOT ONE BYTE the session reads changes.
+"""Step 3b of `design/context-assembly/04-every-occasion.md` §5: the Cognition
+session's prompt is built from context-assembly blocks, and THIS is what it now
+reads, over the fixtures step 3a captured its old format from.
 
-**The goldens in `tests/fixtures/cognition_render_step3a_goldens.json` were
-captured from `master` at `2ae69a51`, BEFORE the module was touched**, over
-synthetic fixtures, and are the criterion. What is compared is `render_agenda`'s
-whole prompt (and `clock_line` and `ago` themselves), not a substring of it,
-over what a move and a later rewrite could disagree on:
+The cases are the ones step 3a froze (`tests/fixtures/cognition_render_pre3b_
+baseline.json`, captured from `master` at `2ae69a51` before the module moved,
+kept untouched and renamed: it is the old-format oracle that
+`test_cognition_render_parity.py` reads facts out of). What is compared here is
+`render_agenda`'s whole prompt (and `clock_line` and `ago` themselves) against the
+capture of the NEW format, `tests/fixtures/cognition_render_step3b_goldens.json`,
+over what a later rewrite could disagree on:
 
 * messages: one, many, an older day, an edit, a withdrawn body, a reaction, a
   delete, cues, a body with a newline, a body past its clip;
@@ -23,6 +24,13 @@ over what a move and a later rewrite could disagree on:
   the probe's hand-written agenda (no clock);
 * names and words carrying `[ ] : < & " '`.
 
+**The type text is held out of the goldens.** Every block opens with its type's
+`description` and `fields`, so a capture that held them would change with every
+edit of a sentence in `nora.domain.block_types`. They are
+stripped before the comparison, and
+`test_every_block_carries_exactly_its_types_description_and_fields` holds each
+one to the registry's own text, so what a model reads is still pinned.
+
 Nothing here regenerates a golden. Changing one is a model-visible change and
 belongs in a step that says so.
 """
@@ -30,6 +38,7 @@ belongs in a step that says so.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -38,6 +47,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.cognition_ground import (
     EventLine,
     Grounding,
@@ -46,14 +56,20 @@ from nora.domain.cognition_ground import (
     RollupLine,
 )
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
-from nora.domain.prompt import ago
+from nora.domain.prompt import ago, escape_attr
 from nora.domain.stimuli import Stimulus
 from nora.language import cognition_render as cr
 
 GOLDEN: dict[str, str] = json.loads(
-    (Path(__file__).parent.parent / "fixtures" / "cognition_render_step3a_goldens.json")
+    (Path(__file__).parent.parent / "fixtures" / "cognition_render_step3b_goldens.json")
     .read_text(encoding="utf-8"),
 )
+
+#: What each block's opening tag says about its TYPE (`ContextBlock.render`
+#: writes it last, as `description="..."` and, for a type with fields,
+#: `fields="..."`). An attribute value is escaped, so a `"` cannot end it early.
+_TYPE_TEXT = re.compile(r' description="[^"]*"(?: fields="[^"]*")?')
+_OPENING = re.compile(r"<([a-z_]+)((?: [a-z_]+=\"[^\"]*\")*)(/?)>")
 
 CASES: dict[str, Callable[[], str]] = {}
 
@@ -430,12 +446,14 @@ def _() -> str:
     return _render(stims, _g(*recs), budget=cr.RenderBudget(record_chars=3000, min_item_chars=500))
 
 
-@_case("budget-drops-exactly-one-earlier-message")
+@_case("budget-drops-exactly-one-earlier-message")  # in the 3a format; see the parity test
 def _() -> str:
     stims, recs = _chatty(count=5, width=80)
-    need = sum(len(cr._record_line(r, (), now_ms=NOW, tz=HK, message_chars=400)) + 1 for r in recs)
+    # 645 is what the step 3a baseline's own `need - 40` came to for these five
+    # rows (685 characters of old lines): a literal, so this case asks the same
+    # question of both formats and not one measured by the format under test.
     return _render(stims, _g(*recs), budget=cr.RenderBudget(
-        record_chars=need - 40, min_item_chars=50,
+        record_chars=645, min_item_chars=50,
     ))
 
 
@@ -777,68 +795,87 @@ def _() -> str:
 # =============================================================================
 
 
+def stripped(text: str) -> str:
+    """The prompt without each block's type text (held to the registry below)."""
+    return _TYPE_TEXT.sub("", text)
+
+
 @pytest.mark.parametrize("name", sorted(CASES))
-def test_the_prompt_is_byte_identical_to_master(name: str):
-    assert CASES[name]() == GOLDEN[name]
+def test_the_prompt_is_what_step_3b_captured(name: str):
+    assert stripped(CASES[name]()) == GOLDEN[name]
 
 
 def test_every_case_has_a_golden_and_no_golden_is_orphaned():
     assert set(CASES) == set(GOLDEN)
 
 
+@pytest.mark.parametrize("name", sorted(CASES))
+def test_every_block_carries_exactly_its_types_description_and_fields(name: str):
+    """The text the goldens hold out is the registry's, on every opening tag."""
+    text = CASES[name]()
+    for tag, attrs, _closed in _OPENING.findall(text):
+        if ' description="' not in attrs:
+            continue       # an element (`m`, `note`, ...), not a block: a block says what it is
+        block_type = BLOCK_TYPES[tag]
+        want = f' description="{escape_attr(block_type.description)}"'
+        if block_type.annotations:
+            fields = "; ".join(f"`{k}` is {v}" for k, v in block_type.annotations)
+            want += f' fields="{escape_attr(fields)}"'
+        assert attrs.endswith(want), (name, tag)
+
+
 def test_the_goldens_vary_what_this_step_is_about():
     """What each golden holds, so «every part present» is a checked property of
     the fixtures and not a claim about them."""
     must = {
-        "one-message": ("[#101] Ada, 14:50 (40 min ago): dinner friday at 8?",),
-        "many-messages-from-and-to": ("(from ", "the newest"),
-        "two-messages-in-one-minute-use-the-at-form": ("(at ",),
-        "older-day-and-days-ago": ("Tue 29 Sep 13:30 (1 d ago)", "(3 d ago)"),
-        "edit-and-edited-flag-with-cues": ("(edited)", "[cues: datetime, rsvp]"),
-        "reaction-with-and-without-words-and-emoji": ("reacted 👍 to [#44]", "reacted ? to"),
-        "delete-and-withheld-words": ("deleted by its author", "(the words are withdrawn)"),
-        "own-sends-in-the-window": ("Nora (you)", "(no words)"),
+        "one-message": ('<m n="101" at="14:50 (40 min ago)" from="Ada">dinner friday at 8?</m>',),
+        "many-messages-from-and-to": ('window="from ', "the newest"),
+        "two-messages-in-one-minute-use-the-at-form": ('window="at ',),
+        "older-day-and-days-ago": ('at="Tue 29 Sep 13:30 (1 d ago)"', '(3 d ago)"'),
+        "edit-and-edited-flag-with-cues": ('edited="yes"', 'cues="datetime, rsvp"'),
+        "reaction-with-and-without-words-and-emoji": ('n="44"', 'reaction="👍"', 'reaction="?"'),
+        "delete-and-withheld-words": ('deleted="yes"', 'withdrawn="yes"'),
+        "own-sends-in-the-window": ('own="yes"',),
         "rollup-lines-of-every-kind": (
             "were in the same place", "arrived at Ramen Ya", "arrived ", "never at home",
-            "scored anomalous", "something_new",
+            "scored anomalous", "something_new", '<rollup kind="colocation">',
         ),
-        "budget-drops-the-oldest-and-says-which": ("earlier messages not shown: #1001 to #",),
-        "budget-drops-exactly-one-earlier-message": ("(1 earlier message not shown",),
-        "could-not-be-shown-singular-and-plural-with-readable-lines": (
-            "(4 of these could not be shown)",),
-        "could-not-be-shown-exactly-one": ("(one of these could not be shown)",),
+        "budget-drops-the-oldest-and-says-which": (
+            'earlier_not_shown="', 'earlier_range="1001 to ',
+        ),
+        "budget-drops-exactly-one-earlier-message": ('earlier_not_shown="',),
+        "could-not-be-shown-singular-and-plural-with-readable-lines": ('unreadable="4"',),
+        "could-not-be-shown-exactly-one": ('unreadable="1"',),
         "returning-items-one-and-many-sessions": (
-            "(returning: left open by 1 earlier session)",
-            "(returning: left open by 2 earlier sessions)",
+            'returning="left open by 1 earlier session"',
+            'returning="left open by 2 earlier sessions"',
         ),
         "social-play-time-self-and-unknown-items": (
             "new social items", "new play sample", "a time stimulus is due:",
             "a self-wake is due:", "1 weird stimuli:",
         ),
         "several-rooms-with-an-unlabelled-one-and-events": (
-            "«a room with no name»", "Already recorded for room «Room B»:",
+            "«a room with no name»", '<room_events room="«Room B»">',
         ),
-        "reads-line-one-room": ("Your read tools look through room «Room A».",),
+        "reads-line-one-room": ("<reads>\nYour read tools look through room «Room A».\n</reads>",),
         "reads-line-several-rooms-with-first-look": (
             "Your read tools take a `room`, one of:", "This is your first look",
         ),
         "reads-line-and-a-return": ("You last looked at this group 3 h ago.",),
-        "register-notes-only": ("Open notes of this group",),
-        "register-events-only": ("no time set", ", revision rev-3"),
-        "register-note-and-event-line-caps": ("more open notes not listed",),
-        "register-cut-at-its-character-budget": ("(more index lines not listed)",),
-        "probe-no-clock-no-grounding": ("(returning: left open by 2 earlier sessions)",),
-        "a-whole-session": (
-            "Open notes of this group", "Already recorded for room", "(you)", "returning",
-        ),
+        "register-notes-only": ("<note_index>", 'n="n-77"'),
+        "register-events-only": ('when="no time set"', 'revision="rev-3"'),
+        "register-note-and-event-line-caps": ('not_listed="4"',),
+        "register-cut-at-its-character-budget": ('not_listed="',),
+        "probe-no-clock-no-grounding": ('returning="left open by 2 earlier sessions"',),
+        "a-whole-session": ("<note_index>", "<events>", 'own="yes"', "returning"),
     }
     for name, parts in must.items():
         for part in parts:
             assert part in GOLDEN[name], (name, part)
-    assert "Open notes" not in GOLDEN["register-none-has-no-trailing-block"]
-    assert "\n\n" not in GOLDEN["register-none-has-no-trailing-block"]
-    assert "It is" not in GOLDEN["probe-no-clock-no-grounding"]
-    assert "[#" not in GOLDEN["probe-no-clock-with-grounding-ignored"]
-    assert "Open notes" not in GOLDEN["register-never-shown-in-a-probe"]
+    assert "<note_index" not in GOLDEN["register-none-has-no-trailing-block"]
+    assert GOLDEN["register-none-has-no-trailing-block"].endswith("</agenda>")
+    assert "<clock" not in GOLDEN["probe-no-clock-no-grounding"]
+    assert "<m " not in GOLDEN["probe-no-clock-with-grounding-ignored"]
+    assert "<note_index" not in GOLDEN["register-never-shown-in-a-probe"]
     assert GOLDEN["no-items-no-clock"] == ""
     assert "LEAK" not in GOLDEN["could-not-be-shown-singular-and-plural-with-readable-lines"]

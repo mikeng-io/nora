@@ -47,6 +47,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.unit.cognition_view import blocks, items, named
 
 NOW = 1_790_000_000_000
 HOME = Room("signal", "home")
@@ -314,10 +315,14 @@ async def test_the_prompt_says_what_time_it_is_and_how_old_each_item_is():
     agent = _Agent()
     runner, _s, _l = _runner(agent=agent)
     await _wake(runner, (_stim(1, HOME, at=NOW - 90 * 60_000),))
-    first, _reads, item = agent.prompts[0].splitlines()[:3]
-    assert first.startswith("It is ") and "(UTC)" in first
-    assert "This is your first look at this group." in first
-    assert "1 h 30 min ago" in item, item
+    prompt = agent.prompts[0]
+    # the clock is the FIRST thing she reads, then which room her reads look through
+    assert [b.tag for b in blocks(prompt)][:2] == ["clock", "reads"]
+    (clock,) = named(prompt, "clock")
+    (item,) = items(prompt)
+    assert (clock.text or "").strip().startswith("It is ") and "(UTC)" in (clock.text or "")
+    assert "This is your first look at this group." in (clock.text or "")
+    assert "1 h 30 min ago" in item.attrib["window"], item.attrib
 
 
 async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
@@ -628,14 +633,73 @@ def test_the_objective_names_every_close_reason_the_session_closes_with():
 
 def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
     """Context framing, not a capability list (AGENTS.md; measured on the gate):
-    it says what the agenda block is, how old, which room, and what the
-    numbers are, and it does not enumerate the kinds of write she can make."""
+    it says what she is handed, in what order, and what is already written down,
+    and it does not enumerate the kinds of write she can make."""
     text = _objective()
-    # the agenda it describes is the one the renderer produces
-    assert "[#101] Ada, 14:05 (1 h 12 min ago): dinner friday?" in text
-    for phrase in ("the message's id", "(edited)", "[cues: ...]", "could not be\nshown",
-                   "the group's open notes", "which room your read tools"):
-        assert phrase in text or phrase.replace("\n", " ") in text, phrase
+    # the agenda it describes is the one the renderer produces: blocks, in order
+    for phrase in ("a clock, which room your read tools", "the agenda: one `item`",
+                   "the group's open notes", "its open events", "marked **returning**"):
+        assert phrase in text, phrase
+    # the judgement about a returning item, restored: the words may have moved
+    assert "the\ngroup's words may have moved since" in text
     # no enumeration of the write verbs (they carry their own descriptions)
     assert "Each note, event, Standing revision" not in text
     assert "note_create" not in text and "event_propose" not in text
+
+
+def test_the_objective_names_none_of_the_old_shapes_of_the_input():
+    """Step 3b of design/context-assembly/04-every-occasion.md: the input is an
+    `agenda` of `item`s, then notes and events. The objective quoted the OLD line
+    shape and kept its vocabulary («the list», «the lines under it», «below the
+    list», «the next list») after the format changed; none of it describes
+    anything the model is handed now."""
+    text = _objective().split("---\n", 2)[2]       # the instruction, not the changelog
+    for old in ("[#", "min ago)", "(edited)", "[cues:", "[room ", "Nora (you)",
+                "(returning:", "earlier messages not shown",
+                "(one of these could not be shown)", "Below the list", "under it",
+                "next list", "the list", "the lines", "agenda_item"):
+        assert old not in text, old
+
+
+def test_the_objective_teaches_nothing_the_block_types_already_say():
+    """The shape of the input (a message's id, the name to put in a note line, an
+    edit, a cue, a reaction, what a cut means, the section order) reaches the
+    model through the block types (`nora.domain.block_types`), so the objective
+    quotes none of it, and each of those sentences is PINNED where it lives."""
+    from nora.domain.block_types import BLOCK_TYPES
+
+    text = _objective()
+    for said_by_the_type in ("cite it exactly as [n]", "in parentheses before the ids",
+                             "Decided, Open, Owed, Proposed, Ruled out"):
+        assert said_by_the_type not in text
+    agenda = BLOCK_TYPES["agenda"]
+    fields = dict(agenda.annotations)
+    # the grammar: what each field is for, in the words the model reads
+    assert "cite it exactly as [n] at the end of the note line it supports" in fields["n"]
+    assert "or as digits in an event's cited ids" in fields["n"]
+    assert "this exact name, as written, goes in parentheses before the ids" in fields["from"]
+    assert "Decided, Proposed or Ruled out" in fields["from"]
+    assert "its sections run Decided, Open, Owed, Proposed, Ruled out" in agenda.description
+    # the citation grammar is said ONCE, in the fields; the description points at them
+    assert "as the `n` and `from` fields say" in agenda.description
+    assert "[n]" not in agenda.description
+    assert agenda.description.count("(names)") == 1          # only «takes no (names)»
+    # and the two line shapes nothing else taught, quoted from the validator
+    assert "An Owed line is `<name> -> <what> -> <due> [<ids>]`" in agenda.description
+    assert "the name is someone on the room's roster and never you" in agenda.description
+    assert "`when <event>` or `no date given`" in agenda.description
+    assert "takes no `(names)`" in agenda.description
+    assert "A Ruled out line is `<option>: <reason> (<names>) [<ids>]`" in agenda.description
+    # which field is the message's REAL id, and the note's, and where the room key is
+    assert fields["n"].startswith("a message's real id: ")
+    assert dict(BLOCK_TYPES["note_index"].annotations)["n"].startswith("the note's real id")
+    assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
+    # and what the old objective said about the rest, now on the fields
+    assert "changed after they were said" in fields["edited"]
+    assert "what code noticed" in fields["cues"] and "never a reading of it" in fields["cues"]
+    assert "not readable now" in fields["unreadable"]
+    assert "left out to fit" in fields["earlier_not_shown"]
+    assert "first and last message ids" in fields["earlier_range"]
+    assert "how many earlier looks left the item open" in fields["returning"]
+    assert "what you sent" in agenda.description and "marked `own`" in agenda.description
+    assert "context only, never cited" in fields["own"]

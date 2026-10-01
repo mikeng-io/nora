@@ -36,6 +36,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.unit.cognition_view import items as agenda_items
 
 HK = ZoneInfo("Asia/Hong_Kong")
 
@@ -688,7 +689,9 @@ async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strik
         (i["stimulus_ids"], i["strike"]) for i in second.agenda["items"]  # type: ignore[union-attr,index]
     )
     assert items == [([1], 1), ([2], 0)]
-    assert "(returning: left open by 1 earlier session)" in rig.agent.prompts[1]
+    assert [i.attrib.get("returning") for i in agenda_items(rig.agent.prompts[1])] == [
+        "left open by 1 earlier session", None,
+    ]
     assert sorted((c.reason, c.strike) for _, c, _ in rig.ledger.closes) == [
         ("struck", 2), ("waiting", 1), ("waiting", 1),
     ]
