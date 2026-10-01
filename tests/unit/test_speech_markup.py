@@ -108,7 +108,9 @@ def test_a_trailing_pause_is_refused():
     assert check(_BASE, _BASE + "<#0.50#>") == "bad_markup"
 
 
-@pytest.mark.parametrize("marker", ["<#5#>", "<#0#>", "<#0.005#>", "<#1.234#>", "<#abc#>", "<#-1#>"])
+@pytest.mark.parametrize(
+    "marker", ["<#5#>", "<#0#>", "<#0.005#>", "<#1.234#>", "<#abc#>", "<#-1#>"],
+)
 def test_a_pause_out_of_range_or_malformed_is_refused(marker):
     assert check(_BASE, f"好呀，{marker}聽日三點喺旺角等，記得帶把遮") == "bad_markup"
 

@@ -105,7 +105,8 @@ async def test_a_refused_answer_speaks_her_reply_normalised(answer, outcome):
 async def test_an_answer_with_no_markup_speaks_her_reply_not_the_models():
     """Punctuation the model moved is not worth speaking its copy for."""
     metrics = Metrics()
-    got = await _formatter(_Model("好呀，聽日三點喺旺角等。記得帶把遮"), metrics).format(text=_REPLY)
+    model = _Model("好呀，聽日三點喺旺角等。記得帶把遮")
+    got = await _formatter(model, metrics).format(text=_REPLY)
     assert got == _BASE
     assert _count(metrics, "unchanged") == 1
 
