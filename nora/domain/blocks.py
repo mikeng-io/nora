@@ -39,7 +39,7 @@ import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, tzinfo
-from typing import Literal, TypeVar, overload
+from typing import Literal, Protocol, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.prompt import age, escape, escape_attr, one_line
@@ -383,7 +383,7 @@ def wrap_outside_text(name: str, source: str, text: str) -> str:
     ).render()
 
 
-def assemble(blocks: Sequence[ContextBlock]) -> str:
+def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     """Every block that has something to say, in `order`, concatenated.
 
     Ordering is DATA here. It used to be the order of `+` operators in one
@@ -396,9 +396,22 @@ def assemble(blocks: Sequence[ContextBlock]) -> str:
     about, which is the honest arrangement — the asymmetry `_declared` used to
     carry (dropped from the body, kept in the list) meant every absent block
     needed a line arguing its own absence.
+
+    **`sep` is the occasion's own separator, and `None` is today's behaviour
+    exactly**: every block closed by one newline, so the text ends on a newline.
+    The tag prompt and the relevance gate assemble that way. The Dreamer's
+    adaptors each joined their blocks by hand instead (`"\\n\\n".join` in
+    proactive, culture and note-candidates, `"\\n".join` in the curator and
+    note-merge), and a hand join is how `_BLOCKS`' `order` came to be a comment
+    the text did not obey (`design/context-assembly/04-every-occasion.md` §5,
+    step 2). With a `sep` the blocks are JOINED by it, so nothing trails the last
+    one — the shape those hand joins produce, byte for byte — and the filter and
+    the ordering are the same as without.
     """
     chosen = sorted((b for b in blocks if b.body), key=lambda b: b.order)
-    return "".join(b.render() + "\n" for b in chosen)
+    if sep is None:
+        return "".join(b.render() + "\n" for b in chosen)
+    return sep.join(b.render() for b in chosen)
 
 
 @overload
@@ -841,3 +854,55 @@ def render_elements(
         )
         out.append(f"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>")
     return "\n".join(out)
+
+
+class _Spoken(Protocol):
+    """A row that carries who said it — `TranscriptRow`'s two name fields, read
+    by attribute because this module cannot import the model that has them."""
+
+    @property
+    def person_name(self) -> str | None: ...
+    @property
+    def sender_name(self) -> str | None: ...
+
+
+def row_speaker(row: _Spoken) -> str:
+    """The `from` a transcript row carries: the identity-canonical name, else the
+    sender's self-set one, else `unknown` — never the raw account id (R-18,
+    DEC-80). `speaker_name` applies the fallback AFTER the collapse; this is the
+    one place the two fields are named, for the windows that render a row and
+    the validators that must agree with what was rendered."""
+    return speaker_name(row.person_name, row.sender_name)
+
+
+def render_row_window(
+    rows: Sequence[Row],
+    *,
+    row_id: Callable[[Row], int],
+    attrs: Callable[[Row], Sequence[tuple[str, str | None]]],
+    body: Callable[[Row], str | None],
+) -> str:
+    """A window of transcript rows as `<m n="<row id>" …>body</m>`, one element
+    per row — `render_elements` with the one thing every pass that cites rows
+    back shares fixed.
+
+    **`n` IS THE ROW'S OWN ID, never a position, and it is always first.** A pass
+    whose model cites rows back — note-candidates' `message_ids`, the curator's
+    grounding — validates the citation against the ids it rendered, and a
+    per-render position fails that join silently and empties the pass. The tag
+    prompt is the one occasion that uses positions, with `resolve_positions` to
+    map them back, and it renders through `render_messages` instead. A pass that
+    cites ids must not be able to forget that, so it is not an attribute the
+    caller supplies.
+
+    `attrs` is the occasion's OWN attributes after `n`, in its order — the
+    candidates' `at`, `from`, `room`, `reply_to`; the curator's `age` and `from`
+    — and a `None` drops its attribute, as in `render_elements`. Escaping, the
+    one-line collapse of every value and the body's escape are
+    `render_elements`'; nothing here can switch them off.
+    """
+    return render_elements(
+        rows, tag="m",
+        attrs=lambda row, _i: (("n", str(row_id(row))), *attrs(row)),
+        body=body,
+    )

@@ -215,6 +215,32 @@ def render_notes(
     )
 
 
+def today_block(when: date | str) -> ContextBlock:
+    """The one-line `<today>` block: a DAY, `2026-10-01 Thu`, no time and no zone.
+
+    Built three ways before this (note-merge, note-candidates and the curator
+    each wrote `ContextBlock(name="today", body=escape(...))` and the curator
+    its own fallback), so a change to the format was three edits. The caller
+    passes the day and stamps its own `order` and `key` with `restamp` — where
+    a block sits is the prompt's, not the block's. Note-merge declares no table
+    and takes the defaults.
+
+    `when` is a `date` for every real day; a `str` is shown as written, which
+    is the curator's floor for a stored `YYYYMMDD` that is not a date (month 13)
+    — a day it cannot name is still printed, because the model reads every
+    `anchor` against this line.
+
+    **A CLOCK THIS PROCESS OWNS, not anything the room said**, and escaped
+    anyway: it is a block body, and `assemble`'s contract is that a body arrives
+    escaped.
+
+    `<today>`, NOT `<now>`: the proactive pass's `<now>` is a MOMENT with a time
+    and a zone, a different block with a different description (#314).
+    """
+    text = f"{when:%Y-%m-%d %a}" if isinstance(when, date) else when
+    return ContextBlock(name="today", body=escape(text))
+
+
 def _about(note: Note, today: int | None) -> str | None:
     """The day the note is about, as a distance when there is a clock to read it
     against. `None` — no anchor, or no clock — DROPS the attribute rather than
