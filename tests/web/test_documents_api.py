@@ -415,3 +415,55 @@ async def test_a_removed_picture_is_not_found_not_an_error(media_client):
     client, world = media_client
     del world.blobs.blobs[world.shas["png"]]
     assert (await client.get(_url(world, world.shas["png"]))).status == 404
+
+
+# ------------------------------------------------------------------ a link's handle
+async def _seed_prefixed(world: _World, tail: str, room: str, by: str, title: str) -> UUID:
+    document_id = UUID("0123456789ab" + tail.ljust(20, "0"))
+    await world.store.create(
+        document_id=document_id, platform="signal", conversation_id=room,
+        created_by=by, revision=_rev(title),
+    )
+    return document_id
+
+
+async def test_a_link_handle_opens_the_document_the_person_reads(world_client):
+    client, world = world_client
+    handle = world.ids["a"].hex[:12]
+    resp = await client.get(f"/app/v1/documents/{handle}?personId=mei")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["id"] == str(world.ids["a"]) and body["title"] == "Lisbon"
+
+
+async def test_a_handle_is_resolved_among_what_the_person_reads_so_it_is_no_oracle(world_client):
+    client, world = world_client
+    mine = await _seed_prefixed(world, "1", "r1", "ken", "Mine")  # mei's room r1 reads it
+    theirs = await _seed_prefixed(world, "2", "r3", "jo", "Theirs")  # only jo reads it
+    assert mine.hex[:12] == theirs.hex[:12]
+    handle = mine.hex[:12]
+    for person, expected in (("mei", mine), ("jo", theirs)):
+        resp = await client.get(f"/app/v1/documents/{handle}?personId={person}")
+        assert (await resp.json())["id"] == str(expected)
+    # A person who reads neither, and a handle that matches nothing, answer identically.
+    miss = await client.get("/app/v1/documents/ffffffffffff?personId=sam")
+    hidden = await client.get(f"/app/v1/documents/{handle}?personId=sam")
+    assert miss.status == hidden.status == 404
+    assert await miss.json() == await hidden.json() == {"status": "not_found"}
+
+
+async def test_a_handle_two_readable_documents_share_is_the_same_404_never_picked(world_client):
+    client, world = world_client
+    await _seed_prefixed(world, "1", "r1", "ken", "One")
+    await _seed_prefixed(world, "2", "r1", "ken", "Two")  # mei reads both (room r1)
+    clash = await client.get("/app/v1/documents/0123456789ab?personId=mei")
+    miss = await client.get("/app/v1/documents/ffffffffffff?personId=mei")
+    assert clash.status == miss.status == 404
+    assert await clash.json() == await miss.json() == {"status": "not_found"}
+
+
+async def test_what_is_neither_an_id_nor_a_handle_is_refused_before_any_lookup(world_client):
+    client, _ = world_client
+    for bad in ("0123456789AB", "0123456789a", "0123456789abc", "%25", "_" * 12, "0123456789a%25"):
+        resp = await client.get(f"/app/v1/documents/{bad}?personId=mei")
+        assert resp.status == 400, bad

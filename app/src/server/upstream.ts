@@ -29,6 +29,9 @@ export interface RouteSpec {
 // An event id is a UUID (nora/web/api.py events_detail parses it with
 // Python's UUID and answers 400 otherwise); anything else cannot be a plan.
 const UUID = /^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
+// A document is opened by its id or by the 12-hex handle a link carries (the handle is not a
+// UUID, so a reply may carry it); Nora resolves it among what the viewer may read.
+const DOCUMENT_REF = /^(?:[0-9a-f]{12}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
 
 export const ROUTES: RouteSpec[] = [
   { pattern: ["status"] },
@@ -44,7 +47,7 @@ export const ROUTES: RouteSpec[] = [
   // names them. `scope: "self"` because the viewer decides what is visible, never
   // the browser; Nora answers "not visible" exactly as "no such document".
   { pattern: ["documents"], scope: "self", query: ["page", "pageSize"] },
-  { pattern: ["documents", ":id"], scope: "self", params: { id: UUID } },
+  { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },
   { pattern: ["presence", "analytics", "places"] },

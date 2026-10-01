@@ -1188,16 +1188,20 @@ def test_the_document_skill_names_only_tools_that_exist() -> None:
         assert tool in NATIVE_TOOLS, f"the skill names {tool}, which is not a tool"
 
 
-def test_the_document_skill_never_asks_her_to_say_an_id() -> None:
-    """A reply carrying a bare UUID is blocked at egress (`nora.agent.egress`), and a
-    document's `url` is `/documents/<uuid>`: a skill that told her to give the url
-    made the turn fail silently (measured 2026-10-01, the documents-on routing arm:
-    3 of 5 draws ERROR, 6 `egress_blocked: uuid` lines, none on the arm before it)."""
+def test_the_document_skill_gives_the_link_and_never_asks_her_to_say_an_id() -> None:
+    """A reply carrying a bare UUID is blocked at egress (`nora.agent.egress`): a skill that
+    told her to give a `url` built from the UUID made the turn fail silently (measured
+    2026-10-01, the documents-on routing arm: 3 of 5 draws ERROR, 6 `egress_blocked: uuid`
+    lines). The `url` is now `<public_url>/documents/<12-hex handle>`, which egress passes,
+    so she gives it verbatim; the id itself is still never written, and with no `url`
+    there is no link and she invents none."""
     from nora.agent.egress import scan_reply
 
     body = " ".join(
         (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
     )
-    assert "Never write the document's id or its path into a reply" in body
-    assert "give the `url`" not in body
+    assert "If the result carries a `url`, give it verbatim on a line of its own" in body
+    assert "Never write the document's id in a reply" in body
+    assert "say it is under Documents, by its title, and do not make one up" in body
+    assert "never a path or a host you were not given" in body
     assert scan_reply(body) is None, "the skill itself carries something egress would block"

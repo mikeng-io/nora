@@ -23,7 +23,7 @@ from aiohttp import web
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.documents import DocumentStore, RoomKey
+from nora.domain.documents import DocumentStore, RoomKey, is_handle
 from nora.domain.ports import BlobStore, MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
@@ -33,6 +33,7 @@ from nora.web.doctrine import build_doctrine_payload
 from nora.web.documents import (
     build_document_media,
     build_document_payload,
+    build_document_payload_by_handle,
     build_documents_payload,
 )
 from nora.web.games import (
@@ -652,14 +653,22 @@ def register_web_routes(
             return web.json_response(
                 {"status": "refused", "note": "a valid personId is required"}, status=400,
             )
-        try:
-            document_id = UUID(request.match_info["id"])
-        except ValueError:
-            return web.json_response({"status": "refused", "note": "bad id"}, status=400)
-        body = await build_document_payload(
-            store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
-            person_id=person_id, document_id=document_id,
-        )
+        ref = request.match_info["id"]
+        if is_handle(ref):
+            # A link's 12-hex handle, resolved among what this person may read.
+            body = await build_document_payload_by_handle(
+                store=a["web_documents"], rooms_of=a["web_rooms_of"],
+                persons=a["web_persons"], person_id=person_id, handle=ref,
+            )
+        else:
+            try:
+                document_id = UUID(ref)
+            except ValueError:
+                return web.json_response({"status": "refused", "note": "bad id"}, status=400)
+            body = await build_document_payload(
+                store=a["web_documents"], rooms_of=a["web_rooms_of"],
+                persons=a["web_persons"], person_id=person_id, document_id=document_id,
+            )
         if body is None:
             # Never a distinct "forbidden": an id must not confirm a document exists.
             return web.json_response({"status": "not_found"}, status=404)

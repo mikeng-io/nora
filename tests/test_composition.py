@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from nora.agent import tool_choice
-from nora.app.composition import Dependencies, StartupError, build_dependencies
+from nora.app.composition import (
+    Dependencies,
+    StartupError,
+    _require_a_sendable_public_url,
+    build_dependencies,
+)
 from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.config import load
@@ -2217,3 +2222,22 @@ async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     assert deps.computer_sweeper is not None
     assert deps.computer_sweep_seconds == 42.0
     assert deps.assembler._computer_reader is not None
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://12345678-1234-1234-1234-123456789012.example.com",  # UUID-shaped host
+        "https://api-abcdefghijklmnop.example.com",  # key-shaped host
+    ],
+)
+def test_a_public_url_egress_would_block_refuses_to_start(origin) -> None:
+    # The validator accepts these origins; egress blocks the whole link, so every reply that
+    # carried it would vanish. The boot check uses egress's own scan.
+    with pytest.raises(StartupError, match="egress would block the link"):
+        _require_a_sendable_public_url(origin)
+
+
+@pytest.mark.parametrize("origin", ["", "https://nora.67.zone", "http://localhost:3000"])
+def test_a_sendable_public_url_or_none_starts(origin) -> None:
+    _require_a_sendable_public_url(origin)

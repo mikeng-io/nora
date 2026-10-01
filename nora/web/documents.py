@@ -22,7 +22,13 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from nora.domain.documents import DocumentStore, DocumentSummary, RoomKey
+from nora.domain.documents import (
+    DocumentStore,
+    DocumentSummary,
+    RoomKey,
+    StoredDocument,
+    is_handle,
+)
 from nora.domain.ports import BlobStore
 from nora.persons import Persons
 
@@ -93,6 +99,30 @@ async def build_document_payload(
         person_id=person_id,
         rooms=rooms_of(person_id),
     )
+    return _detail(persons, stored)
+
+
+async def build_document_payload_by_handle(
+    *,
+    store: DocumentStore,
+    rooms_of: Callable[[str], frozenset[RoomKey]],
+    persons: Persons,
+    person_id: str,
+    handle: str,
+) -> dict[str, object] | None:
+    """`build_document_payload` for a link's 12-hex handle. The prefix is matched among the
+    documents `person_id` may read ONLY, and a handle that matches none, matches more than
+    one, or is not a handle is the same `None` as an unreadable document: the answer never
+    tells a miss from a document the viewer may not see, or from a collision."""
+    if not is_handle(handle):
+        return None
+    stored = await store.get_visible_by_handle(
+        handle=handle, person_id=person_id, rooms=rooms_of(person_id)
+    )
+    return _detail(persons, stored)
+
+
+def _detail(persons: Persons, stored: StoredDocument | None) -> dict[str, object] | None:
     if stored is None:
         return None
     return {
