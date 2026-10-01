@@ -1,0 +1,13 @@
+{
+  "type": "feature",
+  "summary": "Nora can now put a map in a document: she names the places and the system looks up where each one is. A person's home or position cannot be put on a map, and a place that cannot be found is refused by name so she can fix it.",
+  "details": [
+    "She never sees or writes a coordinate. When she reads a document back, the map's coordinates are left out.",
+    "Each place name is one lookup on the maps service when a document is saved."
+  ],
+  "limitations": [
+    "No route line is drawn between places, only the places themselves.",
+    "If the maps service is off or down, a document with a map is not saved and she is told so.",
+    "Every save looks the place names up again."
+  ]
+}

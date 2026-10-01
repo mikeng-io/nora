@@ -291,6 +291,29 @@ class RouteClient:
         out.update(place.dining())
         return out
 
+    async def locate(self, name: str) -> dict[str, Any]:
+        """The coordinate of ONE named place, for a SERVICE and never for the model
+        (design/artifact §40). NEVER raises. Same resolver as `place_info`, so the same
+        four statuses (`ok`, `ambiguous`, `not_found`, `unavailable`), but `ok` carries
+        `lat` and `lng` as well as `name`.
+
+        DEC-24 keeps a coordinate out of every model-facing schema, and this method is
+        why that still holds: its only caller is `DocumentService`, which writes the pair
+        into a stored `Map` and never into a tool result. A tool must not call it."""
+        try:
+            res = await self._resolver.resolve(name)
+        except Exception:
+            log.exception("locate resolve failed")
+            return {"status": "unavailable"}
+        if res.status == "ambiguous":
+            return {"status": "ambiguous", "could_be": list(res.could_be)}
+        if res.status == "not_found":
+            return {"status": "not_found"}
+        if res.status != "ok" or res.place is None:
+            return {"status": "unavailable"}
+        place = res.place
+        return {"status": "ok", "name": place.name, "lat": place.lat, "lng": place.lng}
+
     async def nearby_parking(
         self, *, lat: float, lng: float, radius_m: float | None = None,
     ) -> tuple[Any, ...] | None:

@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import hashlib
 import inspect
 import json
@@ -2727,7 +2728,8 @@ class DocumentPublisher(Protocol):
     async def publish(
         self, *, platform: str, conversation_id: str, person_id: str,
         raw: Any, written_by: str, document_id: UUID | None = None,
-        base_revision: int | None = None,
+        base_revision: int | None = None, person_names: frozenset[str] | None = None,
+        live_addresses: frozenset[str] | None = None,
     ) -> Any: ...
 
     async def read(
@@ -3586,6 +3588,27 @@ _FETCH_NOTES: Mapping[str, str] = {
     "unavailable": "I couldn't fetch that page just now. Say so, and never "
                    "present it as having found nothing.",
 }
+
+
+def _without_map_coordinates(spec: dict[str, Any]) -> dict[str, Any]:
+    """`spec` with every Map's `lat`, `lng` and `route` removed (design/artifact §40).
+    A stored Map carries the pair `DocumentService` looked up; DEC-24 keeps a coordinate out
+    of what the model reads, and publishing the spec back re-looks each place up by name."""
+    out = copy.deepcopy(spec)
+    stack = [out.get("root")]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        if node.get("type") == "Map":
+            props = node.get("props") or {}
+            props.pop("route", None)
+            for place in props.get("places") or []:
+                if isinstance(place, dict):
+                    place.pop("lat", None)
+                    place.pop("lng", None)
+        stack.extend(node.get("children") or [])
+    return out
 
 
 def _with_note(out: Mapping[str, object], notes: Mapping[str, str]) -> dict:
@@ -14582,7 +14605,8 @@ Args:
         try:
             out = await documents.publish(
                 platform=room.platform, conversation_id=bound_conversation_id,
-                person_id=tagger.person_id, raw=spec,
+                person_id=tagger.person_id, raw=spec, person_names=_route_person_names,
+                live_addresses=frozenset(_disclosed_live_addresses),
                 written_by=f"{document_actor}:{current_tag_id() or ''}",
                 document_id=target, base_revision=base_revision,
             )
@@ -14718,7 +14742,7 @@ Args:
                     "note": "It is too large to show here, so `spec` is left out. "
                             "To change it, send the whole document again with "
                             "`base_revision` set to this `revision`."}
-        return {**result, "spec": out.spec,
+        return {**result, "spec": _without_map_coordinates(out.spec),
                 "note": "This is the current revision. Apply the change to this spec "
                         "and publish it with `base_revision` set to `revision`."}
 
