@@ -657,6 +657,43 @@ async def test_a_state_change_waits_for_a_revision_in_flight(request):
         await engine.dispose()
 
 
+# --------------------------------------------------------------- one revision (§34)
+async def test_one_revision_is_its_own_snapshot_and_never_the_current_one(store):
+    doc_id = await _make(store, title="v1", sha=SHA_A)
+    await store.add_revision(
+        document_id=doc_id,
+        base_revision=1,
+        revision=_rev("v2", SHA_B, written_by="tag:2", media=(SHA_B,)),
+    )
+    old = await store.revision(document_id=doc_id, revision=1)
+    assert old is not None
+    assert (old.revision, old.title, old.sha256, old.written_by, old.media) == (
+        1, "v1", SHA_A, "tag:1", (),
+    )
+    assert old.spec["root"]["props"]["title"] == "v1"
+    assert old.text == "v1"
+    assert old.recorded_at.tzinfo is not None
+    new = await store.revision(document_id=doc_id, revision=2)
+    assert new is not None and new.title == "v2" and new.media == (SHA_B,)
+    # The history carries each revision's pictures, so an old one's can still be served.
+    assert [h.media for h in await store.history(document_id=doc_id)] == [(), (SHA_B,)]
+
+
+async def test_a_revision_that_does_not_exist_is_none(store):
+    doc_id = await _make(store)
+    for n in (0, 2, -1):
+        assert await store.revision(document_id=doc_id, revision=n) is None
+    assert await store.revision(document_id=uuid4(), revision=1) is None
+
+
+async def test_a_revision_of_an_archived_or_deleted_document_is_still_read_by_the_store(store):
+    # The store has no visibility and no state rule here; the caller gates on get_visible.
+    doc_id = await _make(store, title="kept")
+    await store.set_state(document_id=doc_id, state="deleted", set_by="ken")
+    kept = await store.revision(document_id=doc_id, revision=1)
+    assert kept is not None and kept.title == "kept"
+
+
 async def test_list_created_by_is_the_creators_documents_in_the_states_asked_for(store):
     mine = await _make(store, created_by="ken", title="mine")
     shelved = await _make(store, created_by="ken", title="shelved")

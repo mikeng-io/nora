@@ -112,6 +112,14 @@ describe("resolveUpstream", () => {
 
   it("names every self-scoped route explicitly", () => {
     const scoped = ROUTES.filter((r) => r.scope === "self").map((r) => r.pattern.join("/"));
-    expect(scoped).toEqual(["memory", "events", "events/:id", "documents", "documents/:id"]);
+    expect(scoped).toEqual([
+      "memory",
+      "events",
+      "events/:id",
+      "documents",
+      "documents/:id",
+      "documents/:id/revisions",
+      "documents/:id/revisions/:n",
+    ]);
   });
 });

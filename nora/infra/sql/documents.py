@@ -39,6 +39,7 @@ from nora.domain.documents import (
     RevisionRecord,
     RoomKey,
     StoredDocument,
+    StoredRevision,
     VisiblePage,
     ensure_utc_document,
     is_handle,
@@ -306,7 +307,7 @@ class SqlDocumentStore:
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         stmt = (
-            sa.select(_R.revision, _R.title, _R.sha256, _R.written_by, _R.recorded_at)
+            sa.select(_R.revision, _R.title, _R.sha256, _R.written_by, _R.recorded_at, _R.media)
             .where(_R.document_id == document_id)
             .order_by(_R.revision)
         )
@@ -319,8 +320,29 @@ class SqlDocumentStore:
                 sha256=r.sha256,
                 written_by=r.written_by,
                 recorded_at=ensure_utc_document(r.recorded_at, field="recorded_at"),
+                media=tuple(r.media),
             )
             for r in rows
+        )
+
+    async def revision(self, *, document_id: UUID, revision: int) -> StoredRevision | None:
+        stmt = sa.select(
+            _R.revision, _R.title, _R.spec, _R.text, _R.sha256, _R.media, _R.written_by,
+            _R.recorded_at,
+        ).where(_R.document_id == document_id, _R.revision == revision)
+        async with self._engine.connect() as conn:
+            r = (await conn.execute(stmt)).first()
+        if r is None:
+            return None
+        return StoredRevision(
+            revision=r.revision,
+            title=r.title,
+            spec=r.spec,
+            text=r.text,
+            sha256=r.sha256,
+            media=tuple(r.media),
+            written_by=r.written_by,
+            recorded_at=ensure_utc_document(r.recorded_at, field="recorded_at"),
         )
 
     async def list_visible(
