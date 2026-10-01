@@ -1,0 +1,11 @@
+{
+  "type": "fix",
+  "summary": "When Nora's document has a typing error in it, she is now shown exactly where, and told to send it as an object and not to say it was made until it is saved. Before, a long document with one stray quote failed with a message she could not act on.",
+  "details": [
+    "The document guidance she reads now says to send the document as an object, not as text."
+  ],
+  "limitations": [
+    "If her final message is held back for linking a document that was never saved, the room still gets the generic apology rather than a sentence saying the document was not saved.",
+    "Her notes can still record a document as published after her own false claim."
+  ]
+}
