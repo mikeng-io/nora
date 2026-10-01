@@ -216,6 +216,7 @@ CONVERTED = (
     "nora/language/note_curator.py",
     "nora/language/note_merge.py",
     "nora/language/proactive.py",
+    "nora/domain/summons.py",
     "nora/skills/loader.py",
 )
 

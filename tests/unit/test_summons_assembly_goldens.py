@@ -39,6 +39,7 @@ from typing import Any
 import pytest
 
 from nora.app.summons import UNSENT_REPLY_FOLLOW_UP
+from nora.domain import summons as summons_domain
 from nora.domain.summons import (
     Comment,
     ItemReading,
@@ -308,7 +309,7 @@ def _thread_long() -> SummonsContext:
 # ages, every bucket boundary (the summons' own vocabulary, not `prompt.age`)
 # =============================================================================
 
-_AGES: dict[str, timedelta | None] = {
+_AGES: dict[str, timedelta] = {
     "0s": timedelta(0), "1s": timedelta(seconds=1), "59s": timedelta(seconds=59),
     "60s": timedelta(seconds=60), "61s": timedelta(seconds=61),
     "89s": timedelta(seconds=89), "90s": timedelta(seconds=90),
@@ -333,7 +334,7 @@ for _label, _delta in _AGES.items():
 
 @_case("age-unknown-everywhere")
 def _age_unknown() -> SummonsContext:
-    return _ctx(summoned_at=None, post_taken_at=None,  # type: ignore[arg-type]
+    return _ctx(summoned_at=None, post_taken_at=None,
                 thread=(ThreadRow("u1", "no time", None, False),
                         ThreadRow("miles_example", "@noraexample ok", None, True)))
 
@@ -596,3 +597,46 @@ def test_a_block_that_escapes_to_nothing_is_still_rendered():
         'fields="`source` is where it was posted">\n\n</social_post>'
     )
     assert render_summons(CASES["question-control-characters-only"]()) == out
+
+
+# =============================================================================
+# the table is what is walked
+# =============================================================================
+
+
+def _spy(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every block `nora.domain.summons` hands to its `assemble`."""
+    seen: list[Any] = []
+    real = summons_domain.assemble
+
+    def spy(blocks, **kwargs):
+        blocks = list(blocks)
+        seen.extend(blocks)
+        return real(blocks, **kwargs)
+
+    monkeypatch.setattr(summons_domain, "assemble", spy)
+    return seen
+
+
+def test_every_block_assemble_is_handed_carries_its_rows_order_and_key(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The goldens cannot see a block left at the default `order=0`: the three
+    sort by list position when their orders tie, and the list is written in the
+    table's order, so the bytes agree either way. The table is what the model
+    reads only if the blocks that reach `assemble` carry it, so that is checked
+    directly: each block carries the `order` and `key` of the row for its
+    `source`, and every row is walked."""
+    seen = _spy(monkeypatch)
+    render_summons(CASES["thread-many-rows-and-elided-comments"]())
+    assert len(seen) == 3
+    rows = {source: (order, key) for _, order, key, source in summons_domain._BLOCKS}
+    for block in seen:
+        assert block.name == "social_post"
+        assert (block.order, block.key) == rows[dict(block.attrs)["source"]], block.attrs
+        assert block.when_empty == "render"
+    assert {dict(b.attrs)["source"] for b in seen} == set(rows)
+    assert [dict(b.attrs)["source"] for b in sorted(seen, key=lambda b: b.order)] == [
+        "the instagram post", "comments under that post",
+        "what the comment that tagged you asks",
+    ]

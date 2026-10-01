@@ -1,0 +1,44 @@
+[
+  {
+    "name": "4a: one row's order moves, so the thread is read before the post",
+    "file": "nora/domain/summons.py",
+    "old": "    (\"social_post\", 20, \"turn\", \"comments under that post\"),",
+    "new": "    (\"social_post\", 5, \"turn\", \"comments under that post\"),",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a: the separator is a blank line, not the newline the hand join wrote",
+    "file": "nora/domain/summons.py",
+    "old": "_SEP = \"\\n\"",
+    "new": "_SEP = \"\\n\\n\"",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  },
+  {
+    "name": "4a: a block is built without its row's order and key (the bytes agree, the table does not)",
+    "file": "nora/domain/summons.py",
+    "old": "        order=order, key=key, when_empty=\"render\",\n",
+    "new": "        when_empty=\"render\",\n",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
+  },
+  {
+    "name": "4a: the three blocks are joined by hand again, so the table's order is a comment",
+    "file": "nora/domain/summons.py",
+    "old": "assemble(blocks, sep=_SEP)",
+    "new": "_SEP.join(b.render() for b in blocks)",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
+  },
+  {
+    "name": "4a: an empty body is dropped, as `assemble` drops it, where the hand join kept the pair",
+    "file": "nora/domain/summons.py",
+    "old": "        order=order, key=key, when_empty=\"render\",\n",
+    "new": "        order=order, key=key,\n",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master tests/unit/test_summons_assembly_goldens.py::test_a_block_that_escapes_to_nothing_is_still_rendered"
+  },
+  {
+    "name": "4a: a stranger's words are not escaped, so a caption writes a closing tag (R-13)",
+    "file": "nora/domain/summons.py",
+    "old": "body=escape(text),",
+    "new": "body=text,",
+    "target": "tests/unit/test_summons_assembly_goldens.py::test_the_prompt_is_byte_identical_to_master"
+  }
+]
