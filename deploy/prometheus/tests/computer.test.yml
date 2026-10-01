@@ -94,6 +94,67 @@ tests:
         alertname: ComputerCallsFailing
         exp_alerts: []
 
+  # THE THRESHOLD ITSELF. `increase` extrapolates at the window edges, so the
+  # claim is pinned where it holds: with the primed zero baseline in the window,
+  # exactly 5 events fire the rule and exactly 4 do not, whether they arrive one
+  # a minute or as one burst inside a single scrape.
+  - interval: 1m
+    input_series:
+      - series: 'nora_computer_calls_total{job="nora",op="run",status="unavailable"}'
+        values: '0x20 1 2 3 4 5 5x30'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: ComputerCallsFailing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ComputerCallsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning, job: nora }
+            exp_annotations:
+              summary: "5 computer calls answered unavailable in 15 minutes"
+              description: >-
+                Compare by op: `nora_computer_calls_total{status="unavailable"}`.
+                When `nora_computer_up` is also 0 this is `ComputerDown`'s cause;
+                when it is 1 computerd is answering and failing, so read its unit
+                journal (`journalctl --user -u nora-computer -n 100`).
+    promql_expr_test:
+      - expr: sum by (job) (increase(nora_computer_calls_total{status="unavailable"}[15m]))
+        eval_time: 25m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 5 }
+  - interval: 1m
+    input_series:
+      - series: 'nora_computer_calls_total{job="nora",op="run",status="unavailable"}'
+        values: '0x20 5 5x30'
+    alert_rule_test:
+      - eval_time: 21m
+        alertname: ComputerCallsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning, job: nora }
+            exp_annotations:
+              summary: "5 computer calls answered unavailable in 15 minutes"
+              description: >-
+                Compare by op: `nora_computer_calls_total{status="unavailable"}`.
+                When `nora_computer_up` is also 0 this is `ComputerDown`'s cause;
+                when it is 1 computerd is answering and failing, so read its unit
+                journal (`journalctl --user -u nora-computer -n 100`).
+  - interval: 1m
+    input_series:
+      - series: 'nora_computer_calls_total{job="nora",op="run",status="unavailable"}'
+        values: '0x20 1 2 3 4 4x30'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: ComputerCallsFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ComputerCallsFailing
+        exp_alerts: []
+    promql_expr_test:
+      - expr: sum by (job) (increase(nora_computer_calls_total{status="unavailable"}[15m]))
+        eval_time: 24m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 4 }
+
   # `denied` and `nothing_found` are answers, not the computer failing: a flood
   # of either (the model asking for files that are not there) never fires.
   - interval: 1m

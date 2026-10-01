@@ -248,7 +248,13 @@ groups:
       # to keep `nora_computer_up` at 1 (a full disk, an OS error, a command
       # path that raises). `unavailable` only: `denied` is a refusal as asked and
       # `nothing_found` an honest empty (R-27), neither is the computer failing.
-      # 5 in 15m: a computerd restart mid-call costs one or two.
+      # "5 in 15m" is `increase() >= 5`, and `increase` EXTRAPOLATES at the window
+      # edges: with the zero baseline sample inside the window (the counters are
+      # created at 0 at start) exactly 5 events read exactly 5 and exactly 4 read
+      # 4, one burst inside a single scrape reads 5 (the promtool cases at the
+      # threshold, below), but events straddling the window's start can read
+      # a little under or over. So the threshold is "about 5", never an exact
+      # count. A computerd restart mid-call costs one or two.
       - alert: ComputerCallsFailing
         expr: sum by (job) (increase(nora_computer_calls_total{status="unavailable"}[15m])) >= 5
         for: 0m
