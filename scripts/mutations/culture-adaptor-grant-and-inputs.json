@@ -114,8 +114,8 @@
   {
     "name": "part 2c: the room block disappears from the prompt",
     "file": "nora/language/culture.py",
-    "old": "        parts: list[str] = [self._room_block(key)]",
-    "new": "        parts: list[str] = []",
+    "old": "        parts: list[ContextBlock] = [self._room_block(key)]",
+    "new": "        parts: list[ContextBlock] = []",
     "target": "tests/unit/test_culture_adaptor.py -k room_block_names_the_room"
   },
   {

@@ -1,9 +1,74 @@
 import { describe, expect, it } from "vitest";
 import { parseDocument, type DocumentSpec } from "./catalog";
-import { planSlides, slideFromQuery, slideKey, slideSpec, swipeStep, SWIPE_MIN_PX } from "./present";
+import {
+  KEYS_OWNED_BY,
+  planSlides,
+  slideFromQuery,
+  slideKey,
+  slideSpec,
+  swipeStep,
+  SWIPE_MIN_PX,
+  targetOwnsKey,
+} from "./present";
+
+describe("targetOwnsKey", () => {
+  // A stand-in element: what `closest` matches is given per node, attributes likewise.
+  type Fake = { matches: string[]; attrs: string[]; parentElement: Fake | null; scrolls?: boolean };
+  const node = (matches: string[] = [], attrs: string[] = [], parent: Fake | null = null, scrolls = false): Fake => ({
+    matches,
+    attrs,
+    parentElement: parent,
+    scrolls,
+  });
+  const el = (n: Fake) => {
+    const wrap = (f: Fake | null): Parameters<typeof targetOwnsKey>[1] =>
+      f && {
+        closest: (sel: string) => {
+          for (let p: Fake | null = f; p; p = p.parentElement) {
+            if (p.matches.some((m) => sel.split(", ").includes(m))) return p;
+          }
+          return null;
+        },
+        hasAttribute: (a: string) => f.attrs.includes(a),
+        get parentElement() {
+          return wrap(f.parentElement);
+        },
+        __fake: f,
+      } as never;
+    return wrap(n);
+  };
+  const scrolls = (e: unknown) => Boolean((e as { __fake: Fake }).__fake.scrolls);
+
+  it("leaves arrows and space with a table's scroll region, a code block, a diagram and a map", () => {
+    for (const owner of ["[role='region']", "pre", "[role='img']", ".maplibregl-map"]) {
+      expect(KEYS_OWNED_BY).toContain(owner);
+      const deck = node([], ["data-present-deck"]);
+      const inside = node([], [], node([owner], [], deck));
+      expect(targetOwnsKey("ArrowRight", el(inside), scrolls), owner).toBe(true);
+      expect(targetOwnsKey(" ", el(inside), scrolls), owner).toBe(true);
+    }
+  });
+
+  it("leaves them with anything that scrolls between the focus and the deck, but not the deck's own scroller", () => {
+    const deck = node([], ["data-present-deck"]);
+    const scroller = node([], ["data-present-scroller"], deck, true);
+    const box = node([], [], scroller, true);
+    expect(targetOwnsKey("ArrowDown", el(node([], [], box)), scrolls)).toBe(true);
+    expect(targetOwnsKey("ArrowDown", el(node([], [], scroller)), scrolls)).toBe(false);
+  });
+
+  it("lets Space and Enter press a focused button, and never keeps Escape from the deck", () => {
+    const deck = node([], ["data-present-deck"]);
+    const button = node(["button"], [], deck);
+    expect(targetOwnsKey(" ", el(button), scrolls)).toBe(true);
+    expect(targetOwnsKey("ArrowRight", el(button), scrolls)).toBe(false);
+    expect(targetOwnsKey("Escape", el(node(["pre"], [], deck)), scrolls)).toBe(false);
+    expect(targetOwnsKey("ArrowRight", el(deck), scrolls)).toBe(false);
+  });
+});
 
 // The present view's two rules a browser cannot be trusted to show: how a document splits
-// into slides, and what each key does (design/artifact §32).
+// into slides, and what each key does (design/artifact §34).
 
 const md = (text: string) => ({ type: "Markdown", props: { text } });
 const section = (title: string, ...children: unknown[]) => ({ type: "Section", props: { title }, children });

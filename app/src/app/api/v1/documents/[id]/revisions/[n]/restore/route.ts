@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { checkSession } from "@/server/session";
 import { proxyDocumentRestore } from "@/server/document-restore";
 
-// Restore an old revision of a document as a new one (design/artifact §32). The rules
+// Restore an old revision of a document as a new one (design/artifact §34). The rules
 // live in src/server/document-restore.ts.
 const NORA_API_BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 

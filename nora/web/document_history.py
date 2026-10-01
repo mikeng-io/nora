@@ -1,4 +1,4 @@
-"""A document's revision history in the portal (ADR 0020, design/artifact §32).
+"""A document's revision history in the portal (ADR 0020, design/artifact §34).
 
 Every revision is a full snapshot in `document_revision`, so the history needs no new
 table: three routes read and copy what is already there, for ONE viewer.
@@ -13,8 +13,14 @@ table: three routes read and copy what is already there, for ONE viewer.
 THE GATE is the document's own read gate, `DocumentStore.get_visible`, before anything
 else is read: whoever may open the document may read its history, and a document they may
 not read, a deleted one, an unknown id, and a revision number the document never had are
-the one 404. An archived document's history is readable (it still opens by its link), and
-its restore is refused like any revision of an archived document (`not_active`).
+the one 404, and so is a forgotten one (`nora person forget`, DEC-264). An archived
+document's history is readable (it still opens by its link), and its restore is refused
+like any revision of an archived document (`not_active`). Both reads carry `roomLabel` by
+the detail payload's rule: only for a viewer in that room.
+
+LIMITATION (operator ruling 2026-10-01, DEC-268): editing something out of a document does
+not remove it from its history. Every earlier revision stays readable to whoever may read
+the document; deleting it, or forgetting its creator, hides all of it. No redaction.
 
 RESTORE goes through the store's one revision path, `add_revision` with `base_revision`:
 the viewer says which revision they were looking at as current, and a revision that landed
@@ -42,6 +48,7 @@ from aiohttp import web
 from nora.documents.check import check_document
 from nora.domain.documents import DocumentStore, RevisionIn, RoomKey, StoredDocument
 from nora.persons import Persons
+from nora.web.documents import RoomLabel, _room_label
 
 log = logging.getLogger(__name__)
 
@@ -72,10 +79,16 @@ async def _readable(
     person_id: str,
     document_id: UUID,
 ) -> StoredDocument | None:
-    # The document's own read gate: not readable, deleted and unknown are one `None`.
-    return await store.get_visible(
+    # The document's own read gate: not readable, deleted and unknown are one `None`. A
+    # forgotten document (`nora person forget`, design §32) is `deleted` and so already
+    # `None`; the check says it again for any state, as `change_document_state` does, so
+    # its history stays as gone as the document.
+    stored = await store.get_visible(
         document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)
     )
+    if stored is None or stored.summary.forgotten:
+        return None
+    return stored
 
 
 async def build_revisions_payload(
@@ -85,6 +98,7 @@ async def build_revisions_payload(
     persons: Persons,
     person_id: str,
     document_id: UUID,
+    room_label: RoomLabel | None = None,
 ) -> dict[str, object] | None:
     current = await _readable(store, rooms_of, person_id, document_id)
     if current is None:
@@ -95,6 +109,8 @@ async def build_revisions_payload(
         "title": current.summary.title,
         "revision": current.summary.revision,
         "state": current.summary.state,
+        # The detail payload's rule: the room's label only for a viewer in that room.
+        "roomLabel": _room_label(rooms_of(person_id), room_label, current.summary),
         "revisions": [
             {
                 "revision": h.revision,
@@ -116,6 +132,7 @@ async def build_revision_payload(
     person_id: str,
     document_id: UUID,
     revision: int,
+    room_label: RoomLabel | None = None,
 ) -> dict[str, object] | None:
     current = await _readable(store, rooms_of, person_id, document_id)
     if current is None:
@@ -128,6 +145,7 @@ async def build_revision_payload(
         "revision": found.revision,
         "currentRevision": current.summary.revision,
         "state": current.summary.state,
+        "roomLabel": _room_label(rooms_of(person_id), room_label, current.summary),
         "title": found.title,
         "sha256": found.sha256,
         "recordedAt": _iso(found.recorded_at),
@@ -165,8 +183,11 @@ async def restore_revision(
     old = await store.revision(document_id=document_id, revision=revision)
     if old is None:
         return RestoreResult("not_found")
-    # An archived document is refused by `add_revision` itself (`not_active`), the one
-    # place every revision is refused, so this path has no second copy of that rule.
+    # An archived document is refused before anything else is judged, so asking to restore
+    # its current revision says the more specific reason (`not_active`), not `current`.
+    # `add_revision` refuses it again under its lock, for a change of state made since.
+    if current.summary.state != "active":
+        return RestoreResult("not_active")
     if revision == current.summary.revision:
         return RestoreResult("current")
     checked = check_document(old.spec)
@@ -188,8 +209,15 @@ async def restore_revision(
     )
     if outcome.status == "ok" and outcome.document is not None:
         return RestoreResult("ok", outcome.document.summary.revision)
-    if outcome.status in ("conflict", "not_active"):
-        return RestoreResult(outcome.status)
+    if outcome.status == "not_active":
+        # Changed since the read above. Deleted or forgotten in between is the viewer's
+        # 404 like any unreadable document; archived is `not_active`.
+        again = await store.get(document_id=document_id)
+        if again is None or again.summary.state == "deleted" or again.summary.forgotten:
+            return RestoreResult("not_found")
+        return RestoreResult("not_active")
+    if outcome.status == "conflict":
+        return RestoreResult("conflict")
     return RestoreResult("not_found")
 
 
@@ -245,6 +273,7 @@ def register_document_history_routes(app: web.Application) -> None:
             body = await build_revisions_payload(
                 store=a["web_documents"], rooms_of=a["web_rooms_of"],
                 persons=a["web_persons"], person_id=person_id, document_id=document_id,
+                room_label=a["web_room_label"],
             )
         except Exception:  # a store that is down is "could not check", never "not found"
             log.exception("document history read failed")
@@ -266,7 +295,7 @@ def register_document_history_routes(app: web.Application) -> None:
             body = await build_revision_payload(
                 store=a["web_documents"], rooms_of=a["web_rooms_of"],
                 persons=a["web_persons"], person_id=person_id, document_id=document_id,
-                revision=number,
+                revision=number, room_label=a["web_room_label"],
             )
         except Exception:
             log.exception("document revision read failed")

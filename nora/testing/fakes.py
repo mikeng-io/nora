@@ -42,6 +42,7 @@ from nora.domain.computer_sessions import (
     normalise_session,
 )
 from nora.domain.documents import (
+    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -54,6 +55,7 @@ from nora.domain.documents import (
     StoredRevision,
     VisiblePage,
     is_handle,
+    normalize_query,
 )
 from nora.domain.media import (
     MediaBlob,
@@ -2338,6 +2340,10 @@ class FakeDocumentStore:
         changes = self._states.get(document_id)
         return changes[-1][0] if changes else "active"
 
+    def _state_by(self, document_id: UUID) -> str:
+        changes = self._states.get(document_id)
+        return changes[-1][1] if changes else ""
+
     def _now(self) -> datetime:
         self._tick += 1
         return datetime(2026, 10, 1, tzinfo=UTC) + timedelta(microseconds=self._tick)
@@ -2355,6 +2361,7 @@ class FakeDocumentStore:
                 created_by=created_by, title=revision.title, revision=number,
                 created_at=created_at, updated_at=recorded_at,
                 state=self._state(document_id),
+                state_by=self._state_by(document_id),
             ),
             spec=json.loads(json.dumps(revision.spec)), text=revision.text,
             sha256=revision.sha256, media=tuple(revision.media),
@@ -2394,15 +2401,37 @@ class FakeDocumentStore:
         return RevisionOutcome("ok", self._stored(document_id))
 
     async def set_state(
-        self, *, document_id: UUID, state: DocumentState, set_by: str
+        self, *, document_id: UUID, state: DocumentState, set_by: str,
+        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         if document_id not in self._rooms:
+            return False
+        if only_if_state is not None and self._state(document_id) not in only_if_state:
             return False
         self._states.setdefault(document_id, []).append((state, set_by))
         return True
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         return self._stored(document_id)
+
+    async def list_created_by(
+        self, *, person_id: str, states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int, offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        mine = sorted(
+            (d.summary for doc_id in self._rooms
+             if (d := self._stored(doc_id)) is not None
+             and d.summary.created_by == person_id and d.summary.state in states),
+            key=lambda s: str(s.id),
+        )
+        limit = min(max(limit, 0), 1_000)
+        offset = min(max(offset, 0), 2**31 - 1)
+        return tuple(mine[offset : offset + limit]) if limit > 0 else ()
+
+    def set_by_of(self, document_id: UUID) -> list[str]:
+        """Who made each change of state, oldest first: what a test reads to show a
+        change was the forget's, not a person's (the SQL store's `document_state.set_by`)."""
+        return [by for _, by in self._states.get(document_id, [])]
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         return tuple(
@@ -2425,14 +2454,19 @@ class FakeDocumentStore:
 
     async def list_visible(
         self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int,
-        state: ListedState = "active",
+        state: ListedState = "active", query: str = "",
     ) -> VisiblePage:
         listed = "archived" if state == "archived" else "active"
+        # `lower()`, not `casefold()`: Postgres ILIKE folds with lower(), and casefold maps
+        # "ß" to "ss" where lower does not, so a query would match here and not there.
+        needle = normalize_query(query).lower()
         seen = [
             d.summary for doc_id in self._rooms
             if (d := self._stored(doc_id)) is not None
             and self._sees(d.summary, person_id, rooms)
             and d.summary.state == listed
+            and (not needle or needle in normalize_query(d.summary.title).lower()
+                 or needle in normalize_query(d.text).lower())
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         # The same bounds as `SqlDocumentStore.list_visible`.
@@ -2443,7 +2477,7 @@ class FakeDocumentStore:
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int,
-        states: tuple[DocumentState, ...] = ("active",),
+        states: tuple[DocumentState, ...] = ("active",), hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         seen = [
             d.summary for doc_id in self._rooms
@@ -2451,6 +2485,7 @@ class FakeDocumentStore:
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states
+            and not (hide_forgotten and d.summary.state_by.startswith(FORGET_SET_BY_PREFIX))
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)

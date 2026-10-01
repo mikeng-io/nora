@@ -1,4 +1,4 @@
-// Restore an old revision of a document as a NEW revision (design/artifact §32): the
+// Restore an old revision of a document as a NEW revision (design/artifact §34): the
 // portal's second write to Nora, beside document-state.ts and held to its rules.
 //
 // Its own route (src/app/api/v1/documents/[id]/revisions/[n]/restore/route.ts), because the

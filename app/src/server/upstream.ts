@@ -19,6 +19,9 @@ export interface RouteSpec {
   /** Segments after /api/v1/; ":name" matches one id-shaped segment. */
   pattern: string[];
   query?: string[];
+  /** Query parameters that carry a person's own words (a search): any printable text up
+   * to FREE_TEXT_MAX characters instead of the id-shaped charset the others must match. */
+  freeText?: string[];
   scope?: "self";
   /** A stricter shape for a named segment. A segment that fails it is a 404
    * here, the same answer the upstream gives for an id that exists and is
@@ -50,9 +53,10 @@ export const ROUTES: RouteSpec[] = [
   // names them. `scope: "self"` because the viewer decides what is visible, never
   // the browser; Nora answers "not visible" exactly as "no such document".
   // `state` is the Archived filter (`active` or `archived`; Nora refuses anything else).
-  { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"] },
+  // `q` is the search box: the current title or text, a substring, any script.
+  { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"], freeText: ["q"] },
   { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
-  // A document's history (design/artifact §32): behind the document's own read gate in
+  // A document's history (design/artifact §34): behind the document's own read gate in
   // Nora, so the same viewer rule; by its UUID only, and a revision is a positive number.
   { pattern: ["documents", ":id", "revisions"], scope: "self", params: { id: DOCUMENT_UUID } },
   {
@@ -82,6 +86,10 @@ export const ROUTES: RouteSpec[] = [
 
 const ID_SEGMENT = /^[A-Za-z0-9_\-:.@]{1,128}$/;
 const QUERY_VALUE = /^[A-Za-z0-9_\-:.@]{0,128}$/;
+// A search is words in any script: everything but control characters, bounded as Nora's
+// own limit is (`DOCUMENT_QUERY_MAX`, 200), so a longer one is a 400 here, not forwarded.
+const FREE_TEXT_MAX = 200;
+const hasControl = (s: string) => /[\u0000-\u001f\u007f]/.test(s);
 
 function matches(spec: RouteSpec, segments: string[]): boolean {
   if (spec.pattern.length !== segments.length) return false;
@@ -119,6 +127,12 @@ export function resolveUpstream(
     const value = search.get(name);
     if (value === null) continue;
     if (!QUERY_VALUE.test(value)) return { ok: false, status: 400 };
+    params.set(name, value);
+  }
+  for (const name of spec.freeText ?? []) {
+    const value = search.get(name);
+    if (value === null) continue;
+    if (value.length > FREE_TEXT_MAX || hasControl(value)) return { ok: false, status: 400 };
     params.set(name, value);
   }
   if (spec.scope === "self") params.set("personId", viewerPersonId);

@@ -8,6 +8,11 @@ module never sees a `Policy` (`nora.web` must not learn about policy loading).
 A document the viewer may not read is `None`, the same answer as "no such document":
 an id never confirms that a document exists.
 
+A SEARCH is the same list with `query`: the store keeps only the documents whose current
+title or text contains it, in the very statement that applies the viewer's visibility and the
+state filter, so a search never reaches a document the list would not show (a deleted one, an
+archived one outside the Archived filter, one the viewer may not read).
+
 A document's STATE (archived, deleted) is filtered by the store in SQL: the default list
 is the active documents, `state=archived` lists the archived ones, and a deleted document
 is the same `None` as one that never existed, on the detail, the handle and the picture
@@ -39,9 +44,13 @@ from nora.domain.documents import (
     RoomKey,
     StoredDocument,
     is_handle,
+    normalize_query,
 )
 from nora.domain.ports import BlobStore
 from nora.persons import Persons
+
+#: (platform, conversation_id) -> the operator's label of that room, "" when none.
+RoomLabel = Callable[[str, str], str]
 
 MAX_PAGE_SIZE = 50
 # A page number past this is a mistake or an attack, never a place to be: the SQL store's
@@ -58,14 +67,26 @@ def _creator(persons: Persons, person_id: str) -> dict[str, str]:
     return {"personId": person_id, "name": ref.name if ref is not None else person_id}
 
 
-def _summary(persons: Persons, s: DocumentSummary) -> dict[str, object]:
+def _room_label(
+    rooms: frozenset[RoomKey], label_of: RoomLabel | None, s: DocumentSummary
+) -> str:
+    """The room's label, only for a viewer whose own rooms include it. A creator who has
+    since left the room still reads their document, but is not told what the room is
+    called: the label of a room a person is not in is not theirs to see."""
+    if label_of is None or (s.platform, s.conversation_id) not in rooms:
+        return ""
+    return label_of(s.platform, s.conversation_id)
+
+
+def _summary(persons: Persons, s: DocumentSummary, room_label: str = "") -> dict[str, object]:
     # The room's id is not shown: a viewer needs to know a document is from a room they
-    # are in, not which chat id it is. The platform is enough to label it.
+    # are in, not which chat id it is. The platform and the room's label are enough.
     return {
         "id": str(s.id),
         "title": s.title,
         "revision": s.revision,
         "platform": s.platform,
+        "roomLabel": room_label,
         "createdAt": _iso(s.created_at),
         "updatedAt": _iso(s.updated_at),
         "createdBy": _creator(persons, s.created_by),
@@ -82,22 +103,30 @@ async def build_documents_payload(
     page: int,
     page_size: int,
     state: ListedState = "active",
+    query: str = "",
+    room_label: RoomLabel | None = None,
 ) -> dict[str, object]:
     page = min(max(1, page), MAX_PAGE)
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
+    rooms = rooms_of(person_id)
+    needle = normalize_query(query)
     result = await store.list_visible(
         person_id=person_id,
-        rooms=rooms_of(person_id),
+        rooms=rooms,
         limit=page_size,
         offset=(page - 1) * page_size,
         state=state,
+        query=needle,
     )
     return {
-        "documents": [_summary(persons, s) for s in result.items],
+        "documents": [
+            _summary(persons, s, _room_label(rooms, room_label, s)) for s in result.items
+        ],
         "page": page,
         "pageSize": page_size,
         "total": result.total,
         "state": state,
+        "query": needle,
     }
 
 
@@ -119,23 +148,27 @@ async def change_document_state(
     person_id: str,
     document_id: UUID,
     state: str,
+    room_label: RoomLabel | None = None,
 ) -> StateChange:
     if state not in DOCUMENT_STATES:
         return StateChange("bad_state")
     # The read gate IS the write gate: whoever may open it (its creator, or a person a
     # room it was made in names) may archive, delete or restore it. A deleted document
     # is not visible, so it cannot be restored from here.
-    stored = await store.get_visible(
-        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)
-    )
-    if stored is None:
+    rooms = rooms_of(person_id)
+    stored = await store.get_visible(document_id=document_id, person_id=person_id, rooms=rooms)
+    # A forgotten document is already invisible here (it is `deleted`); the check says it
+    # again for any state, so forgetting a person stays forgotten even if a state row ever
+    # reads otherwise.
+    if stored is None or stored.summary.forgotten:
         return StateChange("not_found")
     wanted = cast(DocumentState, state)
     if stored.summary.state != wanted and not await store.set_state(
         document_id=document_id, state=wanted, set_by=person_id
     ):
         return StateChange("not_found")
-    return StateChange("ok", _summary(persons, replace(stored.summary, state=wanted)))
+    summary = replace(stored.summary, state=wanted)
+    return StateChange("ok", _summary(persons, summary, _room_label(rooms, room_label, summary)))
 
 
 async def build_document_payload(
@@ -145,13 +178,11 @@ async def build_document_payload(
     persons: Persons,
     person_id: str,
     document_id: UUID,
+    room_label: RoomLabel | None = None,
 ) -> dict[str, object] | None:
-    stored = await store.get_visible(
-        document_id=document_id,
-        person_id=person_id,
-        rooms=rooms_of(person_id),
-    )
-    return _detail(persons, stored)
+    rooms = rooms_of(person_id)
+    stored = await store.get_visible(document_id=document_id, person_id=person_id, rooms=rooms)
+    return _detail(persons, stored, _label_of(rooms, room_label, stored))
 
 
 async def build_document_payload_by_handle(
@@ -161,6 +192,7 @@ async def build_document_payload_by_handle(
     persons: Persons,
     person_id: str,
     handle: str,
+    room_label: RoomLabel | None = None,
 ) -> dict[str, object] | None:
     """`build_document_payload` for a link's 12-hex handle. The prefix is matched among the
     documents `person_id` may read ONLY, and a handle that matches none, matches more than
@@ -168,17 +200,24 @@ async def build_document_payload_by_handle(
     tells a miss from a document the viewer may not see, or from a collision."""
     if not is_handle(handle):
         return None
-    stored = await store.get_visible_by_handle(
-        handle=handle, person_id=person_id, rooms=rooms_of(person_id)
-    )
-    return _detail(persons, stored)
+    rooms = rooms_of(person_id)
+    stored = await store.get_visible_by_handle(handle=handle, person_id=person_id, rooms=rooms)
+    return _detail(persons, stored, _label_of(rooms, room_label, stored))
 
 
-def _detail(persons: Persons, stored: StoredDocument | None) -> dict[str, object] | None:
+def _label_of(
+    rooms: frozenset[RoomKey], label_of: RoomLabel | None, stored: StoredDocument | None
+) -> str:
+    return "" if stored is None else _room_label(rooms, label_of, stored.summary)
+
+
+def _detail(
+    persons: Persons, stored: StoredDocument | None, room_label: str = ""
+) -> dict[str, object] | None:
     if stored is None:
         return None
     return {
-        **_summary(persons, stored.summary),
+        **_summary(persons, stored.summary, room_label),
         "document": stored.spec,
         "media": list(stored.media),
     }
@@ -243,7 +282,7 @@ async def build_document_media(
     except Exception:  # noqa: BLE001 - a store that is down is "could not check"
         return DocumentMedia("unavailable")
     # Readable, AND named by one of ITS revisions (the current one, or an earlier one the
-    # history view shows, design/artifact §32): being able to open a document is not a
+    # history view shows, design/artifact §34): being able to open a document is not a
     # licence to read any picture Nora holds.
     if stored is None:
         return _not_found()

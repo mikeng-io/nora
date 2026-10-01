@@ -1,5 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { markLinksForPrint, PRINT_HREF_ATTR, printHref } from "./print";
+import { markLinksForPrint, PRINT_HREF_ATTR, printHref, printInLight } from "./print";
+
+describe("printInLight", () => {
+  it("in the dark theme, switches to light, waits for every diagram to redraw light, prints, then puts it back", async () => {
+    const html = { dataset: { theme: "dark" } as DOMStringMap };
+    let themes = ["dark", "pending"];
+    const seen: Array<{ theme?: string; themes: string[] }> = [];
+    let ticks = 0;
+    await printInLight({
+      html,
+      drawnThemes: () => themes,
+      print: () => seen.push({ theme: html.dataset.theme, themes: [...themes] }),
+      wait: async () => {
+        ticks += 1;
+        if (ticks === 2) themes = ["light", "light"];
+      },
+    });
+    expect(seen).toEqual([{ theme: "light", themes: ["light", "light"] }]);
+    expect(html.dataset.theme).toBe("dark");
+  });
+
+  it("in the light theme prints at once and touches nothing", async () => {
+    const html = { dataset: {} as DOMStringMap };
+    let printed = 0;
+    await printInLight({ html, drawnThemes: () => ["dark"], print: () => (printed += 1), wait: async () => {
+      throw new Error("must not wait");
+    } });
+    expect(printed).toBe(1);
+    expect(html.dataset.theme).toBeUndefined();
+  });
+
+  it("prints anyway after the timeout, and restores the theme even when printing throws", async () => {
+    const html = { dataset: { theme: "dark" } as DOMStringMap };
+    await expect(
+      printInLight({ html, drawnThemes: () => ["dark"], print: () => { throw new Error("blocked"); }, wait: async () => {}, timeoutMs: 200 }),
+    ).rejects.toThrow("blocked");
+    expect(html.dataset.theme).toBe("dark");
+  });
+});
 
 describe("printHref", () => {
   it("prints the address after a link whose text does not already say it", () => {

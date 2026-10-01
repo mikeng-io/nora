@@ -86,7 +86,7 @@
   {
     "name": "#199 the proactive pass READS the log",
     "file": "nora/language/proactive.py",
-    "old": "        parts.append(await self._loop_decisions(key, rooms, home, now=now))",
+    "old": "        blocks.append(await self._loop_decisions(key, rooms, home, now=now))",
     "new": "        pass",
     "target": "tests/unit/test_proactive_adaptor.py -k pass_sees_what_the_other_deciders_did_in_each_room"
   },

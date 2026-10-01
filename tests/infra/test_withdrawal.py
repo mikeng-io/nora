@@ -22,6 +22,7 @@ from nora.domain.models import NormalizedMessage
 from nora.domain.standing import Standing
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.history import as_of
 from nora.infra.sql.migrations_runner import run_migrations
@@ -74,6 +75,10 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
+
+
+def _docs(engine: Any) -> SqlDocumentStore:
+    return SqlDocumentStore(engine)
 
 
 async def _message(engine: Any, *, conversation_id: str = "g1", ts: int = 1000) -> int:
@@ -206,7 +211,9 @@ async def test_forget_person_hides_messages_and_cascades(engine):
         anchor_date=20260901,
     )
 
-    dry = await forget_person(engine, person_id="miles", apply=False, now_ms=5000)
+    dry = await forget_person(engine,
+        documents=_docs(engine), person_id="miles", apply=False, now_ms=5000
+    )
     assert dry.hidden == 1
     async with engine.connect() as conn:
         untouched = (await conn.execute(
@@ -214,7 +221,9 @@ async def test_forget_person_hides_messages_and_cascades(engine):
         )).scalar_one()
     assert untouched is None, "a dry run must write nothing"
 
-    applied = await forget_person(engine, person_id="miles", apply=True, now_ms=5000)
+    applied = await forget_person(engine,
+        documents=_docs(engine), person_id="miles", apply=True, now_ms=5000
+    )
     assert applied.hidden == 1
     assert applied.cascade is not None
     assert applied.cascade.marked["note"] == [note.id]
@@ -251,7 +260,7 @@ async def test_clear_unsupported_clears_a_row_whose_citations_are_all_visible(en
         body=f"a claim [{mid}]", established_by="test", now_ms=1000,
         anchor_date=20260901,
     )
-    await forget_person(engine, person_id="miles", apply=True, now_ms=5000)
+    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=5000)
     await unforget_person(engine, person_id="miles", apply=True)
     held = await notes.note_by_id(unit="u", note_id=note.id)
     assert held.unsupported_at == 5000, "unforget alone must not clear the cascade mark"
@@ -302,8 +311,8 @@ async def test_clear_unsupported_leaves_a_row_with_a_still_hidden_citation(engin
     # forget BOTH people (one note citing both messages), then only
     # unforget Miles — Alice's message stays hidden, so the note has one
     # visible-again citation and one still-hidden one.
-    await forget_person(engine, person_id="alice", apply=True, now_ms=4000)
-    await forget_person(engine, person_id="miles", apply=True, now_ms=5000)
+    await forget_person(engine, documents=_docs(engine), person_id="alice", apply=True, now_ms=4000)
+    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=5000)
     await unforget_person(engine, person_id="miles", apply=True)
 
     result = await clear_unsupported(engine, apply=True)
@@ -328,7 +337,7 @@ async def test_a_snapshot_before_the_forget_restores_the_message(engine):
             sa.select(sa.func.clock_timestamp())
         )).scalar_one()
 
-    await forget_person(engine, person_id="miles", apply=True, now_ms=9000)
+    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=9000)
 
     async with engine.connect() as conn:
         restored = [

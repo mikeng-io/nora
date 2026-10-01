@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as history from "./api/document-history";
 
-// The history reads (design/artifact §32), beside src/lib/queries.ts rather than in it:
+// The history reads (design/artifact §34), beside src/lib/queries.ts rather than in it:
 // keyed under "document" so everything that re-reads a document (a state change, a
 // restore) re-reads its history too.
 const M = 60 * 1000;

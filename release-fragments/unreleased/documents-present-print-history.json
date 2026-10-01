@@ -2,13 +2,15 @@
   "type": "feature",
   "summary": "A document in the portal can be presented as slides, printed or saved as a PDF, and read revision by revision, with an old revision restorable as a new one.",
   "details": [
-    "Present shows the document full screen, one top-level section per slide after a cover, with the keyboard, a swipe on a phone, a slide counter and a Leave control; a document with no sections opens as the ordinary page and says why.",
-    "Print / save as PDF uses the browser's own print: only the document is on the page, blocks are not split across pages, and paper is light in either theme.",
+    "Present shows the document full screen, one top-level section per slide after a cover, with the keyboard, a swipe on a phone, a slide counter that survives a reload and a Leave control; the page behind is out of reach while it is open, and a document with no sections opens as the ordinary page and says why.",
+    "Print / save as PDF uses the browser's own print: only the document body is on the paper (no buttons, no meta line), blocks are not split across pages, an old revision or an archived document says so in one printed line, and the Print button prints light paper in either theme.",
     "History lists every revision with who wrote it and when; an old revision opens read-only under a banner, and Restore publishes it again as a new revision, never rewriting the old ones, and is refused on an archived document or when someone revised it since."
   ],
   "limitations": [
+    "Editing something out of a document does not remove it from its history: every earlier revision stays readable to anyone who can read the document. Deleting the document, or forgetting the person who made it, hides all of it.",
     "There is no diff between revisions: an old revision is shown whole.",
     "A revision Nora wrote shows as hers, not as the person who asked for it, because only the tag it was written at is recorded.",
+    "Printed from the browser's own menu in the dark theme, a diagram is inverted rather than redrawn in the light colours; the Print button redraws it.",
     "Collapsed blocks print as the page shows them."
   ]
 }

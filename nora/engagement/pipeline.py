@@ -89,6 +89,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room, trigger_message_ids
+from nora.agent.tools import turn_occasion
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
@@ -714,6 +715,10 @@ class EngagementPipeline:
             surface = self._tool_registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.
                 defer=self._defer_tools,
+                # DEC-256: a spoken turn keeps the tools declared `hot_on`
+                # voice resident, so a music request is not a `load_tools`
+                # hop of silence in the channel first.
+                occasion=turn_occasion(voice=msg.voice),
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,

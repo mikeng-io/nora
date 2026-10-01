@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Internal: the proactive, culture, note-candidates and note-curator prompts are assembled through assemble() and render byte for byte what they did, proven against goldens captured before the change.", "details": [], "limitations": []}

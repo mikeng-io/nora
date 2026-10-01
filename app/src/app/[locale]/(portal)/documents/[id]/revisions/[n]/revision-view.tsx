@@ -18,7 +18,7 @@ import { isOldRevision, restoreProblem, revisionParam } from "@/lib/documents/hi
 import { formatRelative } from "@/lib/format";
 import { useNow } from "@/hooks/use-now";
 
-// One old revision of a document, read-only (design/artifact §32). The banner says which
+// One old revision of a document, read-only (design/artifact §34). The banner says which
 // revision this is and that it is not the current one, on screen only; Restore publishes
 // it again as a NEW revision (the old ones all stay), and is offered only while the
 // document is active. A number that is not a revision answers like an unknown document.
@@ -144,7 +144,7 @@ function Loaded({ id, data }: { id: string; data: DocumentRevision }) {
         <p className="mb-4 hidden text-meta text-ink-soft print:block" data-testid="printed-revision">
           {t("printedRevision", { n: data.revision, total: data.currentRevision })}
         </p>
-        <DocumentView doc={data.document} documentId={id} />
+        <DocumentView doc={data.document} documentId={data.id} />
       </PrintableDocument>
     </PageFrame>
   );

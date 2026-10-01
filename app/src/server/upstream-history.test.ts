@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveUpstream } from "./upstream";
 
-// The two history reads (design/artifact §32) in the proxy table: the session's person,
+// The two history reads (design/artifact §34) in the proxy table: the session's person,
 // a UUID, a positive revision number, and nothing else the browser sends.
 const ID = "9c48dbf1-7c25-4467-84b3-ac9d8d61a584";
 const q = (s = "") => new URLSearchParams(s);

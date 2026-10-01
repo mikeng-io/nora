@@ -35,6 +35,10 @@ from .web.voice import register_voice
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_TTL_SECONDS = 3600.0
+# How often computerd is asked whether it answers (DEC-261). 30s, the scrape
+# interval: a faster probe is a series Prometheus never sees, and ComputerDown
+# waits minutes anyway. One authenticated read of a scope that does not exist.
+COMPUTER_PROBE_INTERVAL_SECONDS = 30.0
 # The participation loop ticks fast enough that a closed window is evaluated
 # promptly (its settle window is ~10s; a 2s tick bounds the lag), and sweeps
 # rooms idle for a day — the trigger's cursors are per-room, so the TTL is
@@ -153,6 +157,7 @@ class App:
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
             documents=deps.documents, rooms_of=deps.rooms_of, blobs=deps.blobs,
+            room_label=deps.room_label,
         )
         # The voice channel's text entry point (design/voice-channel/, stage
         # 3): the wake service POSTs transcripts here, and they enter through
@@ -311,6 +316,12 @@ class App:
             deps.background.spawn(runtime.computer_sweep_loop(
                 deps.computer_sweeper, deps.metrics,
                 interval_seconds=deps.computer_sweep_seconds,
+            ))
+        # The timed probe of computerd (DEC-261), the same flag.
+        if deps.computer_probe is not None:
+            deps.background.spawn(runtime.computer_probe_loop(
+                deps.computer_probe, deps.metrics,
+                interval_seconds=COMPUTER_PROBE_INTERVAL_SECONDS,
             ))
         deps.background.spawn(runtime.debounce_sweep_loop(
             deps.debounce, deps.metrics,

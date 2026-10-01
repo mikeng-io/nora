@@ -1,4 +1,4 @@
-// The present view (design/artifact §15, §32): a document shown one top-level Section per
+// The present view (design/artifact §15, §34): a document shown one top-level Section per
 // slide. A view of the SAME stored spec, never a second format: each slide is the document
 // with its Page kept and only some of the Page's children, so it is drawn by the same
 // registry and checked by the same parseDocument.
@@ -84,6 +84,51 @@ export function slideKey(
     default:
       return null;
   }
+}
+
+/** The query flag the Present button adds: the deck was opened from the document page, so
+ * leaving goes BACK to that entry instead of pushing a second copy of it. */
+export const PRESENT_FROM_PAGE = "from";
+
+/** What owns its own keys: a field, a tab list, a scroll region (a wide table, a code
+ * block), a diagram or a map, and anything marked `data-present-keys="own"`. */
+export const KEYS_OWNED_BY = [
+  "input",
+  "textarea",
+  "select",
+  "[contenteditable]",
+  "[role='tablist']",
+  "[role='region']",
+  "[role='img']",
+  "pre",
+  ".maplibregl-map",
+  "[data-present-keys='own']",
+].join(", ");
+
+type KeyTarget = {
+  closest(selector: string): unknown;
+  hasAttribute(name: string): boolean;
+  parentElement: KeyTarget | null;
+};
+
+/** Whether a key pressed with focus on `target` belongs to that element rather than to
+ * the deck. Escape always belongs to the deck. Space and Enter press a focused button or
+ * link. Arrows, space and paging keys stay with anything in `KEYS_OWNED_BY` and with any
+ * element between the focus and the deck that scrolls (`scrolls`), except the deck's own
+ * slide scroller (`data-present-scroller`). */
+export function targetOwnsKey(
+  key: string,
+  target: KeyTarget | null,
+  scrolls: (el: KeyTarget) => boolean,
+): boolean {
+  if (!target || key === "Escape") return false;
+  if ((key === " " || key === "Enter") && target.closest("button, a, summary")) return true;
+  if (target.closest(KEYS_OWNED_BY)) return true;
+  for (let el: KeyTarget | null = target; el; el = el.parentElement) {
+    if (el.hasAttribute("data-present-scroller") || el.hasAttribute("data-present-deck")) break;
+    if (scrolls(el)) return true;
+  }
+  return false;
 }
 
 /** The smallest horizontal travel, in CSS pixels, that counts as a swipe. */

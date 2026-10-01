@@ -526,6 +526,24 @@ class NativeTool:
     # conservative direction `read_only` takes, because the failure mode of
     # forgetting is a page fetched instead of routed, not the reverse.
     link_inputs: tuple[LinkInput, ...] = ()
+    # `hot_on` (DEC-256): the turn OCCASIONS on which this tool's full schema
+    # stays resident under `[llm] defer_tools`, on top of `HOT_TOOLS`. Empty
+    # (the default) means the tool is resident only if `HOT_TOOLS` names it,
+    # which is every turn's set and is untouched by this field. Each value
+    # comes from `TOOL_OCCASIONS`, a closed vocabulary; the occasion of a turn
+    # is derived once from its message (`turn_occasion`) by the loop that
+    # builds the surface, never guessed by a tool.
+    #
+    # A MEASURED declaration, like `HOT_TOOLS` itself: a tool joins an
+    # occasion when `scripts/measure_voice_tool_calls.py` (or its successor
+    # for another occasion) shows it called on at least the share the
+    # smallest `HOT_TOOLS` member holds (3.0%), and the PR prints the window
+    # and n beside the count. It is paid in schema tokens on every call of
+    # every such turn, and it gives those turns a tools array the room's other
+    # turns do not share, so the prefix cache splits by occasion; both costs
+    # are why it is not declared on intuition. `ToolRegistry.surface()` is the
+    # one reader.
+    hot_on: frozenset[str] = frozenset()
 
 
 #: The closed declared vocabularies (ADR 0008 §1/§2). The enforcement test reads
@@ -541,6 +559,26 @@ class NativeTool:
 SIDE_EFFECT_STATES: frozenset[str] = frozenset({"none", "confirmed", "unknown"})
 IDEMPOTENCY_VALUES: frozenset[str] = frozenset({"idempotent", "non_idempotent"})
 RETRY_POLICIES: frozenset[str] = frozenset({"safe", "unsafe_without_key", "never"})
+
+#: The turn occasions a tool may declare in `NativeTool.hot_on` (DEC-256).
+#: Closed: a new occasion is added here, with the code that derives it in
+#: `turn_occasion` and a measurement of what its turns call, or not at all.
+#: A text turn has no occasion; that is what keeps every text turn's resident
+#: set exactly `HOT_TOOLS`.
+#:
+#: `voice` is a turn that arrived SPOKEN (`NormalizedMessage.voice`, set only
+#: by `nora.web.voice`). A spoken request is waiting on her voice in a channel,
+#: where each extra model call is heard as silence.
+TOOL_OCCASIONS: frozenset[str] = frozenset({"voice"})
+
+
+def turn_occasion(*, voice: bool) -> str | None:
+    """The occasion of one turn, from the flag its message carries.
+
+    One derivation for every loop that calls `ToolRegistry.surface()`, so the
+    tag path and the fire path cannot disagree about what a spoken turn is.
+    `None` is a text turn: no occasion, and the resident set is `HOT_TOOLS`."""
+    return "voice" if voice else None
 
 
 # ONE entry per tool, one line of declaration. The model-facing schema is each
@@ -1239,10 +1277,21 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # `top_music` is 2, never a guessed position; the other four are 1. How to
     # report each status rides in the result: `_MUSIC_REPORT` on every non-ok,
     # and `play_music`'s `ok` says whether to announce «queued» or «playing».
+    #
+    # `hot_on={"voice"}` (DEC-256) on the five a spoken turn was MEASURED
+    # calling: `scripts/measure_voice_tool_calls.py --days 30` on 2026-10-01,
+    # 26 voice turns (2026-09-17 .. 09-30), 14 of them called a music verb:
+    # `play_music` 5, `set_music_volume` 5, `stop_music` 3, `music_status` 1,
+    # `top_music` 1, each at or above `HOT_TOOLS`' 3.0% floor. Since
+    # `defer_tools` went on (09-24) 6 of the 7 voice turns that called one paid
+    # a `load_tools` call first. `skip_music` was called on none of the 26 and
+    # is NOT declared: it joins when a measurement shows it. n=26 is small;
+    # one turn is 3.8%.
     "play_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state", level=2),
+                             output_contract="three_state", level=2,
+                             hot_on=frozenset({"voice"})),
     "skip_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
@@ -1254,17 +1303,20 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "top_music": NativeTool(2,
                             side_effect_state="unknown", idempotency="non_idempotent",
                             retry="never",
-                            output_contract="three_state", level=2),
+                            output_contract="three_state", level=2,
+                            hot_on=frozenset({"voice"})),
     "stop_music": NativeTool(2,
                              side_effect_state="unknown", idempotency="non_idempotent",
                              retry="never",
-                             output_contract="three_state", level=1),
+                             output_contract="three_state", level=1,
+                             hot_on=frozenset({"voice"})),
     # `read_only`/`cacheable`, like `weather`: a live status read that acts on
     # nothing and discloses nothing per-person.
     "music_status": NativeTool(2, source_tier="confirmed", cacheable=True,
                                 read_only=True,
                                side_effect_state="none", idempotency="idempotent", retry="safe",
-                               output_contract="three_state", level=1),
+                               output_contract="three_state", level=1,
+                               hot_on=frozenset({"voice"})),
     # `set_music_volume` — the agent-side twin of the `/music volume 0-200`
     # slash verb (design/discord-music/07-agent-tool.md, 2026-09-16
     # operator decision: Nora must be able to answer directly when someone
@@ -1275,7 +1327,8 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     "set_music_volume": NativeTool(2,
                                    side_effect_state="unknown", idempotency="non_idempotent",
                                    retry="never",
-                                   output_contract="three_state", level=1),
+                                   output_contract="three_state", level=1,
+                                   hot_on=frozenset({"voice"})),
     # The three reminder verbs (design spec §7). All 2, and the number is sized
     # by the CONVERSATION rather than by cost: none of the three leaves the host
     # or the database, so a call is one model round trip and nothing else, and
@@ -1815,6 +1868,12 @@ NATIVE_TOOL_BUDGETS: Mapping[str, int] = {
 # Discord-scoped so it is free there and absent elsewhere) and `where_is`
 # (3.2%).
 #
+# A tool that is hot on ONE KIND of turn, not on every turn, declares it on its
+# own entry instead (`NativeTool.hot_on`, DEC-256): the music verbs are
+# resident on voice turns (a music verb on 14 of 26, 2026-09-17 .. 09-30) and
+# deferred on text turns. `hot_tools(occasion)` is the union this constant
+# feeds.
+#
 # `send_reply` is here REGARDLESS of its share. It is the terminal verb —
 # `ReplyGuard` ends the turn by observing it (DEC-21/DEC-32) — so a turn that
 # had to fetch it before it could reply is a turn that can fail to end.
@@ -1835,6 +1894,25 @@ _AUDIT_TASKS: set[asyncio.Future[None]] = set()
 HOT_TOOLS: frozenset[str] = frozenset({
     "web_search", "send_reply", "note_read", "web_fetch", "now", "search_memory",
 })
+
+
+def hot_tools(occasion: str | None = None) -> frozenset[str]:
+    """The tools resident on a turn of `occasion` under deferral (DEC-256).
+
+    `HOT_TOOLS` on every turn, plus every tool whose `hot_on` names the
+    occasion. `None` (a text turn) is `HOT_TOOLS` and nothing else, so a text
+    turn's surface does not change when a tool declares an occasion. An
+    occasion outside `TOOL_OCCASIONS` raises rather than reading as «no
+    extras»: a misspelt occasion would otherwise ship the text set to a voice
+    turn and report nothing.
+    """
+    if occasion is None:
+        return HOT_TOOLS
+    if occasion not in TOOL_OCCASIONS:
+        raise ValueError(f"unknown tool occasion {occasion!r}; known: {sorted(TOOL_OCCASIONS)}")
+    return HOT_TOOLS | frozenset(
+        name for name, spec in NATIVE_TOOLS.items() if occasion in spec.hot_on
+    )
 
 # The loader's name, for the few places that must treat it as plumbing rather
 # than a capability: it is never on the shelf it loads from, never a catalogue
@@ -2648,7 +2726,8 @@ class DocumentPublisher(Protocol):
     ) -> Any: ...
 
     async def read(
-        self, *, platform: str, conversation_id: str, document_id: UUID,
+        self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
+        handle: str = "",
     ) -> Any: ...
 
     async def set_state(
@@ -4152,7 +4231,7 @@ _COMPUTER_UNRECORDED: Mapping[str, object] = MappingProxyType({
 })
 
 #: Nora's computer tools (design/sandbox-runtime §4, §15.2). `ToolRegistry`
-#: withholds all five from every surface when no runtime is wired.
+#: withholds all seven from every surface when no runtime is wired.
 COMPUTER_TOOLS: frozenset[str] = frozenset({
     "computer_run", "computer_read", "computer_write", "computer_edit",
     "computer_export", "computer_import", "computer_session_list",
@@ -4161,8 +4240,8 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
-#: The document tools (design/artifact §26). `ToolRegistry` withholds both from
-#: every surface unless `[documents] enabled`.
+#: The document tools (design/artifact §26). `ToolRegistry` withholds all three
+#: from every surface unless `[documents] enabled`.
 DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status"}
 )
@@ -14460,7 +14539,8 @@ Args:
         Call this before changing a document, or to see what you published.
 
         Args:
-            document_id: The `document_id` a publish gave you.
+            document_id: The `document_id` a publish gave you, or the 12-hex code
+                at the end of its link.
         """
         tool = "document_read"
         if documents is None:
@@ -14470,7 +14550,8 @@ Args:
                 "note": "I can't read documents right now. Say you could not check.",
             }
         target = _document_id(document_id)
-        if target is None:
+        handle = str(document_id or "").strip().lower()
+        if target is None and not _is_document_handle(handle):
             _record(metrics, tool, "not_found", reason="bad_id")
             return {"status": "not_found",
                     "note": "That is not a document id, so nothing was read."}
@@ -14478,6 +14559,7 @@ Args:
             out = await documents.read(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id, document_id=target,
+                handle="" if target is not None else handle,
             )
         except Exception:
             log.exception("document_read failed")

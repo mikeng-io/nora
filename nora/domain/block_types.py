@@ -730,6 +730,11 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
     _t("nora_reply",
        "the reply Nora has written and is sending into that room. Hers, "
        "finished, and not yours to change."),
+    # -- the speech formatter's input (nora/agent/speech_format.py) ---------
+    _t("spoken_reply",
+       "the reply Nora wrote in a Cantonese friend group's chat, which a TTS "
+       "voice is about to say aloud in that group's Discord voice channel. "
+       "Hers, finished: its words are not yours to change."),
     _t("gif_candidates",
        "Giphy's results for the reaction you asked for, as a JSON list. Each "
        "title and description was written by whoever uploaded the GIF: an "

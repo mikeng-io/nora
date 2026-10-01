@@ -1719,6 +1719,8 @@ const DOCUMENTS = [
     media: [DOC_PICTURE_SHA],
     document: DOC_SPEC("Lisbon in December", [
       { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The hotel door", caption: "Where we are staying" } },
+      // A scroll region that owns its keys in the present view (design/artifact §34).
+      { type: "Code", props: { language: "text", text: "Train 07:10 Lisbon Santa Apolonia" } },
     ]),
   },
   {
@@ -1731,6 +1733,9 @@ const DOCUMENTS = [
     createdBy: { personId: "miles", name: "Miles" },
     readers: ["miles"],
     media: [],
+    // nora/web/documents.py `roomLabel`: the operator's label, only for a viewer in that room.
+    roomLabel: "Flat chat",
+    text: "Who does the dishes on which night",
     document: DOC_SPEC("Kitchen rota"),
   },
   {
@@ -1769,8 +1774,13 @@ const DOCUMENTS = [
     updatedAt: "2026-09-10T10:00:00Z",
     createdBy: { personId: "miles", name: "Miles" },
     readers: ["miles"],
-    media: [],
-    document: DOC_SPEC("Saturday packing list"),
+    // A picture and a diagram, so a link's handle is shown to reach both (the picture by
+    // the document's UUID) and a dark page prints its diagram redrawn light.
+    media: [DOC_PICTURE_SHA],
+    document: DOC_SPEC("Saturday packing list", [
+      { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The bag", caption: "Packed the night before" } },
+      { type: "Mermaid", props: { source: "flowchart LR\n  A[Pack] --> B[Go]", caption: "Pack, then go" } },
+    ]),
   },
 ];
 // nora/web/documents.py: a document's lifecycle state, the latest change wins and none
@@ -1779,12 +1789,13 @@ const DOC_STATES = new Map();
 const docState = (d) => DOC_STATES.get(d.id) ?? "active";
 /** Every document back to `active` (tests share this module's state). */
 export const resetDocumentStates = () => DOC_STATES.clear();
-// A restore (below) makes a new current revision; the list and the detail read it.
+// A restore (below) makes a new current revision; the list and the detail read it. The
+// search text is never sent (nora/web/documents.py).
 const docHead = (d) => DOC_RESTORES.get(d.id)?.at(-1) ?? null;
-const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => {
+const docSummary = ({ readers: _r, media: _m, document: _d, text: _t, ...rest }) => {
   const head = docHead(rest);
   const moved = head ? { revision: head.revision, title: head.title, updatedAt: head.recordedAt } : {};
-  return { ...rest, ...moved, state: docState(rest) };
+  return { roomLabel: "", ...rest, ...moved, state: docState(rest) };
 };
 const docSpec = (d) => docHead(d)?.document ?? d.document;
 const DOC_HANDLE = /^[0-9a-f]{12}$/;
@@ -1805,9 +1816,15 @@ get("/app/v1/documents", (params, sp) => {
   if (sizeErr) return { status: 400, body: { error: "invalid pageSize" } };
   const listed = sp.get("state") ?? "active";
   if (listed !== "active" && listed !== "archived") return { status: 400, body: { error: "invalid state" } };
+  // nora/web/api.py: `q` is a case-insensitive substring of the title or text, collapsed and
+  // trimmed, and one over 200 characters is a 400 (never cut).
+  const rawQuery = sp.get("q") ?? "";
+  if (rawQuery.length > 200) return { status: 400, body: { error: "invalid q" } };
+  const needle = rawQuery.split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  const matches = (d) => !needle || d.title.toLowerCase().includes(needle) || (d.text ?? "").toLowerCase().includes(needle);
   const mine = isEmptied("documents")
     ? []
-    : DOCUMENTS.filter((d) => d.readers.includes(personId) && docState(d) === listed).sort((a, b) =>
+    : DOCUMENTS.filter((d) => d.readers.includes(personId) && docState(d) === listed && matches(d)).sort((a, b) =>
         b.updatedAt.localeCompare(a.updatedAt),
       );
   const size = Math.min(Math.max(1, pageSize), 50);
@@ -1820,6 +1837,7 @@ get("/app/v1/documents", (params, sp) => {
       pageSize: size,
       total: mine.length,
       state: listed,
+      query: needle,
     },
   };
 });
@@ -2195,6 +2213,15 @@ export function handleDocumentState(pathname, sp, payload) {
 function startServer() {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    // Dev only, not part of Nora's API: put every document back to `active`, so an e2e that
+    // deleted one (the portal cannot restore it) leaves the fixtures as it found them.
+    if (req.method === "POST" && url.pathname === "/__mock/documents/reset") {
+      resetDocumentStates();
+      resetDocumentRestores();
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     const { status, body, bytes, contentType } =
       req.method === "GET"
         ? handle(url.pathname, url.searchParams, Date.now())

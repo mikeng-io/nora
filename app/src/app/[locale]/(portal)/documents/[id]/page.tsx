@@ -14,13 +14,19 @@ export default async function DocumentPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string | string[]; slide?: string | string[] }>;
+  searchParams: Promise<{ view?: string | string[]; slide?: string | string[]; from?: string | string[] }>;
 }) {
   const { id } = await params;
-  const { view, slide } = await searchParams;
-  // `?view=present` is the same document, one Section per slide (design/artifact §32).
+  const { view, slide, from } = await searchParams;
+  // `?view=present` is the same document, one Section per slide (design/artifact §34).
   if (view === "present") {
-    return <PresentView id={decodeURIComponent(id)} slide={typeof slide === "string" ? slide : undefined} />;
+    return (
+      <PresentView
+        id={decodeURIComponent(id)}
+        slide={typeof slide === "string" ? slide : undefined}
+        fromPage={from === "1"}
+      />
+    );
   }
   return <DocumentPageView id={decodeURIComponent(id)} />;
 }

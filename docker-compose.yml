@@ -221,11 +221,17 @@ services:
     restart: unless-stopped
     # On the private `nora` network (cutover 2026-08-07, Option 2): reaches
     # db and signal-cli BY NAME (db:5432, signal-cli:18080), and the
-    # host-side externals — Honcho :8000, OmniRoute :20128, Langfuse :3100 — via
+    # host-side externals — OmniRoute :20128, Langfuse :3100 — via
     # host.docker.internal (they publish 0.0.0.0, so host-gateway reaches them).
     # config.toml's base_urls were switched to match. (SearXNG/Firecrawl network
     # joins removed 2026-08-08, DEC-73 — web_search is Tavily, a public API.)
-    networks: [nora]
+    #
+    # HONCHO is the exception (#633, DEC-259): it answers with no authentication,
+    # so it is NOT published on 0.0.0.0. It publishes on 127.0.0.1 only (host
+    # evals, the tailnet forward) and nora reaches it BY NAME, `honcho:8000`, on
+    # the `honcho` network below, which holds Honcho's api and this one service.
+    # docs/runbook.md §"Closing Honcho" has the order the steps must go in.
+    networks: [nora, honcho]
     extra_hosts: ["host.docker.internal:host-gateway"]
     # :9100 on loopback so deploy/watchdog.sh (host) still reads /health; the
     # in-container healthcheck below hits the container's own 127.0.0.1:9100.
@@ -1039,6 +1045,15 @@ services:
 
 networks:
   nora:
+  # Honcho's API and nora, and nothing else (#633). Owned by NEITHER compose
+  # project: it is created once by hand, INTERNAL (`docker network create --internal
+  # honcho_memory`: no gateway, so nora's default route stays on `nora`)
+  # and both stacks mark it external, so taking either stack down never removes
+  # it. Absent, `docker compose up nora` fails at once and names it, before the
+  # running container is touched.
+  honcho:
+    external: true
+    name: honcho_memory
   # SearXNG + Firecrawl network joins REMOVED (DEC-73, 2026-08-08): web_search is
   # Tavily (a public API reached over the default network), web_fetch is gone, so
   # Nora no longer calls the co-located SearXNG/Firecrawl containers.

@@ -25,6 +25,7 @@ from nora.domain.reasoning_strip import (
     STRIP_OUTCOMES,
     WRITE_OUTCOMES,
 )
+from nora.domain.speech_markup import FORMAT_OUTCOMES
 from nora.domain.stimuli import (
     LIMIT_STOP_REASONS,
     STIMULUS_KINDS,
@@ -231,6 +232,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(timeout: past [computer.context] read_timeout_seconds; unavailable: "
         "the computer answered unavailable).",
         ("reason",),
+    ),
+    # Every call `ComputerdRuntime` makes, by operation and the status it
+    # answered (`nora.domain.computer.COMPUTER_OPS`, `SandboxStatus`).
+    # Created at ZERO for every (op, status) when `[computer]` is on
+    # (`nora.app.computer_metrics`), because `increase()` over a series whose
+    # first sample is already 1 reads 0: a rare `unavailable` would otherwise be
+    # invisible to the rule written for it. Carries `status`, so the generic
+    # `UnavailableOutcomes` rule covers it too.
+    _CounterSpec(
+        "nora_computer_calls_total",
+        "Calls to computerd by operation (run, read, write, edit, files, fetch, "
+        "put, state) and the status computerd answered (ok, nothing_found, "
+        "denied, unavailable). `unavailable` includes a call that got no answer "
+        "at all; nora_computer_up says which.",
+        ("op", "status"),
     ),
     _CounterSpec(
         "nora_computer_session_expiries_total",
@@ -2133,6 +2149,19 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Every outcome but with/alone sends her words unchanged.",
         ("outcome",),
     ),
+    # The speech formatter (design/voice-channel/08). The vocabulary is
+    # `nora.domain.speech_markup.FORMAT_OUTCOMES`, derived from the Literal the
+    # formatter counts against. formatted/(every outcome but short and long)
+    # is how often the model's pacing is actually heard; words_changed and
+    # bad_markup are the check refusing it.
+    _CounterSpec(
+        "nora_speech_format_total",
+        "Speech-formatter outcomes on a spoken reply: "
+        + " / ".join(FORMAT_OUTCOMES)
+        + ". Only `formatted` speaks the model's text; every other outcome "
+        "speaks her reply normalised, and none drops it.",
+        ("outcome",),
+    ),
     _CounterSpec(
         "nora_relevance_gate_total",
         "Relevance Gate verdicts the MODEL returned, by verdict and platform "
@@ -2770,6 +2799,21 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
+    # Nora's computer, as Nora sees it (design/sandbox-runtime §12, DEC-261).
+    # LABELLED on purpose, with one value (`computerd`): an unlabelled gauge is
+    # exported at 0 from the moment it is declared, so a deployment with
+    # `[computer] enabled = false` would read as a computer that is DOWN. A
+    # labelled gauge has no sample until it is set, so "not applicable" is the
+    # absence of the series and ComputerDown (`== 0`) can never fire on it.
+    _GaugeSpec(
+        "nora_computer_up",
+        "1 when Nora's last contact with computerd got an answer, 0 when it "
+        "did not (refused, timed out, or a non-200 such as a 401 after a token "
+        "rotation). Set by the timed probe AND by every computer call. ABSENT "
+        "while [computer] is off and until the first probe: not applicable, "
+        "never 0.",
+        ("target",),
+    ),
 )
 
 _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
@@ -2835,6 +2879,15 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     # Observed on EVERY exit including the failures. A latency series that only
     # records successes describes the path that already works — which is §2's
     # own argument, applied to this stage's instrument instead of its input.
+    # Time the speech formatter adds before she is heard, on every path that
+    # called the model (a short or long reply calls none and observes
+    # nothing). Its bound is `[speech.tts.format] timeout_seconds`.
+    _HistogramSpec(
+        "nora_speech_format_seconds",
+        "Wall-clock duration of one speech-formatter model call, on every exit "
+        "that made one, refusals and timeouts included.",
+        (0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5),
+    ),
     _HistogramSpec(
         "nora_debrief_seconds",
         "Wall-clock duration of one debrief fold, on every exit path. "

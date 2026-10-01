@@ -1,5 +1,5 @@
 /*
- * Print and "save as PDF" for a document (design/artifact §32): the browser's own print
+ * Print and "save as PDF" for a document (design/artifact §34): the browser's own print
  * is the PDF path, and this sheet is what makes the page fit for it. It applies only on a
  * page that holds a `[data-print-document]` (the document page and an old revision), and
  * only in print, so no screen ever sees it.
@@ -105,6 +105,13 @@
   [data-print-document] pre {
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  /* A Mermaid diagram copied its theme's colours into its SVG when it was drawn. The Print
+     button redraws it light first (src/lib/documents/print.ts printInLight); the browser's
+     own print menu cannot wait, so a diagram still drawn dark is inverted onto the paper. */
+  [data-print-document] [data-mermaid-theme="dark"] svg {
+    filter: invert(1) hue-rotate(180deg);
   }
 
   [data-print-document] a[data-print-href]::after {

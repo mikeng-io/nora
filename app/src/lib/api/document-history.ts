@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ApiError, apiGet, apiPath } from "./client";
 
-// A document's revision history (design/artifact §32). Each schema mirrors its builder in
+// A document's revision history (design/artifact §34). Each schema mirrors its builder in
 // nora/web/document_history.py. As in ./documents.ts, an old revision's `document` stays
 // `unknown`: the renderer validates it before drawing a line.
 
@@ -28,6 +28,8 @@ export const DocumentRevisionsSchema = z.object({
   /** The current revision's number. */
   revision: z.number().int().min(1),
   state: z.enum(["active", "archived"]),
+  /** The room's label, only for a viewer in that room (the detail payload's rule). */
+  roomLabel: z.string().default(""),
   /** Newest first. */
   revisions: z.array(RevisionSummarySchema),
 });
@@ -37,6 +39,7 @@ export const DocumentRevisionSchema = RevisionSummarySchema.extend({
   id: z.string(),
   currentRevision: z.number().int().min(1),
   state: z.enum(["active", "archived"]),
+  roomLabel: z.string().default(""),
   document: z.unknown(),
   media: z.array(z.string()),
 });

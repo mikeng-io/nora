@@ -15,7 +15,7 @@ import { shortSha } from "@/lib/documents/history";
 import { formatRelative } from "@/lib/format";
 import { useNow } from "@/hooks/use-now";
 
-// A document's history (design/artifact §32): every revision, newest first. Each is a
+// A document's history (design/artifact §34): every revision, newest first. Each is a
 // full snapshot Nora kept; an old one opens read-only, the current one is the document.
 // Unreadable, deleted and unknown read the same here, as on the document page.
 export function HistoryView({ id }: { id: string }) {

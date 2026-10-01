@@ -2,23 +2,30 @@
   {
     "name": "history is read through the document's own read gate (visibility)",
     "file": "nora/web/document_history.py",
-    "old": "    return await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
-    "new": "    return await store.get(document_id=document_id)",
+    "old": "    stored = await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
+    "new": "    stored = await store.get(document_id=document_id)",
     "target": "tests/web/test_document_history_api.py::test_history_is_the_same_404_as_an_unknown_id_for_whoever_may_not_read_it"
   },
   {
     "name": "the read gate also makes a deleted document's history a 404",
     "file": "nora/web/document_history.py",
-    "old": "    return await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
-    "new": "    return await store.get(document_id=document_id)",
+    "old": "    stored = await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
+    "new": "    stored = await store.get(document_id=document_id)",
     "target": "tests/web/test_document_history_api.py::test_history_of_a_deleted_document_is_404_and_of_an_archived_one_is_readable"
   },
   {
     "name": "a restore by a person who may not read the document writes nothing",
     "file": "nora/web/document_history.py",
-    "old": "    return await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
-    "new": "    return await store.get(document_id=document_id)",
+    "old": "    stored = await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )",
+    "new": "    stored = await store.get(document_id=document_id)",
     "target": "tests/web/test_document_history_api.py::test_restore_by_a_person_who_may_not_read_it_is_404_and_writes_nothing"
+  },
+  {
+    "name": "a forgotten document has no history, revision or restore (the read gate as a whole)",
+    "file": "nora/web/document_history.py",
+    "old": "    stored = await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )\n    if stored is None or stored.summary.forgotten:",
+    "new": "    stored = await store.get(document_id=document_id)\n    if stored is None:",
+    "target": "tests/web/test_document_history_api.py::test_a_forgotten_document_has_no_history_no_revision_and_no_restore"
   },
   {
     "name": "one revision is that revision's spec, not the current one (read-only view)",
@@ -26,6 +33,20 @@
     "old": "        \"document\": found.spec,",
     "new": "        \"document\": current.spec,",
     "target": "tests/web/test_document_history_api.py::test_an_old_revision_is_its_own_spec_and_reading_it_changes_nothing"
+  },
+  {
+    "name": "the history list carries the room label only for a viewer in that room",
+    "file": "nora/web/document_history.py",
+    "old": "        # The detail payload's rule: the room's label only for a viewer in that room.\n        \"roomLabel\": _room_label(rooms_of(person_id), room_label, current.summary),",
+    "new": "        \"roomLabel\": room_label(current.summary.platform, current.summary.conversation_id) if room_label else \"\",",
+    "target": "tests/web/test_document_history_api.py::test_history_carries_the_room_label_only_for_a_viewer_in_that_room"
+  },
+  {
+    "name": "one revision carries the room label only for a viewer in that room",
+    "file": "nora/web/document_history.py",
+    "old": "        \"currentRevision\": current.summary.revision,\n        \"state\": current.summary.state,\n        \"roomLabel\": _room_label(rooms_of(person_id), room_label, current.summary),",
+    "new": "        \"currentRevision\": current.summary.revision,\n        \"state\": current.summary.state,\n        \"roomLabel\": room_label(current.summary.platform, current.summary.conversation_id) if room_label else \"\",",
+    "target": "tests/web/test_document_history_api.py::test_history_carries_the_room_label_only_for_a_viewer_in_that_room"
   },
   {
     "name": "restore copies the OLD revision's spec",
@@ -42,6 +63,20 @@
     "target": "tests/web/test_document_history_api.py::test_restore_from_a_stale_base_conflicts_and_writes_nothing"
   },
   {
+    "name": "an archived document's restore says archived before anything else, even of its current revision",
+    "file": "nora/web/document_history.py",
+    "old": "    if current.summary.state != \"active\":\n        return RestoreResult(\"not_active\")",
+    "new": "",
+    "target": "tests/web/test_document_history_api.py::test_restoring_the_current_revision_of_an_archived_document_says_archived"
+  },
+  {
+    "name": "a checker that fails is unavailable, never invalid and never stored",
+    "file": "nora/web/document_history.py",
+    "old": "    if checked.status == \"error\":\n        return RestoreResult(\"unavailable\")",
+    "new": "",
+    "target": "tests/web/test_document_history_api.py::test_a_checker_that_fails_is_unavailable_and_stores_nothing"
+  },
+  {
     "name": "restore re-checks the old spec and refuses what this build refuses",
     "file": "nora/web/document_history.py",
     "old": "    if not checked.ok or checked.document is None:\n        return RestoreResult(\"invalid\")",
@@ -56,11 +91,11 @@
     "target": "tests/web/test_document_history_api.py::test_restore_publishes_the_old_spec_as_a_new_revision_and_keeps_every_old_one"
   },
   {
-    "name": "restore of an archived document is refused by add_revision (fake store)",
-    "file": "nora/testing/fakes.py",
-    "old": "        if self._state(document_id) != \"active\":\n            return RevisionOutcome(\"not_active\")\n        if len(self._revisions[document_id]) != base_revision:",
-    "new": "        if len(self._revisions[document_id]) != base_revision:",
-    "target": "tests/web/test_document_history_api.py::test_restore_is_refused_on_an_archived_document_and_404_on_a_deleted_one"
+    "name": "a restore that races a delete or a forget is the unreadable 404, not a reason",
+    "file": "nora/web/document_history.py",
+    "old": "        if again is None or again.summary.state == \"deleted\" or again.summary.forgotten:\n            return RestoreResult(\"not_found\")",
+    "new": "",
+    "target": "tests/web/test_document_history_api.py::test_a_restore_that_races_a_delete_is_a_404_never_a_reason"
   },
   {
     "name": "a picture only an earlier revision names is served",

@@ -1,5 +1,5 @@
 """`/app/v1/documents/{id}/revisions`: a document's history, one old revision, and a
-restore that publishes an old spec as a NEW revision (design/artifact §32, DEC row in
+restore that publishes an old spec as a NEW revision (design/artifact §34, DEC row in
 design/09-decision-index.md).
 
 The world is `test_documents_api`'s: the real `rooms_named` over a real `Policy`, so the
@@ -13,7 +13,8 @@ from uuid import uuid4
 import pytest
 from aiohttp import web
 
-from nora.domain.documents import RevisionIn
+from nora.documents.check import Checked
+from nora.domain.documents import FORGET_SET_BY_PREFIX, RevisionIn
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
@@ -72,6 +73,12 @@ async def history_client(aiohttp_client):
         document_id=world.ids["c"], platform="signal", conversation_id="r3",
         created_by="jo", revision=_rev("Jo's plan"),
     )
+    # Made in r1 by Sam, whom r1 does not name: Sam reads it as its creator, Mei as r1's.
+    world.ids["d"] = uuid4()
+    await world.store.create(
+        document_id=world.ids["d"], platform="signal", conversation_id="r1",
+        created_by="sam", revision=_rev("Sam's note"),
+    )
     app = web.Application()
     register_web_routes(
         app,
@@ -90,6 +97,9 @@ async def history_client(aiohttp_client):
         documents=world.store,
         rooms_of=world.rooms_of,
         blobs=world.blobs,
+        room_label=lambda platform, conversation_id: {"r1": "Trip room", "r3": "Jo's room"}.get(
+            conversation_id, ""
+        ),
     )
     return await aiohttp_client(app), world
 
@@ -272,3 +282,73 @@ async def test_restore_of_a_spec_this_build_refuses_is_refused_not_stored(histor
     resp = await _restore(client, world, 4, base=5)
     assert resp.status == 409 and await resp.json() == {"status": "invalid"}
     assert len(await _numbers(world)) == 5
+
+
+# ------------------------------------------------- after the merge with #686 (design §34)
+async def test_history_carries_the_room_label_only_for_a_viewer_in_that_room(history_client):
+    # The detail payload's rule (`_room_label`): a creator outside the room reads the
+    # document and its history, but is not told what the room is called.
+    client, world = history_client
+    mei = await (await client.get(_h(world, "mei", doc="d"))).json()
+    sam = await (await client.get(_h(world, "sam", doc="d"))).json()
+    assert mei["roomLabel"] == "Trip room"
+    assert sam["roomLabel"] == ""
+    one_mei = await (await client.get(_one(world, 1, person="mei", doc="d"))).json()
+    one_sam = await (await client.get(_one(world, 1, person="sam", doc="d"))).json()
+    assert (one_mei["roomLabel"], one_sam["roomLabel"]) == ("Trip room", "")
+    assert "r1" not in str(sam) and "conversation" not in str(sam).lower()
+
+
+async def test_a_forgotten_document_has_no_history_no_revision_and_no_restore(history_client):
+    client, world = history_client
+    await world.store.set_state(
+        document_id=world.ids["a"], state="deleted", set_by=f"{FORGET_SET_BY_PREFIX}ken"
+    )
+    unknown = await client.get(f"/app/v1/documents/{uuid4()}/revisions?personId=mei")
+    for resp in (
+        await client.get(_h(world, "mei")),
+        await client.get(_h(world, "ken")),
+        await client.get(_one(world, 1)),
+        await _restore(client, world, 1, base=3),
+    ):
+        assert resp.status == 404
+        assert await resp.json() == await unknown.json()
+    assert len(await _numbers(world)) == 3
+
+
+async def test_a_restore_that_races_a_delete_is_a_404_never_a_reason(history_client):
+    # Readable when the restore read it, deleted (here: forgotten) before add_revision took
+    # its lock: the viewer gets the unreadable document's 404, not "archived".
+    client, world = history_client
+    store = world.store
+    real = store.add_revision
+
+    async def racing(**kwargs: Any):
+        await store.set_state(
+            document_id=world.ids["a"], state="deleted", set_by=f"{FORGET_SET_BY_PREFIX}ken"
+        )
+        return await real(**kwargs)
+
+    store.add_revision = racing  # type: ignore[method-assign]
+    resp = await _restore(client, world, 1, base=3)
+    assert resp.status == 404 and await resp.json() == {"status": "not_found"}
+    assert len(await _numbers(world)) == 3
+
+
+async def test_restoring_the_current_revision_of_an_archived_document_says_archived(
+    history_client,
+):
+    client, world = history_client
+    await world.store.set_state(document_id=world.ids["a"], state="archived", set_by="ken")
+    resp = await _restore(client, world, 3, base=3)
+    assert resp.status == 409 and await resp.json() == {"status": "not_active"}
+
+
+async def test_a_checker_that_fails_is_unavailable_and_stores_nothing(history_client, monkeypatch):
+    client, world = history_client
+    monkeypatch.setattr(
+        "nora.web.document_history.check_document", lambda _spec: Checked(status="error")
+    )
+    resp = await _restore(client, world, 1, base=3)
+    assert resp.status == 503 and (await resp.json())["status"] == "unavailable"
+    assert len(await _numbers(world)) == 3

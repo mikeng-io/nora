@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { signIn, watchErrors } from "./helpers";
 
-// The three views of one stored document (design/artifact §32): present (one Section per
+// The three views of one stored document (design/artifact §34): present (one Section per
 // slide), print (the document and nothing else), and history (an old revision read-only).
 // Against the mock API: Lisbon in December is at revision 3, with one Section and a picture
 // after it, so it presents as a cover and one slide. Nothing here restores a revision: the
@@ -10,6 +10,16 @@ import { signIn, watchErrors } from "./helpers";
 // tests/web/test_document_history_api.py and dev/mock-history.test.ts).
 const LISBON = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e01";
 const MEIS = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e04";
+const ROTA = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e02";
+// A link carries the 12-hex handle; the page resolves it to this UUID.
+const PACKING = "9e1d2c3b-4a5f-4617-8899-aabbccddeeff";
+const PACKING_HANDLE = "9e1d2c3b4a5f";
+
+const MOCK = `http://127.0.0.1:${process.env.MOCK_PORT ?? 9199}`;
+// The archived test changes a document's state: the mock is put back after each test.
+test.afterEach(async ({ request }) => {
+  await request.post(`${MOCK}/__mock/documents/reset`);
+});
 
 async function seriousViolations(page: Page) {
   // The entrance fade runs from opacity 0: contrast read mid-fade is the animation's, not
@@ -26,7 +36,7 @@ test("Present shows one Section per slide, moves on the keyboard, and Escape lea
   await signIn(page);
   await page.goto(`/en/documents/${LISBON}`);
   await page.getByRole("link", { name: "Present" }).click();
-  await expect(page).toHaveURL(new RegExp(`/documents/${LISBON}\\?view=present$`));
+  await expect(page).toHaveURL(new RegExp(`/documents/${LISBON}\\?view=present`));
   const deck = page.getByTestId("present-view");
   await expect(deck).toBeVisible();
   await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
@@ -57,7 +67,107 @@ test("Present shows one Section per slide, moves on the keyboard, and Escape lea
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(new RegExp(`/documents/${LISBON}$`));
   await expect(page.getByTestId("present-view")).toHaveCount(0);
+  // Focus is back on the Present button, and leaving went BACK: one more Back leaves the
+  // document, so the deck left no second copy of the page in the history.
+  await expect(page.getByTestId("present-button")).toBeFocused();
+  await page.goBack();
+  await expect(page).not.toHaveURL(new RegExp(`/documents/${LISBON}`));
   errors.expectNone();
+});
+
+test("Present is a modal in effect: the page behind is inert and Tab stays in the deck", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/en/documents/${LISBON}?view=present`);
+  await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
+  expect(await page.evaluate(() => Boolean(document.querySelector("main")?.closest("[inert]")))).toBe(true);
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press(i % 3 === 2 ? "Shift+Tab" : "Tab");
+    expect(
+      await page.evaluate(() => Boolean(document.activeElement?.closest("[data-present-deck]"))),
+      `Tab ${i}`,
+    ).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("present-view")).toHaveCount(0);
+  expect(await page.evaluate(() => Boolean(document.querySelector("main")?.closest("[inert]")))).toBe(false);
+});
+
+test("a focused code block keeps its arrows, the slide stays in the URL, and a reload keeps it", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/en/documents/${LISBON}?view=present`);
+  await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
+  await expect(page).toHaveURL(/[?&]slide=2(&|$)/);
+  // The code block is a scroll region: its arrow keys scroll it, they do not turn slides.
+  await page.getByTestId("present-view").getByRole("region", { name: "text code" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Space");
+  await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
+  // Escape is never the block's.
+  await page.reload();
+  await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(new RegExp(`/documents/${LISBON}$`));
+});
+
+test("Present opened from a link's handle draws the pictures by the document's own id", async ({ page }) => {
+  const errors = watchErrors(page);
+  await signIn(page);
+  await page.goto(`/en/documents/${PACKING_HANDLE}?view=present`);
+  await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
+  await page.keyboard.press("ArrowRight");
+  const img = page.getByTestId("present-view").getByRole("img", { name: "The bag" });
+  await expect(img).toBeVisible();
+  await expect(img).toHaveAttribute("src", `/api/v1/documents/${PACKING}/media/${"b".repeat(64)}`);
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(new RegExp(`/documents/${PACKING_HANDLE}$`));
+  errors.expectNone();
+});
+
+test("the Print button in the dark theme prints its diagram redrawn light, then puts the theme back", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/en/documents/${PACKING}`);
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  const figure = page.locator("[data-print-document] [data-mermaid-theme]");
+  await expect(figure).toHaveAttribute("data-mermaid-theme", "dark");
+  // window.print, recorded instead of opening a dialog: what the paper would have shown.
+  await page.evaluate(() => {
+    const w = window as unknown as { printedWith?: string[] };
+    window.print = () => {
+      w.printedWith = [
+        document.documentElement.dataset.theme ?? "",
+        ...[...document.querySelectorAll("[data-mermaid-theme]")].map((e) => e.getAttribute("data-mermaid-theme") ?? ""),
+      ];
+    };
+  });
+  await page.getByRole("button", { name: "Print / save as PDF" }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { printedWith?: string[] }).printedWith ?? null))
+    .toEqual(["light", "light"]);
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
+});
+
+test("an archived document prints a line saying it is archived", async ({ page }) => {
+  await signIn(page);
+  await page.goto(`/en/documents/${ROTA}`);
+  await page.getByRole("button", { name: "Archive" }).click();
+  await expect(page.getByTestId("document-lifecycle").getByRole("button", { name: "Restore" })).toBeVisible();
+  try {
+    await expect(page.getByTestId("printed-archived")).toBeHidden();
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByTestId("printed-archived")).toHaveText(
+      "Archived: this document is off the list and Nora won't change it until it is restored.",
+    );
+    await expect(page.getByTestId("document-lifecycle")).toBeHidden();
+  } finally {
+    await page.emulateMedia({ media: "screen" });
+    await page.getByTestId("document-lifecycle").getByRole("button", { name: "Restore" }).click();
+    await expect(page.getByTestId("document-lifecycle").getByRole("button", { name: "Archive" })).toBeVisible();
+  }
 });
 
 test("Present has a visible exit control and works in Chinese too", async ({ page }) => {
@@ -123,6 +233,17 @@ test("printing a document keeps the document and drops the portal around it", as
       .map((el) => el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""));
   });
   expect(strays).toEqual([]);
+  // ...and inside it, the page's own controls and meta (drawn under the title) are gone:
+  // no button prints, and no line but the document's own.
+  const printedControls = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-print-document] button, [data-print-document] [data-testid]")]
+      .filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      })
+      .map((el) => el.getAttribute("data-testid") ?? el.textContent?.trim()),
+  );
+  expect(printedControls).toEqual([]);
   await page.emulateMedia({ media: "screen" });
   await expect(page.getByTestId("document-actions")).toBeVisible();
 });

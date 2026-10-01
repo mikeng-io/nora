@@ -206,6 +206,27 @@ async def test_dependencies_builds_a_speaker_when_tts_is_enabled_and_keyed(cfg, 
     assert isinstance(deps.speaker, MiniMaxTtsSpeaker)
 
 
+@pytest.mark.parametrize(("mode", "kind"), [
+    ("off", type(None)), ("normalise", "_NormaliseOnly"), ("model", "SpeechFormatter"),
+])
+async def test_the_speech_formatter_is_wired_by_its_mode(cfg, monkeypatch, mode, kind):
+    """design/voice-channel/08: `off` (the template's value) wires NO
+    formatter, so the speaker sends her reply exactly as written; the other
+    two modes wire the deterministic half alone or the model call."""
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-key")
+    keyed = override_config(cfg, {
+        "speech.tts.enabled": True,
+        "speech.tts.provider": "minimax_cn",
+        "speech.tts.format.mode": mode,
+    })
+    deps = await build_dependencies(keyed)
+    formatter = deps.speaker._formatter  # type: ignore[union-attr]
+    if kind is type(None):
+        assert formatter is None
+    else:
+        assert type(formatter).__name__ == kind
+
+
 async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     """DEC-150: the composition root must no longer wire a capability block.
 
@@ -2222,6 +2243,16 @@ async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     assert deps.computer_sweeper is not None
     assert deps.computer_sweep_seconds == 42.0
     assert deps.assembler._computer_reader is not None
+    # DEC-261: the probe of computerd exists only while on, and "off" leaves no
+    # `nora_computer_up` sample (not applicable), where "on" has primed series
+    # at zero and still no `up` until the first probe has run.
+    assert off.computer_probe is None
+    assert not [ln for ln in off.metrics.render().splitlines()
+                if ln.startswith(("nora_computer_up", "nora_computer_calls_total"))]
+    assert deps.computer_probe is not None
+    on_lines = deps.metrics.render().splitlines()
+    assert any(ln.startswith("nora_computer_calls_total{") for ln in on_lines)
+    assert not [ln for ln in on_lines if ln.startswith("nora_computer_up")]
 
 
 @pytest.mark.parametrize(

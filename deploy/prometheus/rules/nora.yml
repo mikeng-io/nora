@@ -140,16 +140,27 @@ groups:
       # The series does not exist until the first occurrence (prometheus_client
       # only exposes label combinations that have been used), which is why this
       # is written on `increase(...)` and not on a comparison with a level.
+      #
+      # `nora_computer_calls_total` is excluded: one `unavailable` there is a
+      # call that hit a computerd restart, not an incident, and
+      # `ComputerCallsFailing` below is its thresholded rule. Left in, one
+      # computer call would page twice for the same thing.
       - alert: UnavailableOutcomes
-        expr: sum by (job, __name__) (increase({__name__=~".+_total", status="unavailable"}[15m])) > 0
+        expr: >-
+          sum by (job, __name__) (increase({__name__=~".+_total",
+          __name__!="nora_computer_calls_total", status="unavailable"}[15m])) > 0
         for: 5m
         labels: { severity: warning }
         annotations:
-          summary: "{{ $labels.__name__ }} is reporting unavailable"
+          # Not `{{ $labels.__name__ }}`: increase() and sum() drop the metric
+          # name, so that rendered empty ("  is reporting unavailable", read back
+          # with promtool 2026-10-01). The query below names the counter.
+          summary: "a counter is reporting unavailable ({{ $labels.job }})"
           description: >-
             Something could not be checked at all — a wiring gap or a dead
             dependency, not an empty answer. This is the state that replaces an
-            exception in this codebase, so nothing else will report it.
+            exception in this codebase, so nothing else will report it. Which
+            counter: `{__name__=~".+_total", status="unavailable"}` in Prometheus.
 
       # Custody switched off while attachments are still arriving: the exact
       # silent degrade `nora/ingest/stages/media.py` counts rather than raises.
@@ -203,6 +214,74 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "guild {{ $labels.guild_id }}: 3+ music streams failed in 15 minutes (reason {{ $labels.reason }})"
+
+  - name: computer
+    rules:
+      # Nora cannot use her computer, as Nora sees it (DEC-261). `nora_computer_up`
+      # is set by a timed, AUTHENTICATED probe every 30s and by every real call,
+      # so it covers computerd down or hung, the sandbox stopped (a lapsed Docker
+      # login stops sbx's local sandboxes), and a token rotation that reached
+      # computerd but not Nora's container, where `/v1/health` stays green and
+      # every real call is a 401. The audit of 2026-10-01 found NO series that
+      # said any of this.
+      #
+      # `== 0`, never `absent()`: with `[computer] enabled = false` the series
+      # has no sample at all, which is "not applicable", and an absence-based
+      # rule would page a deployment that has no computer. The cost is that a
+      # dead Nora produces no series either: `TargetDown` is the rule for that.
+      - alert: ComputerDown
+        expr: nora_computer_up == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Nora's computer has not answered for 5 minutes"
+          description: >-
+            Every computer tool answers unavailable until this clears. On norty:
+            `deploy/computer/nora-computer status` (sandbox=, computerd=,
+            egress=), `systemctl --user status nora-computer`, `sbx ls`. A
+            computerd that is up but answers 401 is a token the container does
+            not hold: `status` reads `computerd=up` and not `healthy`, and
+            deploy/computer/README.md "Rotating the token" is the fix. A stopped
+            sandbox after a Docker login lapse needs `sbx login`.
+
+      # Calls reaching computerd and failing, while it may still answer enough
+      # to keep `nora_computer_up` at 1 (a full disk, an OS error, a command
+      # path that raises). `unavailable` only: `denied` is a refusal as asked and
+      # `nothing_found` an honest empty (R-27), neither is the computer failing.
+      # "5 in 15m" is `increase() >= 5`, and `increase` EXTRAPOLATES at the window
+      # edges: with the zero baseline sample inside the window (the counters are
+      # created at 0 at start) exactly 5 events read exactly 5 and exactly 4 read
+      # 4, one burst inside a single scrape reads 5 (the promtool cases at the
+      # threshold, below), but events straddling the window's start can read
+      # a little under or over. So the threshold is "about 5", never an exact
+      # count. A computerd restart mid-call costs one or two.
+      - alert: ComputerCallsFailing
+        expr: sum by (job) (increase(nora_computer_calls_total{status="unavailable"}[15m])) >= 5
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value | humanize }} computer calls answered unavailable in 15 minutes"
+          description: >-
+            Compare by op: `nora_computer_calls_total{status="unavailable"}`.
+            When `nora_computer_up` is also 0 this is `ComputerDown`'s cause;
+            when it is 1 computerd is answering and failing, so read its unit
+            journal (`journalctl --user -u nora-computer -n 100`).
+
+      # The audit trail is the operator's one required control over the computer
+      # (design/sandbox-runtime §12) and "an operation with no row is a defect".
+      # The counter was never seen live because its series only existed after
+      # the first failure; it is created at zero at start now, so the first
+      # failure moves it from 0 and `increase` can see it.
+      - alert: ComputerAuditFailing
+        expr: sum by (job, stage) (increase(nora_computer_audit_failures_total[1h])) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "computer audit writes are failing (stage {{ $labels.stage }})"
+          description: >-
+            A computer call ran without its audit row (stage row), or its full
+            input/output was not kept (blob). The tool still answered. Check the
+            db and the blob store; the rows that failed are not recoverable.
 
   - name: monitoring-itself
     rules:
