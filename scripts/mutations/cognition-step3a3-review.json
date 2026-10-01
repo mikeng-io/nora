@@ -92,35 +92,35 @@
  },
  {
   "name": "major 2: a message line carries no id",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "    return f\"  [#{rec.message_id}] {who}, {when}{edited}: {body}{tags}\"",
   "new": "    return f\"  {who}, {when}{edited}: {body}{tags}\"",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {
   "name": "major 2: a message line carries no time",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "    return f\"  [#{rec.message_id}] {who}, {when}{edited}: {body}{tags}\"",
   "new": "    return f\"  [#{rec.message_id}] {who}{edited}: {body}{tags}\"",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {
   "name": "major 2: a message body is not collapsed to one line",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "    line = one_line(text)\n",
   "new": "    line = str(text)\n",
   "target": "tests/unit/test_cognition_grounding.py::test_a_body_with_a_newline_cannot_write_a_second_agenda_line"
  },
  {
   "name": "major 2: an over-budget item is not cut",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "        if kept and spent + cost > allowance:",
   "new": "        if False:",
   "target": "tests/unit/test_cognition_grounding.py::test_an_item_over_its_share_drops_the_oldest_and_says_how_many_and_which tests/unit/test_cognition_grounding.py::test_the_budget_is_shared_by_need_so_a_chatty_room_does_not_starve_a_quiet_one"
  },
  {
   "name": "major 2: the register index lines are not rendered",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "        else _register(rooms, ground, now_ms=now_ms, tz=tz, budget=spend)",
   "new": "        else []",
   "target": "tests/unit/test_cognition_grounding.py::test_the_register_index_lines_follow_the_agenda_and_carry_ids"

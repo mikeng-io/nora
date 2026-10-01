@@ -33,7 +33,6 @@ from nora.domain.cognition_ground import (
     NoteLine,
     RecordItem,
 )
-from nora.domain.cognition_render import RenderBudget, render_agenda
 from nora.domain.cognition_session import Room, build_situation
 from nora.domain.gatherings import Gathering
 from nora.domain.lineage import ROW, Lineage, LineageEntry, RoomFacts
@@ -41,6 +40,7 @@ from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.stimuli import Stimulus, UnitView
+from nora.language.cognition_render import RenderBudget, render_agenda
 from nora.persons import Persons
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder

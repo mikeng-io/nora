@@ -106,14 +106,14 @@
   },
   {
     "name": "minor 3: the per-item floor overruns the budget",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "    floor = min(floor, total // len(needs)) if needs else floor\n",
     "new": "",
     "target": "tests/unit/test_cognition_grounding.py::test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor"
   },
   {
     "name": "minor 3: a single line may exceed its share",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "        if not kept and cost > allowance:\n",
     "new": "        if False:\n",
     "target": "tests/unit/test_cognition_grounding.py::test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor tests/unit/test_cognition_grounding.py::test_a_single_message_longer_than_its_share_is_still_shown_clipped"

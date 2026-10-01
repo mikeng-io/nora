@@ -38,7 +38,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from nora.domain import cognition_render as cr
 from nora.domain.cognition_ground import (
     EventLine,
     Grounding,
@@ -47,7 +46,9 @@ from nora.domain.cognition_ground import (
     RollupLine,
 )
 from nora.domain.cognition_session import AgendaItem, Room, build_agenda
+from nora.domain.prompt import ago
 from nora.domain.stimuli import Stimulus
+from nora.language import cognition_render as cr
 
 GOLDEN: dict[str, str] = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "cognition_render_step3a_goldens.json")
@@ -184,7 +185,7 @@ def _() -> str:
         -5, 0, 59_999, MIN, 59 * MIN + 59_999, HOUR, HOUR + 59_999, HOUR + MIN,
         23 * HOUR + 59 * MIN, DAY - 1, DAY, DAY + 23 * HOUR, 2 * DAY, 400 * DAY,
     )
-    return "\n".join(f"{s}: {cr.ago(s)}" for s in spans)
+    return "\n".join(f"{s}: {ago(s)}" for s in spans)
 
 
 @_case("returning-wording")

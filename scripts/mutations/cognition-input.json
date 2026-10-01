@@ -106,28 +106,28 @@
   },
   {
     "name": "render: her own send is marked as hers",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "{rec.author} (you), {when}",
     "new": "{rec.author}, {when}",
     "target": "tests/unit/test_cognition_grounding.py -k her_own_send_is_shown_in_the_items_window"
   },
   {
     "name": "render: only her sends in the item's own room appear under it",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "        if rec.room == item.room:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
     "new": "        if True:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
     "target": "tests/unit/test_cognition_grounding.py -k another_room_is_never_rendered"
   },
   {
     "name": "render: a rollup line names the person from its ref",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "    who = _join_names(line.names)",
     "new": "    who = \"someone\"",
     "target": "tests/unit/test_cognition_grounding.py -k a_deviation_names_the_person"
   },
   {
     "name": "render: an item is headed by its room's label, never its id",
-    "file": "nora/domain/cognition_render.py",
+    "file": "nora/language/cognition_render.py",
     "old": "        f\"[room {room_label(item.room, grounding.room_labels)}]\"\n        f\"{_item_age(",
     "new": "        f\"[room {room_key(item.room)}]\"\n        f\"{_item_age(",
     "target": "tests/unit/test_cognition_grounding.py -k each_message_carries_its_id"
