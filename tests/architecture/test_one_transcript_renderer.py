@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: The two renderers in the tree that turn records into prompt text. A module
 #: calling either is rendering something for somebody, and has to say which.
-_RENDERERS = ("render_rows", "render_messages", "render_elements")
+_RENDERERS = ("render_rows", "render_messages", "render_elements", "render_row_window")
 
 #: **The element renderers.** `render_messages` is a thin caller of
 #: `render_elements` (one renderer, two entry points), so a builder is
@@ -47,7 +47,11 @@ _RENDERERS = ("render_rows", "render_messages", "render_elements")
 #: call `render_messages`; the ones carrying a different set (a real row id, a
 #: wall clock, a room label, a delivery mark) call `render_elements` directly
 #: rather than bending the transcript's signature around them.
-_ELEMENT_RENDERERS = ("render_messages", "render_elements")
+#: `render_row_window` is `render_elements` with `n` fixed to the row's own id
+#: (context-assembly step 1) — the same one renderer, a third entry point — and
+#: is what note-candidates and the curator call, so it counts as converted for
+#: the same reason.
+_ELEMENT_RENDERERS = ("render_messages", "render_elements", "render_row_window")
 
 #: **The converted builders.** Module -> what it renders.
 CONVERTED = {
