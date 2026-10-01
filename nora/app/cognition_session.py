@@ -131,7 +131,13 @@ from nora.domain.stimuli import (
     is_context_overflow,
     prove_overflow_is_the_agenda,
 )
-from nora.language.cognition_render import RenderBudget, render_agenda, room_key, room_label
+from nora.language.cognition_render import (
+    RenderBudget,
+    render_agenda,
+    room_key,
+    room_label,
+    speaker_of,
+)
 
 log = logging.getLogger("nora.app.cognition_session")
 
@@ -1139,8 +1145,11 @@ class CognitionSessionRunner:
             here = Room(platform, conversation_id)
             fetched = state.fetched.of(_room_key(here))
             rendered: dict[int, ShownMessage] = {
+                # `sender` IS the `from` the prompt rendered for this row: the
+                # note validator compares a `(<names>)` slot to it, so it is
+                # `speaker_of`, the one function the renderer uses too (step 3b).
                 r.message_id: ShownMessage(
-                    id=r.message_id, sender=r.author, person_id=r.person_id,
+                    id=r.message_id, sender=speaker_of(r.author), person_id=r.person_id,
                     is_nora=r.own or r.author in self._nora_names,
                 )
                 for r in state.records

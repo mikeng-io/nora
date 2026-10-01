@@ -22,16 +22,16 @@ AT = int(datetime(2026, 9, 30, 16, 30, tzinfo=HK).timestamp() * 1000)
 
 
 def _event(**kw: object) -> EventLine:
-    base: dict[str, object] = dict(
-        id="e-9", room=ROOM, title="Dinner", when_ms=AT, venue="Ramen Ya",
-        status="proposed", revision="rev-3",
-    )
+    base: dict[str, object] = {
+        "id": "e-9", "room": ROOM, "title": "Dinner", "when_ms": AT, "venue": "Ramen Ya",
+        "status": "proposed", "revision": "rev-3",
+    }
     base.update(kw)
     return EventLine(**base)  # type: ignore[arg-type]
 
 
 def _rows(text: str) -> list[ET.Element]:
-    return list(ET.fromstring(f"<r>{text}</r>"))
+    return list(ET.fromstring(f"<r>{text}</r>"))  # noqa: S314 - our own bytes, rooted before parse
 
 
 def test_an_event_carries_id_status_when_venue_revision_and_title():

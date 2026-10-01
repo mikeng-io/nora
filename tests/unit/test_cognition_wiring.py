@@ -47,6 +47,7 @@ from nora.obs.metrics import Metrics
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.unit.cognition_view import blocks, items, named
 
 NOW = 1_790_000_000_000
 HOME = Room("signal", "home")
@@ -314,10 +315,14 @@ async def test_the_prompt_says_what_time_it_is_and_how_old_each_item_is():
     agent = _Agent()
     runner, _s, _l = _runner(agent=agent)
     await _wake(runner, (_stim(1, HOME, at=NOW - 90 * 60_000),))
-    first, _reads, item = agent.prompts[0].splitlines()[:3]
-    assert first.startswith("It is ") and "(UTC)" in first
-    assert "This is your first look at this group." in first
-    assert "1 h 30 min ago" in item, item
+    prompt = agent.prompts[0]
+    # the clock is the FIRST thing she reads, then which room her reads look through
+    assert [b.tag for b in blocks(prompt)][:2] == ["clock", "reads"]
+    (clock,) = named(prompt, "clock")
+    (item,) = items(prompt)
+    assert (clock.text or "").strip().startswith("It is ") and "(UTC)" in (clock.text or "")
+    assert "This is your first look at this group." in (clock.text or "")
+    assert "1 h 30 min ago" in item.attrib["window"], item.attrib
 
 
 async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():

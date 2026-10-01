@@ -1,6 +1,8 @@
 """The agenda as the model reads it: a clock, one block per item and the index
-lines of what is already recorded (design/cognition-loop/30-cognition.md §1;
-#637 review, major 2). Pure: strings in, a string out, no store, no clock.
+of what is already recorded, every one a context-assembly block
+(design/cognition-loop/30-cognition.md §1; #637 review, major 2; step 3b of
+design/context-assembly/04-every-occasion.md). Pure: strings in, a string out, no
+store, no clock.
 
 **Every question the session is asked, the input answers first** (AGENTS.md's
 spine). She is asked whether a room settled a plan, is still deciding, or is
@@ -8,50 +10,110 @@ talking around it: that turns on WHO said WHAT, WHEN, and whether anyone
 answered, so each item carries its messages with an author, a time and an age
 (a block that cannot say which end is newest reads every line as «just now»,
 measured on the relevance gate); a note may cite only the ids it rests on, so
-each line carries its `[#id]`; «is this already written down» turns on the
-Register, so the index lines follow the agenda. A line states what happened and
-never what to conclude (§1): tags say «edited» and name a cue's kind, and stop
+each message carries its id; «is this already written down» turns on the
+Register, so the index follows the agenda. A row states what happened and never
+what to conclude (§1): attributes say «edited» and name a cue's kind, and stop
 there.
 
-**Bounded, and it says when it cut.** The whole Record block spends at most
-`RenderBudget.record_chars`, shared across the items by what each needs, and a
-message is clipped at `message_chars`. When an item's messages do not fit, the
-OLDEST are dropped and a line says how many and which ids: a session that is
-not told it was handed a slice reads the slice as the whole conversation.
+**The id shown IS the id required** (step 3b, and the whole bug). Until it
+shipped the prompt wrote `[#7998] Ann, 16:35: body` and the verb it then asked
+for, `note_create`, required the citation as a bare `[7998]` and the attribution
+as `(Ann)`: the input contradicted its own validator, and a live trace showed
+three refusals in four calls for exactly that. Every message is now
+`<m n="7998" from="Ann" ...>` through the shared row-id window
+(`nora.domain.blocks.render_row_window`), the way note-candidates and the
+curator show theirs: `n` is the real message id and `from` the name the validator
+compares a `(<names>)` slot to. `speaker_of` is that one name, read here for the
+render and by the session for the validator (`shown_for`), so the two cannot
+differ, and the block types say what each is for
+(`nora.domain.block_types`: `agenda_item`).
 
-**Group-derived text is one line.** A message body is collapsed to one line
-(`nora.domain.prompt.one_line`) before it is quoted: a body that contained a
-newline would otherwise write a second line indistinguishable from a real
-agenda line, the forgery the relevance gate measured.
+**Bounded, and it says when it cut.** The Record rows spend at most
+`RenderBudget.record_chars`, shared across the items by what each needs, counted
+as RENDERED (a row's element, its attributes included), and a message's words are
+cut at `message_chars`. `_fit`, `_shares` and `RenderBudget` are a row-SELECTION
+pre-step: they choose which rows an item shows and the blocks render what they
+chose. When an item's rows do not fit, the OLDEST are dropped and the item says
+how many and which ids (`earlier_not_shown`, `earlier_range`): a session that is
+not told it was handed a slice reads the slice as the whole conversation. The one
+row an allowance always keeps is shown with its words cut, never with its element
+cut: the element is what keeps one row one row (an allowance smaller than the
+element's own attributes keeps the element and one character of words, so the
+cap is exact for any real budget and exceeded by that overhead only where the
+allowance could not hold a row at all).
+
+**Group-derived text is one line, and is escaped.** A message's words are
+collapsed to one line (`nora.domain.prompt.clip`, which is `one_line` and a cut)
+and escaped by the shared renderer, and every attribute value is collapsed and
+escaped there: a body that contained a newline, a closing tag or a quote can
+neither write a second row nor an element (R-13, R-13c; the forgery the
+relevance gate measured).
 
 **Where it lives.** In `nora.language`, not `nora.domain`: it was a domain module
-until step 3a of `design/context-assembly/04-every-occasion.md` and moved whole,
-no rendered byte changed (the goldens are
-`tests/unit/test_cognition_render_goldens.py`), so that step 3b can build it from
-the `nora.language` renderers, which a domain module may not import. The types
-it renders (`AgendaItem`, `Room`, `Stimulus`, `Grounding` and its lines) stay in
-`nora.domain`.
+until step 3a and moved whole, no rendered byte changed (the pre-3b baseline is
+`tests/fixtures/cognition_render_pre3b_baseline.json`), so that step 3b could
+build it from the `nora.language` renderers, which a domain module may not
+import. The types it renders (`AgendaItem`, `Room`, `Stimulus`, `Grounding` and
+its lines) stay in `nora.domain`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, tzinfo
 
-from nora.domain.blocks import speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    render_elements,
+    render_row_window,
+    restamp,
+    speaker_name,
+)
 from nora.domain.cognition_ground import (
     UNNAMED_ROOM,
-    EventLine,
     Grounding,
-    NoteLine,
     RecordItem,
     RollupLine,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.prompt import ago, one_line
+from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.stimuli import Stimulus
+from nora.language.event_render import render_event_rows
+from nora.language.note_render import render_note_rows
+
+#: What this prompt carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`). `render_agenda` builds its
+#: blocks from this table and walks it with `assemble`, so `order` IS the order
+#: the model reads: the clock, which room(s) the read tools look through, one
+#: `agenda_item` per item (repeated, in the agenda's own order), then what is
+#: already recorded, notes first and then each agenda room's events. The numbers
+#: are the order of the lines they replace (the 3a baseline).
+#:
+#: `key="turn"` throughout: this prompt is its own call pattern with no
+#: established cache boundary, so a key borrowed from `prefill._BLOCKS` would not
+#: describe the same thing here, and nothing routes on `key` yet either way
+#: (`design/context-assembly/00-overview.md` §3).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("clock", 10, "turn"),
+    ("reads", 20, "turn"),
+    ("agenda_item", 30, "turn"),
+    ("note_index", 40, "turn"),
+    ("events", 50, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+#: The prompt's separator between blocks. The blocks are several lines each, so
+#: a blank line is what reads as the boundary between them.
+_SEP = "\n\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,14 +122,16 @@ class RenderBudget:
     STARTING guess like every number in this migration, sized from a shadow
     week's sessions and set in `[cognition]`."""
 
-    #: All items' Record lines together.
+    #: All items' Record rows together, counted as rendered.
     record_chars: int = 8000
     #: One message's words.
     message_chars: int = 400
     #: What a single item is always allowed, however many items share the rest.
     min_item_chars: int = 900
-    #: The Register index lines, notes and per-room lines each.
+    #: The Register index rows, notes and per-room events each.
     register_lines: int = 40
+    #: The Register's rows together, counted as rendered (the blocks' own
+    #: description and attributes are not spent from it).
     register_chars: int = 3600
 
 
@@ -80,6 +144,24 @@ def room_label(room: Room, labels: Mapping[str, str]) -> str:
     (R-18; `UNNAMED_ROOM` for a room with none). The id is what a tool's `room`
     argument takes, so it stays THERE, in the tool's own schema."""
     return f"«{labels.get(room_key(room)) or UNNAMED_ROOM}»"
+
+
+def speaker_of(author: str) -> str:
+    """The name a message is shown under, and the name the note validator
+    compares a `(<names>)` slot to: ONE function for both, so the `from` she
+    reads and the sender she is held to are the same string
+    (`nora.domain.note_body.ShownMessage.sender`, which the session fills from
+    this).
+
+    The collapse and the `unknown` floor are `speaker_name`'s, the one the
+    sibling passes use (`row_speaker`), and the removal of characters XML cannot
+    carry is the one the renderer applies to an attribute, done FIRST so a name
+    that is nothing but such characters is the floor and not an empty string.
+    `[`, `]` and `:` are kept: an attribute is not the `[who]: body` line they
+    delimited, and a note line's `(<names>)` takes a name with them (the
+    validator reads the trailing `[<ids>]` of a line, not the name's own
+    brackets)."""
+    return speaker_name(legal(author))
 
 
 def clock_line(now_ms: int, last_session_ms: int | None, tz: tzinfo) -> str:
@@ -107,73 +189,122 @@ def _when(at_ms: int, now_ms: int, tz: tzinfo) -> str:
     return f"{face} ({ago(now_ms - at_ms)})"
 
 
-def _item_age(item: AgendaItem, times: Sequence[int], now_ms: int, tz: tzinfo) -> str:
+def _window(times: Sequence[int], now_ms: int, tz: tzinfo) -> str:
+    """When an item's messages were sent: `at 14:50, 40 min ago`, or
+    `from 14:05 to 14:50, the newest 40 min ago` when they span a minute."""
     if not times:
         return ""
     newest, oldest = max(times), min(times)
     at = f"{datetime.fromtimestamp(oldest / 1000, tz=tz):%H:%M}"
     if newest - oldest < 60_000:
-        return f" (at {at}, {ago(now_ms - newest)})"
+        return f"at {at}, {ago(now_ms - newest)}"
     to = f"{datetime.fromtimestamp(newest / 1000, tz=tz):%H:%M}"
-    return f" (from {at} to {to}, the newest {ago(now_ms - newest)})"
+    return f"from {at} to {to}, the newest {ago(now_ms - newest)}"
 
 
 def returning(strike: int) -> str:
     """A returning item says so: without it two items of one room (the fresh
-    messages and the ones an earlier session left open) read the same."""
+    messages and the ones an earlier session left open) read the same. The
+    `returning` attribute's value; empty when the item is not returning."""
     if strike <= 0:
         return ""
     noun = "session" if strike == 1 else "sessions"
-    return f" (returning: left open by {strike} earlier {noun})"
+    return f"left open by {strike} earlier {noun}"
 
 
-def _clip(text: str, limit: int) -> str:
-    line = one_line(text)
-    if len(line) <= limit:
-        return line
-    return line[: max(limit - 1, 1)].rstrip() + "…"
+def _words(text: str, limit: int) -> str:
+    """A message's words as one line cut to `limit`; none at all for a limit of
+    nothing (the measure of what a row costs without them)."""
+    return clip(text, limit) if limit > 0 else ""
 
 
-def _record_line(
+@dataclass(frozen=True, slots=True)
+class _Row:
+    """One readable row of an item, before it is rendered: where it sorts, and
+    how to render it. `show(None)` is the row as it is normally shown;
+    `show(n)` shows its words cut to `n` characters, which is how the one row an
+    allowance must keep is made to fit without cutting its element."""
+
+    at_ms: int
+    id: int
+    show: Callable[[int | None], str]
+
+
+def _message_row(
     rec: RecordItem, cues: Sequence[str], *, now_ms: int, tz: tzinfo, message_chars: int,
-) -> str:
-    who = speaker_name(rec.author)
+) -> _Row:
+    """A person's message, an edit of one, a reaction to one or a deletion of
+    one, as `<m n="<message id>" at from ...>words</m>`. `n` is the message's
+    own id (`render_row_window` writes it first); a reaction's is the message
+    reacted to, and its `from` and words are that message's."""
     when = _when(rec.at_ms, now_ms, tz)
-    tags = f" [cues: {', '.join(cues)}]" if cues else ""
-    if rec.kind == "delete":
-        return (
-            f"  [#{rec.message_id}] {who}, {when}: deleted by its author "
-            f"(the words are withdrawn){tags}"
+    reacted = rec.kind == "reaction"
+    deleted = rec.kind == "delete"
+    withdrawn = deleted or (not reacted and rec.text is None)
+    edited = rec.kind == "edit" or (rec.kind == "message" and rec.edited)
+
+    def show(limit: int | None) -> str:
+        cap = message_chars if limit is None else min(limit, message_chars)
+        words = "" if deleted or rec.text is None else _words(rec.text, cap)
+        return render_row_window(
+            [rec], row_id=lambda r: r.message_id,
+            attrs=lambda r: (
+                ("at", when), ("from", speaker_of(r.author)),
+                ("reaction", (r.emoji or "?") if reacted else None),
+                ("edited", "yes" if edited else None),
+                ("withdrawn", "yes" if withdrawn else None),
+                ("deleted", "yes" if deleted else None),
+                ("cues", ", ".join(cues) if cues else None),
+            ),
+            body=lambda _r: words,
         )
-    words = "" if rec.text is None else _clip(rec.text, message_chars)
-    if rec.kind == "reaction":
-        return (
-            f"  someone reacted {rec.emoji or '?'} to [#{rec.message_id}] {who}"
-            f"{': ' + words if words else ''}, {when}{tags}"
-        )
-    edited = " (edited)" if rec.kind == "edit" or rec.edited else ""
-    body = words if rec.text is not None else "(the words are withdrawn)"
-    return f"  [#{rec.message_id}] {who}, {when}{edited}: {body}{tags}"
+
+    return _Row(rec.at_ms, rec.message_id, show)
 
 
-def _fit(lines: list[str], allowance: int) -> tuple[list[str], int]:
-    """The NEWEST lines that fit `allowance`, in order, and how many older ones
-    were left out. At least one line is always kept, CLIPPED to `allowance` when
-    the newest message is longer than its share: `record_chars` is a hard cap
-    (#637 second review: a per-item floor let 12 items spend 10,418 of 8,000)."""
+def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) -> _Row:
+    """Nora's own send, marked as hers: `own="yes"`. It is context the room's
+    messages may be answering, never a stimulus."""
+    when = _when(rec.at_ms, now_ms, tz)
+
+    def show(limit: int | None) -> str:
+        cap = message_chars if limit is None else min(limit, message_chars)
+        words = "" if rec.text is None else _words(rec.text, cap)
+        return render_row_window(
+            [rec], row_id=lambda r: r.message_id,
+            attrs=lambda r: (
+                ("at", when), ("from", speaker_of(r.author)), ("own", "yes"),
+                ("withdrawn", "yes" if r.text is None else None),
+            ),
+            body=lambda _r: words,
+        )
+
+    return _Row(rec.at_ms, rec.message_id, show)
+
+
+def _fit(rows: Sequence[_Row], allowance: int) -> tuple[list[str], int]:
+    """The NEWEST rows that fit `allowance`, rendered, in order, and how many
+    older ones were left out. At least one row is always kept, its WORDS cut to
+    fit when the newest is longer than its share: `record_chars` is a hard cap
+    (#637 second review: a per-item floor let 12 items spend 10,418 of 8,000).
+    The cut is in the words and never in the element, so a kept row is always a
+    whole row; an allowance smaller than the element's own attributes keeps the
+    element with one character of words, the one case the cap yields."""
     kept: list[str] = []
     spent = 0
-    for line in reversed(lines):
-        cost = len(line) + 1
+    for row in reversed(rows):
+        text = row.show(None)
+        cost = len(text) + 1
         if not kept and cost > allowance:
-            line = _clip(line, max(allowance - 1, 2))
-            cost = len(line) + 1
+            overhead = len(row.show(0)) + 1
+            text = row.show(max(allowance - overhead, 1))
+            cost = len(text) + 1
         if kept and spent + cost > allowance:
             break
-        kept.append(line)
+        kept.append(text)
         spent += cost
     kept.reverse()
-    return kept, len(lines) - len(kept)
+    return kept, len(rows) - len(kept)
 
 
 def _shares(needs: Sequence[int], total: int, floor: int) -> list[int]:
@@ -198,17 +329,6 @@ def _shares(needs: Sequence[int], total: int, floor: int) -> list[int]:
     return out
 
 
-def _own_line(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) -> str:
-    """Nora's own send, marked as hers: «Nora (you), 18:40 (…): words». It is
-    context the room's messages may be answering, never a stimulus."""
-    when = _when(rec.at_ms, now_ms, tz)
-    body = (
-        "(the words are withdrawn)" if rec.text is None
-        else _clip(rec.text, message_chars) or "(no words)"
-    )
-    return f"  [#{rec.message_id}] {rec.author} (you), {when}: {body}"
-
-
 def _span(start_ms: int | None, end_ms: int | None, now_ms: int, tz: tzinfo) -> str:
     if start_ms is None:
         return ""
@@ -223,7 +343,7 @@ def _join_names(names: Sequence[str]) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def _rollup_line(line: RollupLine, *, now_ms: int, tz: tzinfo) -> str:
+def _rollup_sentence(line: RollupLine, *, now_ms: int, tz: tzinfo) -> str:
     """A Rollup row as a fact, its ref's fields spelled out: WHO (roster name),
     WHAT kind, WHEN (the interval) and WHERE (a place, when the row names one).
     No conclusion: a row the rhythm scored anomalous is said to be that, not to
@@ -231,28 +351,42 @@ def _rollup_line(line: RollupLine, *, now_ms: int, tz: tzinfo) -> str:
     who = _join_names(line.names)
     span = _span(line.start_ms, line.end_ms, now_ms, tz)
     if line.kind == "colocation":
-        return f"  {who} were in the same place {span}"
+        return f"{who} were in the same place {span}"
     if line.kind == "arrival":
         at = f" at {line.place}" if line.place else ""
-        return f"  {who} arrived{at} {span}"
+        return f"{who} arrived{at} {span}"
     if line.kind == "deviation_silence":
         return (
-            f"  {who}: no message in any of the group's rooms and never at home, {span} "
+            f"{who}: no message in any of the group's rooms and never at home, {span} "
             "(presence and the platforms were healthy throughout)"
         )
     if line.kind == "deviation_anomaly":
-        return f"  {who}: a stay the rhythm scored anomalous, {span}"
-    return f"  {who}: {line.kind} {span}"
+        return f"{who}: a stay the rhythm scored anomalous, {span}"
+    return f"{who}: {line.kind} {span}"
 
 
-def _item_lines(
-    item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding, own: Sequence[RecordItem],
-    *, now_ms: int, tz: tzinfo, message_chars: int,
-) -> tuple[list[tuple[int, int, str]], int]:
-    """The item's readable lines `(at_ms, id, text)` and how many stimuli of it
-    could not be read: its messages (Record rows), Nora's own sends in its
-    window, and its Rollup rows."""
-    lines: list[tuple[int, int, str]] = []
+def _rollup_row(stimulus: Stimulus, line: RollupLine, *, now_ms: int, tz: tzinfo) -> _Row:
+    """A Rollup row as `<rollup kind="...">the sentence</rollup>`. It has no
+    message id, so it is no `<m>`: it is not something a note line cites."""
+    sentence = _rollup_sentence(line, now_ms=now_ms, tz=tz)
+
+    def show(limit: int | None) -> str:
+        return render_elements(
+            [line], tag="rollup", attrs=lambda r, _i: (("kind", r.kind),),
+            body=lambda _r: one_line(sentence) if limit is None else _words(sentence, limit),
+        )
+
+    return _Row(stimulus.at_ms, stimulus.id, show)
+
+
+def _item_rows(
+    item: AgendaItem, rows: Sequence[Stimulus], grounding: Grounding,
+    own: Sequence[RecordItem], *, now_ms: int, tz: tzinfo, message_chars: int,
+) -> tuple[list[_Row], int]:
+    """The item's readable rows and how many stimuli of it could not be read:
+    its messages (Record rows), Nora's own sends in its window, and its Rollup
+    rows."""
+    out: list[_Row] = []
     unreadable = 0
     for s in rows:
         if s.kind == "rollup":
@@ -260,7 +394,7 @@ def _item_lines(
             if roll is None:
                 unreadable += 1
                 continue
-            lines.append((s.at_ms, s.id, _rollup_line(roll, now_ms=now_ms, tz=tz)))
+            out.append(_rollup_row(s, roll, now_ms=now_ms, tz=tz))
             continue
         ref = record_ref(s)
         if ref is None:
@@ -269,46 +403,56 @@ def _item_lines(
         if rec is None or rec.room != item.room:
             unreadable += 1
             continue
-        lines.append((rec.at_ms, rec.message_id, _record_line(
+        out.append(_message_row(
             rec, s.cues, now_ms=now_ms, tz=tz, message_chars=message_chars,
-        )))
+        ))
     for rec in own:
         if rec.room == item.room:
-            lines.append((rec.at_ms, rec.message_id, _own_line(
-                rec, now_ms=now_ms, tz=tz, message_chars=message_chars,
-            )))
-    return lines, unreadable
+            out.append(_own_row(rec, now_ms=now_ms, tz=tz, message_chars=message_chars))
+    return out, unreadable
+
+
+def _attrs(pairs: Sequence[tuple[str, str | None]]) -> tuple[tuple[str, str], ...]:
+    """A block's attributes, the empty ones dropped: an attribute that says
+    nothing is no attribute, as in the shared element renderers."""
+    return tuple((k, v) for k, v in pairs if v)
+
+
+def _item_attrs(
+    index: int, item: AgendaItem, labels: Mapping[str, str],
+) -> list[tuple[str, str | None]]:
+    return [
+        ("index", str(index)), ("kind", item.kind),
+        ("room", room_label(item.room, labels)), ("summary", item.summary),
+        ("returning", returning(item.strike)),
+    ]
 
 
 def _item_block(
     index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
-) -> list[str]:
+) -> ContextBlock:
     rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
-    head = (
-        f"{index}. {item.summary}{returning(item.strike)} "
-        f"[room {room_label(item.room, grounding.room_labels)}]"
-        f"{_item_age(item, [s.at_ms for s in rows], now_ms, tz)}"
-    )
-    lines, unreadable = _item_lines(
+    readable, unreadable = _item_rows(
         item, rows, grounding, grounding.own_sends.get(index, ()),
         now_ms=now_ms, tz=tz, message_chars=message_chars,
     )
-    lines.sort(key=lambda t: (t[0], t[1]))
-    body = [t[2] for t in lines]
-    kept, cut = _fit(body, allowance_of.get(index, 0))
-    out = [head]
+    readable.sort(key=lambda r: (r.at_ms, r.id))
+    kept, cut = _fit(readable, allowance_of.get(index, 0))
+    attrs = _item_attrs(index, item, grounding.room_labels)
+    attrs.append(("window", _window([s.at_ms for s in rows], now_ms, tz)))
     if cut:
-        dropped = sorted(t[1] for t in lines[:cut])
-        out.append(
-            f"  ({cut} earlier message{'s' if cut != 1 else ''} not shown: "
-            f"#{dropped[0]} to #{dropped[-1]})"
-        )
-    out.extend(kept)
+        dropped = sorted(r.id for r in readable[:cut])
+        attrs += [
+            ("earlier_not_shown", str(cut)),
+            ("earlier_range", f"{dropped[0]} to {dropped[-1]}"),
+        ]
     if unreadable:
-        noun = "one" if unreadable == 1 else str(unreadable)
-        out.append(f"  ({noun} of these could not be shown)")
-    return out
+        attrs.append(("unreadable", str(unreadable)))
+    return restamp(ContextBlock(
+        name="agenda_item", body="\n".join(kept), attrs=_attrs(attrs),
+        when_empty="self_close",
+    ), _ROW)
 
 
 def _needs(
@@ -318,50 +462,108 @@ def _needs(
     needs = []
     for index, item in enumerate(items):
         rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
-        lines, _ = _item_lines(
+        readable, _ = _item_rows(
             item, rows, grounding, grounding.own_sends.get(index, ()),
             now_ms=now_ms, tz=tz, message_chars=message_chars,
         )
-        needs.append(sum(len(t[2]) + 1 for t in lines))
+        needs.append(sum(len(r.show(None)) + 1 for r in readable))
     return needs
 
 
-def _note_line(n: NoteLine) -> str:
-    return f"- note {n.id} \"{one_line(n.title)}\": {_clip(n.description, 200)}"
-
-
-def _event_line(e: EventLine, now_ms: int, tz: tzinfo) -> str:
-    when = "no time set" if e.when_ms is None else (
-        f"{datetime.fromtimestamp(e.when_ms / 1000, tz=tz):%a %-d %b %Y %H:%M}"
-    )
-    venue = f", at {_clip(e.venue, 80)}" if e.venue else ""
-    rev = f", revision {e.revision}" if e.revision else ""
-    return f"- event {e.id} \"{one_line(e.title)}\", {e.status}, {when}{venue}{rev}"
+#: A note's one line about it, cut to the length a `Note` already holds it to
+#: (`nora.domain.notes.DESCRIPTION_MAX_CHARS`), so an index row is one line.
+_NOTE_LINE_CHARS = 200
 
 
 def _register(
-    rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo, budget: RenderBudget,
-) -> list[str]:
-    out: list[str] = []
+    rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo,
+    budget: RenderBudget,
+) -> list[ContextBlock]:
+    """The notes and each agenda room's events already recorded, as blocks. At
+    most `register_lines` rows of each list, and every row together within
+    `register_chars` as rendered: a row that does not fit, and every row after
+    it, is left out, and the block says how many (`not_listed`) rather than
+    cutting a row."""
+    spent = 0
+    exhausted = False
+
+    def listed(rows: list[str]) -> list[str]:
+        nonlocal spent, exhausted
+        kept: list[str] = []
+        for row in rows:
+            cost = len(row) + 1
+            if exhausted or spent + cost > budget.register_chars:
+                exhausted = True
+                break
+            kept.append(row)
+            spent += cost
+        return kept
+
+    blocks: list[ContextBlock] = []
     if grounding.notes:
-        out.append("Open notes of this group (index lines; note_read gives the body):")
-        shown = grounding.notes[: budget.register_lines]
-        out.extend(_note_line(n) for n in shown)
-        if len(grounding.notes) > len(shown):
-            out.append(f"- ({len(grounding.notes) - len(shown)} more open notes not listed)")
+        notes = [
+            replace(n, description=clip(n.description, _NOTE_LINE_CHARS))
+            for n in grounding.notes
+        ]
+        rows = listed([
+            render_note_rows([n], ids=True) for n in notes[: budget.register_lines]
+        ])
+        left_out = len(notes) - len(rows)
+        blocks.append(restamp(ContextBlock(
+            name="note_index", body="\n".join(rows),
+            attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
+            when_empty="self_close",
+        ), _ROW))
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
         if not events:
             continue
-        out.append(f"Already recorded for room {room_label(room, grounding.room_labels)}:")
-        out.extend(_event_line(e, now_ms, tz) for e in events[: budget.register_lines])
-    if not out:
-        return []
-    text = "\n".join(out)
-    if len(text) > budget.register_chars:
-        cut = text[: budget.register_chars].rsplit("\n", 1)[0]
-        return [*cut.split("\n"), "- (more index lines not listed)"]
-    return out
+        rows = listed([
+            render_event_rows([e], tz=tz) for e in events[: budget.register_lines]
+        ])
+        left_out = len(events) - len(rows)
+        blocks.append(restamp(ContextBlock(
+            name="events", body="\n".join(rows),
+            attrs=_attrs([
+                ("room", room_label(room, grounding.room_labels)),
+                ("not_listed", str(left_out) if left_out else None),
+            ]),
+            when_empty="self_close",
+        ), _ROW))
+    return blocks
+
+
+def _item_blocks(
+    items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
+    *, now_ms: int | None, tz: tzinfo, budget: RenderBudget,
+) -> list[ContextBlock]:
+    """One `agenda_item` per item, then the Register. Without a clock an item is
+    its summary alone (the probe's hand-written item), and nothing is recorded."""
+    if now_ms is None:
+        return [
+            restamp(ContextBlock(
+                name="agenda_item", body="",
+                attrs=_attrs(_item_attrs(i, item, grounding.room_labels)),
+                when_empty="self_close",
+            ), _ROW)
+            for i, item in enumerate(items)
+        ]
+    needs = _needs(
+        items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
+    )
+    allowance = dict(enumerate(_shares(needs, budget.record_chars, budget.min_item_chars)))
+    blocks = [
+        _item_block(
+            i, item, stimuli, grounding, now_ms=now_ms, tz=tz, allowance_of=allowance,
+            message_chars=budget.message_chars,
+        )
+        for i, item in enumerate(items)
+    ]
+    rooms: list[Room] = []
+    for item in items:
+        if item.room not in rooms:
+            rooms.append(item.room)
+    return blocks + _register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget)
 
 
 def render_agenda(
@@ -376,42 +578,21 @@ def render_agenda(
     Without `now_ms` (a probe's hand-written item) there is no clock and no
     age; without `grounding` an item is its summary alone, which is exactly
     what the eval probe hands the model and nothing else does."""
-    spend = budget or RenderBudget()
-    ground = grounding or Grounding()
-    times = stimuli or {}
-    header = []
+    blocks: list[ContextBlock] = []
     if now_ms is not None:
-        header.append(clock_line(now_ms, last_session_ms, tz))
+        blocks.append(restamp(ContextBlock(
+            name="clock", body=escape(clock_line(now_ms, last_session_ms, tz)),
+        ), _ROW))
     if reads_note:
-        header.append(reads_note)
-    now = 0 if now_ms is None else now_ms
-    needs = _needs(items, times, ground, now_ms=now, tz=tz, message_chars=spend.message_chars)
-    shares = _shares(needs, spend.record_chars, spend.min_item_chars)
-    allowance = dict(enumerate(shares))
-    blocks: list[str] = []
-    for i, item in enumerate(items):
-        if now_ms is None:
-            blocks.append(
-                f"{i}. {item.summary}{returning(item.strike)} "
-                f"[room {room_label(item.room, ground.room_labels)}]"
-            )
-            continue
-        blocks.extend(_item_block(
-            i, item, times, ground, now_ms=now_ms, tz=tz, allowance_of=allowance,
-            message_chars=spend.message_chars,
-        ))
-    rooms: list[Room] = []
-    for item in items:
-        if item.room not in rooms:
-            rooms.append(item.room)
-    register = (
-        [] if now_ms is None
-        else _register(rooms, ground, now_ms=now_ms, tz=tz, budget=spend)
+        blocks.append(restamp(ContextBlock(name="reads", body=escape(reads_note)), _ROW))
+    blocks += _item_blocks(
+        items, stimuli or {}, grounding or Grounding(), now_ms=now_ms, tz=tz,
+        budget=budget or RenderBudget(),
     )
-    text = "\n".join([*header, *blocks])
-    return f"{text}\n\n" + "\n".join(register) if register else text
+    return assemble(blocks, sep=_SEP)
 
 
 __all__ = [
     "RenderBudget", "clock_line", "render_agenda", "returning", "room_key", "room_label",
+    "speaker_of",
 ]

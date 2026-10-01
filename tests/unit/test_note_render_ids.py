@@ -26,7 +26,7 @@ def _note(n: int, title: str = "Dinner", description: str = "which venue", **kw:
 
 
 def _rows(text: str) -> list[ET.Element]:
-    return list(ET.fromstring(f"<r>{text}</r>"))
+    return list(ET.fromstring(f"<r>{text}</r>"))  # noqa: S314 - our own bytes, rooted before parse
 
 
 def test_the_default_is_the_positional_n_the_tag_turn_remaps():
