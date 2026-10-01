@@ -92,12 +92,20 @@ it.
 | step | change | model-visible? | measured by |
 |---|---|---|---|
 | 0 | the enforcer, red first, PENDING = today | no | the test; probe: drop an entry, the test names the module |
-| 1 | promote what is private to what is shared: a row-id window builder (lifted from note-candidates), `today`, `room` and `own_sends` builders, a note index that carries the real note id, new event and rollup renderers, the budget as a row-selection pre-step with a cut notice, and `assemble` taking the occasion's separator | no | golden tests: each existing occasion renders byte-identical |
-| 2 | declare and assemble the byte-identical ones: proactive, culture, candidates and curator walk `assemble`; note-merge, the debrief and the Standing fold, and the reaction picker get `_BLOCKS` | no | golden tests (S1's criterion 2) |
-| 3 | **Cognition** onto blocks: rendering moves from `nora/domain` to the language layer (domain cannot import it), `_BLOCKS` and block-type descriptions declared, the transcript through the row-id window, everything escaped, the note grammar carried by the block types | **yes** | (a) a test that an id as rendered passes `parse_note_body`, which reverting the change turns red; (b) the recorded sessions (each row keeps its situation and agenda) replayed through both renderers, refusal rate and close parity read, n small so signal only; (c) the cognition `tool_selection` corpus |
-| 4 | the rest: the summons' blocks, fire's header as a typed builder, the reaction picker through `speaker_label` (a name containing `:` can forge a row today), the debrief's last-wins `by_ts`, five hand-rolled ages, tool-result transcripts in `nora/agent/tools.py` | partly | golden tests; an arm where output changes |
-| 5 | withdrawal in the Dreamer prompts: seven prompts that push a Standing or culture head skip `render_supported`; folded into the shared builders where it comes free | yes | tests per builder; whether those adaptors are meant to be exempt is UNVERIFIED |
-| 6 | structural close: delete the ledger, this node becomes the occasion-joining rule (what a new occasion declares), the decision row, the AGENTS.md line | no | `test_nothing_is_pending` replaces the ledger |
+| 1 | shared pieces: `assemble(sep=)`, one `today` builder, one row-id window builder (no model-visible change; goldens) | no | goldens captured from the code before the refactor: each existing occasion renders byte-identical |
+| 2a | the four adaptors that join by hand walk `assemble` (proactive, culture, note-candidates, note-curator; goldens; table `order` fixed to match what the model reads today, never the other way round) | no | golden tests (step 1's criterion) Two known differences from the hand join, to handle explicitly: `assemble` drops an empty-body block, so culture's and note-candidates' self-closing `<room .../>` needs a form that survives, and proactive's `loop_decisions` is empty when no decision log is wired (a hand join keeps a trailing separator). |
+| 2b | declare `_BLOCKS` for note-merge, the reaction picker and the debrief/Standing fold, moving the debrief's hand-built `_prompt` text into its renderer (goldens) | no | golden tests (step 1's criterion) |
+| 3 | Cognition onto blocks: shared note index carrying the real note id, event and rollup renderers, the char budget as a row-selection pre-step with a cut attribute, `_BLOCKS`, block-type descriptions carrying the note grammar, escaping, the renderer moved out of `nora/domain` (model-visible: id-as-rendered test, replay of recorded sessions, cognition `tool_selection` corpus) | **yes** | (a) a test that an id as rendered passes `parse_note_body`, which reverting the change turns red; (b) the recorded sessions (each row keeps its situation and agenda) replayed through both renderers, refusal rate and close parity read, n small so signal only; (c) the cognition `tool_selection` corpus |
+| 4a | the Instagram summons' prompt onto blocks (live path) | partly | golden tests; an arm where output changes |
+| 4b | fire's five header paragraphs as one typed builder (live path) | partly | golden tests; an arm where output changes |
+| 4c | the reaction picker via `speaker_label` (a `:` in a name forges a row today), the debrief's last-wins `by_ts`, five hand-rolled ages, tool-result transcripts in `nora/agent/tools.py`, the vision summarizer's unframed text | partly | golden tests; an arm where output changes |
+| 5 | withdrawal (`render_supported`) in the seven Dreamer prompts that push a Standing or culture head (live, disclosure) | yes | tests per builder; whether those adaptors are meant to be exempt is UNVERIFIED |
+| 6 | structural close: delete the ledger, the occasion-joining rule, decision row, AGENTS.md line | no | `test_nothing_is_pending` replaces the ledger |
+
+The PENDING ledger cites a step by its number alone: its «step 2» entries are
+2a (the hand-joined four) and 2b (the undeclared three and the debrief's
+hand-built text), and its «step 4» entries are 4a to 4c. Step 1 removes none of
+them.
 
 **Order.** Step 3 is cheap now and costly later: the Cognition session is in
 shadow (`session_mode` is `off` in the default config; the live data shows
