@@ -112,6 +112,17 @@ def test_a_tar_that_fails_in_the_vm_leaves_no_archive(host: Host) -> None:
     assert host.archives() == []
 
 
+def test_an_archive_that_is_not_a_tarball_is_refused_even_when_its_digest_matches(
+    host: Host,
+) -> None:
+    """The digest proves the copy equals what the VM made, not that what the VM
+    made is an archive. Reading it back is the second check."""
+    result = host.run("backup", STUB_VM_TAR_GARBAGE="1")
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "does not read back" in result.stderr
+    assert host.archives() == [] and not list(host.backup_dir.glob("*.partial"))
+
+
 def test_a_failed_backup_never_removes_an_earlier_one(host: Host) -> None:
     good = _backup(host)
     host.run("backup", STUB_CP_CORRUPTS="1")

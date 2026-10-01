@@ -111,7 +111,23 @@ def tr(a):
 args = [tr(a) for a in sys.argv[1:]]
 if os.environ.get("STUB_VM_TAR_FAILS") == "1" and "tar $ex" in " ".join(args):
     sys.exit(2)
-sys.exit(subprocess.call(args))
+env = dict(os.environ)
+if os.environ.get("STUB_VM_TAR_GARBAGE") == "1":
+    # A `tar` that "succeeds" and writes something that is not a tarball: the
+    # digest taken after it still matches the copy, so only reading the archive
+    # back can tell.
+    shim = os.path.join(os.environ["STUB_DIR"], "garbage-bin")
+    os.makedirs(shim, exist_ok=True)
+    with open(os.path.join(shim, "tar"), "w") as fh:
+        fh.write(
+            "#!/bin/bash\n"
+            'for ((i=1;i<=$#;i++)); do\n'
+            '  if [ "${!i}" = "-czf" ]; then j=$((i+1)); echo "not a tarball" > "${!j}"; exit 0; fi\n'
+            "done\nexit 0\n"
+        )
+    os.chmod(os.path.join(shim, "tar"), 0o755)
+    env["PATH"] = shim + ":" + env["PATH"]
+sys.exit(subprocess.call(args, env=env))
 """
 
 _VM_CP_RUN = r"""#!/usr/bin/env python3
