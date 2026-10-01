@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,7 +87,6 @@ def build(
     send_permitted: bool = True,
     lookups: Collection[str] | None = None,
     param_names: Mapping[str, frozenset[str]] | None = None,
-    own_links: Callable[[str, str, str], Awaitable[str | None]] | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -135,9 +134,6 @@ def build(
     bench test) gets a guard that cannot check this axis, not one that rejects
     every call it sees.
 
-    `own_links` arms R-100: `ToolRegistry.own_link_check()`, which refuses a reply that links
-    to a document of ours that does not exist in this room. `None`, the default, is the rule
-    OFF, the shape `lookups` and `param_names` take above.
     """
     # DEC-89: one carrier per turn, built HERE because this is the only place
     # both users of it are in scope — the `Deliverer` below, and (via the
@@ -166,7 +162,6 @@ def build(
         composer=composer,
         links=links,
         send_permitted=send_permitted,
-        own_links=own_links,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

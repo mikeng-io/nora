@@ -569,13 +569,11 @@ RULE_TESTS = {
     # the refusal names the unknown argument and what the tool actually
     # accepts.
     "R-99": "test_the_veto_fires_before_the_tool_body_ever_runs",
-    # R-100 (design/artifact §37): a reply that links to one of OUR documents is
-    # refused unless that document exists in this room, and the refusal says
-    # why. The named test drives the real `Deliverer` through `deliver.build`
-    # and asserts the made-up link never reaches the adapter, beside the two
-    # controls (a reply without the link is sent, and no check wired leaves a
-    # link alone).
-    "R-100": "test_a_reply_with_a_made_up_document_link_is_not_sent_and_says_why",
+    # R-100 (design/artifact §39): a link to one of OUR documents is minted by a tool, never
+    # authored by the model. The named test drives the real `Deliverer` through `deliver.build`
+    # with the carrier armed and asserts the made-up link never reaches the adapter while the
+    # rest of what she said does, and it is counted.
+    "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
 }
 
 

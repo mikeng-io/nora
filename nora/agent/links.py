@@ -40,11 +40,24 @@ asserted a third time in prose.
 It is not a leak guard: everything it appends was already screened by the tool
 that minted it and is screened again by R-6/R-18 downstream, because this runs
 BEFORE them and those guards must measure the bytes that actually leave.
+
+**A link to one of OUR documents is minted, never authored (R-100, design/artifact §39).**
+Only `document_publish`, `document_read` and `document_set_status` return a
+document URL, and the `<documents>` block she reads carries a title and an id,
+never a URL. So she has nothing to write and only something to copy, and on
+2026-10-01 and 02 she wrote two links that matched no document, after a publish
+that never returned `ok`, and told the room the document was made. The first
+cut refused such a reply (459 lines, a store lookup, a refusal reason that went
+stale, and the room got a canned apology). This does the one thing that makes the
+claim true or absent: a document link the carrier was not handed is REMOVED, and
+the link of a document published this turn is added. The link in the room is the
+receipt; if it is not there, nothing was saved.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 
 log = logging.getLogger("nora.links")
 
@@ -54,6 +67,21 @@ log = logging.getLogger("nora.links")
 # is the common case here, the same way `strip_markdown` had to be rewritten
 # once for having reasoned about `\w` in an alphabet Nora does not write in.
 _MIN_ANCHOR = 2
+
+
+def own_document_link_pattern(public_url: str) -> re.Pattern[str]:
+    """`<public_url>/[locale/]documents/<hex run>`, scheme optional, any case: the shape a link
+    to one of our documents is built in (the portal serves it under a locale prefix too).
+    Group 1 is the whole hex run, so a run that is not exactly the handle is a different handle,
+    never a prefix of a real one. The boundaries are ASCII on purpose: Python's `\\w` and `\\b`
+    count a Chinese character as a word character, so a link written with no space beside
+    Cantonese would not match."""
+    host = public_url.split("://", 1)[-1].strip("/")
+    return re.compile(
+        rf"(?<![A-Za-z0-9.-])(?:https?://)?{re.escape(host)}/(?:[a-z]{{2}}(?:-[A-Za-z]{{2,4}})?/)?"
+        rf"documents/([0-9a-f]{{6,}})(?![0-9A-Za-z])",
+        re.IGNORECASE,
+    )
 
 
 class LinkCarry:
@@ -73,6 +101,36 @@ class LinkCarry:
         # Keyed by URL rather than by anchor because the unit of output is the
         # link: two names for one place must not append two lines.
         self._offered: dict[str, list[str]] = {}
+        # Our own documents (R-100). `None` until a documents tool arms it with the public origin,
+        # which is also the only time stripping is possible: no origin, no document links exist.
+        self._doc_pattern: re.Pattern[str] | None = None
+        self._doc_handles: set[str] = set()            # handed to her this turn, may be repeated
+        self._doc_receipts: dict[str, str] = {}        # handle -> url, published this turn
+        self._stripped = 0
+
+    def claim_documents(self, public_url: str) -> None:
+        """Arm the document rule for this turn with the origin documents are linked under.
+        A tool calls this when it is built, so the rule holds from the first reply, including
+        a reply written after a publish that never returned `ok`."""
+        if public_url and self._doc_pattern is None:
+            self._doc_pattern = own_document_link_pattern(public_url)
+
+    def mint_document(self, url: str, *, published: bool) -> None:
+        """Record a document URL a tool returned. `published` means it was saved THIS turn, so
+        the link is added to the reply; a read or a restore only lets her repeat it."""
+        pattern = self._doc_pattern
+        match = pattern.search(url or "") if pattern is not None else None
+        if match is None:
+            return
+        handle = match.group(1).lower()
+        self._doc_handles.add(handle)
+        if published:
+            self._doc_receipts[handle] = url.strip()
+
+    @property
+    def stripped(self) -> int:
+        """How many made-up document links `apply` has removed, for the metric."""
+        return self._stripped
 
     def offer(self, *, anchor: str, url: str) -> None:
         """Record that `url` is the link for a place the group may hear named as `anchor`.
@@ -106,15 +164,53 @@ class LinkCarry:
         `Metrics` instance lives with the `Deliverer`, and giving this class one
         would make it a second thing that knows how to count.
         """
+        added = 0
+        if text and self._doc_pattern is not None:
+            text, added = self._apply_documents(text, self._doc_pattern)
         if not text or not self._offered:
-            return text, 0
+            return text, added
         haystack = text.casefold()
         additions = [
             url for url, anchors in self._offered.items()
             if url not in text and any(a.casefold() in haystack for a in anchors)
         ]
         if not additions:
-            return text, 0
+            return text, added
         log.info("reply_links_carried: %d link(s) the reply had earned and dropped",
                  len(additions))
-        return text.rstrip() + "\n" + "\n".join(additions), len(additions)
+        return text.rstrip() + "\n" + "\n".join(additions), added + len(additions)
+
+    def _apply_documents(self, text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
+        """Remove every document link she was not handed, then add the link of each document
+        published this turn that the reply does not already carry. Returns the text and how many
+        links were added. The label of a Markdown link is kept when its target is removed."""
+        removed = 0
+
+        def drop(match: re.Match[str]) -> str:
+            nonlocal removed
+            if match.group(1).lower() in self._doc_handles:
+                return match.group(0)
+            removed += 1
+            return ""
+
+        # `[label](url)`: a removed target must not leave `[label]()` behind, so the label stays.
+        def drop_target(match: re.Match[str]) -> str:
+            nonlocal removed
+            if match.group(2).lower() in self._doc_handles:
+                return match.group(0)
+            removed += 1
+            return match.group(1)
+
+        markdown = re.compile(r"\[([^\]]*)\]\(\s*" + pattern.pattern + r"\s*\)", re.IGNORECASE)
+        text = markdown.sub(drop_target, text)
+        text = pattern.sub(drop, text)
+        if removed:
+            self._stripped += removed
+            log.warning("reply_document_links_stripped: %d link(s) she was never handed", removed)
+            text = re.sub(r"[ \t]+\n", "\n", text)
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        present = {m.group(1).lower() for m in pattern.finditer(text)}
+        missing = [url for handle, url in self._doc_receipts.items() if handle not in present]
+        if not missing:
+            return text, 0
+        return text.rstrip() + "\n" + "\n".join(missing), len(missing)
