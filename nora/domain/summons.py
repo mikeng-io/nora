@@ -26,6 +26,7 @@ from typing import Literal, Protocol, get_args
 from uuid import UUID
 
 from nora.domain.blocks import BlockKey, ContextBlock, assemble
+from nora.domain.framing import SummonsHead
 from nora.domain.prompt import escape
 
 #: Every state a ledger row can be in. Three are OPEN and the rest are final
@@ -586,16 +587,12 @@ def _social_post(source: str, text: str) -> ContextBlock:
 
 def _head(ctx: SummonsContext) -> str:
     """What she is reading, in our own sentences: the first line of the prompt,
-    outside every wrap (nothing a stranger wrote is in it but a username)."""
+    outside every wrap (nothing a stranger wrote is in it but a username). The
+    text is `nora.domain.framing.SummonsHead`; this says who and when."""
     now = ctx.now
-    return (
-        "You were tagged in a comment under a public Instagram post. Whatever "
-        "you send is posted once, as a public reply to that comment, where "
-        "strangers read it. Saying nothing is a complete answer. It is now "
-        f"{now.strftime('%Y-%m-%d %H:%M')} UTC. {_who(ctx.summoner)} tagged "
-        f"you {age(ctx.summoned_at, now)}. Under each item of the post is "
-        "what a reading of it before this turn found, or that it was not read."
-    )
+    return SummonsHead(
+        now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),
+    ).render()
 
 
 def render_summons(ctx: SummonsContext) -> str:

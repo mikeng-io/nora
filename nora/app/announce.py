@@ -44,8 +44,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from nora.agent.prefill import escape
 from nora.domain.events import Event
+from nora.domain.framing import AnnouncementHeader
 from nora.engagement.slots import ConversationSlots, Key
 from nora.infra.sql.announcements import DONE, FAILED, SqlAnnouncementLog
 from nora.infra.version import OK, VersionManifest
@@ -227,39 +227,6 @@ def _occasion(
         # `<tag_message>` (R-13) exactly as it escapes a person's sentence.
         body=notes,
         speaker=SPEAKER,
-        header=lambda tagger, now: _announcement_header(version),
+        header=lambda tagger, now: AnnouncementHeader(version).render(),
         kind="version_announcement",
     )
-
-
-def _announcement_header(version: str) -> str:
-    """The situation paragraph for an announcement — `build_prefill`'s `header`.
-
-    Every clause of the reminder header is false here: nobody asked her to bring
-    anything up, and no time came due. What is true is that she was restarted on
-    a new build and the group has not heard about it.
-
-    The two prohibitions in the last sentence are the ones the operator asked
-    for: the note is RELAYED, not pasted. A release body is markdown written for
-    a changelog, and reading it out verbatim is neither her voice nor a message
-    anyone in a Cantonese group chat wants to receive.
-
-    `version` is escaped for the reason `_fire_header` escapes a name: it is
-    operator-authored text reaching a prompt, and this module does not get to
-    assume the build stamp is well-formed just because a gate usually makes it
-    so.
-    """
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        "just called you, and nobody asked for this. You have just been "
-        f"restarted on a new version of yourself — {escape(version)} — and "
-        "these people have not been told yet. That is why this turn is "
-        "happening, and it is the only reason.\n"
-        "What is in tag_message below is the note the people who build you "
-        "wrote about this version. RELAY it: say what is new in your own words, "
-        "the way you would mention it to friends, short. Do not paste it, do "
-        "not read it out as a list, do not translate it line by line, and do "
-        "not claim anything it does not say. If part of it is too technical to "
-        "be worth saying here, leave that part out."
-    )
-

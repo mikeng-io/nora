@@ -197,7 +197,7 @@ PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
 #:
 #: **`proactive_decide` IS excluded, and that is the same rule honoured.** The
 #: decide row that scheduled THIS turn is the reason the turn is happening;
-#: `_proactive_header` already puts it in front of her, in her own words, as
+#: `ProactiveHeader` already puts it in front of her, in her own words, as
 #: the intention to weigh. Handing it back a second time under a block of
 #: what the loop DID would be the self-echo the rule is about, and it leans
 #: toward speaking.

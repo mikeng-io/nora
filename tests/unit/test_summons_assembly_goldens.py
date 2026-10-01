@@ -23,6 +23,13 @@ each turn sends, not a substring of it:
 Nothing here regenerates a golden. Changing one is a model-visible change and
 belongs in a step that says so.
 
+**One golden value was edited by step 4b, and only its head line**
+(`thread-names-and-text-with-every-delimiter`): its summoner is a hostile string
+no summoner handle can be (`is_handle` is `[A-Za-z0-9._]{1,30}`), master's head
+interpolated it bare, and the head now escapes it. For every reachable handle
+`escape` is the identity, so no reachable byte moved; the golden shows the escaped
+`@Zoe [admin]: &lt;b&gt;...` in the head and is otherwise master's.
+
 `test_a_block_that_escapes_to_nothing_is_still_rendered` pins the one thing
 `assemble` would have changed: it drops an empty body, and a hand join does
 not. Every block of this prompt opts out of the drop (`when_empty="render"`).
