@@ -62,14 +62,15 @@ FORMAT_OUTCOMES: tuple[str, ...] = get_args(FormatOutcome)
 #: Any `<#…#>` at all, valid or not, so a malformed one is SEEN rather than
 #: left in the text to be read aloud as punctuation.
 _ANY_PAUSE = re.compile(r"<#([^#<>]*)#>")
-_PAUSE_VALUE = re.compile(r"\d{1,2}(?:\.\d{1,2})?")
+_PAUSE_VALUE = re.compile(r"[0-9]{1,2}(?:\.[0-9]{1,2})?")
 _TAG = re.compile(
     r"\((" + "|".join(sorted(map(re.escape, INTERJECTIONS))) + r")\)"
 )
 
 # Markdown that is markup in chat and noise in speech. Removed as MARKERS
-# only: a line's number («1. ») is a word and stays.
-_MD_FENCE = re.compile(r"```[^\n]*")
+# only: a line's number («1. ») is a word and stays, and so does a code
+# fence's language word (backticks go with `_MD_EMPHASIS`, never the text
+# after them).
 _MD_LINE_PREFIX = re.compile(r"(?m)^[ \t]*(?:#{1,6}[ \t]+|[-*+•][ \t]+|>[ \t]?)")
 _MD_EMPHASIS = re.compile(r"\*\*|__|~~|`")
 #: Symbols nobody says. `#` goes with them, which also disarms any `<#…#>` her
@@ -77,13 +78,24 @@ _MD_EMPHASIS = re.compile(r"\*\*|__|~~|`")
 _STRAY = re.compile("[*_#~\uff5e|^`]")
 #: Emoji glue: zero-width joiner, variation selectors, keycap.
 _EMOJI_GLUE = re.compile("[‍︎️⃣]")
+#: Symbols a voice SAYS, kept although they are `So`: «32℃» is not «32».
+_SAID_SYMBOLS = frozenset("°℃℉")
+#: A number as written, sign and separators included. Its run of digits is in
+#: the skeleton already; what this adds is the punctuation INSIDE it, which
+#: changes how it is read («3.14» vs «314», «-5» vs «5», «12345» vs «12 345»).
+_NUMBER = re.compile(r"[-+\u2212]?\d+(?:[.,:/]\d+)*")
 _SPACES = re.compile(r"[ \t　]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 
 
 def _is_spoken(ch: str) -> bool:
-    """A letter or a digit: what a voice actually pronounces."""
-    return unicodedata.category(ch)[0] in "LN"
+    """A letter, a digit, or a combining mark on one: what a voice actually
+    pronounces. Marks count because in Thai, Devanagari or decomposed kana a
+    dropped mark is a changed word; the emoji glue marks (variation selector,
+    keycap) are not speech and do not."""
+    if _EMOJI_GLUE.match(ch):
+        return False
+    return unicodedata.category(ch)[0] in "LNM"
 
 
 def spoken_skeleton(text: str) -> str:
@@ -98,18 +110,21 @@ def normalise(text: str) -> str:
     markers, stray symbols. It never removes a letter or a digit
     (`spoken_skeleton(normalise(t)) == spoken_skeleton(t)` for every `t`,
     pinned by test), so it can be spoken with no model's say-so."""
-    out = _MD_FENCE.sub("", text)
-    out = _MD_LINE_PREFIX.sub("", out)
+    out = _MD_LINE_PREFIX.sub("", text)
     out = _MD_EMPHASIS.sub("", out)
     out = _STRAY.sub("", out)
     out = _EMOJI_GLUE.sub("", out)
     # Pictographs and the skin-tone modifiers are symbols (`So`, `Sk`). Some
     # are letters' neighbours in no language she writes, so removing the
     # whole category is safe; `_is_spoken` never matches them.
-    out = "".join(ch for ch in out if unicodedata.category(ch) not in ("So", "Sk", "Cs", "Co"))
+    out = "".join(ch for ch in out if ch in _SAID_SYMBOLS or not _unsaid_symbol(ch))
     out = _SPACES.sub(" ", out)
     out = _BLANK_LINES.sub("\n", out)
     return "\n".join(line.strip() for line in out.split("\n")).strip()
+
+
+def _unsaid_symbol(ch: str) -> bool:
+    return ch not in _SAID_SYMBOLS and unicodedata.category(ch) in ("So", "Sk", "Cs", "Co")
 
 
 def strip_markup(text: str) -> str:
@@ -154,9 +169,7 @@ def check(base: str, candidate: str) -> RejectReason | None:
         return "bad_markup"
     # Nothing `normalise` would have removed may come back: an emoji or a
     # stray symbol the model added is not markup MiniMax performs.
-    if _STRAY.search(stripped) or any(
-        unicodedata.category(ch) in ("So", "Sk", "Cs", "Co") for ch in stripped
-    ):
+    if _STRAY.search(stripped) or any(_unsaid_symbol(ch) for ch in stripped):
         return "bad_markup"
     tags = _TAG.findall(candidate)
     # Tags her own text already carried are hers, not the formatter's.
@@ -164,6 +177,9 @@ def check(base: str, candidate: str) -> RejectReason | None:
     if added_tags > MAX_INTERJECTIONS:
         return "bad_markup"
     if spoken_skeleton(stripped) != spoken_skeleton(strip_markup(base)):
+        return "words_changed"
+    # A number is a word whose punctuation is part of it.
+    if _NUMBER.findall(stripped) != _NUMBER.findall(strip_markup(base)):
         return "words_changed"
     spoken = len(spoken_skeleton(stripped))
     if pauses and len(pauses) > max(1, spoken // CHARS_PER_PAUSE):

@@ -35,6 +35,11 @@ _BASE = normalise(_REPLY)
     "`code` 同 __底線__ 同 ~~劃走~~",
     "家庭 👨‍👩‍👧 出街 1️⃣",
     "<#0.50#> 呢個係我自己打嘅",
+    # A code fence's backticks go; the words after them stay (review,
+    # 2026-10-01: the first fence rule ate the rest of the line).
+    "睇吓 ```python 呢段 5 行``` 先",
+    "```\n一行\n```",
+    "สวัสดี नमस्ते",
 ])
 def test_normalise_never_removes_a_letter_or_a_digit(raw):
     assert spoken_skeleton(normalise(raw)) == spoken_skeleton(raw)
@@ -49,6 +54,10 @@ def test_normalise_disarms_a_pause_her_own_text_contained():
     """Only a pause `check` has seen may reach the voice: one typed into her
     reply loses its `#` and is no longer markup."""
     assert "<#" not in normalise("等陣<#5#>再講")
+
+
+def test_a_unit_symbol_a_voice_says_is_kept():
+    assert normalise("今日 32℃，體感 35°") == "今日 32℃，體感 35°"
 
 
 def test_a_list_number_is_a_word_and_stays():
@@ -132,6 +141,31 @@ def test_a_pause_after_every_word_is_refused():
     """Every stretch holds a spoken character, so only the count refuses it."""
     words = "聽日三點喺旺角等記得帶把遮"
     assert check(words, "<#0.1#>".join(words)) == "bad_markup"
+
+
+@pytest.mark.parametrize(("base", "candidate"), [
+    ("圓周率係 3.14", "圓周率係 314"),
+    ("圓周率係 3.14", "圓周率係 3 14"),
+    ("打 12345 啦", "打 12 345 啦"),
+    ("今晚 -5 度", "今晚 5 度"),
+    ("19:54 喇", "1954 喇"),
+], ids=["decimal-dropped", "decimal-spaced", "space-in-number", "minus-dropped", "colon-dropped"])
+def test_punctuation_inside_a_number_is_part_of_the_word(base, candidate):
+    assert check(base, candidate) == "words_changed"
+
+
+def test_a_pause_beside_a_number_is_still_allowed():
+    assert check("今日 32 度，濕度 85%", "今日 32 度<#0.30#>濕度 85%") is None
+
+
+def test_a_dropped_combining_mark_is_a_changed_word():
+    """Thai and Devanagari carry vowels as combining marks (review, 2026-10-01)."""
+    assert check("สวัสดี ครับ", "สวสด ครับ") == "words_changed"
+    assert check("नमस्ते दोस्त", "नमसत दोस्त") == "words_changed"
+
+
+def test_a_pause_written_in_full_width_digits_is_refused():
+    assert check("好呀聽日見記得帶遮", "好呀<#１#>聽日見記得帶遮") == "bad_markup"
 
 
 def test_an_empty_answer_is_refused():
