@@ -6,7 +6,9 @@
 #   nora-computer build    build the image and load it into sbx as a template
 #   nora-computer serve    VM exists and publishes its port; computerd runs in the
 #                          foreground (systemd supervises it)
-#   nora-computer status   one line: sandbox state and computerd health
+#   nora-computer status   one line: sandbox state, computerd health, egress policy
+#   nora-computer egress apply|check
+#                          the VM's network allowlist (below): add it, or read it back
 #   nora-computer stop     stop the VM (files persist)
 #   nora-computer destroy  remove the VM and its disk
 #
@@ -25,6 +27,27 @@ ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
 HERE=$(cd "$(dirname "$0")" && pwd)
 LOCK=${XDG_RUNTIME_DIR:-/tmp}/nora-computer.lock
 UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$HOME/.local/state/nora-computer/unused-workspace-$NAME}
+
+# The VM's egress, and the ONLY egress it has. sbx's policy is deny-all
+# (`default-deny-all`, network `**`); these are the allow rules on top of it,
+# scoped to this sandbox so no other sandbox on the host inherits them. The
+# operator's ruling (2026-10-01): the VM may fetch packages from PyPI and the
+# Ubuntu archive and nothing else, and nothing of Nora's own services: not
+# computerd's own published port, not Honcho, OmniRoute or the LAN (design
+# sandbox-runtime sec 1 and 8). Ports are part of each rule: pip is HTTPS only;
+# apt's default sources are plain HTTP on :80 (the policy log counted 424 refused
+# fetches of archive.ubuntu.com:80 and security.ubuntu.com:80 on 2026-10-01) and
+# fall back to :443. A constant, not an environment variable: the allowlist is
+# reproducible setup, and a host that edits it by environment is a host whose
+# policy nobody can read off this file.
+EGRESS_ALLOW=(
+    pypi.org:443
+    files.pythonhosted.org:443
+    archive.ubuntu.com:80
+    archive.ubuntu.com:443
+    security.ubuntu.com:80
+    security.ubuntu.com:443
+)
 
 # The desktop keyring is locked on a headless host; point sbx at nothing and
 # it falls back to its file store (spike round 1).
@@ -87,6 +110,77 @@ load_token() {
     export COMPUTERD_TOKEN
 }
 
+# Does sbx's own authorizer allow `$1` (host:port) from this sandbox? Prints
+# allowed, denied or unknown. `sbx policy check` is read-only and "evaluates the
+# same daemon-side policy authorizer used by sandbox network enforcement", so it
+# is the measurement, not a grep of the rule list. Anything it does not say in
+# the words below is unknown: an unreadable answer is never an allow.
+egress_verdict() {
+    local out first
+    out=$(sbx policy check network --sandbox "$NAME" "$1" </dev/null 2>&1) \
+        || { echo unknown; return; }
+    first=$(printf '%s\n' "$out" | head -n 1)
+    case "$first" in
+        Allowed*) echo allowed ;;
+        Denied*) echo denied ;;
+        *) echo unknown ;;
+    esac
+}
+
+# Add every EGRESS_ALLOW rule the authorizer does not already allow, then read
+# each back. Idempotent: a second run adds nothing. Returns non-zero if any rule
+# could not be added or does not read back as allowed.
+egress_apply() {
+    local res out bad=0
+    for res in "${EGRESS_ALLOW[@]}"; do
+        [ "$(egress_verdict "$res")" = allowed ] && continue
+        out=$(sbx policy allow network --sandbox "$NAME" "$res" </dev/null 2>&1) \
+            || { log "egress: allowing $res failed: $out"; bad=1; continue; }
+        if [ "$(egress_verdict "$res")" = allowed ]; then
+            log "egress: allowed $res for $NAME"
+        else
+            log "egress: $res was added but the policy does not read back as allowed"
+            bad=1
+        fi
+    done
+    return $bad
+}
+
+# The read-back, both halves: every allowlisted host is allowed, and what must
+# NOT be reachable is denied. The negative cover is computerd's own published
+# port (Nora's service: the VM has no business calling the thing that drives
+# it), the same host on OmniRoute's port, and two arbitrary public hosts.
+# Exit 0 all as required, 1 a violation, 2 a verdict sbx would not give.
+egress_check() {
+    local violation=0 unreadable=0 res verdict
+    for res in "${EGRESS_ALLOW[@]}"; do
+        verdict=$(egress_verdict "$res")
+        echo "want allowed  $res  got $verdict"
+        case "$verdict" in allowed) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
+    done
+    for res in "$HOST_IP:$HOST_PORT" "$HOST_IP:20128" example.com:443 8.8.8.8:53; do
+        verdict=$(egress_verdict "$res")
+        echo "want denied   $res  got $verdict"
+        case "$verdict" in denied) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
+    done
+    [ "$violation" = 0 ] || return 1
+    [ "$unreadable" = 0 ] || return 2
+    return 0
+}
+
+cmd_egress() {
+    [ "$(sandbox_state)" != absent ] || { log "no sandbox $NAME: create it first (serve)"; exit 6; }
+    local rc
+    case "${1:-}" in
+        apply)
+            egress_apply; rc=$?
+            if [ "$rc" = 0 ]; then egress_check >/dev/null; rc=$?; fi
+            exit "$rc" ;;
+        check) egress_check; exit $? ;;
+        *) echo "usage: nora-computer egress apply|check" >&2; exit 2 ;;
+    esac
+}
+
 cmd_build() {
     local tar
     tar=$(mktemp --suffix=.tar) || exit 1
@@ -127,6 +221,13 @@ prepare() {
             || echo "$out" | grep -q "already published" \
             || { log "publish failed: $out"; exit 7; }
     fi
+    # The egress allowlist is applied on EVERY prepare, not only on a create: a
+    # rule lives in sbx's daemon, not in the VM, so a recreate or a reset of the
+    # policy store loses it while the unit keeps running. NOT fatal: computerd
+    # serves without package egress (deny-all just refuses the fetch), and a
+    # crash-looping unit over a policy word would take the whole computer down
+    # for a read-back problem. `status` and `egress check` say it is missing.
+    egress_apply || log "egress: the allowlist is NOT in place; run: nora-computer egress apply"
 }
 
 # The long-running mode systemd supervises (nora-computer.service,
@@ -152,17 +253,25 @@ cmd_serve() {
 }
 
 cmd_status() {
-    local health=down
+    local health=down egress=n/a state
     load_token
     healthy && health=up && authorised && health=healthy
-    echo "sandbox=$(sandbox_state) computerd=$health endpoint=http://$HOST_IP:$HOST_PORT"
+    state=$(sandbox_state)
+    # ok only when every allowlisted host reads back allowed AND every denied
+    # probe reads back denied; `egress check` prints which one is not.
+    if [ "$state" != absent ]; then
+        egress_check >/dev/null
+        case $? in 0) egress=ok ;; 1) egress=WRONG ;; *) egress=unknown ;; esac
+    fi
+    echo "sandbox=$state computerd=$health egress=$egress endpoint=http://$HOST_IP:$HOST_PORT"
 }
 
 case "${1:-}" in
     build) cmd_build ;;
     serve) cmd_serve ;;
     status) cmd_status ;;
+    egress) shift; cmd_egress "$@" ;;
     stop) sbx stop "$NAME" </dev/null ;;
     destroy) sbx rm --force "$NAME" </dev/null ;;
-    *) echo "usage: nora-computer build|serve|status|stop|destroy" >&2; exit 2 ;;
+    *) echo "usage: nora-computer build|serve|status|egress|stop|destroy" >&2; exit 2 ;;
 esac

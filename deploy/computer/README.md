@@ -34,6 +34,41 @@ depends on that session. `sbx run` needs a read-write primary workspace: an
 empty dedicated host directory under `~/.local/state/nora-computer/`, which
 nothing on the host reads.
 
+## Network egress: PyPI and the Ubuntu archive, nothing else
+
+sbx's policy is deny-all (`sbx policy ls` shows `default-deny-all` and
+`local-policy`). The VM may fetch packages and nothing more (operator ruling,
+2026-10-01), so `nora-computer` adds these allow rules, **scoped to the
+`nora-computer` sandbox** (`--sandbox`), in its `EGRESS_ALLOW` list:
+
+| host | port | for |
+|---|---|---|
+| `pypi.org` | 443 | pip: the index |
+| `files.pythonhosted.org` | 443 | pip: the wheels and sdists |
+| `archive.ubuntu.com` | 80, 443 | apt (its default sources are plain HTTP) |
+| `security.ubuntu.com` | 80, 443 | apt security updates |
+
+Nothing of Nora's own services is on it: not computerd's own port, Honcho,
+OmniRoute, Langfuse, the LAN or the tailnet. The list is part of `serve`
+(`prepare` applies it on every start, idempotently, because a rule lives in
+sbx's daemon and not in the VM, so a recreate or a policy reset loses it), and
+it is applied by hand with `nora-computer egress apply`.
+
+Read it back, both halves (the allowlist reads **allowed**, what must stay shut
+reads **denied**), from sbx's own authorizer:
+
+```bash
+nora-computer egress check; echo "RC=$?"     # 0 all as required, 1 a violation, 2 sbx would not say
+nora-computer status                         # ... egress=ok|WRONG|unknown
+sbx policy ls --wide                         # the rules themselves, with ids
+sbx policy log nora-computer                 # what the proxy allowed and refused, with counts
+```
+
+A fetch from inside is the end-to-end proof (`pip download` of a small package
+as a scope user; a `curl` to `example.com` must get HTTP 403). `egress check` is
+the read-back that does not depend on a package existing. The policy log's
+refusals of `pypi.org` and the Ubuntu hosts stop appearing once the rules are in.
+
 ## Operating it
 
 | want | run |

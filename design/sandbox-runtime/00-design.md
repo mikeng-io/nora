@@ -359,7 +359,11 @@ computer_export(path, to="link", title, artifact_id?)
 
 - **Network:** `sbx policy init deny-all`, then `sbx policy allow network`
   for package mirrors, and the public web for browsing. `sbx policy log
-  --json` supplies the network half of the audit.
+  --json` supplies the network half of the audit. **Built 2026-10-01
+  (DEC-255):** the allowlist is `pypi.org:443`, `files.pythonhosted.org:443`
+  and the Ubuntu archive (`archive.ubuntu.com` and `security.ubuntu.com`, :80
+  and :443), scoped to the `nora-computer` sandbox and applied by
+  `deploy/computer/nora-computer` on every start; browsing is not on it.
 - **Credentials:** `sbx secret set-custom --sandbox nora-computer --host
   maps.googleapis.com --env GOOGLE_MAPS_API_KEY --value …`. The VM sees a
   placeholder, and sbx's proxy substitutes the real key only on requests to
