@@ -59,17 +59,33 @@ Read from the trace of 2026-10-01 09:08 and the code:
 ## 4. The enforcer
 
 `tests/architecture/test_every_model_call_is_a_declared_occasion.py` finds, by
-AST and with no list of occasions, every module that calls a model and every
-class that defines `async def inputs`, and demands each be declared
-(`_BLOCKS` and a call to `assemble`), or be a named MECHANISM, RUNNER (its
-builders named, each declared) or EXEMPT with a reason. A PENDING ledger names
-today's nine failures and the step that removes each; it can only shrink, a
-stale entry is refused, and step 6 deletes it. The census test now finds its
-occasions instead of listing them.
+AST and with no list of occasions, every module that calls a model (under the
+name it imported the call by) and every class or function that defines
+`inputs`, and demands each be declared: a module-level, non-empty `_BLOCKS`
+and a call to the `assemble` imported from `nora.domain.blocks`. Otherwise it
+must be a named MECHANISM, RUNNER (its builders named, each declared, and for
+`imports` runners really imported) or EXEMPT with a reason. A PENDING ledger
+names today's twelve failures and the step that removes each. It is pinned to
+an exact size (`CEILING`), so paying one down and adding one are both visible
+in the diff; a stale entry is refused; step 6 deletes the ledger. The census
+test now finds its occasions instead of listing them.
 
-It cannot see a hand-built header inside a module that does go through
-`assemble`, nor a new prompt reaching an existing RUNNER by a new path; the
-RUNNER's `builders` tuple is the only guard on the second and is kept by hand.
+An independent review of the first version (PR #675) found, reproduced and
+closed: an `assemble` matched by name alone (a local function or
+`ContextAssembler.assemble` passed), an empty or function-local `_BLOCKS`
+passing, a runner's named builder never checked against its imports (re-pointing
+laundered a debt), a ceiling that was a cap and not a ratchet, aliased and
+`self._runner.invoke` doors missed, and prompt text hand-built inside runners
+(fire's headers, the debrief's `_prompt`) invisible. The last is not detectable
+by the net, so it is recorded by hand in `KNOWN_HAND_BUILT` and each entry is a
+ledger debt.
+
+**What it still cannot see**, stated so review covers it: a NEW hand-built text
+inside a runner or mechanism (found by a person, then recorded); a model door it
+does not know (Honcho's `chat`, a dialectic query to a memory service's own
+model, and image generation); a model call reached only through an imported
+helper; and a `_BLOCKS` walked by `assemble` over a list that does not come from
+it.
 
 ## 5. The steps
 
@@ -96,3 +112,6 @@ shadow), and the cut-over (migration step 4) makes its prompt a live one.
   be gated per room is UNVERIFIED.
 - Fire omits `<peer_history>` on every kind; whether that is deliberate is
   UNVERIFIED.
+- Honcho's `chat` is a prompt to another agent's model (`nora/agent/tools.py`,
+  `nora/app/gatherings.py`); whether "every agent" covers a memory service's
+  dialectic query is the operator's call. Not classified in step 0.
