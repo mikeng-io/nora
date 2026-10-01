@@ -33,12 +33,25 @@ case "$1 $2 $3" in
   "policy check network")
       shift 3
       [ "${STUB_CHECK_BROKEN:-}" = 1 ] && { echo "policy engine unavailable"; exit 0; }
+      [ "${STUB_CHECK_DENIES_ALL:-}" = 1 ] && { echo "Denied: $*"; exit 0; }
       target=""; for a in "$@"; do target="$a"; done
       if grep -qxF "$target" "$allowed"; then
           echo "Allowed: $target"; echo "Governance: Local policy only"
       else
           echo "Denied: $target"; echo "Reason: no matching allow rule (default deny)"
       fi
+      exit 0 ;;
+  "policy ls --json")
+      [ "${STUB_LS_BROKEN:-}" = 1 ] && { echo "not json"; exit 0; }
+      python3 - "$allowed" <<'PY'
+import json, sys
+rules = [{"resource_type": "network", "decision": "allow", "resources": [r],
+          "scope": "sandbox", "applies_to": "nora-computer"}
+         for r in open(sys.argv[1]).read().split()]
+rules.append({"resource_type": "network", "decision": "deny", "resources": ["**"],
+              "scope": "global", "applies_to": "all"})
+print(json.dumps({"rules": rules}))
+PY
       exit 0 ;;
   "policy allow network")
       shift 3

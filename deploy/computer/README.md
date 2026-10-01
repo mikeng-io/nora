@@ -58,6 +58,12 @@ OmniRoute, Langfuse, the LAN or the tailnet. The list is part of `serve`
 sbx's daemon and not in the VM, so a recreate or a policy reset loses it), and
 it is applied by hand with `nora-computer egress apply`.
 
+`nora-computer egress apply` reads sbx's rule list first and adds only what is missing
+(it never trusts `sbx policy allow` to de-duplicate), reads each rule back, and exits 0
+when every rule is in place and reads allowed, 1 when a rule could not be added or
+reads denied, 2 when sbx would not give a verdict; `egress check` has the same
+three codes.
+
 Read it back, both halves (the allowlist reads **allowed**, what must stay shut
 reads **denied**), from sbx's own authorizer:
 

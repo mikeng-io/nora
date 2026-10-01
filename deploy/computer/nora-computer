@@ -179,23 +179,53 @@ egress_verdict() {
     esac
 }
 
-# Add every EGRESS_ALLOW rule the authorizer does not already allow, then read
-# each back. Idempotent: a second run adds nothing. Returns non-zero if any rule
-# could not be added or does not read back as allowed.
+# Is `$1` (host:port) ALREADY an allow rule for this sandbox (or every sandbox)
+# in sbx's own rule list? 0 listed, 1 not listed, 2 the list could not be read.
+# This is the first thing egress_apply asks, because `sbx policy allow` is not
+# known to de-duplicate: a second add of the same rule must never be made.
+egress_listed() {
+    sbx policy ls --json </dev/null 2>/dev/null | python3 -c '
+import json, sys
+res, name = sys.argv[1], sys.argv[2]
+try:
+    rules = json.load(sys.stdin)["rules"]
+except (ValueError, KeyError, TypeError):
+    sys.exit(2)
+for r in rules:
+    if (r.get("resource_type") == "network" and r.get("decision") == "allow"
+            and res in (r.get("resources") or [])
+            and (r.get("scope") == "global" or name in str(r.get("applies_to", "")))):
+        sys.exit(0)
+sys.exit(1)' "$1" "$NAME"
+}
+
+# Add every EGRESS_ALLOW rule that is not already there, then read each back.
+# "Already there" is the rule list first (egress_listed: nothing is ever added
+# twice, whatever `sbx policy allow` does with a duplicate) and the authorizer's
+# own verdict second. Returns 0 every rule is in place and reads back allowed,
+# 1 a rule could not be added or reads back denied, 2 a verdict sbx would not
+# give (the same codes as `egress check`).
 egress_apply() {
-    local res out bad=0
+    local res out bad=0 unknown=0 verdict
     for res in "${EGRESS_ALLOW[@]}"; do
-        [ "$(egress_verdict "$res")" = allowed ] && continue
-        out=$(sbx policy allow network --sandbox "$NAME" "$res" </dev/null 2>&1) \
-            || { log "egress: allowing $res failed: $out"; bad=1; continue; }
-        if [ "$(egress_verdict "$res")" = allowed ]; then
-            log "egress: allowed $res for $NAME"
+        if egress_listed "$res"; then
+            :
+        elif [ "$(egress_verdict "$res")" = allowed ]; then
+            continue
         else
-            log "egress: $res was added but the policy does not read back as allowed"
-            bad=1
+            out=$(sbx policy allow network --sandbox "$NAME" "$res" </dev/null 2>&1) \
+                || { log "egress: allowing $res failed: $out"; bad=1; continue; }
+            log "egress: allowed $res for $NAME"
         fi
+        verdict=$(egress_verdict "$res")
+        case "$verdict" in
+            allowed) ;;
+            unknown) log "egress: $res is in place but sbx would not say whether it is allowed"; unknown=2 ;;
+            *) log "egress: $res is listed or was added but the policy does not read back as allowed"; bad=1 ;;
+        esac
     done
-    return $bad
+    [ "$bad" = 0 ] || return 1
+    return "$unknown"
 }
 
 # The read-back, both halves: every allowlisted host is allowed, and what must

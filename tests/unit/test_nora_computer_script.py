@@ -146,3 +146,58 @@ def test_the_script_parses_and_is_executable() -> None:
     parsed = subprocess.run(["/bin/bash", "-n", str(SCRIPT)], capture_output=True,  # noqa: S603
                             text=True, check=False)
     assert parsed.returncode == 0, parsed.stderr
+
+
+# -- idempotence that does not trust sbx to de-duplicate; the exit codes ----
+
+
+def test_apply_reads_the_rule_list_first_and_never_adds_a_listed_rule_again(host: Host) -> None:
+    """If `sbx policy allow` does not de-duplicate, a second add is a second rule.
+    The authorizer is made blind here (it denies everything), so only the rule
+    LIST can say the rules are already there."""
+    (host.dir / "allowed").write_text("\n".join(sorted(EXPECTED_EGRESS)) + "\n")
+    result = host.run("egress", "apply", STUB_CHECK_DENIES_ALL="1")
+    assert host.allow_calls() == [], host.allow_calls()
+    # Listed but not reading back as allowed is a failure to say so, not a pass.
+    assert result.returncode == 1, result.stdout + result.stderr
+
+
+def test_an_unreadable_rule_list_falls_back_to_the_authorizer(host: Host) -> None:
+    assert host.run("egress", "apply", STUB_LS_BROKEN="1").returncode == 0
+    first = len(host.allow_calls())
+    again = host.run("egress", "apply", STUB_LS_BROKEN="1")
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert len(host.allow_calls()) == first == len(EXPECTED_EGRESS)
+
+
+def test_a_rule_scoped_to_another_sandbox_does_not_count_as_ours(host: Host) -> None:
+    """Present in the list for `nora-computer-eval` is not present for us."""
+    sbx = host.bin / "sbx"
+    mine = '"applies_to": "nora-computer"}'
+    sbx.write_text(sbx.read_text().replace(mine, '"applies_to": "other-sandbox"}'))
+    (host.dir / "allowed").write_text("pypi.org:443\n")
+    host.run("egress", "apply", STUB_CHECK_DENIES_ALL="1")
+    assert any(c.endswith("pypi.org:443") for c in host.allow_calls())
+
+
+def _fresh(tmp_path: Path, name: str) -> Host:
+    root = tmp_path / name
+    root.mkdir()
+    return Host(root)
+
+
+def test_apply_exit_codes_are_the_checks(tmp_path: Path) -> None:
+    """0 in place and read back, 1 a rule could not be added or reads denied, 2 a
+    verdict sbx would not give: what the README says."""
+    ok = _fresh(tmp_path, "ok")
+    assert ok.run("egress", "apply").returncode == 0
+    # Everything is already there, so a store that refuses writes is never asked.
+    assert ok.run("egress", "apply", STUB_ALLOW_FAILS="1").returncode == 0
+    assert _fresh(tmp_path, "ro").run("egress", "apply", STUB_ALLOW_FAILS="1").returncode == 1
+    assert _fresh(tmp_path, "blind").run("egress", "apply", STUB_CHECK_BROKEN="1").returncode == 2
+
+
+def test_the_readme_documents_the_apply_and_check_exit_codes() -> None:
+    readme = " ".join(README.read_text().split())
+    assert "egress apply" in readme and "egress check" in readme
+    assert "exits 0 when every rule is in place and reads allowed, 1 when a rule" in readme
