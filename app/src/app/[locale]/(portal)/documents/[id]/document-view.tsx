@@ -12,9 +12,14 @@ import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { DocumentView } from "@/components/documents/registry";
 import { isNotFound } from "@/lib/api/client";
 import type { DocumentDetail } from "@/lib/api/documents";
-import { CONFIRM_CLOSED, confirmKey, confirmReducer } from "@/lib/documents/lifecycle";
-import { DELETED_FLAG, freshness, isRevised, roomName } from "@/lib/documents/list";
-import { documentTabTitle } from "@/lib/documents/title";
+import {
+  CONFIRM_CLOSED,
+  confirmKey,
+  confirmReducer,
+  type ConfirmState,
+} from "@/lib/documents/lifecycle";
+import { DELETED_FLAG, detailView, isRevised, roomName } from "@/lib/documents/list";
+import { documentTabTitle, shouldReassertTitle, shouldRestoreTitle } from "@/lib/documents/title";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { useDocument, useSetDocumentState } from "@/lib/queries";
 import { useNow } from "@/hooks/use-now";
@@ -32,7 +37,13 @@ export function DocumentPageView({ id }: { id: string }) {
   // section, as the server rendered it.
   useTabTitle(doc.data?.title, t("title"));
 
-  if (doc.isPending) {
+  const view = detailView({
+    isPending: doc.isPending,
+    isError: doc.isError,
+    hasData: doc.data !== undefined,
+    notFound: isNotFound(doc.error),
+  });
+  if (view === "loading") {
     return (
       <PageFrame>
         <Skeleton className="mb-3 h-10 w-2/3" />
@@ -41,10 +52,10 @@ export function DocumentPageView({ id }: { id: string }) {
       </PageFrame>
     );
   }
-  if (doc.isError && !doc.data) {
+  if (view === "not-found" || view === "unavailable") {
     return (
       <PageFrame>
-        {isNotFound(doc.error) ? (
+        {view === "not-found" ? (
           <EmptyState
             art="lost"
             title={t("notFoundTitle")}
@@ -63,20 +74,30 @@ export function DocumentPageView({ id }: { id: string }) {
     );
   }
   if (!doc.data) return null;
-  const outdated = freshness({ isError: doc.isError, hasData: true }) === "outdated";
-  return <Loaded doc={doc.data} outdated={outdated} onRetry={() => doc.refetch()} />;
+  return <Loaded doc={doc.data} outdated={view === "outdated"} onRetry={() => doc.refetch()} />;
 }
 
-/** Sets the tab's title while the page is mounted and puts the server's back after. */
+/** Sets the tab's title while the page is mounted, takes it back if Next writes the route's
+ * own title over it while the address is still this document's, and on leaving puts the
+ * section's title back unless another page has already set its own
+ * (`lib/documents/title.ts` says why each of those is conditional). */
 function useTabTitle(title: string | undefined, fallback: string) {
   const text = documentTabTitle(title, fallback);
   useEffect(() => {
-    const before = document.title;
+    const section = documentTabTitle(null, fallback);
+    const path = window.location.pathname;
     document.title = text;
+    const watch = new MutationObserver(() => {
+      if (shouldReassertTitle(document.title, text, path, window.location.pathname)) {
+        document.title = text;
+      }
+    });
+    watch.observe(document.head, { subtree: true, childList: true, characterData: true });
     return () => {
-      document.title = before;
+      watch.disconnect();
+      if (shouldRestoreTitle(document.title, text)) document.title = section;
     };
-  }, [text]);
+  }, [text, fallback]);
 }
 
 function Loaded({
@@ -142,20 +163,39 @@ function Lifecycle({ doc }: { doc: DocumentDetail }) {
   const [confirm, dispatch] = useReducer(confirmReducer, CONFIRM_CLOSED);
   const trigger = useRef<HTMLButtonElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const restore = useRef<HTMLButtonElement>(null);
+  const archive = useRef<HTMLButtonElement>(null);
   const archived = doc.state === "archived";
 
-  // Focus follows the panel: into it when it opens, back to the Delete button when it is
-  // cancelled (the reducer says which; `lib/documents/lifecycle.ts`).
+  // Focus follows the panel: into it when it opens (and again when a delete fails, so the
+  // error is read), back to the Delete button when it is cancelled, and to the Restore or
+  // Archive button that replaced the one just pressed (the reducer says which;
+  // `lib/documents/lifecycle.ts`). `archived` is a dependency because the swapped button
+  // only exists once the page has re-read the document.
+  const applied = useRef<ConfirmState | null>(null);
   useEffect(() => {
-    if (confirm.focus === "confirm") cancel.current?.focus();
-    else if (confirm.focus === "trigger") trigger.current?.focus();
-  }, [confirm]);
+    // Each focus request is applied once, when its button exists: a later re-read of the
+    // document must not pull focus back to a button the person has since left.
+    if (!confirm.focus || applied.current === confirm) return;
+    const target = { confirm: cancel, trigger, restore, archive }[confirm.focus].current;
+    if (!target) return;
+    target.focus();
+    applied.current = confirm;
+  }, [confirm, archived]);
 
   const set = (state: "active" | "archived" | "deleted") =>
     change.mutate(state, {
       onSuccess: () => {
-        dispatch("done");
-        if (state === "deleted") router.push(`/documents?${DELETED_FLAG}=1`);
+        if (state === "deleted") {
+          dispatch("done");
+          router.push(`/documents?${DELETED_FLAG}=1`);
+        } else {
+          dispatch(state === "archived" ? "archived" : "restored");
+        }
+      },
+      // A failed delete keeps the panel and puts focus back inside it, on the error.
+      onError: () => {
+        if (state === "deleted") dispatch("failed");
       },
     });
 
@@ -168,12 +208,24 @@ function Lifecycle({ doc }: { doc: DocumentDetail }) {
       ) : null}
       <div className="flex flex-wrap gap-2">
         {archived ? (
-          <Button variant="outline" size="sm" disabled={change.isPending} onClick={() => set("active")}>
+          <Button
+            ref={restore}
+            variant="outline"
+            size="sm"
+            disabled={change.isPending}
+            onClick={() => set("active")}
+          >
             <ArchiveRestore aria-hidden="true" />
             {t("restore")}
           </Button>
         ) : (
-          <Button variant="outline" size="sm" disabled={change.isPending} onClick={() => set("archived")}>
+          <Button
+            ref={archive}
+            variant="outline"
+            size="sm"
+            disabled={change.isPending}
+            onClick={() => set("archived")}
+          >
             <Archive aria-hidden="true" />
             {t("archive")}
           </Button>
@@ -211,6 +263,11 @@ function Lifecycle({ doc }: { doc: DocumentDetail }) {
           <p id="delete-body" className="text-meta text-ink-soft">
             {t("deleteConfirm")}
           </p>
+          {change.isError ? (
+            <p className="text-meta text-danger" role="alert">
+              {t("actionFailed")}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <Button variant="destructive" size="sm" disabled={change.isPending} onClick={() => set("deleted")}>
               <Trash2 aria-hidden="true" />
@@ -228,7 +285,7 @@ function Lifecycle({ doc }: { doc: DocumentDetail }) {
           </div>
         </div>
       ) : null}
-      {change.isError ? (
+      {change.isError && !confirm.open ? (
         <p className="text-meta text-danger" role="alert">
           {t("actionFailed")}
         </p>

@@ -23,6 +23,25 @@ describe("the delete confirm panel (d)", () => {
     expect(run(["ask", "done"])).toEqual({ open: false, focus: null });
   });
 
+  it("a failed delete keeps the panel open and puts focus back inside it, on the error", () => {
+    // The button that was pressed went disabled while the request ran, so without this
+    // focus would fall to the page.
+    expect(run(["ask", "failed"])).toEqual({ open: true, focus: "confirm" });
+    // And it can still be cancelled, which returns focus to Delete as before.
+    expect(run(["ask", "failed", "cancel"])).toEqual({ open: false, focus: "trigger" });
+  });
+
+  it("an archive that completes closes an open panel and moves focus to the Restore button", () => {
+    expect(run(["ask", "archived"])).toEqual({ open: false, focus: "restore" });
+    // With no panel open the pressed Archive button is still replaced, so focus still moves.
+    expect(run(["archived"])).toEqual({ open: false, focus: "restore" });
+  });
+
+  it("a restore that completes moves focus to the Archive button that replaced it", () => {
+    expect(run(["restored"])).toEqual({ open: false, focus: "archive" });
+    expect(run(["ask", "restored"])).toEqual({ open: false, focus: "archive" });
+  });
+
   it("is operable from the keyboard: Escape cancels, no other key does anything", () => {
     expect(confirmKey("Escape")).toBe("cancel");
     for (const key of ["Enter", " ", "Tab", "ArrowDown", "Delete", "Backspace", "x"]) {

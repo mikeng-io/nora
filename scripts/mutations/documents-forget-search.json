@@ -49,13 +49,6 @@
     "target": "tests/unit/test_document_tools.py::test_a_document_is_read_by_the_handle_its_link_carries_and_by_that_alone"
   },
   {
-    "name": "service: a handle is resolved across every room, so another room's document reads",
-    "file": "nora/app/documents_service.py",
-    "old": "                if d.summary.platform == platform and d.summary.conversation_id in here\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked",
-    "new": "            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked",
-    "target": "tests/unit/test_document_tools.py::test_a_handle_another_room_shares_is_resolved_among_this_rooms_documents_only"
-  },
-  {
     "name": "service: a handle two documents share is picked (the first), not refused",
     "file": "nora/app/documents_service.py",
     "old": "            current = mine[0] if len(mine) == 1 else None  # two is never picked",
@@ -124,5 +117,124 @@
     "old": "    if label_of is None or (s.platform, s.conversation_id) not in rooms:\n",
     "new": "    if label_of is None:\n",
     "target": "tests/web/test_documents_search_api.py::test_a_creator_who_left_the_room_is_not_told_what_it_is_called"
+  },
+  {
+    "name": "service: a handle (or id) is resolved with no room check at all, so a lone other-room document reads",
+    "file": "nora/app/documents_service.py",
+    "old": "                if d.summary.platform == platform and d.summary.conversation_id in here\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n        ):\n            return None\n        return current",
+    "new": "            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        return current",
+    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
+  },
+  {
+    "name": "service set_state: a forgotten document can be restored or archived",
+    "file": "nora/app/documents_service.py",
+    "old": "            if current is None or current.summary.forgotten:\n                return StateResult(",
+    "new": "            if current is None:\n                return StateResult(",
+    "target": "tests/unit/test_documents_service.py::test_a_forgotten_document_cannot_be_moved_and_answers_like_an_unknown_id"
+  },
+  {
+    "name": "tool document_set_status: a forgotten document can be restored through the tool (service guard gone)",
+    "file": "nora/app/documents_service.py",
+    "old": "            if current is None or current.summary.forgotten:\n                return StateResult(",
+    "new": "            if current is None:\n                return StateResult(",
+    "target": "tests/unit/test_document_tools.py::test_a_forgotten_document_is_not_restorable_or_readable_through_the_tools"
+  },
+  {
+    "name": "service publish: a forgotten document says 'restore it first' instead of answering as unknown",
+    "file": "nora/app/documents_service.py",
+    "old": "            if current.summary.forgotten:\n                return _no_such_document()  # forgotten: not even \"restore it first\"\n",
+    "new": "",
+    "target": "tests/unit/test_documents_service.py::test_a_forgotten_document_is_not_revisable_and_does_not_say_to_restore_it"
+  },
+  {
+    "name": "block: the reader no longer asks the store to hide forgotten documents",
+    "file": "nora/engagement/documents_context.py",
+    "old": "                        hide_forgotten=True,\n",
+    "new": "",
+    "target": "tests/unit/test_documents_block.py::test_a_forgotten_documents_title_never_reaches_her_context"
+  },
+  {
+    "name": "fake list_room: hide_forgotten is ignored",
+    "file": "nora/testing/fakes.py",
+    "old": "            and not (hide_forgotten and d.summary.state_by.startswith(FORGET_SET_BY_PREFIX))\n",
+    "new": "",
+    "target": "tests/contract/test_document_store_contract.py::test_the_room_list_can_leave_out_what_forget_deleted[fake]"
+  },
+  {
+    "name": "sql list_room: hide_forgotten is ignored",
+    "file": "nora/infra/sql/documents.py",
+    "old": "        if hide_forgotten:\n            in_room = sa.and_(\n                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)\n            )",
+    "new": "",
+    "target": "tests/contract/test_document_store_contract.py::test_the_room_list_can_leave_out_what_forget_deleted[sql]"
+  },
+  {
+    "name": "portal route: a deleted document (a forgotten one) is visible to the viewer's state write",
+    "file": "nora/testing/fakes.py",
+    "old": "            stored is None\n            or stored.summary.state == \"deleted\"\n            or not self._sees(stored.summary, person_id, rooms)",
+    "new": "            stored is None\n            or not self._sees(stored.summary, person_id, rooms)",
+    "target": "tests/web/test_documents_api.py::test_a_forgotten_document_cannot_be_moved_from_the_portal_and_reads_as_unknown"
+  },
+  {
+    "name": "sql set_state: the conditional is not checked under the lock",
+    "file": "nora/infra/sql/documents.py",
+    "old": "                if (current or \"active\") not in only_if_state:\n                    return False\n",
+    "new": "",
+    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_write_waits_for_the_lock_and_then_sees_the_change_made_meanwhile"
+  },
+  {
+    "name": "sql set_state: the conditional is ignored (contract)",
+    "file": "nora/infra/sql/documents.py",
+    "old": "                if (current or \"active\") not in only_if_state:\n                    return False\n",
+    "new": "",
+    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_state_write_only_lands_from_a_state_it_names[sql]"
+  },
+  {
+    "name": "fake set_state: the conditional is ignored",
+    "file": "nora/testing/fakes.py",
+    "old": "        if only_if_state is not None and self._state(document_id) not in only_if_state:\n            return False\n",
+    "new": "",
+    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_state_write_only_lands_from_a_state_it_names[fake]"
+  },
+  {
+    "name": "forget: the write is no longer conditional on the state the snapshot saw",
+    "file": "nora/app/person_forget.py",
+    "old": "                set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\", only_if_state=(seen,),\n",
+    "new": "                set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\",\n",
+    "target": "tests/infra/test_forget_documents.py::test_forget_never_overwrites_a_state_changed_since_its_snapshot"
+  },
+  {
+    "name": "forget: a failure part-way is raised away instead of reported with what was done",
+    "file": "nora/app/person_forget.py",
+    "old": "        report.failure = type(exc).__name__\n    return report",
+    "new": "        raise\n    return report",
+    "target": "tests/infra/test_forget_documents.py::test_a_failure_part_way_leaves_a_printed_partial_report_and_a_rerun_completes_it"
+  },
+  {
+    "name": "fake search: folds with casefold (ss for sharp s) where Postgres folds with lower",
+    "file": "nora/testing/fakes.py",
+    "old": "needle in normalize_query(d.summary.title).lower()",
+    "new": "needle in normalize_query(d.summary.title).casefold()",
+    "target": "tests/contract/test_document_store_contract.py::test_search_folds_case_the_way_lower_does_on_both_stores[fake]"
+  },
+  {
+    "name": "sql search: stored text is compared with its whitespace as stored",
+    "file": "nora/infra/sql/documents.py",
+    "old": "    return sa.func.regexp_replace(column, r\"\\s+\", \" \", \"g\")",
+    "new": "    return column",
+    "target": "tests/contract/test_document_store_contract.py::test_search_compares_stored_text_and_query_under_the_same_whitespace[sql]"
+  },
+  {
+    "name": "fake search: stored text is compared with its whitespace as stored",
+    "file": "nora/testing/fakes.py",
+    "old": "needle in normalize_query(d.text).lower()",
+    "new": "needle in d.text.lower()",
+    "target": "tests/contract/test_document_store_contract.py::test_search_compares_stored_text_and_query_under_the_same_whitespace[fake]"
+  },
+  {
+    "name": "route: a control character in q is not refused (a NUL reaches the database)",
+    "file": "nora/web/api.py",
+    "old": " or any(\n            ord(ch) < 32 or ord(ch) == 127 for ch in query\n        ):",
+    "new": ":",
+    "target": "tests/web/test_documents_search_api.py::test_a_control_character_in_q_is_a_400_never_a_500"
   }
 ]

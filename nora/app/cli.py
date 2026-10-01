@@ -836,7 +836,7 @@ async def cmd_person_forget(args: argparse.Namespace) -> int:
         await engine.dispose()
     for line in render_forget(result):
         print(line)
-    return 0
+    return 1 if result.failure else 0
 
 
 async def cmd_person_unforget(args: argparse.Namespace) -> int:

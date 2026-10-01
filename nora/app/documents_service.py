@@ -330,8 +330,8 @@ class DocumentService:
             )
         except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
             return ReadResult("unavailable", note="The document could not be read right now.")
-        if current is None or current.summary.state == "deleted":
-            # gone from every read; `set_state` restores
+        if current is None or current.summary.state == "deleted" or current.summary.forgotten:
+            # gone from every read; `set_state` restores (never a forgotten one)
             return ReadResult("refused", findings=_no_such_document().findings)
         return ReadResult(
             "ok",
@@ -360,7 +360,11 @@ class DocumentService:
         id the room answers to). A handle is resolved among THIS room's documents in any
         state, and one that matches none or more than one, like another room's document,
         answers exactly like an unknown id. A deleted document is found here, and only
-        here, so it can be restored.
+        here, so it can be restored. A FORGOTTEN one (`nora person forget` wrote its latest
+        state row, `FORGET_SET_BY_PREFIX`) is not: it answers exactly like an unknown id for
+        every caller and every state, because forgetting a person must stay forgotten and
+        must not confirm that the document exists. Only the operator, in the database,
+        brings it back.
         """
         if not self._is_person(person_id):
             return StateResult(
@@ -380,7 +384,7 @@ class DocumentService:
                 platform=platform, conversation_id=conversation_id,
                 document_id=document_id, handle=handle,
             )
-            if current is None:
+            if current is None or current.summary.forgotten:
                 return StateResult("refused", findings=_no_such_document().findings)
             previous = current.summary.state
             target = current.summary.id
@@ -527,6 +531,8 @@ class DocumentService:
                 or current.summary.conversation_id not in here
             ):
                 return _no_such_document()
+            if current.summary.forgotten:
+                return _no_such_document()  # forgotten: not even "restore it first"
             if current.summary.state != "active":
                 return _not_active(current.summary.state)
             if current.summary.revision != base_revision:

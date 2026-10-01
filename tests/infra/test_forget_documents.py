@@ -203,3 +203,64 @@ async def test_a_forgotten_persons_document_restores_and_unforget_leaves_it_dele
     assert await store.set_state(document_id=mine, state="active", set_by="operator")
     restored = await store.get_visible(document_id=mine, person_id=ada, rooms=frozenset())
     assert restored is not None and restored.summary.title == "mine"
+
+
+async def test_forget_never_overwrites_a_state_changed_since_its_snapshot(engine):
+    """The race, end to end: between forget's read of a person's documents and its write, a
+    member archives one. The conditional write finds it changed, writes nothing for it,
+    does not count it, and says so; a re-run decides again from the new state."""
+    ada, mei = "ada-" + uuid4().hex[:6], "mei-" + uuid4().hex[:6]
+    plain = SqlDocumentStore(engine)
+    contested = await _make(plain, by=ada, title="contested")
+    quiet = await _make(plain, by=ada, title="quiet")
+
+    class _Racy(SqlDocumentStore):
+        async def list_created_by(self, **kw):  # type: ignore[no-untyped-def]
+            seen = await super().list_created_by(**kw)
+            if kw["states"] == ("active", "archived"):
+                # A member archives one AFTER the snapshot was read.
+                await plain.set_state(document_id=contested, state="archived", set_by=mei)
+            return seen
+
+    report = await forget_person(
+        engine, documents=_Racy(engine), person_id=ada, apply=True, now_ms=1,
+    )
+    assert report.documents == 1 and report.documents_skipped == 1
+    assert await _state_rows(engine, contested) == [("archived", mei)], "not overwritten"
+    assert (await _state_rows(engine, quiet))[-1] == ("deleted", FORGET_SET_BY_PREFIX + ada)
+    assert "1 changed since the read" in render_forget(report)[2]
+    # The re-run decides again from what is there now, and finishes it.
+    again = await forget_person(engine, documents=plain, person_id=ada, apply=True, now_ms=2)
+    assert again.documents == 1 and again.documents_skipped == 0
+    assert (await _state_rows(engine, contested))[-1] == ("deleted", FORGET_SET_BY_PREFIX + ada)
+
+
+async def test_a_failure_part_way_leaves_a_printed_partial_report_and_a_rerun_completes_it(engine):
+    ada = "ada-" + uuid4().hex[:6]
+    plain = SqlDocumentStore(engine)
+    made = [await _make(plain, by=ada, title=f"d{i}") for i in range(3)]
+
+    class _Breaks(SqlDocumentStore):
+        calls = 0
+
+        async def set_state(self, **kw):  # type: ignore[no-untyped-def]
+            _Breaks.calls += 1
+            if _Breaks.calls == 2:
+                raise RuntimeError("the database went away")
+            return await super().set_state(**kw)
+
+    report = await forget_person(
+        engine, documents=_Breaks(engine), person_id=ada, apply=True, now_ms=1,
+    )
+    assert report.failure == "RuntimeError"
+    assert report.documents == 1, "what was written is reported, not thrown away"
+    lines = render_forget(report)
+    assert any("deleted 1 document(s)" in line for line in lines)
+    assert any("FAILED part-way (RuntimeError)" in line and "re-run" in line for line in lines)
+    written = [d for d in made if await _state_rows(engine, d)]
+    assert len(written) == 1
+    # A re-run completes the rest, and only the rest.
+    again = await forget_person(engine, documents=plain, person_id=ada, apply=True, now_ms=2)
+    assert again.failure == "" and again.documents == 2
+    for d in made:
+        assert (await _state_rows(engine, d))[-1][0] == "deleted"

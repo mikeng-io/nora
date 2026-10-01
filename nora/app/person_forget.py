@@ -24,11 +24,21 @@ is the forgotten person's when `created_by` is them: one they only appear in as 
 participant of its room is not theirs and is left alone. Each is SOFT-DELETED through the
 `DocumentStore` port: one more `document_state` row, `deleted`, with `set_by` =
 `forget:<person_id>` so a later reader can tell the forget from a person's own delete.
-Nothing is purged, every revision stays, and a document restores by one more state row
-(Nora's `document_set_status`). It is idempotent: a document already `deleted` is not
-written again, so a re-run reports 0 and a document a person had deleted themselves
-keeps its own `set_by`. `unforget` does NOT restore them: it reverses the message hide
-only, and an operator who wants the documents back asks Nora in the room.
+Nothing is purged and every revision stays (the operator can restore one by writing
+another state row; Nora and the portal cannot, see below). It is idempotent: a
+document already `deleted` is not written again, so a re-run reports 0 and a document a
+person had deleted themselves keeps its own `set_by`.
+
+**It stays forgotten.** A document whose latest state row carries the forget prefix
+cannot be restored or archived by Nora or the portal (`DocumentService.set_state`
+answers it like an unknown id), and its title is left out of the room's `<documents>`
+block. `unforget` does NOT restore it either: only the operator, in the database.
+
+**Race and failure.** The write is CONDITIONAL on the state the snapshot saw
+(`DocumentStore.set_state(only_if_state=)`, checked under the row lock), so a change a
+person made since the snapshot is never overwritten, and only the rows this run wrote
+are counted. A failure part-way through the documents does not raise away what was done:
+the report carries what was hidden and deleted so far, says so, and a re-run completes it.
 
 **The cognition tables hold ids, never a canonical name** (#637 second review).
 `cognition_session.situation` is append-only (`APPEND_ONLY`), so `forget`
@@ -68,6 +78,7 @@ Dry run by default, like `forget`/`unforget`.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -76,10 +87,13 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.app.withdrawal import WithdrawalReport, withdraw_messages
-from nora.domain.documents import DocumentState, DocumentStore
+from nora.domain.documents import FORGET_SET_BY_PREFIX, DocumentState, DocumentStore
 from nora.infra.sql.schema import CITATION, CULTURE, EVENTS, MESSAGES, NOTE, STANDING
 
+log = logging.getLogger("nora.person_forget")
+
 __all__ = [
+    "FORGET_SET_BY_PREFIX",
     "ClearUnsupportedReport",
     "ForgetReport",
     "UnforgetReport",
@@ -101,6 +115,11 @@ class ForgetReport:
     cascade: WithdrawalReport | None = None
     documents: int = 0
     documents_already_deleted: int = 0
+    #: Documents the snapshot saw whose state changed before this run reached them: left as
+    #: they are now (a re-run decides again).
+    documents_skipped: int = 0
+    #: Non-empty when the run stopped part-way through the documents: what failed.
+    failure: str = ""
 
 
 @dataclass
@@ -123,21 +142,19 @@ class ClearUnsupportedReport:
 #: One page of a person's documents. A person has a handful; the loop only exists so no
 #: read is unbounded.
 _DOCUMENT_PAGE = 200
-#: Who a forget writes as, in `document_state.set_by`.
-FORGET_SET_BY_PREFIX = "forget:"
 
 
 async def _documents_created_by(
     documents: DocumentStore, person_id: str, states: tuple[DocumentState, ...],
-) -> list[UUID]:
-    """Every document `person_id` created whose state is in `states`, read before any
-    write so the pages do not shift under the loop."""
-    found: list[UUID] = []
+) -> list[tuple[UUID, DocumentState]]:
+    """Every document `person_id` created whose state is in `states`, with the state it was
+    in, read before any write so the pages do not shift under the loop."""
+    found: list[tuple[UUID, DocumentState]] = []
     while True:
         page = await documents.list_created_by(
             person_id=person_id, states=states, limit=_DOCUMENT_PAGE, offset=len(found),
         )
-        found.extend(d.id for d in page)
+        found.extend((d.id, d.state) for d in page)
         if len(page) < _DOCUMENT_PAGE:
             return found
 
@@ -181,12 +198,20 @@ async def forget_person(
             report.cascade = await withdraw_messages(
                 conn, message_ids=hidden_ids, now_ms=now_ms,
             )
-    for document_id in live:
-        if await documents.set_state(
-            document_id=document_id, state="deleted",
-            set_by=f"{FORGET_SET_BY_PREFIX}{person_id}",
-        ):
-            report.documents += 1
+    try:
+        for document_id, seen in live:
+            # Conditional on the state the snapshot saw, under the row lock: a person who
+            # archived or restored it since is not overwritten, and it is not counted.
+            if await documents.set_state(
+                document_id=document_id, state="deleted",
+                set_by=f"{FORGET_SET_BY_PREFIX}{person_id}", only_if_state=(seen,),
+            ):
+                report.documents += 1
+            else:
+                report.documents_skipped += 1
+    except Exception as exc:  # reported with what was done, never swallowed
+        log.exception("person forget stopped part-way through the documents")
+        report.failure = type(exc).__name__
     return report
 
 
@@ -330,8 +355,18 @@ def render_forget(report: ForgetReport) -> list[str]:
             f"; {report.documents_already_deleted} already deleted"
             if report.documents_already_deleted
             else ""
+        )
+        + (
+            f"; {report.documents_skipped} changed since the read, left as they are"
+            if report.documents_skipped
+            else ""
         ),
     ]
+    if report.failure:
+        lines.append(
+            f"  FAILED part-way ({report.failure}): what is listed above was written and "
+            "stays written; re-run this command with --apply to complete the rest"
+        )
     if report.cascade is not None and report.cascade.total_marked:
         for store, keys in report.cascade.marked.items():
             lines.append(f"  cascade: {len(keys)} {store} row(s) now unsupported")

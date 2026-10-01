@@ -29,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
+    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -61,6 +62,19 @@ def _latest_state(document_id: Any) -> sa.Select[Any]:
     )
 
 
+def _state_by() -> sa.ColumnElement[str]:
+    """Who wrote each document's latest state row, "" when there is none."""
+    latest = (
+        sa.select(_S.set_by)
+        .where(_S.document_id == _D.id)
+        .order_by(_S.id.desc())
+        .limit(1)
+        .correlate(DOCUMENTS)
+        .scalar_subquery()
+    )
+    return sa.func.coalesce(latest, sa.literal(""))
+
+
 def _lock(document_id: UUID) -> sa.Select[Any]:
     """The identity row, locked: what serializes a revision against a change of state."""
     return sa.select(_D.id).where(_D.id == document_id).with_for_update()
@@ -83,6 +97,7 @@ def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
         created_at=ensure_utc_document(created_at, field="created_at"),
         updated_at=ensure_utc_document(r.recorded_at, field="updated_at"),
         state=r.state,
+        state_by=r.state_by,
     )
 
 
@@ -127,6 +142,7 @@ def _current() -> sa.Select[Any]:
         _R.written_by,
         _R.recorded_at,
         _state().label("state"),
+        _state_by().label("state_by"),
     ).select_from(_current_join())
 
 
@@ -136,9 +152,16 @@ def _matches(needle: str) -> sa.ColumnElement[bool]:
     text and never a pattern. It runs only over what `_visible` and `_state` already kept
     (one person's documents), so it needs no trigram index."""
     return sa.or_(
-        _R.title.icontains(needle, autoescape=True),
-        _R.text.icontains(needle, autoescape=True),
+        _spaced(_R.title).icontains(needle, autoescape=True),
+        _spaced(_R.text).icontains(needle, autoescape=True),
     )
+
+
+def _spaced(column: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
+    """`column` with every run of whitespace collapsed to one space: the query is collapsed
+    the same way (`normalize_query`), so "two words" finds text that has them on two lines
+    (the checker joins a document's parts with a newline) or with a doubled space."""
+    return sa.func.regexp_replace(column, r"\s+", " ", "g")
 
 
 def _visible(person_id: str, rooms: frozenset[RoomKey]) -> sa.ColumnElement[bool]:
@@ -230,11 +253,23 @@ class SqlDocumentStore:
         return RevisionOutcome("ok", stored)
 
     async def set_state(
-        self, *, document_id: UUID, state: DocumentState, set_by: str
+        self,
+        *,
+        document_id: UUID,
+        state: DocumentState,
+        set_by: str,
+        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         async with self._engine.begin() as conn:
             if (await conn.execute(_lock(document_id))).first() is None:
                 return False
+            if only_if_state is not None:
+                # Read UNDER the lock: a change another writer committed while this one
+                # waited for it is seen here, so a caller deciding from a snapshot never
+                # overwrites it.
+                current = (await conn.execute(_latest_state(document_id))).scalar_one_or_none()
+                if (current or "active") not in only_if_state:
+                    return False
             await conn.execute(
                 sa.insert(DOCUMENT_STATE).values(
                     document_id=document_id, state=state, set_by=set_by
@@ -335,6 +370,7 @@ class SqlDocumentStore:
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
+        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
@@ -343,6 +379,10 @@ class SqlDocumentStore:
         in_room = sa.and_(
             _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
         )
+        if hide_forgotten:
+            in_room = sa.and_(
+                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)
+            )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
         top = (
@@ -362,6 +402,7 @@ class SqlDocumentStore:
                 _R.title,
                 _R.recorded_at,
                 _state().label("state"),
+                _state_by().label("state_by"),
             )
             .select_from(
                 DOCUMENTS.join(top, top.c.document_id == _D.id).join(

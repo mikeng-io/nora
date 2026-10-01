@@ -288,3 +288,23 @@ async def test_nothing_put_away_renders_exactly_what_it_did_before():
     ).body
     assert "archived" not in render_documents(_view(line)).body
     assert render_documents(DocumentsView(lines=(), now=NOW)) is None
+
+
+async def test_a_forgotten_documents_title_never_reaches_her_context():
+    """`nora person forget` deleted it: unlike a person's own delete, it is not offered back
+    to the room in the put-away section, so its title leaves her context."""
+    store = FakeDocumentStore()
+    forgotten = await _make(store, "Forgotten title")
+    by_hand = await _make(store, "Deleted by hand")
+    await store.set_state(document_id=forgotten, state="deleted", set_by="forget:ada")
+    await store.set_state(document_id=by_hand, state="deleted", set_by="ken")
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.put_away] == [str(by_hand)]
+    rendered = render_documents(view).render()
+    assert "Forgotten title" not in rendered and str(forgotten) not in rendered
+    assert "Deleted by hand" in rendered
+    # Alone, it gives no block at all.
+    only = FakeDocumentStore()
+    gone = await _make(only, "Only forgotten")
+    await only.set_state(document_id=gone, state="deleted", set_by="forget:ada")
+    assert await _reader(only).read(platform=ROOM[0], conversation_id=ROOM[1]) is None

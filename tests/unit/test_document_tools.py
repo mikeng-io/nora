@@ -484,3 +484,27 @@ async def test_a_handle_another_room_shares_is_resolved_among_this_rooms_documen
         )
     out = await _tools(_service(store))["document_read"](document_id="abcdef012345")
     assert out["status"] == "ok" and out["document_id"] == str(mine)
+
+
+# ------------------------------------------------- a forgotten document stays forgotten
+async def test_a_forgotten_document_is_not_restorable_or_readable_through_the_tools() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store, public_url="https://nora.example"))
+    made = await tools["document_publish"](spec=_doc("Hers"))
+    doc = UUID(made["document_id"])
+    handle = made["url"].rsplit("/", 1)[1]
+    await store.set_state(document_id=doc, state="deleted", set_by="forget:ada")
+
+    unknown = await tools["document_set_status"](document_id=str(uuid4()), state="active")
+    for ref in (str(doc), handle):
+        for state in ("active", "archived"):
+            out = await tools["document_set_status"](document_id=ref, state=state)
+            assert out["status"] == "not_found" and out == unknown, (ref, state)
+        read = await tools["document_read"](document_id=ref)
+        assert read["status"] == "not_found"
+    assert store._states[doc] == [("deleted", "forget:ada")], "nothing was written"
+    # A revision does not say "restore it first" either.
+    revise = await tools["document_publish"](
+        spec=_doc("v2"), document_id=str(doc), base_revision=1
+    )
+    assert revise["status"] == "not_found"

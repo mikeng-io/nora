@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SEARCH_MAX,
   deletedNoticeShown,
+  detailView,
   freshness,
   isRevised,
   isTyping,
@@ -80,6 +81,31 @@ describe("freshness (c) (g)", () => {
 
   it("puts the pending cue ahead of the failure: an old filter's rows are not 'out of date', they are another list", () => {
     expect(freshness({ isPlaceholderData: true, isError: true, hasData: true })).toBe("loading");
+  });
+});
+
+describe("the document page's read (3)", () => {
+  const q = { isPending: false, isError: false, hasData: false, notFound: false };
+
+  it("is loading until the first answer", () => {
+    expect(detailView({ ...q, isPending: true })).toBe("loading");
+  });
+
+  it("is ready with data and no error", () => {
+    expect(detailView({ ...q, hasData: true })).toBe("ready");
+  });
+
+  it("switches to not-found on a 404 even when cached data exists, so a gone document stops offering Archive and Delete", () => {
+    expect(detailView({ ...q, isError: true, hasData: true, notFound: true })).toBe("not-found");
+    expect(detailView({ ...q, isError: true, hasData: false, notFound: true })).toBe("not-found");
+  });
+
+  it("keeps cached data up, marked out of date, for a failure that says nothing about the document", () => {
+    expect(detailView({ ...q, isError: true, hasData: true })).toBe("outdated");
+  });
+
+  it("is unavailable when the read failed and there is nothing cached", () => {
+    expect(detailView({ ...q, isError: true })).toBe("unavailable");
   });
 });
 

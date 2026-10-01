@@ -649,7 +649,11 @@ def register_web_routes(
         # `q` narrows the same list: the current revision's title or text, ignoring case.
         # A longer one is refused, never cut, so a query never silently means something else.
         query = request.query.get("q", "")
-        if len(query) > DOCUMENT_QUERY_MAX:
+        # A control character (NUL above all: Postgres refuses it in text) is as invalid as
+        # an over-long one, so it is a 400 here and never a 500 from the store.
+        if len(query) > DOCUMENT_QUERY_MAX or any(
+            ord(ch) < 32 or ord(ch) == 127 for ch in query
+        ):
             return web.json_response({"error": "invalid q"}, status=400)
         body = await build_documents_payload(
             store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],

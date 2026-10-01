@@ -62,6 +62,27 @@ export function freshness(q: { isPlaceholderData?: boolean; isError: boolean; ha
   return "current";
 }
 
+/** What the document page shows for its one read. A 404 beats cached data: a document that
+ * is gone (deleted, or no longer the viewer's) must not keep showing its old content with
+ * live Archive and Delete buttons, so `not-found` is chosen even when rows are cached;
+ * only a failure that says nothing about the document (the network, a 5xx) leaves the
+ * cached copy up, marked `outdated`. */
+export type DetailView = "loading" | "not-found" | "unavailable" | "outdated" | "ready";
+
+export function detailView(q: {
+  isPending: boolean;
+  isError: boolean;
+  hasData: boolean;
+  notFound: boolean;
+}): DetailView {
+  if (q.isPending) return "loading";
+  if (q.isError) {
+    if (q.notFound) return "not-found";
+    return q.hasData ? "outdated" : "unavailable";
+  }
+  return q.hasData ? "ready" : "loading";
+}
+
 /** Whether the list is waiting on the person's own typing: what is in the box is not yet
  * what was asked, so the rows shown answer an older question. */
 export function isTyping(text: string, asked: string): boolean {

@@ -784,3 +784,120 @@ async def test_a_search_pages_and_counts_its_matches(store):
     )
     assert page.total == 5 and len(page.items) == 2
     assert {d.id for d in page.items} <= set(made)
+
+
+# ------------------------------------------- conditional state, who wrote it, forgotten
+async def test_a_conditional_state_write_only_lands_from_a_state_it_names(store):
+    doc = await _make(store)
+    # `active` is the state of a document with no state row at all.
+    assert await store.set_state(
+        document_id=doc, state="archived", set_by="mei", only_if_state=("archived",)
+    ) is False
+    assert (await store.get(document_id=doc)).summary.state == "active"
+    assert await store.set_state(
+        document_id=doc, state="archived", set_by="mei", only_if_state=("active",)
+    ) is True
+    # Now archived: a write conditional on `active` refuses, and writes nothing.
+    assert await store.set_state(
+        document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active",)
+    ) is False
+    got = await store.get(document_id=doc)
+    assert got.summary.state == "archived" and got.summary.state_by == "mei"
+    assert await store.set_state(
+        document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active", "archived")
+    ) is True
+    # An unknown id is `False` however it is asked.
+    assert await store.set_state(
+        document_id=uuid4(), state="deleted", set_by="x", only_if_state=("active",)
+    ) is False
+
+
+async def test_a_summary_says_who_wrote_the_latest_state_row_and_whether_it_is_forgotten(store):
+    doc = await _make(store)
+    assert (await store.get(document_id=doc)).summary.state_by == ""
+    assert not (await store.get(document_id=doc)).summary.forgotten
+    await store.set_state(document_id=doc, state="deleted", set_by="mei")
+    assert (await store.get(document_id=doc)).summary.state_by == "mei"
+    await store.set_state(document_id=doc, state="deleted", set_by="forget:ken")
+    summary = (await store.get(document_id=doc)).summary
+    assert summary.state_by == "forget:ken" and summary.forgotten
+    # The LATEST row decides: the operator's restore makes it an ordinary document again.
+    await store.set_state(document_id=doc, state="active", set_by="operator")
+    assert not (await store.get(document_id=doc)).summary.forgotten
+
+
+async def test_the_room_list_can_leave_out_what_forget_deleted(store):
+    mine = await _make(store, title="by hand")
+    forgotten = await _make(store, title="forgotten")
+    await store.set_state(document_id=mine, state="deleted", set_by="ken")
+    await store.set_state(document_id=forgotten, state="deleted", set_by="forget:ken")
+    ids = frozenset({"room-1"})
+    both = await store.list_room(
+        platform="signal", conversation_ids=ids, limit=10, states=("deleted",)
+    )
+    assert {d.id for d in both} == {mine, forgotten}
+    shown = await store.list_room(
+        platform="signal", conversation_ids=ids, limit=10, states=("deleted",),
+        hide_forgotten=True,
+    )
+    assert [d.id for d in shown] == [mine]
+
+
+async def test_a_conditional_write_waits_for_the_lock_and_then_sees_the_change_made_meanwhile(
+    request,
+):
+    """SQL only, two real connections: the forget's race. A person's archive holds the
+    identity-row lock and has written its row but not committed; a forget that decided
+    from a snapshot taken BEFORE it (the document was `active`) must wait, and when the
+    archive commits it must see `archived`, write nothing, and answer `False`."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import DOCUMENT_STATE
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        conn, trans = await _locked_holder(engine, doc)
+        await conn.execute(
+            sa.insert(DOCUMENT_STATE).values(document_id=doc, state="archived", set_by="mei")
+        )
+        forgetting = asyncio.create_task(
+            s.set_state(
+                document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active",)
+            )
+        )
+        await asyncio.sleep(0.5)
+        assert not forgetting.done()  # blocked on the lock, not racing past it
+        await trans.commit()
+        await conn.close()
+        assert await asyncio.wait_for(forgetting, timeout=10) is False
+        got = await s.get(document_id=doc)
+        assert got.summary.state == "archived" and got.summary.state_by == "mei"
+    finally:
+        await engine.dispose()
+
+
+# ----------------------------------------------- search: folding and whitespace parity
+async def test_search_folds_case_the_way_lower_does_on_both_stores(store):
+    """Postgres ILIKE folds with lower(); Python's casefold() maps "ß" to "ss", which lower
+    does not, so a casefold fake would match a query the real store refuses."""
+    strasse = await _make_text(store, title="Straße", text="a street")
+    assert (await _found(store, "STRAßE"))[0] == {strasse}
+    assert (await _found(store, "strasse"))[0] == set(), "ß is not ss under lower()"
+    assert (await _found(store, "STRASSE"))[0] == set()
+    assert (await _found(store, "A STREET"))[0] == {strasse}
+
+
+async def test_search_compares_stored_text_and_query_under_the_same_whitespace(store):
+    """The query is collapsed to single spaces; the stored text is collapsed the same way
+    before it is compared, so a document whose parts are joined by a newline (the checker
+    joins them so) or that carries a doubled space is found by the words as typed."""
+    parts = await _make_text(store, title="Parts", text="alpha\nbeta gamma")
+    spaced = await _make_text(store, title="Two  spaces", text="delta   epsilon")
+    assert (await _found(store, "alpha beta"))[0] == {parts}
+    assert (await _found(store, "beta  gamma"))[0] == {parts}
+    assert (await _found(store, "delta epsilon"))[0] == {spaced}
+    assert (await _found(store, "two spaces"))[0] == {spaced}

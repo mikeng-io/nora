@@ -75,6 +75,30 @@ test("the title comes first, then who made it and the controls; the tab names th
   }
 });
 
+test("the tab title follows the page across client navigation and is never left stuck on a document's", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/en/documents");
+  await expect(page).toHaveTitle("Documents · Nora");
+  // In (a client navigation, no reload): the document's own title.
+  await page.getByRole("list", { name: "Documents" }).getByRole("link").first().click();
+  await expect(page).toHaveTitle("Lisbon in December · Nora");
+  // Out by the back link: the list's title, and it stays.
+  await page.getByRole("main").getByRole("link", { name: "Documents", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Documents" })).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page).toHaveTitle("Documents · Nora");
+  // In again, then out to ANOTHER section by the main navigation: that section's title,
+  // not the document's and not the section the document was reached from.
+  await page.getByRole("list", { name: "Documents" }).getByRole("link").first().click();
+  await expect(page).toHaveTitle("Lisbon in December · Nora");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Plans" }).click();
+  await expect(page).toHaveURL(/\/plans$/);
+  await page.waitForTimeout(400);
+  await expect(page).toHaveTitle("Plans · Nora");
+});
+
 test("the delete panel takes focus, gives it back on Escape, and a finished delete says how to undo it", async ({
   page,
 }) => {

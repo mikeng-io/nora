@@ -171,3 +171,13 @@ async def test_a_creator_who_left_the_room_is_not_told_what_it_is_called(world_c
     assert detail["roomLabel"] == ""
     inside = await (await client.get(f"/app/v1/documents/{doc}?personId=mei")).json()
     assert inside["roomLabel"] == "Trip planning"
+
+
+@pytest.mark.parametrize("bad", ["a\x00b", "\x00", "tab\there", "line\nbreak", "\x1f", "x\x7f"])
+async def test_a_control_character_in_q_is_a_400_never_a_500(world_client, bad):
+    """A NUL sent straight to Nora's API (not through the portal's proxy) reached Postgres,
+    which refuses it in text: a 500. A control character is as invalid as an over-long q."""
+    client, world = world_client
+    await world.make("One", "a")
+    resp = await client.get("/app/v1/documents", params={"personId": "mei", "q": bad})
+    assert resp.status == 400 and (await resp.json()) == {"error": "invalid q"}
