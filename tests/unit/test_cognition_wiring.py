@@ -680,7 +680,20 @@ def test_the_objective_teaches_nothing_the_block_types_already_say():
     assert "this exact name, as written, goes in parentheses before the ids" in fields["from"]
     assert "Decided, Proposed or Ruled out" in fields["from"]
     assert "its sections run Decided, Open, Owed, Proposed, Ruled out" in agenda.description
-    assert "`[n]` at the end of the line, after `(names)`" in agenda.description
+    # the citation grammar is said ONCE, in the fields; the description points at them
+    assert "as the `n` and `from` fields say" in agenda.description
+    assert "[n]" not in agenda.description
+    assert agenda.description.count("(names)") == 1          # only «takes no (names)»
+    # and the two line shapes nothing else taught, quoted from the validator
+    assert "An Owed line is `<name> -> <what> -> <due> [<ids>]`" in agenda.description
+    assert "the name is someone on the room's roster and never you" in agenda.description
+    assert "`when <event>` or `no date given`" in agenda.description
+    assert "takes no `(names)`" in agenda.description
+    assert "A Ruled out line is `<option>: <reason> (<names>) [<ids>]`" in agenda.description
+    # which field is the message's REAL id, and the note's, and where the room key is
+    assert fields["n"].startswith("a message's real id: ")
+    assert dict(BLOCK_TYPES["note_index"].annotations)["n"].startswith("the note's real id")
+    assert "`platform:conversation_id`" in BLOCK_TYPES["reads"].description
     # and what the old objective said about the rest, now on the fields
     assert "changed after they were said" in fields["edited"]
     assert "what code noticed" in fields["cues"] and "never a reading of it" in fields["cues"]

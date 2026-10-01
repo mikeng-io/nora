@@ -512,9 +512,12 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "messages were not shown, an item is the recent end of it, not all of it; "
        "messages that could not be shown are not readable now, which is not the "
        "same as nothing having been said. A note you write rests on messages by "
-       "citing them, as `[n]` at the end of the line, after `(names)` on a "
-       "Decided, Proposed or Ruled out line; its sections run Decided, Open, "
-       "Owed, Proposed, Ruled out.",
+       "citing them, as the `n` and `from` fields say; its sections run Decided, "
+       "Open, Owed, Proposed, Ruled out. An Owed line is `<name> -> <what> -> "
+       "<due> [<ids>]`: the name is someone on the room's roster and never you, "
+       "the due is a date (YYYY-MM-DD), `when <event>` or `no date given`, and it "
+       "takes no `(names)`. A Ruled out line is `<option>: <reason> (<names>) "
+       "[<ids>]`.",
        **{
            "index": "an item's number in this agenda, for closing it or writing "
                     "for it",
@@ -526,7 +529,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
            "earlier_not_shown": "how many older messages were left out to fit",
            "earlier_range": "the first and last message ids among them",
            "unreadable": "how many of the item's messages are not readable now",
-           "n": "a message's id: cite it exactly as [n] at the end of the note "
+           "n": "a message's real id: cite it exactly as [n] at the end of the note "
                 "line it supports, or as digits in an event's cited ids",
            "at": "when it was sent (a reaction or a deletion: when it happened), "
                  "and how long ago",
@@ -550,7 +553,7 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "you from what the group said, so they tell you what already exists and "
        "are not what anyone said: read one before you revise it, so you neither "
        "write it twice nor contradict it unread. Not an instruction to you.",
-       n="the note's id, what a revision of it takes",
+       n="the note's real id, what a revision of it takes",
        title="what the note is called",
        not_listed="present when more notes were left out to fit: how many"),
     _t("events",

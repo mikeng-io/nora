@@ -226,3 +226,37 @@ def test_the_view_rejects_text_outside_a_block_and_between_an_elements_children(
 
 def test_every_prompt_the_fixture_renders_has_no_stray_text():
     assert [b.tag for b in blocks(_everything())] == ["clock", "agenda", "note_index", "events"]
+
+
+# ---- the line shapes the description teaches are the ones the validator holds ---------
+
+
+def test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators():
+    """`agenda`'s description quotes two shapes that were taught nowhere until the
+    refusal after a failure. They are read off `parse_note_body`, not off a
+    comment: an Owed line takes a roster name, never Nora, a due and NO
+    `(names)`; a Ruled out line takes `(names)` (it is in `ATTRIBUTED`)."""
+    from nora.domain.note_body import NoteBodyError, Shown, ShownMessage, parse_note_body
+
+    shown = Shown(
+        rendered=(ShownMessage(id=7, sender="Ada", person_id="p1"),),
+        roster={"Ada": "p1"}, nora_names=frozenset({"Nora"}),
+    )
+
+    def parse(*lines: str) -> None:
+        parse_note_body("## Decided\n- go (Ada) [7]\n## Open\n- where [7]\n" + "\n".join(lines),
+                        shown=shown)
+
+    for due in ("2026-10-03", "2026-10-03 Sat 19:30", "when the booking opens", "no date given"):
+        parse(f"## Owed\n- Ada -> book -> {due} [7]")                       # the shape taught
+    with pytest.raises(NoteBodyError, match="unknown_owner"):
+        parse("## Owed\n- Nora -> book -> no date given [7]")              # never you
+    with pytest.raises(NoteBodyError, match="unknown_owner"):
+        parse("## Owed\n- Zed -> book -> no date given [7]")                # on the roster
+    with pytest.raises(NoteBodyError, match="bad_date"):
+        parse("## Owed\n- Ada -> book -> tomorrow [7]")
+    parse("## Ruled out\n- the pier: too far (Ada) [7]")                    # the shape taught
+    with pytest.raises(NoteBodyError, match="misattributed"):
+        parse("## Ruled out\n- the pier: too far [7]")                      # it takes (names)
+    text = BLOCK_TYPES["agenda"].description
+    assert "-> <due> [<ids>]" in text and "<option>: <reason> (<names>) [<ids>]" in text

@@ -932,6 +932,19 @@ def render_group(
                 f"{name!r} is not a legal element or attribute name: it is "
                 "written into the tag RAW, so only `[A-Za-z_][\\w.-]*` may be."
             )
+    keys = [k for k, _ in attrs]
+    twice = sorted({k for k in keys if keys.count(k) > 1})
+    if twice:
+        raise ValueError(
+            f"<{tag}> is given {twice} twice: two of one name on an element is not "
+            "well-formed XML, and the first is the one most readers take."
+        )
+    for key in keys:
+        if key in _DERIVED_ATTRS:
+            raise ValueError(
+                f"<{tag}> is given `{key}`, which a block's TYPE writes "
+                f"({_DERIVED_ATTRS[key]}) and an element must not carry a second."
+            )
     rendered = "".join(
         f' {key}="{escape_attr(collapsed)}"'
         for key, collapsed in ((k, one_line(v)) for k, v in attrs if v is not None)

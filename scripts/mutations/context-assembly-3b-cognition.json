@@ -226,8 +226,8 @@
   {
     "name": "3b item 4: the agenda description loses the section order",
     "file": "nora/domain/block_types.py",
-    "old": "Owed, Proposed, Ruled out.\",",
-    "new": "Owed.\",",
+    "old": "its sections run Decided, \"\n       \"Open, Owed, Proposed, Ruled out. An Owed",
+    "new": "its sections run Decided, \"\n       \"Open, Owed. An Owed",
     "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
   },
   {
@@ -250,5 +250,61 @@
     "old": "An \"\n       \"item's summary is only what code counted.",
     "new": "An \"\n       \"item's summary is only what code counted, and a settled one needs no look.",
     "target": "tests/unit/test_cognition_grounding.py::test_a_cue_is_named_and_an_edit_is_marked_and_neither_is_a_conclusion"
+  },
+  {
+    "name": "3b last round (a): the agenda `n` gloss calls it a position, not the message's real id",
+    "file": "nora/domain/block_types.py",
+    "old": "\"n\": \"a message's real id: cite it exactly as [n]",
+    "new": "\"n\": \"a message's position: cite it exactly as [n]",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b last round (b): the note_index `n` gloss calls it a position, not the real note id",
+    "file": "nora/domain/block_types.py",
+    "old": "n=\"the note's real id, what a revision of it takes\",",
+    "new": "n=\"the note's position, what a revision of it takes\",",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b last round (c): the reads description no longer says what a read tool's `room` takes",
+    "file": "nora/domain/block_types.py",
+    "old": "as `platform:conversation_id` beside \"\n       \"its label. Code wrote it;",
+    "new": "as its key beside \"\n       \"its label. Code wrote it;",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b last round (1): the Owed line shape is no longer taught",
+    "file": "nora/domain/block_types.py",
+    "old": "An Owed line is `<name> -> <what> -> \"\n       \"<due> [<ids>]`:",
+    "new": "An Owed line is `<name> -> <what> -> \"\n       \"<due>`:",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say tests/unit/test_cognition_block_types_explain_every_field.py::test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators"
+  },
+  {
+    "name": "3b last round (1): the Ruled out line shape loses its (names), as the validator requires them",
+    "file": "nora/domain/block_types.py",
+    "old": "A Ruled out line is `<option>: <reason> (<names>) \"\n       \"[<ids>]`.",
+    "new": "A Ruled out line is `<option>: <reason> \"\n       \"[<ids>]`.",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say tests/unit/test_cognition_block_types_explain_every_field.py::test_the_owed_and_ruled_out_shapes_the_description_teaches_are_the_validators"
+  },
+  {
+    "name": "3b last round (1): the description says the citation grammar a second time",
+    "file": "nora/domain/block_types.py",
+    "old": "citing them, as the `n` and `from` fields say;",
+    "new": "citing them, as `[n]` at the end of the line;",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b last round (4): render_group renders a duplicate attribute name twice",
+    "file": "nora/domain/blocks.py",
+    "old": "    if twice:\n        raise ValueError(",
+    "new": "    if False:\n        raise ValueError(",
+    "target": "tests/unit/test_render_group.py::test_a_duplicate_attribute_name_is_refused_not_rendered_twice"
+  },
+  {
+    "name": "3b last round (4): render_group lets an element carry `description` or `fields`",
+    "file": "nora/domain/blocks.py",
+    "old": "        if key in _DERIVED_ATTRS:\n            raise ValueError(\n                f\"<{tag}> is given",
+    "new": "        if False:\n            raise ValueError(\n                f\"<{tag}> is given",
+    "target": "tests/unit/test_render_group.py::test_an_element_may_not_carry_what_a_block_type_writes"
   }
 ]

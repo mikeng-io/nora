@@ -1272,7 +1272,8 @@ class CognitionSessionRunner:
                     named the way the room names them.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room this note is about, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1324,7 +1325,8 @@ class CognitionSessionRunner:
                 entity_ids: Optional. The people or things the note is about.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room this note is about, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1382,7 +1384,8 @@ class CognitionSessionRunner:
                     you only suspect it is an event.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room the gathering is in, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1460,7 +1463,8 @@ class CognitionSessionRunner:
                     of what changed since.
                 room: Optional when the agenda is one room, required when it
                     spans several. The event's room, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1528,7 +1532,8 @@ class CognitionSessionRunner:
                     of what changed since.
                 room: Optional when the agenda is one room, required when it
                     spans several. The event's room, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1577,8 +1582,8 @@ class CognitionSessionRunner:
                 base_revision_id: Optional. The `revision` standing_read showed
                     for this room's Standing. A stale one is refused.
                 room: Optional when the agenda is one room, required when it
-                    spans several. The room, as `platform:conversation_id`
-                    from the agenda.
+                    spans several. The room, as `platform:conversation_id`,
+                    which the reads block shows beside each room's label.
                 item: Optional. The agenda item this write is for, by its
                     number. A `written` close of that item is backed by a write
                     that names it.
@@ -1702,7 +1707,8 @@ class CognitionSessionRunner:
                 at: When to reach the room, ISO 8601 with an offset.
                 room: Optional when the agenda is one room, required when it
                     spans several. The room to reach, as
-                    `platform:conversation_id` from the agenda.
+                    `platform:conversation_id`, which the reads block
+                    shows beside each room's label.
             """
             resolved = _room_of(room, state)
             if isinstance(resolved, dict):
