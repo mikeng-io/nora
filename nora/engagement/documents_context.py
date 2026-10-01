@@ -85,7 +85,7 @@ class DocumentsContextReader:
         return DocumentsView(
             lines=tuple(_line(d) for d in found[: self._shown]),
             now=self._clock(),
-            put_away=tuple(_line(d) for d in away[: self._put_away]),
+            put_away=tuple(_line(d) for d in away),  # bounded by the read's own limit
         )
 
 

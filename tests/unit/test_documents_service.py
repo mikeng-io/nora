@@ -723,3 +723,25 @@ async def test_a_new_document_never_takes_the_handle_of_a_put_away_one(state: st
     await store.set_state(document_id=taken, state=state, set_by="ken")
     made = await _publish(svc, _doc(title="new"))
     assert made.status == "ok" and made.document_id == fresh
+
+
+async def test_a_handle_shared_with_another_rooms_document_resolves_to_this_rooms() -> None:
+    # Resolved among THIS room's documents only: another room's document with the same
+    # handle neither wins nor makes the handle ambiguous here.
+    mine = UUID("0123456789ab" + "1" * 20)
+    theirs = UUID("0123456789ab" + "2" * 20)
+    svc, store = _service()
+    for doc, room in ((mine, ROOM), (theirs, OTHER)):
+        await store.create(
+            document_id=doc, platform=room[0], conversation_id=room[1], created_by="ken",
+            revision=RevisionIn(
+                title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(),
+                written_by="t",
+            ),
+        )
+    out = await svc.set_state(
+        platform=ROOM[0], conversation_id=ROOM[1], person_id="ken",
+        handle="0123456789ab", state="deleted",
+    )
+    assert out.status == "ok" and out.document_id == mine
+    assert (await store.get(document_id=theirs)).summary.state == "active"

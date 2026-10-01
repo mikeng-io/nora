@@ -158,7 +158,7 @@
     "file": "nora/app/documents_service.py",
     "old": "                    if d.summary.platform == platform and d.summary.conversation_id in here\n",
     "new": "",
-    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_or_no_document_is_not_found"
+    "target": "tests/unit/test_documents_service.py::test_a_handle_shared_with_another_rooms_document_resolves_to_this_rooms"
   },
   {
     "name": "review 1: the tool refuses a link's handle",
