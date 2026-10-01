@@ -66,15 +66,19 @@ inline pronunciation adds letters, and the check refuses it.
 `nora.domain.speech_markup`, deterministic and framework-free:
 
 - `normalise(reply)` removes emoji, markdown markers and stray symbols
-  (`* _ # ~ ～ | ^ \``) and never a letter or digit. Removing `#` also disarms
-  any `<#…#>` her own text carried, so the only pauses spoken are ones the
-  check saw.
+  (`* _ # ~ ～ | ^ \``) and never a letter, digit or combining mark; unit
+  signs a voice says (° ℃ ℉) stay. Removing `#` also disarms any `<#…#>` her
+  own text carried, so the only pauses spoken are ones the check saw.
 - `check(base, candidate)` refuses: empty; a malformed or out-of-range pause
   (our bound is 0.01 to 2.00 s); a pause first, last or beside another; more
   than one pause per 3 spoken characters; more than 2 added interjections; an
-  added emoji or stray symbol; and **any difference in the sequence of letters
-  and digits** once markup is removed (a tag outside the list stays in and
-  reads as an added word). Punctuation and whitespace may differ.
+  added emoji or stray symbol; **any difference in the sequence of letters,
+  digits and combining marks** once markup is removed (a tag outside the list
+  stays in and reads as an added word); and any difference in the numbers as
+  written, sign and inner separators included («3.14», «-5», «19:54», no
+  space inside a number). Other punctuation and whitespace may differ.
+  Re-applied to the stored draws of §4, the number and mark rules changed no
+  outcome.
 - Any refusal, timeout, error, truncation or missing instruction speaks
   `normalise(reply)`. A model answer that adds no markup also speaks
   `normalise(reply)`, never the model's copy.
