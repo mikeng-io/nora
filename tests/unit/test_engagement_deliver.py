@@ -423,3 +423,66 @@ async def test_a_delivered_reply_records_the_sent_outcome(exported_spans):
     (recorded,) = exported_spans.get_finished_spans()
     assert recorded.attributes["nora.outcome"] == "sent"
     assert recorded.attributes["nora.delivered"] is True
+
+
+# ---- R-100: a link to one of our documents must name a document that exists ----------------------
+
+
+def _deliverer_with(check, adapter, metrics):
+    return deliver.build(
+        store=FakeRecordStore(), adapter=adapter, target=TARGET, doctrine=_doctrine(),
+        canary="C", tag_id="t1", nora_sender_id="nora", conversation_id="g1",
+        budgets=BUDGETS, terminal=TERMINAL, metrics=metrics, audience="tag", composer=None,
+        own_links=check,
+    ).deliverer
+
+
+async def test_a_reply_with_a_made_up_document_link_is_not_sent_and_says_why():
+    seen: list[tuple[str, str, str]] = []
+
+    async def check(platform: str, conversation_id: str, text: str) -> str | None:
+        seen.append((platform, conversation_id, text))
+        return "that document does not exist" if "documents/deadbeef0000" in text else None
+
+    metrics, adapter = Metrics(), _FakeAdapter()
+    d = _deliverer_with(check, adapter, metrics)
+    assert await d.deliver("done: https://nora.example/documents/deadbeef0000") is False
+    assert adapter.sent == [], "the made-up link never reached the room"
+    assert d.last_outcome == "unknown_document_link"
+    assert d.refusal_note == "that document does not exist"
+    assert d.attempted is False and d.called is True
+    assert metrics.get("nora_guard_vetoes_total", rule="R-100") == 1
+    assert metrics.get("nora_silent_failures_total", reason="unknown_document_link") == 1
+    assert all(room == ("signal", "g1") for room in [(p, c) for p, c, _ in seen])
+
+
+async def test_a_reply_without_a_bad_link_is_sent_and_clears_the_note():
+    async def check(platform: str, conversation_id: str, text: str) -> str | None:
+        return "no" if "bad" in text else None
+
+    adapter = _FakeAdapter()
+    d = _deliverer_with(check, adapter, Metrics())
+    assert await d.deliver("bad") is False and d.refusal_note == "no"
+    assert await d.deliver("good") is True
+    assert d.refusal_note == "" and d.last_outcome == "sent"
+
+
+async def test_with_no_check_wired_a_document_link_is_not_looked_at():
+    adapter = _FakeAdapter()
+    d = _deliverer_with(None, adapter, Metrics())
+    assert await d.deliver("https://nora.example/documents/deadbeef0000") is True
+
+
+async def test_a_stale_reason_never_rides_a_later_refusal_out():
+    """Review of #698: the note was cleared only after R-2, R-4, R-6 and R-18, so a later call
+    refused by one of THOSE carried the earlier R-100 sentence out through `send_reply`."""
+    async def check(platform: str, conversation_id: str, text: str) -> str | None:
+        return "no such document" if "documents/" in text else None
+
+    d = _deliverer_with(check, _FakeAdapter(), Metrics())
+    assert await d.deliver("https://nora.example/documents/deadbeef0000") is False
+    assert d.refusal_note == "no such document"
+    assert await d.deliver("call me on +85298765432") is False        # R-18
+    assert d.last_outcome == "egress_block" and d.refusal_note == ""
+    assert await d.deliver("   ") is False                            # R-4
+    assert d.last_outcome == "empty_reply" and d.refusal_note == ""
