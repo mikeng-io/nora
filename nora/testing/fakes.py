@@ -50,6 +50,7 @@ from nora.domain.documents import (
     RoomKey,
     StoredDocument,
     VisiblePage,
+    is_handle,
 )
 from nora.domain.media import (
     MediaBlob,
@@ -2427,6 +2428,20 @@ class FakeDocumentStore:
         if stored is None or not self._sees(stored.summary, person_id, rooms):
             return None
         return stored
+
+    async def get_visible_by_handle(
+        self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]
+    ) -> StoredDocument | None:
+        if not is_handle(handle):
+            return None
+        seen = [
+            stored
+            for document_id in self._rooms
+            if document_id.hex.startswith(handle)
+            and (stored := self._stored(document_id)) is not None
+            and self._sees(stored.summary, person_id, rooms)
+        ]
+        return seen[0] if len(seen) == 1 else None
 
     async def aclose(self) -> None:
         return None

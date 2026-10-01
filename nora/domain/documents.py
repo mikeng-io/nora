@@ -24,6 +24,7 @@ Every datetime crossing this port is UTC-aware.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -31,6 +32,24 @@ from uuid import UUID
 
 #: A room as the policy keys it: `(platform, conversation_id)`.
 RoomKey = tuple[str, str]
+
+#: A document's short handle: the first 12 hex digits of its id, no dashes. It is what a
+#: link to a document carries, because a reply may not carry a UUID (egress blocks any
+#: UUID at every exit) and this is not one. It is resolved among the documents the
+#: VIEWER may read only, so 48 bits is an address, never a secret (the page is signed in).
+DOCUMENT_HANDLE_CHARS = 12
+_HANDLE = re.compile(r"[0-9a-f]{12}")
+
+
+def handle_of(document_id: UUID) -> str:
+    """The short handle of `document_id`."""
+    return document_id.hex[:DOCUMENT_HANDLE_CHARS]
+
+
+def is_handle(text: str) -> bool:
+    """Whether `text` is exactly a document handle (lowercase hex, 12 characters). The one
+    check a handle passes before it may reach a query."""
+    return _HANDLE.fullmatch(text) is not None
 
 
 class NaiveDocumentDatetimeError(ValueError):
@@ -162,6 +181,16 @@ class DocumentStore(Protocol):
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
         """The current document if `person_id` may read it, else `None`."""
+        ...
+
+    async def get_visible_by_handle(
+        self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]
+    ) -> StoredDocument | None:
+        """The current document whose id starts with `handle` (`is_handle`), chosen among
+        the documents `person_id` may read ONLY: visibility first, then the prefix. `None`
+        when none matches, when MORE THAN ONE does (never picked), and when `handle` is not
+        a handle, so the three cannot be told apart and a prefix never reveals a document
+        the person may not read."""
         ...
 
     async def aclose(self) -> None: ...

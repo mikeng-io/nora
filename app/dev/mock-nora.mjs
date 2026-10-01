@@ -1757,8 +1757,24 @@ const DOCUMENTS = [
     media: [],
     document: DOC_SPEC("Mei's surprise"),
   },
+  // A distinct handle (9e1d2c3b4a5f) so a link's 12-hex handle resolves to exactly one
+  // document Miles may read. The four above all share the handle 5b6f0c3a2d41, so that
+  // handle is the collision case: among what Miles reads it names three documents.
+  {
+    id: "9e1d2c3b-4a5f-4617-8899-aabbccddeeff",
+    title: "Saturday packing list",
+    revision: 1,
+    platform: "signal",
+    createdAt: "2026-09-10T10:00:00Z",
+    updatedAt: "2026-09-10T10:00:00Z",
+    createdBy: { personId: "miles", name: "Miles" },
+    readers: ["miles"],
+    media: [],
+    document: DOC_SPEC("Saturday packing list"),
+  },
 ];
 const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => rest;
+const DOC_HANDLE = /^[0-9a-f]{12}$/;
 const DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function documentViewer(sp) {
@@ -1794,6 +1810,17 @@ get("/app/v1/documents/:id", (params, sp) => {
   if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
   const personId = documentViewer(sp);
   if (!personId) return { status: 400, body: { error: "personId required" } };
+  // Nora's rule (nora/web/api.py documents_detail): a 12-hex handle is matched by id
+  // prefix among the documents the viewer may read ONLY, and zero or several matches are
+  // the same 404 as an unreadable document.
+  if (DOC_HANDLE.test(params.id)) {
+    const readable = DOCUMENTS.filter(
+      (d) => d.readers.includes(personId) && d.id.replaceAll("-", "").startsWith(params.id),
+    );
+    if (readable.length !== 1) return { status: 404, body: { status: "not_found" } };
+    const [only] = readable;
+    return { status: 200, body: { ...docSummary(only), document: only.document, media: only.media } };
+  }
   if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
   const doc = DOCUMENTS.find((d) => d.id === params.id);
   // Unreadable is unknown: never a distinct "forbidden".

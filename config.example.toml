@@ -2357,6 +2357,11 @@ enabled = false
 # document pages exist and the `route_document_*` tool_selection cases have run.
 [documents]
 enabled = false
+# The web app's public origin, so she can hand the room a LINK to a document she made
+# (`<public_url>/documents/<12-hex handle>`, signed in; the handle is not a UUID, which
+# egress would block). Empty = no link at all: she says it is under Documents, by title.
+# An origin only: no path, query, fragment or login.
+public_url = ""
 
 
 # The cognition loop's stimuli and wake evaluator (design/cognition-loop/

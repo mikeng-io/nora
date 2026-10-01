@@ -41,7 +41,7 @@ from uuid import UUID, uuid4
 
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
-from nora.domain.documents import DocumentStore, RevisionIn, RoomKey
+from nora.domain.documents import DocumentStore, RevisionIn, RoomKey, handle_of
 from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
 from nora.policy import Policy
@@ -49,6 +49,7 @@ from nora.policy import Policy
 _HEX = re.compile(r"^[0-9a-f]{6,64}$")
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _HANDLES_SHOWN = 5
+_HANDLE_TRIES = 5
 
 
 def _wall_ms() -> int:
@@ -122,6 +123,7 @@ class DocumentService:
         is_person: Callable[[str], bool],
         new_id: Callable[[], UUID] = uuid4,
         now_ms: Callable[[], int] = _wall_ms,
+        public_url: str = "",
     ) -> None:
         self._store = store
         self._records = records
@@ -136,6 +138,8 @@ class DocumentService:
         self._is_person = is_person
         self._new_id = new_id
         self._now_ms = now_ms
+        # Empty means no link is ever built (`[documents] public_url`).
+        self._public_url = public_url.rstrip("/")
 
     # ------------------------------------------------------------------ media
     async def _sightings(self, platform: str, conversation_id: str, code: str) -> set[str] | None:
@@ -249,7 +253,40 @@ class DocumentService:
             revision=current.summary.revision,
             title=current.summary.title,
             spec=current.spec,
-            url=f"/documents/{document_id}",
+            url=self._link(document_id),
+        )
+
+    async def _fresh_id(self, platform: str, conversation_id: str, person_id: str) -> UUID:
+        """A new document id whose 12-hex handle no document its room can read already has.
+
+        A link resolves its handle among what the viewer may read and refuses a handle that
+        matches two, so a clash would make both documents' links 404 for the whole room
+        forever. 48 bits make one astronomically unlikely, so this is a guard, not a loop of
+        retries: a few draws, then the last one (and a clash is still refused, never picked)."""
+        rooms = frozenset(
+            (platform, cid)
+            for cid in self._room_ids(platform, conversation_id) | {conversation_id}
+        )
+        candidate = self._new_id()
+        for _ in range(_HANDLE_TRIES - 1):
+            clash = await self._store.get_visible_by_handle(
+                handle=handle_of(candidate), person_id=person_id, rooms=rooms
+            )
+            if clash is None:
+                break
+            candidate = self._new_id()
+        return candidate
+
+    def _link(self, document_id: UUID) -> str:
+        """The link to hand the room, or "" when there is no public origin. It carries the
+        12-hex handle, never the UUID, so it passes egress whole."""
+        if not self._public_url:
+            return ""
+        return f"{self._public_url}/documents/{handle_of(document_id)}"
+
+    def _ok(self, document_id: UUID, revision: int) -> PublishResult:
+        return PublishResult(
+            "ok", document_id=document_id, revision=revision, url=self._link(document_id)
         )
 
     # ---------------------------------------------------------------- publish
@@ -319,13 +356,13 @@ class DocumentService:
         try:
             if document_id is None:
                 made = await self._store.create(
-                    document_id=self._new_id(),
+                    document_id=await self._fresh_id(platform, conversation_id, person_id),
                     platform=platform,
                     conversation_id=conversation_id,
                     created_by=person_id,
                     revision=revision,
                 )
-                return _ok(made.summary.id, made.summary.revision)
+                return self._ok(made.summary.id, made.summary.revision)
             current = await self._store.get(document_id=document_id)
             # A document in another room is answered exactly like one that does not exist:
             # a model in room B must not learn that an id is a document in room A (the read
@@ -365,19 +402,13 @@ class DocumentService:
             )
         if outcome.status == "not_found" or outcome.document is None:
             return _no_such_document()
-        return _ok(document_id, outcome.document.summary.revision)
+        return self._ok(document_id, outcome.document.summary.revision)
 
 
 def _no_such_document() -> PublishResult:
     return PublishResult(
         "refused",
         findings=(Finding("", "no_such_document", "no document with that id in this room"),),
-    )
-
-
-def _ok(document_id: UUID, revision: int) -> PublishResult:
-    return PublishResult(
-        "ok", document_id=document_id, revision=revision, url=f"/documents/{document_id}"
     )
 
 
