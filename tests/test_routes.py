@@ -718,6 +718,22 @@ async def test_place_info_not_found_is_distinct_from_unavailable(google):
     assert out["status"] == "not_found"
 
 
+async def test_locate_returns_the_coordinate_for_a_service_and_place_info_still_does_not(google):
+    """design/artifact §40: `locate` is the ONE method that returns a coordinate, for
+    `DocumentService`, and `place_info` (the tool's) is unchanged (DEC-24)."""
+    located = await google.client.locate("Yoho Mall")
+    assert located["status"] == "ok" and located["name"] == "YOHO Mall"
+    assert isinstance(located["lat"], float) and isinstance(located["lng"], float)
+    assert "lat" not in json.dumps(await google.client.place_info("Yoho Mall"))
+
+
+async def test_locate_keeps_the_resolvers_three_other_statuses(google):
+    assert (await google.client.locate("打邊爐"))["status"] == "ambiguous"
+    assert (await google.client.locate("no-such-place-anywhere-xyz"))["status"] == "not_found"
+    google.places_status = 500
+    assert (await google.client.locate("Yoho Mall"))["status"] == "unavailable"
+
+
 async def test_place_info_unavailable_when_places_is_down(google):
     google.places_status = 500
     out = await google.client.place_info("Yoho Mall")

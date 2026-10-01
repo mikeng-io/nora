@@ -1435,6 +1435,22 @@ async def build_dependencies(
     # The window scanned for a picture's marker code is the one `media_fetch` scans: the
     # prefill plus `load_transcript`'s reach, so any picture she can still see resolves
     # and an older one is honestly not found.
+    # `route` (Google, DEC-46) is wired ONLY when [route] enabled AND its key
+    # env var holds a value — the same enabled-AND-key gate as media custody.
+    # Off (or keyless) leaves the registry without a RouteClient, so `route`
+    # answers `unavailable` and never reaches Google (a legitimate three-state,
+    # not a leak). R-28 screens person names before any call regardless.
+    route_client = None
+    if cfg.route.enabled:
+        route_key = os.environ.get(cfg.route.api_key_env, "")
+        if route_key:
+            from nora.infra.routes.client import RouteClient
+            route_client = RouteClient(api_key=route_key)
+        else:
+            log.warning(
+                "route enabled but %s is unset — routing stays unavailable",
+                cfg.route.api_key_env,
+            )
     _require_a_sendable_public_url(cfg.documents.public_url)
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
@@ -1442,6 +1458,9 @@ async def build_dependencies(
         room_ids=_room_ids_of(allowlist),
         is_person=persons.by_person.__contains__,
         public_url=cfg.documents.public_url,
+        # A Map names its places and the service looks them up (design/artifact §40). The same
+        # client `route` and `place_info` use, so `[route]` off means a Map is `unavailable`.
+        place_locator=route_client,
     )
     # `<documents>` (design/artifact §29): the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
@@ -2169,22 +2188,6 @@ async def build_dependencies(
         total_tokens=tier.limits.total_tokens,
     )
 
-    # `route` (Google, DEC-46) is wired ONLY when [route] enabled AND its key
-    # env var holds a value — the same enabled-AND-key gate as media custody.
-    # Off (or keyless) leaves the registry without a RouteClient, so `route`
-    # answers `unavailable` and never reaches Google (a legitimate three-state,
-    # not a leak). R-28 screens person names before any call regardless.
-    route_client = None
-    if cfg.route.enabled:
-        route_key = os.environ.get(cfg.route.api_key_env, "")
-        if route_key:
-            from nora.infra.routes.client import RouteClient
-            route_client = RouteClient(api_key=route_key)
-        else:
-            log.warning(
-                "route enabled but %s is unset — routing stays unavailable",
-                cfg.route.api_key_env,
-            )
     # §9's caps as the DOMAIN value, extracted to a variable (not built inline
     # at the `ToolRegistry(...)` call below the way it was before Events) so
     # `GatheringService` and `ToolRegistry` share the exact SAME `ReminderCaps` —

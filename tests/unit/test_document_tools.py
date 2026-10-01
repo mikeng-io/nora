@@ -526,3 +526,81 @@ async def test_a_schema_refusal_keeps_its_own_note() -> None:
     out = await _tools(_service())["document_publish"](spec=bad)
     assert out["status"] == "bad_arguments" and "not valid JSON" not in out["note"]
     assert "Fix each finding" in out["note"]
+
+
+async def test_a_map_is_grounded_on_publish_and_the_model_never_reads_a_coordinate_back() -> None:
+    """DEC-24: the stored Map carries the looked-up pair, but `document_read` hands the model
+    the names alone, so a coordinate can neither be learned from nor copied out of a document."""
+
+    class _Places:
+        async def locate(self, name: str) -> dict[str, Any]:
+            return {"status": "ok", "name": name, "lat": 35.7148, "lng": 139.7967}
+
+    service = DocumentService(
+        store=FakeDocumentStore(), records=_Rows(),  # type: ignore[arg-type]
+        media=FakeMediaObjectStore((), fail=False), media_window=50,
+        room_ids=lambda platform, cid: frozenset({cid}),
+        is_person=lambda person_id: person_id == "miles", place_locator=_Places(),
+    )
+    tools = _tools(service)
+    spec = _doc()
+    spec["root"]["children"] = [{"type": "Map", "props": {
+        "caption": "Where", "places": [{"name": "Senso-ji"}]}}]
+    made = await tools["document_publish"](spec=spec)
+    assert made["status"] == "ok", made
+    stored = (await service._store.get(document_id=UUID(made["document_id"]))).spec
+    assert stored["root"]["children"][0]["props"]["places"][0]["lat"] == 35.7148
+    seen = await tools["document_read"](document_id=made["document_id"])
+    place = seen["spec"]["root"]["children"][0]["props"]["places"][0]
+    assert place == {"name": "Senso-ji"} and "35.71" not in json.dumps(seen)
+
+
+def _map_service(asked: list[str]) -> DocumentService:
+    class _Places:
+        async def locate(self, name: str) -> dict[str, Any]:
+            asked.append(name)
+            return {"status": "ok", "name": name, "lat": 22.3, "lng": 114.2}
+
+    return DocumentService(
+        store=FakeDocumentStore(), records=_Rows(),  # type: ignore[arg-type]
+        media=FakeMediaObjectStore((), fail=False), media_window=50,
+        room_ids=lambda platform, cid: frozenset({cid}),
+        is_person=lambda person_id: person_id == "miles", place_locator=_Places(),
+    )
+
+
+def _map_spec(*names: str) -> dict[str, Any]:
+    spec = _doc()
+    spec["root"]["children"] = [{"type": "Map", "props": {
+        "caption": "Where", "places": [{"name": n} for n in names]}}]
+    return spec
+
+
+async def test_the_tool_hands_the_address_book_to_the_map_screen() -> None:
+    """Review of #703: only the service-level test passed the names, so dropping the argument at
+    the tool (`person_names=_route_person_names`) left the suite green and a person's name went to
+    Google."""
+    asked: list[str] = []
+    out = await _tools(_map_service(asked))["document_publish"](spec=_map_spec("Miles Novak's home"))
+    assert out["status"] == "bad_arguments", out
+    assert any("cannot be mapped" in f for f in out["findings"]), out["findings"]
+    assert asked == [], "a person's name must never leave the host"
+
+
+async def test_an_address_reverse_geocode_gave_out_this_turn_cannot_be_pinned_on_a_map() -> None:
+    """Review of #703 (R-57): `route` refuses an address `reverse_geocode` disclosed this turn; a
+    Map would have stored it as a pin. The tool passes the turn's set to the service."""
+    asked: list[str] = []
+    service = _map_service(asked)
+    tools = _tools(service)
+    # the closure's own set is what `reverse_geocode` fills; reach it the way the tool does
+    from nora.agent import tools as tools_module
+
+    assert "live_addresses" in tools_module.DocumentPublisher.publish.__annotations__
+    out = await service.publish(
+        platform="signal", conversation_id=ROOM, person_id="miles",
+        raw=_map_spec("Flat 5A, 12 Nathan Road"), written_by="t",
+        live_addresses=frozenset({"flat 5a, 12 nathan road"}),
+    )
+    assert out.status == "refused" and out.findings[0].rule == "place_refused"
+    assert asked == [] and tools is not None

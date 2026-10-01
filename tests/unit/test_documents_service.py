@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 import pytest
@@ -114,6 +114,7 @@ def _service(
     filler: int = 0,
     public_url: str = "",
     new_id: Callable[[], UUID] = uuid4,
+    places: Any = None,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
@@ -130,6 +131,7 @@ def _service(
         now_ms=lambda: NOW,
         public_url=public_url,
         new_id=new_id,
+        place_locator=places,
     )
     return svc, store
 
@@ -817,3 +819,193 @@ def test_the_catalog_opens_with_the_rules_a_skipped_skill_would_have_given() -> 
 def test_the_service_says_which_origin_a_link_is_built_under() -> None:
     assert _service(public_url="https://nora.example/")[0].link_base == "https://nora.example"
     assert _service()[0].link_base == ""
+
+
+# ---- Map: the model names places, the service looks them up (design/artifact §40) ---------------
+
+
+class _Places:
+    """A locator that knows a few public places and records every name it was asked for."""
+
+    KNOWN: ClassVar[dict[str, dict[str, Any]]] = {
+        "Senso-ji": {"status": "ok", "name": "Senso-ji", "lat": 35.7148, "lng": 139.7967},
+        "Fushimi Inari": {"status": "ok", "name": "Fushimi Inari", "lat": 34.9671, "lng": 135.7727},
+        "Central": {"status": "ambiguous", "could_be": ["Central, HK", "Central, Tokyo"]},
+    }
+
+    def __init__(self, *, down: bool = False) -> None:
+        self.asked: list[str] = []
+        self.down = down
+
+    async def locate(self, name: str) -> dict[str, Any]:
+        self.asked.append(name)
+        if self.down:
+            raise RuntimeError("places are down")
+        return dict(self.KNOWN.get(name, {"status": "not_found"}))
+
+
+def _map(*places: dict[str, Any], **props: Any) -> dict[str, Any]:
+    return {"type": "Map", "props": {"caption": "Where", "places": list(places), **props}}
+
+
+async def test_a_map_place_is_looked_up_by_name_and_stored_with_its_coordinate() -> None:
+    places = _Places()
+    svc, store = _service(places=places)
+    result = await _publish(svc, _doc(_map({"name": "Senso-ji"}, {"name": "Fushimi Inari"})))
+    assert result.status == "ok", result
+    stored = (await store.get(document_id=result.document_id)).spec
+    got = stored["root"]["children"][0]["props"]["places"]
+    assert got[0] == {"name": "Senso-ji", "lat": 35.7148, "lng": 139.7967}
+    assert got[1]["lat"] == 34.9671
+
+
+async def test_a_coordinate_or_route_the_model_wrote_is_discarded_never_kept() -> None:
+    """DEC-24: whatever pair a spec carries is thrown away and looked up again, so a person's
+    position taken from `where_is` cannot enter a document through a Map."""
+    places = _Places()
+    svc, store = _service(places=places)
+    spec = _doc(_map({"name": "Senso-ji", "lat": 22.3, "lng": 114.2},
+                     route=[{"lat": 22.3, "lng": 114.2}, {"lat": 22.4, "lng": 114.3}]))
+    result = await _publish(svc, spec)
+    assert result.status == "ok", result
+    props = (await store.get(document_id=result.document_id)).spec["root"]["children"][0]["props"]
+    assert props["places"][0]["lat"] == 35.7148 and "route" not in props
+
+
+async def test_a_place_that_does_not_resolve_to_exactly_one_is_refused_and_named() -> None:
+    svc, _ = _service(places=_Places())
+    unknown = await _publish(svc, _doc(_map({"name": "Nowhereville"})))
+    assert unknown.status == "refused"
+    assert [f.rule for f in unknown.findings] == ["place_unknown"]
+    ambiguous = await _publish(svc, _doc(_map({"name": "Central"})))
+    assert [f.rule for f in ambiguous.findings] == ["place_ambiguous"]
+
+
+async def test_a_person_a_coordinate_or_an_identifier_is_refused_before_any_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    result = await _publish(
+        svc, _doc(_map({"name": "Mei's home"}, {"name": "22.4106, 114.1245"})),
+        person_names=frozenset({"mei"}),
+    )
+    assert result.status == "refused"
+    assert [f.rule for f in result.findings] == ["place_refused", "place_refused"]
+    assert places.asked == [], "a screened name must never leave the host"
+
+
+async def test_a_down_locator_is_unavailable_never_a_stored_map_without_coordinates() -> None:
+    for locator in (_Places(down=True), None):
+        svc, _ = _service(places=locator)
+        result = await _publish(svc, _doc(_map({"name": "Senso-ji"})))
+        assert result.status == "unavailable", locator
+        assert result.document_id is None, "nothing was stored"
+
+
+async def test_a_document_with_no_map_never_asks_the_locator() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    assert (await _publish(svc, _doc())).status == "ok"
+    assert places.asked == []
+
+
+async def test_a_name_used_twice_is_looked_up_once() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    await _publish(svc, _doc(_map({"name": "Senso-ji"}), _map({"name": "Senso-ji"})))
+    assert places.asked == ["Senso-ji"]
+
+
+async def test_a_coordinate_written_with_a_space_instead_of_a_comma_is_refused_too() -> None:
+    """Review of #703: Google Text Search locates a bare pair either way, and the comma-only
+    pattern let `22.4106 114.1245` through as a place name."""
+    places = _Places()
+    svc, _ = _service(places=places)
+    for name in ("22.4106 114.1245", "22.4106,114.1245", "-33.8 151.2"):
+        result = await _publish(svc, _doc(_map({"name": name})))
+        assert result.status == "refused", name
+    assert places.asked == []
+
+
+async def test_an_address_disclosed_this_turn_is_refused_before_any_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    live = frozenset({"flat 5a, 12 nathan road, tsim sha tsui"})
+    result = await _publish(
+        svc, _doc(_map({"name": "Flat 5A, 12 Nathan Road, Tsim Sha Tsui"}, {"name": "Senso-ji"})),
+        live_addresses=live,
+    )
+    assert result.status == "refused" and [f.rule for f in result.findings] == ["place_refused"]
+    assert places.asked == ["Senso-ji"] or places.asked == [], places.asked
+
+
+async def test_one_publish_may_look_up_only_fifty_different_places() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    names = [{"name": f"Place {i}"} for i in range(26)]
+    others = [{"name": f"Other {i}"} for i in range(26)]
+    result = await _publish(svc, _doc(_map(*names), _map(*others)))
+    assert result.status == "refused" and [f.rule for f in result.findings] == ["place_limit"]
+    assert places.asked == [], "nothing was looked up, nothing was billed"
+
+
+async def test_names_that_differ_only_in_case_or_spacing_are_one_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    result = await _publish(
+        svc, _doc(_map({"name": "Senso-ji"}, {"name": "senso-ji"}, {"name": "Senso-ji  "}))
+    )
+    assert result.status == "ok", result
+    assert places.asked == ["Senso-ji"]
+
+
+async def test_fifty_unknown_places_are_ten_findings_not_fifty() -> None:
+    svc, _ = _service(places=_Places())
+    result = await _publish(svc, _doc(_map(*[{"name": f"Nowhere {i}"} for i in range(40)])))
+    assert result.status == "refused" and len(result.findings) == 10
+
+
+async def test_a_stale_revision_is_answered_before_any_place_is_looked_up() -> None:
+    """Review of #703: the lookups ran before the store checks, so «read it again and publish again»
+    after a conflict paid for the same places twice."""
+    places = _Places()
+    svc, _ = _service(places=places)
+    first = await _publish(svc, _doc(title="v1"))
+    result = await _publish(
+        svc, _doc(_map({"name": "Senso-ji"})), document_id=first.document_id, base_revision=99
+    )
+    assert result.status == "conflict"
+    assert places.asked == []
+
+
+async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixable_refusal() -> None:
+    """Review of #703: grounding adds a pair per place, so a document that passed the first
+    check could fail the second as «could not be re-checked», which she cannot fix and a retry
+    pays for."""
+    import json
+
+    from nora.documents.check import MAX_BYTES
+
+    places = _Places()
+    places.KNOWN = {f"P{i}": {"status": "ok", "name": f"P{i}", "lat": 22.123456, "lng": 114.123456}
+                    for i in range(50)}
+    svc, _ = _service(places=places)
+
+    # Five Markdown blocks of at most 20,000 characters hold the padding (3 bytes each).
+    def sized(total: int) -> dict[str, Any]:
+        blocks = [
+            {"type": "Markdown", "props": {"text": "字" * min(20000, max(0, total - 20000 * i))}}
+            for i in range(5)
+        ]
+        return _doc(*blocks, _map(*[{"name": f"P{i}"} for i in range(50)]))
+
+    total = 20000 * 4
+    spec = sized(total)
+    for _ in range(200):
+        if len(json.dumps(spec, ensure_ascii=False).encode()) >= MAX_BYTES - 700:
+            break
+        total += 200
+        spec = sized(total)
+    size = len(json.dumps(spec, ensure_ascii=False).encode())
+    assert MAX_BYTES - 2500 < size <= MAX_BYTES, size
+    result = await _publish(svc, spec)
+    assert result.status == "refused" and result.findings[0].rule == "size", result

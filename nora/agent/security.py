@@ -47,7 +47,9 @@ log = logging.getLogger(__name__)
 # address («12 Larkspur Rd» is integers): no legitimate place NAME is written this
 # way, so a coordinate in a route argument is a leaked machine position, not
 # somewhere a person typed. See `looks_like_coordinate`.
-_COORD_RE = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
+# A comma OR plain whitespace between the two numbers: Google Text Search locates a bare pair
+# written either way, and a pair with no comma got through while it was only a `route` argument.
+_COORD_RE = re.compile(r"-?\d{1,3}\.\d+(?:\s*,\s*|\s+)-?\d{1,3}\.\d+")
 
 
 def looks_like_coordinate(text: str) -> bool:
@@ -140,6 +142,47 @@ class PlaceScreenResult:
     data: dict[str, Any] | None = None
 
 
+def _refused_before_the_call(query: str, person_names: frozenset[str] | None) -> str | None:
+    """Why a place query may not leave the host, or `None`: an identifier or a coordinate
+    (`identifier`), or a known person's name (`person`). The outbound half of R-28, shared
+    by `screen_and_resolve_place` and `screen_and_locate_place` so the two cannot drift."""
+    if scan_identifiers(query) is not None or looks_like_coordinate(query):
+        return "identifier"
+    if person_names is not None and _names_a_person(query, person_names):
+        return "person"
+    return None
+
+
+class PlaceLocator(Protocol):
+    async def locate(self, name: str) -> dict[str, Any]: ...
+
+
+async def screen_and_locate_place(
+    query: str,
+    *,
+    place_locator: PlaceLocator | None,
+    person_names: frozenset[str] | None = None,
+) -> PlaceScreenResult:
+    """`screen_and_resolve_place`'s twin for a SERVICE that needs the coordinate (design/artifact
+    §40): the same outbound screen, the call wrapped so it never raises, and the same return-path
+    screen on Google's name, but the reply carries `lat` and `lng`. Only a caller that stores the
+    pair may use it; its result must never reach a tool result (DEC-24)."""
+    reason = _refused_before_the_call(query, person_names)
+    if reason is not None:
+        return PlaceScreenResult(status="refused", reason=reason)
+    if place_locator is None:
+        return PlaceScreenResult(status="unavailable")
+    try:
+        out = await place_locator.locate(query)
+    except Exception:
+        log.exception("screen_and_locate_place: locate call failed")
+        return PlaceScreenResult(status="unavailable")
+    out = dict(out)
+    if scan_identifiers(str(out.get("name", ""))) is not None:
+        out.pop("name", None)
+    return PlaceScreenResult(status="resolved", data=out)
+
+
 async def screen_and_resolve_place(
     query: str,
     *,
@@ -170,10 +213,9 @@ async def screen_and_resolve_place(
     A caller that has it should always pass it; one without it still gets
     the identifier/coordinate half of the screen, both ways.
     """
-    if scan_identifiers(query) is not None or looks_like_coordinate(query):
-        return PlaceScreenResult(status="refused", reason="identifier")
-    if person_names is not None and _names_a_person(query, person_names):
-        return PlaceScreenResult(status="refused", reason="person")
+    reason = _refused_before_the_call(query, person_names)
+    if reason is not None:
+        return PlaceScreenResult(status="refused", reason=reason)
     if route_source is None:
         return PlaceScreenResult(status="unavailable")
     try:
