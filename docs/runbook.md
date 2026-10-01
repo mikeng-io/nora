@@ -409,6 +409,9 @@ probed the same day), and `SignalListener` discarded it. It now advances
 `last_event_at` without reaching `on_event`, as the WhatsApp and Instagram
 heartbeats already do, so an age over 900 seconds on any platform means a
 silent socket, not a quiet room. The same clock feeds `state_of`'s `stale`.
+What it cannot see: a signal-cli that stays connected, keeps sending its
+keep-alive and delivers no message. That reads as alive, exactly as a quiet room
+does; only a message or a failing send shows it.
 
 (An earlier version of this paragraph said the metric carries **no `signal`
 series at all**. That was wrong: Signal emitted continuously 09-09 to 09-16
