@@ -684,3 +684,103 @@ async def test_list_created_by_pages_in_a_stable_order_and_is_bounded(store):
     assert seen == sorted(seen, key=str), "ordered by id"
     assert await store.list_created_by(person_id="ken", limit=0) == ()
     assert await store.list_created_by(person_id="ken", limit=5, offset=2**40) == ()
+
+
+# ------------------------------------------------------------------------- search
+async def _make_text(store, *, title, text, created_by="ken", room=ROOM) -> UUID:
+    doc_id = uuid4()
+    await store.create(
+        document_id=doc_id,
+        platform=room[0],
+        conversation_id=room[1],
+        created_by=created_by,
+        revision=_rev(title, SHA_A, text=text),
+    )
+    return doc_id
+
+
+async def _found(store, query, *, person="mei", rooms=frozenset({ROOM}), state="active"):
+    page = await store.list_visible(
+        person_id=person, rooms=rooms, limit=50, offset=0, state=state, query=query
+    )
+    return {d.id for d in page.items}, page.total
+
+
+async def test_a_search_matches_the_current_titles_and_texts_ignoring_case(store):
+    by_title = await _make_text(store, title="Lisbon weekend", text="flights")
+    by_text = await _make_text(store, title="Packing", text="Pack a LISBON guide and a coat")
+    other = await _make_text(store, title="Tokyo", text="ramen")
+
+    found, total = await _found(store, "lisbon")
+    assert found == {by_title, by_text} and total == 2 and other not in found
+    # Inner whitespace is collapsed, an empty search is no search.
+    assert (await _found(store, "  LISBON   weekend "))[0] == {by_title}
+    assert (await _found(store, ""))[1] == 3 and (await _found(store, "   "))[1] == 3
+    assert await _found(store, "nothing like it") == (set(), 0)
+
+
+async def test_a_search_reads_the_current_revision_only(store):
+    doc_id = await _make_text(store, title="Old title", text="first draft mentions tulips")
+    out = await store.add_revision(
+        document_id=doc_id, base_revision=1,
+        revision=_rev("New title", SHA_B, text="second draft mentions roses"),
+    )
+    assert out.status == "ok"
+    assert (await _found(store, "tulips"))[0] == set(), "a superseded revision is not searched"
+    assert (await _found(store, "roses"))[0] == {doc_id}
+    assert (await _found(store, "new title"))[0] == {doc_id}
+
+
+async def test_a_query_is_text_never_a_pattern(store):
+    plain = await _make_text(store, title="Plain", text="nothing special here")
+    percent = await _make_text(store, title="Budget", text="saved 50% of it_all, a/b")
+    assert (await _found(store, "%"))[0] == {percent}, "% matches a percent sign, not everything"
+    assert (await _found(store, "_"))[0] == {percent}, "_ matches an underscore, not any letter"
+    assert (await _found(store, "/"))[0] == {percent}, "the escape character is a literal too"
+    assert (await _found(store, "50\\"))[0] == set(), "a backslash is a literal too"
+    assert plain not in (await _found(store, "%"))[0]
+
+
+async def test_a_search_never_matches_a_deleted_document_and_keeps_the_state_filter(store):
+    live = await _make_text(store, title="Garden plan", text="tomatoes")
+    shelved = await _make_text(store, title="Garden archive", text="tomatoes")
+    gone = await _make_text(store, title="Garden deleted", text="tomatoes")
+    assert await store.set_state(document_id=shelved, state="archived", set_by="mei")
+    assert await store.set_state(document_id=gone, state="deleted", set_by="mei")
+
+    assert await _found(store, "garden") == ({live}, 1)
+    assert await _found(store, "garden", state="archived") == ({shelved}, 1)
+    # A deleted document matches under no filter, not even by its text, and for no one.
+    for state in ("active", "archived"):
+        for person in ("mei", "ken"):
+            found, _ = await _found(store, "tomatoes", person=person, state=state)
+            assert gone not in found
+    # Restored, it matches again: nothing was erased.
+    assert await store.set_state(document_id=gone, state="active", set_by="mei")
+    assert (await _found(store, "tomatoes"))[0] == {live, gone}
+
+
+async def test_a_search_never_matches_a_document_the_person_may_not_read(store):
+    mine = await _make_text(store, title="Secret plan", text="the vault", room=ROOM)
+    elsewhere = await _make_text(
+        store, title="Secret plan two", text="the vault", room=OTHER_ROOM, created_by="jo"
+    )
+    own_elsewhere = await _make_text(
+        store, title="Secret plan three", text="the vault", room=OTHER_ROOM, created_by="mei"
+    )
+    rooms = frozenset({ROOM})
+    # Mei reads ROOM and her own; the other room's, made by Jo, is not hers.
+    found, total = await _found(store, "vault", person="mei", rooms=rooms)
+    assert found == {mine, own_elsewhere} and total == 2 and elsewhere not in found
+    # Nobody in no room, who made nothing, finds anything.
+    assert await _found(store, "vault", person="stranger", rooms=frozenset()) == (set(), 0)
+
+
+async def test_a_search_pages_and_counts_its_matches(store):
+    made = [await _make_text(store, title=f"Trip {i}", text="beach") for i in range(5)]
+    await _make_text(store, title="Work", text="spreadsheet")
+    page = await store.list_visible(
+        person_id="mei", rooms=frozenset({ROOM}), limit=2, offset=2, query="beach"
+    )
+    assert page.total == 5 and len(page.items) == 2
+    assert {d.id for d in page.items} <= set(made)

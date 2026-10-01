@@ -1154,3 +1154,23 @@ command is idempotent (a document already `deleted` is not written again) and it
 `deleted N document(s)` (`would delete` in a dry run) beside the message count. `unforget` does not
 restore documents: a document's delete has no marker it could read back without also undoing a person's
 own delete, so the operator restores one by asking Nora in its room.
+
+**Search (DEC-257).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
+title or search text (migration 0084's `text` column). It is `list_visible(query=)`, not a second read, so
+the visibility predicate and the state filter that already hide archived and deleted documents are in the
+same SQL statement, and a document a list would not show is never a match (`total` counts the matches).
+The query is text: `%`, `_` and the escape character are escaped, inner whitespace is collapsed, a blank
+one is no search and one over 200 characters is a 400. Plain `ILIKE`: the match only runs over one person's
+visible documents, so no trigram index and no migration were added; one is the answer if a measured listing
+is slow. The portal's list has a debounced search box that keeps the Archived filter. No Nora tool was added
+for search: `document_read` and the room's `<documents>` block already cover finding a document from chat.
+
+**Documents carry their room's label.** A row and the detail carry `roomLabel`, the operator's label from
+`policy.toml`, only for a viewer whose own rooms include that room (`nora.web.documents._room_label`): a creator
+who has since left a room still reads their document, but is not told what the room is called. The chat id is
+still never sent.
+
+**`document_read` takes a link's handle.** Like `document_set_status`, it accepts the 12-hex code at the end of a
+link as well as the id. `DocumentService._in_room` is the one resolution both share: a handle is matched among THIS
+room's documents in any state, none or two matches are never picked, and another room's document, an unknown id and
+a deleted document answer alike.

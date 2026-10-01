@@ -153,6 +153,7 @@ class App:
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
             documents=deps.documents, rooms_of=deps.rooms_of, blobs=deps.blobs,
+            room_label=deps.room_label,
         )
         # The voice channel's text entry point (design/voice-channel/, stage
         # 3): the wake service POSTs transcripts here, and they enter through

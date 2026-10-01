@@ -61,6 +61,17 @@ DOCUMENT_HANDLE_CHARS = 12
 _HANDLE = re.compile(r"[0-9a-f]{12}")
 
 
+#: The longest search text a listing accepts. A caller refuses a longer one; the store
+#: never sees it, so a query is a few words and never a way to make it scan on a huge needle.
+DOCUMENT_QUERY_MAX = 200
+
+
+def normalize_query(text: str) -> str:
+    """A search text as the store matches it: trimmed, inner whitespace collapsed to one
+    space. Empty means "no search". Callers check `DOCUMENT_QUERY_MAX` first."""
+    return " ".join(text.split())
+
+
 def handle_of(document_id: UUID) -> str:
     """The short handle of `document_id`."""
     return document_id.hex[:DOCUMENT_HANDLE_CHARS]
@@ -214,8 +225,16 @@ class DocumentStore(Protocol):
         limit: int,
         offset: int,
         state: ListedState = "active",
+        query: str = "",
     ) -> VisiblePage:
-        """The documents `person_id` may read IN `state`, most recently updated first."""
+        """The documents `person_id` may read IN `state`, most recently updated first.
+
+        A non-empty `query` keeps only those whose CURRENT revision's title or search text
+        contains it, ignoring case (a plain substring; `normalize_query` is applied). The
+        visibility and the state rule are the same ones the unfiltered list applies, in the
+        same statement, so a search can never reach a document a list would not show: a
+        deleted document, an archived one outside the Archived filter, and a document the
+        person may not read are never matches. `total` counts the matches."""
         ...
 
     async def list_room(

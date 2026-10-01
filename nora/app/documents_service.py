@@ -131,6 +131,17 @@ def rooms_named(policy: Policy, person_id: str) -> frozenset[RoomKey]:
     )
 
 
+def room_label(policy: Policy, platform: str, conversation_id: str) -> str:
+    """The operator's label of the room `(platform, conversation_id)` names, or "" when no
+    allowed room answers to it. The portal shows it beside a document, but only to someone
+    whose own rooms include it (`nora.web.documents`), so it never names a room to a person
+    who is not in it."""
+    for convo in policy.conversations:
+        if convo.platform == platform and conversation_id in convo.ids:
+            return convo.label
+    return ""
+
+
 def _images(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """Every Image node and its JSON Pointer. Iterative: the document has passed the
     checker, so depth is bounded, but nothing here needs to rely on that."""
@@ -572,4 +583,11 @@ def _not_active(state: str) -> PublishResult:
     )
 
 
-__all__ = ["DocumentService", "PublishResult", "ReadResult", "StateResult", "rooms_named"]
+__all__ = [
+    "DocumentService",
+    "PublishResult",
+    "ReadResult",
+    "StateResult",
+    "room_label",
+    "rooms_named",
+]

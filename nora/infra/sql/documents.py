@@ -41,6 +41,7 @@ from nora.domain.documents import (
     VisiblePage,
     ensure_utc_document,
     is_handle,
+    normalize_query,
 )
 from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENT_STATE, DOCUMENTS
 
@@ -96,13 +97,21 @@ def _stored(r: Row[Any]) -> StoredDocument:
     )
 
 
-def _current() -> sa.Select[Any]:
-    """Each document at its highest revision."""
+def _current_join() -> sa.Join:
+    """`documents` joined to its highest revision."""
     top = (
         sa.select(_R.document_id, sa.func.max(_R.revision).label("top"))
         .group_by(_R.document_id)
         .subquery()
     )
+    return DOCUMENTS.join(top, top.c.document_id == _D.id).join(
+        DOCUMENT_REVISION,
+        sa.and_(_R.document_id == top.c.document_id, _R.revision == top.c.top),
+    )
+
+
+def _current() -> sa.Select[Any]:
+    """Each document at its highest revision."""
     return sa.select(
         _D.id,
         _D.platform,
@@ -118,11 +127,17 @@ def _current() -> sa.Select[Any]:
         _R.written_by,
         _R.recorded_at,
         _state().label("state"),
-    ).select_from(
-        DOCUMENTS.join(top, top.c.document_id == _D.id).join(
-            DOCUMENT_REVISION,
-            sa.and_(_R.document_id == top.c.document_id, _R.revision == top.c.top),
-        )
+    ).select_from(_current_join())
+
+
+def _matches(needle: str) -> sa.ColumnElement[bool]:
+    """The CURRENT revision's title or search text contains `needle`, ignoring case. A
+    plain `ILIKE '%needle%'` with `%`, `_` and the escape character escaped, so a query is
+    text and never a pattern. It runs only over what `_visible` and `_state` already kept
+    (one person's documents), so it needs no trigram index."""
+    return sa.or_(
+        _R.title.icontains(needle, autoescape=True),
+        _R.text.icontains(needle, autoescape=True),
     )
 
 
@@ -281,15 +296,23 @@ class SqlDocumentStore:
         limit: int,
         offset: int,
         state: ListedState = "active",
+        query: str = "",
     ) -> VisiblePage:
         # `deleted` is never a listing, whatever a caller passes.
         listed = "archived" if state == "archived" else "active"
         where = sa.and_(_visible(person_id, rooms), _state() == listed)
+        needle = normalize_query(query)
+        if needle:
+            where = sa.and_(where, _matches(needle))
         # Bounded here as well as by the caller: an unbounded OFFSET is a DataError, and
         # the fake answers an empty page, so the two stores must agree at the extremes.
         limit = min(max(limit, 0), _MAX_LIMIT)
         offset = min(max(offset, 0), _MAX_OFFSET)
-        count = sa.select(sa.func.count()).select_from(DOCUMENTS).where(where)
+        # A search filters on the current revision's columns, so its count reads the same
+        # join the page does; an unfiltered list counts the identity rows alone.
+        count = sa.select(sa.func.count()).select_from(
+            _current_join() if needle else DOCUMENTS
+        ).where(where)
         page = (
             _current()
             .where(where)

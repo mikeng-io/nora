@@ -53,6 +53,7 @@ from nora.domain.documents import (
     StoredDocument,
     VisiblePage,
     is_handle,
+    normalize_query,
 )
 from nora.domain.media import (
     MediaBlob,
@@ -2433,14 +2434,17 @@ class FakeDocumentStore:
 
     async def list_visible(
         self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int,
-        state: ListedState = "active",
+        state: ListedState = "active", query: str = "",
     ) -> VisiblePage:
         listed = "archived" if state == "archived" else "active"
+        needle = normalize_query(query).casefold()
         seen = [
             d.summary for doc_id in self._rooms
             if (d := self._stored(doc_id)) is not None
             and self._sees(d.summary, person_id, rooms)
             and d.summary.state == listed
+            and (not needle or needle in d.summary.title.casefold()
+                 or needle in d.text.casefold())
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         # The same bounds as `SqlDocumentStore.list_visible`.
