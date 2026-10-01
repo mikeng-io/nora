@@ -30,12 +30,39 @@ import it. `metrics` is injected rather than imported for the same
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 from nora.domain.models import Quote, TranscriptRow
 from nora.domain.ports import RecordStore
 
 log = logging.getLogger("nora.domain.quote_window")
+
+
+def first_by_ts(rows: Iterable[TranscriptRow]) -> dict[int, TranscriptRow]:
+    """`ts -> the FIRST row carrying it`, which is the tie-break every resolver
+    of a reply owes every other.
+
+    `ts` is not unique. Two rows can share a millisecond — a burst, a re-import,
+    a platform that stamps by second — and until this function existed the places
+    that resolve a quote disagreed about which one it meant: `_replying_to_block`
+    scanned with `next(...)` (FIRST wins) while `_parent_of` read a dict
+    comprehension (LAST wins). One prompt could then carry `<replying_to>`
+    quoting one message and `replying_to="n"` pointing at another, for the same
+    pointer — the model reading two different parents for one reply. Step 4c of
+    `design/context-assembly/04-every-occasion.md` found the same comprehension
+    twice more (the debrief's transcript and the tool-result transcript), and
+    `tests/architecture/test_one_quote_resolver.py` is what stops a fifth.
+
+    FIRST rather than last because a reply points at something that already
+    existed: the earliest row bearing the timestamp is the one that was there
+    to be quoted. It is also the row `RecordStore.depth_to` sizes a window to
+    reach, so a window grown for a quote still holds the row this resolves to.
+    """
+    out: dict[int, TranscriptRow] = {}
+    for row in rows:
+        out.setdefault(row.ts, row)
+    return out
 
 
 class QuoteWindow:

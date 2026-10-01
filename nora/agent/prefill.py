@@ -8,7 +8,7 @@ for its own injected XML, with the label replaced by the sentence (#314).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 
 from ..domain.blocks import (
@@ -26,6 +26,7 @@ from ..domain.decision_log import (
 from ..domain.framing import CLOSING_LINE, TAG_HEADER, ClockLine, ContextHeader
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
+from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.computer_render import render_computer
 from ..language.culture_render import render_culture
@@ -408,27 +409,12 @@ def _label(row: TranscriptRow, display_name: str) -> str:
     return speaker_name(row.person_name, row.sender_name)
 
 
-def _by_ts(rows: Iterable[TranscriptRow]) -> dict[int, TranscriptRow]:
-    """`ts -> the FIRST row carrying it`, which is the tie-break both resolvers
-    owe each other.
-
-    `ts` is not unique. Two rows can share a millisecond — a burst, a re-import,
-    a platform that stamps by second — and until this function existed the two
-    places that resolve a quote disagreed about which one it meant:
-    `_replying_to_block` scanned with `next(...)` (FIRST wins) while
-    `_parent_of` read a dict comprehension (LAST wins). One prompt could then
-    carry `<replying_to>` quoting one message and `replying_to="n"` pointing at
-    another, for the same pointer — the model reading two different parents for
-    one reply.
-
-    FIRST rather than last because a reply points at something that already
-    existed: the earliest row bearing the timestamp is the one that was there
-    to be quoted.
-    """
-    out: dict[int, TranscriptRow] = {}
-    for row in rows:
-        out.setdefault(row.ts, row)
-    return out
+#: One resolver for a reply's quote, shared with the debrief's transcript and the
+#: tool-result transcript: FIRST wins when two rows share a `ts`
+#: (`nora.domain.quote_window.first_by_ts` says why). Kept under its old name
+#: because `design/09-decision-index.md` (DEC-195) and the audit store's
+#: contract test name it there.
+_by_ts = first_by_ts
 
 
 def _parent_of(

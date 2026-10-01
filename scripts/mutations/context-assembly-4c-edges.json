@@ -1,0 +1,86 @@
+[
+  {
+    "name": "4c: the picker's speaker is escaped and collapsed again but not stripped of [ ] :",
+    "file": "nora/agent/reaction.py",
+    "old": "        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
+    "new": "        lines.append(f\"{escape(one_line(who))}: {escape(body)}\")",
+    "target": "tests/unit/test_reaction.py -k a_profile_name_cannot_write_a_line"
+  },
+  {
+    "name": "4c: the same revert, read by the goldens (a hostile name keeps its delimiters)",
+    "file": "nora/agent/reaction.py",
+    "old": "        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
+    "new": "        lines.append(f\"{escape(one_line(who))}: {escape(body)}\")",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_name_carrying_a_delimiter_loses_exactly_the_delimiters"
+  },
+  {
+    "name": "4c: her own display name skips the label, so a colon in it reads as a body",
+    "file": "nora/agent/reaction.py",
+    "old": "        who = display_name if row.is_nora else row_speaker(row)\n        lines.append(f\"{speaker_label(who)}: {escape(body)}\")",
+    "new": "        who = display_name if row.is_nora else row_speaker(row)\n        lines.append(f\"{escape(display_name if row.is_nora else speaker_label(who))}: {escape(body)}\")",
+    "target": "tests/unit/test_reaction.py -k hers_goes_through_the_same_label"
+  },
+  {
+    "name": "4c: the shared resolver is last-wins again (the tie goes to the row that came after)",
+    "file": "nora/domain/quote_window.py",
+    "old": "        out.setdefault(row.ts, row)",
+    "new": "        out[row.ts] = row",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/test_prefill.py tests/architecture/test_one_quote_resolver.py::test_the_helper_is_first_wins"
+  },
+  {
+    "name": "4c: the debrief's transcript builds its own last-wins map again",
+    "file": "nora/engagement/debrief_render.py",
+    "old": "    by_ts = first_by_ts(rows)\n",
+    "new": "    by_ts = {row.ts: row for row in rows}\n",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_the_debrief_transcript_follows_the_same_rule tests/architecture/test_one_quote_resolver.py"
+  },
+  {
+    "name": "4c: the tool-result transcript builds its own last-wins map again",
+    "file": "nora/agent/tools.py",
+    "old": "    by_ts = first_by_ts(rows)\n",
+    "new": "    by_ts = {r.ts: r for r in rows}\n",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/architecture/test_one_quote_resolver.py"
+  },
+  {
+    "name": "4c: the summarize text goes to the model raw again, a forged closer ends nothing because there is no block",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "                text=wrap_outside_text(\"media_text\", _SUMMARIZE_SOURCE, text),",
+    "new": "                text=text,",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_forged_closer_in_a_transcript_cannot_end_the_block tests/unit/test_step4c_edge_goldens.py::test_a_summarize_call_sends_the_text_framed_and_nothing_else_differs tests/test_media_fetch.py::test_summarize_is_a_text_call_and_never_a_second_listen tests/unit/test_media_comprehender.py::test_a_videos_title_and_description_are_a_text_pass_over_the_chunks"
+  },
+  {
+    "name": "4c: the summarize text is framed as the wrong block (a stranger's post)",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "wrap_outside_text(\"media_text\", _SUMMARIZE_SOURCE, text)",
+    "new": "wrap_outside_text(\"social_post\", _SUMMARIZE_SOURCE, text)",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_summarize_call_sends_the_text_framed_and_nothing_else_differs"
+  },
+  {
+    "name": "4c: the summarize text is wrapped but not escaped",
+    "file": "nora/infra/vision/comprehend.py",
+    "old": "                text=wrap_outside_text(\"media_text\", _SUMMARIZE_SOURCE, text),",
+    "new": "                text=f\"<media_text>\\n{text}\\n</media_text>\",",
+    "target": "tests/unit/test_step4c_edge_goldens.py::test_a_forged_closer_in_a_transcript_cannot_end_the_block"
+  },
+  {
+    "name": "4c: the new block type is no longer declared",
+    "file": "nora/domain/block_types.py",
+    "old": "    _t(\"media_text\",",
+    "new": "    _t(\"media_text_x\",",
+    "target": "tests/architecture/test_every_block_declares_its_type.py"
+  },
+  {
+    "name": "4c: the ledger's ceiling is raised again, which a paid debt may not be",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "CEILING = 0\n",
+    "new": "CEILING = 1\n",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_ledger_is_exactly_the_size_it_says"
+  },
+  {
+    "name": "4c: the summarize path is recorded as a hand-built debt again",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "KNOWN_HAND_BUILT: dict[str, str] = {}\n",
+    "new": "KNOWN_HAND_BUILT: dict[str, str] = {\"nora/infra/vision/comprehend.py\": \"summarize sends a voice note transcript or a video chunk text as a raw second user message with no framing at all\"}\n",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger"
+  }
+]

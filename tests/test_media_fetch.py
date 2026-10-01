@@ -1169,7 +1169,11 @@ async def test_summarize_is_a_text_call_and_never_a_second_listen():
 
     assert got.available is True
     assert client.calls == [], "no vision call for a transcript already held"
-    assert client.completions == ["喂你今日得唔得閒啊"]
+    # The words ride in a `media_text` block that says what they are (step 4c of
+    # design/context-assembly/04): the transcript is data, not the question's tail.
+    [sent] = client.completions
+    assert sent.startswith("<media_text source=")
+    assert sent.endswith(">\n喂你今日得唔得閒啊\n</media_text>")
     assert got.content == "", "the caller already holds the words"
 
 

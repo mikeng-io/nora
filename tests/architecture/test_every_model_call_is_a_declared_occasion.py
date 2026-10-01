@@ -40,12 +40,13 @@ and the last step of the plan deletes the ledger and this paragraph with it.
 
   - text a module hand-builds INSIDE a RUNNER or a MECHANISM. The net knows a
     module runs a prompt, not that it also writes one. KNOWN_HAND_BUILT is the
-    by-hand record of the ones found by reading (the vision summarizer's
-    unframed text; the debrief's `_prompt` was one until step 2b moved it into
-    its renderer, and fire's header paragraphs until step 4b made them typed
-    builders in `nora.domain.framing`, which `test_framing_is_one_typed_place`
-    now watches): each is a ledger entry like any other, but a NEW one is found
-    by a person, not by this test;
+    by-hand record of the ones found by reading (it is empty now: the debrief's
+    `_prompt` was one until step 2b moved it into its renderer, fire's header
+    paragraphs until step 4b made them typed builders in `nora.domain.framing`,
+    which `test_framing_is_one_typed_place` now watches, and the vision
+    summarizer's unframed text until step 4c wrapped it in a `media_text`
+    block): each is a ledger entry like any other, but a NEW one is found by a
+    person, not by this test;
   - a model door this file does not know. Honcho's `chat` (a dialectic query
     to a memory service's own model) and image generation are not matched;
   - a model call reached only through an imported helper (the net is
@@ -104,7 +105,9 @@ EXEMPT = {
     "nora/infra/vision/comprehend.py": (
         "the describe path asks an authored question per modality about one "
         "image or video, with no conversation to assemble; its summarize path "
-        "is a recorded debt in KNOWN_HAND_BUILT, not covered by this entry"
+        "sends the authored question and then the one piece of outside text, a "
+        "transcript or chunk run, wrapped by `wrap_outside_text` as a typed "
+        "`media_text` block (step 4c), so there is no prompt of its own to declare"
     ),
 }
 
@@ -137,26 +140,19 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
 #: as a RUNNER, a MECHANISM or an EXEMPT. rel -> what is hand-built. Each is a
 #: ledger entry below; this table is how a debt the net cannot detect is still
 #: recorded and counted.
-KNOWN_HAND_BUILT = {
-    "nora/infra/vision/comprehend.py": (
-        "summarize sends a voice note's transcript or a video's chunk text, "
-        "members' words, as a raw second user message with no framing"
-    ),
-}
+KNOWN_HAND_BUILT: dict[str, str] = {}
 
 #: What fails TODAY. (module, kind) -> the plan step that removes it.
 #: kind is `undeclared` (builds a prompt, no `_BLOCKS`), `hand_joined`
 #: (`_BLOCKS` declared but never walked by `assemble`, so its `order` is a
 #: comment) or `hand_built` (text written by hand inside a runner, from
 #: KNOWN_HAND_BUILT).
-PENDING: dict[tuple[str, str], str] = {
-    ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",
-}
+PENDING: dict[tuple[str, str], str] = {}
 
 #: The ledger's size, pinned exactly. Pay one down and this test fails until
 #: you lower the number in the same diff; add one and it fails until you raise
 #: it, which should never be done.
-CEILING = 1
+CEILING = 0
 
 
 def _rel(path: Path) -> str:

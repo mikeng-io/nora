@@ -200,6 +200,7 @@ from ..domain.ports import (
     VoicePresenceSource,
 )
 from ..domain.prompt import stamp
+from ..domain.quote_window import first_by_ts
 from ..domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
 from ..domain.reminders import (
     PROACTIVE_KIND,
@@ -2907,7 +2908,7 @@ def _transcript_messages(
     that `prefill` keeps off it on purpose (R-18). `now` is the caller's clock
     in the zone the clock line names, so `stamp` renders a local day.
     """
-    by_ts = {r.ts: r for r in rows}
+    by_ts = first_by_ts(rows)
     out: list[dict] = []
     threaded = 0
     for r in rows:

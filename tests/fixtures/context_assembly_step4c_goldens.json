@@ -85,6 +85,61 @@
   "tool_ids": [],
   "tool_threaded": 0
  },
+ "by-ts-the-earlier-of-two-duplicates-quotes-the-shared-ms": {
+  "debrief": "<m at=\"2025-08-24 01:46\" from=\"Miles\">start</m>\n<m at=\"2025-08-24 01:46\" from=\"Miles\" replying_to=\"2025-08-24 01:46\">the earlier of two at one ms</m>\n<m at=\"2025-08-24 01:46\" from=\"Grant\">the later of two at one ms</m>\n<m at=\"2025-08-24 01:46\" from=\"Eve\">after</m>",
+  "prefill": "<m n=\"1\" age=\"397d ago\" from=\"Miles\">start</m>\n<m n=\"2\" age=\"397d ago\" from=\"Miles\">the earlier of two at one ms</m>\n<m n=\"3\" age=\"397d ago\" from=\"Grant\">the later of two at one ms</m>\n<m n=\"4\" age=\"397d ago\" from=\"Eve\">after</m>",
+  "tool": [
+   {
+    "body": "start",
+    "sender": "Miles",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "the earlier of two at one ms",
+    "reply_to": "Grant",
+    "sender": "Miles",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "the later of two at one ms",
+    "sender": "Grant",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "after",
+    "sender": "Eve",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   }
+  ],
+  "tool_ids": [
+   {
+    "body": "start",
+    "n": 1,
+    "sender": "Miles",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "the earlier of two at one ms",
+    "n": 2,
+    "reply_to": "Grant",
+    "sender": "Miles",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "the later of two at one ms",
+    "n": 3,
+    "sender": "Grant",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   },
+   {
+    "body": "after",
+    "n": 4,
+    "sender": "Eve",
+    "when": "2025-08-24 Sun 01:46 (397d ago)"
+   }
+  ],
+  "tool_threaded": 1
+ },
  "by-ts-the-same-ms-on-rows-nobody-quotes": {
   "debrief": "<m at=\"2025-08-24 01:46\" from=\"Miles\">a</m>\n<m at=\"2025-08-24 01:46\" from=\"Grant\">b</m>\n<m at=\"2025-08-24 01:46\" from=\"Eve\">c</m>",
   "prefill": "<m n=\"1\" age=\"397d ago\" from=\"Miles\">a</m>\n<m n=\"2\" age=\"397d ago\" from=\"Grant\">b</m>\n<m n=\"3\" age=\"397d ago\" from=\"Eve\">c</m>",
