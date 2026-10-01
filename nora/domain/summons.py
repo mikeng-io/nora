@@ -25,7 +25,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol, get_args
 from uuid import UUID
 
-from nora.domain.blocks import wrap_outside_text
+from nora.domain.blocks import BlockKey, ContextBlock, assemble
+from nora.domain.prompt import escape
 
 #: Every state a ledger row can be in. Three are OPEN and the rest are final
 #: (`finish` refuses to move a final row):
@@ -534,13 +535,60 @@ def _reading_line(reading: ItemReading | None) -> str:
     return _NOT_SEEN.get(reading.state, _NOT_SEEN["unreadable"])
 
 
-def render_summons(ctx: SummonsContext) -> str:
-    """The ONE rendering of a summons: what she is reading, then the post, the
-    thread and the question, each stranger-written part wrapped as a
-    `social_post` block. Our own sentences stay outside the wraps; nothing a
-    stranger wrote is outside one."""
+#: What the summons prompt carries after its head, declared as data
+#: (`design/context-assembly/01-the-registry.md`) instead of left as three
+#: `wrap_outside_text` calls and the hand join that placed them.
+#:
+#: `render_summons` hands its blocks to `assemble()`, so `order` IS the order
+#: the model reads (the numbers are the order the hand join wrote them, step 4a
+#: of `design/context-assembly/04-every-occasion.md`; the goldens in
+#: `tests/unit/test_summons_assembly_goldens.py` pin the whole prompt byte for
+#: byte). Every row is the ONE type `social_post`, so a row says WHICH of the
+#: three it is by its `source`, the fourth field, and not by its name: a table
+#: keyed on the name alone could hold one row, and the order of the three would
+#: be the order they were listed in, a comment and not data. `key="turn"`
+#: throughout: this is the turn's own message, no cached prefix.
+#:
+#: The head is NOT in the table. It is the occasion's own sentences (what she is
+#: being asked, the clock, who tagged her, and when), authored text with no
+#: opening tag, and a `ContextBlock` cannot render without one; carrying it as a
+#: block would add bytes the model reads, which this step may not do. It stays
+#: the first line of the prompt (`_head`).
+_BLOCKS: tuple[tuple[str, int, BlockKey, str], ...] = (
+    ("social_post", 10, "turn", "the instagram post"),
+    ("social_post", 20, "turn", "comments under that post"),
+    ("social_post", 30, "turn", "what the comment that tagged you asks"),
+)
+
+#: `source -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    source: (order, key) for _name, order, key, source in _BLOCKS
+}
+
+#: What the hand join put between the head and the blocks, and `assemble` now
+#: puts between the blocks.
+_SEP = "\n"
+
+
+def _social_post(source: str, text: str) -> ContextBlock:
+    """One stranger-written piece, as the block `wrap_outside_text` builds (the
+    same name, the same `source` attribute, the same `escape`: R-13), at its
+    row in `_BLOCKS` and kept when its body is empty. A question or a line of
+    control characters escapes to nothing, a hand join rendered that as an empty
+    pair, and `assemble` would drop it."""
+    order, key = _ROW[source]
+    return ContextBlock(
+        name="social_post", attrs=(("source", source),), body=escape(text),
+        order=order, key=key, when_empty="render",
+    )
+
+
+def _head(ctx: SummonsContext) -> str:
+    """What she is reading, in our own sentences: the first line of the prompt,
+    outside every wrap (nothing a stranger wrote is in it but a username)."""
     now = ctx.now
-    head = (
+    return (
         "You were tagged in a comment under a public Instagram post. Whatever "
         "you send is posted once, as a public reply to that comment, where "
         "strangers read it. Saying nothing is a complete answer. It is now "
@@ -548,6 +596,14 @@ def render_summons(ctx: SummonsContext) -> str:
         f"you {age(ctx.summoned_at, now)}. Under each item of the post is "
         "what a reading of it before this turn found, or that it was not read."
     )
+
+
+def render_summons(ctx: SummonsContext) -> str:
+    """The ONE rendering of a summons: what she is reading, then the post, the
+    thread and the question, each stranger-written part wrapped as a
+    `social_post` block. Our own sentences stay outside the wraps; nothing a
+    stranger wrote is outside one."""
+    now = ctx.now
     post_lines = [
         f"posted by {_who(ctx.post_author)} "
         f"{age(_epoch(ctx.post_taken_at), now)}",
@@ -575,16 +631,12 @@ def render_summons(ctx: SummonsContext) -> str:
             f"{_who(row.author)}, {age(row.at, now)}{mark}: {_one_line(row.text)}"
         )
     question = ctx.question or "(nothing but the tag: they mean the post above)"
-    return "\n".join((
-        head,
-        wrap_outside_text("social_post", "the instagram post", "\n".join(post_lines)),
-        wrap_outside_text(
-            "social_post", "comments under that post", "\n".join(thread_lines),
-        ),
-        wrap_outside_text(
-            "social_post", "what the comment that tagged you asks", question,
-        ),
-    ))
+    blocks = [
+        _social_post("the instagram post", "\n".join(post_lines)),
+        _social_post("comments under that post", "\n".join(thread_lines)),
+        _social_post("what the comment that tagged you asks", question),
+    ]
+    return f"{_head(ctx)}{_SEP}{assemble(blocks, sep=_SEP)}"
 
 
 @dataclass(frozen=True)
