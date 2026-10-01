@@ -7,7 +7,11 @@ logging every call to `$STUB_DIR/calls.log`, so a call the script should not
 make is visible and an unexpected one exits 1 rather than succeeding silently.
 
 What a stub cannot show is the real binary: that `sbx` takes these arguments and
-answers in these words is the README's read-back on the deploy host.
+answers in these words is the README's read-back on the deploy host. Where that
+read-back has been made, the stub reproduces it, exit status included: `sbx
+policy check network` exits 1 for a denied host (2026-10-01), and a stub that
+exited 0 there once kept the suite green on a script that read every denial as
+unknown.
 """
 
 from __future__ import annotations
@@ -32,15 +36,33 @@ touch "$allowed"
 case "$1 $2 $3" in
   "policy check network")
       shift 3
-      [ "${STUB_CHECK_BROKEN:-}" = 1 ] && { echo "policy engine unavailable"; exit 0; }
-      [ "${STUB_CHECK_DENIES_ALL:-}" = 1 ] && { echo "Denied: $*"; exit 0; }
       target=""; for a in "$@"; do target="$a"; done
+      # The real `sbx policy check` (measured on the deploy host, 2026-10-01):
+      # exit 0 and `Allowed:` for an allowed host, exit 1 and `Denied:` for a
+      # denied one, the verdict first on stdout and the same Governance/Context
+      # lines after it. The default below is that; the STUB_CHECK_* knobs are
+      # the shapes the real tool must NOT be read as a verdict from.
+      verdict() {  # $1 Allowed|Denied, $2 target, $3 reason or ""
+          echo "$1: $2"; echo "Governance: Local policy only"
+          echo "Context: sandbox:nora-computer"
+          [ -z "$3" ] || echo "Reason: $3"
+      }
+      denied() { verdict Denied "$target" "no matching allow rule (default deny)"; }
+      [ "${STUB_CHECK_BROKEN:-}" = 1 ] && { echo "policy engine unavailable"; exit 0; }
+      [ "${STUB_CHECK_DENIES_ALL:-}" = 1 ] && { denied; exit 1; }
+      case "${STUB_CHECK_SHAPE:-}" in
+        allowed-exit-1)    verdict Allowed "$target" ""; exit 1 ;;
+        denied-exit-0)     denied; exit 0 ;;
+        denied-exit-2)     denied; exit 2 ;;
+        empty)             exit 0 ;;
+        empty-exit-1)      exit 1 ;;
+        crash)             echo "panic: policy daemon went away" >&2; exit 137 ;;
+      esac
       if grep -qxF "$target" "$allowed"; then
-          echo "Allowed: $target"; echo "Governance: Local policy only"
+          verdict Allowed "$target" ""; exit 0
       else
-          echo "Denied: $target"; echo "Reason: no matching allow rule (default deny)"
-      fi
-      exit 0 ;;
+          denied; exit 1
+      fi ;;
   "policy ls --json")
       [ "${STUB_LS_BROKEN:-}" = 1 ] && { echo "not json"; exit 0; }
       python3 - "$allowed" <<'PY'

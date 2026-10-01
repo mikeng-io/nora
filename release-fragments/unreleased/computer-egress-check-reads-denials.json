@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "On the host that runs Nora's computer, `nora-computer egress check` and `nora-computer status` now read a blocked address as blocked instead of unknown, so the egress line can finally say ok or WRONG.",
+  "details": [
+    "The real sandbox tool exits with an error status when it denies an address, and the script took every error as no answer; a denial is now read from what the tool says plus how it exited, and anything unreadable still counts as unknown, never as allowed."
+  ],
+  "limitations": [
+    "This changes how the answer is read, not what the computer may reach, and has been checked against a stand-in for the sandbox tool that reproduces its measured exit statuses, not yet against the real one after the change."
+  ]
+}
