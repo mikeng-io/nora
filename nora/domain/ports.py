@@ -1,9 +1,9 @@
 """Protocol seams every later phase plugs into (spec §4.2). Declarations only —
 no implementation moves here; the concrete classes that satisfy these shapes
 keep living where they live until the phase that migrates them. One named
-exception: `ArtifactIngest` (Nora Drop spec §7a) ships with NO concrete class
-anywhere in this repo yet — see its own docstring for why, and for what stands
-in for a real implementation in the meantime.
+exception: `ArtifactIngest` (Nora Drop spec §7a) was declared with no concrete
+class at all; `nora.infra.drop.DropArtifactIngest` is that class now, and
+`computer_export` is its caller — see its own docstring for the history.
 
 Standard library only, same rule as the rest of `nora/domain`: if a port needs
 aiohttp, strands, sqlalchemy, pydantic or prometheus_client to express itself,
@@ -155,15 +155,17 @@ avoid:
   bytes rather than the metadata would be gone.
 
 - `ArtifactIngest` is the Nora Drop spec's §7a seam — the one thing that spec
-  puts in scope from the not-yet-designed Compute layer: a future Compute tool
-  hands `drop` bytes it produced; Compute itself never touches RustFS or
-  Postgres. It is declared here with ZERO implementations in this repo, a
-  departure from every port above (each already has a concrete adapter and a
-  real caller before a second is declared) — reasonable per that spec's own
-  accounting, since the seam belongs to Drop and Compute does not exist yet to
-  write the other half. Paired with `nora.testing.FakeArtifactIngest` anyway,
-  per the spec review that flagged the gap, so the shape is exercised by
-  something rather than declared into a vacuum. See its own docstring for the
+  puts in scope from the Compute layer: a Compute tool hands `drop` bytes it
+  produced; Compute itself never touches RustFS or Postgres. It was declared
+  here with ZERO implementations in this repo, a departure from every port
+  above (each already has a concrete adapter and a real caller before a second
+  is declared) — reasonable per that spec's own accounting, since the seam
+  belongs to Drop and its caller did not exist yet. That is history:
+  `DropArtifactIngest` is the concrete class and `computer_export` the caller
+  (S3a, 2026-10-01; `nora/app/composition.py` wires it when the computer is
+  on). Paired with `nora.testing.FakeArtifactIngest`, per the spec review that
+  flagged the gap, so the shape is exercised by something rather than declared
+  into a vacuum. See its own docstring for the
   `bytes`-not-path-or-stream call and the raise-on-failure call, both argued
   from precedent already on this port (`BlobStore`). The port has since gained
   an `update` method (Nora Compute spec §9), with both `register` and `update`
@@ -1794,17 +1796,15 @@ class ArtifactIngest(Protocol):
 
     **Shipped with zero implementations alongside this Protocol at first** — a
     named departure from every other port in this file, each declared next to
-    at least one concrete adapter and a real caller already in-tree; still true
-    of the *caller*, since Compute does not exist yet. `drop`'s own internal
-    `POST /api/artifacts` (drop spec §3, §5a) is now built
-    (`deploy/drop/artifacts.py`), and `nora.infra.drop.DropArtifactIngest` is
-    the Nora-side HTTP-client half (drop spec §6a) — bound to
+    at least one concrete adapter and a real caller already in-tree. That is
+    history: `drop`'s own internal `POST /api/artifacts` (drop spec §3, §5a) is
+    built (`deploy/drop/artifacts.py`), and `nora.infra.drop.DropArtifactIngest`
+    is the Nora-side HTTP-client half (drop spec §6a) — bound to
     `nora.testing.FakeArtifactIngest` by
     `tests/contract/test_artifact_ingest_contract.py`, the same as every other
-    port's fake. `DropArtifactIngest` has no caller anywhere in this repo yet;
-    that wiring is Compute's, not this port's.
-    (S3a, 2026-10-01: `computer_export` is now its caller, design/
-    sandbox-runtime §6; the paragraph above is its history.)
+    port's fake. Its caller is `computer_export` (S3a, 2026-10-01,
+    design/sandbox-runtime §6), wired in `nora/app/composition.py` when the
+    computer is on.
 
     `data` is `bytes`, matching `BlobStore.put` exactly — not a path (the
     caller and `drop` are different containers with no shared filesystem

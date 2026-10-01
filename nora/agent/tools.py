@@ -2726,7 +2726,8 @@ class DocumentPublisher(Protocol):
     ) -> Any: ...
 
     async def read(
-        self, *, platform: str, conversation_id: str, document_id: UUID,
+        self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
+        handle: str = "",
     ) -> Any: ...
 
     async def set_state(
@@ -4230,7 +4231,7 @@ _COMPUTER_UNRECORDED: Mapping[str, object] = MappingProxyType({
 })
 
 #: Nora's computer tools (design/sandbox-runtime §4, §15.2). `ToolRegistry`
-#: withholds all five from every surface when no runtime is wired.
+#: withholds all seven from every surface when no runtime is wired.
 COMPUTER_TOOLS: frozenset[str] = frozenset({
     "computer_run", "computer_read", "computer_write", "computer_edit",
     "computer_export", "computer_import", "computer_session_list",
@@ -4239,8 +4240,8 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
-#: The document tools (design/artifact §26). `ToolRegistry` withholds both from
-#: every surface unless `[documents] enabled`.
+#: The document tools (design/artifact §26). `ToolRegistry` withholds all three
+#: from every surface unless `[documents] enabled`.
 DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status"}
 )
@@ -14538,7 +14539,8 @@ Args:
         Call this before changing a document, or to see what you published.
 
         Args:
-            document_id: The `document_id` a publish gave you.
+            document_id: The `document_id` a publish gave you, or the 12-hex code
+                at the end of its link.
         """
         tool = "document_read"
         if documents is None:
@@ -14548,7 +14550,8 @@ Args:
                 "note": "I can't read documents right now. Say you could not check.",
             }
         target = _document_id(document_id)
-        if target is None:
+        handle = str(document_id or "").strip().lower()
+        if target is None and not _is_document_handle(handle):
             _record(metrics, tool, "not_found", reason="bad_id")
             return {"status": "not_found",
                     "note": "That is not a document id, so nothing was read."}
@@ -14556,6 +14559,7 @@ Args:
             out = await documents.read(
                 platform=room.platform if room is not None else "",
                 conversation_id=bound_conversation_id, document_id=target,
+                handle="" if target is not None else handle,
             )
         except Exception:
             log.exception("document_read failed")

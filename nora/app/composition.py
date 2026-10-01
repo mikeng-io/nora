@@ -58,7 +58,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import LOAD_TRANSCRIPT_MAX, OriginRoom
+from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -73,8 +73,9 @@ from nora.app.cognition_wiring import (
     require_session_hook,
     units_with_home_rooms,
 )
+from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
-from nora.app.documents_service import DocumentService, rooms_named
+from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -121,6 +122,7 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.speech_markup import normalise as normalise_for_speech
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.computer_context import ComputerContextReader
@@ -132,6 +134,7 @@ from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
+from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -167,6 +170,7 @@ from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.video_readings import SqlVideoReadingStore
+from nora.infra.tts import TextFormatter as SpeechTextFormatter
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -761,6 +765,52 @@ class _DebriefModelClient:
         )
 
 
+def _speech_formatter(
+    cfg: Config, prompts: DoctrineStore, metrics: Metrics,
+) -> SpeechTextFormatter | None:
+    """`[speech.tts.format]`'s formatter (design/voice-channel/08), or None.
+
+    `off` is None, so the speaker sends her reply exactly as written. The
+    `model` mode's client is the reaction picker's shape, `_DebriefModelClient`
+    over the same OmniRoute base URL: one `ask_text` call, its own Strands
+    agent span (`invoke_agent speech-format`) under the turn that is speaking.
+    """
+    fmt = cfg.speech.tts.format
+    if fmt.mode == "off":
+        return None
+    if fmt.mode == "normalise":
+        return _NormaliseOnly()
+    from nora.agent.speech_format import SpeechFormatter
+    return SpeechFormatter(
+        client=_DebriefModelClient(
+            base_url=cfg.llm.base_url,
+            api_key=os.environ.get(cfg.llm.api_key_env, ""),
+            max_tokens=fmt.max_tokens,
+            temperature=0.0,
+            model=fmt.model or cfg.llm.model,
+            # The client's own bound sits above the formatter's so the
+            # formatter's `wait_for` is the one that fires and is counted.
+            timeout_seconds=fmt.timeout_seconds + 1.0,
+            reasoning_effort=_reasoning_effort(
+                fmt.reasoning_effort or cfg.llm.reasoning_effort,
+                source="[speech.tts.format] reasoning_effort",
+            ),
+            agent_name="speech-format",
+        ),
+        prompts=prompts, metrics=metrics,
+        timeout_seconds=fmt.timeout_seconds,
+        min_chars=fmt.min_chars, max_chars=fmt.max_chars,
+    )
+
+
+class _NormaliseOnly:
+    """`[speech.tts.format] mode = "normalise"`: the deterministic half only,
+    no model call (`nora.domain.speech_markup.normalise`)."""
+
+    async def format(self, *, text: str) -> str:
+        return normalise_for_speech(text)
+
+
 def _describe_models(cfg: Config) -> dict[str, str]:
     """Modality → the model that describes it, for every modality that CAN.
 
@@ -991,6 +1041,9 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
+    # (platform, conversation_id) -> the room's policy label, for the portal's document
+    # rows; "" for a room the policy does not name.
+    room_label: Callable[[str, str], str]
     # The content-addressed byte store, for the portal's picture route (a document names
     # its pictures by sha256). `None` when media custody is off: the route then answers
     # `unavailable`, never a picture.
@@ -1169,6 +1222,10 @@ class Dependencies:
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
     computer_sweep_seconds: float = 300.0
+    # The timed probe of computerd (`nora.infra.computer.probe`): `None`
+    # unless `[computer] enabled`. `nora/__main__.py` spawns
+    # `runtime.computer_probe_loop` on it.
+    computer_probe: ComputerdProbe | None = None
     # Platform adapter health transitions as Record (20 §1). ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
     # for the span» must be answerable for the whole history, not only from
@@ -1306,13 +1363,27 @@ async def build_dependencies(
     # (see the settings below for the rest of `[computer]`). Built here,
     # before the assembler, because `<computer>` reads it on every turn.
     computer: SandboxRuntime | None = None
+    computer_probe: ComputerdProbe | None = None
     if cfg.computer.enabled:
         from nora.infra.computer.client import ComputerdRuntime
 
+        computer_token = _computer_token(cfg)
+        # The computer as a metric (DEC-261): built ONLY here, so with
+        # `[computer] enabled = false` there is no `nora_computer_up` series at
+        # all (not applicable, which is not down) and no zero-valued calls
+        # series either. `prime()` creates them at zero, so a rare `unavailable`
+        # after a restart is not a series whose first sample is already 1.
+        computer_metrics = ComputerMetrics(metrics, audit_tools=COMPUTER_TOOLS)
+        computer_metrics.prime()
         computer = ComputerdRuntime(
-            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            base_url=cfg.computer.base_url, token=computer_token,
             timeout_seconds=cfg.computer.request_timeout_seconds,
             max_output_chars=cfg.computer.max_output_chars,
+            observer=computer_metrics,
+        )
+        computer_probe = ComputerdProbe(
+            base_url=cfg.computer.base_url, token=computer_token,
+            observer=computer_metrics,
         )
     # `<computer>` (design/sandbox-runtime §15.3): the one reader the tag
     # path and the fire path share. `None` while `[computer]` is off, so no
@@ -1564,6 +1635,21 @@ async def build_dependencies(
     # (stage 3 closure) receives this same instance — the registry's
     # `discord_speaker=` keyword is the one place that knows MiniMax is real;
     # everything downstream receives `Speaker | None`.
+    # Built before the speaker (below) because the speech formatter reads its
+    # instruction from it (design/voice-channel/08); nothing else here moved.
+    doctrine_store = DoctrineStore(
+        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+        trigger=cfg.engagement.trigger.text,
+        language_hint=cfg.doctrine.language_hint,
+        tool_names=ToolRegistry().tool_names(),
+        metrics=metrics,
+    )
+    try:
+        doctrine = doctrine_store.get(applies_to="tag")
+    except DoctrineError as exc:
+        raise StartupError(f"doctrine error: {exc}") from exc
+
     speaker: Speaker | None = None
     if cfg.speech.tts.enabled:
         tts_key = os.environ.get(cfg.speech.tts.api_key_env, "")
@@ -1576,6 +1662,9 @@ async def build_dependencies(
                 pitch=cfg.speech.tts.pitch,
                 vol=cfg.speech.tts.vol,
                 emotion=cfg.speech.tts.emotion or None,
+                text_normalization=cfg.speech.tts.text_normalization,
+                pronunciation=tuple(cfg.speech.tts.pronunciation),
+                formatter=_speech_formatter(cfg, doctrine_store, metrics),
             )
         else:
             log.warning(
@@ -1671,19 +1760,6 @@ async def build_dependencies(
     # line — not the isinstance test — is what would catch it.
     _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
     account = registry.identity_for("signal").primary
-
-    doctrine_store = DoctrineStore(
-        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
-        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text,
-        language_hint=cfg.doctrine.language_hint,
-        tool_names=ToolRegistry().tool_names(),
-        metrics=metrics,
-    )
-    try:
-        doctrine = doctrine_store.get(applies_to="tag")
-    except DoctrineError as exc:
-        raise StartupError(f"doctrine error: {exc}") from exc
 
     # The Dreamer's own instruction corpus — its doctrine plus one objective
     # per adaptor (instruction-substrate spec §4.1). Bind-mounted read-only the
@@ -4496,6 +4572,7 @@ async def build_dependencies(
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
+        room_label=functools.partial(room_label, allowlist),
         blobs=blobs,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
@@ -4541,6 +4618,7 @@ async def build_dependencies(
             ) if computer is not None else None
         ),
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
+        computer_probe=computer_probe,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,

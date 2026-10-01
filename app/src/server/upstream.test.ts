@@ -42,6 +42,28 @@ describe("resolveUpstream", () => {
     expect(ok(["documents"], "personId=ken", "jo")).not.toContain("ken");
   });
 
+  it("forwards a documents search in any script, re-encoded, and refuses a control character or an over-long one", () => {
+    // Spaces, Chinese and punctuation are a search, not an id: they must survive the proxy.
+    const sp = new URLSearchParams({ q: "里斯本 trip & 100%", state: "archived" });
+    const r = resolveUpstream(["documents"], sp, "jo");
+    if (!r.ok) throw new Error("a search must resolve");
+    const forwarded = new URL(`http://x${r.upstreamPath}`).searchParams;
+    expect(forwarded.get("q")).toBe("里斯本 trip & 100%");
+    expect(forwarded.get("personId")).toBe("jo");
+    expect(forwarded.get("state")).toBe("archived");
+    expect(resolveUpstream(["documents"], new URLSearchParams({ q: "a\u0000b" }), "jo")).toEqual({
+      ok: false,
+      status: 400,
+    });
+    expect(resolveUpstream(["documents"], new URLSearchParams({ q: "x".repeat(201) }), "jo")).toEqual({
+      ok: false,
+      status: 400,
+    });
+    expect(ok(["documents"], new URLSearchParams({ q: "x".repeat(200) }).toString(), "jo")).toContain("q=");
+    // Only the documents list takes it: another route still drops an unnamed parameter.
+    expect(ok(["persons"], "q=anything")).toBe("/app/v1/persons");
+  });
+
   it("answers a plan id that cannot be one as not found, before asking Nora", () => {
     // Nora answers a non-UUID id with 400, which the portal would show as
     // "couldn't check"; there is nothing to check.

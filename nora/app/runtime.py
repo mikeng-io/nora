@@ -157,6 +157,32 @@ async def computer_sweep_loop(
             metrics.inc("nora_errors_total", stage="computer_sweep")
 
 
+class _ProbesComputerd(Protocol):
+    """The one method `computer_probe_loop` needs
+    (`nora.infra.computer.probe.ComputerdProbe`)."""
+
+    async def probe_once(self) -> bool: ...
+
+
+async def computer_probe_loop(
+    probe: _ProbesComputerd, metrics: Metrics, *, interval_seconds: float,
+) -> None:
+    """Ask computerd whether it answers, on a clock (DEC-261): the first probe
+    straight away (the series has no value until it runs) and then every
+    `interval_seconds`. The probe reports its own outcome to
+    `nora_computer_up` and never raises; this loop is the second barrier, so a
+    probe that did raise would be counted `nora_errors_total{stage=
+    computer_probe}` and the loop would keep going. Started only while
+    `[computer] enabled`."""
+    while True:
+        try:
+            await probe.probe_once()
+        except Exception:
+            log.exception("computer probe failed")
+            metrics.inc("nora_errors_total", stage="computer_probe")
+        await asyncio.sleep(interval_seconds)
+
+
 async def debounce_sweep_loop(
     debounce: tag_module.Debounce,
     metrics: Metrics,

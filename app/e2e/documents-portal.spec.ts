@@ -34,11 +34,116 @@ test("the list shows what Miles may read, newest first, and opens a document", a
   errors.expectNone();
 });
 
-test("the rail has a Documents link on a desktop", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === "phone", "the phone's bottom bar holds four places");
+test("Documents is one tap away on a desktop's rail and on a phone's bottom bar", async ({ page }, testInfo) => {
   await signIn(page);
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Documents" }).click();
+  const bar = page.getByRole("navigation", { name: "Main" });
+  if (testInfo.project.name === "phone") {
+    // Five places, each wide enough to read: none is clipped or pushed off the screen.
+    await expect(bar.getByRole("link")).toHaveCount(5);
+    for (const link of await bar.getByRole("link").all()) {
+      const box = await link.boundingBox();
+      const view = page.viewportSize();
+      expect(box && view && box.x >= 0 && box.x + box.width <= view.width + 0.5).toBe(true);
+    }
+  }
+  await bar.getByRole("link", { name: "Documents" }).click();
   await expect(page).toHaveURL(/\/documents$/);
+});
+
+const MOCK = `http://127.0.0.1:${process.env.MOCK_PORT ?? 9199}`;
+// Deleting is the one thing the portal cannot undo, so the mock is put back after each test.
+test.afterEach(async ({ request }) => {
+  await request.post(`${MOCK}/__mock/documents/reset`);
+});
+
+test("the title comes first, then who made it and the controls; the tab names the document", async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await page.goto(`/en/documents/${LISBON}`);
+  const title = page.getByRole("heading", { level: 1, name: "Lisbon in December" });
+  await expect(title).toBeVisible();
+  await expect(page).toHaveTitle("Lisbon in December · Nora");
+  const at = async (loc: ReturnType<typeof page.locator>) => (await loc.boundingBox())!.y;
+  const titleY = await at(title);
+  expect(titleY).toBeLessThan(await at(page.getByTestId("document-meta")));
+  expect(titleY).toBeLessThan(await at(page.getByTestId("document-lifecycle")));
+  // A wider column than the old 760px reading width, where the screen has the room.
+  if (testInfo.project.name === "desktop") {
+    const frame = await page.getByRole("main").locator("> div").first().boundingBox();
+    expect(frame!.width).toBeGreaterThan(760);
+  }
+});
+
+test("the tab title follows the page across client navigation and is never left stuck on a document's", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/en/documents");
+  await expect(page).toHaveTitle("Documents · Nora");
+  // In (a client navigation, no reload): the document's own title.
+  await page.getByRole("list", { name: "Documents" }).getByRole("link").first().click();
+  await expect(page).toHaveTitle("Lisbon in December · Nora");
+  // Out by the back link: the list's title, and it stays.
+  await page.getByRole("main").getByRole("link", { name: "Documents", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Documents" })).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page).toHaveTitle("Documents · Nora");
+  // In again, then out to ANOTHER section by the main navigation: that section's title,
+  // not the document's and not the section the document was reached from.
+  await page.getByRole("list", { name: "Documents" }).getByRole("link").first().click();
+  await expect(page).toHaveTitle("Lisbon in December · Nora");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Plans" }).click();
+  await expect(page).toHaveURL(/\/plans$/);
+  await page.waitForTimeout(400);
+  await expect(page).toHaveTitle("Plans · Nora");
+});
+
+test("the delete panel takes focus, gives it back on Escape, and a finished delete says how to undo it", async ({
+  page,
+}) => {
+  const rota = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e02";
+  await signIn(page);
+  await page.goto(`/en/documents/${rota}`);
+  const open = page.getByRole("button", { name: "Delete", exact: true });
+  await open.click();
+  const panel = page.getByRole("alertdialog");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeFocused();
+  // Again, and through with it.
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await panel.getByRole("button", { name: "Delete it" }).click();
+  await expect(page).toHaveURL(/\/documents\?deleted=1$/);
+  await expect(page.getByTestId("documents-deleted")).toContainText("Ask Nora in the chat");
+  await expect(page.getByText("Kitchen rota")).toHaveCount(0);
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page).toHaveURL(/\/documents$/);
+  await expect(page.getByTestId("documents-deleted")).toHaveCount(0);
+});
+
+test("search narrows the list, names the room, keeps the Archived filter, and says when nothing matches", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/en/documents");
+  const rows = page.getByRole("list", { name: "Documents" }).getByRole("link");
+  await expect(rows).toHaveCount(4);
+  await page.getByRole("searchbox", { name: "Search documents" }).fill("dishes");
+  await expect(rows).toHaveCount(1);
+  // The room's label, not just the platform; the absolute date is on hover.
+  await expect(rows.first()).toContainText("Miles · Flat chat");
+  await expect(rows.first().locator("time")).toHaveAttribute("title", /^Updated /);
+  await page.getByRole("searchbox", { name: "Search documents" }).fill("zzzz");
+  await expect(page.getByText("No matches")).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(rows).toHaveCount(4);
+  // The filter and the search together.
+  await page.getByRole("button", { name: "Archived" }).click();
+  await expect(page.getByText("Nothing archived")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Archived" })).toHaveAttribute("aria-pressed", "true");
 });
 
 for (const theme of ["light", "dark"] as const) {
@@ -129,6 +234,13 @@ test("the list has no serious a11y violation, in both lightings", async ({ page 
     await page.goto("/en/documents");
     await page.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
     await expect(page.getByRole("list", { name: "Documents" })).toBeVisible();
+    // The theme switch fades colours (`transition-colors`); axe read mid-fade measured a
+    // text colour that is neither theme's (#837979 between #6e6362 and #948989) and failed
+    // contrast on a warm server. Measure the settled page.
+    // (Only transitions: the page has looping animations that never finish.)
+    await page.waitForFunction(
+      () => document.getAnimations().every((a) => !(a instanceof CSSTransition) || a.playState === "finished"),
+    );
     const axe = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
       .analyze();

@@ -20,6 +20,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 
 class SandboxStatus(StrEnum):
@@ -27,6 +28,43 @@ class SandboxStatus(StrEnum):
     NOTHING_FOUND = "nothing_found"
     DENIED = "denied"
     UNAVAILABLE = "unavailable"
+
+
+#: The operations a `SandboxRuntime` makes against computerd, the `op` label of
+#: `nora_computer_calls_total`. One name per port method, so a counter reads in
+#: the port's own words. `ComputerdRuntime` records each call under exactly one
+#: of these, and `tests/unit/test_computer_metrics.py` checks that every method
+#: it has is named here: a new op that is not listed would count under a label
+#: the eager series never created, which is the lazy-label trap.
+COMPUTER_OPS: tuple[str, ...] = (
+    "run", "read", "write", "edit", "files", "fetch", "put", "state",
+)
+
+#: `nora_computer_audit_failures_total`'s `stage` label: where the audit write
+#: failed (see that counter's help text). Read by the eager creation of the
+#: series and checked against every call site by
+#: `tests/architecture/test_computer_metrics_are_primed.py`.
+COMPUTER_AUDIT_STAGES: tuple[str, ...] = (
+    "blob", "row", "session", "lease", "export", "media",
+)
+
+
+class ComputerCallObserver(Protocol):
+    """What `ComputerdRuntime` and the computer probe tell the outside about
+    computerd, without importing the metrics layer (`nora.infra` sits below
+    `nora.obs`).
+
+    `answered` is the one distinction that matters for an outage: computerd
+    replied with an HTTP 200 and a body (it is there, and Nora can use it, even
+    if the answer is `unavailable` or `denied`), versus nothing usable came back
+    (refused, timed out, a non-200 such as a 401 after a token rotation). A call
+    that answered with `unavailable` is a thing computerd said; one that did
+    not answer is Nora not being able to reach her computer at all.
+    """
+
+    def call(self, op: str, status: str, answered: bool) -> None: ...
+
+    def probe(self, answered: bool) -> None: ...
 
 
 def computer_scope(platform: str, conversation_id: str) -> str:

@@ -28,8 +28,8 @@ and nothing is stored. A document is JSON, never HTML, Markdown-with-tags or a s
 
 ## Write it for a reader who was not in the chat
 
-Put the point first, then the detail. One idea per top-level section, because the page can show each
-as a slide. Use the component that fits the content (a table for things compared, a timeline for
+Put the point first, then the detail. One idea per top-level section, so each one reads on its
+own. Use the component that fits the content (a table for things compared, a timeline for
 things in order, a callout for a deadline or a warning, a chart for one measured series) and plain
 prose everywhere else. Do not paste the chat in, and do not repeat one fact in three places.
 

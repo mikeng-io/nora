@@ -107,6 +107,10 @@ _DEFAULT_IDENTITY = (
 #: itself calls that machine.
 _DOCKER_HOST = "host.docker.internal"
 _LOOPBACK = "127.0.0.1"
+#: The name nora's container reaches Honcho by on the private `honcho_memory`
+#: network (#633, DEC-259). It exists only inside that network; the host
+#: reaches the same service on loopback, where Honcho still publishes.
+_HONCHO_ALIAS = "honcho"
 
 
 def _resolves(host: str) -> bool:
@@ -120,11 +124,22 @@ def _resolves(host: str) -> bool:
 
 
 def _from_host(url: str) -> str:
-    """`url` with `host.docker.internal` swapped for loopback; anything else
-    untouched."""
-    return url.replace(f"//{_DOCKER_HOST}:", f"//{_LOOPBACK}:").replace(
-        f"//{_DOCKER_HOST}/", f"//{_LOOPBACK}/"
-    )
+    """`url` with a name only a container can resolve (`host.docker.internal`,
+    or `honcho` on the private Honcho network) swapped for loopback; anything
+    else untouched.
+
+    `honcho` is here because DEC-259 moved nora's route to Honcho off
+    `host.docker.internal:8000` (published on every interface, no
+    authentication) onto a network of its own. Honcho still publishes on
+    loopback, so the suite on the host reaches the same service there; without
+    this the host would try to resolve a name it cannot, and every case would
+    read as "memory unreachable".
+    """
+    for name in (_DOCKER_HOST, _HONCHO_ALIAS):
+        url = url.replace(f"//{name}:", f"//{_LOOPBACK}:").replace(
+            f"//{name}/", f"//{_LOOPBACK}/"
+        )
+    return url
 
 
 def config_default(key: str) -> object:
@@ -373,9 +388,10 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # one deployment differs from another by, which is what `overrides` is
     # for, and `build_config` refuses any value outside the eval namespace.
     cfg = _with(cfg, "memory.workspace_id", shared_eval_workspace(cfg.memory.workspace_id))
-    # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute and
-    # Honcho at `host.docker.internal`, the name docker gives a container for
-    # the machine it runs on. The suite runs on that machine, outside a
+    # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute at
+    # `host.docker.internal`, the name docker gives a container for the machine
+    # it runs on, and Honcho at `honcho`, a name on a private docker network
+    # (DEC-259). The suite runs on that machine, outside a
     # container, where the name does not resolve at all — so the model call
     # would fail before the turn and read as "the model was unreachable" for
     # every case. The same services, reached from the host, are on loopback;

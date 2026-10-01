@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 57, (
+    assert len(dataclasses.fields(Dependencies)) == 59, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -78,7 +78,12 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "the portal's read API needs (ADR 0020). "
         "56 -> 57 on 2026-10-01: `blobs`, the content-addressed byte store the "
         "portal's picture route reads a document's pictures from (None when media "
-        "custody is off; the route then answers `unavailable`)."
+        "custody is off; the route then answers `unavailable`). "
+        "57 -> 58 on 2026-10-01: `computer_probe`, the timed probe of computerd "
+        "behind `nora_computer_up` (None unless `[computer] enabled`; DEC-261). "
+        "58 -> 59 on 2026-10-01: `room_label`, (platform, conversation id) -> the "
+        "operator's room label, a callable for the portal's document rows "
+        "because `nora.web` never sees a `Policy` (design/artifact §33)."
     )
 
 

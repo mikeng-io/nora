@@ -488,11 +488,33 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `PlatformSilent` | adapter event age > 900s (keep-alives and heartbeats count, so it is a silent socket, not a quiet room) | the one condition the old shell watchdog checked — on no timer, into no channel |
 | `UnavailableOutcomes` | any `*_total{status="unavailable"}` increasing | R-27's third state — the thing this codebase produces *instead of* raising |
 | `MediaCustodyNotConfigured` | attachments arriving with custody off | the silent degrade `media.py` counts rather than raises |
+| `ComputerDown` | `nora_computer_up == 0` for 5m | the 2026-10-01 audit of Nora's computer found no series at all that said computerd was down, hung, stopped by a lapsed Docker login, or answering 401 after a token rotation |
+| `ComputerCallsFailing` | 5+ computer calls answered `unavailable` in 15m | computerd answering and failing (a full disk, an OS error) keeps `nora_computer_up` at 1 |
+| `ComputerAuditFailing` | any computer audit write failing, by stage | `nora_computer_audit_failures_total` was never seen live: its series did not exist until the first failure |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
 
 `UnavailableOutcomes` is written generically over every `*_total` carrying the
 label, so a counter added next month is covered the day it ships — the same
-derive-don't-hand-copy rule AGENTS.md holds for label vocabularies.
+derive-don't-hand-copy rule AGENTS.md holds for label vocabularies. Its summary
+used to read `{{ $labels.__name__ }}`, which rendered empty (Prometheus drops the
+metric name in `increase` and `sum`; read back with promtool 2026-10-01), so it
+now says which query names the counter. `nora_computer_calls_total` is the one
+series left to its own thresholded rule.
+
+**The computer is a labelled gauge on purpose (DEC-261).** `nora_computer_up` is
+`{target="computerd"}`, set by a 30s authenticated probe and by every computer
+call. An unlabelled gauge is exported at 0 from the moment it is declared, so a
+deployment with `[computer] enabled = false` would read as a computer that is
+down; a labelled one has no sample until it is set, so "not applicable" is the
+absence of the series and `ComputerDown` (`== 0`) stays silent. The cost of an
+absence-free rule is that a dead Nora exports nothing either, and `TargetDown` is
+the rule for that. The two computer counters are created at zero at start
+(`nora.app.computer_metrics.ComputerMetrics.prime`), because `increase()` over a
+series whose first sample is already 1 reads 0 and a rare failure after one of
+nora's two or three daily restarts would be invisible to the rule written for it.
+Read back: `ssh norty 'curl -s localhost:9100/metrics | grep ^nora_computer_'` shows
+`nora_computer_up` (1 when healthy) and the zero-valued counters; with the computer
+off it shows neither.
 
 **Thresholds are deliberately slack** (900s for platform silence, not the old
 script's 300s; a 12h repeat interval). A rule that cries wolf is a rule
