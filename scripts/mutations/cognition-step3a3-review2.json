@@ -30,8 +30,8 @@
   {
     "name": "blocker: the objective promises a Standing line again",
     "file": "nora/dreamer/objectives/cognition.md",
-    "old": "its open events. Those are index lines, not bodies:",
-    "new": "its open events and its Standing. Those are index lines, not bodies:",
+    "old": "its open events. They tell you what exists",
+    "new": "its open events and its Standing. They tell you what exists",
     "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_does_not_promise_a_standing_index_line"
   },
   {
