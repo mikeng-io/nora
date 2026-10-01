@@ -233,8 +233,8 @@
  {
   "name": "D5/D11 the heartbeat holds the screen",
   "file": "nora/app/composition.py",
-  "old": "            proactive=proactive_screen,\n        )\n        background.spawn(heartbeat.run())",
-  "new": "            proactive=None,\n        )\n        background.spawn(heartbeat.run())",
+  "old": "            proactive=proactive_screen,\n            # A gathering whose evidence was withdrawn",
+  "new": "            proactive=None,\n            # A gathering whose evidence was withdrawn",
   "target": "tests/test_composition.py -k the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent"
  },
  {

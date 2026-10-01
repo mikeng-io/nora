@@ -51,8 +51,8 @@
   {
     "name": "uncited: a line without [ids] is taken as citing nothing",
     "file": "nora/domain/note_body.py",
-    "old": "    if m is None or not _IDS.match(m.group(\"ids\")):\n        raise NoteBodyError(\n            \"uncited\",",
-    "new": "    if m is None or not _IDS.match(m.group(\"ids\")):\n        return item, ()\n        raise NoteBodyError(\n            \"uncited\",",
+    "old": "    if m is None or not ok:\n        raise NoteBodyError(\n            \"uncited\",",
+    "new": "    if m is None or not ok:\n        return item, ()\n        raise NoteBodyError(\n            \"uncited\",",
     "target": "tests/unit/test_note_body.py::test_a_line_with_no_ids_is_refused"
   },
   {

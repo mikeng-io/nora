@@ -37,8 +37,8 @@
   {
     "name": "#60 the declared count must match the source (constant moved)",
     "file": "nora/language/note_candidates.py",
-    "old": "STORE_CALLS_PER_TICK = 10",
-    "new": "STORE_CALLS_PER_TICK = 11",
+    "old": "STORE_CALLS_PER_TICK = 15",
+    "new": "STORE_CALLS_PER_TICK = 16",
     "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count"
   },
   {
