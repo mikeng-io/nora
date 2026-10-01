@@ -10,6 +10,7 @@ import { useRegisterTitle } from "@/components/shell/page-title";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { DocumentView } from "@/components/documents/registry";
+import { DocumentActions, PrintableDocument } from "@/components/documents/document-actions";
 import { isNotFound } from "@/lib/api/client";
 import type { DocumentDetail } from "@/lib/api/documents";
 import { platformLabel, isRevised } from "@/lib/documents/list";
@@ -81,7 +82,10 @@ function Loaded({ doc }: { doc: DocumentDetail }) {
           : t("made", who)}
       </p>
       <Lifecycle doc={doc} />
-      <DocumentView doc={doc.document} documentId={doc.id} />
+      <DocumentActions id={doc.id} spec={doc.document} />
+      <PrintableDocument>
+        <DocumentView doc={doc.document} documentId={doc.id} />
+      </PrintableDocument>
     </PageFrame>
   );
 }
