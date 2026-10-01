@@ -142,9 +142,9 @@ async def test_the_curator_prompt_is_byte_identical_to_master():
 
 def test_the_curator_today_block_is_byte_identical_including_its_fallback():
     for day in (20260910, 20261001, 20261345, 0, 99999999):
-        assert _now_block(day) == GOLDEN[f"curator-now-{day}"], day
+        assert _now_block(day).render() == GOLDEN[f"curator-now-{day}"], day
     # `20261345` is not a date (month 13): the block says the number, as it did.
-    assert ">\n20261345\n<" in _now_block(20261345)
+    assert ">\n20261345\n<" in _now_block(20261345).render()
 
 
 def test_the_shared_today_builder_renders_what_the_three_prompts_carry():
