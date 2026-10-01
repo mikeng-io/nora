@@ -161,10 +161,6 @@ PENDING: dict[tuple[str, str], str] = {
     ("nora/engagement/debrief_render.py", "undeclared"): "step 2",
     ("nora/agent/reaction.py", "undeclared"): "step 2",
     ("nora/domain/summons.py", "undeclared"): "step 4",
-    ("nora/language/proactive.py", "hand_joined"): "step 2",
-    ("nora/language/culture.py", "hand_joined"): "step 2",
-    ("nora/language/note_candidates.py", "hand_joined"): "step 2",
-    ("nora/language/note_curator.py", "hand_joined"): "step 2",
     ("nora/app/fire.py", "hand_built"): "step 4",
     ("nora/engagement/stages/debrief.py", "hand_built"): "step 2",
     ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",
@@ -173,7 +169,7 @@ PENDING: dict[tuple[str, str], str] = {
 #: The ledger's size, pinned exactly. Pay one down and this test fails until
 #: you lower the number in the same diff; add one and it fails until you raise
 #: it, which should never be done.
-CEILING = 12
+CEILING = 8
 
 
 def _rel(path: Path) -> str:
