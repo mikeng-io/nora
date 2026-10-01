@@ -24,6 +24,11 @@ the operator: MiniMax bills ~2 characters per CJK input char; turbo is
 ¥2.00 per 10k billed characters, so a typical short reply costs a fraction
 of a fen. Not load-bearing — quoted so a surprise on the bill can be checked
 against it.
+
+An optional `formatter` (design/voice-channel/08) rewrites only the text
+this request carries, adding MiniMax pause and interjection markup; the
+reply that was recorded is never touched. Absent, the body is byte-identical
+to the one before it existed.
 """
 
 from __future__ import annotations

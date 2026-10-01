@@ -1329,6 +1329,12 @@ pitch = 0.0                    # voice_setting.pitch semitones [-12, 12]
 vol = 1.0                      # voice_setting.vol [0.1, 10]
 emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
                                # for smoother delivery); "" keeps it off-wire
+                               # and MiniMax matches the emotion to the text.
+                               # "whisper" is refused: speech-2.8 lacks it.
+text_normalization = false     # voice_setting.text_normalization: the vendor's
+                               # digit/English normalization (slightly slower)
+pronunciation = []             # pronunciation_dict.tone, each "original/
+                               # replacement", e.g. "RV/(aa1)(wai1)"; [] = off
 # duck_gain = 0.25             # music scales to this while she speaks (0<x<1).
 #                              # PHASE 1: accepted but UNREAD — the controller
 #                              # hard-cuts speech over music; phase 2 restores
@@ -1336,6 +1342,22 @@ emotion = ""                   # voice_setting.emotion when set (e.g. "fluent"
 # duck_ramp_ms = 150           # ramp down and back up over this many ms — a
 #                              # hard step is audible as a click. Phase 2 only,
 #                              # same note as duck_gain.
+[speech.tts.format]
+# The speech formatter (design/voice-channel/08): fits a spoken reply to the
+# TTS voice after her words are final, on the spoken copy only. Her recorded
+# reply (audit row, Honcho, notes) never changes.
+#   off       her reply reaches MiniMax exactly as written (the default)
+#   normalise emoji, markdown and stray symbols removed; no model call
+#   model     normalise, then one cheap call may add pauses <#x#> and
+#             interjection tags; spoken only when a code check finds every
+#             letter and digit unchanged, otherwise the normalised reply is
+mode = "off"
+model = "nora-gate"            # the gate's cheap combo; "" = [llm] model
+reasoning_effort = "none"
+timeout_seconds = 2.0          # time added before she is heard, worst case
+max_tokens = 1024
+min_chars = 12                 # fewer letters+digits than this: no model call
+max_chars = 200                # more than this: no model call (too slow to pace)
 [speech.wake]
 # The wake gate (「喂 Nora」 in a Discord voice channel, stage 3). Read by the
 # voice-wake CONTAINER at startup (compose bind-mounts this file read-only into
