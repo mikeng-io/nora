@@ -92,7 +92,7 @@ def test_reading_the_policy_log_is_an_audited_read(fresh: Host) -> None:
     fresh.run("serve")
     result = fresh.run("policy-log", "--json")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "policy-log-output" in result.stdout
+    assert "policy-log-output" in result.stdout + result.stderr
     assert fresh.event_kinds()[-1] == "policy_log_read"
     assert _details(fresh, "policy_log_read") == [{"args": "--json"}]
     assert fresh.sbx_calls("policy log nora-computer --json")
@@ -129,7 +129,7 @@ def test_a_database_that_is_down_costs_nothing_but_a_delay(fresh: Host) -> None:
     holds the events, serve carries on, and `sync-events` replays them."""
     result = fresh.run("serve", STUB_DB_FAIL="1")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "not yet in Postgres" in result.stdout
+    assert "not yet in Postgres" in result.stdout + result.stderr
     assert fresh.event_kinds() == ["create", "computerd_start"]
     (fresh.dir / "psql.sql").unlink()
     synced = fresh.run("sync-events")
@@ -154,4 +154,4 @@ def test_a_destroy_that_could_not_be_recorded_does_not_look_audited(fresh: Host)
     fresh.run("serve")
     result = fresh.run("destroy", NORA_COMPUTER_STATE_DIR="/dev/null/nope")
     assert result.returncode == 5, result.stdout + result.stderr
-    assert "could NOT be recorded" in result.stdout
+    assert "could NOT be recorded" in result.stdout + result.stderr

@@ -343,7 +343,14 @@ computer_export(path, to="link", title, artifact_id?)
   `SandboxRuntime.put` into `inbox/`. The VM never needs a route to RustFS.
 - **Backup:** a nightly job tars each room's `projects/` (not `browser/`,
   which holds cookies) through `fetch` into the blob store. It is on the same
-  host, so this is rollback, not off-host backup.
+  host, so this is rollback, not off-host backup. **Built 2026-10-01
+  (DEC-255), as a different job from the one described:** a recreate deletes the
+  whole VM disk (three in one day), so `nora-computer backup` tars all of
+  `/workspace` on the HOST, nightly, to `~/nora-backups/computer-workspace/` (not
+  through `fetch` into the blob store), minus each room's `browser/` and the tmux
+  sockets, verified by digest, newest 14 kept. `nora-computer restore` puts it
+  back, and `destroy` takes one first and refuses without it (`--no-backup`).
+  The per-room `projects/` tar into RustFS stays unbuilt.
 - **Manifest:** a small table (room, path, sha256, origin, artifact_id, url,
   time). "Continue with `data.csv` tomorrow" resolves through it. A file
   missing from the VM is `unavailable`, never an empty answer.

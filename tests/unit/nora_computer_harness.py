@@ -52,7 +52,8 @@ esac
 case "$1" in
   ls)
       if [ -e "$STUB_DIR/sandbox" ]; then
-          echo '{"sandboxes": [{"name": "nora-computer", "status": "running"}]}'
+          st=$(cat "$STUB_DIR/sandbox"); [ -n "$st" ] || st=running
+          echo "{\"sandboxes\": [{\"name\": \"nora-computer\", \"status\": \"$st\"}]}"
       else
           echo '{"sandboxes": []}'
       fi
@@ -95,6 +96,56 @@ _VM_CP = r"""#!/bin/bash
 if [ -x "$STUB_DIR/vm-cp" ]; then exec "$STUB_DIR/vm-cp" "$@"; fi
 echo "stub sbx cp: no VM simulation" >&2
 exit 1
+"""
+
+# The VM, as a directory: `/workspace` and `/tmp/nora-*` inside it are
+# `$STUB_DIR/vm/workspace` and `$STUB_DIR/vm/tmp/nora-*` on the host. A command
+# the script sends is run here with those two paths translated, which is enough
+# for the tar, sha256sum, ls, grep and rm the script uses. The things only a real
+# VM has (users, ownership) are the stubs below, and they log what was asked.
+_VM_RUN = r"""#!/usr/bin/env python3
+import os, subprocess, sys
+vm = os.path.join(os.environ["STUB_DIR"], "vm")
+def tr(a):
+    return a.replace("/workspace", vm + "/workspace").replace("/tmp/nora-", vm + "/tmp/nora-")
+args = [tr(a) for a in sys.argv[1:]]
+if os.environ.get("STUB_VM_TAR_FAILS") == "1" and "tar $ex" in " ".join(args):
+    sys.exit(2)
+sys.exit(subprocess.call(args))
+"""
+
+_VM_CP_RUN = r"""#!/usr/bin/env python3
+import os, shutil, sys
+vm = os.path.join(os.environ["STUB_DIR"], "vm")
+src, dst = sys.argv[2], sys.argv[3]
+def tr(p):
+    if p.startswith("nora-computer:"):
+        return p.split(":", 1)[1].replace("/tmp/nora-", vm + "/tmp/nora-")
+    return p
+src_p, dst_p = tr(src), tr(dst)
+if src.startswith("nora-computer:") is False and dst.startswith("nora-computer:") is False:
+    sys.exit("neither side is the sandbox")
+if os.environ.get("STUB_CP_CORRUPTS") == "1" and src.startswith("nora-computer:"):
+    data = open(src_p, "rb").read()
+    open(dst_p, "wb").write(data[:-7] + b"garbage")
+    sys.exit(0)
+shutil.copyfile(src_p, dst_p)
+"""
+
+# What only a real VM can say about users, kept as stubs on the PATH.
+_ID = r"""#!/bin/bash
+if [ "$1" = "-u" ] && grep -qxF "$2" "$STUB_DIR/vm-users" 2>/dev/null; then echo 1001; exit 0; fi
+exit 1
+"""
+_USERADD = r"""#!/bin/bash
+echo "useradd $*" >> "$STUB_DIR/vm-users.log"
+for a in "$@"; do u="$a"; done
+echo "$u" >> "$STUB_DIR/vm-users"
+exit 0
+"""
+_CHOWN = r"""#!/bin/bash
+echo "chown $*" >> "$STUB_DIR/vm-users.log"
+exit 0
 """
 
 # `docker compose exec -T db psql ...`: the SQL arrives on stdin, and is kept.
@@ -145,6 +196,14 @@ class Host:
         (self.dir / "bin-vm-exec").chmod(0o755)
         (self.dir / "bin-vm-cp").write_text(_VM_CP)
         (self.dir / "bin-vm-cp").chmod(0o755)
+        for name, body in (("vm-run", _VM_RUN), ("vm-cp", _VM_CP_RUN)):
+            (self.dir / name).write_text(body)
+            (self.dir / name).chmod(0o755)
+        for name, body in (("id", _ID), ("useradd", _USERADD), ("chown", _CHOWN)):
+            self._install(name, body)
+        self.vm = self.dir / "vm"
+        (self.vm / "workspace").mkdir(parents=True)
+        (self.vm / "tmp").mkdir()
         if sandbox:
             (self.dir / "sandbox").touch()
         self.env_file = root / "env"
@@ -210,6 +269,31 @@ class Host:
     @property
     def state_dir(self) -> Path:
         return self.home / ".local" / "state" / "nora-computer"
+
+    # -- the simulated VM ----------------------------------------------------
+
+    def make_room(self, scope: str, files: dict[str, str]) -> None:
+        """A room's directory in the VM's /workspace, with files by relative path."""
+        for rel, text in files.items():
+            path = self.vm / "workspace" / scope / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+
+    def vm_tmp_files(self) -> list[str]:
+        return sorted(p.name for p in (self.vm / "tmp").iterdir())
+
+    def vm_user_calls(self) -> list[str]:
+        path = self.dir / "vm-users.log"
+        return path.read_text().splitlines() if path.exists() else []
+
+    @property
+    def backup_dir(self) -> Path:
+        return self.home / "nora-backups" / "computer-workspace"
+
+    def archives(self) -> list[Path]:
+        if not self.backup_dir.exists():
+            return []
+        return sorted(self.backup_dir.glob("workspace-*.tar.gz"))
 
 
 def load_lifecycle_event():

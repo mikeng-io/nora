@@ -19,6 +19,10 @@ echo "NORA_COMPUTER_TOKEN=$(openssl rand -hex 32)" >> ~/workspace/nora/.env
 mkdir -p ~/.config/systemd/user
 ln -sf ~/workspace/nora/deploy/computer/nora-computer.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now nora-computer.service
+# the nightly /workspace backup (see "Backup and restore"):
+ln -sf ~/workspace/nora/deploy/computer/nora-computer-backup.service \
+       ~/workspace/nora/deploy/computer/nora-computer-backup.timer ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now nora-computer-backup.timer
 ```
 
 User lingering must be on (`loginctl show-user "$USER" -p Linger`), or the
@@ -109,6 +113,55 @@ Rows count only; read the table, not the spool, for what the record says.
 `nora-computer sync-events` and a re-read are how a row that is in the spool and
 not in the table is closed.
 
+## Backup and restore
+
+A **recreate deletes /workspace**, and the audit of 2026-10-01 saw three of them in
+24 hours: the VM's disk is the only copy of every room's files. So:
+
+- **Nightly**, `nora-computer-backup.timer` (03:20, persistent: a night the host was
+  off is made up) runs `nora-computer backup`: a tar of `/workspace` made inside
+  the VM as root, copied out with `sbx cp`, **verified** (the digest computed in
+  the VM must equal the copy's, and the copy must read back as a gzip tar, or it is
+  deleted and the run fails), and written to
+  `~/nora-backups/computer-workspace/workspace-<UTC time>.tar.gz` with a
+  `.sha256` beside it, mode 700. The newest 14 are kept
+  (`NORA_COMPUTER_BACKUP_KEEP`; a zero or a non-number prunes nothing, and a failed
+  run never removes an older archive). A stopped VM is skipped, not started: `sbx
+  exec` would start it, and a stopped disk has not changed.
+- **Not in it:** each room's `browser/` directory (a Chromium profile is a
+  credential store; its cookies are never backed up, design §7) and computerd's
+  `.tmux` sockets. A project folder that happens to be called `browser` is kept.
+- **It is rollback, not off-host backup** (design §7): the same machine, the same
+  disk. Copy `~/nora-backups` off the host if the host's loss matters.
+- **`nora-computer destroy` takes a backup first and refuses if it cannot**
+  (exit 9, the VM untouched). `nora-computer destroy --no-backup` deletes
+  `/workspace` without one, on purpose, and the audit row says so.
+- A failed run leaves the unit `failed`: `systemctl --user --failed`,
+  `journalctl --user -u nora-computer-backup -n 30`.
+
+Restore (after a recreate the VM's `/workspace` is empty):
+
+```bash
+ls -lt ~/nora-backups/computer-workspace/ | head                   # pick an archive
+deploy/computer/nora-computer restore ~/nora-backups/computer-workspace/workspace-<time>.tar.gz
+```
+
+It needs the archive's `.sha256` beside it and checks it, refuses when the VM's
+`/workspace` already holds rooms (restoring over them would overwrite files; `--force`
+if that is meant), extracts as root preserving modes, and gives each room's
+directory to `c-<first 12 hex of the scope>`, creating that user the way computerd
+does if it is not there yet: the uids inside an archive mean nothing in a new VM.
+Every backup, restore and destroy is a lifecycle audit row.
+
+Read it back (the nightly job ran, and the archive is a good one):
+
+```bash
+systemctl --user list-timers nora-computer-backup.timer          # LAST and NEXT
+ls -l ~/nora-backups/computer-workspace/ | tail -n 4
+f=$(ls -t ~/nora-backups/computer-workspace/workspace-*.tar.gz | head -n 1)
+(cd "$(dirname "$f")" && sha256sum -c "$(basename "$f").sha256") && tar -tzf "$f" | head
+```
+
 ## Operating it
 
 | want | run |
@@ -116,9 +169,11 @@ not in the table is closed.
 | state | `nora-computer status` |
 | stop it | `systemctl --user stop nora-computer` FIRST, then `nora-computer stop`: while the unit runs, `Restart=always` and its `sbx exec` start the VM again within seconds |
 | logs | `journalctl --user -u nora-computer -n 50`; computerd's own output is in the unit's journal (it runs in the foreground) |
-| new image | `nora-computer build`, `nora-computer destroy`, then `systemctl --user restart nora-computer`. **Destroy deletes /workspace**: export what matters first |
-| what the network refused | `sbx policy log nora-computer` |
+| new image | `nora-computer build`, `nora-computer destroy`, `systemctl --user restart nora-computer`, then `nora-computer restore <the archive destroy printed>`. **Destroy deletes /workspace**: it takes a verified backup first and refuses without one, unless you pass `--no-backup` (see "Backup and restore") |
+| back up now / restore | `nora-computer backup`; `nora-computer restore ARCHIVE [--force]` |
+| what the network refused | `nora-computer policy-log` (the audited form of `sbx policy log nora-computer`) |
 | token rotated | `systemctl --user restart nora-computer` |
+| a lifecycle row is missing in Postgres | `nora-computer sync-events` |
 
 The CLI needs `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent` when run by
 hand on a headless host (the script sets it): the desktop keyring is locked.

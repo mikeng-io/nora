@@ -13,8 +13,13 @@
 #                          sbx policy log for the VM, as an audited read
 #   nora-computer sync-events
 #                          replay the lifecycle audit spool into computer_events
+#   nora-computer backup   tar the VM's /workspace to ~/nora-backups/computer-workspace
+#   nora-computer restore ARCHIVE [--force]
+#                          put an archive back (a recreate leaves /workspace empty)
 #   nora-computer stop     stop the VM (files persist)
-#   nora-computer destroy  remove the VM and its disk
+#   nora-computer destroy [--no-backup]
+#                          remove the VM and its disk; takes a backup first and
+#                          refuses without one unless --no-backup
 #
 # `serve` is what nora-computer.service runs, with Restart=always. Health is an
 # HTTP BODY from computerd: under sbx a TCP connect succeeds to any address,
@@ -30,6 +35,9 @@ CPUS=${NORA_COMPUTER_CPUS:-2}
 ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
 HERE=$(cd "$(dirname "$0")" && pwd)
 LOCK=${XDG_RUNTIME_DIR:-/tmp}/nora-computer.lock
+# Where the /workspace backups go, and how many are kept (below).
+BACKUP_DIR=${NORA_COMPUTER_BACKUP_DIR:-$HOME/nora-backups/computer-workspace}
+BACKUP_KEEP=${NORA_COMPUTER_BACKUP_KEEP:-14}
 STATE_DIR=${NORA_COMPUTER_STATE_DIR:-$HOME/.local/state/nora-computer}
 UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$NAME}
 # The lifecycle audit (design/sandbox-runtime sec 12). A host-side spool is the
@@ -64,7 +72,7 @@ EGRESS_ALLOW=(
 # it falls back to its file store (spike round 1).
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 
-log() { echo "$(date -Is) nora-computer: $*"; }
+log() { echo "$(date -Is) nora-computer: $*" >&2; }
 
 # Replay the whole spool into computer_events. Idempotent (ON CONFLICT DO
 # NOTHING, so a row already there is skipped and nothing is ever updated), so it
@@ -230,6 +238,150 @@ cmd_egress() {
     esac
 }
 
+# -- /workspace backup and restore -------------------------------------------
+# A recreate (and `destroy`) deletes /workspace, and the audit saw three
+# recreates in 24 hours. The VM's disk is the only copy of every room's files,
+# so this is a nightly tar of it onto the host (README, "Backup and restore").
+# It is rollback, not off-host backup: same machine (design sec 7). NOT in it:
+# each room's browser/ directory (a Chromium profile is a credential store: its
+# cookies are never backed up, design sec 7) and computerd's .tmux sockets.
+
+# Tar /workspace INSIDE the VM, as root (each room's directory is 0700 and owned
+# by its own user), to $1, and print the archive's sha256. The excludes are
+# literal paths built from what exists, never a wildcard, so a project directory
+# that happens to be called `browser` is kept. tar's exit 1 is "a file changed
+# while it was read", which a live disk has; 2 is fatal.
+backup_in_vm() {
+    sbx exec -u root "$NAME" sh -c '
+        out=$1; ex=""
+        for d in /workspace/*/browser; do
+            [ -d "$d" ] || continue
+            ex="$ex --exclude=./$(basename "$(dirname "$d")")/browser"
+        done
+        # shellcheck disable=SC2086
+        tar $ex --exclude=./.tmux -C /workspace -czf "$out" .
+        rc=$?
+        [ "$rc" -le 1 ] || exit "$rc"
+        sha256sum "$out" | cut -d" " -f1' sh "$1" </dev/null | tail -n 1
+}
+
+# Keep the newest BACKUP_KEEP archives (by modification time) and their
+# checksums. Never fewer than one: a zero or a non-number prunes nothing.
+prune_backups() {
+    local f
+    case "$BACKUP_KEEP" in
+        ''|*[!0-9]*|0) log "backup: NORA_COMPUTER_BACKUP_KEEP=$BACKUP_KEEP is not a positive number; nothing pruned"; return 0 ;;
+    esac
+    ls -1t "$BACKUP_DIR"/workspace-*.tar.gz 2>/dev/null | awk -v keep="$BACKUP_KEEP" 'NR > keep' \
+        | while IFS= read -r f; do rm -f -- "$f" "$f.sha256"; done
+}
+
+# One archive of /workspace, verified before it counts: the checksum computed in
+# the VM equals the one of the copy on the host, and the copy reads back as a
+# gzip tar. Prints the archive's path. 4 no sandbox, 2 the copy failed, 3 it did
+# not verify. An archive that is not verified is deleted, never kept.
+backup_workspace() {
+    local allow_start=${1:-} state stamp dest part vm_tar want got n=1
+    state=$(sandbox_state)
+    [ "$state" != absent ] || { log "backup: there is no sandbox $NAME"; return 4; }
+    # `sbx exec` starts a stopped sandbox, so a nightly backup would undo a
+    # deliberate `nora-computer stop`. A stopped disk has not changed since the
+    # last backup, so the timer skips (10); destroy passes `start`, because the
+    # files are about to be deleted and must be had first.
+    if [ "$state" != running ] && [ "$allow_start" != start ]; then
+        log "backup: $NAME is $state, not running; skipped (a stopped disk is unchanged since the last backup, and sbx exec would start it)"
+        return 10
+    fi
+    mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR" || { log "backup: cannot use $BACKUP_DIR"; return 1; }
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    dest=$BACKUP_DIR/workspace-$stamp.tar.gz
+    while [ -e "$dest" ]; do dest=$BACKUP_DIR/workspace-$stamp-$n.tar.gz; n=$((n + 1)); done
+    part=$dest.partial
+    vm_tar=/tmp/nora-backup-$stamp.tar.gz
+    want=$(backup_in_vm "$vm_tar") || { log "backup: tar inside $NAME failed"; return 2; }
+    sbx cp "$NAME:$vm_tar" "$part" </dev/null || { rm -f "$part"; log "backup: copying the archive out of $NAME failed"; return 2; }
+    sbx exec -u root "$NAME" rm -f "$vm_tar" </dev/null >/dev/null 2>&1 || true
+    got=$(sha256sum "$part" | cut -d' ' -f1)
+    if [ -z "$want" ] || [ "$want" != "$got" ]; then
+        rm -f "$part"; log "backup: checksum mismatch (in the VM: ${want:-none}, on the host: $got)"; return 3
+    fi
+    tar -tzf "$part" >/dev/null 2>&1 || { rm -f "$part"; log "backup: the archive does not read back"; return 3; }
+    mv "$part" "$dest" || return 1
+    printf '%s  %s\n' "$got" "$(basename "$dest")" > "$dest.sha256" || return 1
+    prune_backups
+    printf '%s\n' "$dest"
+}
+
+cmd_backup() {
+    local out rc size sum
+    out=$(backup_workspace); rc=$?
+    if [ "$rc" = 10 ]; then
+        exit 0           # skipped, with its reason already logged: nothing failed
+    fi
+    if [ "$rc" != 0 ]; then
+        record_event backup failed rc="$rc"
+        log "backup FAILED (rc=$rc)"
+        exit "$rc"
+    fi
+    size=$(wc -c < "$out" | tr -d ' ')
+    sum=$(cut -d' ' -f1 "$out.sha256")
+    record_event backup ok path="$out" bytes="$size" sha256="$sum"
+    log "backed up /workspace to $out ($size bytes)"
+    echo "$out"
+}
+
+# restore ARCHIVE [--force]: put an archive back into /workspace. The archive must
+# have its .sha256 beside it and match it. Refuses when the VM's /workspace
+# already holds rooms (the state after a RECREATE is empty; anything else would
+# overwrite live files) unless --force. Ownership is rebuilt, not trusted: the
+# per-room users are created by computerd on first use with whatever uid is free,
+# so uids in the archive mean nothing in a new VM. Each room's directory is given
+# to `c-<first 12 hex of the scope>` (computerd's scope_user), creating that user
+# the way computerd does if it is not there yet.
+cmd_restore() {
+    local file="" force=0 arg want got existing rc
+    for arg in "$@"; do
+        case "$arg" in
+            --force) force=1 ;;
+            -*) echo "usage: nora-computer restore ARCHIVE [--force]" >&2; exit 2 ;;
+            *) file=$arg ;;
+        esac
+    done
+    [ -n "$file" ] && [ -f "$file" ] || { echo "usage: nora-computer restore ARCHIVE [--force]" >&2; exit 2; }
+    [ -f "$file.sha256" ] || { log "restore: $file.sha256 is missing; an archive with no checksum is not restored"; exit 3; }
+    want=$(cut -d' ' -f1 "$file.sha256")
+    got=$(sha256sum "$file" | cut -d' ' -f1)
+    [ -n "$want" ] && [ "$want" = "$got" ] || { log "restore: $file does not match its checksum"; exit 3; }
+    tar -tzf "$file" >/dev/null 2>&1 || { log "restore: $file does not read as a gzip tar"; exit 3; }
+    [ "$(sandbox_state)" != absent ] || { log "restore: there is no sandbox $NAME; start the unit first"; exit 6; }
+    existing=$(sbx exec -u root "$NAME" sh -c 'ls /workspace | grep -E "^[0-9a-f]{16,64}$" | head -n 1' </dev/null) || existing=unknown
+    if [ -n "$existing" ] && [ "$force" != 1 ]; then
+        log "restore: /workspace already holds rooms; restoring would overwrite their files. Pass --force if that is meant"
+        exit 7
+    fi
+    sbx cp "$file" "$NAME:/tmp/nora-restore.tar.gz" </dev/null || { log "restore: copying the archive in failed"; record_event restore failed stage=copy; exit 2; }
+    sbx exec -u root "$NAME" sh -c '
+        tar -C /workspace -xzpf /tmp/nora-restore.tar.gz || exit 1
+        rm -f /tmp/nora-restore.tar.gz
+        for d in /workspace/*/; do
+            scope=$(basename "$d")
+            case "$scope" in *[!0-9a-f]*|"") continue ;; esac
+            [ "${#scope}" -ge 16 ] && [ "${#scope}" -le 64 ] || continue
+            user=c-$(printf %s "$scope" | cut -c1-12)
+            id -u "$user" >/dev/null 2>&1 || useradd --system --no-create-home --user-group \
+                --shell /usr/sbin/nologin --home-dir /nonexistent "$user" || exit 2
+            chown -R "$user:$user" "/workspace/$scope" || exit 3
+        done' </dev/null
+    rc=$?
+    if [ "$rc" != 0 ]; then
+        record_event restore failed stage=extract rc="$rc" sha256="$got"
+        log "restore FAILED inside the VM (rc=$rc); /workspace may be partly restored"
+        exit "$rc"
+    fi
+    record_event restore ok path="$file" sha256="$got"
+    log "restored $file into $NAME:/workspace"
+}
+
 cmd_build() {
     local tar
     tar=$(mktemp --suffix=.tar) || exit 1
@@ -352,10 +504,29 @@ cmd_policy_log() {
 # removal is recorded as failed, and a removal that could not be recorded exits
 # non-zero so nobody reads silence as "audited".
 cmd_destroy() {
-    local rc
+    local rc backup=1 arg out kept=none
+    for arg in "$@"; do
+        case "$arg" in
+            --no-backup) backup=0 ;;
+            *) echo "usage: nora-computer destroy [--no-backup]" >&2; exit 2 ;;
+        esac
+    done
+    # destroy deletes /workspace, the only copy of every room's files, so it
+    # takes a verified backup FIRST and refuses if it cannot: the operator who
+    # means to lose the files says so with --no-backup, and that is recorded.
+    if [ "$backup" = 1 ] && [ "$(sandbox_state)" != absent ]; then
+        if ! out=$(backup_workspace start); then
+            log "destroy REFUSED: the backup before it failed, so nothing was removed. Fix that, or pass --no-backup to delete /workspace without one"
+            record_event destroy failed reason=backup_failed
+            exit 9
+        fi
+        kept=$out
+        log "backed up /workspace to $out before destroying $NAME"
+    fi
     sbx rm --force "$NAME" </dev/null; rc=$?
     if [ "$rc" = 0 ]; then
-        record_event destroy ok || { log "audit: $NAME was destroyed and the event could NOT be recorded"; exit 5; }
+        record_event destroy ok backup="$kept" no_backup_flag="$((1 - backup))" \
+            || { log "audit: $NAME was destroyed and the event could NOT be recorded"; exit 5; }
     else
         record_event destroy failed rc="$rc"
     fi
@@ -369,7 +540,9 @@ case "${1:-}" in
     egress) shift; cmd_egress "$@" ;;
     policy-log) shift; cmd_policy_log "$@" ;;
     sync-events) sync_events; exit $? ;;
+    backup) cmd_backup ;;
+    restore) shift; cmd_restore "$@" ;;
     stop) sbx stop "$NAME" </dev/null ;;
-    destroy) cmd_destroy ;;
-    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|stop|destroy" >&2; exit 2 ;;
+    destroy) shift; cmd_destroy "$@" ;;
+    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|backup|restore|stop|destroy" >&2; exit 2 ;;
 esac

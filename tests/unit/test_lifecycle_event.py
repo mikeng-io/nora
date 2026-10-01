@@ -28,7 +28,7 @@ def test_every_event_the_script_records_is_in_the_vocabulary() -> None:
     assert used <= lifecycle.EVENTS, used - lifecycle.EVENTS
     # And the other way: a kind the vocabulary lists that nothing records is a
     # row nobody will ever see.
-    assert used | {"backup", "restore"} >= lifecycle.EVENTS, lifecycle.EVENTS - used
+    assert used >= lifecycle.EVENTS, lifecycle.EVENTS - used
 
 
 def test_the_fingerprint_is_twelve_hex_and_not_the_token() -> None:
