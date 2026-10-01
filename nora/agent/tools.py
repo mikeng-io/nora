@@ -14633,6 +14633,19 @@ Args:
             return {"status": "not_found",
                     "note": "There is no document with that id in this room. Nothing "
                             "was stored. Publish without a `document_id` for a new one."}
+        if out.status == "refused" and "json" in rules:
+            # The spec was TEXT that does not parse. A long document written as a string of JSON
+            # breaks on one unescaped quote; sent as an object it cannot (2026-10-02, trace
+            # c3619636: 10,000 characters, the break at 7,247, and a made-up link after).
+            _record(metrics, tool, "bad_arguments", reason="not_json")
+            return {
+                "status": "bad_arguments",
+                "note": "Nothing was stored. The spec was not valid JSON. Send `spec` as an "
+                        "object, not as text, fix the marked place, and call again. Until a "
+                        "call returns ok there is no document and no link: do not tell anybody "
+                        "it was made.",
+                "findings": _document_findings(out.findings),
+            }
         if out.status == "refused":
             _record(metrics, tool, "bad_arguments", reason="findings")
             return {

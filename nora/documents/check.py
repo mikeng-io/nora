@@ -148,8 +148,30 @@ def _parse(data: bytes) -> tuple[Any, Finding | None]:
         return None, Finding("", "encoding", "the file is not valid UTF-8")
     try:
         return json.loads(text, parse_constant=_no_constant, object_pairs_hook=_no_duplicates), None
+    except json.JSONDecodeError as exc:
+        return None, Finding("", "json", _where_it_broke(text, exc))
     except (ValueError, RecursionError) as exc:
         return None, Finding("", "json", _clip(str(exc), _MESSAGE_CHARS) or "not valid JSON")
+
+
+_CONTEXT_CHARS = 28
+
+
+def _where_it_broke(text: str, exc: json.JSONDecodeError) -> str:
+    """The parser's own message plus the characters around the break, marked, so a writer who sent
+    a long spec as text can find the one bad character. A bare «Expecting ',' delimiter: line 1
+    column 7248» gave a model nothing to fix in 10,000 characters (2026-10-02): it saved the draft
+    elsewhere and told the room the document was made. The usual cause is a straight double quote
+    inside a string that was not escaped, so the hint names it."""
+    start = max(0, exc.pos - _CONTEXT_CHARS)
+    before = text[start:exc.pos].replace("\n", "\\n")
+    after = text[exc.pos:exc.pos + _CONTEXT_CHARS].replace("\n", "\\n")
+    return _clip(
+        f"{exc.msg} at character {exc.pos}: ...{before}<<HERE>>{after}... "
+        "Usual causes: an unescaped straight double quote inside a string, or a missing or "
+        "extra comma.",
+        _MESSAGE_CHARS,
+    )
 
 
 def _walk(node: Any, path: str = "") -> Iterator[tuple[dict[str, Any], str, int]]:
