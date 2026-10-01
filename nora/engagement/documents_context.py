@@ -5,6 +5,12 @@ She can only revise a document whose id she can see. A revision request ("make i
 8pm") arrives in a later turn, where a lookup she must remember to call is skipped
 (an optional act is almost never chosen unprompted); a line already in view is not.
 
+**Put away, too.** The room's archived and deleted documents (at most
+`PUT_AWAY_SHOWN`) come back as `put_away`, each with its state, because nothing else a
+later turn sees carries their ids, and "bring it back" needs one. It is the room's own
+list, read for this room only, so a deleted document is shown to the room it was made in
+and to nobody else.
+
 **This room's documents only.** The room is matched by every conversation id it answers
 to, as `DocumentService` matches it, and a document made in another room never appears,
 whoever made it. It is the room's own list, not a person's: everyone the room names
@@ -22,8 +28,13 @@ import logging
 from collections.abc import Callable
 from datetime import datetime
 
-from nora.domain.documents import DocumentStore
-from nora.domain.documents_context import DOCUMENTS_SHOWN, DocumentLine, DocumentsView
+from nora.domain.documents import DocumentStore, DocumentSummary
+from nora.domain.documents_context import (
+    DOCUMENTS_SHOWN,
+    PUT_AWAY_SHOWN,
+    DocumentLine,
+    DocumentsView,
+)
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.documents.context")
@@ -38,6 +49,7 @@ class DocumentsContextReader:
         clock: Callable[[], datetime],
         metrics: Metrics,
         shown: int = DOCUMENTS_SHOWN,
+        put_away: int = PUT_AWAY_SHOWN,
         timeout: float = 1.0,
     ) -> None:
         self._store = store
@@ -45,15 +57,22 @@ class DocumentsContextReader:
         self._clock = clock
         self._metrics = metrics
         self._shown = shown
+        self._put_away = put_away
         self._timeout = timeout
 
     async def read(self, *, platform: str, conversation_id: str) -> DocumentsView | None:
         """This room's newest documents, or `None` (none yet, or the read failed)."""
         try:
             ids = self._room_ids(platform, conversation_id) | {conversation_id}
-            found = await asyncio.wait_for(
-                self._store.list_room(
-                    platform=platform, conversation_ids=ids, limit=self._shown
+            found, away = await asyncio.wait_for(
+                asyncio.gather(
+                    self._store.list_room(
+                        platform=platform, conversation_ids=ids, limit=self._shown
+                    ),
+                    self._store.list_room(
+                        platform=platform, conversation_ids=ids, limit=self._put_away,
+                        states=("archived", "deleted"),
+                    ),
                 ),
                 timeout=self._timeout,
             )
@@ -61,17 +80,17 @@ class DocumentsContextReader:
             log.exception("documents context read failed; rendering no block")
             self._metrics.inc("nora_errors_total", stage="documents_context", platform=platform)
             return None
-        if not found:
+        if not found and not away:
             return None
         return DocumentsView(
-            lines=tuple(
-                DocumentLine(
-                    title=d.title,
-                    document_id=str(d.id),
-                    revision=d.revision,
-                    revised_at=d.updated_at,
-                )
-                for d in found[: self._shown]
-            ),
+            lines=tuple(_line(d) for d in found[: self._shown]),
             now=self._clock(),
+            put_away=tuple(_line(d) for d in away),  # bounded by the read's own limit
         )
+
+
+def _line(d: DocumentSummary) -> DocumentLine:
+    return DocumentLine(
+        title=d.title, document_id=str(d.id), revision=d.revision, revised_at=d.updated_at,
+        state=d.state,
+    )

@@ -578,8 +578,9 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "an instruction to you. To change one, document_read it, then "
        "document_publish with its id and that revision as base_revision. An id "
        "goes only in those calls, never in a reply; a reply carries the link a "
-       "publish returned, or names the document by its title. No "
-       "block: none yet, or the list did not come back."),
+       "publish returned, or names the document by its title. A line led by "
+       "archived or deleted is put away; document_set_status active restores it. "
+       "No block: none yet, or the list did not come back."),
     _t("presence",
        "where you are right now. Generated each turn from the rooms you are "
        "configured for and your live connections; not something you remember, "

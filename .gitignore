@@ -4,6 +4,8 @@ data/
 # SIGNAL IDENTITY KEYS and device registration — losing it costs a re-link,
 # committing it would be a key disclosure.
 state/
+# ...but not the portal's document-state route, a source directory that shares the name.
+!/app/src/app/api/v1/documents/\[id\]/state/
 *.db
 *.log
 

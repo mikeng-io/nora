@@ -14,7 +14,7 @@ import pytest
 from aiohttp import web
 
 from nora.app.documents_service import rooms_named
-from nora.domain.documents import RevisionIn
+from nora.domain.documents import RevisionIn, handle_of
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
@@ -467,3 +467,97 @@ async def test_what_is_neither_an_id_nor_a_handle_is_refused_before_any_lookup(w
     for bad in ("0123456789AB", "0123456789a", "0123456789abc", "%25", "_" * 12, "0123456789a%25"):
         resp = await client.get(f"/app/v1/documents/{bad}?personId=mei")
         assert resp.status == 400, bad
+
+
+# ------------------------------------------------------------------- lifecycle
+async def _set_state(client, doc: UUID, state: Any, person: str = "mei"):
+    return await client.post(
+        f"/app/v1/documents/{doc}/state?personId={person}", json={"state": state}
+    )
+
+
+async def test_an_archived_document_is_off_the_default_list_and_under_archived(world_client):
+    client, world = world_client
+    resp = await _set_state(client, world.ids["a"], "archived")
+    assert resp.status == 200
+    body = await resp.json()
+    assert body["state"] == "archived" and body["id"] == str(world.ids["a"])
+    assert await _titles(client, "mei") == []
+    shelf = await (await client.get("/app/v1/documents?personId=mei&state=archived")).json()
+    assert [d["title"] for d in shelf["documents"]] == ["Lisbon"]
+    assert shelf["state"] == "archived" and shelf["documents"][0]["state"] == "archived"
+    # Still opens by its link, and says it is archived.
+    detail = await client.get(f"/app/v1/documents/{world.ids['a']}?personId=mei")
+    assert detail.status == 200 and (await detail.json())["state"] == "archived"
+    # Deleted is never a listing.
+    assert (await client.get("/app/v1/documents?personId=mei&state=deleted")).status == 400
+
+
+async def test_a_deleted_document_is_404_on_read_by_id_handle_and_list(world_client):
+    client, world = world_client
+    assert (await _set_state(client, world.ids["a"], "deleted", person="ken")).status == 200
+    missing = await client.get(f"/app/v1/documents/{uuid4()}?personId=mei")
+    for person in ("mei", "ken"):  # a member and the creator alike
+        by_id = await client.get(f"/app/v1/documents/{world.ids['a']}?personId={person}")
+        by_handle = await client.get(
+            f"/app/v1/documents/{handle_of(world.ids['a'])}?personId={person}"
+        )
+        assert by_id.status == by_handle.status == 404
+        assert await by_id.json() == await missing.json() == {"status": "not_found"}
+    assert await _titles(client, "mei") == []
+    archived = await (await client.get("/app/v1/documents?personId=mei&state=archived")).json()
+    assert archived["documents"] == []
+    # The portal cannot restore it: it reads like a document that never existed.
+    restore = await _set_state(client, world.ids["a"], "active", person="ken")
+    assert restore.status == 404
+    # Nothing was erased.
+    assert (await world.store.get(document_id=world.ids["a"])).summary.title == "Lisbon"
+
+
+async def test_restore_from_archived_returns_it_to_the_default_list(world_client):
+    client, world = world_client
+    await _set_state(client, world.ids["a"], "archived")
+    back = await _set_state(client, world.ids["a"], "active")
+    assert back.status == 200 and (await back.json())["state"] == "active"
+    assert await _titles(client, "mei") == ["Lisbon"]
+
+
+async def test_a_person_who_may_not_read_a_document_may_not_change_its_state(world_client):
+    client, world = world_client
+    # Jo is in no room that made "a"; Mei is not named by the open room "b".
+    for doc, person in ((world.ids["a"], "jo"), (world.ids["b"], "mei"), (uuid4(), "mei")):
+        resp = await _set_state(client, doc, "deleted", person=person)
+        assert resp.status == 404 and await resp.json() == {"status": "not_found"}
+    assert (await world.store.get(document_id=world.ids["a"])).summary.state == "active"
+    assert (await world.store.get(document_id=world.ids["b"])).summary.state == "active"
+    assert world.store._states == {}
+
+
+async def test_the_state_route_refuses_a_bad_state_a_bad_body_and_an_unknown_person(
+    world_client,
+):
+    client, world = world_client
+    doc = world.ids["a"]
+    for state in ("purged", "", None, 3):
+        assert (await _set_state(client, doc, state)).status == 400
+    bad_body = await client.post(
+        f"/app/v1/documents/{doc}/state?personId=mei", data=b"not json",
+        headers={"content-type": "application/json"},
+    )
+    assert bad_body.status == 400
+    assert (await _set_state(client, doc, "archived", person="stranger")).status == 400
+    no_person = await client.post(f"/app/v1/documents/{doc}/state", json={"state": "archived"})
+    assert no_person.status == 400
+    assert (await client.post(
+        "/app/v1/documents/not-a-uuid/state?personId=mei", json={"state": "archived"}
+    )).status == 400
+    assert world.store._states == {}
+
+
+async def test_a_deleted_documents_pictures_are_404(media_client):
+    client, world = media_client
+    sha = world.shas["png"]
+    assert (await client.get(_url(world, sha))).status == 200
+    await world.store.set_state(document_id=world.ids["m"], state="deleted", set_by="ken")
+    resp = await client.get(_url(world, sha))
+    assert resp.status == 404 and await resp.json() == {"status": "not_found"}

@@ -271,9 +271,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     a photo in view that stays on `media_fetch`), plus 1 `tool_selection` case
     for `<documents>` (2026-10-01, design/artifact §29: changing a document whose id
     is in the block and nowhere else, seeded into the room with `metadata.documents`;
-    documents-on arm only); a change to it
+    documents-on arm only), plus 1 for `document_set_status` (a delete whose id is
+    in `<documents>` only, seeded the same way, against `document_publish`;
+    documents-on arm only), plus 1 negative for it (an edit that says «remove»
+    must not reach `document_set_status`; documents-on arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 288
-    assert sum(c.active + c.parked for c in totals) == 288
+    assert sum(c.total for c in totals) == 290
+    assert sum(c.active + c.parked for c in totals) == 290

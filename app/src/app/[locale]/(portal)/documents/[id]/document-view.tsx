@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronLeft } from "lucide-react";
-import { Link } from "@/i18n/routing";
+import { Archive, ArchiveRestore, ChevronLeft, Trash2 } from "lucide-react";
+import { Link, useRouter } from "@/i18n/routing";
+import { Button } from "@/components/ui/button";
 import { PageFrame } from "@/components/shell/app-shell";
 import { useRegisterTitle } from "@/components/shell/page-title";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,7 +14,7 @@ import { isNotFound } from "@/lib/api/client";
 import type { DocumentDetail } from "@/lib/api/documents";
 import { platformLabel, isRevised } from "@/lib/documents/list";
 import { formatRelative } from "@/lib/format";
-import { useDocument } from "@/lib/queries";
+import { useDocument, useSetDocumentState } from "@/lib/queries";
 import { useNow } from "@/hooks/use-now";
 
 // One document, drawn from its stored spec by the same registry the fixtures use, in
@@ -73,12 +75,95 @@ function Loaded({ doc }: { doc: DocumentDetail }) {
         <ChevronLeft className="size-4" aria-hidden="true" />
         {t("back")}
       </Link>
-      <p className="mb-6 text-meta text-ink-muted" data-testid="document-meta">
+      <p className="mb-3 text-meta text-ink-muted" data-testid="document-meta">
         {isRevised(doc.revision)
           ? t("madeRevised", { ...who, n: doc.revision, ago })
           : t("made", who)}
       </p>
+      <Lifecycle doc={doc} />
       <DocumentView doc={doc.document} documentId={doc.id} />
     </PageFrame>
+  );
+}
+
+// Archive, delete (after a confirm) or restore. Each one is recorded by Nora before the
+// page changes: nothing here is optimistic. A delete leaves the page, because the
+// document no longer opens for anyone; it is restored by asking Nora in the chat.
+function Lifecycle({ doc }: { doc: DocumentDetail }) {
+  const t = useTranslations("documents");
+  const router = useRouter();
+  const change = useSetDocumentState(doc.id);
+  const [confirming, setConfirming] = useState(false);
+  const archived = doc.state === "archived";
+
+  const set = (state: "active" | "archived" | "deleted") =>
+    change.mutate(state, {
+      onSuccess: () => {
+        setConfirming(false);
+        if (state === "deleted") router.push("/documents");
+      },
+    });
+
+  return (
+    <div className="mb-6 grid gap-3" data-testid="document-lifecycle">
+      {archived ? (
+        <p className="text-meta text-ink-soft" role="status">
+          {t("archivedNote")}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {archived ? (
+          <Button variant="outline" size="sm" disabled={change.isPending} onClick={() => set("active")}>
+            <ArchiveRestore aria-hidden="true" />
+            {t("restore")}
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled={change.isPending} onClick={() => set("archived")}>
+            <Archive aria-hidden="true" />
+            {t("archive")}
+          </Button>
+        )}
+        {confirming ? null : (
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={change.isPending}
+            onClick={() => setConfirming(true)}
+          >
+            <Trash2 aria-hidden="true" />
+            {t("delete")}
+          </Button>
+        )}
+      </div>
+      {confirming ? (
+        <div
+          role="alertdialog"
+          aria-labelledby="delete-title"
+          aria-describedby="delete-body"
+          className="grid gap-3 rounded-panel border border-hairline bg-surface p-4"
+        >
+          <p id="delete-title" className="font-semibold text-ink">
+            {t("deleteConfirmTitle")}
+          </p>
+          <p id="delete-body" className="text-meta text-ink-soft">
+            {t("deleteConfirm")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" size="sm" disabled={change.isPending} onClick={() => set("deleted")}>
+              <Trash2 aria-hidden="true" />
+              {t("deleteConfirmAction")}
+            </Button>
+            <Button variant="quiet" size="sm" disabled={change.isPending} onClick={() => setConfirming(false)}>
+              {t("cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {change.isError ? (
+        <p className="text-meta text-danger" role="alert">
+          {t("actionFailed")}
+        </p>
+      ) : null}
+    </div>
   );
 }

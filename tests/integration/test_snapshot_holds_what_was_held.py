@@ -338,6 +338,10 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "spec": {"version": 1}, "text": f"doc {n}", "sha256": f"{n:064x}",
         "written_by": "tag",
     },
+    # 0087_document_state (DEC-255): one row per change of a document's state.
+    "document_state": lambda n: {
+        "document_id": _uuid("doc", n), "state": "archived", "set_by": "ken",
+    },
     # design/sandbox-runtime §6 (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",

@@ -8,6 +8,14 @@ module never sees a `Policy` (`nora.web` must not learn about policy loading).
 A document the viewer may not read is `None`, the same answer as "no such document":
 an id never confirms that a document exists.
 
+A document's STATE (archived, deleted) is filtered by the store in SQL: the default list
+is the active documents, `state=archived` lists the archived ones, and a deleted document
+is the same `None` as one that never existed, on the detail, the handle and the picture
+route alike. `change_document_state` is the portal's one write: the viewer who may READ a
+document may archive, delete or restore it, through the same `get_visible` gate, and a
+deleted one is out of reach here (only Nora's `document_set_status`, in its room, or the
+database restores it).
+
 The spec is returned as stored, never re-judged here: it passed `check_document`
 when it was written, and the portal validates it again before it draws a line
 (`parseDocument` in `app/src/lib/documents/catalog.ts`).
@@ -17,14 +25,17 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from nora.domain.documents import (
+    DOCUMENT_STATES,
+    DocumentState,
     DocumentStore,
     DocumentSummary,
+    ListedState,
     RoomKey,
     StoredDocument,
     is_handle,
@@ -58,6 +69,7 @@ def _summary(persons: Persons, s: DocumentSummary) -> dict[str, object]:
         "createdAt": _iso(s.created_at),
         "updatedAt": _iso(s.updated_at),
         "createdBy": _creator(persons, s.created_by),
+        "state": s.state,
     }
 
 
@@ -69,6 +81,7 @@ async def build_documents_payload(
     person_id: str,
     page: int,
     page_size: int,
+    state: ListedState = "active",
 ) -> dict[str, object]:
     page = min(max(1, page), MAX_PAGE)
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
@@ -77,13 +90,52 @@ async def build_documents_payload(
         rooms=rooms_of(person_id),
         limit=page_size,
         offset=(page - 1) * page_size,
+        state=state,
     )
     return {
         "documents": [_summary(persons, s) for s in result.items],
         "page": page,
         "pageSize": page_size,
         "total": result.total,
+        "state": state,
     }
+
+
+@dataclass(frozen=True)
+class StateChange:
+    """The portal's state write. `ok` carries the document's new summary; `not_found` is
+    every reason the viewer must not tell apart (no such document, not theirs, deleted);
+    `bad_state` is a state that is not one of `DOCUMENT_STATES`."""
+
+    status: Literal["ok", "not_found", "bad_state"]
+    body: dict[str, object] | None = None
+
+
+async def change_document_state(
+    *,
+    store: DocumentStore,
+    rooms_of: Callable[[str], frozenset[RoomKey]],
+    persons: Persons,
+    person_id: str,
+    document_id: UUID,
+    state: str,
+) -> StateChange:
+    if state not in DOCUMENT_STATES:
+        return StateChange("bad_state")
+    # The read gate IS the write gate: whoever may open it (its creator, or a person a
+    # room it was made in names) may archive, delete or restore it. A deleted document
+    # is not visible, so it cannot be restored from here.
+    stored = await store.get_visible(
+        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)
+    )
+    if stored is None:
+        return StateChange("not_found")
+    wanted = cast(DocumentState, state)
+    if stored.summary.state != wanted and not await store.set_state(
+        document_id=document_id, state=wanted, set_by=person_id
+    ):
+        return StateChange("not_found")
+    return StateChange("ok", _summary(persons, replace(stored.summary, state=wanted)))
 
 
 async def build_document_payload(

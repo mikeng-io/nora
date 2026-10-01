@@ -46,7 +46,8 @@ export const ROUTES: RouteSpec[] = [
   // Documents (ADR 0020): what the viewer created plus what was made in a room that
   // names them. `scope: "self"` because the viewer decides what is visible, never
   // the browser; Nora answers "not visible" exactly as "no such document".
-  { pattern: ["documents"], scope: "self", query: ["page", "pageSize"] },
+  // `state` is the Archived filter (`active` or `archived`; Nora refuses anything else).
+  { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"] },
   { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },

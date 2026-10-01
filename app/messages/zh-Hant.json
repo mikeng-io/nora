@@ -247,7 +247,22 @@
     "notFoundTitle": "唔係你可以睇嘅文件",
     "notFound": "你可以開自己叫佢寫、或者喺你所在群組寫嘅文件。呢份唔喺入面，或者已經冇咗。",
     "made": "{name} 喺 {platform} 叫佢寫",
-    "madeRevised": "{name} 喺 {platform} 叫佢寫 · 第 {n} 版，{ago}更新"
+    "madeRevised": "{name} 喺 {platform} 叫佢寫 · 第 {n} 版，{ago}更新",
+    "filterLabel": "顯示邊啲文件",
+    "filterActive": "現用",
+    "filterArchived": "已封存",
+    "archivedEmptyTitle": "冇封存文件",
+    "archivedEmpty": "你封存嘅文件會喺呢度出現，可以還原。",
+    "archived": "已封存",
+    "archivedNote": "已封存：唔會喺列表出現，還原之前 Nora 唔會改佢。",
+    "archive": "封存",
+    "restore": "還原",
+    "delete": "刪除",
+    "deleteConfirmTitle": "刪除呢份文件？",
+    "deleteConfirm": "群組入面所有人都會喺列表見唔到佢，連結亦都開唔到。內容唔會被抹走：喺群組叫 Nora，佢可以搵返出嚟。",
+    "deleteConfirmAction": "刪除",
+    "cancel": "取消",
+    "actionFailed": "做唔到，再試一次。"
   },
   "map": {
     "title": "大家喺邊",

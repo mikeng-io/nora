@@ -35,6 +35,7 @@ from nora.web.documents import (
     build_document_payload,
     build_document_payload_by_handle,
     build_documents_payload,
+    change_document_state,
 )
 from nora.web.games import (
     GamesUnavailableError,
@@ -638,9 +639,15 @@ def register_web_routes(
             page_size = _int_query(request, "pageSize", _DEFAULT_PAGE_SIZE)
         except _BadQueryError as exc:
             return web.json_response({"error": f"invalid {exc}"}, status=400)
+        # The default list is the active documents; `state=archived` is the Archived
+        # filter. A deleted document is never listed, so `deleted` is a bad query.
+        listed = request.query.get("state", "active")
+        if listed not in ("active", "archived"):
+            return web.json_response({"error": "invalid state"}, status=400)
         body = await build_documents_payload(
             store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
             person_id=person_id, page=page, page_size=page_size,
+            state="archived" if listed == "archived" else "active",
         )
         return web.json_response(body)
 
@@ -710,6 +717,43 @@ def register_web_routes(
             },
         )
 
+    async def documents_state(request: web.Request) -> web.Response:
+        # Archive, delete or restore (the portal's one write). The viewer comes from the
+        # session through the portal's proxy, exactly as on the reads, and the gate is the
+        # read gate: a document the viewer may not open, or a deleted one, is the same 404
+        # as no such document. Body: {"state": "active" | "archived" | "deleted"}.
+        a = request.app
+        if a["web_documents"] is None or a["web_rooms_of"] is None:
+            return _documents_unavailable()
+        person_id = request.query.get("personId")
+        if not person_id or a["web_persons"].by_person.get(person_id) is None:
+            return web.json_response(
+                {"status": "refused", "note": "a valid personId is required"}, status=400,
+            )
+        try:
+            document_id = UUID(request.match_info["id"])
+        except ValueError:
+            return web.json_response({"status": "refused", "note": "bad id"}, status=400)
+        try:
+            payload = await request.json()
+        except ValueError:
+            return web.json_response({"status": "refused", "note": "bad body"}, status=400)
+        state = payload.get("state") if isinstance(payload, dict) else None
+        try:
+            change = await change_document_state(
+                store=a["web_documents"], rooms_of=a["web_rooms_of"],
+                persons=a["web_persons"], person_id=person_id,
+                document_id=document_id, state=str(state),
+            )
+        except Exception:  # a store that is down is "could not check", never "not found"
+            log.exception("document state change failed")
+            return _documents_unavailable()
+        if change.status == "bad_state":
+            return web.json_response({"status": "refused", "note": "bad state"}, status=400)
+        if change.status == "not_found":
+            return web.json_response({"status": "not_found"}, status=404)
+        return web.json_response(change.body)
+
     app.router.add_get("/app/v1/status", status)
     app.router.add_get("/app/v1/skills", skills)
     app.router.add_get("/app/v1/tools", tools)
@@ -748,3 +792,4 @@ def register_web_routes(
     app.router.add_get("/app/v1/documents", documents_list)
     app.router.add_get("/app/v1/documents/{id}", documents_detail)
     app.router.add_get("/app/v1/documents/{id}/media/{sha}", documents_media)
+    app.router.add_post("/app/v1/documents/{id}/state", documents_state)

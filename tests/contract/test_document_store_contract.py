@@ -5,6 +5,7 @@ in-memory fake, as `test_compute_job_store_contract.py` does."""
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -446,3 +447,211 @@ async def test_what_is_not_a_handle_never_reaches_the_query_and_matches_nothing(
     assert not is_handle(bad)
     got = await store.get_visible_by_handle(handle=bad, person_id="ken", rooms=frozenset())
     assert got is None
+
+
+# ------------------------------------------------------------- lifecycle (document_state)
+# Archive, delete and restore are appended rows; the latest one is the state, and no row
+# is `active`. These are the read-side guards, each named for the exclusion it holds.
+
+
+async def test_an_archived_document_leaves_the_default_list_and_shows_under_archived(store):
+    kept = await _make(store, title="kept")
+    shelved = await _make(store, title="shelved")
+    assert await store.set_state(document_id=shelved, state="archived", set_by="mei")
+    rooms = frozenset({ROOM})
+    default = await store.list_visible(person_id="mei", rooms=rooms, limit=10, offset=0)
+    assert [d.id for d in default.items] == [kept] and default.total == 1
+    archived = await store.list_visible(
+        person_id="mei", rooms=rooms, limit=10, offset=0, state="archived"
+    )
+    assert [d.id for d in archived.items] == [shelved] and archived.total == 1
+    assert archived.items[0].state == "archived"
+    # Still opens by its link: the detail and the handle find it.
+    got = await store.get_visible(document_id=shelved, person_id="mei", rooms=rooms)
+    assert got is not None and got.summary.state == "archived"
+    assert (
+        await store.get_visible_by_handle(handle=handle_of(shelved), person_id="mei", rooms=rooms)
+    ) is not None
+
+
+async def test_a_deleted_document_is_in_no_list_and_reads_like_an_unknown_id(store):
+    gone = await _make(store, title="gone", created_by="ken")
+    assert await store.set_state(document_id=gone, state="deleted", set_by="ken")
+    rooms = frozenset({ROOM})
+    for state in ("active", "archived"):
+        page = await store.list_visible(
+            person_id="ken", rooms=rooms, limit=10, offset=0, state=state
+        )
+        assert page.items == () and page.total == 0
+    # The creator, a room member, by id and by handle: all the same None as a miss.
+    assert await store.get_visible(document_id=gone, person_id="ken", rooms=frozenset()) is None
+    assert await store.get_visible(document_id=gone, person_id="mei", rooms=rooms) is None
+    assert (
+        await store.get_visible_by_handle(handle=handle_of(gone), person_id="ken", rooms=rooms)
+    ) is None
+    assert await store.list_room(
+        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5
+    ) == ()
+    # Nothing was erased: the service's own read still finds it, with every revision.
+    raw = await store.get(document_id=gone)
+    assert raw is not None and raw.summary.state == "deleted" and raw.summary.title == "gone"
+    assert [h.revision for h in await store.history(document_id=gone)] == [1]
+
+
+async def test_add_revision_is_refused_on_an_archived_or_deleted_document(store):
+    for state in ("archived", "deleted"):
+        doc = await _make(store, title=f"was {state}")
+        assert await store.set_state(document_id=doc, state=state, set_by="ken")
+        out = await store.add_revision(document_id=doc, base_revision=1, revision=_rev("v2"))
+        assert out.status == "not_active" and out.document is None
+        assert [h.revision for h in await store.history(document_id=doc)] == [1]
+
+
+async def test_restore_returns_a_document_to_every_read_and_lets_it_be_revised(store):
+    doc = await _make(store, title="back")
+    rooms = frozenset({ROOM})
+    for state in ("archived", "deleted", "active"):
+        assert await store.set_state(document_id=doc, state=state, set_by="mei")
+    page = await store.list_visible(person_id="mei", rooms=rooms, limit=10, offset=0)
+    assert [d.id for d in page.items] == [doc] and page.items[0].state == "active"
+    assert await store.get_visible(document_id=doc, person_id="mei", rooms=rooms) is not None
+    assert [d.id for d in await store.list_room(
+        platform="signal", conversation_ids=frozenset({"room-1"}), limit=5
+    )] == [doc]
+    out = await store.add_revision(document_id=doc, base_revision=1, revision=_rev("v2"))
+    assert out.status == "ok" and out.document.summary.revision == 2
+
+
+async def test_list_room_leaves_out_archived_and_deleted_documents(store):
+    live = await _make(store, title="live")
+    archived = await _make(store, title="archived")
+    deleted = await _make(store, title="deleted")
+    await store.set_state(document_id=archived, state="archived", set_by="ken")
+    await store.set_state(document_id=deleted, state="deleted", set_by="ken")
+    got = await store.list_room(platform="signal", conversation_ids=frozenset({"room-1"}), limit=5)
+    assert [d.id for d in got] == [live]
+
+
+async def test_set_state_on_an_unknown_id_is_false_and_writes_nothing(store):
+    assert await store.set_state(document_id=uuid4(), state="deleted", set_by="ken") is False
+
+
+async def test_the_state_table_is_append_only_and_its_check_names_every_state(request):
+    """SQL only: every change is a row (none updated), the latest wins, and the CHECK on
+    `state` admits exactly `DOCUMENT_STATES` and refuses anything else."""
+    import sqlalchemy as sa
+    from sqlalchemy.exc import IntegrityError
+
+    from nora.domain.documents import DOCUMENT_STATES
+    from nora.infra.sql.schema import DOCUMENT_STATE
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        for state in ("archived", "deleted", "active"):
+            await s.set_state(document_id=doc, state=state, set_by="ken")
+        async with engine.connect() as conn:
+            rows = (await conn.execute(
+                sa.select(DOCUMENT_STATE.c.state, DOCUMENT_STATE.c.set_by)
+                .where(DOCUMENT_STATE.c.document_id == doc)
+                .order_by(DOCUMENT_STATE.c.id)
+            )).all()
+            check = (await conn.execute(sa.text(
+                "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                "WHERE conname = 'ck_document_state_state'"
+            ))).scalar_one()
+        assert [tuple(r) for r in rows] == [
+            ("archived", "ken"), ("deleted", "ken"), ("active", "ken"),
+        ]
+        assert sorted(re.findall(r"'([a-z]+)'::text", check)) == sorted(DOCUMENT_STATES)
+        with pytest.raises(IntegrityError, match="ck_document_state_state"):
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(DOCUMENT_STATE).values(
+                    document_id=doc, state="purged", set_by="ken"))
+        with pytest.raises(IntegrityError, match="ck_document_state_set_by"):
+            async with engine.begin() as conn:
+                await conn.execute(sa.insert(DOCUMENT_STATE).values(
+                    document_id=doc, state="archived", set_by=""))
+    finally:
+        await engine.dispose()
+
+
+async def test_find_by_handle_sees_every_state_and_no_visibility(store):
+    live = await _make_id(store, _with_prefix("5"), created_by="ken")
+    gone = await _make_id(store, _with_prefix("6"), created_by="mei", room=OTHER_ROOM)
+    await store.set_state(document_id=gone, state="deleted", set_by="mei")
+    found = await store.find_by_handle(handle=PREFIX)
+    assert sorted(d.summary.id for d in found) == sorted([live, gone])
+    assert {d.summary.id: d.summary.state for d in found}[gone] == "deleted"
+    assert await store.find_by_handle(handle="not a handle") == ()
+
+
+async def _locked_holder(engine, doc):
+    """A second connection that takes the document's identity-row lock the way the store
+    does, and holds it until the caller commits."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import DOCUMENTS
+
+    conn = await engine.connect()
+    trans = await conn.begin()
+    await conn.execute(
+        sa.select(DOCUMENTS.c.id).where(DOCUMENTS.c.id == doc).with_for_update()
+    )
+    return conn, trans
+
+
+async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request):
+    """SQL only, two real connections. A delete holds the identity-row lock and has
+    written its state row but not committed; a revision that starts now must wait, and
+    when the delete commits it must see `deleted` and write nothing."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import DOCUMENT_STATE
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        conn, trans = await _locked_holder(engine, doc)
+        await conn.execute(
+            sa.insert(DOCUMENT_STATE).values(document_id=doc, state="deleted", set_by="ken")
+        )
+        revising = asyncio.create_task(
+            s.add_revision(document_id=doc, base_revision=1, revision=_rev("v2"))
+        )
+        await asyncio.sleep(0.5)
+        assert not revising.done()  # blocked on the lock, not racing past it
+        await trans.commit()
+        await conn.close()
+        out = await asyncio.wait_for(revising, timeout=10)
+        assert out.status == "not_active"
+        assert [h.revision for h in await s.history(document_id=doc)] == [1]
+    finally:
+        await engine.dispose()
+
+
+async def test_a_state_change_waits_for_a_revision_in_flight(request):
+    """SQL only: the other direction. A revision holds the lock; `set_state` waits for it
+    rather than writing alongside it."""
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        conn, trans = await _locked_holder(engine, doc)
+        changing = asyncio.create_task(s.set_state(document_id=doc, state="deleted", set_by="ken"))
+        await asyncio.sleep(0.5)
+        assert not changing.done()
+        await trans.commit()
+        await conn.close()
+        assert await asyncio.wait_for(changing, timeout=10) is True
+        assert (await s.get(document_id=doc)).summary.state == "deleted"
+    finally:
+        await engine.dispose()
