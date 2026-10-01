@@ -71,6 +71,30 @@ async def test_last_event_at_advances(aiohttp_server):
     assert listener.last_event_at is not None
 
 
+async def test_a_keepalive_comment_advances_last_event_at_without_reaching_on_event(aiohttp_server):
+    """signal-cli sends a `:` comment line about every 18s (probed on norty
+    2026-10-01). It is the only evidence a QUIET room's socket is alive, so
+    it must advance `last_event_at` — and it is not a message, so it must
+    never reach the parse/deliver path."""
+    server = await aiohttp_server(await _sse_app([':\n', ':\n']))
+    got: list[dict] = []
+    listener = SignalListener(str(server.make_url("")).rstrip("/"), sleeper=_stop_after(1))
+    with pytest.raises(_Stop):
+        await listener.listen(lambda e: _record(got, e))
+    assert got == []
+    assert listener.last_event_at is not None
+
+
+async def test_a_blank_data_line_is_not_liveness(aiohttp_server):
+    """Only a comment line is a keep-alive; an empty `data:` is neither a
+    message nor evidence the daemon is talking."""
+    server = await aiohttp_server(await _sse_app(['data:\n\n']))
+    listener = SignalListener(str(server.make_url("")).rstrip("/"), sleeper=_stop_after(1))
+    with pytest.raises(_Stop):
+        await listener.listen(lambda e: asyncio.sleep(0))
+    assert listener.last_event_at is None
+
+
 def test_backoff_is_exponential_capped_and_jittered():
     listener = SignalListener("http://x", max_backoff=60.0)
     delays = [listener._next_backoff(attempt) for attempt in range(0, 10)]

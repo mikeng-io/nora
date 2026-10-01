@@ -435,7 +435,7 @@ Sentry rather than instead of it — see "what counts as an error" below.
 |---|---|---|
 | `TargetDown` | `up == 0` for 3m | `nora-egress.service` sat `failed` for sixteen days |
 | `HeartbeatStalled` | tick age > 300s | a stalled loop in a process that still answers HTTP |
-| `PlatformSilent` | adapter event age > 900s | the one condition the old shell watchdog checked — on no timer, into no channel |
+| `PlatformSilent` | adapter event age > 900s (keep-alives and heartbeats count, so it is a silent socket, not a quiet room) | the one condition the old shell watchdog checked — on no timer, into no channel |
 | `UnavailableOutcomes` | any `*_total{status="unavailable"}` increasing | R-27's third state — the thing this codebase produces *instead of* raising |
 | `MediaCustodyNotConfigured` | attachments arriving with custody off | the silent degrade `media.py` counts rather than raises |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
