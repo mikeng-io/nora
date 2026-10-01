@@ -69,6 +69,46 @@ as a scope user; a `curl` to `example.com` must get HTTP 403). `egress check` is
 the read-back that does not depend on a package existing. The policy log's
 refusals of `pypi.org` and the Ubuntu hosts stop appearing once the rules are in.
 
+## Lifecycle audit: who did what to the machine
+
+The computer's audit (design/sandbox-runtime §12) covers every tool call, and
+until 2026-10-01 nothing else: a VM create, a recreate, a computerd restart or a
+token rotation left no row. `nora-computer` runs on the host as the operator,
+outside the nora container and outside the VM, so it cannot append to Postgres
+the way the tools do; it keeps a **host-side spool first** and replays it into
+`computer_events`:
+
+- The spool is `~/.local/state/nora-computer/lifecycle-events.jsonl`, one JSON
+  line per event, written before anything else. It survives Postgres being down
+  at boot, which is the ordinary case: the unit starts before the db is healthy.
+- Each event is then replayed into `computer_events` through
+  `docker compose exec db psql` (`ON CONFLICT (operation_id, phase) DO NOTHING`,
+  so replaying the whole spool is safe at any time). A db that is not up yet
+  logs `not yet in Postgres`; `nora-computer sync-events` replays it by hand.
+- Rows have `actor = 'operator'` (a value the table's constraint already
+  allowed: no migration), `tool = 'computer_vm'`, and the event in `request`
+  (`{"event": ..., "name": ..., "host": ...}`) with its facts in `result`. The
+  append-only triggers are untouched: nothing here updates or deletes.
+- The kinds: `create`, `recreate` (a create after an earlier one: `/workspace` was
+  lost to it), `destroy`, `computerd_start` (every `serve` start: a crash restart,
+  a deploy, a boot), `token_rotation`, `policy_log_read`, `egress_apply`,
+  `backup`, `restore`. A rotation is the token's SHA-256 fingerprint (12 hex,
+  never the token) differing from the last start's.
+- `nora-computer policy-log [--json]` is the audited way to read `sbx policy log`:
+  it records the read first and does not read if it could not record it.
+
+Read it back:
+
+```bash
+cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc \
+  "select created_at, request->>'event', status, result::text from computer_events where tool = 'computer_vm' order by created_at desc limit 10" </dev/null
+tail -n 3 ~/.local/state/nora-computer/lifecycle-events.jsonl      # the spool
+```
+
+Rows count only; read the table, not the spool, for what the record says.
+`nora-computer sync-events` and a re-read are how a row that is in the spool and
+not in the table is closed.
+
 ## Operating it
 
 | want | run |

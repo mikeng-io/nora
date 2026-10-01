@@ -1,12 +1,11 @@
-"""`deploy/computer/nora-computer`'s host-side behaviour, driven through a stub `sbx`.
+"""`deploy/computer/nora-computer`'s egress allowlist, driven through a stub `sbx`.
 
-The script is the ONLY thing that runs `sbx`, so what it asks `sbx` to do is
-the contract: the egress allowlist (operator ruling 2026-10-01: PyPI and the
-Ubuntu archive, nothing else), and the lifecycle audit, backup and restore added
-beside it. The stub behaves like the real binary on the properties the script
-reads: `policy check network` answers `Allowed:`/`Denied:` from a table that
-`policy allow network` appends to, and a command it does not know exits 1, so a
-call the script should not make shows up as a failure and not as a silent no.
+The operator's ruling (2026-10-01): the VM may fetch from PyPI and the Ubuntu
+archive, nothing else. The stub behaves like the real binary on the properties
+the script reads: `policy check network` answers `Allowed:`/`Denied:` from a
+table that `policy allow network` appends to, and a command it does not know
+exits 1, so a call the script should not make is a failure and not a silent no.
+The harness is `tests/unit/nora_computer_harness.py`.
 
 What this cannot show is sbx itself: that the real daemon takes these rules and
 answers in these words is the README's read-back on norty, UNVERIFIED until run.
@@ -14,20 +13,15 @@ answers in these words is the README's read-back on norty, UNVERIFIED until run.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "deploy" / "computer" / "nora-computer"
-README = ROOT / "deploy" / "computer" / "README.md"
+from tests.unit.nora_computer_harness import HOST_IP, HOST_PORT, NAME, SCRIPT, Host
 
-NAME = "nora-computer"
-HOST_IP = "172.17.0.1"
-HOST_PORT = "18765"
+README = SCRIPT.parent / "README.md"
 
 #: Written out here, not read from the script: the test must be able to fail
 #: when the script's list changes. The operator's ruling, 2026-10-01.
@@ -40,86 +34,13 @@ EXPECTED_EGRESS = {
     "security.ubuntu.com:443",
 }
 
-_SBX = r"""#!/bin/bash
-# A stub sbx. State lives in $STUB_DIR; every call is logged to calls.log.
-echo "$*" >> "$STUB_DIR/calls.log"
-allowed="$STUB_DIR/allowed"
-touch "$allowed"
-case "$1 $2 $3" in
-  "policy check network")
-      shift 3
-      [ "${STUB_CHECK_BROKEN:-}" = 1 ] && { echo "policy engine unavailable"; exit 0; }
-      target=""; for a in "$@"; do target="$a"; done
-      if grep -qxF "$target" "$allowed"; then
-          echo "Allowed: $target"; echo "Governance: Local policy only"
-      else
-          echo "Denied: $target"; echo "Reason: no matching allow rule (default deny)"
-      fi
-      exit 0 ;;
-  "policy allow network")
-      shift 3
-      [ "${STUB_ALLOW_FAILS:-}" = 1 ] && { echo "policy store is read-only" >&2; exit 1; }
-      res=""; for a in "$@"; do res="$a"; done
-      echo "$res" >> "$allowed"
-      exit 0 ;;
-esac
-case "$1" in
-  ls)
-      if [ "${STUB_NO_SANDBOX:-}" = 1 ]; then echo '{"sandboxes": []}'
-      else echo '{"sandboxes": [{"name": "nora-computer", "status": "running"}]}'; fi
-      exit 0 ;;
-esac
-echo "stub sbx: unexpected call: $*" >&2
-exit 1
-"""
-
-
-class _Host:
-    def __init__(self, root: Path) -> None:
-        self.dir = root / "state"
-        self.bin = root / "bin"
-        self.home = root / "home"
-        for d in (self.dir, self.bin, self.home):
-            d.mkdir()
-        sbx = self.bin / "sbx"
-        sbx.write_text(_SBX)
-        sbx.chmod(0o755)
-        self.env_file = root / "env"
-        self.env_file.write_text("NORA_COMPUTER_TOKEN=tok-test\n")
-
-    def run(self, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
-        full = {
-            "PATH": f"{self.bin}:/usr/bin:/bin:/usr/local/bin",
-            "HOME": str(self.home), "STUB_DIR": str(self.dir),
-            "NORA_ENV_FILE": str(self.env_file), "XDG_RUNTIME_DIR": str(self.dir),
-            **env,
-        }
-        return subprocess.run(  # noqa: S603 - a fixed local script, stubbed PATH
-            ["/bin/bash", str(SCRIPT), *args], env=full, capture_output=True,
-            text=True, check=False, timeout=120,
-        )
-
-    def calls(self) -> list[str]:
-        path = self.dir / "calls.log"
-        return path.read_text().splitlines() if path.exists() else []
-
-    def allowed(self) -> set[str]:
-        path = self.dir / "allowed"
-        return set(path.read_text().split()) if path.exists() else set()
-
-    def allow_calls(self) -> list[str]:
-        return [c for c in self.calls() if c.startswith("policy allow network")]
-
 
 @pytest.fixture
-def host(tmp_path: Path) -> _Host:
-    return _Host(tmp_path)
+def host(tmp_path: Path) -> Host:
+    return Host(tmp_path)
 
 
-# -- egress ---------------------------------------------------------------
-
-
-def test_apply_allows_exactly_the_operators_hosts_and_nothing_else(host: _Host) -> None:
+def test_apply_allows_exactly_the_operators_hosts_and_nothing_else(host: Host) -> None:
     result = host.run("egress", "apply")
     assert result.returncode == 0, result.stdout + result.stderr
     # The set the policy ended up holding, and the set it was asked for, are
@@ -130,14 +51,14 @@ def test_apply_allows_exactly_the_operators_hosts_and_nothing_else(host: _Host) 
     assert not any("*" in a or HOST_IP in a for a in asked)
 
 
-def test_every_rule_is_scoped_to_this_sandbox_not_the_whole_host(host: _Host) -> None:
+def test_every_rule_is_scoped_to_this_sandbox_not_the_whole_host(host: Host) -> None:
     host.run("egress", "apply")
     calls = host.allow_calls()
     assert calls, "no allow call was made, so there is nothing to scope"
     assert all(f"--sandbox {NAME}" in c for c in calls), calls
 
 
-def test_a_second_apply_adds_nothing(host: _Host) -> None:
+def test_a_second_apply_adds_nothing(host: Host) -> None:
     assert host.run("egress", "apply").returncode == 0
     first = len(host.allow_calls())
     again = host.run("egress", "apply")
@@ -145,7 +66,7 @@ def test_a_second_apply_adds_nothing(host: _Host) -> None:
     assert len(host.allow_calls()) == first == len(EXPECTED_EGRESS)
 
 
-def test_check_passes_after_apply_and_names_each_line(host: _Host) -> None:
+def test_check_passes_after_apply_and_names_each_line(host: Host) -> None:
     host.run("egress", "apply")
     result = host.run("egress", "check")
     assert result.returncode == 0, result.stdout
@@ -156,13 +77,13 @@ def test_check_passes_after_apply_and_names_each_line(host: _Host) -> None:
     assert "want denied   example.com:443  got denied" in result.stdout
 
 
-def test_check_fails_when_nothing_has_been_applied(host: _Host) -> None:
+def test_check_fails_when_nothing_has_been_applied(host: Host) -> None:
     result = host.run("egress", "check")
     assert result.returncode == 1, result.stdout
     assert "want allowed  pypi.org:443  got denied" in result.stdout
 
 
-def test_check_fails_when_a_service_of_noras_became_reachable(host: _Host) -> None:
+def test_check_fails_when_a_service_of_noras_became_reachable(host: Host) -> None:
     """The negative measurement: an allow rule that reaches computerd's own port
     is a violation however well the package hosts read."""
     host.run("egress", "apply")
@@ -173,7 +94,7 @@ def test_check_fails_when_a_service_of_noras_became_reachable(host: _Host) -> No
     assert f"want denied   {HOST_IP}:{HOST_PORT}  got allowed" in result.stdout
 
 
-def test_a_verdict_sbx_will_not_give_is_an_error_not_an_allow(host: _Host) -> None:
+def test_a_verdict_sbx_will_not_give_is_an_error_not_an_allow(host: Host) -> None:
     """Exit 2, never 0: an unreadable policy engine proves nothing about the
     allowlist."""
     result = host.run("egress", "check", STUB_CHECK_BROKEN="1")
@@ -181,14 +102,15 @@ def test_a_verdict_sbx_will_not_give_is_an_error_not_an_allow(host: _Host) -> No
     assert "got unknown" in result.stdout
 
 
-def test_apply_reports_a_rule_it_could_not_add(host: _Host) -> None:
+def test_apply_reports_a_rule_it_could_not_add(host: Host) -> None:
     result = host.run("egress", "apply", STUB_ALLOW_FAILS="1")
     assert result.returncode != 0
     assert host.allowed() == set()
 
 
-def test_egress_without_a_sandbox_refuses(host: _Host) -> None:
-    result = host.run("egress", "apply", STUB_NO_SANDBOX="1")
+def test_egress_without_a_sandbox_refuses(tmp_path: Path) -> None:
+    host = Host(tmp_path, sandbox=False)
+    result = host.run("egress", "apply")
     assert result.returncode == 6, result.stdout + result.stderr
     assert host.allow_calls() == []
 
@@ -224,17 +146,3 @@ def test_the_script_parses_and_is_executable() -> None:
     parsed = subprocess.run(["/bin/bash", "-n", str(SCRIPT)], capture_output=True,  # noqa: S603
                             text=True, check=False)
     assert parsed.returncode == 0, parsed.stderr
-
-
-def test_json_shape_the_stub_returns_is_what_the_script_parses(host: _Host) -> None:
-    """The stub's `ls --json` is the shape the script's own parser reads
-    (`sandbox_state`); if the two drifted, every egress test above would pass on
-    a stub the script could not read."""
-    body = json.loads(
-        subprocess.run(  # noqa: S603
-            [str(host.bin / "sbx"), "ls", "--json"], capture_output=True, text=True,
-            env={"STUB_DIR": str(host.dir), "PATH": "/usr/bin:/bin"}, check=True,
-        ).stdout
-    )
-    assert body["sandboxes"][0] == {"name": NAME, "status": "running"}
-    assert 'for s in json.load(sys.stdin)["sandboxes"]' in SCRIPT.read_text()

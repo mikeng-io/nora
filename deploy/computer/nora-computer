@@ -9,6 +9,10 @@
 #   nora-computer status   one line: sandbox state, computerd health, egress policy
 #   nora-computer egress apply|check
 #                          the VM's network allowlist (below): add it, or read it back
+#   nora-computer policy-log [args]
+#                          sbx policy log for the VM, as an audited read
+#   nora-computer sync-events
+#                          replay the lifecycle audit spool into computer_events
 #   nora-computer stop     stop the VM (files persist)
 #   nora-computer destroy  remove the VM and its disk
 #
@@ -26,7 +30,14 @@ CPUS=${NORA_COMPUTER_CPUS:-2}
 ENV_FILE=${NORA_ENV_FILE:-$HOME/workspace/nora/.env}
 HERE=$(cd "$(dirname "$0")" && pwd)
 LOCK=${XDG_RUNTIME_DIR:-/tmp}/nora-computer.lock
-UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$HOME/.local/state/nora-computer/unused-workspace-$NAME}
+STATE_DIR=${NORA_COMPUTER_STATE_DIR:-$HOME/.local/state/nora-computer}
+UNUSED_WORKSPACE=${NORA_COMPUTER_UNUSED_WORKSPACE:-$STATE_DIR/unused-workspace-$NAME}
+# The lifecycle audit (design/sandbox-runtime sec 12). A host-side spool is the
+# first record of every operator-side event, and Postgres' computer_events is the
+# record of truth it is replayed into; COMPOSE_DIR is where `docker compose exec
+# db` finds the stack. See lifecycle_event.py.
+SPOOL=$STATE_DIR/lifecycle-events.jsonl
+COMPOSE_DIR=${NORA_COMPOSE_DIR:-$(dirname "$ENV_FILE")}
 
 # The VM's egress, and the ONLY egress it has. sbx's policy is deny-all
 # (`default-deny-all`, network `**`); these are the allow rules on top of it,
@@ -54,6 +65,39 @@ EGRESS_ALLOW=(
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 
 log() { echo "$(date -Is) nora-computer: $*"; }
+
+# Replay the whole spool into computer_events. Idempotent (ON CONFLICT DO
+# NOTHING, so a row already there is skipped and nothing is ever updated), so it
+# is safe to run after every event and by hand. A db that is not up yet is the
+# ordinary reason it fails at boot; the spool keeps the event until it is.
+sync_events() {
+    local sql
+    [ -s "$SPOOL" ] || return 0
+    sql=$(python3 "$HERE/lifecycle_event.py" sql --spool "$SPOOL") || return 1
+    printf '%s\n' "$sql" | (cd "$COMPOSE_DIR" && timeout 30 docker compose exec -T db \
+        psql -U nora -d nora -v ON_ERROR_STOP=1 -q) >/dev/null 2>&1
+}
+
+# record_event EVENT STATUS [key=value ...]: one audit event, spool first. The
+# spool write failing is the only failure that is returned: the event is lost,
+# and the caller of a destructive step says so loudly. Postgres lagging is
+# logged and recoverable (`nora-computer sync-events`). Never prints a token.
+record_event() {
+    local event=$1 status=$2 args=() kv
+    shift 2
+    for kv in "$@"; do args+=(--detail "$kv"); done
+    mkdir -p "$STATE_DIR" || return 1
+    python3 "$HERE/lifecycle_event.py" record --spool "$SPOOL" --event "$event" \
+        --status "$status" --name "$NAME" --host "$(hostname)" "${args[@]+"${args[@]}"}" \
+        >/dev/null || { log "audit: could not record $event in $SPOOL"; return 1; }
+    sync_events || log "audit: $event is in $SPOOL and not yet in Postgres; run: nora-computer sync-events"
+    return 0
+}
+
+# A token's identity for the audit: 12 hex of its SHA-256, never the token.
+token_fingerprint() {
+    printf '%s' "$COMPUTERD_TOKEN" | python3 "$HERE/lifecycle_event.py" fingerprint
+}
 
 # computerd answers /v1/health, parsed as JSON rather than grepped for spacing.
 healthy() {
@@ -175,6 +219,11 @@ cmd_egress() {
         apply)
             egress_apply; rc=$?
             if [ "$rc" = 0 ]; then egress_check >/dev/null; rc=$?; fi
+            if [ "$rc" = 0 ]; then
+                record_event egress_apply ok allowed="${EGRESS_ALLOW[*]}"
+            else
+                record_event egress_apply failed rc="$rc"
+            fi
             exit "$rc" ;;
         check) egress_check; exit $? ;;
         *) echo "usage: nora-computer egress apply|check" >&2; exit 2 ;;
@@ -208,9 +257,21 @@ prepare() {
         # dedicated host directory that nothing on the host ever reads.
         mkdir -p "$UNUSED_WORKSPACE" && chmod 700 "$UNUSED_WORKSPACE"
         log "creating $NAME (detached) from $IMAGE"
-        sbx run -d --name "$NAME" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
+        if ! sbx run -d --name "$NAME" -m "$MEMORY" --cpus "$CPUS" --pull never -t "$IMAGE" \
             -p "$HOST_IP:$HOST_PORT:80" shell "$UNUSED_WORKSPACE" \
-            </dev/null >/dev/null || { log "create failed"; exit 6; }
+            </dev/null >/dev/null; then
+            record_event create failed image="$IMAGE"
+            log "create failed"
+            exit 6
+        fi
+        # A create after an earlier one is a RECREATE: /workspace was lost to it
+        # (README, "Backup and restore"). The marker is the earlier create's time.
+        if [ -s "$STATE_DIR/created-at" ]; then
+            record_event recreate ok image="$IMAGE" previous_create="$(cat "$STATE_DIR/created-at")"
+        else
+            record_event create ok image="$IMAGE"
+        fi
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$STATE_DIR/created-at"
     fi
     # A published port survives a stop, and `sbx ports` lists nothing while
     # the sandbox is stopped, so a publish can answer 409 "already
@@ -243,6 +304,18 @@ cmd_serve() {
     prepare
     exec 9>&-
     sbx exec -u root "$NAME" pkill -f /opt/computerd/computerd.py </dev/null >/dev/null 2>&1 || true
+    # Every serve start is a computerd (re)start: the unit restarting it after
+    # a crash, a token rotation, a deploy, a reboot. A rotation is the token's
+    # fingerprint differing from the one the last start saw; the first start
+    # has nothing to differ from and records only the start.
+    local fp previous=""
+    fp=$(token_fingerprint) || fp=unknown
+    [ -s "$STATE_DIR/token.fingerprint" ] && previous=$(cat "$STATE_DIR/token.fingerprint")
+    if [ -n "$previous" ] && [ "$previous" != "$fp" ]; then
+        record_event token_rotation ok previous_fingerprint="$previous" fingerprint="$fp"
+    fi
+    mkdir -p "$STATE_DIR" && printf '%s\n' "$fp" > "$STATE_DIR/token.fingerprint"
+    record_event computerd_start ok token_fingerprint="$fp" invocation="${INVOCATION_ID:-manual}"
     log "serving computerd in the foreground"
     # As root, so commands (each room's as its own user) cannot read its
     # token, kill it or take its port 80. `-e COMPUTERD_TOKEN` passes the
@@ -266,12 +339,37 @@ cmd_status() {
     echo "sandbox=$state computerd=$health egress=$egress endpoint=http://$HOST_IP:$HOST_PORT"
 }
 
+# Reading what the network refused is an audited read: the policy log shows what
+# the VM tried to reach, which is the network half of the audit (design sec 8).
+cmd_policy_log() {
+    local rc
+    record_event policy_log_read ok args="$*" || exit 5
+    sbx policy log "$NAME" "$@" </dev/null; rc=$?
+    exit "$rc"
+}
+
+# destroy removes the VM and its disk. The row says it happened; a failed
+# removal is recorded as failed, and a removal that could not be recorded exits
+# non-zero so nobody reads silence as "audited".
+cmd_destroy() {
+    local rc
+    sbx rm --force "$NAME" </dev/null; rc=$?
+    if [ "$rc" = 0 ]; then
+        record_event destroy ok || { log "audit: $NAME was destroyed and the event could NOT be recorded"; exit 5; }
+    else
+        record_event destroy failed rc="$rc"
+    fi
+    exit "$rc"
+}
+
 case "${1:-}" in
     build) cmd_build ;;
     serve) cmd_serve ;;
     status) cmd_status ;;
     egress) shift; cmd_egress "$@" ;;
+    policy-log) shift; cmd_policy_log "$@" ;;
+    sync-events) sync_events; exit $? ;;
     stop) sbx stop "$NAME" </dev/null ;;
-    destroy) sbx rm --force "$NAME" </dev/null ;;
-    *) echo "usage: nora-computer build|serve|status|egress|stop|destroy" >&2; exit 2 ;;
+    destroy) cmd_destroy ;;
+    *) echo "usage: nora-computer build|serve|status|egress|policy-log|sync-events|stop|destroy" >&2; exit 2 ;;
 esac

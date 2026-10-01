@@ -490,6 +490,15 @@ with who, when, how and what, as a full trail for auditing.**
   `policy log --json` egress records. S3 adds import and export. S4 adds
   every browser sub-agent step (action, element, URL, screenshot key). An
   operation with no row is a gap in the trail, and is treated as a defect.
+- **Lifecycle events (built 2026-10-01, DEC-255).** `nora-computer` runs on the
+  host as the operator, outside the nora container and the VM, so it cannot
+  append the way the tools do. It spools each event (create, recreate, destroy,
+  computerd start, token rotation by fingerprint, policy-log read, egress change,
+  backup, restore) to `~/.local/state/nora-computer/lifecycle-events.jsonl` first
+  and replays the spool into `computer_events` as actor `operator`
+  (`ON CONFLICT DO NOTHING`; the append-only triggers are untouched). The spool
+  is a delay, not a second record of truth: `nora-computer sync-events` closes a
+  gap. A `started` row is never written for these, so they never orphan.
 - **Alerting (built 2026-10-01, DEC-255).** `nora_computer_up{target="computerd"}`
   is set by an authenticated probe every 30 s and by every call; the
   `nora_computer_calls_total{op,status}` and
