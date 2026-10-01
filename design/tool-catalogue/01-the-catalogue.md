@@ -150,6 +150,66 @@ sets the cadence. The next two candidates are `play_music` (3.5%, 612 tokens
 — already Discord-scoped, so free there and absent elsewhere) and `where_is`
 (3.2%, 774).
 
+## Tools hot on one occasion (DEC-256, 2026-10-01)
+
+Some tools are rare across all turns and common on one kind of turn. The music
+verbs are the case that raised it: a spoken turn in a Discord voice channel is
+waiting on her voice, each extra model call is heard as silence (wake to first
+speech measured at a 6s median over 14 voice turns, 2026-09-26..30, and a
+`load_tools` call is a full model call over ~20k input tokens), and since
+`[llm] defer_tools` went on (2026-09-24) six of the seven voice turns that used
+a music verb paid a `load_tools` call for it first.
+
+**The convention.** A tool declares the occasions it is hot on, once, beside its
+own entry: `NativeTool.hot_on`, a set drawn from `TOOL_OCCASIONS` in
+`nora/agent/tools.py`, a closed vocabulary that holds only `voice` today. The
+loop that builds a turn's surface derives the occasion from the turn's message
+(`turn_occasion(voice=msg.voice)`, on the tag path and the fire path alike) and
+passes it to `ToolRegistry.surface()`, which keeps `hot_tools(occasion)`
+resident: `HOT_TOOLS` plus every tool whose `hot_on` names it, still inside the
+scope (`ToolScope` cuts the music verbs from every non-Discord room first). A
+text turn has no occasion, so its surface is byte-identical to what it was
+before the field existed; a test asserts it by stripping every declaration.
+There is no per-tool special case in the builder.
+
+**The practice.** A tool joins an occasion on a measurement, never on intuition:
+`scripts/measure_voice_tool_calls.py` counts the tools called on voice turns
+against text turns in the same rooms (read-only, aggregates only, run on the
+deploy host), printing the window and n beside every count. The bar is the one
+`HOT_TOOLS` already meets: called on at least the share its smallest member
+holds (3.0%). Measured 2026-10-01 over 30 days (voice turns 2026-09-17..09-30,
+n=26, a small sample: one turn is 3.8%):
+
+| tool | voice turns calling it | declared |
+|---|---|---|
+| `play_music` | 5/26 | yes |
+| `set_music_volume` | 5/26 | yes |
+| `stop_music` | 3/26 | yes |
+| `music_status` | 1/26 | yes |
+| `top_music` | 1/26 | yes |
+| `skip_music` | 0/26 | no |
+
+14 of the 26 voice turns called a music verb; text turns in the same rooms did
+so on 21 of 169 over the same 30 days, and on 1 of 34 since deferral went on.
+
+**What it costs, and why the cost is accepted.** The five schemas are 658
+cl100k tokens on every call of a voice turn (ceiling 750, pinned). They also
+give a voice turn a tools array no text turn shares, so the prefix cache splits
+by occasion. Read from Langfuse for the same 26 turns: a voice turn's first call
+reuses ~11k of cached prefix (the system prompt, which sits before the tools
+and is unaffected) plus ~3k for the tools when the previous call was compatible;
+voice turns come in bursts (12 of 26 followed another voice turn within two
+minutes), and a burst shares the new array. Against that, a voice turn that used a music verb paid one
+whole extra model call for `load_tools` (~20k input) and a cache drop to the
+system prompt on the call after it, because loading changes the tools array.
+Text turns are untouched. This is an estimate from recorded turns, not a
+before/after; the before/after is the next reading below.
+
+**The reading that would reopen it:** voice turns calling a music verb falling
+under the 3.0% bar over a 30-day window, or a voice-turn before/after (turn
+latency and cached/uncached input per turn, from Langfuse) showing the first-call
+miss costing more than the hop it removes.
+
 ## Why the catalogue is resident and not itself deferred
 
 To ask for a catalogue you must already suspect the capability exists. When
