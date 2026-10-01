@@ -496,7 +496,7 @@ class DocumentService:
             )
         if outcome.status == "not_active":
             # Archived or deleted between the read above and the write.
-            return _not_active("archived or deleted")
+            return _not_active("no longer active")
         if outcome.status == "not_found" or outcome.document is None:
             return _no_such_document()
         return self._ok(document_id, outcome.document.summary.revision)
