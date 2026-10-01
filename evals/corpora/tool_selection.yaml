@@ -491,6 +491,23 @@ cases:
         document_set_status: ["2b7e9c41-5d3a-4f8e-b6c2-9a1d4e7f3c58", "deleted"]
     snapshot: *room_a
 
+  # The negative: «remove» a line from a document is an EDIT (read, then publish a
+  # revision), never `document_set_status`. Same seeding, same documents-on arm.
+  - name: route_document_remove_a_line_is_an_edit_not_a_delete
+    entry: tag
+    expect: reply
+    mention: true
+    input: remove the umbrella from the packing list document
+    metadata:
+      documents:
+        - id: 5c8a1e63-2f4b-4d7a-9e15-7b3c6d2a8f40
+          title: Packing list
+          body: Passports, chargers, umbrella.
+      tools: [document_read]
+      not_tools: [document_set_status]
+      before: {document_read: [document_publish]}
+    snapshot: *room_a
+
   # --- the room tools (design/self-awareness/07) ----------------------------------
   # A same-domain pair (ADR 0015 §1), and each has a neighbour it could steal
   # from: `room_list` from `group_members` (who is HERE vs which rooms exist),

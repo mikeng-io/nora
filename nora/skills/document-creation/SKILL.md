@@ -63,9 +63,10 @@ apply your change to that, and publish again.
 
 ## Archive, delete or restore with the tool
 
-When somebody asks to archive, delete, remove or bring back a document, call `document_set_status`
-with its id and the state. Never publish an empty or "deleted" revision to stand in for it. An archived
-or deleted document cannot be changed until it is set `active` again.
+When somebody asks to archive, delete or bring back a whole document, call `document_set_status`
+with its id and the state; a put-away one is in your documents view, led by its state. Taking
+something out of a document is an edit, not a delete. Never publish an empty or "deleted" revision to
+stand in for it. An archived or deleted document cannot be changed until it is set `active` again.
 
 ## A refusal is an instruction
 

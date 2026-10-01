@@ -2431,14 +2431,15 @@ class FakeDocumentStore:
                            total=len(seen))
 
     async def list_room(
-        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+        self, *, platform: str, conversation_ids: frozenset[str], limit: int,
+        states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         seen = [
             d.summary for doc_id in self._rooms
             if (d := self._stored(doc_id)) is not None
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
-            and d.summary.state == "active"
+            and d.summary.state in states
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)
@@ -2455,6 +2456,16 @@ class FakeDocumentStore:
         ):
             return None
         return stored
+
+    async def find_by_handle(self, *, handle: str, limit: int = 10) -> tuple[StoredDocument, ...]:
+        if not is_handle(handle):
+            return ()
+        found = sorted(
+            (s for doc_id in self._rooms if doc_id.hex.startswith(handle)
+             if (s := self._stored(doc_id)) is not None),
+            key=lambda s: str(s.summary.id),
+        )
+        return tuple(found[: min(max(limit, 0), 1_000)])
 
     async def get_visible_by_handle(
         self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]

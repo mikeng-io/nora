@@ -577,3 +577,81 @@ async def test_the_state_table_is_append_only_and_its_check_names_every_state(re
                     document_id=doc, state="archived", set_by=""))
     finally:
         await engine.dispose()
+
+
+async def test_find_by_handle_sees_every_state_and_no_visibility(store):
+    live = await _make_id(store, _with_prefix("5"), created_by="ken")
+    gone = await _make_id(store, _with_prefix("6"), created_by="mei", room=OTHER_ROOM)
+    await store.set_state(document_id=gone, state="deleted", set_by="mei")
+    found = await store.find_by_handle(handle=PREFIX)
+    assert sorted(d.summary.id for d in found) == sorted([live, gone])
+    assert {d.summary.id: d.summary.state for d in found}[gone] == "deleted"
+    assert await store.find_by_handle(handle="not a handle") == ()
+
+
+async def _locked_holder(engine, doc):
+    """A second connection that takes the document's identity-row lock the way the store
+    does, and holds it until the caller commits."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import DOCUMENTS
+
+    conn = await engine.connect()
+    trans = await conn.begin()
+    await conn.execute(
+        sa.select(DOCUMENTS.c.id).where(DOCUMENTS.c.id == doc).with_for_update()
+    )
+    return conn, trans
+
+
+async def test_a_revision_waits_for_a_delete_in_flight_and_then_refuses(request):
+    """SQL only, two real connections. A delete holds the identity-row lock and has
+    written its state row but not committed; a revision that starts now must wait, and
+    when the delete commits it must see `deleted` and write nothing."""
+    import sqlalchemy as sa
+
+    from nora.infra.sql.schema import DOCUMENT_STATE
+
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        conn, trans = await _locked_holder(engine, doc)
+        await conn.execute(
+            sa.insert(DOCUMENT_STATE).values(document_id=doc, state="deleted", set_by="ken")
+        )
+        revising = asyncio.create_task(
+            s.add_revision(document_id=doc, base_revision=1, revision=_rev("v2"))
+        )
+        await asyncio.sleep(0.5)
+        assert not revising.done()  # blocked on the lock, not racing past it
+        await trans.commit()
+        await conn.close()
+        out = await asyncio.wait_for(revising, timeout=10)
+        assert out.status == "not_active"
+        assert [h.revision for h in await s.history(document_id=doc)] == [1]
+    finally:
+        await engine.dispose()
+
+
+async def test_a_state_change_waits_for_a_revision_in_flight(request):
+    """SQL only: the other direction. A revision holds the lock; `set_state` waits for it
+    rather than writing alongside it."""
+    pg_url = request.getfixturevalue("pg_url")
+    run_migrations(pg_url)
+    engine = create_sql_engine(pg_url)
+    s = SqlDocumentStore(engine)
+    try:
+        doc = await _make(s)
+        conn, trans = await _locked_holder(engine, doc)
+        changing = asyncio.create_task(s.set_state(document_id=doc, state="deleted", set_by="ken"))
+        await asyncio.sleep(0.5)
+        assert not changing.done()
+        await trans.commit()
+        await conn.close()
+        assert await asyncio.wait_for(changing, timeout=10) is True
+        assert (await s.get(document_id=doc)).summary.state == "deleted"
+    finally:
+        await engine.dispose()

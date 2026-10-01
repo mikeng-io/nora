@@ -102,6 +102,7 @@ from ..domain.computer_sessions import (
     progress_text,
     shown_status,
 )
+from ..domain.documents import is_handle as _is_document_handle
 from ..domain.gatherings import (
     RSVP,
     AmbiguousOpenGatheringsError,
@@ -2652,7 +2653,7 @@ class DocumentPublisher(Protocol):
 
     async def set_state(
         self, *, platform: str, conversation_id: str, person_id: str,
-        document_id: UUID, state: str,
+        document_id: UUID | None = None, state: str, handle: str = "",
     ) -> Any: ...
 
 
@@ -14513,18 +14514,19 @@ Args:
     async def document_set_status(
         document_id: str, state: Literal["archived", "deleted", "active"],
     ) -> dict:
-        """Archive, delete or restore a document made in this room. Call this when
-        somebody asks to archive, delete, remove or bring back a document.
+        """Archive, delete or restore a whole document made in this room. Call this
+        when somebody asks to archive, delete or bring back a document.
 
-        `archived` takes it off the documents list and your documents view; its
-        link still opens it, and it cannot be changed until restored. `deleted`
-        takes it off everything and its link stops opening; nothing is erased.
-        `active` restores either one.
+        `archived` takes it off the documents list; its link still opens it, and
+        it cannot be changed until restored. `deleted` takes it off every list
+        and its link stops opening; nothing is erased. `active` restores either
+        one. Your documents view lists put-away documents with their ids.
 
         Returns `status`: ok, not_found or unavailable, with a `note`.
 
         Args:
-            document_id: The document's id, from your documents view or a publish.
+            document_id: The document's id from your documents view, or the
+                12-hex code at the end of its link.
             state: The state to put it in.
         """
         tool = "document_set_status"
@@ -14540,7 +14542,8 @@ Args:
                     "note": "A document's state is changed for the person who asked, "
                             "and nobody asked here, so nothing changed."}
         target = _document_id(document_id)
-        if target is None:
+        handle = str(document_id or "").strip().lower()
+        if target is None and not _is_document_handle(handle):
             _record(metrics, tool, "not_found", reason="bad_id")
             return {"status": "not_found",
                     "note": "That is not a document id, so nothing changed."}
@@ -14548,6 +14551,7 @@ Args:
             out = await documents.set_state(
                 platform=room.platform, conversation_id=bound_conversation_id,
                 person_id=tagger.person_id, document_id=target, state=state,
+                handle="" if target is not None else handle,
             )
         except Exception:
             log.exception("document_set_status failed")

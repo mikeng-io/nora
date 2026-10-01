@@ -1101,9 +1101,28 @@ a deleted document keeps every revision in `document_revision`.
 - `archived`: off the portal's default list and off the room's `<documents>` block; listed under the
   portal's Archived filter (`state=archived`); still opens by its link and its id; a revision is refused
   (`RevisionOutcome("not_active")`, `document_not_active` from the service) until it is restored.
-- `deleted`: off every list and the block; every person-facing read (by id, by a link's handle, a
-  picture) is the same 404 as an unknown id, so nothing leaks. Only the publish service's own
-  room-scoped `get` still finds it, which is how a room restores it through Nora.
+- `deleted`: off every list and off the block's live lines; every person-facing read (by id, by a
+  link's handle, a picture) is the same 404 as an unknown id, so nothing leaks. Only the publish
+  service's own room-scoped reads still find it, which is how a room restores it through Nora.
+
+**Restorable from the chat (review of PR #674).** After a delete nothing a later turn saw carried the
+id, so "ask Nora to bring it back" could not work. The room's `<documents>` block now ends with at
+most three put-away documents of THAT room (`PUT_AWAY_SHOWN`), each line led by its state
+(`deleted · "title" · id … · revision … · age`), and renders nothing extra when there are none (the
+one-document block is byte-identical). `document_set_status` also takes the 12-hex handle a link
+carries, resolved among this room's documents in any state; a handle matching none or two, like
+another room's document, is the same `not_found`. The test that proves it deletes and restores using
+only ids parsed from the block a later turn renders.
+
+**Serialized.** `add_revision` and `set_state` both take the identity row `FOR UPDATE` first, so a
+revision that read `active` cannot land after a concurrent delete (two-connection tests on Postgres, in
+both directions). A new document's handle is drawn clear of every document its room reads in any state
+(`find_by_handle`), so a restore never brings back a clash.
+
+**Known and left (review of PR #674).** The portal write is read-then-write with no compare-and-set: two
+people changing one document's state at once each succeed in order, and the later row wins, which is
+the intended outcome. A document's creator outside its room may change its state, because they may
+read it (DEC-255 as written).
 
 **Who may change it.** In the portal, whoever may READ the document (its creator, or a person a room it
 was made in names): the read gate is the write gate (`change_document_state` calls `get_visible` first),

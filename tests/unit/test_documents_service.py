@@ -703,3 +703,23 @@ async def test_an_archived_document_still_reads_and_says_it_is_archived() -> Non
     await _set(svc, first.document_id, "archived")
     read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id)
     assert read.status == "ok" and read.state == "archived"
+
+
+@pytest.mark.parametrize("state", ["archived", "deleted"])
+async def test_a_new_document_never_takes_the_handle_of_a_put_away_one(state: str) -> None:
+    # A put-away document can be restored, and then two documents would share the handle
+    # and both links would 404: the clash check sees documents in every state.
+    taken = UUID("0123456789ab" + "0" * 20)
+    clash = UUID("0123456789ab" + "f" * 20)
+    fresh = UUID("fedcba987654" + "1" * 20)
+    draws = iter([clash, fresh])
+    svc, store = _service(store=None, new_id=lambda: next(draws))
+    await store.create(
+        document_id=taken, platform=ROOM[0], conversation_id=ROOM[1], created_by="ken",
+        revision=RevisionIn(
+            title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
+        ),
+    )
+    await store.set_state(document_id=taken, state=state, set_by="ken")
+    made = await _publish(svc, _doc(title="new"))
+    assert made.status == "ok" and made.document_id == fresh

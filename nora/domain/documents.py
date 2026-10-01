@@ -205,12 +205,18 @@ class DocumentStore(Protocol):
         ...
 
     async def list_room(
-        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+        self,
+        *,
+        platform: str,
+        conversation_ids: frozenset[str],
+        limit: int,
+        states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
-        """The ACTIVE documents made in ONE room (`platform` and any of the room's
-        conversation ids), most recently revised first, at most `limit`. It is the room's own
-        list, not a person's: no visibility check, because everyone the room names already
-        reads these. It loads no spec and no text: the prompt block reads this on every turn."""
+        """The documents IN `states` (by default the active ones) made in ONE room
+        (`platform` and any of the room's conversation ids), most recently revised first, at
+        most `limit`. It is the room's own list, not a person's: no visibility check, because
+        everyone the room names already reads these. It loads no spec and no text: the prompt
+        block reads this on every turn."""
         ...
 
     async def get_visible(
@@ -218,6 +224,13 @@ class DocumentStore(Protocol):
     ) -> StoredDocument | None:
         """The current document if `person_id` may read it and it is not deleted, else
         `None`. An archived document is returned: it still opens by its link."""
+        ...
+
+    async def find_by_handle(self, *, handle: str, limit: int = 10) -> tuple[StoredDocument, ...]:
+        """Every document in ANY state whose id starts with `handle`, at most `limit`, with
+        NO visibility check: for the publish service only (a new id's clash check, and
+        resolving a handle within the room a tool runs in), never for a reader. Empty when
+        `handle` is not a handle."""
         ...
 
     async def get_visible_by_handle(

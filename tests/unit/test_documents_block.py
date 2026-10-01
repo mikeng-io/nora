@@ -21,7 +21,13 @@ import tiktoken
 
 from nora.agent.prefill import build_prefill
 from nora.domain.documents import RevisionIn
-from nora.domain.documents_context import DOCUMENTS_SHOWN, TITLE_CHARS, DocumentLine, DocumentsView
+from nora.domain.documents_context import (
+    DOCUMENTS_SHOWN,
+    PUT_AWAY_SHOWN,
+    TITLE_CHARS,
+    DocumentLine,
+    DocumentsView,
+)
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.language.documents_render import render_documents
@@ -150,10 +156,13 @@ def test_the_block_sits_after_computer_and_before_standing_in_the_prompt():
 def test_the_block_costs_what_it_was_measured_to_cost():
     # cl100k, measured 2026-10-01: 150 tokens with one document, 316 with five (the ids
     # are ~27 tokens each and are what the tool needs, so they cannot be shortened).
+    # RE-MEASURED 2026-10-01 for the put-away sentence in the description (DEC-255),
+    # over 300 random ids: at most 180 with one, 366 with five, and 513 with five plus
+    # the full put-away section of three. Nothing put away adds nothing to a line.
     one = render_documents(_view(_line("Hong Kong to Tokyo, December trip")))
     five = render_documents(_view(*[_line("x" * TITLE_CHARS, hours=n + 1) for n in range(5)]))
-    assert len(ENC.encode(one.render())) <= 175
-    assert len(ENC.encode(five.render())) <= 360
+    assert len(ENC.encode(one.render())) <= 190
+    assert len(ENC.encode(five.render())) <= 380
 
 
 # -- the reader -------------------------------------------------------------------------
@@ -236,8 +245,46 @@ async def test_the_view_leaves_out_archived_and_deleted_documents():
     assert {line.document_id for line in view.lines} == {str(live), str(gone)}
 
 
-async def test_a_room_whose_documents_are_all_archived_has_no_block():
+async def test_put_away_documents_are_a_bounded_section_led_by_their_state():
+    store = FakeDocumentStore()
+    live = await _make(store, "Live")
+    away = []
+    for n in range(5):
+        doc = await _make(store, f"Away {n}")
+        await store.set_state(
+            document_id=doc, state="deleted" if n % 2 else "archived", set_by="ken"
+        )
+        away.append(doc)
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(live)]
+    # At most PUT_AWAY_SHOWN, newest first, each carrying its own state.
+    assert len(view.put_away) == PUT_AWAY_SHOWN == 3
+    assert [line.document_id for line in view.put_away] == [str(d) for d in away[::-1][:3]]
+    body = render_documents(view).body.splitlines()
+    assert body[0].startswith('"Live"')
+    assert [row.split(" · ")[0] for row in body[1:]] == ["archived", "deleted", "archived"]
+
+
+async def test_a_room_with_only_put_away_documents_still_gets_the_block():
     store = FakeDocumentStore()
     only = await _make(store, "Only")
-    await store.set_state(document_id=only, state="archived", set_by="ken")
+    await store.set_state(document_id=only, state="deleted", set_by="ken")
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    assert view.lines == () and [line.document_id for line in view.put_away] == [str(only)]
+    assert render_documents(view).body.startswith(f'deleted · "Only" · id {only}')
+
+
+async def test_another_rooms_put_away_documents_never_appear():
+    store = FakeDocumentStore()
+    there = await _make(store, "Elsewhere", room=("signal", "g-other"))
+    await store.set_state(document_id=there, state="deleted", set_by="ken")
     assert await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1]) is None
+
+
+async def test_nothing_put_away_renders_exactly_what_it_did_before():
+    line = _line("Trip")
+    assert render_documents(_view(line)).body == render_documents(
+        DocumentsView(lines=(line,), now=NOW, put_away=())
+    ).body
+    assert "archived" not in render_documents(_view(line)).body
+    assert render_documents(DocumentsView(lines=(), now=NOW)) is None

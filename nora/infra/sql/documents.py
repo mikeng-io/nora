@@ -12,6 +12,10 @@ State is part of the read too. A third append-only table, `document_state`, hold
 row per change; the current state is the latest row (`_state`, a correlated read on
 `idx_document_state_latest`), and no row is `active`. Every person-facing read filters
 on it in SQL, so a deleted document is never a row a caller could forget to drop.
+
+`add_revision` and `set_state` both lock the document's identity row (`FOR UPDATE`) first,
+so a revision and a change of state on one document are serialized: a revision can never
+land on a document that was archived or deleted after it read the state.
 """
 
 from __future__ import annotations
@@ -54,6 +58,11 @@ def _latest_state(document_id: Any) -> sa.Select[Any]:
         .order_by(_S.id.desc())
         .limit(1)
     )
+
+
+def _lock(document_id: UUID) -> sa.Select[Any]:
+    """The identity row, locked: what serializes a revision against a change of state."""
+    return sa.select(_D.id).where(_D.id == document_id).with_for_update()
 
 
 def _state() -> sa.ColumnElement[str]:
@@ -177,6 +186,8 @@ class SqlDocumentStore:
     ) -> RevisionOutcome:
         try:
             async with self._engine.begin() as conn:
+                if (await conn.execute(_lock(document_id))).first() is None:
+                    return RevisionOutcome("not_found")
                 head = await conn.execute(
                     sa.select(sa.func.max(_R.revision)).where(_R.document_id == document_id)
                 )
@@ -207,8 +218,7 @@ class SqlDocumentStore:
         self, *, document_id: UUID, state: DocumentState, set_by: str
     ) -> bool:
         async with self._engine.begin() as conn:
-            found = await conn.execute(sa.select(_D.id).where(_D.id == document_id))
-            if found.first() is None:
+            if (await conn.execute(_lock(document_id))).first() is None:
                 return False
             await conn.execute(
                 sa.insert(DOCUMENT_STATE).values(
@@ -273,14 +283,19 @@ class SqlDocumentStore:
         )
 
     async def list_room(
-        self, *, platform: str, conversation_ids: frozenset[str], limit: int
+        self,
+        *,
+        platform: str,
+        conversation_ids: frozenset[str],
+        limit: int,
+        states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
             return ()
         ids = sorted(conversation_ids)
         in_room = sa.and_(
-            _D.platform == platform, _D.conversation_id.in_(ids), _state() == "active"
+            _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
         )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
@@ -345,6 +360,23 @@ class SqlDocumentStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return _stored(rows[0]) if len(rows) == 1 else None
+
+    async def find_by_handle(self, *, handle: str, limit: int = 10) -> tuple[StoredDocument, ...]:
+        if not is_handle(handle):  # nothing else ever reaches the query
+            return ()
+        stmt = (
+            _current()
+            .where(
+                sa.func.replace(sa.cast(_D.id, sa.Text), "-", "").startswith(
+                    handle, autoescape=True
+                )
+            )
+            .order_by(_D.id)
+            .limit(min(max(limit, 0), _MAX_LIMIT))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(_stored(r) for r in rows)
 
     async def _one(self, conn: AsyncConnection, document_id: UUID) -> StoredDocument | None:
         row = (await conn.execute(_current().where(_D.id == document_id))).first()

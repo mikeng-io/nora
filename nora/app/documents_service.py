@@ -53,7 +53,9 @@ from nora.domain.documents import (
     DocumentStore,
     RevisionIn,
     RoomKey,
+    StoredDocument,
     handle_of,
+    is_handle,
 )
 from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
@@ -296,14 +298,18 @@ class DocumentService:
         platform: str,
         conversation_id: str,
         person_id: str,
-        document_id: UUID,
+        document_id: UUID | None = None,
         state: str,
+        handle: str = "",
     ) -> StateResult:
         """Archive, delete or restore a document made in THIS room, for `person_id`.
 
-        The gate is the one a revision takes: a known person, and a document made in this
-        room (any id the room answers to). Another room's document answers exactly like an
-        unknown id. A deleted document is found here, and only here, so it can be restored.
+        The document is named by its id, or by the 12-hex handle its link carries. The gate
+        is the one a revision takes: a known person, and a document made in this room (any
+        id the room answers to). A handle is resolved among THIS room's documents in any
+        state, and one that matches none or more than one, like another room's document,
+        answers exactly like an unknown id. A deleted document is found here, and only
+        here, so it can be restored.
         """
         if not self._is_person(person_id):
             return StateResult(
@@ -319,8 +325,17 @@ class DocumentService:
             )
         wanted = cast(DocumentState, state)  # checked against DOCUMENT_STATES just above
         try:
-            current = await self._store.get(document_id=document_id)
             here = self._room_ids(platform, conversation_id) | {conversation_id}
+            current: StoredDocument | None = None
+            if document_id is not None:
+                current = await self._store.get(document_id=document_id)
+            elif is_handle(handle):
+                mine = [
+                    d
+                    for d in await self._store.find_by_handle(handle=handle)
+                    if d.summary.platform == platform and d.summary.conversation_id in here
+                ]
+                current = mine[0] if len(mine) == 1 else None  # two is never picked
             if (
                 current is None
                 or current.summary.platform != platform
@@ -328,9 +343,10 @@ class DocumentService:
             ):
                 return StateResult("refused", findings=_no_such_document().findings)
             previous = current.summary.state
+            target = current.summary.id
             if previous != wanted:
                 written = await self._store.set_state(
-                    document_id=document_id, state=wanted, set_by=person_id
+                    document_id=target, state=wanted, set_by=person_id
                 )
                 if not written:
                     return StateResult("refused", findings=_no_such_document().findings)
@@ -340,16 +356,18 @@ class DocumentService:
             )
         return StateResult(
             "ok",
-            document_id=document_id,
+            document_id=target,
             state=wanted,
             previous=previous,
             changed=previous != wanted,
             title=current.summary.title,
-            url="" if wanted == "deleted" else self._link(document_id),
+            url="" if wanted == "deleted" else self._link(target),
         )
 
     async def _fresh_id(self, platform: str, conversation_id: str, person_id: str) -> UUID:
-        """A new document id whose 12-hex handle no document its room can read already has.
+        """A new document id whose 12-hex handle no document its room can read already has,
+        in ANY state: an archived or deleted one counts, because a restore would bring it
+        back and two documents would then share the handle.
 
         A link resolves its handle among what the viewer may read and refuses a handle that
         matches two, so a clash would make both documents' links 404 for the whole room
@@ -359,12 +377,15 @@ class DocumentService:
             (platform, cid)
             for cid in self._room_ids(platform, conversation_id) | {conversation_id}
         )
+
+        def _reads(d: StoredDocument) -> bool:
+            s = d.summary
+            return s.created_by == person_id or (s.platform, s.conversation_id) in rooms
+
         candidate = self._new_id()
         for _ in range(_HANDLE_TRIES - 1):
-            clash = await self._store.get_visible_by_handle(
-                handle=handle_of(candidate), person_id=person_id, rooms=rooms
-            )
-            if clash is None:
+            found = await self._store.find_by_handle(handle=handle_of(candidate))
+            if not any(_reads(d) for d in found):
                 break
             candidate = self._new_id()
         return candidate

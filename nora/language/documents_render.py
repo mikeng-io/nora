@@ -36,9 +36,13 @@ def _line(line: DocumentLine, view: DocumentsView) -> str:
 def render_documents(view: DocumentsView | None) -> ContextBlock | None:
     """The block, or None when there is no view (no document yet, `[documents]` off,
     or the read did not come back)."""
-    if view is None or not view.lines:
+    if view is None or not (view.lines or view.put_away):
         return None
-    body = render_bullets([_line(line, view) for line in view.lines], mark="")
+    # A put-away line is LED by its state, so it can never be read as a live document.
+    rows = [_line(line, view) for line in view.lines] + [
+        f"{line.state} · {_line(line, view)}" for line in view.put_away
+    ]
+    body = render_bullets(rows, mark="")
     if not body:
         return None
     return ContextBlock(name="documents", body=body)

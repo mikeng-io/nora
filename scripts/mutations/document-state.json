@@ -79,14 +79,14 @@
   {
     "name": "sql list_room: archived and deleted documents reach the block",
     "file": "nora/infra/sql/documents.py",
-    "old": "            _D.platform == platform, _D.conversation_id.in_(ids), _state() == \"active\"\n",
+    "old": "            _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)\n",
     "new": "            _D.platform == platform, _D.conversation_id.in_(ids)\n",
     "target": "tests/contract/test_document_store_contract.py::test_list_room_leaves_out_archived_and_deleted_documents[sql]"
   },
   {
     "name": "fake list_room: archived and deleted documents reach the block",
     "file": "nora/testing/fakes.py",
-    "old": "            and d.summary.conversation_id in conversation_ids\n            and d.summary.state == \"active\"\n",
+    "old": "            and d.summary.conversation_id in conversation_ids\n            and d.summary.state in states\n",
     "new": "            and d.summary.conversation_id in conversation_ids\n",
     "target": "tests/unit/test_documents_block.py::test_the_view_leaves_out_archived_and_deleted_documents"
   },
@@ -124,5 +124,75 @@
     "old": "        if not self._is_person(person_id):\n            return StateResult(",
     "new": "        if False:\n            return StateResult(",
     "target": "tests/unit/test_documents_service.py::test_only_a_known_person_changes_a_state_and_only_to_a_known_state"
+  },
+  {
+    "name": "review 1: the reader never reads the put-away documents, so a later turn has no id to restore",
+    "file": "nora/engagement/documents_context.py",
+    "old": "                        states=(\"archived\", \"deleted\"),\n",
+    "new": "",
+    "target": "tests/unit/test_document_tools.py::test_a_deleted_document_is_restored_from_what_a_later_turn_sees"
+  },
+  {
+    "name": "review 1: the renderer drops the put-away section",
+    "file": "nora/language/documents_render.py",
+    "old": "    rows = [_line(line, view) for line in view.lines] + [\n        f\"{line.state} · {_line(line, view)}\" for line in view.put_away\n    ]",
+    "new": "    rows = [_line(line, view) for line in view.lines]",
+    "target": "tests/unit/test_document_tools.py::test_a_deleted_document_is_restored_from_what_a_later_turn_sees"
+  },
+  {
+    "name": "review 1: a put-away line is not led by its state, so it reads as a live document",
+    "file": "nora/language/documents_render.py",
+    "old": "        f\"{line.state} · {_line(line, view)}\" for line in view.put_away",
+    "new": "        _line(line, view) for line in view.put_away",
+    "target": "tests/unit/test_documents_block.py::test_put_away_documents_are_a_bounded_section_led_by_their_state"
+  },
+  {
+    "name": "review 1: the put-away section is not capped",
+    "file": "nora/engagement/documents_context.py",
+    "old": "                        platform=platform, conversation_ids=ids, limit=self._put_away,",
+    "new": "                        platform=platform, conversation_ids=ids, limit=self._shown,",
+    "target": "tests/unit/test_documents_block.py::test_put_away_documents_are_a_bounded_section_led_by_their_state"
+  },
+  {
+    "name": "review 1: a handle resolves outside this room",
+    "file": "nora/app/documents_service.py",
+    "old": "                    if d.summary.platform == platform and d.summary.conversation_id in here\n",
+    "new": "",
+    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_or_no_document_is_not_found"
+  },
+  {
+    "name": "review 1: the tool refuses a link's handle",
+    "file": "nora/agent/tools.py",
+    "old": "        if target is None and not _is_document_handle(handle):",
+    "new": "        if target is None:",
+    "target": "tests/unit/test_document_tools.py::test_a_put_away_document_is_restored_by_the_handle_its_link_carries"
+  },
+  {
+    "name": "review 2: add_revision reads the state without the identity-row lock",
+    "file": "nora/infra/sql/documents.py",
+    "old": "                if (await conn.execute(_lock(document_id))).first() is None:\n                    return RevisionOutcome(\"not_found\")",
+    "new": "                if (await conn.execute(sa.select(_D.id).where(_D.id == document_id))).first() is None:\n                    return RevisionOutcome(\"not_found\")",
+    "target": "tests/contract/test_document_store_contract.py::test_a_revision_waits_for_a_delete_in_flight_and_then_refuses"
+  },
+  {
+    "name": "review 2: set_state writes without the identity-row lock",
+    "file": "nora/infra/sql/documents.py",
+    "old": "            if (await conn.execute(_lock(document_id))).first() is None:\n                return False",
+    "new": "            if (await conn.execute(sa.select(_D.id).where(_D.id == document_id))).first() is None:\n                return False",
+    "target": "tests/contract/test_document_store_contract.py::test_a_state_change_waits_for_a_revision_in_flight"
+  },
+  {
+    "name": "review 3: the handle-clash check skips put-away documents",
+    "file": "nora/app/documents_service.py",
+    "old": "            found = await self._store.find_by_handle(handle=handle_of(candidate))",
+    "new": "            seen = await self._store.get_visible_by_handle(handle=handle_of(candidate), person_id=person_id, rooms=rooms)\n            found = [seen] if seen is not None else []",
+    "target": "tests/unit/test_documents_service.py::test_a_new_document_never_takes_the_handle_of_a_put_away_one"
+  },
+  {
+    "name": "review 4: the tool text routes a bare remove to a delete",
+    "file": "nora/agent/tools.py",
+    "old": "        when somebody asks to archive, delete or bring back a document.",
+    "new": "        when somebody asks to archive, delete, remove or bring back a document.",
+    "target": "tests/unit/test_document_tools.py::test_the_lifecycle_texts_never_route_a_remove_to_a_delete"
   }
 ]
