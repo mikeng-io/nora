@@ -107,6 +107,14 @@ So "it is not in Jaeger" is evidence about `chat` spans only: a generation is
 in Langfuse, its agent, cycle and tool spans are in both, and the plumbing
 under a generation root is in both.
 
+The deployed endpoint is `http://host.docker.internal:4318/v1/traces`. The
+`/v1/traces` path is **required**: `OTLPSpanExporter` appends it only when the
+endpoint comes from an environment variable, and a literal `endpoint=` is used
+verbatim — without the path it POSTs to the collector root and 404s (seen live
+2026-09-04, 31 export failures). The collector's own exporter is the opposite
+and auto-appends, which is why Langfuse there is configured with
+`traces_endpoint`. Two SDKs, two conventions, one afternoon lost.
+
 ### Session and observation type (`TraceIdentityProcessor`)
 
 Langfuse is a trace store; what makes it more than a list of traces is that a
@@ -119,11 +127,15 @@ call) against 4-16 generations.
 `nora.agent.telemetry.TraceIdentityProcessor` is registered on the provider in
 `setup_agent_tracing`, so it sees Strands spans and Nora's own alike:
 
-* **Session.** A span carrying `nora.conversation_id` (or the bare
-  `conversation_id` that `trace_attributes` stamps) gets `session.id`, which
-  Langfuse reads, and `gen_ai.conversation.id`, which OTel GenAI defines as
-  "session, thread". A child with neither inherits its parent's `session.id`,
-  because Langfuse asks for it on each span. The session is the room, so a
+* **Session.** A span started with `nora.conversation_id` (the roots and the
+  stages that pass it to `span()`) gets `session.id`, which Langfuse reads, and
+  `gen_ai.conversation.id`, which OTel GenAI defines as "session, thread". A
+  span without it inherits its parent's `session.id`, because Langfuse asks for
+  it on each span. Strands spans always take this path: Strands opens a span
+  and sets `trace_attributes` after it started, past what the processor sees,
+  so the bare `conversation_id` in `trace_attributes` stamps nothing. Inheritance
+  follows trace parentage, so a detached span cannot take another room's
+  session. The session is the room, so a
   group room is one long session: the docs are silent on session length, and
   OTel's own definition of a conversation is the thread, not a day.
   An id Langfuse would drop (over 200 characters, or non-ASCII) is left

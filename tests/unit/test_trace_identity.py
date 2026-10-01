@@ -61,12 +61,32 @@ def test_a_child_inherits_the_session_from_its_parent(rig):
     assert got["store.notes.standing"]["session.id"] == "g1/c2"
 
 
-def test_the_bare_conversation_id_key_of_trace_attributes_counts_too(rig):
-    """`nora.obs.tracing.trace_attributes` spells it `conversation_id`."""
+def test_an_attribute_set_after_the_span_started_is_not_seen(rig):
+    """Strands opens a span, then sets `trace_attributes` on it — past
+    `on_start`. So the bare `conversation_id` of `trace_attributes` stamps
+    nothing on a Strands span; it gets its session from its parent. Pinned so
+    nobody re-adds that key believing it works (read from the installed
+    strands/telemetry/tracer.py, review of #680)."""
     tracer, exporter = rig
-    with tracer.start_as_current_span("invoke_agent nora", attributes={"conversation_id": "g1/c2"}):
+    with tracer.start_as_current_span("invoke_agent nora") as sp:
+        sp.set_attribute("conversation_id", "g1/c2")
+    assert "session.id" not in _attrs(exporter)["invoke_agent nora"]
+
+
+def test_a_detached_span_does_not_take_another_rooms_session(rig):
+    """Inheritance follows trace parentage, not the ambient span: a span started
+    under an empty context inside room A's span is a new trace root and gets no
+    session. The failure this guards is room B's trace filed under room A."""
+    from opentelemetry.context import Context
+
+    tracer, exporter = rig
+    with (
+        tracer.start_as_current_span("engagement", attributes={"nora.conversation_id": "A"}),
+        tracer.start_as_current_span("detached", context=Context()),
+    ):
         pass
-    assert _attrs(exporter)["invoke_agent nora"]["session.id"] == "g1/c2"
+    assert _attrs(exporter)["engagement"]["session.id"] == "A"
+    assert "session.id" not in _attrs(exporter)["detached"]
 
 
 def test_a_span_with_no_conversation_gets_no_session(rig):

@@ -86,10 +86,12 @@ _STOP_REASON_FROM_FINISH_REASON: dict[str, StopReason] = {
 #: silently (langfuse.com/docs/observability/features/sessions).
 _SESSION_ID_MAX = 200
 
-#: The two spellings a span carries its room under: `nora.conversation_id` on
-#: every span `nora.obs.tracing.span` opens, bare `conversation_id` on the
-#: Strands spans `nora.obs.tracing.trace_attributes` stamps.
-_CONVERSATION_KEYS = ("nora.conversation_id", "conversation_id")
+#: The attribute a span carries its room under, WHEN IT IS STARTED WITH IT:
+#: the roots and stages that pass it to `nora.obs.tracing.span`. Strands spans
+#: never start with it: Strands opens a span and sets `trace_attributes` after,
+#: past `on_start`, so they take their session from the parent instead (read
+#: from the installed `strands/telemetry/tracer.py`, review of #680).
+_CONVERSATION_KEYS = ("nora.conversation_id",)
 
 #: First match wins. Langfuse's recognised `langfuse.observation.type` values;
 #: a span not in the table is left to Langfuse, which types the model calls,
@@ -106,7 +108,7 @@ _OBSERVATION_TYPES: tuple[tuple[str, str], ...] = (
 
 
 def _session_id_for(span: Any, parent_context: Any) -> str | None:
-    """The room a span belongs to: its own attribute, else its parent's stamp.
+    """The room a span belongs to: its own start attribute, else its parent's stamp.
 
     A session id is valid when Langfuse will keep it. One it would drop is not
     stamped, so the trace's absence from a session is in the data, not a
