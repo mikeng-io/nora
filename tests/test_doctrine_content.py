@@ -49,6 +49,10 @@ EXPECTED = {
     # NOT hers either: the reaction picker's instruction (`nora.agent.reaction`),
     # read after she has written a reply and never shown to her.
     "reaction": ("instrument", 6, ("reaction",)),
+    # NOT hers: the speech formatter's instruction (`nora.agent.speech_format`,
+    # design/voice-channel/08), read after her reply is final, on the spoken
+    # copy only.
+    "speech-format": ("instrument", 7, ("speech_format",)),
     # HERS, and ambient-only: the one thing an offered floor has that a tag
     # never does — several things worth answering at once, none addressed to
     # her. `conduct.md` is occasion-neutral and must not carry it.
@@ -81,6 +85,7 @@ _SCOPE_FOLDER = {
     "pictures": ("rooms", "pictures"),
     "participation": ("instruments", "participation"),
     "reaction": ("instruments", "reaction"),
+    "speech-format": ("instruments", "speech-format"),
     "public-voice": ("public", "voice"),
     "public-conduct": ("public", "conduct"),
     "public-constraints": ("public", "constraints"),

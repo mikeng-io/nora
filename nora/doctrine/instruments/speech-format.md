@@ -19,7 +19,7 @@ change_policy: agent-may-edit
 
 # What you are reading
 
-One reply Nora wrote in a Hong Kong friend group's chat, in written
+One reply Nora wrote in a friend group's chat, in written
 Cantonese, sometimes mixed with English words. She wrote it to be read on a
 screen. It is about to be said aloud, unchanged, by a synthetic Cantonese
 voice (MiniMax speech-2.8) in the same group's Discord voice channel, to the

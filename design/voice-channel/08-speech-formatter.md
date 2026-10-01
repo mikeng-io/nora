@@ -95,7 +95,10 @@ on norty. Each case drawn 3 times with the gateway cache bypassed
 (`x-omniroute-no-cache`; the first run without it returned 0.04 s medians and
 identical outcomes across two models, i.e. one reading counted many times).
 Same path as production: `build_structured_model` + `ask_text`,
-`reasoning_effort = "none"`, temperature 0, the branch's instruction.
+`reasoning_effort = "none"`, temperature 0, the branch's instruction. The
+shipped instruction differs from the measured one by one phrase («a Hong Kong
+friend group» became «a friend group», as `reaction.md` v3 did); that change
+was not re-measured.
 
 | model alias | draws | check passed | refused (fallback) | formatted | latency p50 / p90 / p95 / max |
 |---|---|---|---|---|---|

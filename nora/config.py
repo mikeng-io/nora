@@ -1937,7 +1937,7 @@ class SpeechTtsFormatConfig(BaseModel):
       every letter and digit of her reply unchanged and in order; anything
       else, a timeout included, speaks the normalised reply.
 
-    `model` empty inherits `[llm] model`. `timeout_seconds` bounds the whole
+    `model` defaults to `nora-gate`; empty inherits `[llm] model`. `timeout_seconds` bounds the whole
     call and is time added before she is heard, so it is sized on measured
     latency (the design note has the numbers). A reply with fewer than
     `min_chars` letters and digits, or more than `max_chars`, skips the model:
@@ -1947,7 +1947,9 @@ class SpeechTtsFormatConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     mode: Literal["off", "normalise", "model"] = "off"
-    model: str = ""
+    # The relevance gate's cheap combo, the alias the formatter was measured
+    # on (design/voice-channel/08 section 4). Empty inherits `[llm] model`.
+    model: str = "nora-gate"
     reasoning_effort: Literal[
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = "none"
