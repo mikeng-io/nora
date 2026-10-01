@@ -1393,9 +1393,18 @@ picture's address only when the page text happened to contain it.
 5. **No code for bytes first indexed in another room.** The first source of a sha256 wins and its provenance is
    never overwritten, so the row stays born elsewhere and would not resolve here. `media_fetch` then returns
    no code rather than one a document would refuse.
-6. **Credit.** The result's note tells her to put the page under `Sources`; the `Image` caption carries the
+6. **Only the types the portal shows.** png, jpeg, gif and webp. An SVG or AVIF would get a code, pass the
+   checker and render broken (`app/src/server/document-media.ts`), so it is not kept.
+7. **The room that looked owns it** (review of #693). `media_search` (library scope) and `media_send` show a
+   `fetched` row only in the room it was born in; what she generated stays global (DEC-138). Without this, filling
+   the `fetched` source made every looked-at web picture findable and sendable from any room.
+8. **The code works for a follow-up look.** `media_fetch(code=…)` also resolves a `fetched` row born in this room
+   (a kept picture has no message row, so the sightings cannot see it).
+9. **Credit.** The result's note tells her to put the page under `Sources`; the `Image` caption carries the
    rest. Third-party pictures are kept in custody for this one private group, not republished.
 
 **Not built.** An image-search tool (the discovery path is a page the person already collected), downloading
-a picture without reading it, resolving a kept code through `media_fetch(code=…)` (that resolver reads message
-rows only; `media_search` finds a kept picture by its words), and a quota on kept bytes beyond `media.max_bytes`.
+a picture without reading it, a quota on kept bytes beyond `media.max_bytes` (a picture can be up to the
+download ceiling, and nothing deletes kept rows), and withholding the code when the reading was withheld for an
+identifier (room photos behave the same way). A story-frame link opened in a LATER turn than the one that read
+the story is kept: the story exclusion is per turn.

@@ -158,11 +158,16 @@ async def wiring(tmp_path, pg_url):
     def build_all(**kw):
         """Every tool, not just `media_fetch` — `load_transcript` is the
         EIGHTH transcript builder and lives in this same closure, so its media
-        join is only reachable through the full registry."""
+        join is only reachable through the full registry. `conversation_id`
+        builds them for another room."""
+        cid = kw.pop("conversation_id", "g1")
         tools = build_tools(
-            store=store, conversation_id="g1", conversation_type="group",
+            store=store, conversation_id=cid, conversation_type="group",
             persons=persons, honcho=FakeMemoryStore(), deliverer=deliverer,
-            metrics=metrics, room=room, transit_source=None,
+            metrics=metrics,
+            room=Room(platform="signal", conversation_id=cid, roster_source=None,
+                      persons=persons),
+            transit_source=None,
             vision_source=vision, blob_store=blobs, vision_cache=cache,
             describe_models={"image": "test/image-model"},
             question="what is in the photo", context_window=40,
@@ -253,6 +258,50 @@ async def test_a_picture_first_indexed_in_another_room_gets_no_code(wiring, monk
     assert out["status"] == "ok"
     assert out["code"] is None
     assert "kept" not in out["note"]
+
+
+async def test_a_kept_picture_is_found_and_sent_only_in_the_room_that_kept_it(
+    wiring, monkeypatch,
+):
+    """Review of #693: a `fetched` row used to be library-global, so a picture
+    kept in one room could be found and sent from any other."""
+    await _fake_download(monkeypatch)
+    index = FakeMediaObjectStore([])
+    mine = wiring["build_all"](media_store=index)
+    out = await _call(mine["media_fetch"], url="https://x.com/pic.png")
+    assert out["code"] == PNG_SHA[:6]
+    assert [r["handle"] for r in (await _call(mine["media_search"], query=""))["results"]] \
+        == [PNG_SHA[:6]]
+
+    other = wiring["build_all"](media_store=index, conversation_id="g2")
+    assert (await _call(other["media_search"], query=""))["results"] == []
+    sent = await _call(other["media_send"], handle=PNG_SHA[:6])
+    assert sent["status"] == "nothing_found"
+
+
+async def test_a_kept_picture_resolves_by_its_code_in_media_fetch(wiring, monkeypatch):
+    """Review of #693: the code the result hands back must work for a follow-up
+    look, though a kept picture has no message row."""
+    await _fake_download(monkeypatch)
+    index = FakeMediaObjectStore([])
+    tools = wiring["build_all"](media_store=index)
+    kept = await _call(tools["media_fetch"], url="https://x.com/pic.png")
+    again = await _call(tools["media_fetch"], code=kept["code"], question="what colour")
+    assert again["status"] == "ok"
+    elsewhere = wiring["build_all"](media_store=index, conversation_id="g2")
+    nope = await _call(elsewhere["media_fetch"], code=kept["code"])
+    assert nope["status"] == "nothing_found"
+
+
+async def test_a_picture_type_the_portal_cannot_show_is_not_kept(wiring, monkeypatch):
+    await _fake_download(monkeypatch, data=b"<svg xmlns='http://www.w3.org/2000/svg'/>",
+                         media_type="image/svg+xml")
+    index = FakeMediaObjectStore([])
+    out = await _call(wiring["build"](media_store=index), url="https://x.com/p.svg")
+    assert out.get("code") is None
+    assert await index.get(
+        sha256=hashlib.sha256(b"<svg xmlns='http://www.w3.org/2000/svg'/>").hexdigest()
+    ) is None
 
 
 async def test_a_clip_from_a_url_is_never_kept(wiring, monkeypatch):
