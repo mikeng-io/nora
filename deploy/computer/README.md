@@ -182,9 +182,14 @@ step 4 recreates nora):
    NEW=$(openssl rand -hex 32)
    cp .env ~/nora-backups/env.$(date +%Y%m%dT%H%M%S)          # the rollback copy
    ```
-2. Write it to `.env` (the last assignment wins; the unit and compose both read it):
+2. Write it to `.env` (the unit and compose both read it) **without the token on
+   any command line**: `printf` is a shell builtin, so the value never reaches
+   an `argv` another user's `ps` or `/proc` can read (a `sed` whose
+   expression holds `$NEW` would). The new file is made under the `umask 077` from step 1 and copied
+   over `.env` so the file keeps its inode and mode:
    ```bash
-   sed -i "s/^NORA_COMPUTER_TOKEN=.*/NORA_COMPUTER_TOKEN=$NEW/" .env
+   { grep -v '^NORA_COMPUTER_TOKEN=' .env; printf 'NORA_COMPUTER_TOKEN=%s\n' "$NEW"; } > .env.new \
+     && cat .env.new > .env && rm -f .env.new
    grep -c '^NORA_COMPUTER_TOKEN=' .env                       # 1
    ```
 3. Restart computerd's unit, so it starts with the new token:

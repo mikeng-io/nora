@@ -67,3 +67,19 @@ def test_the_alert_that_points_at_this_section_points_at_one_that_exists() -> No
 def test_a_rotation_is_documented_as_an_audit_row_by_fingerprint() -> None:
     section = _section("Rotating the token")
     assert "token_rotation" in section and "fingerprints" in section
+
+
+def test_no_step_puts_a_token_on_a_command_line() -> None:
+    """`sed -i "s/.../$NEW/"` runs as a process whose argv, with the new token in
+    it, is readable through /proc by every user on the host. The write is a
+    shell builtin (`printf`) into a file made under `umask 077`."""
+    section = _section("Rotating the token")
+    assert not re.search(r"^\s*sed\s+-", section, re.M)
+    assert "printf 'NORA_COMPUTER_TOKEN=%s\\n' \"$NEW\"" in section
+    assert "umask 077" in section
+    # And nothing in the section hands a token to an external program as an
+    # argument: every use of $NEW or $OLD is a builtin (printf), an assignment,
+    # or a header file the shell wrote.
+    for line in section.splitlines():
+        if ("$NEW" in line or "$OLD" in line) and "printf" not in line:
+            assert not re.match(r"\s*(curl|sed|echo|grep|openssl|docker)\b", line), line
