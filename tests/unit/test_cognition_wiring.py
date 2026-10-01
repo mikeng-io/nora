@@ -633,14 +633,29 @@ def test_the_objective_names_every_close_reason_the_session_closes_with():
 
 def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
     """Context framing, not a capability list (AGENTS.md; measured on the gate):
-    it says what the agenda block is, how old, which room, and what the
-    numbers are, and it does not enumerate the kinds of write she can make."""
+    it says what she is handed, in what order, and what is already written down,
+    and it does not enumerate the kinds of write she can make."""
     text = _objective()
-    # the agenda it describes is the one the renderer produces
-    assert "[#101] Ada, 14:05 (1 h 12 min ago): dinner friday?" in text
-    for phrase in ("the message's id", "(edited)", "[cues: ...]", "could not be\nshown",
-                   "the group's open notes", "which room your read tools"):
-        assert phrase in text or phrase.replace("\n", " ") in text, phrase
+    # the agenda it describes is the one the renderer produces: blocks, in order
+    for phrase in ("a clock, which room your read tools", "`agenda_item`",
+                   "the group's open notes", "its open events"):
+        assert phrase in text, phrase
     # no enumeration of the write verbs (they carry their own descriptions)
     assert "Each note, event, Standing revision" not in text
     assert "note_create" not in text and "event_propose" not in text
+
+
+def test_the_objective_teaches_nothing_the_block_types_already_say():
+    """Step 3b of design/context-assembly/04-every-occasion.md: the shape of the
+    input (a message's id, the name to put in a note line, an edit, a cue, a
+    reaction, what a cut means) reaches the model through the block types
+    (`nora.domain.block_types`), so the objective quotes none of it. It used to
+    quote the OLD line shape, which no prompt carries any more."""
+    text = _objective()
+    for old in ("[#101]", "(edited)", "[cues:", "[room ", "Nora (you)", "(returning:",
+                "earlier messages not shown", "(one of these could not be shown)"):
+        assert old not in text, old
+    from nora.domain.block_types import BLOCK_TYPES
+
+    assert "n" in dict(BLOCK_TYPES["agenda_item"].annotations)    # the shape lives THERE
+    assert "cite it as [n]" in dict(BLOCK_TYPES["agenda_item"].annotations)["n"]
