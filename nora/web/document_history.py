@@ -165,8 +165,8 @@ async def restore_revision(
     old = await store.revision(document_id=document_id, revision=revision)
     if old is None:
         return RestoreResult("not_found")
-    if current.summary.state != "active":
-        return RestoreResult("not_active")
+    # An archived document is refused by `add_revision` itself (`not_active`), the one
+    # place every revision is refused, so this path has no second copy of that rule.
     if revision == current.summary.revision:
         return RestoreResult("current")
     checked = check_document(old.spec)
