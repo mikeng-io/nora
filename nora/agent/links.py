@@ -78,8 +78,8 @@ def own_document_link_pattern(public_url: str) -> re.Pattern[str]:
     Cantonese would not match."""
     host = public_url.split("://", 1)[-1].strip("/")
     return re.compile(
-        rf"(?<![A-Za-z0-9.-])(?:https?://)?{re.escape(host)}/(?:[a-z]{{2}}(?:-[A-Za-z]{{2,4}})?/)?"
-        rf"documents/([0-9a-f]{{6,}})(?![0-9A-Za-z])",
+        rf"(?<![A-Za-z0-9.-])(?:https?://)?(?:www\.)?{re.escape(host)}(?::\d+)?/"
+        rf"(?:[a-z]{{2}}(?:-[A-Za-z0-9]{{2,8}})*/)?documents/([0-9a-f]{{6,}})(?![0-9A-Za-z])",
         re.IGNORECASE,
     )
 
@@ -107,6 +107,7 @@ class LinkCarry:
         self._doc_handles: set[str] = set()            # handed to her this turn, may be repeated
         self._doc_receipts: dict[str, str] = {}        # handle -> url, published this turn
         self._stripped = 0
+        self._documents_added = 0
 
     def claim_documents(self, public_url: str) -> None:
         """Arm the document rule for this turn with the origin documents are linked under.
@@ -126,6 +127,28 @@ class LinkCarry:
         self._doc_handles.add(handle)
         if published:
             self._doc_receipts[handle] = url.strip()
+
+    @property
+    def documents_added(self) -> int:
+        """How many document links `apply` has added, apart from place links, for the metric."""
+        return self._documents_added
+
+    def mark_sent(self, text: str) -> None:
+        """A message carrying these documents' links reached the room: they are not added to the
+        next message of the turn. A link that was due but not in what was sent (a refusal, a GIF
+        with no words) stays pending, so the next message still carries it."""
+        pattern = self._doc_pattern
+        if pattern is None or not self._doc_receipts:
+            return
+        for match in pattern.finditer(text or ""):
+            self._doc_receipts.pop(match.group(1).lower(), None)
+
+    def scrub(self, text: str) -> str:
+        """`text` with the document links no tool handed her removed, and nothing added: for the
+        copy of a reply that is recorded rather than sent (a GIF caption, its audit row)."""
+        if not text or self._doc_pattern is None:
+            return text
+        return self._remove_documents(text, self._doc_pattern)[0]
 
     @property
     def stripped(self) -> int:
@@ -180,10 +203,9 @@ class LinkCarry:
                  len(additions))
         return text.rstrip() + "\n" + "\n".join(additions), added + len(additions)
 
-    def _apply_documents(self, text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
-        """Remove every document link she was not handed, then add the link of each document
-        published this turn that the reply does not already carry. Returns the text and how many
-        links were added. The label of a Markdown link is kept when its target is removed."""
+    def _remove_documents(self, text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
+        """`text` without the document links she was not handed, and how many were removed. The
+        label of a Markdown link stays when its target goes."""
         removed = 0
 
         def drop(match: re.Match[str]) -> str:
@@ -205,12 +227,21 @@ class LinkCarry:
         text = markdown.sub(drop_target, text)
         text = pattern.sub(drop, text)
         if removed:
+            # Only what the removal itself can leave behind: a run of blank lines and the ends.
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        return text, removed
+
+    def _apply_documents(self, text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
+        """Remove every document link she was not handed, then add the link of each document
+        published this turn that this reply does not carry and no earlier message did. Returns the
+        text and how many links were added."""
+        text, removed = self._remove_documents(text, pattern)
+        if removed:
             self._stripped += removed
             log.warning("reply_document_links_stripped: %d link(s) she was never handed", removed)
-            text = re.sub(r"[ \t]+\n", "\n", text)
-            text = re.sub(r"\n{3,}", "\n\n", text).strip()
         present = {m.group(1).lower() for m in pattern.finditer(text)}
         missing = [url for handle, url in self._doc_receipts.items() if handle not in present]
         if not missing:
             return text, 0
+        self._documents_added += len(missing)
         return text.rstrip() + "\n" + "\n".join(missing), len(missing)

@@ -1450,6 +1450,9 @@ only. The check is the live read-back: the same prompt, then the trace.
 
 ## 37. A document link must exist, and the turn must be able to publish (2026-10-02)
 
+> **Item 1 below (R-100 as a refusal with a store lookup) is SUPERSEDED by §39 the same day: a link to our documents is
+> minted by a tool and a made-up one is removed. Items 2 and 3 stand.**
+
 **Read-back (traces `8dc5551b`, `7983a050`, `1acce721`, 2026-10-01).** Asked for an itinerary document, Nora fetched
 pages and looked at four pictures, made fourteen further `media_fetch` calls the per-turn ceiling of four refused, and
 ended the turn without sending a spec to `document_publish` (her one call had no spec, which returns the catalog and
@@ -1530,3 +1533,13 @@ that guarded them. The skill body went from 1,495 to 1,468 tokens, which the par
 
 **Not built.** A check that her prose claim «the document is made» matches a publish. The link is the receipt: with no link in
 the room, nothing was saved. Re-linking an older document needs a `document_read` first.
+
+
+**Review of #701 (independent).** Two blocking findings, both fixed. The link was appended to every message of a turn,
+the canned fallback included: a message that carried it now settles it (`LinkCarry.mark_sent`), and one due but not sent
+stays due. And the skill said never to write a link while a `document_read` result let her pass one on: the skill now says
+to repeat a `url` exactly as a document tool returned it this turn, and `document_read` says so. Also fixed: the recorded
+copy of a GIF caption kept a made-up link (`LinkCarry.scrub`), the `appended` counter moved for a document link (now
+`document_added`), the removal reflowed her whole reply (now only the blank lines it leaves), and `www.`, an explicit port
+and a locale with more than one subtag were not matched. Left alone, as adversarial or unlikely: percent-encoding,
+zero-width characters in the host, a handle shorter than six digits.

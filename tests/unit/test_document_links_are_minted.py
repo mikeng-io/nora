@@ -163,7 +163,10 @@ async def test_a_published_documents_link_reaches_the_room_in_the_reply_she_wrot
     handle.links.mint_document(REAL, published=True)
     assert await handle.deliverer.deliver("搞掂，要登入先睇到。") is True
     assert adapter.sent[0][1].endswith(REAL)
-    assert metrics.get("nora_reply_links_carried_total", outcome="appended") == 1
+    assert metrics.get("nora_reply_links_carried_total", outcome="document_added") == 1
+    assert metrics.get("nora_reply_links_carried_total", outcome="appended") == 0, (
+        "the place-link counter is not moved by a document"
+    )
 
 
 async def test_a_reply_that_was_only_a_made_up_link_sends_nothing_and_says_why() -> None:
@@ -256,3 +259,63 @@ async def test_with_no_public_url_nothing_is_armed_and_no_link_is_touched() -> N
     out = await tools["document_publish"](spec=_doc())
     assert out["status"] == "ok" and "url" not in out
     assert carrier.apply(f"see {MADE_UP}") == (f"see {MADE_UP}", 0)
+
+
+async def test_the_link_goes_with_one_message_not_every_message_of_the_turn() -> None:
+    """Review of #701: it was appended to all three messages of a turn, the canned fallback
+    included. A message that carried it settles it; the next one does not."""
+    adapter = _FakeAdapter()
+    handle = _handle(adapter, Metrics())
+    handle.links.claim_documents(PUBLIC)
+    handle.links.mint_document(REAL, published=True)
+    assert await handle.deliverer.deliver("搞掂。") is True
+    assert await handle.deliverer.deliver("要唔要加張地圖？") is True
+    assert await handle.deliverer.deliver("唔好意思。", source="fallback") is True
+    sent = [text for _, text in adapter.sent]
+    assert [t.count("/documents/") for t in sent] == [1, 0, 0], sent
+
+
+async def test_a_link_that_was_due_but_not_sent_stays_due_for_the_next_message() -> None:
+    adapter = _FakeAdapter(succeed=False)
+    handle = _handle(adapter, Metrics())
+    handle.links.claim_documents(PUBLIC)
+    handle.links.mint_document(REAL, published=True)
+    assert await handle.deliverer.deliver("搞掂。") is False        # the send failed
+    adapter._succeed = True
+    assert await handle.deliverer.deliver("再試。") is True
+    assert adapter.sent[-1][1].endswith(REAL)
+
+
+async def test_the_recorded_copy_of_a_gif_caption_never_keeps_a_made_up_link() -> None:
+    """Review of #701: `record_text` was built from the caption before the removal, so the audit
+    row (what next turn's transcript and the notes read) kept the link the room never saw."""
+    from nora.testing import FakeRecordStore
+
+    store, adapter = FakeRecordStore(), _FakeAdapter()
+    handle = deliver.build(
+        store=store, adapter=adapter, target=TARGET, doctrine=_doctrine(), canary="C",
+        tag_id="t1", nora_sender_id="nora", conversation_id="g1", budgets=BUDGETS,
+        terminal=TERMINAL, metrics=Metrics(), audience="tag", composer=None,
+    )
+    handle.links.claim_documents(PUBLIC)
+    await handle.deliverer.deliver(
+        f"done {MADE_UP}", record_text=f"done {MADE_UP} [GIF: yay]",
+    )
+    (row,) = await store.recent(conversation_id="g1", limit=1)
+    assert "documents/" not in row.body and "[GIF: yay]" in row.body
+
+
+def test_the_variants_a_made_up_link_could_be_written_in_are_caught() -> None:
+    for text in (
+        "https://www.nora.example/documents/8e2f4b1a9c00",
+        "nora.example:443/documents/8e2f4b1a9c00",
+        "nora.example/zh-Hant-HK/documents/8e2f4b1a9c00",
+    ):
+        cleaned, _ = _armed().apply(text)
+        assert "documents/" not in cleaned, text
+
+
+def test_removing_a_link_does_not_reflow_the_rest_of_her_reply() -> None:
+    """Only the blank lines the removal itself leaves are tidied; her own spacing is not touched."""
+    cleaned, _ = _armed().apply(f"第一行  \n\n{MADE_UP}\n\n\n第二行")
+    assert cleaned == "第一行  \n\n第二行"

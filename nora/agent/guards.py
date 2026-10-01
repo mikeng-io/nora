@@ -391,10 +391,16 @@ class Deliverer:
         #     LEAVE. A text transformation sitting in front of a fail-closed
         #     guard without the guard seeing its output is the exact hole the
         #     2026-08-10 audit found in DEC-82's first cut.
-        stripped_before = self._links.stripped
+        if record_text is not None:
+            # R-100: the recorded copy of a GIF caption never keeps a link the room did not see.
+            record_text = self._links.scrub(record_text)
+        stripped_before, documents_before = self._links.stripped, self._links.documents_added
         text, carried = self._links.apply(text)
-        if carried:
+        documents = self._links.documents_added - documents_before
+        if carried - documents > 0:
             self._metrics.inc("nora_reply_links_carried_total", outcome="appended")
+        if documents:
+            self._metrics.inc("nora_reply_links_carried_total", outcome="document_added")
         if self._links.stripped > stripped_before:
             # R-100: a link to one of our documents that no tool handed her this turn.
             self._metrics.inc("nora_reply_links_carried_total", outcome="stripped")
@@ -604,6 +610,9 @@ class Deliverer:
                 "nora_silent_failures_total", reason="send_failed",
                 platform=self._target.platform, audience=self._audience,
             )
+        if result.ok:
+            # R-100: a document link that went out in this message is not added to the next one.
+            self._links.mark_sent(text)
         self._last_outcome = "sent" if result.ok else "send_failed"
         return result.ok
 

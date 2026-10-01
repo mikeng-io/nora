@@ -14709,6 +14709,8 @@ Args:
         if out.url:  # no public origin configured = no link, and none is invented
             link_carry.mint_document(out.url, published=False)
             result["url"] = out.url
+            result["link_note"] = ("You may repeat this `url` exactly as given; a document link "
+                                   "you did not get from a tool this turn is removed.")
         if getattr(out, "state", "active") != "active":
             result["state"] = out.state
         if len(body) > _DOCUMENT_READ_CHARS:

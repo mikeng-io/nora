@@ -1094,8 +1094,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_reply_links_carried_total",
         "Replies that left with a link the model had dropped, by outcome: "
         "appended (a place the reply named had a minted maps link the text did "
-        "not carry, or a document was published this turn), stripped (the reply "
-        "carried a link to one of our documents that no tool had handed her).",
+        "not carry), document_added (a document was published this turn and its "
+        "link was added), stripped (the reply carried a link to one of our "
+        "documents that no tool had handed her).",
         ("outcome",),
     ),
     # DEC-105. `ok` is a message that reached another room; every other value is
