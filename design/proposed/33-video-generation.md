@@ -7,9 +7,9 @@
 
 ## 1. What this is
 
-Nora gains a `generate_video` tool. A clip takes one to three minutes to render, so the tool does not wait for it: it starts a job and returns, and the finished clip is delivered to the room later through the deferred-job outbox (`compute_jobs`, `ComputeJobPoller`, `compute_occasion`) that design/sandbox-runtime decision 4 kept for exactly this purpose. The provider is MiniMax CN (`api.minimaxi.com`, key `MINIMAX_CN_API_KEY`), the same account that already serves her speech.
+Nora gains a `generate_video` tool. A clip takes one to three minutes to render, so the tool does not wait for it: it starts a job and returns, and the finished clip is delivered to the room later through the deferred-job outbox (`compute_jobs`, `ComputeJobPoller`, `compute_occasion`) that design/sandbox-runtime decision 4 kept for a future `delegate_task`. The path is generic (launch now, deliver later, survive a restart), so a video job can use it. The provider is MiniMax CN (`api.minimaxi.com`, key `MINIMAX_CN_API_KEY`), the same account that already serves her speech.
 
-This does not need `delegate_task` (issue #22). That design is a background sub-agent that researches and writes. A video is one external job with no model running while it renders. The outbox has no adapter today (`composition.py`: "NO adapter ships"); this document adds one.
+This does not need `delegate_task` (issue #22). That design is a background sub-agent that researches and writes. A video is one external job with no model running while it renders. The outbox has no adapter today (`composition.py`: "NO adapter ships"); this document adds one. Three fit gaps are real and are settled when it is built: `ComputeBackend.launch(task, artifact_id, context)` has no slot for a ratio or reference images, `composition.py` holds a single `compute_backend` so a later `delegate_task` adapter would collide with this one, and the delivered message is a summary plus a URL, which fits link delivery (§6).
 
 ## 2. The fixed settings
 
@@ -19,13 +19,18 @@ Every value is read from `config.toml`, never from code, and the shipped default
 [video_gen]
 enabled = false
 provider = "minimax_cn"
-model = "MiniMax-H3"        # fixed; see §5 on 480P
 resolution = "480P"
 duration_seconds = 15
 ratio = "3:4"               # explicit; `adaptive` is refused for text-only AND reference tasks
 allow_reference_images = false
 max_clips_per_day = 1       # hard cap, see §4
+
+[video_gen.minimax_cn]
+model = "MiniMax-H3"        # fixed; see §7 on 480P
+api_key_env = "MINIMAX_CN_API_KEY"   # resolved by NAME from the container env (DEC-8)
 ```
+
+The shape mirrors `[image_gen]` and `[image_gen.xai]`: provider-agnostic settings at the top, the provider's model and credential name in its own sub-table. The adapter also needs `[compute] enabled = true`, because the poller is only built with a `ComputeBackend`.
 
 ## 3. API shape (read from the vendor docs and measured 2026-10-02)
 
