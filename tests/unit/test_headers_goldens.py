@@ -30,10 +30,22 @@ whole text each seam produces, never a substring of it:
 * the whole turn as the fire path sends it for every kind: `tag_message` and
   `pre_fill` as the runner receives them.
 
-Two quirks are pinned, not fixed, and each is a finding of the step: the
-summons' head interpolates the summoner's username WITHOUT escape (it is the one
-person-authored value outside every block), and prints the clock's own digits
+One quirk is pinned, not fixed: the summons' head prints the clock's own digits
 under a literal `UTC` whatever zone `now` carries.
+
+**One golden value is NOT master's, and says so.** The summons' head used to
+interpolate the summoner's username bare. Review of the first version found a
+handle can only be `[A-Za-z0-9._]{1,30}` (`is_handle`) and `escape` is the
+identity on those, so the head now escapes it: no reachable byte moves. The
+summoner cases here sweep REACHABLE handles, captured from master and unchanged;
+`summons-head-a-hostile-summoner-is-escaped` sweeps the unreachable hostile
+strings and its golden is what the head renders NOW (escaped), checked again by
+an assertion that does not read the fixture. The hostile summoner values the
+first version captured from master (unescaped) are gone from the fixture.
+
+A second gap review found: every `PersonRef` here had `first_name=""`, so a
+header that preferred `first_name` over `name` was invisible. The `first-name-*`
+cases give the person a different first name; their goldens are master's.
 """
 
 from __future__ import annotations
@@ -577,6 +589,32 @@ def _announcement_tagger() -> Any:
 
 
 # =============================================================================
+# a person whose first name is not their name
+# =============================================================================
+
+#: Live identity entries may set `first_name`; the header says `name`.
+_FIRST = PersonRef(
+    person_id="miles", name="Miles Novak", honcho_peer_id="miles", first_name="Michael",
+    last_name="Nguyen", aliases=("Mikey",),
+)
+
+
+@_case("first-name-the-header-says-the-name")
+def _first_name() -> Any:
+    return {
+        "reminder": _event(reminder_occasion([_row()]), _FIRST),
+        "gathering": _event(_gathering("Friday dinner"), _FIRST),
+        "proactive": _event(_proactive({"note_title": "plan"}), _FIRST),
+        "participation": _event(participation_occasion(
+            platform="signal", conversation_id="c", relevance_score=0.4), _FIRST),
+        "compute": _event(_compute(), _FIRST),
+        "lost": _event(lost_job_occasion(_job()), _FIRST),
+        "relay": _event(_relay(requester=_FIRST), _FIRST),
+        "announcement": _event(_announcement(), _FIRST),
+    }
+
+
+# =============================================================================
 # every field hostile at once
 # =============================================================================
 
@@ -733,18 +771,30 @@ def _sctx(**kw: Any) -> SummonsContext:
     return SummonsContext(**base)
 
 
+#: What a summoner can be: `is_handle`'s `[A-Za-z0-9._]{1,30}`, or nothing.
+_HANDLES: dict[str, str | None] = {
+    "empty": "", "none": None, "plain": "Miles", "dotted": "miles_example.99",
+    "digits": "0123456789", "dots-and-underscores": "_.._.", "max-length": "a" * 30,
+    "upper": "BIRD.Account_1",
+}
+
+#: Where the head is rendered for a hostile summoner: not reachable, and escaped.
+HEAD_ONLY = {"summons-head-a-hostile-summoner-is-escaped"}
+
+
 @_case("summons-head-the-summoner")
 def _head_summoner() -> Any:
-    out = _sweep(lambda v: summons_domain._head(_sctx(summoner=v)))
-    out["none"] = summons_domain._head(_sctx(summoner=None))
-    return out
+    return {k: summons_domain._head(_sctx(summoner=v)) for k, v in _HANDLES.items()}
 
 
 @_case("summons-head-the-summoner-in-the-whole-prompt")
 def _head_summoner_whole() -> Any:
-    out = _sweep(lambda v: render_summons(_sctx(summoner=v)))
-    out["none"] = render_summons(_sctx(summoner=None))
-    return out
+    return {k: render_summons(_sctx(summoner=v)) for k, v in _HANDLES.items()}
+
+
+@_case("summons-head-a-hostile-summoner-is-escaped")
+def _head_summoner_hostile() -> Any:
+    return _sweep(lambda v: summons_domain._head(_sctx(summoner=v)))
 
 
 _AGES: dict[str, timedelta | None] = {
@@ -881,6 +931,22 @@ def produce(name: str) -> Any:
 
 GOLDEN: dict[str, Any] = json.loads(GOLDEN_PATH.read_text(encoding="utf-8")) \
     if GOLDEN_PATH.exists() else {}
+
+
+def test_a_hostile_summoner_is_escaped_in_the_head() -> None:
+    """The head escapes the handle. Read off `escape`, not off the fixture: for
+    every hostile string the head carries `@` + the escaped string, and the raw
+    string is there only where escaping left it alone."""
+    from nora.domain.prompt import escape
+
+    for name, value in HOSTILE.items():
+        head = summons_domain._head(_sctx(summoner=value))
+        if not value:  # no summoner at all reads «someone»
+            assert " someone tagged you" in head
+            continue
+        assert f"@{escape(value)} tagged you" in head, name
+        if escape(value) != value and value.strip():
+            assert f"@{value} tagged you" not in head, name
 
 
 def test_every_case_has_a_golden_and_every_golden_a_case() -> None:

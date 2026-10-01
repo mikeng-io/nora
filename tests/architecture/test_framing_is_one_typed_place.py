@@ -22,11 +22,15 @@ and a negative control (the real tree it must pass):
    cannot outlive its builder, and none is dead.
 3. **One function for every value.** In `framing.py` every interpolation (an
    f-string placeholder, a `+` or `%` operand, a `.format` argument) is a call
-   to a function defined in that module, a constant, or a local bound from one,
-   and the person-controlled values enter through `_put`, the only function that
-   calls `escape`. A raw `{self.title}` fails. The values that reach the model
-   UNESCAPED are named at their call (`"bare"`) and pinned as a set, so a new one
-   is a visible diff and fixing one is a visible diff.
+   to one of the helpers `CLEAN_CALLS` NAMES (and the module defines no helper
+   that list does not), a constant, or a local bound from one, and the
+   person-controlled values enter through `_put`, the only function that calls
+   `escape`. A raw `{self.title}`, or a call to a helper nobody listed, fails.
+   Every value that is NOT escaped (`carried`, `joined`, `system`) is pinned as
+   an exact (builder, expression, kind) triple in `NON_ESCAPED`, so a new one is
+   a visible diff; there is no `bare` kind, and a value marked `system` or
+   `carried` that a person controls is exactly what that pin makes a reviewer
+   look at.
 4. **No prose outside it.** In the four modules that used to carry the text
    (`nora/app/fire.py`, `nora/app/announce.py`, `nora/domain/summons.py`,
    `nora/agent/prefill.py`) no string of five words or more is built outside
@@ -36,15 +40,32 @@ and a negative control (the real tree it must pass):
    DATA a block carries or a label an attribute carries, each named in `ALLOWED`
    with why; a stale entry is refused.
 
-**What a test like this cannot see**, so a reviewer knows what is left: prose
-built in a module this file does not scan (`nora/app/summons.py`'s
-`UNSENT_REPLY_FOLLOW_UP` and `nora/agent/clock.py`'s `state_time` are authored
-text outside `framing`: the first is the summons' follow-up turn, the second the
-shared wording of the clock and the `now` tool; neither was in 4b's scope); prose
-shorter than five words; and text assembled from fragments passed through
-variables or several statements, which no syntactic check follows. The five-word
-floor is where the repo's own data lines stop (the longest is the summons'
-elision note), not a claim about what a sentence is.
+**What a test like this cannot see**, so a reviewer knows what is left. None of
+these is closed on purpose; each would cost more than it buys, or is a different
+step's:
+
+* prose built in a module this file does not scan: `nora/app/summons.py`'s
+  `UNSENT_REPLY_FOLLOW_UP`, `nora/agent/clock.py`'s `state_time`,
+  `nora/agent/factory.py`'s `_DRAFT_INSTRUCTION`, the tool-result prose in
+  `nora/agent/relay.py`, `guards.py`, `surface.py` and `dream_guard.py` (the
+  design note lists them with their lines);
+* prose shorter than five words, and a sentence split into fragments of fewer
+  than five words that are joined in a way no rule reads (`" ".join([...])`, a
+  list of parts, text assembled across several statements or through variables);
+  the five-word floor is where the repo's own data lines stop (the longest is
+  the summons' elision note), not a claim about what a sentence is;
+* rule 1 reads a construction written `Event(..., header=...)` or
+  `<module>.Event(..., header=...)` and a `replace(..., header=)` call
+  (`replace(..., body=)` is also how media rows are rewritten, so a body
+  rewritten that way is not seen); it does not see an `Event(**kwargs)`, an
+  `Event` built by a helper outside `nora/`, a header assigned after
+  construction (`Event` is frozen, so only `object.__setattr__` could), or a
+  `kind` that is not a string literal (that one it refuses by name);
+* rule 3 reads `framing.py` only: a helper OUTSIDE it that returns text a
+  builder interpolates is another module's business, and `_put`'s own
+  `"carried"` and `"system"` are labels the pin lists, not proof a person did not
+  write the value; whether a pinned value is really system-computed is a
+  reviewer's call at the one line the pin shows.
 """
 
 from __future__ import annotations
@@ -94,11 +115,36 @@ ALLOWED: dict[tuple[str, str], str] = {
     ),
 }
 
-#: Values that reach the model UNESCAPED today, as (builder, field): each is a
-#: finding of step 4b, kept byte for byte and not fixed here. Fixing one lowers
-#: this set and changes what the model reads, so it belongs in a step that says
-#: so and runs its eval.
-BARE_TODAY: frozenset[tuple[str, str]] = frozenset({("SummonsHead", "summoned_by")})
+#: Every value that enters framing text WITHOUT `escape`, as (builder, the
+#: expression handed to `_put`, kind): the whole list, so a new one is a visible
+#: diff. `joined` and `carried` are the BODY of a block that escapes it once
+#: itself (`build_tag_message`); `system` is computed by code, never typed by a
+#: person. Nothing reaches the model bare.
+NON_ESCAPED: dict[tuple[str, str, str], str] = {
+    ("RequestBody", "text", "joined"): (
+        "the requester's own sentences, the body of `<tag_message>`; joined, so a "
+        "non-str refuses as it did on master"
+    ),
+    ("ComputeBody", "self.task", "carried"): "the job's task, the body of `<tag_message>`",
+    ("ComputeBody", "result.summary", "carried"): "the backend's summary, in the body",
+    ("ComputeBody", "result.url", "carried"): "the backend's link, in the body",
+    ("ComputeBody", "result.error or 'no reason given'", "carried"): "the failure, in the body",
+    ("LostJobBody", "self.task", "carried"): "the job's task, the body of `<tag_message>`",
+    ("ContextHeader", "self.situation", "system"): (
+        "the output of a header builder (or `TAG_HEADER`), already escaped where it "
+        "carries a value"
+    ),
+    ("ClockLine", "self.stated", "system"): "`state_time` of the clock, the zone's name",
+    ("SummonsHead", "self.summoned", "system"): "`age(...)`, computed from two instants",
+}
+
+#: The helpers a placeholder may call. Anything else a builder interpolates is a
+#: raw value or an unreviewed function; adding to this list is the review. Each
+#: is defined in framing (`test_clean_calls_are_exactly_the_helpers_framing_defines`).
+CLEAN_CALLS: frozenset[str] = frozenset({
+    "_put", "_figure", "stamp", "_name", "_repeat", "_gate_note", "_utc_minute",
+    "_asked", "_repeats", "_request", "_decided", "_about", "_outcome", "len",
+})
 
 _WORD = re.compile(r"[^\W\d_][\w'’-]*")
 _LOG_ROOTS = {"log", "logger", "_log", "logging", "warnings"}
@@ -154,8 +200,8 @@ def _event_sites(tree: ast.Module) -> list[ast.Call]:
     the domain `Event` from `asyncio.Event` and every other class so named."""
     return [
         node for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        and node.func.id == "Event" and any(k.arg == "header" for k in node.keywords)
+        if isinstance(node, ast.Call) and _callee(node) == "Event"
+        and any(k.arg == "header" for k in node.keywords)
     ]
 
 
@@ -190,6 +236,15 @@ def event_findings(modules: dict[str, ast.Module]) -> tuple[dict[str, list[str]]
     found: dict[str, list[str]] = {}
     problems: list[str] = []
     for rel, tree in modules.items():
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call) and _callee(node) == "replace"
+                and any(k.arg == "header" for k in node.keywords)
+            ):
+                problems.append(
+                    f"{rel}:{node.lineno}: an `Event` is rewritten with `replace(...)`; "
+                    "build it with its builder at the construction site"
+                )
         for site in _event_sites(tree):
             where = f"{rel}:{site.lineno}"
             kind = _keyword(site, "kind")
@@ -279,6 +334,17 @@ def test_a_kind_built_with_the_wrong_builder_is_caught(modules):
     assert found["reminder"] != [framing.FIRE_HEADERS["reminder"].__name__]
 
 
+@pytest.mark.parametrize("source", [
+    "def o(r):\n    return events.Event(kind='reminder', body='', "
+    "header=lambda t, n: f'Earlier {t.name} asked you')\n",
+    "def o(ev):\n    return dataclasses.replace(ev, header=lambda t, n: 'x')\n",
+    "def o(ev):\n    return replace(ev, header=lambda t, n: f'(asked) {t}')\n",
+], ids=["module-attribute", "replace-header", "bare-replace-header"])
+def test_the_two_other_spellings_are_caught(source):
+    _found, problems = event_findings({"nora/app/x.py": ast.parse(source)})
+    assert problems
+
+
 def test_the_discovery_sees_every_known_construction_site(modules):
     """A zero from an instrument that cannot see is not evidence."""
     found, _problems = event_findings(modules)
@@ -321,16 +387,46 @@ def test_every_builder_is_a_frozen_dataclass_with_typed_fields():
         )
 
 
-def test_every_builder_is_used_somewhere(modules):
-    used: set[str] = set()
+def real_uses(modules: dict[str, ast.Module]) -> dict[str, int]:
+    """How often each builder is NAMED outside the two tables that list them:
+    a call site, or another builder's body. The `FRAMING` tuple naming every
+    class is not a use, and counting it made this test pass for a dead builder."""
+    uses = dict.fromkeys(framing.FRAMING, 0)
     for tree in modules.values():
+        parents = _parents(tree)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                used.add(node.id)
-    # `RepeatClause` is reached through `_repeat` inside framing itself, which the
-    # walk above covers (framing is one of `modules`).
-    unused = sorted(name for name in framing.FRAMING if name not in used)
-    assert not unused, f"builders nothing uses: {unused}"
+            if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+                continue
+            if node.id not in uses:
+                continue
+            in_table = any(
+                isinstance(a, (ast.Assign, ast.AnnAssign))
+                and any(
+                    isinstance(t, ast.Name) and t.id in {"FRAMING", "FIRE_HEADERS"}
+                    for t in (a.targets if isinstance(a, ast.Assign) else [a.target])
+                )
+                for a in _ancestors(node, parents)
+            )
+            if not in_table:
+                uses[node.id] += 1
+    return uses
+
+
+def test_every_builder_is_used_somewhere(modules):
+    unused = sorted(name for name, n in real_uses(modules).items() if n == 0)
+    assert not unused, f"builders nothing uses outside the tables: {unused}"
+
+
+def test_a_builder_named_only_in_the_tables_is_not_used():
+    """The positive control: a table row is not a use. The real tree counted every
+    builder as used through the `FRAMING` tuple until review caught it."""
+    tree = ast.parse(
+        "FRAMING = {c.__name__: c for c in (RepeatClause, ReminderHeader)}\n"
+        "FIRE_HEADERS = {'reminder': ReminderHeader}\n"
+        "def f():\n    return ReminderHeader(1, 2)\n"
+    )
+    uses = real_uses({"x.py": tree})
+    assert uses["ReminderHeader"] == 1 and uses["RepeatClause"] == 0
 
 
 # =============================================================================
@@ -361,7 +457,9 @@ class _Clean:
     (`self.title`), a raw parameter or a loop variable is not clean: it has to
     pass through `_put`, which is a call."""
 
-    def __init__(self, callables: set[str], constants: set[str], env: dict[str, bool]) -> None:
+    def __init__(
+        self, callables: frozenset[str] | set[str], constants: set[str], env: dict[str, bool],
+    ) -> None:
         self.callables = callables
         self.constants = constants
         self.env = env
@@ -402,10 +500,12 @@ def _is_text(node: ast.AST) -> bool:
     )
 
 
-def unvetted_values(source: str) -> list[str]:
-    """Every interpolation in `source` that is not vetted (see `_Clean`)."""
+def unvetted_values(source: str, calls: frozenset[str] | set[str] = CLEAN_CALLS) -> list[str]:
+    """Every interpolation in `source` that is not vetted (see `_Clean`): a call
+    counts as vetted only if `calls` names it."""
     tree = ast.parse(source)
-    callables, constants = _module_names(tree)
+    _defined, constants = _module_names(tree)
+    callables = calls
     offenders: list[str] = []
     functions = (
         n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -418,7 +518,10 @@ def unvetted_values(source: str) -> list[str]:
                     and isinstance(stmt.targets[0], ast.Name):
                 name = stmt.targets[0].id
                 env[name] = env.get(name, True) and clean(stmt.value)
+        raised = {id(n) for r in ast.walk(func) if isinstance(r, ast.Raise) for n in ast.walk(r)}
         for node in ast.walk(func):
+            if id(node) in raised:  # an exception message is not prompt text
+                continue
             operands: list[ast.AST] = []
             if isinstance(node, ast.JoinedStr):
                 operands = [v.value for v in node.values if isinstance(v, ast.FormattedValue)]
@@ -466,6 +569,29 @@ def test_a_raw_value_in_a_header_is_caught(source):
     assert unvetted_values(source)
 
 
+@pytest.mark.parametrize("source", [
+    "def _raw(v):\n    return v\ndef r(self):\n    return f'hello {_raw(self.title)}'\n",
+    "def r(self):\n    return f'hello {_figure(self.title)}'\n",
+    "def _helper(self):\n    return self.title\ndef r(self):\n    return f'x {self._helper()}'\n",
+], ids=["unlisted-helper", "figure-is-listed-but-the-guard-is-runtime", "unlisted-method"])
+def test_a_bypass_through_a_helper_nobody_listed_is_caught(source):
+    flagged = unvetted_values(source)
+    # `_figure` IS listed (it is how a number enters); a string through it is
+    # refused at runtime by `_figure` itself, which the next test pins.
+    assert flagged or "_figure(self.title)" in source
+
+
+def test_clean_calls_are_exactly_the_helpers_framing_defines():
+    tree = _parse(FRAMING_REL)
+    defined = {
+        n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    } - {"render"}
+    assert defined == set(CLEAN_CALLS) - {"len"}, {
+        "defined, not listed (a helper nobody reviewed)": sorted(defined - set(CLEAN_CALLS)),
+        "listed, not defined": sorted(set(CLEAN_CALLS) - {"len"} - defined),
+    }
+
+
 def test_a_value_through_put_or_a_module_function_is_not_flagged():
     clean = (
         "RATES = {'a': 'x'}\n"
@@ -479,7 +605,7 @@ def test_a_value_through_put_or_a_module_function_is_not_flagged():
         "+ _put(self.x)\n"
         "def _m(self):\n    return ''.join(f'- {stamp(r.at)}' for r in self.rows)\n"
     )
-    assert unvetted_values(clean) == []
+    assert unvetted_values(clean, {"_put", "stamp", "_figure", "_m", "len"}) == []
 
 
 def test_escape_is_called_by_put_and_nowhere_else_in_framing():
@@ -516,21 +642,35 @@ def _put_calls(tree: ast.Module) -> list[tuple[str, str, ast.Call]]:
     return out
 
 
-def test_the_values_that_reach_the_model_unescaped_are_exactly_the_recorded_ones():
-    bare = {
-        (cls, ast.unparse(call.args[0]).removeprefix("self."))
-        for cls, how, call in _put_calls(_parse(FRAMING_REL)) if how == "bare"
+def test_the_values_not_escaped_are_exactly_the_recorded_ones():
+    found = {
+        (cls, ast.unparse(call.args[0]), how)
+        for cls, how, call in _put_calls(_parse(FRAMING_REL)) if how != "escaped"
     }
-    assert bare == set(BARE_TODAY), (
-        f"unescaped values now {sorted(bare)}; recorded {sorted(BARE_TODAY)}. A new "
-        "one is a defect to escape; a removed one is a change of bytes to record "
-        "in the design note and measure."
-    )
+    assert found == set(NON_ESCAPED), {
+        "new (a person's value reaching the model without escape?)":
+            sorted(found - set(NON_ESCAPED)),
+        "gone (record the change)": sorted(set(NON_ESCAPED) - found),
+    }
+    for key, reason in NON_ESCAPED.items():
+        assert len(reason.split()) >= 4, f"{key}: say why"
+
+
+def test_a_new_non_escaped_kind_is_seen():
+    tree = ast.parse(
+        "class B:\n    def render(self):\n        return f'x {_put(self.who, \"system\")}'\n")
+    calls = _put_calls(tree)
+    assert [(c, ast.unparse(n.args[0]), h) for c, h, n in calls] == [("B", "self.who", "system")]
+
+
+def test_the_number_helper_refuses_a_string():
+    with pytest.raises(TypeError):
+        framing._figure("a title")  # type: ignore[arg-type]
 
 
 def test_every_put_names_a_known_entry():
     for _cls, how, call in _put_calls(_parse(FRAMING_REL)):
-        assert how in {"escaped", "carried", "system", "bare"}, ast.unparse(call)
+        assert how in {"escaped", "carried", "joined", "system"}, ast.unparse(call)
 
 
 # =============================================================================

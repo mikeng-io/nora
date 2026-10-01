@@ -51,8 +51,8 @@
   {
     "name": "4b: the relay swaps two fields (who asked and where from)",
     "file": "nora/domain/framing.py",
-    "old": "f\"has just called you. {_name(self.requester)} asked you, over on \"\n            f\"{_put(self.from_platform)}, to pass something on to this room — \"",
-    "new": "f\"has just called you. {_put(self.from_platform)} asked you, over on \"\n            f\"{_name(self.requester)}, to pass something on to this room — \"",
+    "old": "f\"has just called you. {_put(self.requester.name)} asked you, over on \"\n            f\"{_put(self.from_platform)}, to pass something on to this room — \"",
+    "new": "f\"has just called you. {_put(self.from_platform)} asked you, over on \"\n            f\"{_put(self.requester.name)}, to pass something on to this room — \"",
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[relay-the-platform-it-came-from]"
   },
   {
@@ -119,25 +119,25 @@
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[summons-head-the-summoner]"
   },
   {
-    "name": "4b: the summoner is escaped (bytes change for a hostile username)",
+    "name": "4b: the summoner is no longer escaped (a hostile handle writes into the first line)",
     "file": "nora/domain/framing.py",
-    "old": "{_put(self.summoned_by, 'bare')}",
-    "new": "{_put(self.summoned_by)}",
-    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[summons-head-the-summoner]"
-  },
-  {
-    "name": "4b: the summoner's escape is recorded as bare no longer (the set of unescaped values moves)",
-    "file": "nora/domain/framing.py",
-    "old": "{_put(self.summoned_by, 'bare')}",
+    "old": "{_put(self.summoned_by)}",
     "new": "{_put(self.summoned_by, 'system')}",
-    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_that_reach_the_model_unescaped_are_exactly_the_recorded_ones"
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[summons-head-a-hostile-summoner-is-escaped]"
   },
   {
-    "name": "4b: a NEW unescaped value (the announcement version is passed bare)",
+    "name": "4b: the summoner is marked system, so a person's value is unescaped and the pin sees it",
+    "file": "nora/domain/framing.py",
+    "old": "{_put(self.summoned_by)}",
+    "new": "{_put(self.summoned_by, 'system')}",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
+  },
+  {
+    "name": "4b: a NEW non-escaped value (the announcement version is marked system)",
     "file": "nora/domain/framing.py",
     "old": "{_put(self.version)}",
-    "new": "{_put(self.version, 'bare')}",
-    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_that_reach_the_model_unescaped_are_exactly_the_recorded_ones"
+    "new": "{_put(self.version, 'system')}",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
   },
   {
     "name": "4b: a raw field is interpolated in a header (no `_put`)",
@@ -208,5 +208,61 @@
     "old": "CEILING = 1",
     "new": "CEILING = 2",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_ledger_is_exactly_the_size_it_says"
+  },
+  {
+    "name": "4b fix: the header's name prefers first_name (review mutant R18)",
+    "file": "nora/domain/framing.py",
+    "old": "    return _put(person.name if person is not None else \"\")",
+    "new": "    return _put((person.first_name or person.name) if person is not None else \"\")",
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[first-name-the-header-says-the-name]"
+  },
+  {
+    "name": "4b fix: a reminder's text is formatted with str() again (fail-open for a non-str)",
+    "file": "nora/domain/framing.py",
+    "old": "_put(text, \"joined\")",
+    "new": "_put(text, \"carried\")",
+    "target": "tests/unit/test_framing_refuses_what_master_refused.py::test_a_request_whose_text_is_not_a_str_fails_the_turn_closed"
+  },
+  {
+    "name": "4b fix: the relay renders a missing requester as an empty name instead of refusing",
+    "file": "nora/domain/framing.py",
+    "old": "f\"has just called you. {_put(self.requester.name)} asked you, over on \"\n            f\"{_put(self.from_platform)}, to pass something on to this room — \"\n            \"that is why this turn is happening, and it is the only reason.\\n\"\n            \"Pass it on, and make it unmistakable that \"\n            f\"{_put(self.requester.name)} said it and not you. \"",
+    "new": "f\"has just called you. {_name(self.requester)} asked you, over on \"\n            f\"{_put(self.from_platform)}, to pass something on to this room — \"\n            \"that is why this turn is happening, and it is the only reason.\\n\"\n            \"Pass it on, and make it unmistakable that \"\n            f\"{_name(self.requester)} said it and not you. \"",
+    "target": "tests/unit/test_framing_refuses_what_master_refused.py::test_a_relay_with_no_requester_is_refused_not_rendered_nameless"
+  },
+  {
+    "name": "4b fix: the number helper stops refusing a string (a smuggling door)",
+    "file": "nora/domain/framing.py",
+    "old": "if not spec and not isinstance(value, (int, float)):",
+    "new": "if False:",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_number_helper_refuses_a_string"
+  },
+  {
+    "name": "4b fix: a string is passed through the number helper (the placeholder check lists it)",
+    "file": "nora/domain/framing.py",
+    "old": "{_put(str(self.title))}",
+    "new": "{_figure(self.title)}",
+    "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[gathering-the-title]"
+  },
+  {
+    "name": "4b fix: a person's value is marked carried, so no escape and the pin sees it",
+    "file": "nora/domain/framing.py",
+    "old": "{_put(str(self.title))}",
+    "new": "{_put(str(self.title), 'carried')}",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_the_values_not_escaped_are_exactly_the_recorded_ones"
+  },
+  {
+    "name": "4b fix: a helper nobody reviewed is defined in framing",
+    "file": "nora/domain/framing.py",
+    "old": "def _utc_minute(moment: datetime) -> str:",
+    "new": "def _raw(value):\n    return value\n\n\ndef _utc_minute(moment: datetime) -> str:",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_clean_calls_are_exactly_the_helpers_framing_defines"
+  },
+  {
+    "name": "4b fix: a builder's only real use is removed (the FRAMING tuple still names it)",
+    "file": "nora/domain/framing.py",
+    "old": "    return RepeatClause(series).render()",
+    "new": "    return \"\"",
+    "target": "tests/architecture/test_framing_is_one_typed_place.py::test_every_builder_is_used_somewhere"
   }
 ]

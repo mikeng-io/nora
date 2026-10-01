@@ -16,18 +16,21 @@ A builder is a frozen dataclass whose fields are the inputs, typed, and whose
 `render()` returns the text. Every person- or store-controlled value enters the
 text through `_put`, and `_put` is the only function here that calls `escape`.
 How a value enters is NAMED at the call, one of four, so a reviewer reads the
-policy off the line and the architecture test counts it
+policy off the line and the architecture test pins every non-default one
 (`tests/architecture/test_framing_is_one_typed_place.py`):
 
 * `"escaped"`: R-13's escape (`nora.domain.prompt.escape`), the default;
 * `"carried"`: the text is the BODY of a block that escapes it once itself
   (`build_tag_message` escapes `<tag_message>`), so escaping it here would
-  escape it twice;
+  escape it twice. Formatted as an f-string formats it, so any object goes in;
+* `"joined"`: `"carried"` for a text that master joined with `str.join`, which
+  REFUSES a non-str with a `TypeError`. A reminder's text is one: a turn whose
+  row held a `None` failed closed, and must still;
 * `"system"`: computed by code from the clock, the zone database or a number,
-  or the output of another builder; no person authored it;
-* `"bare"`: a value that reaches the model UNESCAPED, exactly as the code this
-  replaced interpolated it. Each is a finding, recorded where it stands and
-  pinned as a count; a step that fixes one lowers the count and changes bytes.
+  or the output of another builder; no person authored it.
+
+There is no fifth way. Nothing reaches the model unescaped except what a
+block escapes for itself or what code, not a person, computed.
 
 **Byte-identical by construction.** Every sentence below is the text the call
 sites carried, moved and not reworded; `tests/unit/test_headers_goldens.py` holds
@@ -50,7 +53,7 @@ from nora.domain.ports import JobResult, JobStatus
 from nora.domain.prompt import escape
 from nora.domain.reminders import Recurrence, Reminder, Series, remaining_occurrences
 
-Entry = Literal["escaped", "carried", "system", "bare"]
+Entry = Literal["escaped", "carried", "joined", "system"]
 
 
 def _put(value: object, how: Entry = "escaped") -> str:
@@ -58,15 +61,24 @@ def _put(value: object, how: Entry = "escaped") -> str:
 
     `"escaped"` is `nora.domain.prompt.escape`: `& < >` and the control
     characters XML cannot carry. The other three leave the bytes as they are and
-    differ only in what they say about why (see the module docstring)."""
+    differ in what they say about why (see the module docstring); `"joined"`
+    also refuses a non-str, as `str.join` did where this text used to be built."""
     if how == "escaped":
         return escape(value)
+    if how == "joined" and not isinstance(value, str):
+        raise TypeError(f"expected str instance, {type(value).__name__} found")
     return str(value)
 
 
 def _figure(value: float, spec: str = "") -> str:
     """A number as text. A number carries no markup and no person's words; this
-    is the one way one enters authored text, so it is a call like any other."""
+    is the one way one enters authored text, so it is a call like any other, and
+    a string cannot be smuggled in past the placeholder check through it: with no
+    format spec anything but a number is refused, and with `".2f"` (the only spec
+    used) `format` itself refuses a string, with the `ValueError` the f-string it
+    replaced raised."""
+    if not spec and not isinstance(value, (int, float)):
+        raise TypeError(f"a number is expected, not {type(value).__name__}")
     return format(value, spec)
 
 
@@ -347,11 +359,11 @@ class RelayHeader:
     def render(self) -> str:
         return (
             "You are in a group chat you have been reading all along. Nobody here "
-            f"has just called you. {_name(self.requester)} asked you, over on "
+            f"has just called you. {_put(self.requester.name)} asked you, over on "
             f"{_put(self.from_platform)}, to pass something on to this room — "
             "that is why this turn is happening, and it is the only reason.\n"
             "Pass it on, and make it unmistakable that "
-            f"{_name(self.requester)} said it and not you. "
+            f"{_put(self.requester.name)} said it and not you. "
             "You are carrying somebody's message, not making a remark of your own."
         )
 
@@ -492,12 +504,14 @@ class RequestBody:
     """The requester's OWN sentence(s), joined, as the words put to her. That is
     the premise of a reminder: a deferred request, put to her at the due time AS a
     request, so the set-at and due-at facts belong in the header, never here.
-    Carried: `build_tag_message` escapes the body once, in its block."""
+    Carried: `build_tag_message` escapes the body once, in its block. Joined: a
+    text that is not a str raises `TypeError`, as `"\n".join` did, so a row that
+    somehow holds none fails the turn closed instead of putting «None» to her."""
 
     texts: tuple[str, ...]
 
     def render(self) -> str:
-        return "\n".join(_put(text, "carried") for text in self.texts)
+        return "\n".join(_put(text, "joined") for text in self.texts)
 
 
 @dataclass(frozen=True)
@@ -612,12 +626,14 @@ class SummonsHead:
     the summons' context is built from a UTC clock, and a zone-aware non-UTC `now`
     would be mislabelled (pinned by the goldens, not changed here).
 
-    `summoned_by` is `@username` or `someone`, and it is the ONE person-authored
-    value in this module that reaches the model UNESCAPED (`"bare"`): the head
-    was written on the premise that nothing a stranger wrote is in it but a
-    username, and a username is whatever the bridge's card carried. Instagram's
-    own charset keeps one from carrying markup, but nothing at this layer checks
-    it. UNVERIFIED that no card can carry a newline or `<`.
+    `summoned_by` is `@username` or `someone`. It is escaped, and escaping it
+    changes no byte for any value that can reach it: a summoner handle is
+    `[A-Za-z0-9._]{1,30}` (`nora.domain.instagram_links.is_handle`, both
+    construction sites filter), and `escape` is the identity on every one of
+    those characters. Before step 4b it was interpolated bare, outside every
+    block, on the premise that nothing a stranger wrote is in the head but a
+    username; escaping it means a future path that sets the summoner without that
+    filter cannot inject into the first line.
     """
 
     now: datetime
@@ -629,7 +645,7 @@ class SummonsHead:
             "You were tagged in a comment under a public Instagram post. Whatever "
             "you send is posted once, as a public reply to that comment, where "
             "strangers read it. Saying nothing is a complete answer. It is now "
-            f"{_utc_minute(self.now)} UTC. {_put(self.summoned_by, 'bare')} tagged "
+            f"{_utc_minute(self.now)} UTC. {_put(self.summoned_by)} tagged "
             f"you {_put(self.summoned, 'system')}. Under each item of the post is "
             "what a reading of it before this turn found, or that it was not read."
         )
