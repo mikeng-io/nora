@@ -36,6 +36,9 @@ const UUID = /^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 // UUID, so a reply may carry it); Nora resolves it among what the viewer may read.
 const DOCUMENT_REF = /^(?:[0-9a-f]{12}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
 
+const DOCUMENT_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const REVISION = /^[1-9][0-9]{0,8}$/;
+
 export const ROUTES: RouteSpec[] = [
   { pattern: ["status"] },
   { pattern: ["skills"] },
@@ -53,6 +56,14 @@ export const ROUTES: RouteSpec[] = [
   // `q` is the search box: the current title or text, a substring, any script.
   { pattern: ["documents"], scope: "self", query: ["page", "pageSize", "state"], freeText: ["q"] },
   { pattern: ["documents", ":id"], scope: "self", params: { id: DOCUMENT_REF } },
+  // A document's history (design/artifact §34): behind the document's own read gate in
+  // Nora, so the same viewer rule; by its UUID only, and a revision is a positive number.
+  { pattern: ["documents", ":id", "revisions"], scope: "self", params: { id: DOCUMENT_UUID } },
+  {
+    pattern: ["documents", ":id", "revisions", ":n"],
+    scope: "self",
+    params: { id: DOCUMENT_UUID, n: REVISION },
+  },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },
   { pattern: ["presence", "analytics", "places"] },

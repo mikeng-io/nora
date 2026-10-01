@@ -126,6 +126,9 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
   const id = "mmd" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const theme = useThemeName();
   const [svg, setSvg] = useState<string | null>(null);
+  // Which lighting the diagram on screen was drawn in: the colours are copied in at draw
+  // time, so printing waits for a light redraw (and print.css inverts a dark one).
+  const [drawn, setDrawn] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -173,9 +176,16 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
       const out = await mermaid.render(run, source);
       const safe = passiveSvg(out.svg);
       if (!safe) throw new Error("the diagram is not passive");
-      if (live) setSvg(safe);
+      if (live) {
+        setSvg(safe);
+        setDrawn(theme);
+      }
     })()
-      .catch(() => live && setFailed(true))
+      .catch(() => {
+        if (!live) return;
+        setFailed(true);
+        setDrawn(theme);
+      })
       .finally(() => removeMermaidScratch(run));
     return () => {
       live = false;
@@ -183,7 +193,7 @@ export function MermaidBlock({ source, caption }: { source: string; caption: str
   }, [id, source, theme]);
 
   return (
-    <figure className={FIG}>
+    <figure className={FIG} data-mermaid-theme={drawn ?? "pending"}>
       {failed ? (
         <div role="note" className="flex flex-col gap-2">
           <p className="text-meta text-danger">{t("diagramFailed")}</p>

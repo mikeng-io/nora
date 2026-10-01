@@ -1719,6 +1719,8 @@ const DOCUMENTS = [
     media: [DOC_PICTURE_SHA],
     document: DOC_SPEC("Lisbon in December", [
       { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The hotel door", caption: "Where we are staying" } },
+      // A scroll region that owns its keys in the present view (design/artifact §34).
+      { type: "Code", props: { language: "text", text: "Train 07:10 Lisbon Santa Apolonia" } },
     ]),
   },
   {
@@ -1772,8 +1774,13 @@ const DOCUMENTS = [
     updatedAt: "2026-09-10T10:00:00Z",
     createdBy: { personId: "miles", name: "Miles" },
     readers: ["miles"],
-    media: [],
-    document: DOC_SPEC("Saturday packing list"),
+    // A picture and a diagram, so a link's handle is shown to reach both (the picture by
+    // the document's UUID) and a dark page prints its diagram redrawn light.
+    media: [DOC_PICTURE_SHA],
+    document: DOC_SPEC("Saturday packing list", [
+      { type: "Image", props: { media: DOC_PICTURE_SHA, alt: "The bag", caption: "Packed the night before" } },
+      { type: "Mermaid", props: { source: "flowchart LR\n  A[Pack] --> B[Go]", caption: "Pack, then go" } },
+    ]),
   },
 ];
 // nora/web/documents.py: a document's lifecycle state, the latest change wins and none
@@ -1782,11 +1789,15 @@ const DOC_STATES = new Map();
 const docState = (d) => DOC_STATES.get(d.id) ?? "active";
 /** Every document back to `active` (tests share this module's state). */
 export const resetDocumentStates = () => DOC_STATES.clear();
-const docSummary = ({ readers: _r, media: _m, document: _d, text: _t, ...rest }) => ({
-  roomLabel: "",
-  ...rest,
-  state: docState(rest),
-});
+// A restore (below) makes a new current revision; the list and the detail read it. The
+// search text is never sent (nora/web/documents.py).
+const docHead = (d) => DOC_RESTORES.get(d.id)?.at(-1) ?? null;
+const docSummary = ({ readers: _r, media: _m, document: _d, text: _t, ...rest }) => {
+  const head = docHead(rest);
+  const moved = head ? { revision: head.revision, title: head.title, updatedAt: head.recordedAt } : {};
+  return { roomLabel: "", ...rest, ...moved, state: docState(rest) };
+};
+const docSpec = (d) => docHead(d)?.document ?? d.document;
 const DOC_HANDLE = /^[0-9a-f]{12}$/;
 const DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1845,7 +1856,7 @@ get("/app/v1/documents/:id", (params, sp) => {
     );
     if (readable.length !== 1) return { status: 404, body: { status: "not_found" } };
     const [only] = readable;
-    return { status: 200, body: { ...docSummary(only), document: only.document, media: only.media } };
+    return { status: 200, body: { ...docSummary(only), document: docSpec(only), media: only.media } };
   }
   if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
   const doc = DOCUMENTS.find((d) => d.id === params.id);
@@ -1853,7 +1864,7 @@ get("/app/v1/documents/:id", (params, sp) => {
   if (!doc || !doc.readers.includes(personId) || docState(doc) === "deleted") {
     return { status: 404, body: { status: "not_found" } };
   }
-  return { status: 200, body: { ...docSummary(doc), document: doc.document, media: doc.media } };
+  return { status: 200, body: { ...docSummary(doc), document: docSpec(doc), media: doc.media } };
 });
 
 get("/app/v1/documents/:id/media/:sha", (params, sp) => {
@@ -1867,6 +1878,107 @@ get("/app/v1/documents/:id/media/:sha", (params, sp) => {
   }
   return { status: 200, bytes: DOC_PNG, contentType: "image/png" };
 });
+
+// nora/web/document_history.py: every revision is a full snapshot, read through the
+// document's own gate. A fixture's earlier revisions are its current spec with an earlier
+// note, written by Nora; a restore appends one more, by the person, and never rewrites.
+const DOC_RESTORES = new Map();
+/** Every restore undone (tests share this module's state). */
+export const resetDocumentRestores = () => DOC_RESTORES.clear();
+
+function docRevisions(d) {
+  const base = Array.from({ length: d.revision }, (_, i) => {
+    const n = i + 1;
+    const current = n === d.revision;
+    const day = Date.parse(d.createdAt) + i * 86_400_000;
+    return {
+      revision: n,
+      title: d.title,
+      sha256: current ? "f".repeat(64) : String(n).repeat(64),
+      recordedAt: current ? d.updatedAt : new Date(day).toISOString().replace(".000Z", "Z"),
+      writtenBy: { kind: "nora" },
+      document: current
+        ? d.document
+        : {
+            ...d.document,
+            root: {
+              ...d.document.root,
+              children: [
+                { type: "Section", props: { title: "Notes" }, children: [{ type: "Markdown", props: { text: `Draft ${n}.` } }] },
+                ...(d.document.root?.children ?? []).slice(1),
+              ],
+            },
+          },
+      media: d.media,
+    };
+  });
+  return [...base, ...(DOC_RESTORES.get(d.id) ?? [])];
+}
+
+function readableDocument(params, sp) {
+  const personId = documentViewer(sp);
+  if (!personId) return { error: { status: 400, body: { error: "personId required" } } };
+  if (!DOC_UUID.test(params.id)) return { error: { status: 400, body: { status: "refused", note: "bad id" } } };
+  const doc = DOCUMENTS.find((d) => d.id === params.id);
+  if (!doc || !doc.readers.includes(personId) || docState(doc) === "deleted") {
+    return { error: { status: 404, body: { status: "not_found" } } };
+  }
+  return { doc, personId };
+}
+
+get("/app/v1/documents/:id/revisions", (params, sp) => {
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const { doc, error } = readableDocument(params, sp);
+  if (error) return error;
+  const all = docRevisions(doc);
+  return {
+    status: 200,
+    body: {
+      id: doc.id,
+      title: all.at(-1).title,
+      revision: all.length,
+      state: docState(doc),
+      revisions: all.map(({ document: _d, media: _m, ...r }) => r).reverse(),
+    },
+  };
+});
+
+get("/app/v1/documents/:id/revisions/:n", (params, sp) => {
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const { doc, error } = readableDocument(params, sp);
+  if (error) return error;
+  if (!/^[1-9][0-9]*$/.test(params.n)) return { status: 400, body: { status: "refused", note: "bad id" } };
+  const all = docRevisions(doc);
+  const found = all[Number(params.n) - 1];
+  if (!found) return { status: 404, body: { status: "not_found" } };
+  return { status: 200, body: { id: doc.id, currentRevision: all.length, state: docState(doc), ...found } };
+});
+
+// POST /app/v1/documents/:id/revisions/:n/restore (nora/web/document_history.py).
+export function handleDocumentRestore(pathname, sp, payload) {
+  const m = /^\/app\/v1\/documents\/([^/]+)\/revisions\/([^/]+)\/restore$/.exec(pathname);
+  if (!m) return null;
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const { doc, personId, error } = readableDocument({ id: m[1] }, sp);
+  if (error) return error;
+  const all = docRevisions(doc);
+  const old = all[Number(m[2]) - 1];
+  if (!/^[1-9][0-9]*$/.test(m[2]) || !old) return { status: 404, body: { status: "not_found" } };
+  const base = payload?.baseRevision;
+  if (!Number.isInteger(base) || base < 1) return { status: 400, body: { status: "refused" } };
+  if (old.revision === all.length) return { status: 400, body: { status: "refused" } };
+  if (docState(doc) !== "active") return { status: 409, body: { status: "not_active" } };
+  if (base !== all.length) return { status: 409, body: { status: "conflict" } };
+  const person = ROSTER_BY_ID.get(personId);
+  const restored = {
+    ...old,
+    revision: all.length + 1,
+    recordedAt: new Date().toISOString(),
+    writtenBy: { kind: "person", personId, name: person?.displayName ?? personId },
+  };
+  DOC_RESTORES.set(doc.id, [...(DOC_RESTORES.get(doc.id) ?? []), restored]);
+  return { status: 200, body: { status: "ok", revision: restored.revision } };
+}
 
 // -------------------------------------------------------------- presence
 
@@ -2105,6 +2217,7 @@ function startServer() {
     // deleted one (the portal cannot restore it) leaves the fixtures as it found them.
     if (req.method === "POST" && url.pathname === "/__mock/documents/reset") {
       resetDocumentStates();
+      resetDocumentRestores();
       res.writeHead(204);
       res.end();
       return;
@@ -2113,7 +2226,11 @@ function startServer() {
       req.method === "GET"
         ? handle(url.pathname, url.searchParams, Date.now())
         : req.method === "POST"
-          ? handleDocumentState(url.pathname, url.searchParams, await readJson(req))
+          ? await readJson(req).then(
+              (payload) =>
+                handleDocumentRestore(url.pathname, url.searchParams, payload) ??
+                handleDocumentState(url.pathname, url.searchParams, payload),
+            )
           : { status: 404, body: ERR_NOT_FOUND };
     await sleep(jitteredLatencyMs());
     if (bytes) {

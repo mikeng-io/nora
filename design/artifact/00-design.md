@@ -1198,7 +1198,7 @@ nothing is erased for real: DEC-255's reopen condition (a document that must be 
 own decision and a purge path) stands. **Built since (§33):** `nora/app/person_forget.py` has the step, and #655 is closed by it.
 
 **To be built, in a separate PR (planned; not built; this design claims none of it exists).** Search and the phone
-entry are built since (§33); the rest below stays planned:
+entry are built since (§33), and the present view, print and PDF, and the revision history since (§34):
 
 - **Search**, v1 lexical over `documents.text` as §14 specifies, behind the same visibility rule.
 - **A phone bottom-bar entry for Documents** (§27, and the DESIGN.md change that goes with it).
@@ -1211,7 +1211,8 @@ Until each merges, the `document-creation` skill and the room's tools must not t
 skill's line about slides was removed on 2026-10-01 for that reason. The generated catalog prompt
 (`nora/documents/catalog-prompt.md`, from `app/src/lib/documents/catalog.ts`) still says a presentation view
 shows each top-level Section as a slide; it is the one place left that does, and it is generated from the
-app, so the present-view PR is where it becomes true or is changed.
+app, so the present-view PR is where it becomes true or is changed. It is true since §34, and the catalog
+line is unchanged.
 
 **Parked, not designed away:** long background research reports. They are the job of a future
 `delegate_task` (open issue #22), which delivers a `document_id` through the document tool.
@@ -1300,3 +1301,68 @@ a deleted document answer alike.
   five at most.
 - *The proxy.* `/api/v1/documents` forwards `q` as free text (any script, at most 200 characters, no control
   characters; the other parameters stay id-shaped), because a search is words, not an id.
+
+## 34. Present, print, history (2026-10-01)
+
+**The gap.** §15 promised `?view=present`, nothing said how a document becomes a PDF, and every revision was
+already a full snapshot (§25) with no way for a reader to see one. The operator ruled all three in on 2026-10-01
+(§32's planned list). Long background reports stay `delegate_task`'s (§15, §32), parked.
+
+**Present (DEC-267).** `/documents/<id>?view=present` draws the SAME stored spec through the same registry,
+one slide at a time: slide 1 is a cover (the Page's title block, `data-document-cover`, and every block before
+the first top-level `Section`), then one slide per top-level `Section`, carrying any non-Section block that
+follows it. A nested Section never splits; each slide is the document with its Page and only that slide's
+children, so `parseDocument` checks it like any document. The deck is a modal in effect: it is portalled to
+`<body>`, everything else is `inert` while it is open, Tab cycles inside it, and focus returns to the Present
+button when it closes. Arrows / space / Page Up and Down / Home / End move unless the focused element owns
+them (a table's scroll region, a code block, a diagram, a map, anything that scrolls); Escape and a visible
+Leave control always exit; a horizontal swipe moves on a phone; a counter is always shown; the portal's
+reduced-motion rule applies. `?slide=` follows the slide by replacing the history entry, so a reload keeps it,
+and leaving goes BACK to the page the deck was opened from (or replaces itself with the page), so Back from
+the document is never a no-op. Opened from a link's 12-hex handle, everything handed down uses the document's
+UUID, so pictures load. A document with no top-level Section shows the ordinary page with a note, and the
+Present button is offered only where the split exists. `app/src/lib/documents/present.ts`.
+
+**Print / PDF (DEC-266): the browser's print is the PDF path.** No server-side renderer and no new service: a
+headless browser beside Nora would be a second renderer of model-written content to keep in step, a new attack
+surface and a container, for a file the reader's browser already makes ("Save as PDF"). The portal adds
+`app/src/components/documents/print.css`, active only in print and only on a page holding
+`[data-print-document]`: everything outside that subtree is dropped (shell, back link), and inside it the
+page's own chrome under the title (§33: the meta line, the outdated note, Archive / Delete, Present / Print /
+History) carries `data-print-hide` and is dropped too, so the paper holds the document body only, plus one
+printed line where it matters: an old revision says "Revision N of M: not the current version", an archived
+document says it is archived. Cards, Tables, Code, Images, Charts, Maps and diagrams are not split across
+pages, and a link prints its address only where its text does not already say it. **Paper is light in either
+theme, with one approximation:** the tokens are light in print; a Mermaid diagram copied its theme's colours
+into its SVG at draw time, so the Print button switches the page to light, waits until every diagram reports
+it was redrawn light (`data-mermaid-theme`), prints, and restores the theme; the browser's own print menu
+cannot wait, so for it a diagram still drawn dark is inverted (`filter: invert(1) hue-rotate(180deg)`), which
+is legible but not the light palette exactly. This holds unless a document must be produced with no reader
+present (a scheduled PDF sent to a room), which reopens a server-side renderer.
+
+**History (DEC-268).** Three Nora routes in `nora/web/document_history.py`, through the document's own read
+gate (`get_visible`, plus the `forgotten` check `change_document_state` makes) before anything else is read:
+the revisions newest first (number, title, sha256, when, who), one revision's stored spec, and a restore. Not
+readable, deleted, forgotten (§32), unknown and a revision the document never had are one 404; archived is
+readable. Both reads carry `roomLabel` by the detail payload's rule: only for a viewer in that room. The store
+gains `revision()` and `RevisionRecord.media`; the picture route also serves a picture an EARLIER revision of
+the same readable document names, and a picture no revision names is still a 404. Nora records the tag a
+revision was written at (`tag:<id>`), not a person, so the history shows it as hers; a restore records
+`portal:<person_id>`, shown by name.
+
+**Restore** publishes an old spec as a NEW revision and never rewrites history. It reuses the store's one
+revision path, `add_revision` with `base_revision` (the current number the viewer saw): a revision that landed
+since is a `conflict`; an archived document is `not_active`, checked first (so restoring the current revision
+of an archived document says archived, not "already current") and again by `add_revision` under its lock; a
+document deleted or forgotten between the read and the write is the unreadable 404. The old spec is checked
+again with `check_document` (a spec this build would refuse is `invalid`, a checker failure `unavailable`;
+neither stores anything). `DocumentService.publish` is not the path: it re-resolves picture codes against the
+room's recent messages and is room-scoped.
+
+**Limitation (operator ruling 2026-10-01): editing something out of a document does not remove it from its
+history.** Every earlier revision stays readable to anyone who may read the document; the in-group exposure is
+minor in this private project, and deleting the document or `nora person forget` hides all of it. No redaction
+is built.
+
+**Not built.** A diff between revisions, restoring a deleted document from the portal (§31), redaction, and
+opening collapsed blocks for print.

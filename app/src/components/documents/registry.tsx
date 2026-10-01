@@ -78,7 +78,9 @@ function PageBlock({ props, children }: Render<"Page">) {
   return (
     <article className="flex min-w-0 flex-col gap-8">
       <div className="flex flex-col gap-4">
-        <header className="flex flex-col gap-2">
+        {/* `data-document-cover`: the Page's own title block, which the present view shows
+            on the cover slide only (design/artifact §34). */}
+        <header className="flex flex-col gap-2" data-document-cover>
           <h1 className="text-display font-semibold text-ink">{props.title}</h1>
           {props.subtitle ? <p className="text-lead text-ink-soft">{props.subtitle}</p> : null}
         </header>

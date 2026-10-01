@@ -52,6 +52,7 @@ from nora.domain.documents import (
     RevisionRecord,
     RoomKey,
     StoredDocument,
+    StoredRevision,
     VisiblePage,
     is_handle,
     normalize_query,
@@ -2436,9 +2437,19 @@ class FakeDocumentStore:
         return tuple(
             RevisionRecord(
                 revision=i, title=r.title, sha256=r.sha256, written_by=r.written_by,
-                recorded_at=at,
+                recorded_at=at, media=tuple(r.media),
             )
             for i, (r, at) in enumerate(self._revisions.get(document_id, []), start=1)
+        )
+
+    async def revision(self, *, document_id: UUID, revision: int) -> StoredRevision | None:
+        revisions = self._revisions.get(document_id, [])
+        if not 1 <= revision <= len(revisions):
+            return None
+        r, at = revisions[revision - 1]
+        return StoredRevision(
+            revision=revision, title=r.title, spec=json.loads(json.dumps(r.spec)), text=r.text,
+            sha256=r.sha256, media=tuple(r.media), written_by=r.written_by, recorded_at=at,
         )
 
     async def list_visible(

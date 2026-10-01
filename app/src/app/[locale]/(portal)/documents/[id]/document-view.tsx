@@ -10,6 +10,7 @@ import { useRegisterTitle } from "@/components/shell/page-title";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { DocumentView } from "@/components/documents/registry";
+import { DocumentActions, PrintableDocument } from "@/components/documents/document-actions";
 import { isNotFound } from "@/lib/api/client";
 import type { DocumentDetail } from "@/lib/api/documents";
 import {
@@ -110,6 +111,7 @@ function Loaded({
   onRetry: () => void;
 }) {
   const t = useTranslations("documents");
+  const tv = useTranslations("documentViews");
   const locale = useLocale();
   const now = useNow() || Date.now();
   // The spec's own Page draws the one <h1>; this only tells the phone's top bar the title.
@@ -117,8 +119,12 @@ function Loaded({
   const updated = Date.parse(doc.updatedAt);
   const ago = formatRelative(updated, locale, now);
   const who = { name: doc.createdBy.name, room: roomName(doc) };
+  // The page's own controls are drawn inside the printed subtree (under the title), so
+  // they carry `data-print-hide`; paper gets the document and, when it is archived, one
+  // line saying so (design/artifact §34).
   const chrome = (
-    <div className="flex flex-col gap-3">
+    <>
+    <div className="flex flex-col gap-3" data-print-hide>
       <p
         className="text-meta text-ink-muted"
         data-testid="document-meta"
@@ -136,7 +142,14 @@ function Loaded({
         </p>
       ) : null}
       <Lifecycle doc={doc} />
+      <DocumentActions id={doc.id} spec={doc.document} />
     </div>
+    {doc.state === "archived" ? (
+      <p className="hidden text-meta text-ink-soft print:block" data-testid="printed-archived">
+        {tv("printedArchived")}
+      </p>
+    ) : null}
+    </>
   );
   return (
     <PageFrame>
@@ -147,7 +160,9 @@ function Loaded({
         <ChevronLeft className="size-4" aria-hidden="true" />
         {t("back")}
       </Link>
-      <DocumentView doc={doc.document} documentId={doc.id} chrome={chrome} />
+      <PrintableDocument>
+        <DocumentView doc={doc.document} documentId={doc.id} chrome={chrome} />
+      </PrintableDocument>
     </PageFrame>
   );
 }

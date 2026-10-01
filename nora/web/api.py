@@ -30,6 +30,7 @@ from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
 from nora.web.doctrine import build_doctrine_payload
+from nora.web.document_history import register_document_history_routes
 from nora.web.documents import (
     build_document_media,
     build_document_payload,
@@ -808,3 +809,4 @@ def register_web_routes(
     app.router.add_get("/app/v1/documents/{id}", documents_detail)
     app.router.add_get("/app/v1/documents/{id}/media/{sha}", documents_media)
     app.router.add_post("/app/v1/documents/{id}/state", documents_state)
+    register_document_history_routes(app)
