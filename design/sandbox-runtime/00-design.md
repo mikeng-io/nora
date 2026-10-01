@@ -490,6 +490,15 @@ with who, when, how and what, as a full trail for auditing.**
   `policy log --json` egress records. S3 adds import and export. S4 adds
   every browser sub-agent step (action, element, URL, screenshot key). An
   operation with no row is a gap in the trail, and is treated as a defect.
+- **Alerting (built 2026-10-01, DEC-255).** `nora_computer_up{target="computerd"}`
+  is set by an authenticated probe every 30 s and by every call; the
+  `nora_computer_calls_total{op,status}` and
+  `nora_computer_audit_failures_total{tool,stage}` counters are created at zero
+  at start. `ComputerDown` (5 min), `ComputerCallsFailing` and
+  `ComputerAuditFailing` ride the existing rules and Alertmanager route to the
+  alert channel. With `[computer] enabled = false` there is no `up` sample:
+  not applicable, not down. A lapsed Docker login or a hung computerd is the
+  same symptom (computerd does not answer) and the same alert.
 
 ## 13. Sequence
 

@@ -83,7 +83,8 @@ def test_the_host_reaches_honcho_on_loopback_where_the_container_uses_its_name()
     does not resolve. The deployment's `[memory] base_url` is `http://honcho:8000`,
     and the suite must read it as loopback, exactly as it already reads
     `host.docker.internal`."""
-    obtain = importlib.import_module("nora.subject.obtain")  # `nora.subject.obtain` the name is a function too
+    # By module path: `nora.subject.obtain` as an attribute is the function.
+    obtain = importlib.import_module("nora.subject.obtain")
     assert obtain._from_host("http://honcho:8000") == "http://127.0.0.1:8000"
     assert obtain._from_host("http://host.docker.internal:8000") == "http://127.0.0.1:8000"
     # Not a substring rewrite: a host that merely contains the name is untouched.

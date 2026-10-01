@@ -31,6 +31,7 @@ import aiohttp
 
 from nora.domain.computer import (
     BytesResult,
+    ComputerCallObserver,
     FileEntry,
     FileResult,
     ListResult,
@@ -58,6 +59,14 @@ class _UnavailableError(Exception):
     """Internal: a reply that cannot be trusted as an answer."""
 
 
+class _NoAnswerError(_UnavailableError):
+    """Internal: computerd gave no answer at all: an HTTP status other than 200
+    (a 401 after a token rotation, a 5xx, a 404 from something that is not
+    computerd). Distinct from `_UnavailableError`, which includes a reply that
+    DID arrive and could not be trusted (a digest mismatch): that one is
+    computerd answering badly, this is computerd not answering."""
+
+
 def _status(raw: Any) -> SandboxStatus:
     try:
         return SandboxStatus(raw)
@@ -82,12 +91,16 @@ class ComputerdRuntime:
 
     def __init__(
         self, *, base_url: str, token: str, timeout_seconds: float = 30.0,
-        max_output_chars: int = 8000,
+        max_output_chars: int = 8000, observer: ComputerCallObserver | None = None,
     ) -> None:
         self._base = base_url.rstrip("/") + "/v1"
         self._headers = {"Authorization": f"Bearer {token}"}
         self._timeout = timeout_seconds
         self._max_output_chars = max_output_chars
+        # Told, after every call, which operation ran, the status it answered
+        # and whether computerd answered at all. Never raises into a call: a
+        # broken observer must not turn a computer answer into a failure.
+        self._observer = observer
 
     # -- the port ---------------------------------------------------------
 
@@ -117,7 +130,9 @@ class ComputerdRuntime:
                 duration_ms=_opt_int(reply.get("duration_ms")),
                 reason=_opt_str(reply.get("reason")),
             )
-        return await _guard(body, lambda why: RunResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "run", body, lambda why: RunResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def read(
         self, *, scope: str, path: str, offset: int = 0, limit: int | None = None,
@@ -135,7 +150,9 @@ class ComputerdRuntime:
                 lines_total=_opt_int(reply.get("lines_total")),
                 reason=_opt_str(reply.get("reason")),
             )
-        return await _guard(body, lambda why: FileResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "read", body, lambda why: FileResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def write_text(self, *, scope: str, path: str, content: str) -> OpResult:
         sent = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -161,7 +178,9 @@ class ComputerdRuntime:
                 truncated=reply.get("truncated") is True,
                 reason=_opt_str(reply.get("reason")),
             )
-        return await _guard(body, lambda why: ListResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "files", body, lambda why: ListResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def fetch(self, *, scope: str, path: str, max_bytes: int) -> BytesResult:
         async def body() -> BytesResult:
@@ -175,7 +194,7 @@ class ComputerdRuntime:
                 ) as response,
             ):
                 if response.status != 200:
-                    raise _UnavailableError(f"computerd answered HTTP {response.status}")
+                    raise _NoAnswerError(f"computerd answered HTTP {response.status}")
                 if response.content_type == "application/json":
                     reply = await response.json()
                     if not isinstance(reply, dict):
@@ -197,7 +216,9 @@ class ComputerdRuntime:
             if claimed != digest:
                 raise _UnavailableError("the bytes received do not match the digest computerd sent")
             return BytesResult(status=SandboxStatus.OK, data=data, sha256=digest)
-        return await _guard(body, lambda why: BytesResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "fetch", body, lambda why: BytesResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def put(self, *, scope: str, path: str, data: bytes) -> OpResult:
         sent = hashlib.sha256(data).hexdigest()
@@ -213,10 +234,12 @@ class ComputerdRuntime:
                 ) as response,
             ):
                 if response.status != 200:
-                    raise _UnavailableError(f"computerd answered HTTP {response.status}")
+                    raise _NoAnswerError(f"computerd answered HTTP {response.status}")
                 reply = await response.json(content_type=None)
             return _op_result(reply, sent)
-        return await _guard(body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "put", body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def state(self, *, scope: str) -> StateResult:
         async def body() -> StateResult:
@@ -262,14 +285,18 @@ class ComputerdRuntime:
                                   or (None if isinstance(raw_procs, list)
                                       else "computerd did not report processes")),
             )
-        return await _guard(body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            "state", body, lambda why: StateResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     # -- plumbing ---------------------------------------------------------
 
     async def _op(self, op: str, payload: dict[str, Any], sent: str | None) -> OpResult:
         async def body() -> OpResult:
             return _op_result(await self._post_json(op, payload), sent)
-        return await _guard(body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why))
+        return await self._guarded(
+            op, body, lambda why: OpResult(SandboxStatus.UNAVAILABLE, reason=why),
+        )
 
     async def _post_json(
         self, op: str, payload: dict[str, Any], *, deadline_s: float | None = None,
@@ -281,11 +308,47 @@ class ComputerdRuntime:
             session.post(f"{self._base}/{op}", headers=self._headers, json=payload) as response,
         ):
             if response.status != 200:
-                raise _UnavailableError(f"computerd answered HTTP {response.status}")
+                raise _NoAnswerError(f"computerd answered HTTP {response.status}")
             reply = await response.json(content_type=None)
         if not isinstance(reply, dict):
             raise _UnavailableError("computerd returned a non-object JSON body")
         return reply
+
+    async def _guarded(
+        self, op: str, body: Callable[[], Awaitable[R]], unavailable: Callable[[str], R],
+    ) -> R:
+        """The never-raise barrier every public method goes through, and the one
+        place a call is counted: `op`, the status it answered (the result's own
+        `status`) and whether computerd answered at all.
+
+        `answered` is False only for a refused or timed-out connection and for
+        a non-200 reply. Any other failure happened AFTER a reply arrived
+        (parsing it, a digest that did not match), so computerd is up and the
+        status says what was wrong."""
+        answered = True
+        try:
+            result = await body()
+        except _NoAnswerError as exc:
+            answered, result = False, unavailable(str(exc))
+        except _UnavailableError as exc:
+            result = unavailable(str(exc))
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            log.info("computerd unreachable: %s: %s", type(exc).__name__, exc)
+            answered = False
+            result = unavailable(f"the computer is unreachable ({type(exc).__name__})")
+        except Exception as exc:  # a raise out of the port breaks every tool on it
+            log.exception("computerd call failed unexpectedly")
+            result = unavailable(f"the computer call failed ({type(exc).__name__})")
+        self._observe(op, str(getattr(result, "status", SandboxStatus.UNAVAILABLE)), answered)
+        return result
+
+    def _observe(self, op: str, status: str, answered: bool) -> None:
+        if self._observer is None:
+            return
+        try:
+            self._observer.call(op, status, answered)
+        except Exception:
+            log.exception("computer call observer failed (op=%s)", op)
 
 
 def _epoch(raw: Any) -> datetime:
@@ -306,17 +369,3 @@ def _op_result(reply: Any, sent: str | None) -> OpResult:
         reason=_opt_str(reply.get("reason")),
         previous_sha256=_opt_str(reply.get("previous_sha256")),
     )
-
-
-async def _guard(body: Callable[[], Awaitable[R]], unavailable: Callable[[str], R]) -> R:
-    """The never-raise barrier every public method goes through."""
-    try:
-        return await body()
-    except _UnavailableError as exc:
-        return unavailable(str(exc))
-    except (aiohttp.ClientError, TimeoutError) as exc:
-        log.info("computerd unreachable: %s: %s", type(exc).__name__, exc)
-        return unavailable(f"the computer is unreachable ({type(exc).__name__})")
-    except Exception as exc:  # a raise out of the port breaks every tool on it
-        log.exception("computerd call failed unexpectedly")
-        return unavailable(f"the computer call failed ({type(exc).__name__})")

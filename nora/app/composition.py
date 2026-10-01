@@ -58,7 +58,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import LOAD_TRANSCRIPT_MAX, OriginRoom
+from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX, OriginRoom
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -73,6 +73,7 @@ from nora.app.cognition_wiring import (
     require_session_hook,
     units_with_home_rooms,
 )
+from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
 from nora.app.documents_service import DocumentService, rooms_named
 from nora.app.memory_routing import (
@@ -132,6 +133,7 @@ from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
+from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -1169,6 +1171,10 @@ class Dependencies:
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
     computer_sweep_seconds: float = 300.0
+    # The timed probe of computerd (`nora.infra.computer.probe`): `None`
+    # unless `[computer] enabled`. `nora/__main__.py` spawns
+    # `runtime.computer_probe_loop` on it.
+    computer_probe: ComputerdProbe | None = None
     # Platform adapter health transitions as Record (20 §1). ALWAYS built:
     # it is Record, not a subsystem that acts, and «was the source healthy
     # for the span» must be answerable for the whole history, not only from
@@ -1306,13 +1312,27 @@ async def build_dependencies(
     # (see the settings below for the rest of `[computer]`). Built here,
     # before the assembler, because `<computer>` reads it on every turn.
     computer: SandboxRuntime | None = None
+    computer_probe: ComputerdProbe | None = None
     if cfg.computer.enabled:
         from nora.infra.computer.client import ComputerdRuntime
 
+        computer_token = _computer_token(cfg)
+        # The computer as a metric (DEC-255): built ONLY here, so with
+        # `[computer] enabled = false` there is no `nora_computer_up` series at
+        # all (not applicable, which is not down) and no zero-valued calls
+        # series either. `prime()` creates them at zero, so a rare `unavailable`
+        # after a restart is not a series whose first sample is already 1.
+        computer_metrics = ComputerMetrics(metrics, audit_tools=COMPUTER_TOOLS)
+        computer_metrics.prime()
         computer = ComputerdRuntime(
-            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            base_url=cfg.computer.base_url, token=computer_token,
             timeout_seconds=cfg.computer.request_timeout_seconds,
             max_output_chars=cfg.computer.max_output_chars,
+            observer=computer_metrics,
+        )
+        computer_probe = ComputerdProbe(
+            base_url=cfg.computer.base_url, token=computer_token,
+            observer=computer_metrics,
         )
     # `<computer>` (design/sandbox-runtime §15.3): the one reader the tag
     # path and the fire path share. `None` while `[computer]` is off, so no
@@ -4541,6 +4561,7 @@ async def build_dependencies(
             ) if computer is not None else None
         ),
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,
+        computer_probe=computer_probe,
         health_recorder=AdapterHealthRecorder(
             log=SqlSourceHealthLog(engine), metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
