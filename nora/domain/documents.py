@@ -130,11 +130,29 @@ class StoredDocument:
 
 @dataclass(frozen=True, slots=True)
 class RevisionRecord:
-    """One entry of a document's history."""
+    """One entry of a document's history. `media` is every picture that revision names,
+    so the picture route can serve a picture an EARLIER revision shows (the portal's
+    history view, design/artifact §32)."""
 
     revision: int
     title: str
     sha256: str
+    written_by: str
+    recorded_at: datetime
+    media: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class StoredRevision:
+    """One revision's full snapshot, as it was written: never the current one unless it
+    IS the current one. What the portal's history view shows and what a restore copies."""
+
+    revision: int
+    title: str
+    spec: dict[str, Any]
+    text: str
+    sha256: str
+    media: tuple[str, ...]
     written_by: str
     recorded_at: datetime
 
@@ -190,6 +208,11 @@ class DocumentStore(Protocol):
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         """Every revision, oldest first."""
+        ...
+
+    async def revision(self, *, document_id: UUID, revision: int) -> StoredRevision | None:
+        """Revision `revision` of a document in ANY state, or `None` when there is no such
+        revision. NO visibility check: the caller gates on `get_visible` first."""
         ...
 
     async def list_visible(

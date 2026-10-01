@@ -242,10 +242,18 @@ async def build_document_media(
         )
     except Exception:  # noqa: BLE001 - a store that is down is "could not check"
         return DocumentMedia("unavailable")
-    # Readable, AND named by the revision being read: being able to open a document is
-    # not a licence to read any picture Nora holds.
-    if stored is None or sha not in stored.media:
+    # Readable, AND named by one of ITS revisions (the current one, or an earlier one the
+    # history view shows, design/artifact §32): being able to open a document is not a
+    # licence to read any picture Nora holds.
+    if stored is None:
         return _not_found()
+    if sha not in stored.media:
+        try:
+            history = await store.history(document_id=document_id)
+        except Exception:  # noqa: BLE001
+            return DocumentMedia("unavailable")
+        if not any(sha in h.media for h in history):
+            return _not_found()
     if blobs is None:
         return DocumentMedia("unavailable")
     try:
