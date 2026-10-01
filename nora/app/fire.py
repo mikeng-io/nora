@@ -83,6 +83,7 @@ from nora.agent.prefill import (
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
@@ -1984,6 +1985,11 @@ class FirePath:
             surface = self._registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.
                 defer=self._defer_tools,
+                # DEC-256, the same derivation as the tag path. A fire turn's
+                # message is never spoken (`_synthetic_message` leaves `voice`
+                # False, operator 2026-09-17), so this is a text turn today;
+                # derived rather than hardcoded so the two paths cannot drift.
+                occasion=turn_occasion(voice=ctx.message.voice),
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
