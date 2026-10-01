@@ -51,21 +51,24 @@ from typing import Any
 
 import pytest
 
+from nora.agent import reaction
 from nora.agent.reaction import ReactionPicker, render_recent
 from nora.domain.culture import CultureRevision
 from nora.domain.media import GifCandidate
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.ports import OutboundAttachment
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
+from nora.engagement import debrief_render
 from nora.engagement.debrief_render import render_debrief_input, render_rollup_input
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import debrief
 from nora.ingest.stages import standing_event
+from nora.language import note_merge
 from nora.obs.metrics import Metrics
 from nora.testing import FakeRecordStore, InMemoryNoteStore, InMemoryStandingStore
 from nora.testing.culture_store import InMemoryCultureStore
 from tests.unit import test_note_merge as merge
+from tests.unit.test_reaction import _Gifs
 
 GOLDEN: dict[str, Any] = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "context_assembly_step2b_goldens.json")
@@ -184,17 +187,6 @@ class _Prompts:
 
     def get(self, *, applies_to: str = "reaction"):
         return SimpleNamespace(doctrine_text=self.text)
-
-
-class _Gifs:
-    def __init__(self, *found: GifCandidate) -> None:
-        self.found = found
-
-    async def search(self, *, query: str):
-        return self.found
-
-    async def fetch(self, *, candidate: GifCandidate):
-        return OutboundAttachment(b"GIF89a", "image/gif", "r.gif")
 
 
 _NOD = GifCandidate("giphy", "nod-1", "Dog Nodding", "A dog nods slowly", ("nod",), "g")
@@ -340,7 +332,9 @@ def _steps_messages() -> tuple[dict, ...]:
         {"role": "assistant", "content": [
             {"text": "I will search. " + "thinking " * 120},
             {"reasoningContent": {"reasoningText": {"text": "private " * 700}}},
-            {"toolUse": {"name": "web_search", "input": {"q": 'ramen "Kwun Tong"', "pad": "x" * 700}}},
+            {"toolUse": {"name": "web_search", "input": {
+                "q": 'ramen "Kwun Tong"', "pad": "x" * 700,
+            }}},
         ]},
         {"role": "user", "content": [
             {"toolResult": {"content": [{"text": long_result}]}},
@@ -371,7 +365,9 @@ def _prior(*, body: str = "Dinner Saturday is agreed; where is still open.\nSeco
     )
 
 
-def _culture(body: str = "They decide by attrition; <never> cancelled & \"quiet\".") -> CultureRevision:
+def _culture(
+    body: str = "They decide by attrition; <never> cancelled & \"quiet\".",
+) -> CultureRevision:
     return CultureRevision(
         id="rev-1", culture_key="room-1", body=body, written_at=T - 3 * 24 * H,
         established_by="dream:culture:test",
@@ -732,3 +728,47 @@ def test_the_note_merge_goldens_carry_the_blocks_they_vary():
     assert 'changed="revised"' in GOLDEN["merge-a-note-the-model-must-see-marked-revised"]
     assert "its first 600 characters" in GOLDEN["merge-long-and-nasty-text"]
     assert 'room="room 1"' in GOLDEN["merge-many-notes-two-rooms-one-unlabelled"]
+
+
+# =============================================================================
+# the table is what is walked
+# =============================================================================
+
+
+def _spy(monkeypatch: pytest.MonkeyPatch, module: Any) -> list[Any]:
+    """Every block `module` hands to its `assemble`, in call order."""
+    seen: list[Any] = []
+    real = module.assemble
+
+    def spy(blocks, **kwargs):
+        blocks = list(blocks)
+        seen.extend(blocks)
+        return real(blocks, **kwargs)
+
+    monkeypatch.setattr(module, "assemble", spy)
+    return seen
+
+
+@pytest.mark.parametrize(("module", "cases"), [
+    (note_merge, ["merge-two-notes-anchored-and-not"]),
+    (reaction, ["reaction-both-prompts-ordinary-window"]),
+    (debrief_render, [
+        "input-prior-with-a-working-set-and-a-culture-account",
+        "rollup-prior-working-set-and-culture",
+    ]),
+], ids=["note-merge", "reaction", "debrief"])
+async def test_every_block_assemble_is_handed_carries_its_rows_order_and_key(
+    module: Any, cases: list[str], monkeypatch: pytest.MonkeyPatch,
+):
+    """The goldens cannot see a dropped `restamp`: a block left at the default
+    `order=0` still sorts first, and these tables' orders were the append order
+    of the join they replaced, so the bytes agree either way. The table is what
+    the model reads only if the blocks that reach `assemble` carry it, so that
+    is checked directly, and every row of the table is walked by some case."""
+    seen = _spy(monkeypatch, module)
+    for name in cases:
+        await CASES[name]()
+    assert seen
+    for block in seen:
+        assert (block.order, block.key) == module._ROW[block.name], block.name
+    assert {b.name for b in seen} == {name for name, _, _ in module._BLOCKS}

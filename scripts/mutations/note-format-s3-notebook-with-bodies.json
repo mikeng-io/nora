@@ -86,8 +86,8 @@
   {
     "name": "note-merge keeps its own type",
     "file": "nora/language/note_merge.py",
-    "old": "    return ContextBlock(name=\"open_note\", attrs=attrs, body=body).render()",
-    "new": "    return ContextBlock(name=\"candidate_open_note\", attrs=attrs, body=body).render()",
+    "old": "        name=\"open_note\", order=order, key=key, attrs=attrs, body=body,",
+    "new": "        name=\"candidate_open_note\", order=order, key=key, attrs=attrs, body=body,",
     "target": "tests/unit/test_note_merge.py::test_merge_renders_an_open_note_byte_identical_to_master"
   }
 ]

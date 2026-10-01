@@ -191,11 +191,15 @@ from nora.domain.standing import (
     working_set_to_json,
 )
 from nora.domain.tag_trace import TagTrace
+from nora.engagement.debrief_render import (
+    consolidate_prompt,
+    fold_prompt,
+    render_debrief_input,
+    shown_step_tool_names,
+)
 from nora.infra.sql.standing_revise import standing_revise
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import annotate
-
-from ..debrief_render import render_debrief_input, shown_step_tool_names
 
 log = logging.getLogger("nora.engagement.debrief")
 
@@ -333,102 +337,6 @@ async def _complete(
             "nora.conversation_id": conversation_id,
             "nora.debrief.call": call,
         },
-    )
-
-
-def _working_set_rule(*, working_set_max_items: int, working_set_max_chars: int) -> str:
-    """The working set's own length rule — `working_set_max_chars`/`_max_items`'s
-    sentence, stated in both `_prompt` and `_consolidate_prompt` the same way
-    `max_chars`' rule already is, so the system message is consistent across
-    the fold and its retry (design/standing-compact/30-working-set.md §1)."""
-    return (
-        f"The working set can hold at most {working_set_max_items} items "
-        f"and must fit inside {working_set_max_chars} characters combined, "
-        f"rendered as JSON. Leave it empty, or omit the key, when there is "
-        f"nothing to carry."
-    )
-
-
-def _prompt(
-    *, instructions: str, rendered: str, max_chars: int,
-    working_set_max_items: int, working_set_max_chars: int,
-) -> tuple[str, str]:
-    """`(system, user)` — the objective and its length rule in the SYSTEM
-    role, the turn being folded in the USER role.
-
-    They were one concatenated string. That is not merely untidy: the rendered
-    half is a transcript of what people typed, so with both in one user
-    message an instruction written by a member sits in the same role as the
-    operator's, and nothing downstream can tell which is which.
-    """
-    rule = _working_set_rule(
-        working_set_max_items=working_set_max_items,
-        working_set_max_chars=working_set_max_chars,
-    )
-    return (
-        f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.\n\n"
-        f"{rule}",
-        rendered,
-    )
-
-
-def _consolidate_prompt(
-    *, instructions: str, rendered: str, max_chars: int, over: str,
-    working_set_max_items: int, working_set_max_chars: int,
-) -> tuple[str, str]:
-    """The retry, and it is a RETRY rather than a truncation.
-
-    The model is shown its own over-long answer and the number it missed, which
-    is what makes the failure model-resolvable: it can decide what to drop.
-    Nothing here decides that for it — the moment this module picks, the tier
-    has silently become a recency slice.
-
-    **TWO ordering rules, and the SECOND one is the OVERRIDE.** The position
-    prefers what Nora CONCLUDED over what the room said (issue #78 Phase 2's
-    tiebreak reversal): room-said belongs in the transcript, and a shrink that
-    drops her synthesis first leaves the tier carrying other people's words
-    wearing her name. Recency alone cannot govern the tie, because the most
-    recent thing in a position is just as likely to be a room quote as one of
-    her judgements — so recency is scoped to a tie between two things of the
-    SAME KIND, and the synthesis rule outranks it when the kinds differ.
-
-    Since 2026-09-24 there is a THIRD kind between the two: what she FOUND on
-    a turn and has not shared (design/standing-compact/10 §4). It ranks below
-    what she concluded or owes, because it is the part of the position most
-    harmless to lose, and above what the room said, because the transcript
-    keeps the room's words and nothing keeps an unsent tool result. Without a
-    rank it was always the most recent clause and so the last one dropped,
-    which evicted older commitments first (review 2026-09-24).
-
-    The rule ran the OPPOSITE way until 2026-08-29 — «what the room SAID
-    outranks what you concluded about it» — and that phrasing is part of why a
-    recap-shaped standing row survived: the shrink was taught to prefer exactly
-    the clauses that made it a recap (the falsifier and the flip condition live
-    in `design/standing-split-fold/20-ratchet-and-tiebreak.md`).
-    """
-    # `(system, user)`: the objective, the length rule and the consolidation
-    # rules are the OPERATOR's and go in the system role; the turn and the
-    # model's own over-long answer are the material being worked on.
-    rule = _working_set_rule(
-        working_set_max_items=working_set_max_items,
-        working_set_max_chars=working_set_max_chars,
-    )
-    return (
-        f"{instructions}\n\n"
-        f"The position you write must be at most {max_chars} characters.\n\n"
-        f"{rule}",
-        f"{rendered}\n\n"
-        f"Your previous answer was {len(over)} characters, which is over the "
-        f"{max_chars}-character limit, so it was NOT saved. Consolidate it now "
-        f"and answer again, within the limit. Drop the oldest and least "
-        f"consequential thing in it, never the most recent. "
-        f"What you CONCLUDED or COMMITTED to outranks what you FOUND and have "
-        f"not shared, and what you found outranks what the room SAID: drop in "
-        f"the reverse of that order, even when the thing you drop is the more "
-        f"recent. Recency decides only between two things of the same "
-        f"kind.\n\n"
-        f"Your previous answer was:\n{over}"
     )
 
 
@@ -782,7 +690,7 @@ async def run(
             reply = await _complete(
                 client, call="fold",
                 tag_id=trace.tag_id, conversation_id=trace.conversation_id,
-                prompt=_prompt(
+                prompt=fold_prompt(
                     instructions=instructions, rendered=rendered,
                     max_chars=max_chars,
                     working_set_max_items=working_set_max_items,
@@ -801,7 +709,7 @@ async def run(
             retry = await _complete(
                 client, call="consolidate",
                 tag_id=trace.tag_id, conversation_id=trace.conversation_id,
-                prompt=_consolidate_prompt(
+                prompt=consolidate_prompt(
                     instructions=instructions, rendered=rendered,
                     max_chars=max_chars, over=first[0],
                     working_set_max_items=working_set_max_items,
