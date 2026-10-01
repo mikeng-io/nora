@@ -1846,7 +1846,6 @@ dependencies = [
     { name = "boto3" },
     { name = "cryptography" },
     { name = "discord-py", extra = ["voice"] },
-    { name = "docker" },
     { name = "greenlet" },
     { name = "jsonschema" },
     { name = "openai" },
@@ -1889,7 +1888,6 @@ dev = [
     { name = "testcontainers" },
     { name = "tiktoken" },
     { name = "tomli-w" },
-    { name = "types-docker" },
     { name = "types-jsonschema" },
     { name = "types-pyyaml" },
     { name = "types-yt-dlp" },
@@ -1903,7 +1901,6 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.43.62" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "discord-py", extras = ["voice"], specifier = ">=2.7.1" },
-    { name = "docker", specifier = ">=7.2.0" },
     { name = "greenlet", specifier = ">=3.5.4" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "openai", specifier = ">=1.40" },
@@ -1941,7 +1938,6 @@ dev = [
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15.0" },
     { name = "tiktoken", specifier = ">=0.14.0" },
     { name = "tomli-w", specifier = ">=1.0" },
-    { name = "types-docker", specifier = ">=7.2.0.20260813" },
     { name = "types-jsonschema", specifier = ">=4.26.0.20260518" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20260724" },
     { name = "types-yt-dlp", specifier = ">=2026.8.19.20260823" },
@@ -3495,19 +3491,6 @@ wheels = [
 ]
 
 [[package]]
-name = "types-docker"
-version = "7.2.0.20260813"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "types-requests" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/06/48/a1eeaffe58bfc0d1fd61fc8e1c6a450e73e4ec7181a3720b2a28bce6fabc/types_docker-7.2.0.20260813.tar.gz", hash = "sha256:c42eae5a10afad99864aec144daf62f33422baf265f58be9112ffc037f0e9783", size = 36836, upload-time = "2026-08-13T03:56:42.622Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/10/878e713aa6176480a70d759e518bc3382f5e31ffc0f8913834c5dd839aaa/types_docker-7.2.0.20260813-py3-none-any.whl", hash = "sha256:8d25c84424ec911cf71eb023ab271f9f6f214e7d2515ed9ce61d6be13fa6d507", size = 51231, upload-time = "2026-08-13T03:56:41.636Z" },
-]
-
-[[package]]
 name = "types-jsonschema"
 version = "4.26.0.20260518"
 source = { registry = "https://pypi.org/simple" }
@@ -3526,18 +3509,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3f/6f/a28f44bcd56bebed42b028a2894c79853e2f5e6b5279e633cb3f287a05e7/types_pyyaml-6.0.12.20260724.tar.gz", hash = "sha256:3c1ce1bb73cd5ec02e90390c2b1f00e810d241d8825fd73ff359696839271b6b", size = 17893, upload-time = "2026-07-24T04:58:43.453Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/42/0337fefc615e20ee55d1c8f71b774a9b2b734a04669139c20753b27a2a3a/types_pyyaml-6.0.12.20260724-py3-none-any.whl", hash = "sha256:d57db930a4b2efbc57cf430ec8882765d246929432fa253092f383902329a453", size = 20312, upload-time = "2026-07-24T04:58:42.486Z" },
-]
-
-[[package]]
-name = "types-requests"
-version = "2.33.0.20260712"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/db/51/703318f7b7be8bee126ec13bf615050f932d0179b8784420f3a0199cc769/types_requests-2.33.0.20260712.tar.gz", hash = "sha256:2141b67ab534a5c5cd2dac5034f2a35f42e699c5bf185eee608c5246a069d7fb", size = 25084, upload-time = "2026-07-12T05:14:20.455Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/e7/010c87f559e216d83f9dc51e939633fd0d0ead3377340181ab0e223cd3b5/types_requests-2.33.0.20260712-py3-none-any.whl", hash = "sha256:de027e28c171d3da529689cbfa023b0b4eab188c8dfa22fd834eebd2cee6e7bb", size = 21392, upload-time = "2026-07-12T05:14:19.616Z" },
 ]
 
 [[package]]

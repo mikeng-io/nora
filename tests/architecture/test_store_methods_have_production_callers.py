@@ -362,12 +362,10 @@ def _store_methods() -> dict[str, list[_Method]]:
 def _production_sources() -> list[Path]:
     """Everything that could hold a production caller.
 
-    `nora/testing/` is the fakes package and `nora/compute/smith/tests/` is a
-    test suite that lives inside `nora/` — a call from either is exactly the
-    "the contract suite is the gate" mistake this file is about, so neither may
-    vouch for anything. The second was missed by an earlier version, whose
-    exclusion checked for the path component "testing" while that directory is
-    named "tests".
+    `nora/testing/` is the fakes package, and any `tests/` directory inside
+    `nora/` is a test suite — a call from either is exactly the "the contract
+    suite is the gate" mistake this file is about, so neither may vouch for
+    anything.
     """
     return sorted(
         p

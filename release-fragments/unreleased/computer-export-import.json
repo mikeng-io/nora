@@ -11,7 +11,7 @@
     "The computer-use runtime skill carries the judgement: when to use the computer, projects, long jobs, files in and out, and that a document's page is not the computer's to write."
   ],
   "limitations": [
-    "make_artifact and Smith still exist until S3b; an artifact Smith made cannot be revised through computer_export.",
+    "An artifact made before the computer existed still opens at its old link, but cannot be revised through computer_export.",
     "The VM image must be rebuilt (nora-computer build) for nora-render to exist on the computer."
   ]
 }

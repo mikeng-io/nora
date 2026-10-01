@@ -96,8 +96,7 @@ async def _wait_for(
     predicate, *, timeout_seconds: float = 5.0, message: str
 ) -> None:
     """Poll `predicate()` until true, bounded by a DEADLOCK GUARD rather than
-    a measurement — the same idiom as `tests/infra/compute/test_docker_backend
-    .py`'s own `_wait_for`.
+    a measurement.
 
     Replaces `await asyncio.sleep(0.02)` followed by a state assertion
     (`assert _held(pipeline) is True`, ...) across this file's queueing tests

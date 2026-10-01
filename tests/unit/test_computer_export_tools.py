@@ -198,7 +198,7 @@ async def test_an_artifact_the_computer_never_made_is_refused(persons):
     world = _World()
     world.put(GROUP, "out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](
-        path="out/chart.png", to="link", artifact_id="art_made_by_smith",
+        path="out/chart.png", to="link", artifact_id="art_made_before_the_computer",
     )
     assert out["status"] == "refused"
     assert world.ingest.artifacts == {}

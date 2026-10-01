@@ -3,7 +3,7 @@
 A thin projection over `ToolRegistry.catalog()` (nora/agent/registry.py),
 which is where the strands introspection lives — the strands import
 boundary (tests/test_boundaries.py::test_strands_import_boundary) allows
-`strands` only under `nora/agent/` and `nora/compute/`, so the web layer
+`strands` only under `nora/agent/`, so the web layer
 never imports it. The payload IS the deployed agent's own tool surface:
 same `build_tool_specs` builder, same `NATIVE_TOOLS` declared fields, so a
 tool added on master appears here on the next deploy with no frontend

@@ -506,6 +506,11 @@ with who, when, how and what, as a full trail for auditing.**
   delivery path for a future `delegate_task` (background sub-agent,
   decision 4).
   Measure `output_tokens` on the first real artifact turns.
+- **S3b, landed 2026-10-01 (DEC-254):** `make_artifact`, Smith,
+  `LocalDockerBackend`, the `docker.sock` mount, `nora-compute` with
+  `compute-egress`, and Drop's `POST /api/tokens` are retired; the job outbox,
+  poller, `ComputeBackend` port and `compute_jobs` stay wired but idle (decision
+  4). Drop's artifact read path and link shortener stay.
 - **S4:** the browser spike (§14), then `computer_browse`, then persistent
   browser profiles per room.
 

@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nora.domain.ports import ImageResult, ImageSize  # noqa: E402
-from nora.infra.image_gen.xai_adapter import XaiImageGenerator  # noqa: E402
-from nora.infra.image_gen.xai_oauth import XaiOAuth  # noqa: E402
+from nora.domain.ports import ImageResult, ImageSize
+from nora.infra.image_gen.xai_adapter import XaiImageGenerator
+from nora.infra.image_gen.xai_oauth import XaiOAuth
 
 
 async def main() -> int:

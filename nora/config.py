@@ -2144,57 +2144,26 @@ class HeartbeatConfig(BaseModel):
 
 
 class ComputeConfig(BaseModel):
-    """Nora Compute's background poller + backend (`nora.app.compute_poller`,
-    `nora.infra.compute.docker_backend.LocalDockerBackend`).
+    """The deferred-delivery poller (`nora.app.compute_poller`).
 
-    Optional, defaulted, and INERT by default — the `[heartbeat]` shape: a
-    config.toml written before this section existed keeps loading, and
-    `make_artifact`'s slow path answers `unavailable` until an operator turns
-    this on. UNLIKE `[heartbeat]`, the composition root builds the
-    `ComputeJobStore` unconditionally regardless of `enabled` (mirroring the
-    reason `nora.app.composition` already gives for `reminders`): the slow
-    path needs somewhere to persist a job whether or not the poller that
-    delivers it is running, and a stranded `FIRING` row must be swept at boot
-    whether or not the feature is currently switched on — only the poller's
-    own tick loop is gated on `enabled`.
+    Optional, defaulted, and INERT by default. S3b retired the per-job container
+    backend (design/sandbox-runtime decision 4), so no
+    `ComputeBackend` adapter ships and `enabled = true` builds nothing: the
+    poller, the `compute_jobs` outbox and the port stay as the delivery path
+    a future `delegate_task` plugs an adapter into. The composition root
+    builds the `ComputeJobStore` unconditionally regardless of `enabled`, and
+    sweeps a stranded `FIRING` row at boot whether or not the feature is on:
+    only the poller's own tick loop is gated.
 
-    `sandbox_image`/`job_timeout_seconds`/`max_concurrent_jobs` are
-    `LocalDockerBackend`'s own construction knobs (Nora Compute spec §2/§3).
-    `poll_tick_seconds` is `ComputeJobPoller`'s wake interval — the same
-    "best case for lateness, not an upper bound" shape `[heartbeat]
-    .tick_seconds`'s own docstring describes.
+    `poll_tick_seconds` is the poller's wake interval, the same "best case
+    for lateness, not an upper bound" shape `[heartbeat].tick_seconds`
+    describes.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    sandbox_image: str = "smith:latest"
-    job_timeout_seconds: int = 300
-    max_concurrent_jobs: int = 2
     poll_tick_seconds: float = 10.0
-    # `LocalDockerBackend`'s per-container resource caps -- docker-py's own
-    # `containers.run` kwarg shapes: `mem_limit` a size string, `nano_cpus`
-    # billionths of a CPU core (2_000_000_000 = 2 vCPUs). 1g/unbounded-CPU
-    # (the first-shipped values) was tight for real workloads -- charts,
-    # maps, larger markdown/html renders.
-    mem_limit: str = "8g"
-    nano_cpus: int = 2_000_000_000
-    # NAMES the env var carrying the HOST-side path of whatever is bind-mounted
-    # at `store.data_dir` — `*_env` for the same DEC-8 reason every secret is:
-    # the VALUE is a deployment fact injected by the host, never a line in a
-    # committed config file. Not a secret, but the same problem: only the host
-    # knows it, and this container cannot compute it.
-    #
-    # It exists because `store.data_dir` is a path INSIDE this container
-    # (`/app/data`), and `LocalDockerBackend` hands a workspace path to the
-    # HOST Docker daemon as a bind-mount source. The daemon resolves it on the
-    # host filesystem, where `/app/data` does not exist — so it would create an
-    # empty directory there and every job would fail with nothing to read and
-    # no exception raised. `docker-compose.yml` sets this variable from THE
-    # SAME expression it uses for the `:/app/data` mount source, so the two
-    # cannot disagree; `nora.app.composition` refuses to start when `enabled`
-    # is true and this is unset or relative.
-    data_host_root_env: str = "NORA_DATA_HOST_ROOT"
 
 
 class ComputerLimitsConfig(BaseModel):

@@ -61,8 +61,8 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # RE-SET 2026-10-01 again, 2,300 -> 2,400, for TWO MORE NEW TOOLS, not for
 # drift: S3a (design/sandbox-runtime §6, §7) adds `computer_export` (32
 # tokens) and `computer_import` (28) on top of the two reads above: total
-# 2,342 over 73 lines at a mean of 31.1. No existing line changed. `make_artifact`'s
-# line (38) leaves in S3b, which gives some of this back.
+# 2,342 over 73 lines at a mean of 31.1. No existing line changed. The artifact tool's
+# line (38) left in S3b, which gave some of this back.
 #
 # RE-SET 2026-10-01 a third time, 2,400 -> 2,500, for TWO NEW TOOLS, from the
 # MEASURED block, not raised blindly: `document_publish` (35 tokens) and

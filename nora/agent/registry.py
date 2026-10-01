@@ -34,7 +34,6 @@ from typing import Any
 
 from strands.tools.decorator import FunctionToolMetadata
 
-from ..domain.compute import ComputeJobStore
 from ..domain.computer import ComputerToolSettings
 from ..domain.computer_events import ComputerEventStore
 from ..domain.computer_exports import ComputerExportStore
@@ -45,7 +44,6 @@ from ..domain.models import PersonRef, TranscriptRow
 from ..domain.ports import (
     ArtifactIngest,
     BlobStore,
-    ComputeBackend,
     DiscordPresenceSource,
     GifSource,
     MediaDescriptionStore,
@@ -207,8 +205,6 @@ class ToolRegistry:
         notes: NoteCollaborator | None = None,
         note_unit: Callable[[str, str], str | None] | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
-        compute_backend: ComputeBackend | None = None,
-        compute_jobs: ComputeJobStore | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
         # Nora's computer (design/sandbox-runtime, DEC-243): the runtime is
         # `None` whenever `[computer] enabled` is false, and every computer
@@ -445,15 +441,8 @@ class ToolRegistry:
         # the note tier passes, so it does not have to read the NOTE tier's
         # parameter and thereby depend on the note tier being wired.
         self._unit_for = unit_for
-        # `make_artifact`'s pair (Nora Compute spec §4), wired the same honest
-        # way `reminders` is: NOT default-constructed — there is no backendless
-        # or storeless default — so every composition that has not wired Nora
-        # Compute (offline, eval, and any test that does not care) leaves both
-        # None and `make_artifact` answers `unavailable` (R-5).
-        self._compute_backend = compute_backend
-        self._compute_jobs = compute_jobs
         # `recall_lookups`'s own collaborator (tool-recall-log spec §4), wired
-        # the identical honest way `compute_backend`/`compute_jobs` are: `None`
+        # the identical honest way `reminders` is: `None`
         # in the offline/eval compositions and any composition that has not
         # wired the tool-recall log, which is what makes `recall_lookups`
         # answer `unavailable` (R-5) rather than crash.
@@ -503,7 +492,7 @@ class ToolRegistry:
         # `nora.agent.reaction`: None keeps every reply exactly as written.
         self._reaction = reaction
         # `MusicToolBridge` (design/discord-music/07-agent-tool.md), wired the
-        # identical honest way `events`/`compute_backend` are: NOT
+        # identical honest way `events`/`reminders` are: NOT
         # default-constructed — there is no bridgeless default, and every
         # composition that has not wired `DiscordMusicToolBridge` (offline,
         # eval, `[music] enabled = false`, or Discord itself disabled) leaves
@@ -809,7 +798,7 @@ class ToolRegistry:
 
         Why this method lives HERE and not in `nora.web`: the strands import
         boundary (`tests/test_boundaries.py::test_strands_import_boundary`)
-        allows `strands` only under `nora/agent/` and `nora/compute/` — the
+        allows `strands` only under `nora/agent/` — the
         web layer must not import it. The registry already owns the tool
         table, so it is the natural single reader.
 
@@ -1077,7 +1066,6 @@ class ToolRegistry:
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
-            compute_backend=self._compute_backend, compute_jobs=self._compute_jobs,
             tool_call_log_store=self._tool_call_log_store,
             computer=self._computer, computer_events=self._computer_events,
             computer_settings=self._computer_settings,

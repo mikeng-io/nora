@@ -345,9 +345,9 @@ cases:
 
   # --- documents (design/artifact/00-design.md §26, ADR 0020) ----------------------
   # `document_publish` against the tools a written piece could be mistaken for:
-  # `make_artifact` (the HTML path it replaces, still registered while S3b has
-  # not retired it), `note_create` (a private memory, not a page), `generate_image`
-  # and the computer (a FILE: CSV, PDF, a script's output).
+  # `note_create` (a private memory, not a page), `generate_image` and the
+  # computer (a FILE: CSV, PDF, a script's output). The HTML path it replaced
+  # (the artifact tool) was retired in S3b, so it is no longer a `not_tools` entry.
   #
   # ON ARM ONLY for the positives (`route_document_publish_*`), exactly as the
   # computer's: both document tools are withheld from every surface unless
@@ -369,7 +369,7 @@ cases:
     mention: true
     input: >-
       幫我整份12月東京旅行計劃，每日行程同預算都要有，整好之後我想喺網頁開返嚟睇
-    metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
+    metadata: {tools: [document_publish], not_tools: [note_create]}
     snapshot: *room_a
 
   # Was `route_document_publish_room_summary` («write up what we decided about
@@ -385,7 +385,7 @@ cases:
     input: >-
       write a proper document I can open later comparing Tokyo and Osaka for a
       week in December: a section for each, then which one you would pick
-    metadata: {tools: [document_publish], not_tools: [make_artifact, note_create]}
+    metadata: {tools: [document_publish], not_tools: [note_create]}
     snapshot: *room_a
 
   - name: route_calculate_not_a_document
@@ -446,7 +446,6 @@ cases:
       3f9c1d52-7a4e-4b8e-9f06-2d1c5a7b8e10
     metadata:
       tools: [document_read]
-      not_tools: [make_artifact]
       before: {document_read: [document_publish]}
     snapshot: *room_a
 
@@ -467,7 +466,6 @@ cases:
           title: Saturday dinner plan
           body: Dinner at 7pm. Book the usual place.
       tools: [document_read]
-      not_tools: [make_artifact]
       args_include:
         document_read: ["8d1f3a52-6c7e-4b9a-a1d4-5e2c9b7f0a31"]
       before: {document_read: [document_publish]}

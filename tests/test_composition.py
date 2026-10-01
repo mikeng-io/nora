@@ -798,68 +798,10 @@ async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cf
     ) == 1
 
 
-# `[compute] enabled` plus a model URL a job can reach through compute-egress:
-# composition refuses to start when the endpoint it hands a job is off
-# EGRESS_ALLOWLIST (test_compute_refuses_a_model_url_its_jobs_cannot_reach).
-_COMPUTE_ON = {
-    "compute.enabled": True,
-    "llm.base_url": "http://host.docker.internal:20128/v1",
-}
-
-
-def _compute_environment(monkeypatch, cfg) -> Path:
-    """Every host-injected value `[compute] enabled = true` refuses to start
-    without, set to a plausible value. Returns the host data root, which is the
-    one of them a test may want to assert against.
-
-    Reads the variable NAMES off `cfg` rather than hardcoding them, for the
-    reason DEC-8 gives: config names the variable, the host holds the value, and
-    a test that hardcodes the name passes after a rename that would break the
-    deployment."""
-    host_root = Path("/srv/nora/data")
-    monkeypatch.setenv(cfg.compute.data_host_root_env, str(host_root))
-    monkeypatch.setenv(cfg.shortener.token_env, "test-drop-token")
-    monkeypatch.setenv(cfg.route.api_key_env, "test-maps-key")
-    return host_root
-
-
-@pytest.mark.parametrize(
-    "unset",
-    ["data_host_root_env", "shortener_token_env", "route_api_key_env"],
-)
-async def test_compute_refuses_to_start_without_its_host_injected_values(
-    cfg, monkeypatch, unset,
-):
-    """`policy.toml`'s discipline (R-5: refuse to start rather than run in a
-    state that looks like working), applied to `[compute]`.
-
-    Every one of these is read with a `""` default, so without the check the
-    daemon starts CLEANLY and then fails every job minutes later — an empty
-    bearer token on the Drop mint, an empty key handed to Smith, or a
-    workspace bind-mounted from a host path that does not exist. All three
-    surface in the group as «it failed», with an error string nobody can act
-    on, and none of them are things a group can fix. They are operator
-    problems and they belong in the operator's terminal.
-
-    Parametrized over each one INDIVIDUALLY: a check that only fired when all
-    three were missing would pass a single combined test.
-    """
-    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
-    _compute_environment(monkeypatch, cfg)
-    monkeypatch.delenv({
-        "data_host_root_env": cfg.compute.data_host_root_env,
-        "shortener_token_env": cfg.shortener.token_env,
-        "route_api_key_env": cfg.route.api_key_env,
-    }[unset])
-
-    with pytest.raises(StartupError):
-        await build_dependencies(on)
-
-
 @pytest.mark.parametrize("token", [None, "", "   "])
 async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, token):
     """`[computer] enabled` with computerd's bearer token unset or blank
-    refuses to start (R-5), the `[compute]` discipline: otherwise every
+    refuses to start (R-5), the `policy.toml` discipline: otherwise every
     computer call would answer `unavailable` from computerd's 401, in front of
     the group, for a fault only the operator can fix. The variable NAME is
     read off `cfg` (DEC-8)."""
@@ -873,92 +815,22 @@ async def test_computer_refuses_to_start_without_its_token(cfg, monkeypatch, tok
         await build_dependencies(on)
 
 
-@pytest.mark.parametrize("base_url", [
-    "http://localhost:20128/v1",               # right port, a host the proxy never allows
-    "http://host.docker.internal:8000/v1",     # Honcho's port
-])
-async def test_compute_refuses_a_model_url_its_jobs_cannot_reach(cfg, monkeypatch, base_url):
-    """A job is handed Nora's own `[llm] base_url`, and its only way out is
-    `compute-egress`. A URL off EGRESS_ALLOWLIST would fail every job with a
-    proxy 403 in front of the group, so it is refused here, at boot."""
-    on = override_config(cfg, {**_COMPUTE_ON, "llm.base_url": base_url,
-                                "heartbeat.enabled": False})
-    _compute_environment(monkeypatch, cfg)
-
-    with pytest.raises(StartupError, match="compute-egress allowlist"):
-        await build_dependencies(on)
-
-
-async def test_compute_refuses_a_relative_host_root(cfg, monkeypatch):
-    """`./data` is what the compose mount falls back to when nobody sets the
-    variable, and it is exactly the value that must NOT reach the backend: the
-    host Docker daemon resolves a bind source against a working directory this
-    process knows nothing about. Unset is caught above; a relative value is the
-    same defect wearing a plausible-looking string."""
-    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
-    _compute_environment(monkeypatch, cfg)
-    monkeypatch.setenv(cfg.compute.data_host_root_env, "./data")
-
-    with pytest.raises(StartupError):
-        await build_dependencies(on)
-
-
-async def test_the_sandbox_bind_source_is_the_host_path_not_noras_own(
-    cfg, monkeypatch, tmp_path, no_build_stamp,
-):
-    """The wiring half of the two-roots rule (`LocalDockerBackend.__init__`).
-
-    Nora's own `store.data_dir` is `/app/data` inside her container, and that
-    is the right root for the `task.txt` SHE writes. It is the wrong root for
-    the bind-mount source she hands the host Docker daemon, which resolves it
-    on the host filesystem — where `/app/data` does not exist, so the daemon
-    creates an empty directory and every job silently produces nothing.
-
-    Asserted as a PAIR: same trailing directory name, different roots. Wiring
-    that passed `data_dir` to both (the shipped defect) fails the second
-    assertion; wiring that appended a different subdirectory to each fails the
-    first.
-    """
-    on = override_config(cfg, {**_COMPUTE_ON, "heartbeat.enabled": False})
-    host_root = _compute_environment(monkeypatch, cfg)
-    deps = await build_dependencies(on)
-    try:
-        backend = _spawned(deps, "ComputeJobPoller.run")[0]._backend
-        assert backend._workspace_root == cfg.store.data_dir / "compute-workspaces"
-        assert backend._workspace_host_root == host_root / "compute-workspaces"
-        assert backend._workspace_host_root != backend._workspace_root
-    finally:
-        await deps.background.cancel_all()
-
-
-async def test_compute_only_deployment_still_gets_a_live_fire_path(
+async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
     cfg, monkeypatch, no_build_stamp,
 ):
-    """The widened `fire_path` gate: `[compute] enabled` alone — heartbeat
-    off, no version announcement (`no_build_stamp` forces the unstamped path,
-    the same way `test_an_unstamped_build_spawns_no_announcer` does) — must
-    still construct a real `FirePath` and spawn `ComputeJobPoller`.
-
-    Before the fix, `fire_path` was built only under `cfg.heartbeat.enabled or
-    announcing`; a compute-only deployment (a real, plausible configuration —
-    "I just want make_artifact") would build a live `compute_backend`, accept
-    `make_artifact` slow-path jobs, and then never spawn a poller to deliver
-    them — every such job would sit `pending` forever with no path to ever
-    reach the group that asked for it. Reaching into `background._tasks` for
-    the same reason `test_the_heartbeat_is_wired_to_the_real_fire_path` does:
-    `Dependencies` deliberately exposes neither loop.
-    """
-    on = override_config(cfg, {
-        **_COMPUTE_ON,
-        "heartbeat.enabled": False,
-    })
-    assert on.version.announce is True  # the shipped default; no_build_stamp is what mutes it
-    _compute_environment(monkeypatch, cfg)
+    """S3b retired the only `ComputeBackend` adapter (design/sandbox-runtime
+    decision 4) and kept the outbox, the poller and boot recovery as generic
+    deferred delivery for a future `delegate_task`. A deployment whose
+    `config.toml` still says `[compute] enabled = true` must therefore still
+    BOOT (the old host-injected-secret refusals are gone with the backend that
+    needed them), and the poller must not be spawned: it has no backend to
+    poll, so a spawned one would claim `pending` rows it cannot answer for.
+    Reaching into `background._tasks` for the same reason
+    `test_the_heartbeat_is_wired_to_the_real_fire_path` does."""
+    on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
     deps = await build_dependencies(on)
     try:
-        pollers = _spawned(deps, "ComputeJobPoller.run")
-        assert pollers, "the compute job poller was not spawned"
-        assert isinstance(pollers[0]._speak.__self__, FirePath)
+        assert _spawned(deps, "ComputeJobPoller.run") == []
     finally:
         await deps.background.cancel_all()
 

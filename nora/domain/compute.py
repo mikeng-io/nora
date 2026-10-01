@@ -38,8 +38,10 @@ class ComputeJobState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ComputeJob:
-    """One `make_artifact` call that fell to the slow path (Nora Compute
-    spec §4) — the fast path never writes a row at all.
+    """One deferred job awaiting delivery (Nora Compute spec §4). Nothing writes
+    one today: the artifact tool, its only producer, was retired in S3b
+    (design/sandbox-runtime decision 4), and the row is kept as the generic
+    deferred-delivery outbox a future `delegate_task` uses.
 
     `backend_job_id` is `ComputeBackend.launch`'s own return value — the
     handle `ComputeJobPoller` polls with. `artifact_id`, when set, means this
@@ -52,8 +54,8 @@ class ComputeJob:
     turn needs one Room, one policy decision, one Deliverer binding).
 
     `task_sha256`/`context_sha256` are the SHA-256 of `task`/`context` as
-    `make_artifact` actually sent them (context-channel spec §5) — computed
-    once, by `make_artifact` itself, never by a backend. A caller can verify
+    the producer actually sent them (context-channel spec §5) — computed
+    once, by the producer itself, never by a backend. A caller can verify
     the unit file on disk still matches what was launched.
     """
 
@@ -92,7 +94,7 @@ def normalise_compute_job(job: ComputeJob) -> ComputeJob:
 class ComputeJobStore(Protocol):
     async def create(self, job: ComputeJob) -> None:
         """Insert-only: the row's fields are written exactly as given, `state`
-        included. In production the only caller (`make_artifact`'s slow path)
+        included. A producer
         always passes `PENDING`, but that is the CALLER's discipline — neither
         implementation enforces it, and the contract suite itself creates a
         terminal row directly. Stated as a habit rather than an invariant so
@@ -140,8 +142,8 @@ class ComputeJobStore(Protocol):
 
         A pending reminder is a due TIME — durable, and a restart loses
         nothing. A pending compute job is a HANDLE into `ComputeBackend`'s
-        in-process registry (`backend_job_id`), and `LocalDockerBackend` keeps
-        that registry in memory only. So ANY restart — a crash, a deploy, a
+        in-process registry (`backend_job_id`), and the adapter that
+        shipped kept that registry in memory only. So ANY restart — a crash, a deploy, a
         config change — leaves every surviving `PENDING` row pointing at a job
         this process has never heard of, and `poll` answers `FAILED("unknown
         job_id")` for it. Delivered, that becomes Nora telling the group in her

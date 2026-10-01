@@ -372,7 +372,7 @@ async def test_the_ceiling_is_rechecked_per_run_and_reports_unavailable(monkeypa
     measured once, at a moment that has passed. `unavailable` rather than a
     raise — a background loop must not take its own clock down — but loud."""
     sink = _Sink()
-    adaptor = _Adaptor(sink=sink, tools=frozenset({"now", "make_artifact"}))
+    adaptor = _Adaptor(sink=sink, tools=frozenset({"now", "computer_run"}))
     runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
 
     outcome = await runtime.run(adaptor=adaptor, key="g1", batch=())
@@ -897,7 +897,7 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
             unit="friends", platform="signal", conversation_id="g1",
         )},
     )
-    asked = frozenset({"send_reply", "make_artifact", "remind", "now"})
+    asked = frozenset({"send_reply", "computer_run", "remind", "now"})
 
     # No grant: the whole pre-DEC-162 ceiling. `now` is read-only and builds;
     # the three act verbs do not, `remind` included.
@@ -910,7 +910,7 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
         grant=proactive_grant(),
     ))
     assert granted == {"now", "remind"}
-    assert "send_reply" not in granted and "make_artifact" not in granted
+    assert "send_reply" not in granted and "computer_run" not in granted
 
 
 def _names(built: list[Any]) -> set[str]:

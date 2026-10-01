@@ -110,6 +110,10 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # DEC-237 (design/cognition-loop/70-migration.md §8, migration step 2b):
     # renamed to the event verbs and `event_search`.
     "create_event", "update_event", "rsvp_event", "cancel_event", "list_events",
+    # S3b (design/sandbox-runtime decision 4): retired. A file is made on the
+    # computer and leaves through `computer_export`; a document is published
+    # through `document_publish` (ADR 0020).
+    "make_artifact",
 })
 
 _PREDATES_THE_RULE = _SNAPSHOT_2026_09_24 - _RENAMED_SINCE

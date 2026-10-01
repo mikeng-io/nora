@@ -17,11 +17,9 @@ path testable by whatever future Compute tool calls through this port.
 **Its caller is `computer_export`** (design/sandbox-runtime §6, S3a): the
 composition root builds it on `[shortener]`'s Drop base URL and token when
 `[computer] enabled`, and the tool publishes a file only after validating it
-on Nora's side (size, sha256, a media type read off the bytes). Until then
-this class had no caller and existed so the `ArtifactIngest` Protocol had a
-real second implementation (see `tests/contract/test_artifact_ingest_contract.py`);
-Smith still reaches Drop directly with its own per-job token until it
-retires in S3b.
+on Nora's side (size, sha256, a media type read off the bytes). Before
+it this class existed so the `ArtifactIngest` Protocol had a real second
+implementation (see `tests/contract/test_artifact_ingest_contract.py`).
 
 **Multipart, not JSON, on the wire** — matching `deploy/drop/artifacts.py`'s
 own `POST /api/artifacts` request shape exactly (see that module's docstring

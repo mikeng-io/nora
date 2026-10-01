@@ -61,8 +61,8 @@ class CallLedger:
 
         Exposed as the live dict rather than a copy because callers read it by
         subscript (`counts["send_reply"]`) and because `ReplyGuard` publishes
-        it under its own `counts` attribute, which four test files and R-45's
-        nudge already read. Write through `record` — a caller that increments
+        it under its own `counts` attribute, which four test files
+        already read. Write through `record` — a caller that increments
         this directly bypasses nothing today, but says nothing about in-flight
         calls either, which is the half that makes the ceiling hold.
         """

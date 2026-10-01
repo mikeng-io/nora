@@ -1023,12 +1023,16 @@ docker exec nora-db psql -U nora -d nora -c \
 the ledger row was deleted or the database was restored from before the
 announcement. Check `version_announcements` before looking anywhere else.
 
-## 8c. "She never came back with the file" (`make_artifact`)
+## 8c. Deferred delivery (`compute_jobs`, idle)
 
-A compute job that outruns `make_artifact`'s inline window becomes a durable
-`compute_jobs` row, and `ComputeJobPoller` delivers it later as its own turn.
-R-5 keeps every failure of that delivery out of the room, so — exactly as with
-8b — the counter and the table are the only evidence.
+Nothing writes a `compute_jobs` row today. The artifact tool and the
+per-job container backend were retired in S3b (design/sandbox-runtime decision
+4); files now leave through `computer_export` and documents through
+`document_publish`. The outbox, `ComputeJobPoller` and boot recovery are kept as
+the generic deferred-delivery path a future `delegate_task` will use, so the
+evidence below still applies the day something writes a row. R-5 keeps every
+failure of that delivery out of the room, so — exactly as with 8b — the counter
+and the table are the only evidence.
 
 ```bash
 curl -s localhost:9100/metrics | grep nora_compute_jobs_delivered_total
@@ -1041,32 +1045,14 @@ docker exec nora-db psql -U nora -d nora -c \
 |---|---|---|
 | `sent` | she delivered it | nothing |
 | `deferred` | a tag held the conversation on that tick | nothing — the row is still `PENDING` and the next tick retries. Climbing without ever reaching `sent` means the slot is never freeing; look at the tag path, not at compute |
-| `failed_error` | the turn raised, **or** boot recovery resolved the row. `error` on the row says which: `process crashed mid-delivery` (`FIRING`) or `lost track of this job across a restart` (`PENDING`) | the second one is expected on **every** restart with jobs in flight — the backend's job registry is in-memory, so a restart orphans both the handle and, possibly, a still-running sandbox container (`docker ps` for a `job_*` name). Nothing retries; the request has to be made again |
+| `failed_error` | the turn raised, **or** boot recovery resolved the row. `error` on the row says which: `process crashed mid-delivery` (`FIRING`) or `lost track of this job across a restart` (`PENDING`) | a `PENDING` row is swept at every boot, because a backend's job registry is in-memory. Nothing retries; the request has to be made again |
 | `failed_policy` / `failed_timeout` | the fire turn itself was refused or cut off | same reading as `nora_reminders_fired_total`'s own — §8.1's outcomes, not compute-specific |
 
 **Nothing here is retried.** One job, one delivery, ever — the same
 at-most-once rule reminders and announcements hold.
 
-**`[compute] enabled = true` and she refuses to start** is the design, not a
-regression: `NORA_DATA_HOST_ROOT` (the host-side path of the `/app/data` mount,
-needed because the Docker daemon resolves a sandbox's bind-mount source on the
-HOST) plus the Drop, Maps and model credentials are all checked at boot. The
-startup message names exactly what is missing. They are checked there because
-each one, unset, would otherwise fail every job silently at run time, in front
-of the group.
-
-**A job fails reaching something new** (a pip install, a new API, a
-`ProxyError` / `403 Forbidden` in the job's log tail) is the egress allowlist
-working. `nora-compute` is internal and a job's only way out is
-`compute-egress`, which allows OmniRoute, the OTLP collector and
-`maps.googleapis.com` and nothing else (`deploy/compute-egress/squid.conf`
-says why). Read what it refused with:
-
-```bash
-docker exec compute-egress tail -20 /var/log/squid/access.log   # TCP_DENIED rows
-```
-
-Adding a destination is a decision: name the Smith skill that needs it.
+**`[compute] enabled = true` builds nothing.** No backend adapter ships, so the
+poller is not spawned and composition logs a warning at boot. Set it to `false`.
 
 ## 9. "Where does everything live?" (read this first, months later)
 

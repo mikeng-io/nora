@@ -696,8 +696,8 @@ def _unwrap_tool_status(result: Any) -> str | None:
     always takes its ELSE branch: `content` becomes `[{"text":
     json.dumps(the_tools_own_dict)}]`. Reaching the real status means
     parsing that text back out — this is the one place in the codebase that
-    does, shared by `ToolCallLog` (this module) and `ReplyGuard`'s R-45
-    check (`evaluate`, below) so the unwrap logic exists exactly once.
+    does, shared by `ToolCallLog` and `ReplyGuard` (this module) so the unwrap
+    logic exists exactly once.
 
     Returns `None` for a result shaped in a way this cannot parse (a tool
     that carries no `status` key at all — `now` and `send_reply` return a
@@ -881,23 +881,6 @@ class ReplyGuard(HookProvider):
         # stop response for a cancelled call, which is indistinguishable from a
         # real answer at that event alone.
         self._model_call_in_flight = False
-        # R-45: has the make_artifact/context nudge already fired this turn?
-        # One-shot, like R-4/R-2's own care about not silently blocking a
-        # correction (DEC-33) — a second veto on the SAME defect the model
-        # already ignored once would not change its answer, only spend a
-        # turn refusing the model's only remaining path to `make_artifact`
-        # at all (its own budget is 1, and this veto does not consume it —
-        # see `evaluate`).
-        self._context_nudge_given = False
-        # R-45's status-aware half (tool-recall-log spec §5): did the LAST
-        # `recall_lookups` call this turn actually find something? `counts`
-        # alone can't answer this — it increments for any non-cancelled
-        # call regardless of what the tool itself answered — so this is
-        # read directly off the event in `_after_tool`, the one place that
-        # sees the raw result. Overwritten on every `recall_lookups` call,
-        # not accumulated: only the MOST RECENT call's own answer is what
-        # "have I just seen something to reuse" means.
-        self._recall_found_something = False
         # R-55, the read-before-write latch (note-tier spec §6.2): the notes a
         # `note_read` SUCCEEDED on this turn. Per-tag by construction, like
         # every other counter here — a latch that outlived the turn would let a
@@ -938,7 +921,7 @@ class ReplyGuard(HookProvider):
     @property
     def counts(self) -> dict[str, int]:
         """Calls that COMPLETED this tag, per tool. The ledger's own dict, read
-        by R-45's nudge here and by the guard test files."""
+        by the guard test files."""
         return self._ledger.counts
 
     def record(self, tool_name: str) -> None:
@@ -1205,7 +1188,7 @@ class ReplyGuard(HookProvider):
         # does it silently: the prior revision survives in the table, but
         # nothing in the room ever learns the note stopped saying what it said.
         #
-        # NOT ONE-SHOT, unlike R-45 above. R-45's argument for firing once is
+        # NOT ONE-SHOT. The argument for a one-shot nudge is
         # that a second refusal would not change the model's answer and would
         # only spend a budget of 1 on refusals. Neither half holds here: the
         # remedy IS a different call (`note_read`, its own budget), the veto
@@ -1236,39 +1219,6 @@ class ReplyGuard(HookProvider):
                     "arranged, and you cannot rewrite a body you have not seen.",
                 )
 
-        # R-45 (DEC-101): a nudge, not a refusal — `make_artifact` itself
-        # still runs if the model ignores this once. Root cause: the model
-        # had ALREADY drafted a full prose answer from `place_info`/`route`
-        # results earlier this turn and then reused that draft wholesale as
-        # `task`, leaving `context` empty — `make_artifact`'s own docstring
-        # already says "do not re-derive or summarise them into prose
-        # first", but advisory prose alone did not hold against a model that
-        # had already written the words once. One-shot (`_context_nudge_
-        # given`) because vetoing this repeatedly would not change the
-        # model's answer, only spend the turn's only `make_artifact` call
-        # (budget 1) on refusals — this veto is exempt from that spend since
-        # `_after_tool` never `record()`s a cancelled call (DEC-33's own
-        # mechanism, reused here rather than re-invented).
-        if (
-            tool_name == "make_artifact" and not self._context_nudge_given
-            and not (tool_input or {}).get("context")
-            and (
-                self.counts.get("place_info", 0) + self.counts.get("route", 0) > 0
-                or self._recall_found_something
-            )
-        ):
-            self._context_nudge_given = True
-            gathered = self.counts.get("place_info", 0) + self.counts.get("route", 0)
-            source = (
-                f"place_info/route {gathered} time(s)" if gathered > 0
-                else "recall_lookups"
-            )
-            return self._veto(
-                "R-45",
-                f"You already called {source} this turn and have real data "
-                "from it. Pass it as `context` — the small dicts you already "
-                "have — instead of typing it into `task` as prose.",
-            )
         return None
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
@@ -1449,10 +1399,8 @@ class ReplyGuard(HookProvider):
         - **«this call FINISHED»** — the in-flight reservation. True on every
           path, including the ones that raised or were vetoed, so it belongs
           ABOVE both returns.
-        - **«this call SUCCEEDED»** — `record`, the terminal latch, and
-          `_recall_found_something`. True on ONE path, so each belongs BELOW
-          both returns, and `_recall_found_something` additionally reads the
-          result's own status.
+        - **«this call SUCCEEDED»** — `record` and the terminal latch. True on
+          ONE path, so each belongs BELOW both returns.
 
         Only the second kind is visible through `counts`, which is why a
         mistake in the first kind survives a suite that looks thorough.
@@ -1500,20 +1448,14 @@ class ReplyGuard(HookProvider):
             if getattr(event, "cancel_message", None) is not None:
                 return
             self.record(name)
-            if name == "recall_lookups":
-                self._recall_found_something = (
-                    _unwrap_tool_status(getattr(event, "result", None)) == "ok"
-                )
             # R-97's two counters, below both early returns for R-55's reason
             # and the identical one: they mean «this lookup RAN», which is true
             # on one path only. A call that raised, or that this guard
             # cancelled, went looking nowhere.
             #
-            # ACCUMULATED, unlike `_recall_found_something` above — that one is
-            # about the most recent call's answer being available to reuse;
-            # this is about everything this turn went and got. A turn whose
-            # first lookup found the answer and whose second came back empty
-            # still holds the answer.
+            # ACCUMULATED: this is about everything this turn went and got. A
+            # turn whose first lookup found the answer and whose second came
+            # back empty still holds the answer.
             if self._lookups is not None and name in self._lookups:
                 self._lookups_made += 1
                 if _unwrap_tool_status(getattr(event, "result", None)) == "ok":

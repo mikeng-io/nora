@@ -197,8 +197,8 @@ async def test_a_failed_write_increments_the_writes_counter_as_failed():
 # `nora.engagement.stages.deliver.build` makes), `adapt()` (the same
 # Strands conversion production uses), and `FakeAgentRunner` (which now
 # threads the tool's REAL return value into the after-tool hook) — the one
-# test that proves place_info → a written row → recall_lookups seeing it →
-# make_artifact's empty-context nudge (R-45) all work TOGETHER.
+# test that proves place_info → a written row → recall_lookups seeing it
+# work TOGETHER.
 
 CONVERSATION = "conv-e2e"
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
@@ -235,9 +235,8 @@ def _e2e_room() -> Room:
 async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeToolCallLogStore, dict]:
     """Builds the real tools + real guard + real ToolCallLog, exactly the
     shape `deliver.build` wires them, and replays place_info → recall_lookups
-    → make_artifact(context=[]) through `FakeAgentRunner`. Returns the
-    `Metrics` and the `FakeToolCallLogStore` so the caller can inspect both
-    the written row and the R-45 veto.
+    through `FakeAgentRunner`. Returns the `Metrics` and the
+    `FakeToolCallLogStore` so the caller can inspect the written row.
 
     `tool_call_log_clock` defaults to None — meaning `ToolCallLog` is
     constructed WITHOUT a `clock=` override, the same as the one production
@@ -270,13 +269,7 @@ async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeTool
 
     runner = FakeAgentRunner([
         ScriptedTurn(tool_calls=[("place_info", {"name": "Yoho Mall"})], final_text=""),
-        ScriptedTurn(tool_calls=[("recall_lookups", {})], final_text=""),
-        ScriptedTurn(
-            tool_calls=[("make_artifact", {
-                "task": "write up what I found about Yoho Mall", "context": [],
-            })],
-            final_text="working on it",
-        ),
+        ScriptedTurn(tool_calls=[("recall_lookups", {})], final_text="on it"),
     ])
     await runner.invoke(
         doctrine=None, tools=tools, pre_fill=[], guard=guard,
@@ -287,7 +280,7 @@ async def _run_the_chain(*, tool_call_log_clock=None) -> tuple[Metrics, FakeTool
     return metrics, store, specs_by_name
 
 
-async def test_the_whole_chain_writes_reads_and_nudges_together():
+async def test_the_whole_chain_writes_and_reads_together():
     metrics, store, specs_by_name = await _run_the_chain()
 
     rows = await store.recent(
@@ -298,9 +291,6 @@ async def test_the_whole_chain_writes_reads_and_nudges_together():
     assert metrics.get(
         "nora_tool_call_log_writes_total", tool="place_info", outcome="ok",
     ) == 1
-    # The R-45 nudge: make_artifact was called with empty context after
-    # place_info had already gathered something this turn.
-    assert metrics.get("nora_guard_vetoes_total", rule="R-45") == 1
 
     # Independently re-exercise `recall_lookups` against the SAME store the
     # scripted turn's `place_info` call wrote to — the real production
