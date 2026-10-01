@@ -277,6 +277,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "apply",
+        # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
+        "set_state",
     }
 )
 
