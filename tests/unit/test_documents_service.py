@@ -8,16 +8,17 @@ and a code that fits two photos is refused rather than picked.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from nora.app import documents_service as service_module
 from nora.app.documents_service import DocumentService, rooms_named
 from nora.documents.check import Checked, Finding
-from nora.domain.documents import RevisionOutcome
+from nora.domain.documents import RevisionIn, RevisionOutcome
 from nora.domain.media import MediaObject
 from nora.policy import Conversation, Policy
 from nora.testing import FakeDocumentStore, FakeMediaObjectStore
@@ -112,6 +113,7 @@ def _service(
     history: dict[str, list[tuple[int, dict[str, Any]]]] | None = None,
     filler: int = 0,
     public_url: str = "",
+    new_id: Callable[[], UUID] = uuid4,
 ) -> tuple[DocumentService, FakeDocumentStore]:
     store = store or FakeDocumentStore()
     svc = DocumentService(
@@ -127,6 +129,7 @@ def _service(
         is_person=lambda person_id: person_id in {"ken", "mei"},
         now_ms=lambda: NOW,
         public_url=public_url,
+        new_id=new_id,
     )
     return svc, store
 
@@ -572,3 +575,38 @@ async def test_with_a_public_url_the_link_is_the_origin_and_the_handle_never_the
         svc, _doc(title="v2"), document_id=made.document_id, base_revision=1
     )
     assert revised.url == made.url  # one document, one link, whatever its revision
+
+
+async def test_a_new_document_never_takes_a_handle_its_room_already_reads() -> None:
+    # Two documents sharing a 12-hex handle would 404 BOTH links for the room forever (a
+    # clash is refused, never picked): the id is drawn again until it is clear of them.
+    taken = UUID("0123456789ab" + "0" * 20)
+    clash = UUID("0123456789ab" + "f" * 20)
+    fresh = UUID("fedcba987654" + "1" * 20)
+    draws = iter([clash, clash, fresh])
+    svc, store = _service(store=None, new_id=lambda: next(draws))
+    await store.create(
+        document_id=taken, platform=ROOM[0], conversation_id=ROOM[1], created_by="ken",
+        revision=RevisionIn(
+            title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
+        ),
+    )
+    made = await _publish(svc, _doc(title="new"))
+    assert made.status == "ok" and made.document_id == fresh
+
+
+async def test_a_clash_in_another_room_is_none_of_this_rooms_business() -> None:
+    # The guard looks at what THIS room can read; another room's document does not make
+    # the link ambiguous for anyone here, so the first id drawn is kept.
+    elsewhere = UUID("0123456789ab" + "0" * 20)
+    first = UUID("0123456789ab" + "f" * 20)
+    draws = iter([first, UUID("fedcba987654" + "1" * 20)])
+    svc, store = _service(new_id=lambda: next(draws))
+    await store.create(
+        document_id=elsewhere, platform=OTHER[0], conversation_id=OTHER[1], created_by="mei",
+        revision=RevisionIn(
+            title="x", spec={"version": 1}, text="x", sha256="0" * 64, media=(), written_by="t"
+        ),
+    )
+    made = await _publish(svc, _doc(title="new"))
+    assert made.status == "ok" and made.document_id == first

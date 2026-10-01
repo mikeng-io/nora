@@ -8,6 +8,7 @@ failure, not a default.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from pathlib import Path
 from typing import Literal
@@ -3746,6 +3747,11 @@ class RecordQueryConfig(BaseModel):
     enabled: bool = False
 
 
+#: Dot-separated host labels of letters, digits and inner hyphens (no trailing dot).
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+_HOST_LABELS = re.compile(rf"{_LABEL}(?:\.{_LABEL})*")
+
+
 class DocumentsConfig(BaseModel):
     """`document_publish` and `document_read` (design/artifact/00-design.md §26).
 
@@ -3772,20 +3778,30 @@ class DocumentsConfig(BaseModel):
         if not value:
             return value
         parts = urlsplit(value)
+        try:
+            port = parts.port  # raises on a non-numeric or out-of-range port
+        except ValueError:
+            port = -1
+        host = parts.hostname or ""
         bad = (
             parts.scheme not in ("http", "https")
-            or not parts.hostname
+            # Letters, digits and hyphens in dot-separated labels: no control character,
+            # backslash, `+`, underscore or trailing dot can get into a link she sends.
+            or _HOST_LABELS.fullmatch(host) is None
+            or port == -1
             or parts.username is not None
             or parts.password is not None
             or parts.path not in ("", "/")
             or parts.query
             or parts.fragment
-            or any(c.isspace() for c in value)
+            or any(c.isspace() or not c.isprintable() for c in value)
+            or "\\" in value
         )
         if bad:
             msg = (
                 "[documents] public_url must be an origin like https://nora.67.zone "
-                "(scheme and host, optional port; no path, query, fragment or login)"
+                "(http or https, a plain host, optional port; no path, query, fragment, "
+                "login, trailing dot or backslash)"
             )
             raise ValueError(msg)
         return f"{parts.scheme}://{parts.netloc}"

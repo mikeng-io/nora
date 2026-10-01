@@ -49,6 +49,7 @@ from nora.policy import Policy
 _HEX = re.compile(r"^[0-9a-f]{6,64}$")
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _HANDLES_SHOWN = 5
+_HANDLE_TRIES = 5
 
 
 def _wall_ms() -> int:
@@ -255,6 +256,27 @@ class DocumentService:
             url=self._link(document_id),
         )
 
+    async def _fresh_id(self, platform: str, conversation_id: str, person_id: str) -> UUID:
+        """A new document id whose 12-hex handle no document its room can read already has.
+
+        A link resolves its handle among what the viewer may read and refuses a handle that
+        matches two, so a clash would make both documents' links 404 for the whole room
+        forever. 48 bits make one astronomically unlikely, so this is a guard, not a loop of
+        retries: a few draws, then the last one (and a clash is still refused, never picked)."""
+        rooms = frozenset(
+            (platform, cid)
+            for cid in self._room_ids(platform, conversation_id) | {conversation_id}
+        )
+        candidate = self._new_id()
+        for _ in range(_HANDLE_TRIES - 1):
+            clash = await self._store.get_visible_by_handle(
+                handle=handle_of(candidate), person_id=person_id, rooms=rooms
+            )
+            if clash is None:
+                break
+            candidate = self._new_id()
+        return candidate
+
     def _link(self, document_id: UUID) -> str:
         """The link to hand the room, or "" when there is no public origin. It carries the
         12-hex handle, never the UUID, so it passes egress whole."""
@@ -334,7 +356,7 @@ class DocumentService:
         try:
             if document_id is None:
                 made = await self._store.create(
-                    document_id=self._new_id(),
+                    document_id=await self._fresh_id(platform, conversation_id, person_id),
                     platform=platform,
                     conversation_id=conversation_id,
                     created_by=person_id,

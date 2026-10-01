@@ -2122,6 +2122,8 @@ def test_documents_public_url_defaults_to_no_link_and_the_example_ships_it_empty
         ("https://nora.67.zone", "https://nora.67.zone"),
         ("https://nora.67.zone/", "https://nora.67.zone"),
         ("http://localhost:3000", "http://localhost:3000"),
+        ("https://a-b.example.com:8443", "https://a-b.example.com:8443"),
+        ("https://xn--nora-8na.example", "https://xn--nora-8na.example"),
     ],
 )
 def test_documents_public_url_accepts_an_origin_and_drops_a_trailing_slash(given, kept) -> None:
@@ -2141,6 +2143,15 @@ def test_documents_public_url_accepts_an_origin_and_drops_a_trailing_slash(given
         "https://user:pw@nora.67.zone",  # credentials
         "https://nora.67.zone extra",
         "//nora.67.zone",
+        "https://ho\x00st.com",  # a control character
+        "https://host\x7f",
+        "https://good.com\\evil.com",  # a bare backslash
+        "https://nora.67.zone.",  # a trailing dot
+        "https://host:99999",  # a port out of range
+        "https://host:abc",
+        "https://+85212345678.example.com",  # not a host (and a phone to egress)
+        "https://under_score.example.com",
+        "https://-lead.example.com",
     ],
 )
 def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> None:

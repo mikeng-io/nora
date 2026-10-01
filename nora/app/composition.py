@@ -46,7 +46,7 @@ from nora.agent.dreamer import (
     proactive_grant,
     verify_tool_subsets,
 )
-from nora.agent.egress import scan_identifiers
+from nora.agent.egress import scan_identifiers, scan_reply
 from nora.agent.mcp import McpMount, build_mcp_tools
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
@@ -427,6 +427,25 @@ def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
             f"start rather than failing on the first call that uses it"
         )
     return cast(ReasoningEffort, value)
+
+
+def _require_a_sendable_public_url(public_url: str) -> None:
+    """Refuse to start when egress would block the link she is told to send.
+
+    `[documents] public_url` is validated as an origin, but an origin can still be one the
+    identifier scan blocks whole (a UUID-shaped, `+digits` or key-shaped host): she would be
+    told to paste the link verbatim and every such reply would be swallowed. The scan used
+    is egress's own, on the longest link the handle can make, so nothing is duplicated."""
+    if not public_url:
+        return
+    link = f"{public_url}/documents/{'0' * 12}"
+    kind = scan_reply(link)
+    if kind is not None:
+        raise StartupError(
+            f"[documents] public_url = {public_url!r}: egress would block the link she "
+            f"sends ({kind}) — refusing to start rather than silently dropping every reply "
+            f"that carries a document link"
+        )
 
 
 def _build_wake_evaluator(
@@ -1443,6 +1462,7 @@ async def build_dependencies(
     # The window scanned for a picture's marker code is the one `media_fetch` scans: the
     # prefill plus `load_transcript`'s reach, so any picture she can still see resolves
     # and an older one is honestly not found.
+    _require_a_sendable_public_url(cfg.documents.public_url)
     document_service = DocumentService(
         store=documents_store, records=audit, media=media_objects,
         media_window=cfg.store.context_window + LOAD_TRANSCRIPT_MAX,

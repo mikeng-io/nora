@@ -1067,6 +1067,18 @@ passes the resolved id to it). The handle reaches SQL only after `is_handle` (`[
 LIKE is autoescaped: each is shown load-bearing by reverting it (an empty handle would match every
 document).
 
+**Review (independent, scenarios only; seven scenarios held).** Four defects found and fixed here:
+`public_url` accepted a control character, a bare backslash, a trailing dot and a port out of range (now a
+plain host of letters, digits and hyphens, and a valid port); an origin whose host is UUID-shaped or
+key-shaped passes that check but egress blocks the whole link, so every reply carrying it would vanish
+(composition now refuses to start on egress's own scan of the longest link the handle can make); a new
+document could draw a handle a document its room already reads has, which would 404 both links for the
+room (the id is drawn again, a few times, against what that room can read; another room's documents are
+none of its business; a clash that still happens is refused, never picked). Left as is, on purpose: the
+`document_publish` description still says `ok` "carries `url`", which is false with no origin set; the
+result's note says so plainly, and a description change needs a `tool_selection` before and after (ADR
+0015), which one phrase does not justify.
+
 **Not changed.** Egress, doctrine, the `<documents>` block's content (its note now says a reply carries
 the link a publish returned, or the title). Live step: set `[documents] public_url` to the web app's
 origin (its `AUTH_URL`) through nora-deploy step 5.
