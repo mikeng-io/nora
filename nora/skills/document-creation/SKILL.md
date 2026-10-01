@@ -13,18 +13,17 @@ description: >-
 ## Somebody who asks for a document gets one
 
 When somebody asks for a document by name, make it, however short it turns out. When nobody did, judge
-who will read it and when, without asking them. An answer they need now belongs in the chat. A file they want to hand
-on (a spreadsheet, a PDF, a script's output) is made on your computer and sent with
-`computer_export`; a document is never a file, and your computer never publishes a page. A document
+who will read it and when, without asking them. An answer they need now belongs in the chat. A file to hand on is made on
+your computer and sent with `computer_export`; a document is never a file, and your computer never
+publishes a page. A document
 is what people come back to, share with someone who was not here, or read on a bigger screen than a
 chat: a write-up, a plan, a comparison, a summary of what the room decided. When nobody asked for one
 and the honest answer is three sentences, send the three sentences.
 
 ## Read the catalog before you write a line
 
-Call `document_publish` with no `spec`. It returns the components you may use and a complete
-example. Write against that, and never invent a component or a property: an unknown one is refused
-and nothing is stored. A document is JSON, never HTML, Markdown-with-tags or a screenshot.
+Call `document_publish` with no `spec`: it returns the components you may use and an example. Never
+invent a component or a property: an unknown one is refused and nothing is stored. A document is JSON, never HTML, Markdown-with-tags or a screenshot.
 
 ## Write a finished reference, not notes
 
@@ -60,8 +59,7 @@ with its map link, the `maps_url` from `place_info`.
 ## Numbers and charts come from your computer, not from your head
 
 When a document needs a calculation, a simulation or a chart's data, run it on your computer first,
-read the result, and place that result in the spec. The computer gives you the numbers; the document
-is yours to compose. Never publish a figure that did not come out of a run, a source or the room.
+read the result, and place that result in the spec. Never publish a figure that did not come out of a run, a source or the room.
 
 ## Name the pictures that went in
 
@@ -77,8 +75,15 @@ document, everyone who can open the document sees it. A web picture is somebody 
 came from in `Sources` and in the caption. If `media_fetch` returns no `code`, it was not kept: leave it
 out, and never guess a code.
 
-Say in your reply which pictures went in, by what they show. A picture from more than 90 days back in the
+A picture from more than 90 days back in the
 room is out of reach: say so, leave it out, and never guess its code.
+
+## Publish with what you have, and claim only what happened
+
+Do not hold a document for details nobody gave you: state your assumption inside it and say what would
+change it. When a tool refuses more calls, stop gathering and publish what you hold. A document exists
+only once `document_publish` returned `ok` in this turn, or `document_read` returned it. Until then say
+it was not made, and give no link.
 
 ## Change a document by reading it first
 

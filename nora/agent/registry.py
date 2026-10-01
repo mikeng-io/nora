@@ -874,6 +874,13 @@ class ToolRegistry:
         place."""
         return self._video_chunk_seconds
 
+    def own_link_check(self) -> Callable[[str, str, str], Awaitable[str | None]] | None:
+        """The check `Deliverer` runs on every reply for a link to one of our documents
+        (R-100), or `None` while `[documents]` is off. Read off the same service
+        `document_publish` uses, so there is no second wiring to forget."""
+        documents = self._documents
+        return documents.unknown_document_link if documents is not None else None
+
     def tool_param_names(self) -> Mapping[str, frozenset[str]]:
         """Each tool's ACCEPTED argument names, read off its own signature —
         never hand-copied — for `ReplyGuard`'s R-99 unknown-argument veto

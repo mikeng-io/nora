@@ -508,3 +508,38 @@ async def test_a_forgotten_document_is_not_restorable_or_readable_through_the_to
         spec=_doc("v2"), document_id=str(doc), base_revision=1
     )
     assert revise["status"] == "not_found"
+
+
+class _RefusingDeliverer:
+    """A deliverer R-100 refused: nothing sent, and a sentence that says why."""
+
+    held_count = 0
+    exhausted = False
+
+    def __init__(self, note: str) -> None:
+        self.refusal_note = note
+
+    async def deliver(self, text: str, **_: Any) -> bool:
+        return False
+
+
+async def _send_with(deliverer: Any, text: str) -> str:
+    room = Room(
+        platform="signal", conversation_id=ROOM,
+        roster_source=FakeRosterSource(groups={ROOM: (frozenset({"miles"}),)}),
+        persons=_Persons(), tagger=MILES,
+    )
+    specs = ToolRegistry().specs(
+        store=_Rows(), conversation_id=ROOM, conversation_type="group", persons=_Persons(),
+        honcho=FakeMemoryStore(), deliverer=deliverer, metrics=Metrics(), room=room,
+    )
+    return await {s.name: s.call for s in specs}["send_reply"](text=text)
+
+
+async def test_a_refusal_for_a_made_up_document_link_tells_the_model_why() -> None:
+    out = await _send_with(_RefusingDeliverer("that document does not exist"), "see the link")
+    assert out == "refused. that document does not exist"
+
+
+async def test_every_other_refusal_keeps_the_bare_word() -> None:
+    assert await _send_with(_RefusingDeliverer(""), "see the link") == "refused"
