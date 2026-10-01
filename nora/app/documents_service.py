@@ -166,22 +166,6 @@ _CATALOG_RULES = (
 )
 
 
-def _own_link_pattern(public_url: str) -> re.Pattern[str]:
-    """`<public_url>/[locale/]documents/<hex run>`, scheme optional, any case: the shape
-    `DocumentService` builds a link in (the portal serves it under a locale prefix too), and the
-    only one a reply is checked for. The boundaries are ASCII on purpose: Python's `\\w` and `\\b`
-    count a Chinese character as a word character, so a link written with no space beside Cantonese
-    («份文件喺https://…/documents/8e2f4b1a9c00呢度») would not match and would walk through. The
-    handle is captured as the whole hex run, so a run that is not exactly 12 digits is read as a
-    made-up handle instead of being cut to its first twelve."""
-    host = public_url.split("://", 1)[-1].strip("/")
-    return re.compile(
-        rf"(?<![A-Za-z0-9.-])(?:https?://)?{re.escape(host)}/(?:[a-z]{{2}}(?:-[A-Za-z]{{2,4}})?/)?"
-        rf"documents/([0-9a-f]{{6,}})(?![0-9A-Za-z])",
-        re.IGNORECASE,
-    )
-
-
 class DocumentService:
     def __init__(
         self,
@@ -298,45 +282,10 @@ class DocumentService:
                 named.append(sha)
         return rewritten, tuple(sorted(set(named))), findings, False
 
-    async def unknown_document_link(
-        self, platform: str, conversation_id: str, text: str
-    ) -> str | None:
-        """A refusal note when `text` links to a document that is not this room's, else `None`
-        (design/artifact §37, R-100).
-
-        A reply may carry a link to one of OUR documents (`<public_url>/documents/<handle>`) only
-        when the document exists in this room, in any state (an archived or deleted one is still
-        a real thing to mention). A handle that matches none is a made-up link: on 2026-10-01
-        Nora wrote «document made, with four photos» and a link to a document she never stored,
-        then told the room it was still there. The check runs where the text leaves
-        (`Deliverer`), not in a prompt, because the rule «do not say it was made until the publish
-        returned ok» was already in her skill. FAILS CLOSED: a store that cannot be read refuses
-        the reply, since «I could not check» is not «it exists». A reply with no such link, and a
-        deployment with no `[documents] public_url`, never reach the store."""
-        if not self._public_url:
-            return None
-        pattern = _own_link_pattern(self._public_url)
-        handles = {m.group(1).lower() for m in pattern.finditer(text)}
-        for handle in sorted(handles):
-            try:
-                # `_in_room` answers `None` for anything that is not a 12-digit handle, so a longer
-                # hex run (a UUID without dashes) is refused here without a second rule.
-                found = await self._in_room(
-                    platform=platform, conversation_id=conversation_id,
-                    document_id=None, handle=handle,
-                )
-            except Exception:  # noqa: BLE001 - a store that is down is a refusal, not a pass
-                return (
-                    "I could not check that document link just now, so the reply was not sent. "
-                    "Say it in words without the link."
-                )
-            if found is None:
-                return (
-                    f"That reply links to a document ({handle}) that is not one of this room's "
-                    "documents. Give only a link that document_publish or document_read returned "
-                    "to you. If you never published it, or it was refused, say so in words."
-                )
-        return None
+    @property
+    def link_base(self) -> str:
+        """The public origin a document link is built under; `""` while none is configured."""
+        return self._public_url
 
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:

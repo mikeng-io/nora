@@ -664,7 +664,6 @@ class EngagementPipeline:
                 terminal=self._tool_registry.terminal_tools(), metrics=self._metrics,
                 param_names=self._tool_registry.tool_param_names(),
                 audience=audience_names.TAG,
-                own_links=self._tool_registry.own_link_check(),
                 cacheable_tools=self._tool_registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,

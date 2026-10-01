@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Nora no longer writes document links herself: the link to a document she just saved is added to her reply automatically, and a document link she makes up is removed. The room is told the truth by the link itself: if it is not there, nothing was saved.",
+  "details": [
+    "This replaces the first version of the guard, which held back her whole reply and sent a generic apology instead.",
+    "To link an older document she has to open it first."
+  ],
+  "limitations": [
+    "She can still write that a document was made in her message; only the link is controlled.",
+    "A link to some other website is not touched."
+  ]
+}

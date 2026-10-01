@@ -1203,10 +1203,11 @@ def test_the_document_skill_gives_the_link_and_never_asks_her_to_say_an_id() -> 
     body = " ".join(
         (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
     )
-    assert "If the result carries a `url`, give it verbatim on a line of its own" in body
-    assert "Never write the document's id in a reply" in body
-    assert "say it is under Documents, by its title, and do not make one up" in body
-    assert "never a path or a host you were not given" in body
+    assert "The link is added to your reply for you" in body
+    assert "never write a path, a host or the document's id, and never make up a link" in body
+    assert "repeat a `url` exactly as a document tool returned it this turn" in body
+    assert "any other document link is removed" in body
+    assert "If the result carries no `url`, there is no link yet: say it is under Documents" in body
     assert scan_reply(body) is None, "the skill itself carries something egress would block"
 
 
