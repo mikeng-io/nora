@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse a /workspace archive that could write outside it (DEC-263).
+"""Refuse a /workspace archive that could write outside it (DEC-262).
 
 `nora-computer restore` extracts an archive INSIDE the VM as root. The archive is
 a file on the host's disk, so it is not trusted just because Nora made it: a room

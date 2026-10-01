@@ -1,4 +1,4 @@
-"""The computer's alert rules (DEC-261) name series that exist, in the words the
+"""The computer's alert rules (DEC-260) name series that exist, in the words the
 code emits, and fire as the cases in `deploy/prometheus/tests/computer.test.yml`
 say they do.
 

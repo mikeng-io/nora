@@ -1,4 +1,4 @@
-"""`computer_probe_loop` (DEC-261): probe at once, keep going past a probe that raised."""
+"""`computer_probe_loop` (DEC-260): probe at once, keep going past a probe that raised."""
 
 from __future__ import annotations
 

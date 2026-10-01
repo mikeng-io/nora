@@ -80,7 +80,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "portal's picture route reads a document's pictures from (None when media "
         "custody is off; the route then answers `unavailable`). "
         "57 -> 58 on 2026-10-01: `computer_probe`, the timed probe of computerd "
-        "behind `nora_computer_up` (None unless `[computer] enabled`; DEC-261)."
+        "behind `nora_computer_up` (None unless `[computer] enabled`; DEC-260)."
     )
 
 

@@ -69,7 +69,7 @@ if [ "$AHEAD" != 0 ] || [ -n "$DIRTY" ]; then echo "CHECKOUT_NOT_CLEAN ahead=$AH
 git merge -q --ff-only origin/master || { echo "FF_FAILED"; exit 4; }
 git merge-base --is-ancestor "$SHA" HEAD || { echo "SHA_NOT_IN_HEAD"; exit 5; }
 git log --oneline -1
-docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory  # DEC-259: every `up` naming nora fails without it; --internal keeps nora's default route
+docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory  # DEC-258: every `up` naming nora fails without it; --internal keeps nora's default route
 NORA_GIT_SHA=$(git rev-parse HEAD) NORA_BUILT_AT=$(date -u +%FT%TZ) docker compose build nora > /tmp/nora-build.log 2>&1; BUILD_RC=$?
 echo "BUILD_RC=$BUILD_RC"; grep -E 'Built|ERROR' /tmp/nora-build.log | tail -n 3
 [ "$BUILD_RC" = 0 ] || exit 6

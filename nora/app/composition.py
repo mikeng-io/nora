@@ -1365,7 +1365,7 @@ async def build_dependencies(
         from nora.infra.computer.client import ComputerdRuntime
 
         computer_token = _computer_token(cfg)
-        # The computer as a metric (DEC-261): built ONLY here, so with
+        # The computer as a metric (DEC-260): built ONLY here, so with
         # `[computer] enabled = false` there is no `nora_computer_up` series at
         # all (not applicable, which is not down) and no zero-valued calls
         # series either. `prime()` creates them at zero, so a rare `unavailable`

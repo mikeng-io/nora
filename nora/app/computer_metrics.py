@@ -1,4 +1,4 @@
-"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-261).
+"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-260).
 
 `ComputerMetrics` is the observer `ComputerdRuntime` and the timed probe tell
 about computerd (`nora.domain.computer.ComputerCallObserver`), and it is the one

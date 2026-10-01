@@ -1,4 +1,4 @@
-"""`deploy/honcho-closed-probe.sh` reads the outcomes apart (#633, DEC-259).
+"""`deploy/honcho-closed-probe.sh` reads the outcomes apart (#633, DEC-258).
 
 The probe is the read-back for the one property that matters here: Honcho
 answers with no authentication, so what protects it is where it listens. A probe

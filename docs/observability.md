@@ -501,7 +501,7 @@ metric name in `increase` and `sum`; read back with promtool 2026-10-01), so it
 now says which query names the counter. `nora_computer_calls_total` is the one
 series left to its own thresholded rule.
 
-**The computer is a labelled gauge on purpose (DEC-261).** `nora_computer_up` is
+**The computer is a labelled gauge on purpose (DEC-260).** `nora_computer_up` is
 `{target="computerd"}`, set by a 30s authenticated probe and by every computer
 call. An unlabelled gauge is exported at 0 from the moment it is declared, so a
 deployment with `[computer] enabled = false` would read as a computer that is
