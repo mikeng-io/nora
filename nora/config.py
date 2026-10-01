@@ -3722,9 +3722,10 @@ _HOST_LABELS = re.compile(rf"{_LABEL}(?:\.{_LABEL})*")
 
 
 class DocumentsConfig(BaseModel):
-    """`document_publish` and `document_read` (design/artifact/00-design.md §26).
+    """`document_publish`, `document_read` and `document_set_status` (design/artifact/
+    00-design.md §26, §31).
 
-    **Ships OFF.** Off, neither tool is in any turn's tools, catalogue or the
+    **Ships OFF.** Off, none of the three is in any turn's tools, catalogue or the
     Relevance Gate's capability digest. A published document is opened in the web
     app, and the portal's document pages are a later step; until they ship, a model
     that published one would hand people a path that shows nothing. Turn it on

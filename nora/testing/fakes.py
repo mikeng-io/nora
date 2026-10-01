@@ -43,7 +43,9 @@ from nora.domain.computer_sessions import (
 )
 from nora.domain.documents import (
     DocumentExistsError,
+    DocumentState,
     DocumentSummary,
+    ListedState,
     RevisionIn,
     RevisionOutcome,
     RevisionRecord,
@@ -2327,7 +2329,13 @@ class FakeDocumentStore:
     def __init__(self) -> None:
         self._rooms: dict[UUID, tuple[str, str, str, datetime]] = {}
         self._revisions: dict[UUID, list[tuple[RevisionIn, datetime]]] = {}
+        # Append-only, like `document_state`: the latest entry is the state, none is active.
+        self._states: dict[UUID, list[tuple[DocumentState, str]]] = {}
         self._tick = 0
+
+    def _state(self, document_id: UUID) -> DocumentState:
+        changes = self._states.get(document_id)
+        return changes[-1][0] if changes else "active"
 
     def _now(self) -> datetime:
         self._tick += 1
@@ -2345,6 +2353,7 @@ class FakeDocumentStore:
                 id=document_id, platform=platform, conversation_id=conversation_id,
                 created_by=created_by, title=revision.title, revision=number,
                 created_at=created_at, updated_at=recorded_at,
+                state=self._state(document_id),
             ),
             spec=json.loads(json.dumps(revision.spec)), text=revision.text,
             sha256=revision.sha256, media=tuple(revision.media),
@@ -2376,10 +2385,20 @@ class FakeDocumentStore:
     ) -> RevisionOutcome:
         if document_id not in self._rooms:
             return RevisionOutcome("not_found")
+        if self._state(document_id) != "active":
+            return RevisionOutcome("not_active")
         if len(self._revisions[document_id]) != base_revision:
             return RevisionOutcome("conflict")
         self._revisions[document_id].append((revision, self._now()))
         return RevisionOutcome("ok", self._stored(document_id))
+
+    async def set_state(
+        self, *, document_id: UUID, state: DocumentState, set_by: str
+    ) -> bool:
+        if document_id not in self._rooms:
+            return False
+        self._states.setdefault(document_id, []).append((state, set_by))
+        return True
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         return self._stored(document_id)
@@ -2394,12 +2413,15 @@ class FakeDocumentStore:
         )
 
     async def list_visible(
-        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
+        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int,
+        state: ListedState = "active",
     ) -> VisiblePage:
+        listed = "archived" if state == "archived" else "active"
         seen = [
             d.summary for doc_id in self._rooms
             if (d := self._stored(doc_id)) is not None
             and self._sees(d.summary, person_id, rooms)
+            and d.summary.state == listed
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         # The same bounds as `SqlDocumentStore.list_visible`.
@@ -2416,6 +2438,7 @@ class FakeDocumentStore:
             if (d := self._stored(doc_id)) is not None
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
+            and d.summary.state == "active"
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)
@@ -2425,7 +2448,11 @@ class FakeDocumentStore:
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
         stored = self._stored(document_id)
-        if stored is None or not self._sees(stored.summary, person_id, rooms):
+        if (
+            stored is None
+            or stored.summary.state == "deleted"
+            or not self._sees(stored.summary, person_id, rooms)
+        ):
             return None
         return stored
 
@@ -2439,6 +2466,7 @@ class FakeDocumentStore:
             for document_id in self._rooms
             if document_id.hex.startswith(handle)
             and (stored := self._stored(document_id)) is not None
+            and stored.summary.state != "deleted"
             and self._sees(stored.summary, person_id, rooms)
         ]
         return seen[0] if len(seen) == 1 else None

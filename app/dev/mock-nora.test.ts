@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { handle } from "./mock-nora.mjs";
+import { handle, handleDocumentState, resetDocumentStates } from "./mock-nora.mjs";
 
 import {
   DoctrineSchema,
@@ -98,9 +98,14 @@ describe("status/memory/doctrine/skills/tools", () => {
     expect(data.map((s) => s.name)).toEqual(["identity", "voice", "silence", "conduct", "capability", "constraints"]);
   });
 
-  it("GET /skills matches SkillsSchema and includes the three real repo skills", () => {
+  it("GET /skills matches SkillsSchema and includes the four real repo skills", () => {
     const data = expectOk("/app/v1/skills", {}, SkillsSchema);
-    expect(data.map((s) => s.name).sort()).toEqual(["computer-use", "image-generation", "navigation"]);
+    expect(data.map((s) => s.name).sort()).toEqual([
+      "computer-use",
+      "document-creation",
+      "image-generation",
+      "navigation",
+    ]);
     for (const skill of data) expect(skill.instructions?.length ?? 0).toBeGreaterThan(0);
   });
 
@@ -152,7 +157,12 @@ describe("documents", () => {
 
   it("lists only what the viewer may read, newest first, matching DocumentsPageSchema", () => {
     const miles = expectOk("/app/v1/documents", { personId: "miles" }, DocumentsPageSchema);
-    expect(miles.documents.map((d) => d.title)).toEqual(["Lisbon in December", "Kitchen rota", "From a newer catalog"]);
+    expect(miles.documents.map((d) => d.title)).toEqual([
+      "Lisbon in December",
+      "Kitchen rota",
+      "From a newer catalog",
+      "Saturday packing list",
+    ]);
     const mei = expectOk("/app/v1/documents", { personId: "mei" }, DocumentsPageSchema);
     expect(mei.documents.map((d) => d.title)).toEqual(["Lisbon in December", "Mei's surprise"]);
   });
@@ -179,6 +189,31 @@ describe("documents", () => {
     // Not named by the document: no picture. Not a reader: no picture.
     expect(call(`/app/v1/documents/${LISBON}/media/${"c".repeat(64)}`, { personId: "miles" }).status).toBe(404);
     expect(call(`/app/v1/documents/${MEIS}/media/${doc.media[0]}`, { personId: "miles" }).status).toBe(404);
+  });
+
+  it("archive moves a document to the Archived filter, delete hides it everywhere, both like Nora", () => {
+    const ROTA = "5b6f0c3a-2d41-4e8b-9c77-1a2b3c4d5e02";
+    const post = (id: string, state: unknown, personId = "miles") =>
+      handleDocumentState(`/app/v1/documents/${id}/state`, new URLSearchParams({ personId }), { state });
+    const titles = (state?: string) =>
+      expectOk("/app/v1/documents", { personId: "miles", ...(state ? { state } : {}) }, DocumentsPageSchema)
+        .documents.map((d) => d.title);
+    try {
+      expect(post(ROTA, "archived").status).toBe(200);
+      expect(titles()).not.toContain("Kitchen rota");
+      expect(titles("archived")).toEqual(["Kitchen rota"]);
+      expect(post(ROTA, "deleted").status).toBe(200);
+      expect(titles("archived")).toEqual([]);
+      expect(call(`/app/v1/documents/${ROTA}`, { personId: "miles" }).status).toBe(404);
+      // Deleted cannot be restored from the portal, and a reader nobody names cannot change it.
+      expect(post(ROTA, "active").status).toBe(404);
+      expect(post(MEIS, "archived").status).toBe(404);
+      expect(post(LISBON, "purged").status).toBe(400);
+      expect(call("/app/v1/documents", { personId: "miles", state: "deleted" }).status).toBe(400);
+    } finally {
+      // The mock's state is module-level: put the fixture back for every other test.
+      resetDocumentStates();
+    }
   });
 
   it("MOCK_FAIL=documents is a 503, never an empty list", () => {

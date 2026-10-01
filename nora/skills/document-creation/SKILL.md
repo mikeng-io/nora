@@ -61,6 +61,12 @@ publish with the same `document_id` and `base_revision` set to the revision you 
 from memory of what it said. If the answer is a conflict, someone changed it meanwhile: read it again,
 apply your change to that, and publish again.
 
+## Archive, delete or restore with the tool
+
+When somebody asks to archive, delete, remove or bring back a document, call `document_set_status`
+with its id and the state. Never publish an empty or "deleted" revision to stand in for it. An archived
+or deleted document cannot be changed until it is set `active` again.
+
 ## A refusal is an instruction
 
 The findings are plain sentences that name where the spec is wrong. Fix exactly those places and

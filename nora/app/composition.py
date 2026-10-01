@@ -1374,7 +1374,7 @@ async def build_dependencies(
     )
     # `<documents>` (design/artifact §29): the one reader the tag path and the fire path
     # share. `None` while `[documents]` is off, so no room renders the block (the same
-    # flag that withholds `document_publish` and `document_read`).
+    # flag that withholds the document tools).
     documents_context: DocumentsContextReader | None = None
     if cfg.documents.enabled:
         documents_context = DocumentsContextReader(
@@ -2882,8 +2882,8 @@ async def build_dependencies(
         reminders=reminders,
         # The unified media index store — same engine, same lifecycle.
         media_store=media_objects,
-        # `document_publish`/`document_read` (design/artifact §26): ships OFF, and
-        # off the registry withholds both tools from every turn.
+        # The document tools (design/artifact §26, §31): ships OFF, and off the
+        # registry withholds all three from every turn.
         documents=document_service if cfg.documents.enabled else None,
         # the six event tools (`create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`/`suggest_venue`) answer `unavailable`

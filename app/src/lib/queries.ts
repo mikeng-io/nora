@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as documents from "./api/documents";
 import * as games from "./api/games";
 import * as nora from "./api/nora";
@@ -34,7 +34,8 @@ export const qk = {
   roster: ["roster"] as const,
   person: (id: string) => ["person", id] as const,
   plans: ["plans"] as const,
-  documents: (page: number) => ["documents", page] as const,
+  documents: (page: number, state: documents.DocumentFilter = "active") =>
+    ["documents", page, state] as const,
   document: (id: string) => ["document", id] as const,
   plan: (id: string) => ["plan", id] as const,
   presence: ["presence"] as const,
@@ -128,10 +129,10 @@ export const usePlan = (id: string) =>
 
 // ------------------------------------------------------------- documents
 
-export const useDocuments = (page: number) =>
+export const useDocuments = (page: number, state: documents.DocumentFilter = "active") =>
   useQuery({
-    queryKey: qk.documents(page),
-    queryFn: ({ signal }) => documents.fetchDocuments(page, signal),
+    queryKey: qk.documents(page, state),
+    queryFn: ({ signal }) => documents.fetchDocuments(page, state, signal),
     staleTime: 1 * M,
     // Turning a page keeps the last one on screen until the next arrives.
     placeholderData: keepPreviousData,
@@ -145,6 +146,22 @@ export const useDocument = (id: string) =>
     // and short enough that a revision she just made is the one you open.
     staleTime: 1 * M,
   });
+
+/** Archive, delete or restore a document. On success every documents list and this
+ * document are read again, so what is shown is what Nora now holds, never a guess. */
+export const useSetDocumentState = (id: string) => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (state: documents.DocumentStateChange) => documents.setDocumentState(id, state),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["documents"] }),
+        // Every cached copy of a document, by id and by a link's handle alike.
+        client.invalidateQueries({ queryKey: ["document"] }),
+      ]);
+    },
+  });
+};
 
 // -------------------------------------------------------------- presence
 

@@ -7,6 +7,11 @@ updated. A revision written from a stale base raises a unique violation on
 
 Visibility is part of the read, in SQL: a document is visible to a person who
 created it or whose room set contains its `(platform, conversation_id)`.
+
+State is part of the read too. A third append-only table, `document_state`, holds one
+row per change; the current state is the latest row (`_state`, a correlated read on
+`idx_document_state_latest`), and no row is `active`. Every person-facing read filters
+on it in SQL, so a deleted document is never a row a caller could forget to drop.
 """
 
 from __future__ import annotations
@@ -21,7 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
     DocumentExistsError,
+    DocumentState,
     DocumentSummary,
+    ListedState,
     RevisionIn,
     RevisionOutcome,
     RevisionRecord,
@@ -31,12 +38,28 @@ from nora.domain.documents import (
     ensure_utc_document,
     is_handle,
 )
-from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENTS
+from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENT_STATE, DOCUMENTS
 
 _D = DOCUMENTS.c
 _MAX_LIMIT = 1_000
 _MAX_OFFSET = 2**31 - 1
 _R = DOCUMENT_REVISION.c
+_S = DOCUMENT_STATE.c
+
+
+def _latest_state(document_id: Any) -> sa.Select[Any]:
+    return (
+        sa.select(_S.state)
+        .where(_S.document_id == document_id)
+        .order_by(_S.id.desc())
+        .limit(1)
+    )
+
+
+def _state() -> sa.ColumnElement[str]:
+    """Each document's current state: its latest `document_state` row, else `active`."""
+    latest = _latest_state(_D.id).correlate(DOCUMENTS).scalar_subquery()
+    return sa.func.coalesce(latest, sa.literal("active"))
 
 
 def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
@@ -49,6 +72,7 @@ def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
         revision=r.revision,
         created_at=ensure_utc_document(created_at, field="created_at"),
         updated_at=ensure_utc_document(r.recorded_at, field="updated_at"),
+        state=r.state,
     )
 
 
@@ -84,6 +108,7 @@ def _current() -> sa.Select[Any]:
         _R.media,
         _R.written_by,
         _R.recorded_at,
+        _state().label("state"),
     ).select_from(
         DOCUMENTS.join(top, top.c.document_id == _D.id).join(
             DOCUMENT_REVISION,
@@ -158,6 +183,13 @@ class SqlDocumentStore:
                 top = head.scalar_one()
                 if top is None:
                     return RevisionOutcome("not_found")
+                state = (
+                    await conn.execute(_latest_state(document_id))
+                ).scalar_one_or_none()
+                if state not in (None, "active"):
+                    # Archived or deleted: restore it first. Checked before the base, so a
+                    # stale base on an archived document still says why it cannot move.
+                    return RevisionOutcome("not_active")
                 if top != base_revision:
                     return RevisionOutcome("conflict")
                 await conn.execute(
@@ -170,6 +202,20 @@ class SqlDocumentStore:
             # Another writer took `base_revision + 1` between the read and the insert.
             return RevisionOutcome("conflict")
         return RevisionOutcome("ok", stored)
+
+    async def set_state(
+        self, *, document_id: UUID, state: DocumentState, set_by: str
+    ) -> bool:
+        async with self._engine.begin() as conn:
+            found = await conn.execute(sa.select(_D.id).where(_D.id == document_id))
+            if found.first() is None:
+                return False
+            await conn.execute(
+                sa.insert(DOCUMENT_STATE).values(
+                    document_id=document_id, state=state, set_by=set_by
+                )
+            )
+        return True
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         async with self._engine.connect() as conn:
@@ -195,9 +241,17 @@ class SqlDocumentStore:
         )
 
     async def list_visible(
-        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
+        self,
+        *,
+        person_id: str,
+        rooms: frozenset[RoomKey],
+        limit: int,
+        offset: int,
+        state: ListedState = "active",
     ) -> VisiblePage:
-        where = _visible(person_id, rooms)
+        # `deleted` is never a listing, whatever a caller passes.
+        listed = "archived" if state == "archived" else "active"
+        where = sa.and_(_visible(person_id, rooms), _state() == listed)
         # Bounded here as well as by the caller: an unbounded OFFSET is a DataError, and
         # the fake answers an empty page, so the two stores must agree at the extremes.
         limit = min(max(limit, 0), _MAX_LIMIT)
@@ -225,7 +279,9 @@ class SqlDocumentStore:
         if limit == 0 or not conversation_ids:
             return ()
         ids = sorted(conversation_ids)
-        in_room = sa.and_(_D.platform == platform, _D.conversation_id.in_(ids))
+        in_room = sa.and_(
+            _D.platform == platform, _D.conversation_id.in_(ids), _state() == "active"
+        )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
         top = (
@@ -244,6 +300,7 @@ class SqlDocumentStore:
                 _R.revision,
                 _R.title,
                 _R.recorded_at,
+                _state().label("state"),
             )
             .select_from(
                 DOCUMENTS.join(top, top.c.document_id == _D.id).join(
@@ -262,7 +319,9 @@ class SqlDocumentStore:
     async def get_visible(
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
-        stmt = _current().where(_D.id == document_id, _visible(person_id, rooms))
+        stmt = _current().where(
+            _D.id == document_id, _visible(person_id, rooms), _state() != "deleted"
+        )
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).first()
         return None if row is None else _stored(row)
@@ -276,6 +335,7 @@ class SqlDocumentStore:
             _current()
             .where(
                 _visible(person_id, rooms),
+                _state() != "deleted",
                 sa.func.replace(sa.cast(_D.id, sa.Text), "-", "").startswith(
                     handle, autoescape=True
                 ),

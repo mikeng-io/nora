@@ -610,3 +610,96 @@ async def test_a_clash_in_another_room_is_none_of_this_rooms_business() -> None:
     )
     made = await _publish(svc, _doc(title="new"))
     assert made.status == "ok" and made.document_id == first
+
+
+# ------------------------------------------------------------------- lifecycle
+async def _set(svc: DocumentService, doc: UUID, state: str, *, room=ROOM, person="ken"):
+    return await svc.set_state(
+        platform=room[0], conversation_id=room[1], person_id=person,
+        document_id=doc, state=state,
+    )
+
+
+@pytest.mark.parametrize("state", ["archived", "deleted"])
+async def test_a_revision_of_an_archived_or_deleted_document_is_refused_as_not_active(
+    state: str,
+) -> None:
+    svc, store = _service()
+    first = await _publish(svc, _doc(title="v1"))
+    assert (await _set(svc, first.document_id, state)).status == "ok"
+    result = await _publish(
+        svc, _doc(title="v2"), document_id=first.document_id, base_revision=1
+    )
+    assert result.status == "refused"
+    assert [f.rule for f in result.findings] == ["document_not_active"]
+    assert state in result.findings[0].message
+    assert len(await store.history(document_id=first.document_id)) == 1
+
+
+async def test_a_store_that_reports_not_active_is_refused_not_stored() -> None:
+    """The race: archived between the service's read and the store's write."""
+
+    class _Archives(FakeDocumentStore):
+        async def add_revision(self, **kw: Any) -> RevisionOutcome:
+            return RevisionOutcome("not_active")
+
+    svc, _ = _service(store=_Archives())
+    first = await _publish(svc, _doc(title="v1"))
+    result = await _publish(svc, _doc(title="v2"), document_id=first.document_id, base_revision=1)
+    assert result.status == "refused"
+    assert [f.rule for f in result.findings] == ["document_not_active"]
+
+
+async def test_set_state_appends_and_restore_brings_a_deleted_document_back() -> None:
+    svc, store = _service(public_url="https://nora.example")
+    first = await _publish(svc, _doc(title="Trip"))
+    gone = await _set(svc, first.document_id, "deleted")
+    assert gone.status == "ok" and gone.changed and gone.previous == "active"
+    assert gone.url == ""  # a deleted document's link opens nothing, so none is handed out
+    # Deleted is out of every read a room makes, except the restore itself.
+    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id)
+    assert read.status == "refused" and read.findings[0].rule == "no_such_document"
+    back = await _set(svc, first.document_id, "active", person="mei")
+    assert back.status == "ok" and back.changed and back.previous == "deleted"
+    assert back.url.startswith("https://nora.example/documents/")
+    assert (await store.get(document_id=first.document_id)).summary.state == "active"
+    again = await _set(svc, first.document_id, "active")
+    assert again.status == "ok" and not again.changed
+    assert store._states[first.document_id] == [("deleted", "ken"), ("active", "mei")]
+
+
+async def test_another_rooms_document_cannot_have_its_state_changed() -> None:
+    svc, store = _service()
+    first = await _publish(svc, _doc(title="mine"), room=ROOM)
+    other = await _set(svc, first.document_id, "deleted", room=OTHER)
+    unknown = await _set(svc, uuid4(), "deleted", room=OTHER)
+    assert other.status == "refused" and other == unknown
+    assert (await store.get(document_id=first.document_id)).summary.state == "active"
+
+
+async def test_only_a_known_person_changes_a_state_and_only_to_a_known_state() -> None:
+    svc, store = _service()
+    first = await _publish(svc, _doc(title="mine"))
+    stranger = await _set(svc, first.document_id, "deleted", person="100200300")
+    assert stranger.status == "refused" and stranger.findings[0].rule == "unknown_person"
+    bad = await _set(svc, first.document_id, "purged")
+    assert bad.status == "refused" and bad.findings[0].rule == "bad_state"
+    assert (await store.get(document_id=first.document_id)).summary.state == "active"
+
+
+async def test_a_store_that_is_down_changes_no_state_and_says_unavailable() -> None:
+    class _Down(FakeDocumentStore):
+        async def set_state(self, **kw: Any) -> bool:
+            raise RuntimeError("db down")
+
+    svc, _ = _service(store=_Down())
+    first = await _publish(svc, _doc(title="mine"))
+    assert (await _set(svc, first.document_id, "archived")).status == "unavailable"
+
+
+async def test_an_archived_document_still_reads_and_says_it_is_archived() -> None:
+    svc, _ = _service()
+    first = await _publish(svc, _doc(title="mine"))
+    await _set(svc, first.document_id, "archived")
+    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=first.document_id)
+    assert read.status == "ok" and read.state == "archived"

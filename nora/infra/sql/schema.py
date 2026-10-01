@@ -4590,3 +4590,27 @@ DOCUMENT_REVISION = sa.Table(
         "octet_length(spec::text) <= 1048576", name="ck_document_revision_spec_size",
     ),
 )
+
+# `document_state` (migration `0087_document_state`): a document's lifecycle, APPEND-ONLY
+# like the two tables above. One row per change; the CURRENT state is the row with the
+# highest `id` for the document, and a document with no row is `active`. Archive, delete
+# and restore are each one more row, so nothing is updated, nothing is ever removed, and
+# a deleted document keeps every revision. `set_by` is the person who asked (the portal
+# viewer, or the tagger Nora acted for). No foreign key, for the reason `documents` gives
+# above. `idx_document_state_latest` is the latest-row read every listing makes.
+DOCUMENT_STATE = sa.Table(
+    "document_state",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    sa.Column("document_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("set_by", sa.Text, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint(
+        "state IN ('active', 'archived', 'deleted')", name="ck_document_state_state",
+    ),
+    sa.CheckConstraint("length(set_by) > 0", name="ck_document_state_set_by"),
+)
+IDX_DOCUMENT_STATE_LATEST = sa.Index(
+    "idx_document_state_latest", DOCUMENT_STATE.c.document_id, DOCUMENT_STATE.c.id,
+)

@@ -219,3 +219,25 @@ async def test_the_age_is_against_the_turns_clock():
     view = await _reader(store, now=later).read(platform=ROOM[0], conversation_id=ROOM[1])
     assert view.now == later
     assert "3 h ago" in render_documents(view).body
+
+
+async def test_the_view_leaves_out_archived_and_deleted_documents():
+    store = FakeDocumentStore()
+    live = await _make(store, "Live")
+    shelved = await _make(store, "Shelved")
+    gone = await _make(store, "Gone")
+    await store.set_state(document_id=shelved, state="archived", set_by="ken")
+    await store.set_state(document_id=gone, state="deleted", set_by="ken")
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    assert [line.document_id for line in view.lines] == [str(live)]
+    # Restored, it is back in her view.
+    await store.set_state(document_id=gone, state="active", set_by="ken")
+    view = await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1])
+    assert {line.document_id for line in view.lines} == {str(live), str(gone)}
+
+
+async def test_a_room_whose_documents_are_all_archived_has_no_block():
+    store = FakeDocumentStore()
+    only = await _make(store, "Only")
+    await store.set_state(document_id=only, state="archived", set_by="ken")
+    assert await _reader(store).read(platform=ROOM[0], conversation_id=ROOM[1]) is None

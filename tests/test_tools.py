@@ -201,7 +201,7 @@ def test_every_declared_tool_is_built(wiring):
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
         # design/artifact §26: a document is published to the web app, read back to edit.
-        "document_publish", "document_read",
+        "document_publish", "document_read", "document_set_status",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

@@ -19,6 +19,18 @@ what was made there. Everything else is `None` (the same answer as "no such
 document": never a distinct "forbidden", so an id does not confirm that a document
 exists).
 
+LIFECYCLE is a third append-only table, `document_state`: one row per change of state,
+and a document's state is its LATEST row (none means `active`). Nothing is updated and
+nothing is deleted, so a restore is one more row (`active`) and every revision a deleted
+document had is still in `document_revision`. What each state does is the read side's:
+
+- `active`: listed, opened, in the room's `<documents>` block, revisable.
+- `archived`: off the default list and the block; opens by its link, listed only when
+  the caller asks for archived documents, and refused a revision until it is restored.
+- `deleted`: off every list and the block, and every read a person makes answers it
+  exactly like an unknown id. Only `get` (the publish service's own read, which is
+  room-scoped) still finds it, so a room can restore it through Nora.
+
 Every datetime crossing this port is UTC-aware.
 """
 
@@ -27,11 +39,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, get_args, runtime_checkable
 from uuid import UUID
 
 #: A room as the policy keys it: `(platform, conversation_id)`.
 RoomKey = tuple[str, str]
+
+#: A document's lifecycle state (the module docstring says what each one does). The
+#: `document_state` table's CHECK must name exactly these
+#: (`tests/contract/test_document_store_contract.py` reads it back).
+DocumentState = Literal["active", "archived", "deleted"]
+DOCUMENT_STATES: tuple[str, ...] = get_args(DocumentState)
+#: What a person's list can be filtered to. `deleted` is never listed.
+ListedState = Literal["active", "archived"]
 
 #: A document's short handle: the first 12 hex digits of its id, no dashes. It is what a
 #: link to a document carries, because a reply may not carry a UUID (egress blocks any
@@ -93,6 +113,7 @@ class DocumentSummary:
     revision: int
     created_at: datetime
     updated_at: datetime
+    state: DocumentState = "active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,9 +142,11 @@ class RevisionRecord:
 @dataclass(frozen=True, slots=True)
 class RevisionOutcome:
     """`ok` carries the new current document; `conflict` means another revision
-    took that number first (re-read and try again); `not_found` means no such id."""
+    took that number first (re-read and try again); `not_found` means no such id;
+    `not_active` means the document is archived or deleted, and nothing was written
+    (restore it first)."""
 
-    status: Literal["ok", "conflict", "not_found"]
+    status: Literal["ok", "conflict", "not_found", "not_active"]
     document: StoredDocument | None = None
 
 
@@ -150,12 +173,19 @@ class DocumentStore(Protocol):
     async def add_revision(
         self, *, document_id: UUID, base_revision: int, revision: RevisionIn
     ) -> RevisionOutcome:
-        """Write revision `base_revision + 1`."""
+        """Write revision `base_revision + 1`, only while the document is `active`."""
+        ...
+
+    async def set_state(
+        self, *, document_id: UUID, state: DocumentState, set_by: str
+    ) -> bool:
+        """Append a `document_state` row. `False` (and nothing written) when there is no
+        such document. Who may do this is the caller's check, made before the call."""
         ...
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
-        """The current document, with no visibility check: for the service that
-        publishes into a room, never for a reader."""
+        """The current document in ANY state, with no visibility check: for the service
+        that publishes into a room, never for a reader."""
         ...
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
@@ -163,31 +193,39 @@ class DocumentStore(Protocol):
         ...
 
     async def list_visible(
-        self, *, person_id: str, rooms: frozenset[RoomKey], limit: int, offset: int
+        self,
+        *,
+        person_id: str,
+        rooms: frozenset[RoomKey],
+        limit: int,
+        offset: int,
+        state: ListedState = "active",
     ) -> VisiblePage:
-        """The documents `person_id` may read, most recently updated first."""
+        """The documents `person_id` may read IN `state`, most recently updated first."""
         ...
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int
     ) -> tuple[DocumentSummary, ...]:
-        """The documents made in ONE room (`platform` and any of the room's conversation ids),
-        most recently revised first, at most `limit`. It is the room's own list, not a person's:
-        no visibility check, because everyone the room names already reads these. It loads no
-        spec and no text: the prompt block reads this on every turn."""
+        """The ACTIVE documents made in ONE room (`platform` and any of the room's
+        conversation ids), most recently revised first, at most `limit`. It is the room's own
+        list, not a person's: no visibility check, because everyone the room names already
+        reads these. It loads no spec and no text: the prompt block reads this on every turn."""
         ...
 
     async def get_visible(
         self, *, document_id: UUID, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
-        """The current document if `person_id` may read it, else `None`."""
+        """The current document if `person_id` may read it and it is not deleted, else
+        `None`. An archived document is returned: it still opens by its link."""
         ...
 
     async def get_visible_by_handle(
         self, *, handle: str, person_id: str, rooms: frozenset[RoomKey]
     ) -> StoredDocument | None:
         """The current document whose id starts with `handle` (`is_handle`), chosen among
-        the documents `person_id` may read ONLY: visibility first, then the prefix. `None`
+        the documents `person_id` may read ONLY (never a deleted one): visibility first, then
+        the prefix. `None`
         when none matches, when MORE THAN ONE does (never picked), and when `handle` is not
         a handle, so the three cannot be told apart and a prefix never reveals a document
         the person may not read."""

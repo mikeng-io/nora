@@ -1177,12 +1177,15 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
 def test_the_document_skill_names_only_tools_that_exist() -> None:
     """A rule that tells her to call a tool she does not hold is a dead rule.
 
-    The skill names four tools by backtick; each must be a registered tool (a
+    The skill names five tools by backtick; each must be a registered tool (a
     rename would otherwise leave her following an instruction to nothing)."""
     from nora.agent.tools import NATIVE_TOOLS
 
     body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
-    named = {"document_publish", "document_read", "media_fetch", "computer_export"}
+    named = {
+        "document_publish", "document_read", "document_set_status", "media_fetch",
+        "computer_export",
+    }
     for tool in named:
         assert f"`{tool}`" in body, f"the skill stopped naming {tool}"
         assert tool in NATIVE_TOOLS, f"the skill names {tool}, which is not a tool"

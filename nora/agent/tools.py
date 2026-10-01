@@ -1546,6 +1546,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 side_effect_state="none", idempotency="idempotent",
                                 retry="safe",
                                 output_contract="three_state", level=1),
+    # `document_set_status` 2: one call archives, deletes or restores a document; a
+    # second is a different document or an undo. Not `read_only`: it appends a
+    # `document_state` row. `confirmed`: the answer is the store's own write.
+    # `idempotent`: the same state twice writes nothing the second time. Level 2:
+    # what each state does, so "delete it" is never read as "erase it".
+    "document_set_status": NativeTool(2, read_only=False,
+                                      side_effect_state="confirmed",
+                                      idempotency="idempotent", retry="safe",
+                                      output_contract="three_state", level=2),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -2639,6 +2648,11 @@ class DocumentPublisher(Protocol):
 
     async def read(
         self, *, platform: str, conversation_id: str, document_id: UUID,
+    ) -> Any: ...
+
+    async def set_state(
+        self, *, platform: str, conversation_id: str, person_id: str,
+        document_id: UUID, state: str,
     ) -> Any: ...
 
 
@@ -4148,7 +4162,9 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
 _DOCUMENT_READ_CHARS = 40_000
 #: The document tools (design/artifact §26). `ToolRegistry` withholds both from
 #: every surface unless `[documents] enabled`.
-DOCUMENT_TOOLS: frozenset[str] = frozenset({"document_publish", "document_read"})
+DOCUMENT_TOOLS: frozenset[str] = frozenset(
+    {"document_publish", "document_read", "document_set_status"}
+)
 
 #: `computer_export`'s title, cut: Drop turns it into a download file name.
 _EXPORT_TITLE_CHARS = 200
@@ -14414,6 +14430,12 @@ Args:
                     "note": "The document changed since you read it, so nothing was "
                             "stored. Read it again, apply your change to that, and "
                             "publish again with its revision."}
+        if out.status == "refused" and "document_not_active" in rules:
+            _record(metrics, tool, "bad_arguments", reason="not_active")
+            return {"status": "bad_arguments",
+                    "note": "That document is archived or deleted, so nothing was "
+                            "stored. Restore it with document_set_status (state "
+                            "active) first if the room wants it changed."}
         if out.status == "refused" and "no_such_document" in rules:
             _record(metrics, tool, "not_found")
             return {"status": "not_found",
@@ -14477,6 +14499,8 @@ Args:
         }
         if out.url:  # no public origin configured = no link, and none is invented
             result["url"] = out.url
+        if getattr(out, "state", "active") != "active":
+            result["state"] = out.state
         if len(body) > _DOCUMENT_READ_CHARS:
             return {**result,
                     "note": "It is too large to show here, so `spec` is left out. "
@@ -14485,6 +14509,80 @@ Args:
         return {**result, "spec": out.spec,
                 "note": "This is the current revision. Apply the change to this spec "
                         "and publish it with `base_revision` set to `revision`."}
+
+    async def document_set_status(
+        document_id: str, state: Literal["archived", "deleted", "active"],
+    ) -> dict:
+        """Archive, delete or restore a document made in this room. Call this when
+        somebody asks to archive, delete, remove or bring back a document.
+
+        `archived` takes it off the documents list and your documents view; its
+        link still opens it, and it cannot be changed until restored. `deleted`
+        takes it off everything and its link stops opening; nothing is erased.
+        `active` restores either one.
+
+        Returns `status`: ok, not_found or unavailable, with a `note`.
+
+        Args:
+            document_id: The document's id, from your documents view or a publish.
+            state: The state to put it in.
+        """
+        tool = "document_set_status"
+        if documents is None:
+            _record(metrics, tool, "unavailable", reason="not_wired")
+            return {"status": "unavailable",
+                    "note": "I can't change documents right now. Say so; nothing "
+                            "changed."}
+        tagger = getattr(room, "tagger", None) if room is not None else None
+        if document_actor != "tag" or tagger is None:
+            _record(metrics, tool, "unavailable", reason="no_requester")
+            return {"status": "unavailable",
+                    "note": "A document's state is changed for the person who asked, "
+                            "and nobody asked here, so nothing changed."}
+        target = _document_id(document_id)
+        if target is None:
+            _record(metrics, tool, "not_found", reason="bad_id")
+            return {"status": "not_found",
+                    "note": "That is not a document id, so nothing changed."}
+        try:
+            out = await documents.set_state(
+                platform=room.platform, conversation_id=bound_conversation_id,
+                person_id=tagger.person_id, document_id=target, state=state,
+            )
+        except Exception:
+            log.exception("document_set_status failed")
+            _record(metrics, tool, "unavailable", reason="raised")
+            return {"status": "unavailable",
+                    "note": "It could not be changed, so nothing changed. Say you "
+                            "could not."}
+        rules = [f.rule for f in out.findings]
+        if out.status == "refused" and "no_such_document" in rules:
+            _record(metrics, tool, "not_found")
+            return {"status": "not_found",
+                    "note": "There is no document with that id in this room. Nothing "
+                            "changed."}
+        if out.status != "ok":
+            _record(metrics, tool, "unavailable", reason=rules[0] if rules else out.status)
+            return {"status": "unavailable",
+                    "note": "It could not be changed, so nothing changed. Say you "
+                            "could not."}
+        _record(metrics, tool, "ok", state=out.state)
+        notes = {
+            "archived": "Archived. It is off the documents list; its link still "
+                        "opens it. Setting it active brings it back.",
+            "deleted": "Deleted. It is off every list and its link no longer opens. "
+                       "Nothing was erased: setting it active brings it back.",
+            "active": "Active again: listed, and it can be changed.",
+        }
+        result: dict[str, Any] = {
+            "status": "ok", "document_id": str(out.document_id), "title": out.title,
+            "state": out.state, "previous": out.previous,
+            "note": notes.get(out.state, "Done.") if out.changed
+            else f"It was already {out.state}; nothing changed.",
+        }
+        if out.url and out.changed and out.state == "active":
+            result["url"] = out.url
+        return result
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
         """Load catalogue tools by name so you can call them. Call this before
@@ -14536,6 +14634,7 @@ Args:
         _spec("media_send", media_send),
         _spec("document_publish", document_publish),
         _spec("document_read", document_read),
+        _spec("document_set_status", document_set_status),
         _spec("web_search", web_search),
         _spec("web_fetch", web_fetch),
         _spec("x_read", x_read),

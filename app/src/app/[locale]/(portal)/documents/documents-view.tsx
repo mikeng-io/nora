@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
-import type { DocumentSummary } from "@/lib/api/documents";
+import type { DocumentFilter, DocumentSummary } from "@/lib/api/documents";
 import { formatRelative } from "@/lib/format";
 import { isRevised, pageCount, platformLabel } from "@/lib/documents/list";
 import { useDocuments } from "@/lib/queries";
@@ -18,17 +18,36 @@ import { useNow } from "@/hooks/use-now";
 
 // What Nora has written up for the rooms you are in, newest first. A document is
 // made in a chat; this is where it is read. Only what the viewer may open is listed
-// (Nora decides that, per person and per room), so there is nothing here to filter.
+// (Nora decides that, per person and per room). The one filter is Current or Archived:
+// a deleted document is in neither, because Nora never sends one.
 export function DocumentsView() {
   const t = useTranslations("documents");
   const now = useNow() || Date.now();
   const [page, setPage] = useState(1);
-  const docs = useDocuments(page);
+  const [filter, setFilter] = useState<DocumentFilter>("active");
+  const docs = useDocuments(page, filter);
   const pages = docs.data ? pageCount(docs.data.total, docs.data.pageSize) : 1;
+  const choose = (next: DocumentFilter) => {
+    setFilter(next);
+    setPage(1);
+  };
 
   return (
     <PageFrame width="narrow">
       <PageHeader title={t("title")} description={t("lede")} />
+      <div role="group" aria-label={t("filterLabel")} className="mb-4 flex gap-2">
+        {(["active", "archived"] as const).map((f) => (
+          <Button
+            key={f}
+            size="sm"
+            variant={filter === f ? "outline" : "quiet"}
+            aria-pressed={filter === f}
+            onClick={() => choose(f)}
+          >
+            {f === "active" ? t("filterActive") : t("filterArchived")}
+          </Button>
+        ))}
+      </div>
       {docs.isPending ? (
         <div className="grid gap-3">
           {[0, 1, 2].map((i) => (
@@ -38,9 +57,15 @@ export function DocumentsView() {
       ) : docs.isError && !docs.data ? (
         <UnavailableState onRetry={() => docs.refetch()} />
       ) : docs.data && docs.data.documents.length === 0 && page === 1 ? (
-        <EmptyState art="notebook" title={t("emptyTitle")}>
-          {t("empty")}
-        </EmptyState>
+        filter === "archived" ? (
+          <EmptyState art="notebook" title={t("archivedEmptyTitle")}>
+            {t("archivedEmpty")}
+          </EmptyState>
+        ) : (
+          <EmptyState art="notebook" title={t("emptyTitle")}>
+            {t("empty")}
+          </EmptyState>
+        )
       ) : docs.data ? (
         <div className="grid gap-6">
           <ol className="grid gap-2.5" aria-label={t("title")}>
@@ -91,6 +116,7 @@ function DocumentRow({ doc, now }: { doc: DocumentSummary; now: number }) {
             </time>
           </span>
         </span>
+        {doc.state === "archived" ? <Badge tone="outline">{t("archived")}</Badge> : null}
         {isRevised(doc.revision) ? <Badge>{t("revisionN", { n: doc.revision })}</Badge> : null}
         <ChevronRight
           className="hidden size-4 shrink-0 text-ink-muted transition-transform duration-160 ease-nora group-hover:translate-x-0.5 sm:block"
