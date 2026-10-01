@@ -34,8 +34,8 @@ export const qk = {
   roster: ["roster"] as const,
   person: (id: string) => ["person", id] as const,
   plans: ["plans"] as const,
-  documents: (page: number, state: documents.DocumentFilter = "active") =>
-    ["documents", page, state] as const,
+  documents: (page: number, state: documents.DocumentFilter = "active", search = "") =>
+    ["documents", page, state, search] as const,
   document: (id: string) => ["document", id] as const,
   plan: (id: string) => ["plan", id] as const,
   presence: ["presence"] as const,
@@ -129,12 +129,13 @@ export const usePlan = (id: string) =>
 
 // ------------------------------------------------------------- documents
 
-export const useDocuments = (page: number, state: documents.DocumentFilter = "active") =>
+export const useDocuments = (page: number, state: documents.DocumentFilter = "active", search = "") =>
   useQuery({
-    queryKey: qk.documents(page, state),
-    queryFn: ({ signal }) => documents.fetchDocuments(page, state, signal),
+    queryKey: qk.documents(page, state, search),
+    queryFn: ({ signal }) => documents.fetchDocuments(page, state, search, signal),
     staleTime: 1 * M,
-    // Turning a page keeps the last one on screen until the next arrives.
+    // A new page, filter or search keeps the last list on screen until the next arrives.
+    // The view must say so (`isPlaceholderData`): an old list is not the new one.
     placeholderData: keepPreviousData,
   });
 
@@ -153,11 +154,16 @@ export const useSetDocumentState = (id: string) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (state: documents.DocumentStateChange) => documents.setDocumentState(id, state),
-    onSuccess: async () => {
+    onSuccess: async (_done, state) => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ["documents"] }),
-        // Every cached copy of a document, by id and by a link's handle alike.
-        client.invalidateQueries({ queryKey: ["document"] }),
+        // Every cached copy of a document, by id and by a link's handle alike. A deleted
+        // one is only marked stale: reading it again now is a 404 that would flash "may be
+        // out of date" on the page it is leaving; the next visit reads it fresh.
+        client.invalidateQueries({
+          queryKey: ["document"],
+          refetchType: state === "deleted" ? "none" : "active",
+        }),
       ]);
     },
   });

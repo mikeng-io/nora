@@ -82,8 +82,9 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
   portal pages, the skill, links and archive, delete and restore are built and in use (#644, #648, #654, #658,
   #660, #667, #668, #670, #673, #674). The renderer still validates every document before drawing it, so a
   bad one is reported, not shown.
-- **Not built.** Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are
-  planned (`design/artifact/00-design.md` §32); `nora person forget` does not yet reach documents (#655).
+- **Not built.** A present view, print/PDF and a revision-history view are planned
+  (`design/artifact/00-design.md` §32). Search, a phone bottom-bar entry and `nora person forget` reaching documents
+  (#655) are built since (§33).
 - **The portal sends no Content-Security-Policy** (`app/next.config.ts`). Documents rely on the
   schema, the renderer's own checks and the Mermaid source rule; a CSP for the document route would
   be a second wall and is not built here.

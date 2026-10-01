@@ -167,6 +167,22 @@ describe("documents", () => {
     expect(mei.documents.map((d) => d.title)).toEqual(["Lisbon in December", "Mei's surprise"]);
   });
 
+  it("searches titles and text, ignoring case, inside what the viewer may read; labels rooms", () => {
+    const find = (personId: string, q: string) =>
+      expectOk("/app/v1/documents", { personId, q }, DocumentsPageSchema);
+    // The text is only in the body, not the title; the case does not matter.
+    expect(find("miles", "DISHES").documents.map((d) => d.title)).toEqual(["Kitchen rota"]);
+    expect(find("miles", "lisbon").documents.map((d) => d.title)).toEqual(["Lisbon in December"]);
+    // Mei's surprise is Mei's alone: Miles's search for it finds nothing.
+    expect(find("miles", "surprise")).toMatchObject({ documents: [], total: 0 });
+    expect(find("mei", "surprise").documents.map((d) => d.title)).toEqual(["Mei's surprise"]);
+    expect(call("/app/v1/documents", { personId: "miles", q: "x".repeat(201) }).status).toBe(400);
+    const all = expectOk("/app/v1/documents", { personId: "miles" }, DocumentsPageSchema);
+    const room = Object.fromEntries(all.documents.map((d) => [d.title, d.roomLabel]));
+    expect(room["Kitchen rota"]).toBe("Flat chat");
+    expect(room["Lisbon in December"]).toBe("");
+  });
+
   it("a person nobody knows, or no person, is a fail-closed 400", () => {
     expect(call("/app/v1/documents").status).toBe(400);
     expect(call("/app/v1/documents", { personId: "nobody" }).status).toBe(400);

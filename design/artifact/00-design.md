@@ -23,9 +23,8 @@ Status (2026-10-01): **built and live in part.** What exists, by section: the ca
 #644), the checker (§24, #648), the store, publish service and read API (§25, #654), the tools (§26, #658),
 the portal pages and picture route (§27, #660), the `document-creation` skill (§28, #667), the room's
 `<documents>` block (§29, #670), the sightings resolver for pictures (#668), links (§30, #673) and the
-lifecycle of archive, delete and restore (§31, #674). **Planned and not built** (operator, 2026-10-01; a
-separate PR, and nothing below claims any of them exists until it merges): search, a phone bottom-bar entry,
-a present view, print/PDF and a revision-history view (§32). **Parked:** long background research reports,
+lifecycle of archive, delete and restore (§31, #674). **Built since** (§33): search, a phone bottom-bar entry, forget reaching documents. **Planned and not built**
+(operator, 2026-10-01, §32): a present view, print/PDF and a revision-history view; nothing claims they exist. **Parked:** long background research reports,
 which are the job of the future `delegate_task` (open issue #22, written while Smith still existed, so its
 wording is stale), not of documents. The sections below are in the order
 they were written: where an early section says something the later ones or the code changed, it carries a
@@ -299,8 +298,8 @@ here is open except decision 9.
 2. **Spec authority: settled (§18).** A Nora envelope, `{version: 1, root: <Page>}`, stored as a nested
    tree, with no `title` of its own (the Page's title is the document's title).
 3. **Nav placement: settled (§27).** One «Documents» link in the rail's main group and the command palette;
-   the phone bottom bar stays four destinations (DESIGN.md §7). **Ruled 2026-10-01 (§32):** a phone
-   bottom-bar entry is to be built, which is a DESIGN.md decision to come with it; it does not exist yet.
+   the phone bottom bar was four destinations (DESIGN.md §7). **Ruled 2026-10-01 (§32), built (§33):** a phone
+   bottom-bar entry; the bar now holds five and DESIGN.md says so.
 4. **Keep prior revisions: settled (§25).** Yes. `document_revision` keeps one full snapshot per revision,
    append-only. **Ruled 2026-10-01 (§32):** a view of that history is to be built; none exists yet (§27).
 5. **Images inside a document: settled (§16, §25).** Room media by reference (a media code resolved to a
@@ -943,7 +942,7 @@ well as in the service; the list endpoint clamps `limit` and `offset` (and the p
 100,000) so an absurd value answers a page, not a 500. A room is matched by its conversation id alone, not by
 platform, because conversation ids are unique across platforms by the same convention `media_fetch` relies
 on; if that ever stops being true, the room key here must gain the platform. Not covered: `nora person
-forget` does not reach documents, and a message the platform deleted may still be resolvable by `recent`;
+forget` did not reach documents (it does now, §33), and a message the platform deleted may still be resolvable by `recent`;
 these are issues #655 and #656.
 
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
@@ -999,7 +998,7 @@ would need its own route (`DocumentStore.history` exists); not built.
 **Nav.** One link, «Documents», in the rail's main group (`MAIN_NAV`, no `mobile` flag): the phone's bottom
 bar stays four destinations (DESIGN.md §7), and the command palette lists it with the others. No DESIGN.md
 change. (Decision for the operator: whether documents deserve a bottom-bar slot on a phone, which would
-displace one of Today, Map, Plans or Games.) **Ruled 2026-10-01 (§32): yes, to be built; it does not exist yet.**
+displace one of Today, Map, Plans or Games.) **Ruled 2026-10-01 (§32): yes; built, §33.**
 
 **The picture route.** Nora: `GET /app/v1/documents/{id}/media/{sha}?personId=` (`build_document_media`).
 It answers a picture only when ALL of these hold, and every other case is one `404`: the document is
@@ -1183,7 +1182,7 @@ a UUID and one of three words checked before any request), Archive / Delete (wit
 on the document page, and a Current / Archived filter on the list. The `document-creation` skill names
 the verb in one paragraph so she never hand-rolls a delete as an empty revision.
 
-**Not built.** Search (still §25's "not built"), a purge (a hard delete is a separate decision), and a
+**Not built.** Search (built since, §33), a purge (a hard delete is a separate decision), and a
 portal restore of a deleted document. The decision row is DEC-255.
 
 ## 32. Operator rulings of 2026-10-01, and what is planned
@@ -1196,10 +1195,10 @@ person-facing read answers 404, and every revision stays in `document_revision`.
 document the person created, including one others have revised since, which is one of the three cases issue
 #655 left open. The ruling does not cover a document that quotes a forgotten message in its text, and
 nothing is erased for real: DEC-255's reopen condition (a document that must be erased for real needs its
-own decision and a purge path) stands. **Not built:** `nora/app/person_forget.py` has no step for documents today, and #655 is
-still open.
+own decision and a purge path) stands. **Built since (§33):** `nora/app/person_forget.py` has the step, and #655 is closed by it.
 
-**To be built, in a separate PR (planned; not built; this design claims none of it exists):**
+**To be built, in a separate PR (planned; not built; this design claims none of it exists).** Search and the phone
+entry are built since (§33); the rest below stays planned:
 
 - **Search**, v1 lexical over `documents.text` as §14 specifies, behind the same visibility rule.
 - **A phone bottom-bar entry for Documents** (§27, and the DESIGN.md change that goes with it).
@@ -1216,3 +1215,88 @@ app, so the present-view PR is where it becomes true or is changed.
 
 **Parked, not designed away:** long background research reports. They are the job of a future
 `delegate_task` (open issue #22), which delivers a `document_id` through the document tool.
+
+## 33. What the rulings built: forget, reading by link, search, and the portal's rough edges (2026-10-01)
+
+Built from §32's rulings (2026-10-01). Parked and NOT built: a present view, print,
+a revision-history view, and `delegate_task`.
+
+**`nora person forget` reaches documents (DEC-264).** A document is the forgotten person's when they
+CREATED it (`created_by`); one they only appear in as a participant of its room is not theirs. Each is
+soft-deleted through the `DocumentStore` port: one `document_state` row, `deleted`, `set_by` =
+`forget:<person_id>`, so a reader can tell the forget from a person's own delete. Nothing is purged and
+every revision stays. The command is idempotent (a document already `deleted` is not written again) and its
+summary reports `deleted N document(s)` (`would delete` in a dry run) beside the message count.
+
+**It stays forgotten (review of the PR, operator ruling 2026-10-01).** A document whose LATEST state row's
+`set_by` starts with `forget:` (`DocumentSummary.forgotten`) cannot be restored or archived by Nora or the portal:
+`DocumentService.set_state` refuses it for every caller and state, and a revision of it, answering exactly like an
+unknown id (not "restore it first", which would confirm it exists); `<documents>` put-away leaves it out
+(`list_room(hide_forgotten=True)`) so its title leaves her context. Only a state row written by someone else, in the
+database, brings it back; `unforget` does not. The portal was already closed (`get_visible` hides `deleted`) and
+its write refuses it too.
+
+**Race and failure.** `DocumentStore.set_state(only_if_state=)` checks the state under the `FOR UPDATE` lock the write
+takes, so forget never overwrites a change made since its snapshot (it counts only rows it wrote and reports the
+ones skipped); a failure part-way is printed with what was done and the command exits non-zero, so a re-run
+completes it. A two-connection Postgres test covers the wait.
+
+**Search (DEC-265).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
+title or search text (migration 0084's `text` column). It is `list_visible(query=)`, not a second read, so
+the visibility predicate and the state filter that already hide archived and deleted documents are in the
+same SQL statement, and a document a list would not show is never a match (`total` counts the matches).
+The query is text: `%`, `_` and the escape character are escaped, inner whitespace is collapsed (in the stored
+text too: the checker joins a document's parts with a newline, so the comparison collapses both sides), case is folded
+with `lower()` as Postgres does (the fake no longer uses `casefold()`), a blank one is no search, and one over 200
+characters or with a control character is a 400 (a NUL straight to Nora's API was a 500). Plain `ILIKE`: the match only runs over one person's
+visible documents, so no trigram index and no migration were added; one is the answer if a measured listing
+is slow. The portal's list has a debounced search box that keeps the Archived filter. No Nora tool was added
+for search: `document_read` and the room's `<documents>` block already cover finding a document from chat.
+
+**Documents carry their room's label.** A row and the detail carry `roomLabel`, the operator's label from
+`policy.toml`, only for a viewer whose own rooms include that room (`nora.web.documents._room_label`): a creator
+who has since left a room still reads their document, but is not told what the room is called. The chat id is
+still never sent.
+
+**`document_read` takes a link's handle.** Like `document_set_status`, it accepts the 12-hex code at the end of a
+link as well as the id. `DocumentService._in_room` is the one resolution both share: a handle is matched among THIS
+room's documents in any state, none or two matches are never picked, and another room's document, an unknown id and
+a deleted document answer alike.
+
+**The portal's rough edges, fixed (2026-10-01).**
+- *The title is first.* The detail page hands its meta line and the Archive / Delete controls to the
+  renderer as `chrome` (`DocumentView`), drawn right under the document's own H1 inside its Page, and after the
+  refusal when a stored spec cannot be shown, so they stay reachable. Nothing sits above the title but the back link.
+- *The tab names the document.* A client effect sets `document.title` to `<title> · Nora` (the layout's own template)
+  once the document is read and puts the section's title back on leaving. Server-side `generateMetadata` was not used:
+  it would need a second signed-in read of the same document just for `<title>`. **Verified, and it did break
+  (review):** entering a document whose data was cached rendered at once, the effect ran, and Next then wrote the
+  route's own title over it (the tab even read "" while it swapped its `<title>`), so the second visit stayed
+  "Documents · Nora". The page now takes its title back while the address is still the document's
+  (`shouldReassertTitle`) and never fights the next page's, and an e2e navigates in, out and to another section.
+- *A new list is not drawn as the old one.* A new filter, page or search keeps the last rows on screen
+  (`keepPreviousData`); while it loads they are dimmed, `aria-busy`, and a status line says the list is updating
+  (`freshness`: `loading`). The selected filter is a filled segment, not only `aria-pressed`.
+- *A failed refetch that keeps rows says so.* `freshness`: `outdated` shows "May be out of date" with a retry,
+  on the list and on a document.
+- *The delete panel is keyboard-operable* (`lib/documents/lifecycle.ts`, a reducer the view follows): opening it
+  moves focus to Cancel, Escape or Cancel returns focus to Delete, and a finished delete goes to
+  `/documents?deleted=1`, where the list says it can be restored by asking Nora in the chat. A delete only marks the
+  cached document stale (it does not refetch it), so the page it leaves never flashes "out of date" on its own 404.
+  A failed delete keeps the panel open with the error and returns focus into it; an archive or restore that completes
+  closes the panel and moves focus to the button that replaced the one pressed. And a 404 on the document's read
+  switches the page to not-found even when a cached copy exists (`detailView`), so a gone document never keeps live
+  Archive and Delete buttons; only a failure that says nothing about it (network, 5xx) leaves the copy up, marked
+  "may be out of date".
+- *The row* shows the title, who made it and in which room (the room's label, else the platform), the relative time
+  with the absolute date on hover, a revision badge and an Archived badge.
+- *Wider.* Both pages use the shell's `default` frame (1080px) instead of `narrow` (760px).
+- *The renderer speaks both languages.* The strings `registry.tsx` and `blocks.tsx` owned (aria labels, fallbacks,
+  error text) are `documents.renderer.*` in `en.json` and `zh-Hant.json`; a vitest reads both sources and files and
+  fails on a key either lacks, on one the source never asks for, and on a hard-coded English string left in the source.
+  The checker's own refusal reason (`parseDocument`) is a diagnostic and stays as written.
+- *Phone.* Documents joins the bottom bar, which now holds five (`MOBILE_NAV_MAX`); the bar picks its columns from the
+  count and a test pins both the count and a label length that fits a 320px phone. DESIGN.md's "four destinations" says
+  five at most.
+- *The proxy.* `/api/v1/documents` forwards `q` as free text (any script, at most 200 characters, no control
+  characters; the other parameters stay id-shaped), because a search is words, not an id.

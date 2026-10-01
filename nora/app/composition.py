@@ -75,7 +75,7 @@ from nora.app.cognition_wiring import (
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
-from nora.app.documents_service import DocumentService, rooms_named
+from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
     build_workspace_router,
@@ -1041,6 +1041,9 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
+    # (platform, conversation_id) -> the room's policy label, for the portal's document
+    # rows; "" for a room the policy does not name.
+    room_label: Callable[[str, str], str]
     # The content-addressed byte store, for the portal's picture route (a document names
     # its pictures by sha256). `None` when media custody is off: the route then answers
     # `unavailable`, never a picture.
@@ -4569,6 +4572,7 @@ async def build_dependencies(
         workspaces_of=functools.partial(workspaces_of_person, allowlist),
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
+        room_label=functools.partial(room_label, allowlist),
         blobs=blobs,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,

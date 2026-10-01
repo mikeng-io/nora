@@ -414,3 +414,97 @@ def test_the_lifecycle_texts_never_route_a_remove_to_a_delete() -> None:
     for text in (described, para):
         assert not re.search(r"\bremov", text, re.IGNORECASE)
     assert "edit, not a delete" in para
+
+
+# ----------------------------------------------------- document_read by a link's handle
+async def test_a_document_is_read_by_the_handle_its_link_carries_and_by_that_alone() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store, public_url="https://nora.example"))
+    made = await tools["document_publish"](spec=_doc("Trip"))
+    handle = made["url"].rsplit("/", 1)[1]
+    assert handle != made["document_id"] and len(handle) == 12
+
+    # The handle and nothing else: the id is never passed.
+    read = await tools["document_read"](document_id=handle)
+    assert read["status"] == "ok" and read["title"] == "Trip" and read["revision"] == 1
+    assert read["document_id"] == made["document_id"]
+    assert read["spec"]["root"]["props"]["title"] == "Trip"
+    # Pasted in capitals, as a link may be, it is the same document.
+    assert (await tools["document_read"](document_id=handle.upper()))["revision"] == 1
+
+
+async def test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id() -> None:
+    store = FakeDocumentStore()
+    here = _tools(_service(store, public_url="https://nora.example"))
+    made = await here["document_publish"](spec=_doc("Mine"))
+    handle = made["url"].rsplit("/", 1)[1]
+    there = _tools(_service(store), conversation_id=OTHER)
+    other = await there["document_read"](document_id=handle)
+    unknown = await there["document_read"](document_id="0" * 12)
+    assert other["status"] == unknown["status"] == "not_found" and other == unknown
+
+    # Deleted in its own room, its link's handle reads like an unknown one too.
+    await here["document_set_status"](document_id=handle, state="deleted")
+    gone = await here["document_read"](document_id=handle)
+    assert gone["status"] == "not_found" and gone == unknown
+    # Not a handle at all (11 hex characters) is named, not looked up.
+    assert (await here["document_read"](document_id="a" * 11))["status"] == "not_found"
+
+
+async def test_a_handle_two_documents_of_the_room_share_is_refused_never_picked() -> None:
+    from nora.domain.documents import RevisionIn
+
+    store = FakeDocumentStore()
+    first = UUID("abcdef012345" + "0" * 20)
+    second = UUID("abcdef012345" + "1" * 20)
+    for document_id in (first, second):
+        await store.create(
+            document_id=document_id, platform="signal", conversation_id=ROOM, created_by="miles",
+            revision=RevisionIn(
+                title="x", spec=_doc("x"), text="x", sha256="a" * 64, media=(), written_by="t:1"
+            ),
+        )
+    out = await _tools(_service(store))["document_read"](document_id="abcdef012345")
+    assert out["status"] == "not_found"
+
+
+async def test_a_handle_another_room_shares_is_resolved_among_this_rooms_documents_only() -> None:
+    from nora.domain.documents import RevisionIn
+
+    store = FakeDocumentStore()
+    mine = UUID("abcdef012345" + "0" * 20)
+    theirs = UUID("abcdef012345" + "1" * 20)
+    for document_id, room_id in ((mine, ROOM), (theirs, OTHER)):
+        await store.create(
+            document_id=document_id, platform="signal", conversation_id=room_id,
+            created_by="miles",
+            revision=RevisionIn(
+                title="x", spec=_doc("x"), text="x", sha256="a" * 64, media=(), written_by="t:1"
+            ),
+        )
+    out = await _tools(_service(store))["document_read"](document_id="abcdef012345")
+    assert out["status"] == "ok" and out["document_id"] == str(mine)
+
+
+# ------------------------------------------------- a forgotten document stays forgotten
+async def test_a_forgotten_document_is_not_restorable_or_readable_through_the_tools() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store, public_url="https://nora.example"))
+    made = await tools["document_publish"](spec=_doc("Hers"))
+    doc = UUID(made["document_id"])
+    handle = made["url"].rsplit("/", 1)[1]
+    await store.set_state(document_id=doc, state="deleted", set_by="forget:ada")
+
+    unknown = await tools["document_set_status"](document_id=str(uuid4()), state="active")
+    for ref in (str(doc), handle):
+        for state in ("active", "archived"):
+            out = await tools["document_set_status"](document_id=ref, state=state)
+            assert out["status"] == "not_found" and out == unknown, (ref, state)
+        read = await tools["document_read"](document_id=ref)
+        assert read["status"] == "not_found"
+    assert store._states[doc] == [("deleted", "forget:ada")], "nothing was written"
+    # A revision does not say "restore it first" either.
+    revise = await tools["document_publish"](
+        spec=_doc("v2"), document_id=str(doc), base_revision=1
+    )
+    assert revise["status"] == "not_found"

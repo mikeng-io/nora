@@ -23,7 +23,7 @@ from aiohttp import web
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.documents import DocumentStore, RoomKey, is_handle
+from nora.domain.documents import DOCUMENT_QUERY_MAX, DocumentStore, RoomKey, is_handle
 from nora.domain.ports import BlobStore, MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
@@ -220,11 +220,13 @@ def register_web_routes(
     documents: DocumentStore | None = None,
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
     blobs: BlobStore | None = None,
+    room_label: Callable[[str, str], str] | None = None,
 ) -> None:
     app["web_store"] = store
     app["web_workspaces_of"] = workspaces_of
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
+    app["web_room_label"] = room_label
     app["web_blobs"] = blobs
     app["web_honcho"] = honcho
     app["web_reminders"] = reminders
@@ -644,10 +646,20 @@ def register_web_routes(
         listed = request.query.get("state", "active")
         if listed not in ("active", "archived"):
             return web.json_response({"error": "invalid state"}, status=400)
+        # `q` narrows the same list: the current revision's title or text, ignoring case.
+        # A longer one is refused, never cut, so a query never silently means something else.
+        query = request.query.get("q", "")
+        # A control character (NUL above all: Postgres refuses it in text) is as invalid as
+        # an over-long one, so it is a 400 here and never a 500 from the store.
+        if len(query) > DOCUMENT_QUERY_MAX or any(
+            ord(ch) < 32 or ord(ch) == 127 for ch in query
+        ):
+            return web.json_response({"error": "invalid q"}, status=400)
         body = await build_documents_payload(
             store=a["web_documents"], rooms_of=a["web_rooms_of"], persons=a["web_persons"],
             person_id=person_id, page=page, page_size=page_size,
-            state="archived" if listed == "archived" else "active",
+            state="archived" if listed == "archived" else "active", query=query,
+            room_label=a["web_room_label"],
         )
         return web.json_response(body)
 
@@ -664,6 +676,7 @@ def register_web_routes(
         if is_handle(ref):
             # A link's 12-hex handle, resolved among what this person may read.
             body = await build_document_payload_by_handle(
+                room_label=a["web_room_label"],
                 store=a["web_documents"], rooms_of=a["web_rooms_of"],
                 persons=a["web_persons"], person_id=person_id, handle=ref,
             )
@@ -673,6 +686,7 @@ def register_web_routes(
             except ValueError:
                 return web.json_response({"status": "refused", "note": "bad id"}, status=400)
             body = await build_document_payload(
+                room_label=a["web_room_label"],
                 store=a["web_documents"], rooms_of=a["web_rooms_of"],
                 persons=a["web_persons"], person_id=person_id, document_id=document_id,
             )
@@ -744,6 +758,7 @@ def register_web_routes(
                 store=a["web_documents"], rooms_of=a["web_rooms_of"],
                 persons=a["web_persons"], person_id=person_id,
                 document_id=document_id, state=str(state),
+                room_label=a["web_room_label"],
             )
         except Exception:  # a store that is down is "could not check", never "not found"
             log.exception("document state change failed")

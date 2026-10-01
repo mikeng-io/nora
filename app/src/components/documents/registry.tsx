@@ -6,7 +6,8 @@
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
 // on this theme (design/artifact/00-design.md §13). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
-import { Children, type ReactNode } from "react";
+import { Children, createContext, useContext, type ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { nestedToFlat } from "@json-render/core";
 import ReactMarkdown from "react-markdown";
@@ -67,17 +68,104 @@ function Md({ text }: { text: string }) {
   );
 }
 
-const { registry } = defineRegistry(catalog, {
-  components: {
-    Page: ({ props, children }: Render<"Page">) => (
-      <article className="flex min-w-0 flex-col gap-8">
+/** What the page that shows a document puts right under its title (who made it, the
+ * archive and delete controls): the title is the first thing on the page, so these
+ * cannot sit above it. Empty for a fixture. */
+const DocumentChromeContext = createContext<ReactNode>(null);
+
+function PageBlock({ props, children }: Render<"Page">) {
+  const chrome = useContext(DocumentChromeContext);
+  return (
+    <article className="flex min-w-0 flex-col gap-8">
+      <div className="flex flex-col gap-4">
         <header className="flex flex-col gap-2">
           <h1 className="text-display font-semibold text-ink">{props.title}</h1>
           {props.subtitle ? <p className="text-lead text-ink-soft">{props.subtitle}</p> : null}
         </header>
-        {children}
-      </article>
-    ),
+        {chrome}
+      </div>
+      {children}
+    </article>
+  );
+}
+
+function TableBlock({ props }: Render<"Table">) {
+  const t = useTranslations("documents.renderer");
+  return (
+    // A wide table scrolls sideways on a phone, so its scroll region takes focus (axe:
+    // scrollable-region-focusable) and has a name.
+    <div
+      role="region"
+      aria-label={props.caption ?? t("tableFallback")}
+      tabIndex={0}
+      className="overflow-x-auto rounded-panel border border-hairline bg-surface focus-visible:outline-2 focus-visible:outline-denim"
+    >
+      <table className="w-full min-w-max border-collapse text-left text-body">
+        {props.caption ? <caption className="px-4 py-2 text-left text-meta text-ink-muted">{props.caption}</caption> : null}
+        <thead>
+          <tr className="border-b border-hairline">
+            {props.columns.map((c, i) => (
+              <th key={i} scope="col" className="px-4 py-2 text-label font-semibold text-ink-soft">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-hairline">
+          {props.rows.map((r, i) => (
+            <tr key={i}>
+              {props.columns.map((_, j) => (
+                <td key={j} className="px-4 py-2 align-top text-ink">
+                  {r[j] ?? ""}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CodeBlock({ props }: Render<"Code">) {
+  const t = useTranslations("documents.renderer");
+  return (
+    <figure className="overflow-hidden rounded-panel border border-hairline bg-surface">
+      {props.language ? (
+        <figcaption className="border-b border-hairline px-4 py-1.5 font-mono text-label text-ink-muted">{props.language}</figcaption>
+      ) : null}
+      <pre
+        role="region"
+        aria-label={props.language ? t("codeLabel", { language: props.language }) : t("codeFallback")}
+        tabIndex={0}
+        className="overflow-x-auto px-4 py-3 font-mono text-meta text-ink focus-visible:outline-2 focus-visible:outline-denim"
+      >
+        <code>{props.text}</code>
+      </pre>
+    </figure>
+  );
+}
+
+function SourcesBlock({ props }: Render<"Sources">) {
+  const t = useTranslations("documents.renderer");
+  return (
+    <ol className="flex list-decimal flex-col gap-2 pl-5 text-body text-ink marker:text-ink-muted">
+      {props.items.map((it, i) => (
+        <li key={i}>
+          <a href={it.url} target="_blank" rel="noopener noreferrer nofollow" className="text-denim underline underline-offset-2">
+            {it.title}
+          </a>
+          {it.asOf ? <span className="text-meta text-ink-muted">{` · ${t("readOn", { date: it.asOf })}`}</span> : null}
+          {it.note ? <span className="text-meta text-ink-soft">{` · ${it.note}`}</span> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const { registry } = defineRegistry(catalog, {
+  components: {
+    Page: PageBlock,
     Section: ({ props, children }: Render<"Section">) => (
       <section className="flex min-w-0 flex-col gap-4" data-slide>
         {props.title ? (
@@ -99,40 +187,7 @@ const { registry } = defineRegistry(catalog, {
       <div className={cn("grid gap-4", COLS[props.columns] ?? COLS[2])}>{children}</div>
     ),
     Markdown: ({ props }: Render<"Markdown">) => <Md text={props.text} />,
-    Table: ({ props }: Render<"Table">) => (
-      // A wide table scrolls sideways on a phone, so its scroll region takes focus (axe:
-      // scrollable-region-focusable) and has a name.
-      <div
-        role="region"
-        aria-label={props.caption ?? "Table"}
-        tabIndex={0}
-        className="overflow-x-auto rounded-panel border border-hairline bg-surface focus-visible:outline-2 focus-visible:outline-denim"
-      >
-        <table className="w-full min-w-max border-collapse text-left text-body">
-          {props.caption ? <caption className="px-4 py-2 text-left text-meta text-ink-muted">{props.caption}</caption> : null}
-          <thead>
-            <tr className="border-b border-hairline">
-              {props.columns.map((c, i) => (
-                <th key={i} scope="col" className="px-4 py-2 text-label font-semibold text-ink-soft">
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {props.rows.map((r, i) => (
-              <tr key={i}>
-                {props.columns.map((_, j) => (
-                  <td key={j} className="px-4 py-2 align-top text-ink">
-                    {r[j] ?? ""}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    ),
+    Table: TableBlock,
     // A flex row, so a Badge inside a column keeps its own width instead of stretching.
     Badge: ({ props }: Render<"Badge">) => (
       <div className="flex">
@@ -171,21 +226,7 @@ const { registry } = defineRegistry(catalog, {
         ))}
       </div>
     ),
-    Code: ({ props }: Render<"Code">) => (
-      <figure className="overflow-hidden rounded-panel border border-hairline bg-surface">
-        {props.language ? (
-          <figcaption className="border-b border-hairline px-4 py-1.5 font-mono text-label text-ink-muted">{props.language}</figcaption>
-        ) : null}
-        <pre
-          role="region"
-          aria-label={props.language ? `${props.language} code` : "Code"}
-          tabIndex={0}
-          className="overflow-x-auto px-4 py-3 font-mono text-meta text-ink focus-visible:outline-2 focus-visible:outline-denim"
-        >
-          <code>{props.text}</code>
-        </pre>
-      </figure>
-    ),
+    Code: CodeBlock,
     // The portal's own Radix tabs (ui/tabs.tsx): roving tabindex, arrow keys,
     // Home and End, `aria-controls` and `aria-labelledby` come from Radix, where
     // a first version of this block hand-wrote them. The labels are derived from
@@ -232,19 +273,7 @@ const { registry } = defineRegistry(catalog, {
         ))}
       </ol>
     ),
-    Sources: ({ props }: Render<"Sources">) => (
-      <ol className="flex list-decimal flex-col gap-2 pl-5 text-body text-ink marker:text-ink-muted">
-        {props.items.map((it, i) => (
-          <li key={i}>
-            <a href={it.url} target="_blank" rel="noopener noreferrer nofollow" className="text-denim underline underline-offset-2">
-              {it.title}
-            </a>
-            {it.asOf ? <span className="text-meta text-ink-muted">{` · read ${it.asOf}`}</span> : null}
-            {it.note ? <span className="text-meta text-ink-soft">{` · ${it.note}`}</span> : null}
-          </li>
-        ))}
-      </ol>
-    ),
+    Sources: SourcesBlock,
     Checklist: ({ props }: Render<"Checklist">) => (
       <ul className="flex flex-col gap-2 text-body text-ink">
         {props.items.map((it, i) => (
@@ -274,22 +303,39 @@ export function toFlatSpec(doc: DocumentSpec) {
 
 /** Renders a stored document. It validates first, every time: the renderer is
  * the last line of defence, so it never draws what the schema would refuse, and
- * it is here that the defaults (a Badge's tone) are applied. */
-export function DocumentView({ doc, documentId = null }: { doc: unknown; documentId?: string | null }) {
+ * it is here that the defaults (a Badge's tone) are applied.
+ *
+ * `chrome` is drawn right under the document's title (the page's meta and controls), and
+ * after the refusal when the stored spec cannot be shown, so they stay reachable then. */
+export function DocumentView({
+  doc,
+  documentId = null,
+  chrome = null,
+}: {
+  doc: unknown;
+  documentId?: string | null;
+  chrome?: ReactNode;
+}) {
+  const t = useTranslations("documents.renderer");
   const parsed = parseDocument(doc);
   if (!parsed.ok) {
     return (
-      <div role="alert" className="rounded-panel border border-hairline border-l-4 border-l-danger bg-surface px-4 py-3">
-        <p className="text-title font-semibold text-ink">This document cannot be shown</p>
-        <p className="mt-0.5 text-body text-ink-soft">{parsed.reason}</p>
+      <div className="flex flex-col gap-4">
+        <div role="alert" className="rounded-panel border border-hairline border-l-4 border-l-danger bg-surface px-4 py-3">
+          <p className="text-title font-semibold text-ink">{t("cannotShow")}</p>
+          <p className="mt-0.5 text-body text-ink-soft">{parsed.reason}</p>
+        </div>
+        {chrome}
       </div>
     );
   }
   return (
     <DocumentIdContext.Provider value={documentId}>
-      <JSONUIProvider registry={registry}>
-        <Renderer spec={toFlatSpec(parsed.doc)} registry={registry} />
-      </JSONUIProvider>
+      <DocumentChromeContext.Provider value={chrome}>
+        <JSONUIProvider registry={registry}>
+          <Renderer spec={toFlatSpec(parsed.doc)} registry={registry} />
+        </JSONUIProvider>
+      </DocumentChromeContext.Provider>
     </DocumentIdContext.Provider>
   );
 }

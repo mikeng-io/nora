@@ -45,6 +45,7 @@ from nora.domain.lineage import Lineage, message
 from nora.domain.models import NormalizedMessage
 from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
@@ -102,6 +103,10 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
+
+
+def _docs(engine: Any) -> SqlDocumentStore:
+    return SqlDocumentStore(engine)
 
 
 async def _message(engine: Any, *, conversation_id: str, ts: int = 1000,
@@ -385,7 +390,9 @@ async def test_a_later_revision_cannot_undo_the_mark(engine):
 
 async def test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it(engine):
     store, event, _mid = await _cited_event(engine)
-    report = await forget_person(engine, person_id="ada", apply=True, now_ms=77)
+    report = await forget_person(engine,
+        documents=_docs(engine), person_id="ada", apply=True, now_ms=77
+    )
     assert report.cascade is not None and report.cascade.marked["event"] == [str(event.id)]
     await unforget_person(engine, person_id="ada", apply=True)
     lifted = await clear_unsupported(engine, apply=True)
@@ -521,7 +528,9 @@ async def test_forgetting_the_author_of_the_message_that_raised_a_tag_turn_marks
         conversation_id="ga", requester_person_id="p_ben", title="lunch",
         platform="signal", unit_id="u", message_ids=(other,),
     )
-    report = await forget_person(engine, person_id="ada", apply=True, now_ms=77)
+    report = await forget_person(engine,
+        documents=_docs(engine), person_id="ada", apply=True, now_ms=77
+    )
     assert report.cascade is not None and report.cascade.marked["event"] == [str(mine.id)]
     got = await store.get(theirs.id)
     assert got is not None and got.unsupported_at is None

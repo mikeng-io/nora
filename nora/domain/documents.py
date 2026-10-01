@@ -50,6 +50,11 @@ RoomKey = tuple[str, str]
 #: (`tests/contract/test_document_store_contract.py` reads it back).
 DocumentState = Literal["active", "archived", "deleted"]
 DOCUMENT_STATES: tuple[str, ...] = get_args(DocumentState)
+#: What `nora person forget` writes in `document_state.set_by`, before the person's id. A
+#: document whose LATEST state row carries it is FORGOTTEN, and stays so: nothing a person
+#: or Nora does restores it (`DocumentService.set_state`), and every person-facing answer
+#: about it is the one an unknown id gets. Only the operator, in the database, can.
+FORGET_SET_BY_PREFIX = "forget:"
 #: What a person's list can be filtered to. `deleted` is never listed.
 ListedState = Literal["active", "archived"]
 
@@ -59,6 +64,17 @@ ListedState = Literal["active", "archived"]
 #: VIEWER may read only, so 48 bits is an address, never a secret (the page is signed in).
 DOCUMENT_HANDLE_CHARS = 12
 _HANDLE = re.compile(r"[0-9a-f]{12}")
+
+
+#: The longest search text a listing accepts. A caller refuses a longer one; the store
+#: never sees it, so a query is a few words and never a way to make it scan on a huge needle.
+DOCUMENT_QUERY_MAX = 200
+
+
+def normalize_query(text: str) -> str:
+    """A search text as the store matches it: trimmed, inner whitespace collapsed to one
+    space. Empty means "no search". Callers check `DOCUMENT_QUERY_MAX` first."""
+    return " ".join(text.split())
 
 
 def handle_of(document_id: UUID) -> str:
@@ -114,6 +130,13 @@ class DocumentSummary:
     created_at: datetime
     updated_at: datetime
     state: DocumentState = "active"
+    #: Who wrote the LATEST state row ("" when there is none: the document was never put away).
+    state_by: str = ""
+
+    @property
+    def forgotten(self) -> bool:
+        """The latest state change was `nora person forget`'s."""
+        return self.state_by.startswith(FORGET_SET_BY_PREFIX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,15 +200,39 @@ class DocumentStore(Protocol):
         ...
 
     async def set_state(
-        self, *, document_id: UUID, state: DocumentState, set_by: str
+        self,
+        *,
+        document_id: UUID,
+        state: DocumentState,
+        set_by: str,
+        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         """Append a `document_state` row. `False` (and nothing written) when there is no
-        such document. Who may do this is the caller's check, made before the call."""
+        such document. Who may do this is the caller's check, made before the call.
+
+        `only_if_state` makes the write conditional: the document's CURRENT state, read
+        under the same lock the write takes, must be one of these, else nothing is written
+        and the answer is `False`. It is what lets a caller that decided from a snapshot (a
+        bulk forget) refuse to overwrite a change made since."""
         ...
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         """The current document in ANY state, with no visibility check: for the service
         that publishes into a room, never for a reader."""
+        ...
+
+    async def list_created_by(
+        self,
+        *,
+        person_id: str,
+        states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        """The documents `person_id` CREATED (`created_by`, never a room they merely read)
+        whose current state is in `states`, ordered by id so a page is stable, at most
+        `limit` from `offset`. No visibility check and no spec: this is the operator's read
+        for `nora person forget`, never a reader's."""
         ...
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
@@ -200,8 +247,16 @@ class DocumentStore(Protocol):
         limit: int,
         offset: int,
         state: ListedState = "active",
+        query: str = "",
     ) -> VisiblePage:
-        """The documents `person_id` may read IN `state`, most recently updated first."""
+        """The documents `person_id` may read IN `state`, most recently updated first.
+
+        A non-empty `query` keeps only those whose CURRENT revision's title or search text
+        contains it, ignoring case (a plain substring; `normalize_query` is applied). The
+        visibility and the state rule are the same ones the unfiltered list applies, in the
+        same statement, so a search can never reach a document a list would not show: a
+        deleted document, an archived one outside the Archived filter, and a document the
+        person may not read are never matches. `total` counts the matches."""
         ...
 
     async def list_room(
@@ -211,12 +266,14 @@ class DocumentStore(Protocol):
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
+        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         """The documents IN `states` (by default the active ones) made in ONE room
         (`platform` and any of the room's conversation ids), most recently revised first, at
         most `limit`. It is the room's own list, not a person's: no visibility check, because
         everyone the room names already reads these. It loads no spec and no text: the prompt
-        block reads this on every turn."""
+        block reads this on every turn. `hide_forgotten` leaves out the documents `nora person
+        forget` deleted (`DocumentSummary.forgotten`): their titles must not reach her context."""
         ...
 
     async def get_visible(

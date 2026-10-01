@@ -1731,6 +1731,9 @@ const DOCUMENTS = [
     createdBy: { personId: "miles", name: "Miles" },
     readers: ["miles"],
     media: [],
+    // nora/web/documents.py `roomLabel`: the operator's label, only for a viewer in that room.
+    roomLabel: "Flat chat",
+    text: "Who does the dishes on which night",
     document: DOC_SPEC("Kitchen rota"),
   },
   {
@@ -1779,7 +1782,11 @@ const DOC_STATES = new Map();
 const docState = (d) => DOC_STATES.get(d.id) ?? "active";
 /** Every document back to `active` (tests share this module's state). */
 export const resetDocumentStates = () => DOC_STATES.clear();
-const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => ({ ...rest, state: docState(rest) });
+const docSummary = ({ readers: _r, media: _m, document: _d, text: _t, ...rest }) => ({
+  roomLabel: "",
+  ...rest,
+  state: docState(rest),
+});
 const DOC_HANDLE = /^[0-9a-f]{12}$/;
 const DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1798,9 +1805,15 @@ get("/app/v1/documents", (params, sp) => {
   if (sizeErr) return { status: 400, body: { error: "invalid pageSize" } };
   const listed = sp.get("state") ?? "active";
   if (listed !== "active" && listed !== "archived") return { status: 400, body: { error: "invalid state" } };
+  // nora/web/api.py: `q` is a case-insensitive substring of the title or text, collapsed and
+  // trimmed, and one over 200 characters is a 400 (never cut).
+  const rawQuery = sp.get("q") ?? "";
+  if (rawQuery.length > 200) return { status: 400, body: { error: "invalid q" } };
+  const needle = rawQuery.split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  const matches = (d) => !needle || d.title.toLowerCase().includes(needle) || (d.text ?? "").toLowerCase().includes(needle);
   const mine = isEmptied("documents")
     ? []
-    : DOCUMENTS.filter((d) => d.readers.includes(personId) && docState(d) === listed).sort((a, b) =>
+    : DOCUMENTS.filter((d) => d.readers.includes(personId) && docState(d) === listed && matches(d)).sort((a, b) =>
         b.updatedAt.localeCompare(a.updatedAt),
       );
   const size = Math.min(Math.max(1, pageSize), 50);
@@ -1813,6 +1826,7 @@ get("/app/v1/documents", (params, sp) => {
       pageSize: size,
       total: mine.length,
       state: listed,
+      query: needle,
     },
   };
 });
@@ -2087,6 +2101,14 @@ export function handleDocumentState(pathname, sp, payload) {
 function startServer() {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    // Dev only, not part of Nora's API: put every document back to `active`, so an e2e that
+    // deleted one (the portal cannot restore it) leaves the fixtures as it found them.
+    if (req.method === "POST" && url.pathname === "/__mock/documents/reset") {
+      resetDocumentStates();
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     const { status, body, bytes, contentType } =
       req.method === "GET"
         ? handle(url.pathname, url.searchParams, Date.now())
