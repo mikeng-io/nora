@@ -92,8 +92,7 @@ from nora.domain.notes import (
     merged_body,
 )
 from nora.domain.ports import Proposal
-from nora.domain.prompt import escape
-from nora.language.note_render import open_note_parts
+from nora.language.note_render import open_note_parts, today_block
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.merge")
@@ -326,7 +325,7 @@ class NoteMergeAdaptor:
         rooms = _room_names(open_notes, self._label_for)
         by_handle: dict[str, str] = {}
         heads: dict[str, NoteRevision] = {}
-        parts = [_today_block(today)]
+        parts = [today_block(today).render()]
         for n, note in enumerate(open_notes, start=1):
             handle = str(n)
             by_handle[handle] = note.id
@@ -615,10 +614,6 @@ def _room_names(
             unnamed += 1
             out[room] = f"room {unnamed}"
     return out
-
-
-def _today_block(today: date) -> str:
-    return ContextBlock(name="today", body=escape(f"{today:%Y-%m-%d %a}")).render()
 
 
 def _note_block(

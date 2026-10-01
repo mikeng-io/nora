@@ -37,8 +37,8 @@
   {
     "name": "the shown set names a row by the roster-projected from it rendered",
     "file": "nora/language/note_candidates.py",
-    "old": "            id=row.id, sender=speaker_name(row.person_name, row.sender_name),",
-    "new": "            id=row.id, sender=speaker_name(None, row.sender_name),",
+    "old": "            id=row.id, sender=row_speaker(row),",
+    "new": "            id=row.id, sender=row.sender_name or \"unknown\",",
     "target": "tests/unit/test_note_candidates.py::test_accept_names_the_body_by_the_roster_name_it_rendered"
   },
   {

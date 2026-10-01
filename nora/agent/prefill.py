@@ -906,7 +906,7 @@ def _standing_block(
 
 
 def _standing_working_set_block(
-    ctx: TagContext, view: DerivedView | None = None,
+    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
 ) -> ContextBlock | None:
     """Options she found and has not given this room, as
     `<standing_working_set>` (design/standing-compact/30-working-set.md §4,
@@ -922,7 +922,7 @@ def _standing_working_set_block(
     if not _shown(ctx, view, "standing_working_set"):
         return None
     return render_standing_working_set(
-        ctx.standing.working_set if ctx.standing is not None else (),
+        ctx.standing.working_set if ctx.standing is not None else (), now=now,
     )
 
 
@@ -1076,7 +1076,7 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(_standing_block(ctx, view)),
-            _restamp(_standing_working_set_block(ctx, view)),
+            _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),
         ])
         # WHICH blocks were actually built (non-empty body — `assemble`'s own
