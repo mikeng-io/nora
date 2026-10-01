@@ -122,7 +122,9 @@ if os.environ.get("STUB_VM_TAR_GARBAGE") == "1":
         fh.write(
             "#!/bin/bash\n"
             'for ((i=1;i<=$#;i++)); do\n'
-            '  if [ "${!i}" = "-czf" ]; then j=$((i+1)); echo "not a tarball" > "${!j}"; exit 0; fi\n'
+            '  if [ "${!i}" = "-czf" ]; then\n'
+            '    j=$((i+1)); echo "not a tarball" > "${!j}"; exit 0\n'
+            "  fi\n"
             "done\nexit 0\n"
         )
     os.chmod(os.path.join(shim, "tar"), 0o755)

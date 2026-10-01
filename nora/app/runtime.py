@@ -167,7 +167,7 @@ class _ProbesComputerd(Protocol):
 async def computer_probe_loop(
     probe: _ProbesComputerd, metrics: Metrics, *, interval_seconds: float,
 ) -> None:
-    """Ask computerd whether it answers, on a clock (DEC-255): the first probe
+    """Ask computerd whether it answers, on a clock (DEC-261): the first probe
     straight away (the series has no value until it runs) and then every
     `interval_seconds`. The probe reports its own outcome to
     `nora_computer_up` and never raises; this loop is the second barrier, so a

@@ -344,7 +344,7 @@ computer_export(path, to="link", title, artifact_id?)
 - **Backup:** a nightly job tars each room's `projects/` (not `browser/`,
   which holds cookies) through `fetch` into the blob store. It is on the same
   host, so this is rollback, not off-host backup. **Built 2026-10-01
-  (DEC-255), as a different job from the one described:** a recreate deletes the
+  (DEC-263), as a different job from the one described:** a recreate deletes the
   whole VM disk (three in one day), so `nora-computer backup` tars all of
   `/workspace` on the HOST, nightly, to `~/nora-backups/computer-workspace/` (not
   through `fetch` into the blob store), minus each room's `browser/` and the tmux
@@ -367,7 +367,7 @@ computer_export(path, to="link", title, artifact_id?)
 - **Network:** `sbx policy init deny-all`, then `sbx policy allow network`
   for package mirrors, and the public web for browsing. `sbx policy log
   --json` supplies the network half of the audit. **Built 2026-10-01
-  (DEC-255):** the allowlist is `pypi.org:443`, `files.pythonhosted.org:443`
+  (DEC-260):** the allowlist is `pypi.org:443`, `files.pythonhosted.org:443`
   and the Ubuntu archive (`archive.ubuntu.com` and `security.ubuntu.com`, :80
   and :443), scoped to the `nora-computer` sandbox and applied by
   `deploy/computer/nora-computer` on every start; browsing is not on it.
@@ -497,7 +497,7 @@ with who, when, how and what, as a full trail for auditing.**
   `policy log --json` egress records. S3 adds import and export. S4 adds
   every browser sub-agent step (action, element, URL, screenshot key). An
   operation with no row is a gap in the trail, and is treated as a defect.
-- **Lifecycle events (built 2026-10-01, DEC-255).** `nora-computer` runs on the
+- **Lifecycle events (built 2026-10-01, DEC-262).** `nora-computer` runs on the
   host as the operator, outside the nora container and the VM, so it cannot
   append the way the tools do. It spools each event (create, recreate, destroy,
   computerd start, token rotation by fingerprint, policy-log read, egress change,
@@ -506,7 +506,7 @@ with who, when, how and what, as a full trail for auditing.**
   (`ON CONFLICT DO NOTHING`; the append-only triggers are untouched). The spool
   is a delay, not a second record of truth: `nora-computer sync-events` closes a
   gap. A `started` row is never written for these, so they never orphan.
-- **Alerting (built 2026-10-01, DEC-255).** `nora_computer_up{target="computerd"}`
+- **Alerting (built 2026-10-01, DEC-261).** `nora_computer_up{target="computerd"}`
   is set by an authenticated probe every 30 s and by every call; the
   `nora_computer_calls_total{op,status}` and
   `nora_computer_audit_failures_total{tool,stage}` counters are created at zero

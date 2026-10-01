@@ -1,6 +1,6 @@
 # `promtool test rules deploy/prometheus/tests/computer.test.yml`, from the repo
 # root (or the docker form in tests/test_deploy_assets.py). Nora's computer
-# (DEC-255): ComputerDown, ComputerCallsFailing, ComputerAuditFailing, and the
+# (DEC-261): ComputerDown, ComputerCallsFailing, ComputerAuditFailing, and the
 # one change to UnavailableOutcomes. Each case states what a WRONG rule would do.
 rule_files:
   - ../rules/nora.yml

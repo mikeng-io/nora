@@ -35,7 +35,7 @@ from .web.voice import register_voice
 PRUNE_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_INTERVAL_SECONDS = 300.0
 DEBOUNCE_SWEEP_TTL_SECONDS = 3600.0
-# How often computerd is asked whether it answers (DEC-255). 30s, the scrape
+# How often computerd is asked whether it answers (DEC-261). 30s, the scrape
 # interval: a faster probe is a series Prometheus never sees, and ComputerDown
 # waits minutes anyway. One authenticated read of a scope that does not exist.
 COMPUTER_PROBE_INTERVAL_SECONDS = 30.0
@@ -316,7 +316,7 @@ class App:
                 deps.computer_sweeper, deps.metrics,
                 interval_seconds=deps.computer_sweep_seconds,
             ))
-        # The timed probe of computerd (DEC-255), the same flag.
+        # The timed probe of computerd (DEC-261), the same flag.
         if deps.computer_probe is not None:
             deps.background.spawn(runtime.computer_probe_loop(
                 deps.computer_probe, deps.metrics,
