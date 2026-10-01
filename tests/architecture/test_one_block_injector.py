@@ -198,6 +198,7 @@ def test_the_census_can_only_shrink():
 CONVERTED = (
     "nora/agent/prefill.py",
     "nora/agent/reaction.py",
+    "nora/agent/speech_format.py",
     "nora/domain/decision_log.py",
     "nora/ingest/relevance_gate.py",
     "nora/language/computer_render.py",

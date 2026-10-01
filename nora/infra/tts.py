@@ -24,13 +24,18 @@ the operator: MiniMax bills ~2 characters per CJK input char; turbo is
 ¥2.00 per 10k billed characters, so a typical short reply costs a fraction
 of a fen. Not load-bearing — quoted so a surprise on the bill can be checked
 against it.
+
+An optional `formatter` (design/voice-channel/08) rewrites only the text
+this request carries, adding MiniMax pause and interjection markup; the
+reply that was recorded is never touched. Absent, the body is byte-identical
+to the one before it existed.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -44,6 +49,14 @@ _DEFAULT_MODEL = "speech-2.8-turbo"
 # Hard-set, never "auto" — see the module docstring for the measurement.
 _LANGUAGE_BOOST = "Chinese,Yue"
 _MEDIA_TYPE = "audio/mpeg"
+
+
+class TextFormatter(Protocol):
+    """Fits a reply to this voice before synthesis
+    (`nora.agent.speech_format.SpeechFormatter`, design/voice-channel/08).
+    Never raises; answers the text to speak."""
+
+    async def format(self, *, text: str) -> str: ...
 
 
 class _TransportError(Exception):
@@ -79,6 +92,9 @@ class MiniMaxTtsSpeaker:
         pitch: int = 0,
         vol: float = 1.0,
         emotion: str | None = None,
+        text_normalization: bool = False,
+        pronunciation: tuple[str, ...] = (),
+        formatter: TextFormatter | None = None,
     ) -> None:
         self._api_key = api_key
         self._voice = voice
@@ -87,6 +103,12 @@ class MiniMaxTtsSpeaker:
         self._pitch = pitch
         self._vol = vol
         self._emotion = emotion
+        self._text_normalization = text_normalization
+        self._pronunciation = pronunciation
+        # `None` (the default, and `[speech.tts.format] mode = "off"`) sends
+        # the reply exactly as written: the request body is byte-identical to
+        # the one before the formatter existed.
+        self._formatter = formatter
         self._hosts = (host.rstrip("/"), fallback_host.rstrip("/"))
         self._timeout = httpx.Timeout(timeout_seconds)
         # The seam a test drives: with no transport injected, httpx's own
@@ -104,7 +126,12 @@ class MiniMaxTtsSpeaker:
         """
         if not text.strip():
             return SpeakResult(available=False, reason="empty")
-        body = {
+        if self._formatter is not None:
+            text = await self._formatted(self._formatter, text)
+            if not text.strip():
+                # Her reply was nothing but emoji or symbols: nothing to say.
+                return SpeakResult(available=False, reason="empty")
+        body: dict[str, Any] = {
             "model": self._model,
             "text": text,
             "stream": False,
@@ -114,6 +141,7 @@ class MiniMaxTtsSpeaker:
                 "vol": self._vol,
                 "pitch": self._pitch,
                 **({"emotion": self._emotion} if self._emotion else {}),
+                **({"text_normalization": True} if self._text_normalization else {}),
             },
             "audio_setting": {
                 "sample_rate": 32000,
@@ -123,6 +151,8 @@ class MiniMaxTtsSpeaker:
             },
             "language_boost": _LANGUAGE_BOOST,
         }
+        if self._pronunciation:
+            body["pronunciation_dict"] = {"tone": list(self._pronunciation)}
         reason = "error"
         for host in self._hosts:
             try:
@@ -139,6 +169,19 @@ class MiniMaxTtsSpeaker:
                 log.exception("tts synthesis failed against %s", host)
                 return SpeakResult(available=False, reason="error")
         return SpeakResult(available=False, reason=reason)
+
+    @staticmethod
+    async def _formatted(formatter: TextFormatter, text: str) -> str:
+        """The formatter's text, or the reply as written if it broke its
+        never-raises contract: a reply that fails to be paced is still
+        spoken."""
+        try:
+            return await formatter.format(text=text)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("speech formatter raised; speaking the reply as written")
+            return text
 
     async def _attempt(self, host: str, body: dict[str, Any]) -> SpeakResult:
         try:

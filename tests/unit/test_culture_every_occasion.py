@@ -170,13 +170,14 @@ async def test_proactive_carries_one_named_account_per_folded_room():
     culture = await _seeded(**{"sig-1": ACCOUNT})
     blocks = await _proactive(culture)._cultures(ROOMS)
     assert len(blocks) == 1
-    assert '<culture room="Friends"' in blocks[0] and ACCOUNT in blocks[0]
+    rendered = blocks[0].render()
+    assert '<culture room="Friends"' in rendered and ACCOUNT in rendered
     assert culture.reads == ["sig-1", "1/2"]
 
 
 async def test_an_unlabelled_room_is_named_by_the_stand_in_never_its_id():
     culture = await _seeded(**{"1/2": ACCOUNT})
-    (block,) = await _proactive(culture)._cultures(ROOMS)
+    (block,) = (b.render() for b in await _proactive(culture)._cultures(ROOMS))
     assert "1/2" not in block
     assert 'room="' in block
 

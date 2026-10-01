@@ -24,6 +24,7 @@ members:
   - 05-sidecar-receive.md
   - 06-stt-provider-decision.md
   - 07-audio-owner-controller.md
+  - 08-speech-formatter.md
 edges:
   - {src: 01-tts-playback-and-ducking, dst: 00-overview, rel: realizes, provenance: asserted}
   - {src: 02-module-layout-ddd, dst: 00-overview, rel: realizes, provenance: asserted}
@@ -35,6 +36,7 @@ edges:
   - {src: 06-stt-provider-decision, dst: 05-sidecar-receive, rel: decides, provenance: asserted}
   - {src: 07-audio-owner-controller, dst: 00-overview, rel: extends, provenance: asserted}
   - {src: 07-audio-owner-controller, dst: 05-sidecar-receive, rel: extends, provenance: asserted}
+  - {src: 08-speech-formatter, dst: 01-tts-playback-and-ducking, rel: extends, provenance: asserted}
 scope:
   v1:
     - "Nora speaks a turn's answer into the voice channel as Cantonese TTS (MiniMax CN, speech-2.8-turbo, Cantonese_CuteGirl)"
