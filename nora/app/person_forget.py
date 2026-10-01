@@ -19,7 +19,7 @@ cascade mark; `unforget` is not that.
 person-scoped Character and Standing — has no table until steps 5, 6 and 8).
 `messages` is hidden, and so is every document the person CREATED.
 
-**Documents** (operator ruling 2026-10-01, DEC-259, design/artifact §33). A document
+**Documents** (operator ruling 2026-10-01, DEC-264, design/artifact §33). A document
 is the forgotten person's when `created_by` is them: one they only appear in as a
 participant of its room is not theirs and is left alone. Each is SOFT-DELETED through the
 `DocumentStore` port: one more `document_state` row, `deleted`, with `set_by` =

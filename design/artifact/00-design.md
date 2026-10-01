@@ -1221,7 +1221,7 @@ app, so the present-view PR is where it becomes true or is changed.
 Built from §32's rulings (2026-10-01). Parked and NOT built: a present view, print,
 a revision-history view, and `delegate_task`.
 
-**`nora person forget` reaches documents (DEC-259).** A document is the forgotten person's when they
+**`nora person forget` reaches documents (DEC-264).** A document is the forgotten person's when they
 CREATED it (`created_by`); one they only appear in as a participant of its room is not theirs. Each is
 soft-deleted through the `DocumentStore` port: one `document_state` row, `deleted`, `set_by` =
 `forget:<person_id>`, so a reader can tell the forget from a person's own delete. Nothing is purged and
@@ -1241,7 +1241,7 @@ takes, so forget never overwrites a change made since its snapshot (it counts on
 ones skipped); a failure part-way is printed with what was done and the command exits non-zero, so a re-run
 completes it. A two-connection Postgres test covers the wait.
 
-**Search (DEC-260).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
+**Search (DEC-265).** The portal's list takes `q`: a case-insensitive substring of the CURRENT revision's
 title or search text (migration 0084's `text` column). It is `list_visible(query=)`, not a second read, so
 the visibility predicate and the state filter that already hide archived and deleted documents are in the
 same SQL statement, and a document a list would not show is never a match (`total` counts the matches).

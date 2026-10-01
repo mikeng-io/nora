@@ -2243,6 +2243,16 @@ async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     assert deps.computer_sweeper is not None
     assert deps.computer_sweep_seconds == 42.0
     assert deps.assembler._computer_reader is not None
+    # DEC-261: the probe of computerd exists only while on, and "off" leaves no
+    # `nora_computer_up` sample (not applicable), where "on" has primed series
+    # at zero and still no `up` until the first probe has run.
+    assert off.computer_probe is None
+    assert not [ln for ln in off.metrics.render().splitlines()
+                if ln.startswith(("nora_computer_up", "nora_computer_calls_total"))]
+    assert deps.computer_probe is not None
+    on_lines = deps.metrics.render().splitlines()
+    assert any(ln.startswith("nora_computer_calls_total{") for ln in on_lines)
+    assert not [ln for ln in on_lines if ln.startswith("nora_computer_up")]
 
 
 @pytest.mark.parametrize(

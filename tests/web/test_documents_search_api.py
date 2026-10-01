@@ -1,4 +1,4 @@
-"""`GET /app/v1/documents?q=`: search is the same list, narrowed (DEC-260), and a row
+"""`GET /app/v1/documents?q=`: search is the same list, narrowed (DEC-265), and a row
 carries its room's label for the viewers whose rooms include it.
 
 The store-level rules (current revision only, a query is text, a deleted document never

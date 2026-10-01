@@ -422,7 +422,14 @@ computer_export(path, to="link", title, artifact_id?)
   `SandboxRuntime.put` into `inbox/`. The VM never needs a route to RustFS.
 - **Backup:** a nightly job tars each room's `projects/` (not `browser/`,
   which holds cookies) through `fetch` into the blob store. It is on the same
-  host, so this is rollback, not off-host backup.
+  host, so this is rollback, not off-host backup. **Built 2026-10-01
+  (DEC-263), as a different job from the one described:** a recreate deletes the
+  whole VM disk (three in one day), so `nora-computer backup` tars all of
+  `/workspace` on the HOST, nightly, to `~/nora-backups/computer-workspace/` (not
+  through `fetch` into the blob store), minus each room's `browser/` and the tmux
+  sockets, verified by digest, newest 14 kept. `nora-computer restore` puts it
+  back, and `destroy` takes one first and refuses without it (`--no-backup`).
+  The per-room `projects/` tar into RustFS stays unbuilt.
 - **Manifest:** a small table (room, path, sha256, origin, artifact_id, url,
   time). "Continue with `data.csv` tomorrow" resolves through it. A file
   missing from the VM is `unavailable`, never an empty answer.
@@ -443,6 +450,10 @@ computer_export(path, to="link", title, artifact_id?)
   The decision allows it; writing the policy rules is an implementation PR's,
   and this text does not say what norty's live policy holds today (read it
   with `sbx policy ls`).
+  **Built afterwards, 2026-10-01 (DEC-260):** the allowlist is `pypi.org:443`,
+  `files.pythonhosted.org:443` and the Ubuntu archive (`archive.ubuntu.com` and
+  `security.ubuntu.com`, :80 and :443), scoped to the `nora-computer` sandbox and
+  applied by `deploy/computer/nora-computer` on every start; browsing is not on it.
 - **Credentials:** the mechanism is `sbx secret set-custom --sandbox
   nora-computer --host <host> --env <NAME> --value …`: the VM sees a
   placeholder, and sbx's proxy substitutes the real key only on requests to
@@ -576,10 +587,29 @@ with who, when, how and what, as a full trail for auditing.**
   every browser sub-agent step (action, element, URL, screenshot key). An
   operation with no row is a gap in the trail, and is treated as a defect.
   **As of 2026-10-01** the rows are the tools' (`started` and `finished` per
-  call, `nora/domain/computer_events.py`), the session rows and the sweeper's.
-  The host unit's lifecycle events and sbx's egress log are read from the
-  unit's journal and `sbx policy log` (`deploy/computer/README.md`), not from
-  this table.
+  call, `nora/domain/computer_events.py`), the session rows and the sweeper's,
+  and, since the lifecycle audit below (DEC-262), the host unit's own events
+  (`tool = 'computer_vm'`, actor `operator`). sbx's egress log is read from
+  `sbx policy log` (`nora-computer policy-log`, itself an audited read), not
+  from this table.
+- **Lifecycle events (built 2026-10-01, DEC-262).** `nora-computer` runs on the
+  host as the operator, outside the nora container and the VM, so it cannot
+  append the way the tools do. It spools each event (create, recreate, destroy,
+  computerd start, token rotation by fingerprint, policy-log read, egress change,
+  backup, restore) to `~/.local/state/nora-computer/lifecycle-events.jsonl` first
+  and replays the spool into `computer_events` as actor `operator`
+  (`ON CONFLICT DO NOTHING`; the append-only triggers are untouched). The spool
+  is a delay, not a second record of truth: `nora-computer sync-events` closes a
+  gap. A `started` row is never written for these, so they never orphan.
+- **Alerting (built 2026-10-01, DEC-261).** `nora_computer_up{target="computerd"}`
+  is set by an authenticated probe every 30 s and by every call; the
+  `nora_computer_calls_total{op,status}` and
+  `nora_computer_audit_failures_total{tool,stage}` counters are created at zero
+  at start. `ComputerDown` (5 min), `ComputerCallsFailing` and
+  `ComputerAuditFailing` ride the existing rules and Alertmanager route to the
+  alert channel. With `[computer] enabled = false` there is no `up` sample:
+  not applicable, not down. A lapsed Docker login or a hung computerd is the
+  same symptom (computerd does not answer) and the same alert.
 
 ## 13. Sequence
 

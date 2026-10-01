@@ -1,4 +1,4 @@
-"""`nora person forget` reaches documents (operator ruling 2026-10-01, DEC-259,
+"""`nora person forget` reaches documents (operator ruling 2026-10-01, DEC-264,
 design/artifact/00-design.md §33).
 
 A document is the forgotten person's when they CREATED it. Each is soft-deleted through the
