@@ -9,6 +9,7 @@ reproduce a live grammar is a design finding, and this is where it surfaces.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest import mock
 
@@ -19,6 +20,7 @@ from nora.domain.block_types import BLOCK_TYPES, BlockType
 from nora.domain.blocks import (
     ContextBlock,
     RowStyle,
+    assemble,
     render_elements,
     render_rows,
     restamp,
@@ -652,3 +654,54 @@ def test_restamp_refuses_a_name_the_caller_never_declared():
     block = ContextBlock(name="notes", body="- one open thing")
     with pytest.raises(KeyError):
         restamp(block, {"standing": (60, "room")})
+
+
+# --- an empty body, and what assemble does with it ---------------------------
+
+
+def test_an_empty_block_is_dropped_unless_it_opts_in():
+    """The rule, unchanged for every occasion that does not ask: prefill and
+    the relevance gate never set `when_empty`, so a block with nothing to say
+    is a block she is never told about."""
+    empty = ContextBlock(name="notes", body="", order=1)
+    kept = ContextBlock(name="today", body="2026-10-01 Thu", order=2)
+    assert empty.when_empty == "drop"
+    assert assemble([empty, kept]) == kept.render() + "\n"
+    assert assemble([empty]) == ""
+
+
+def test_a_self_closing_block_survives_assemble_and_is_its_opening_tag_alone():
+    """Culture's and note-candidates' `<room label="..."/>`: the operator wrote
+    nothing, so the block is its opening tag with no body, no closing tag and
+    no blank line, and `assemble` keeps it where it would drop an empty one."""
+    room = ContextBlock(
+        name="room", attrs=(("label", "Zone 42"),), body="", order=1,
+        when_empty="self_close",
+    )
+    kept = ContextBlock(name="today", body="2026-10-01 Thu", order=2)
+    rendered = room.render()
+    assert rendered.startswith('<room label="Zone 42" description="')
+    assert rendered.endswith('"/>')
+    assert "\n" not in rendered and "</room>" not in rendered
+    assert assemble([kept, room], sep="\n\n") == rendered + "\n\n" + kept.render()
+    # The same block WITH a body is an ordinary block: the flag is about empty.
+    full = replace(room, body="the games channel")
+    assert full.render().endswith("\nthe games channel\n</room>")
+
+
+def test_a_render_block_is_kept_empty_and_written_like_any_other():
+    block = ContextBlock(name="room", attrs=(("label", "X"),), body="", when_empty="render")
+    assert assemble([block], sep="\n\n") == block.render()
+    assert block.render().endswith('">\n\n</room>')
+
+
+def test_a_nothing_block_keeps_its_slot_and_its_separators_and_writes_no_bytes():
+    """Proactive's `<loop_decisions>` with no decision log wired: the hand join
+    kept an empty string, and the separators either side of it."""
+    a = ContextBlock(name="today", body="a", order=1)
+    gap = ContextBlock(name="loop_decisions", body="", order=2, when_empty="nothing")
+    b = ContextBlock(name="notes", body="b", order=3)
+    assert gap.render() == ""
+    assert assemble([a, gap, b], sep="\n\n") == a.render() + "\n\n\n\n" + b.render()
+    assert assemble([a, gap], sep="\n\n") == a.render() + "\n\n"
+

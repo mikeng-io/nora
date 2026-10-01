@@ -158,6 +158,24 @@ class RowStyle:
     self_name: str = ""
 
 
+#: What a block with an EMPTY body becomes in `assemble`. `drop` is the rule and
+#: the default: a block with nothing to say is a block she is never told about
+#: (`assemble`'s docstring). The other three exist because a Dreamer occasion
+#: joined its blocks by hand before step 2a of
+#: `design/context-assembly/04-every-occasion.md`, and a hand join keeps every
+#: string it is given, so converting those occasions without them would change
+#: what a model reads:
+#:
+#: * `self_close` renders `<room label="..."/>`: the operator wrote nothing, and
+#:   an empty body would read as «the operator said this room is nothing».
+#: * `render` keeps the block and renders it like any other, empty body and all.
+#: * `nothing` keeps the block's SLOT and renders no bytes, so the separators
+#:   either side of it stay. Used once, for `<loop_decisions>` when no decision
+#:   log is wired, which is the prompt the proactive eval harness builds.
+#:
+#: Each is opt-in per block; prefill and the relevance gate never set one.
+EmptyBody = Literal["drop", "render", "self_close", "nothing"]
+
 #: Attributes `render()` writes from the block's TYPE, and which therefore may
 #: not also arrive through `attrs`. Checked in `__post_init__`; the value is
 #: what the message says the caller was trying to set.
@@ -231,6 +249,9 @@ class ContextBlock:
     #: cache line it never had, and one wrongly declared `global` silently
     #: fragments a 13-17k-token prefix that measures 95-99% hit.
     key: BlockKey = "turn"
+    #: What `assemble` does with this block when its body is empty — see
+    #: `EmptyBody`. `drop` unless a caller says otherwise.
+    when_empty: EmptyBody = "drop"
 
     def __post_init__(self) -> None:
         """Both halves of «a call site cannot invent a description», checked
@@ -354,7 +375,15 @@ class ContextBlock:
         parts.append(f'description="{escape_attr(self.description)}"')
         if self.annotation:
             parts.append(f'fields="{escape_attr(self.annotation)}"')
-        return f"<{' '.join(parts)}>\n{self.body}\n</{self.name}>"
+        opening = f"<{' '.join(parts)}"
+        if not self.body:
+            # Only an opted-in empty block gets here through `assemble`; a
+            # caller that renders one directly gets the same answer.
+            if self.when_empty == "self_close":
+                return f"{opening}/>"
+            if self.when_empty == "nothing":
+                return ""
+        return f"{opening}>\n{self.body}\n</{self.name}>"
 
 
 def wrap_outside_text(name: str, source: str, text: str) -> str:
@@ -408,15 +437,19 @@ def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     last one, and the ordering is the same as without.
 
     **It is the hand join's shape, not its filter.** A hand join joins whatever
-    strings it is given; `assemble` still drops an empty-body block. Two places
-    differ when step 2a converts them, found by review of the PR that added
-    `sep`: a block built with an empty body and rendered self-closing (the
-    `<room label="..."/>` of culture and note-candidates) would vanish, and
-    proactive's `loop_decisions` is `""` when no decision log is wired (a hand
-    join leaves a trailing separator, `assemble` does not). Step 2a handles each
-    explicitly and its goldens catch either; do not assume `sep` is a drop-in.
+    strings it is given; `assemble` drops an empty-body block unless the block
+    says otherwise with `when_empty` (`EmptyBody`). Two places differed when
+    step 2a converted the Dreamer's hand joins, found by review of the PR that
+    added `sep`: a block built with an empty body and rendered self-closing (the
+    `<room label="..."/>` of culture and note-candidates), and proactive's
+    `loop_decisions`, `""` when no decision log is wired (a hand join leaves its
+    separators, `assemble` would not). Each opts in; do not assume `sep` is a
+    drop-in for a join whose pieces can be empty.
     """
-    chosen = sorted((b for b in blocks if b.body), key=lambda b: b.order)
+    chosen = sorted(
+        (b for b in blocks if b.body or b.when_empty != "drop"),
+        key=lambda b: b.order,
+    )
     if sep is None:
         return "".join(b.render() + "\n" for b in chosen)
     return sep.join(b.render() for b in chosen)
