@@ -64,12 +64,11 @@ written down here at all.
   span(...)                                                        ┌─▶ Langfuse
       │                                                            │   :3100
       ▼                                                            │
-  ① build_sampler()  ──▶ OTLP/HTTP ──▶ ② filter/langfuse ──────────┘
-    ParentBased(          :4318/          drops service.name != "nora"
-      _PlumbingIs         v1/traces
+  ① build_sampler()  ──▶ OTLP/HTTP ──▶ ② tail_sampling/langfuse ───┘
+    ParentBased(          :4318/          keeps a WHOLE trace iff it has
+      _PlumbingIs         v1/traces       a chat or invoke_agent span
       NotATrace)                     ──▶ ② filter/jaeger  ──────────┬─▶ Jaeger
-                                          drops spans that HAVE     │   :16686
-                                          gen_ai.operation.name     │
+                                          drops chat spans only     │   :16686
                                                                     ┘
 ```
 
@@ -87,17 +86,26 @@ Two consequences worth holding on to:
   attributes as arguments for exactly this reason; an attribute added by
   `annotate()` one line later is one the sampling decision was made without.
 
-**② The collector filters** (`workspace/otel-collector/config.yaml` on norty)
-are a second stage that this repo does not own and cannot see:
+**② The collector filters** (`~/workspace/otel-collector/config.yaml` on norty)
+are a second stage that this repo does not own and cannot see. Read from the
+file 2026-10-01; an earlier version of this section described a
+`service.name != "nora"` filter that is no longer there:
 
-* the Langfuse pipeline keeps only `service.name == "nora"`;
-* the Jaeger pipeline drops every span that **has** `gen_ai.operation.name` —
-  i.e. the fan-out is deliberate and complementary. **Generations go to
-  Langfuse; infrastructure spans go to Jaeger.** A span is not in both.
+* the Langfuse pipeline is **tail sampling per trace**: it keeps the whole
+  trace iff it holds at least one span whose `gen_ai.operation.name` is `chat`
+  or `invoke_agent`, after a 90 s decision wait. A per-span filter cannot do
+  this: the app root carries no GenAI marker, so a span filter drops the root
+  and orphans the model call (measured 2026-09-14/15);
+* the Jaeger pipeline drops **only `chat` spans**, which carry the prompts and
+  reasoning. Strands also stamps `gen_ai.operation.name` on `invoke_agent`,
+  `execute_event_loop_cycle` and `execute_tool`, so the earlier "has the
+  attribute" test dropped the whole agent and tool tree (measured 2026-09-23).
+  Read back 2026-10-01: two engagement traces in Jaeger had 1 root, 0 orphans,
+  and lacked exactly their `chat` spans.
 
-That second filter is why "it is not in Jaeger" is *not* evidence a generation
-was dropped, and why a span carrying `gen_ai.operation.name` is removed from
-Jaeger by design.
+So "it is not in Jaeger" is evidence about `chat` spans only: a generation is
+in Langfuse, its agent, cycle and tool spans are in both, and the plumbing
+under a generation root is in both.
 
 The deployed endpoint is `http://host.docker.internal:4318/v1/traces`. The
 `/v1/traces` path is **required**: `OTLPSpanExporter` appends it only when the
@@ -106,6 +114,48 @@ verbatim — without the path it POSTs to the collector root and 404s (seen live
 2026-09-04, 31 export failures). The collector's own exporter is the opposite
 and auto-appends, which is why Langfuse there is configured with
 `traces_endpoint`. Two SDKs, two conventions, one afternoon lost.
+
+### Session and observation type (`TraceIdentityProcessor`)
+
+Langfuse is a trace store; what makes it more than a list of traces is that a
+trace belongs to a **session** and each span has a **type**. Read back
+2026-10-01: `/api/public/sessions` held 0 items and 100 of 100 recent traces had
+a null `sessionId`; 55-70% of an engagement trace's observations were untyped
+`SPAN`s (`store.*` reads, stage spans, one `execute_event_loop_cycle` per model
+call) against 4-16 generations.
+
+`nora.agent.telemetry.TraceIdentityProcessor` is registered on the provider in
+`setup_agent_tracing`, so it sees Strands spans and Nora's own alike:
+
+* **Session.** A span started with `nora.conversation_id` (the roots and the
+  stages that pass it to `span()`) gets `session.id`, which Langfuse reads, and
+  `gen_ai.conversation.id`, which OTel GenAI defines as "session, thread". A
+  span without it inherits its parent's `session.id`, because Langfuse asks for
+  it on each span. Strands spans always take this path: Strands opens a span
+  and sets `trace_attributes` after it started, past what the processor sees,
+  so the bare `conversation_id` in `trace_attributes` stamps nothing. Inheritance
+  follows trace parentage, so a detached span cannot take another room's
+  session. The session is the room, so a
+  group room is one long session: the docs are silent on session length, and
+  OTel's own definition of a conversation is the thread, not a day.
+  An id Langfuse would drop (over 200 characters, or non-ASCII) is left
+  unstamped, never truncated.
+* **User is not stamped.** A Langfuse trace has one `user.id` and a group
+  room has many senders, and it would name a person on a trace whose
+  attributes are provenance only (`trace_attributes`). Whether a person's id
+  belongs there is the operator's call, not a gap this processor fills.
+* **Type.** `langfuse.observation.type` is set from the span name, first match
+  wins: `engagement.admission` is a `guardrail`, `store.*` a `retriever`, other
+  `engagement.*`, `agent.prefill` and `execute_event_loop_cycle` a `chain`.
+  Anything else is left to Langfuse, which types model calls, agents and tools
+  from their GenAI attributes (read back as GENERATION, AGENT, TOOL). A span
+  that already declares a type keeps it.
+
+The processor is never load-bearing: a failure costs the stamp, not the span.
+Enforced by `tests/unit/test_trace_identity.py`, including a test that reads the
+stamp through the provider `setup_agent_tracing` registers, because a class
+that exists and passes alone says nothing about the provider the deployment
+runs.
 
 ---
 

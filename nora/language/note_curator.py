@@ -154,9 +154,9 @@ from typing import Any, ClassVar, Literal, Protocol, get_args
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
-    render_elements,
+    render_row_window,
     restamp,
-    speaker_name,
+    row_speaker,
 )
 from nora.domain.bounds import over_fetch
 from nora.domain.gatherings import AmbiguousOpenGatheringsError
@@ -172,6 +172,7 @@ from nora.domain.notes import (
 from nora.domain.ports import CultureReader, Proposal
 from nora.domain.prompt import age, escape
 from nora.language.culture_render import read_culture, render_culture
+from nora.language.note_render import today_block
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.notes.curator")
@@ -720,7 +721,7 @@ class NoteCuratorAdaptor:
         # `Persons.name_transcript`, so a mapped sender's evidence row was
         # attributed to their self-set, spoofable `sender_name` instead of
         # the operator's canonical name for them (`_render_evidence`'s
-        # `who=speaker_name(...)`). `None` (unwired, or a note whose room maps
+        # `who=row_speaker(...)`). `None` (unwired, or a note whose room maps
         # to no platform) skips resolution: `speaker_name` still never
         # renders a raw id either way, so an unwired composition only loses
         # the canonical name, never gains a leak.
@@ -866,7 +867,7 @@ class NoteCuratorAdaptor:
         # RESOLVE NAMES (issue #200), the same projection `NoteCandidateAdaptor`
         # and `CultureAdaptor` apply before their own batches render. Nothing
         # else in `evidence` changes — only `person_name`, which
-        # `_render_evidence`'s `who=speaker_name(...)` reads — so this is
+        # `_render_evidence`'s `who=row_speaker(...)` reads — so this is
         # applied AFTER the `is_nora`/`since` filters (their own identity is
         # unaffected either way) and does not touch `since` or the own-sends
         # split below, which never reads a sender's name at all
@@ -1840,13 +1841,14 @@ def _own_sends(since: Sequence[TranscriptRow]) -> tuple[TranscriptRow, ...]:
 
 #: `n` IS THE ROW ID in both of the curator's renders, not a per-render
 #: position — the grounding check (`_ground`) cites these ids back, so they are
-#: the note tier's real handles. That was `RowStyle(handle="row_id")` on a flat
-#: line until #292 and is now the `n` attribute; the two `RowStyle` constants
-#: went with the lines they described.
+#: the note tier's real handles. `render_row_window` writes it, first, for this
+#: pass and note-candidates alike; this is what comes after it. It was
+#: `RowStyle(handle="row_id")` on a flat line until #292, and the two `RowStyle`
+#: constants went with the lines they described.
 def _curator_attrs(
-    row: TranscriptRow, _i: int, *, now: datetime, who: str,
+    row: TranscriptRow, *, now: datetime, who: str,
 ) -> tuple[tuple[str, str | None], ...]:
-    """One evidence or own-send row's attributes.
+    """One evidence or own-send row's attributes, after `n`.
 
     `who` is REQUIRED and non-optional. A first cut typed it `str | None` with a
     docstring arguing that `None` meant «hers by construction» and that a `from`
@@ -1857,7 +1859,6 @@ def _curator_attrs(
     attribution from.
     """
     return (
-        ("n", str(row.id)),
         ("age", age(row.ts, now) if row.ts else None),
         ("from", who),
     )
@@ -1898,8 +1899,8 @@ def _render_own_sends(
     # carried is closed by construction rather than by a collapse: the block
     # one line up asserts «nobody else in the room wrote any of them», and a
     # body can no longer produce a second row to inherit that assertion.
-    rows = render_elements(
-        own_sends, tag="m",
+    rows = render_row_window(
+        own_sends, row_id=lambda r: r.id,
         attrs=functools.partial(_curator_attrs, now=now, who="you"),
         body=lambda r: r.body,
     )
@@ -1971,12 +1972,9 @@ def _render_evidence(
     # renders at the same indent and line position as the note's own field.
     # Wrapped, a newline in a body writes text inside `<evidence>`, where there
     # is no field for it to imitate.
-    rendered = render_elements(
-        evidence, tag="m",
-        attrs=lambda r, i: _curator_attrs(
-            r, i, now=now,
-            who=speaker_name(r.person_name, r.sender_name),
-        ),
+    rendered = render_row_window(
+        evidence, row_id=lambda r: r.id,
+        attrs=lambda r: _curator_attrs(r, now=now, who=row_speaker(r)),
         body=lambda r: r.body,
     )
     order, key = _ROW["evidence"]
@@ -2008,13 +2006,7 @@ def _now_block(today: int) -> str:
     not carry (#314).
     """
     day = _as_date(today)
-    when = f"{day:%Y-%m-%d %a}" if day is not None else str(today)
-    order, key = _ROW["today"]
-    return ContextBlock(
-        name="today", order=order, key=key,
-        # A CLOCK THIS PROCESS OWNS, not anything the room said.
-        body=escape(when),
-    ).render()
+    return restamp(today_block(day if day is not None else str(today)), _ROW).render()
 
 
 def _as_date(yyyymmdd: int) -> date | None:
