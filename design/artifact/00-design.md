@@ -1431,6 +1431,15 @@ the document, for three causes, none of them in the new code's keep path:
 - `test_the_document_skill_names_every_content_component_in_the_catalog` fails when a content component is added to
   the catalog and the skill does not name it, so the drift that left thirteen unnamed cannot recur.
 
+**Review of #696 (independent, told to find the rules it lost): five changes before merge.** The depth rule is scoped
+("the full substance the content has", never padded) so it does not collide with «however short it turns out»; «never
+guess its code» is restored for the out-of-reach case; the skill now says a coordinate from `where_is`, `where_been` or
+`reverse_geocode` is a person's position and never goes in a document (those tools DO return coordinates, for people, and
+`Map` accepts any in-range pair); the matching section names `Map` conditionally and `Sources`, and the component test
+now reads that section, not the whole file; and `image_links` also admits an extensionless picture whose query carries
+a resize parameter or whose host serves pictures (unsplash, Google, Cloudinary, imgix, Medium), because the first filter
+silently dropped those.
+
 **Found, not fixed: `Map` cannot be filled** (issue #695). No tool returns a coordinate for a named place (DEC-24,
 R-28), so the skill tells her to give each place's `place_info` link in Markdown until a ruling lets a `Map` place carry
 a name that `publish` resolves.

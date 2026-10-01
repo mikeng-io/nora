@@ -68,10 +68,14 @@ _IMAGES_RAW = [
     "data:image/png;base64,AAAA", "/relative.png", 5, "https://example.test/b.png",
     "https://example.test/hotel/page", "https://example.test/icon.svg",
     "https://example.test/_next/image?url=%2Fc.webp&w=640",
+    "https://images.example.test/photo-123?ixlib=rb-4", "https://example.test/blog/post?id=7",
+    "https://cdn.example.test/p/abc?w=800",
 ]
 _IMAGES = [
     "https://example.test/a.jpg", "https://example.test/b.png",
     "https://example.test/_next/image?url=%2Fc.webp&w=640",
+    "https://images.example.test/photo-123?ixlib=rb-4",
+    "https://cdn.example.test/p/abc?w=800",
 ]
 
 

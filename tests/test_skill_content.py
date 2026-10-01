@@ -1222,10 +1222,12 @@ def test_the_document_skill_names_every_content_component_in_the_catalog() -> No
         (SKILLS_DIR.parent / "documents" / "document.schema.json").read_text(encoding="utf-8")
     )
     catalog = set(schema["$defs"]["n2"]["properties"]["type"]["enum"])
-    layout = {"Page", "Section", "Card", "Grid", "Tab", "Tabs"}
+    layout = {"Page", "Section", "Card", "Grid", "Tab"}
     body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
-    unnamed = sorted(c for c in catalog - layout if not re.search(rf"\b{c}\b", body))
-    assert not unnamed, f"the document skill never names: {unnamed}"
+    start = body.index("## Match each piece of content")
+    section = body[start : body.index("\n## ", start + 1)]
+    unnamed = sorted(c for c in catalog - layout if not re.search(rf"\b{c}\b", section))
+    assert not unnamed, f"the matching section never names: {unnamed}"
 
 
 def test_the_document_skill_lets_a_web_picture_into_a_document() -> None:
@@ -1236,4 +1238,6 @@ def test_the_document_skill_lets_a_web_picture_into_a_document() -> None:
     )
     assert "`media_fetch(url=...)`" in body and "`images`" in body
     assert "The picture has to come from this room" not in body
-    assert "in `Sources`" in body, "a web picture is credited to its page"
+    assert "never guess" in body and "code" in body, "the no-guessed-code rule survives"
+    assert "never goes in a document" in body, "a person's position is not a Map's data"
+    assert "name the page it came from in `Sources`" in body, "a web picture is credited"

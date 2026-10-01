@@ -23,7 +23,7 @@ grows a branch per provider inside a "shared" helper.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from ...domain.blocks import wrap_outside_text
 
@@ -54,14 +54,29 @@ _MAX_LINK_CHARS = 2000
 # The raster types the portal can show and Nora keeps. A vendor's `images` list
 # also carries links to PAGES (a hotel listing, a related post), and `media_fetch`
 # would spend a download on each to answer `not_an_image`; a link is kept only when
-# it names a picture: an extension of those types in its path, or Next.js's
-# `/_next/image` proxy, which serves one from a query. Nothing is fetched here.
+# it names a picture: an extension of those types in its path, Next.js's `/_next/image`
+# proxy, a resize parameter in its query, or a host that serves pictures. Nothing is
+# fetched here, and a wrong guess costs one download that answers `not_an_image`.
 _PICTURE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+# Many image CDNs serve a picture from an extensionless path and say so in the
+# query (`?w=800`, `?fm=jpg`, `=w800-h600` on a Google host is the exception below)
+# or by the host's job. A page link carries none of these.
+_RESIZE_PARAMS = frozenset({"w", "h", "width", "height", "fm", "format", "auto", "q"})
+_IMAGE_HOST_LABELS = frozenset({"images", "image", "img", "photos", "i"})
+_IMAGE_HOST_SUFFIXES = (
+    ".googleusercontent.com", ".cloudinary.com", ".imgix.net", "miro.medium.com",
+)
 
 
 def _names_a_picture(link: str) -> bool:
-    path = urlsplit(link).path.lower()
-    return path.endswith(_PICTURE_EXTENSIONS) or path.startswith("/_next/image")
+    parts = urlsplit(link)
+    path = parts.path.lower()
+    host = (parts.hostname or "").lower()
+    if path.endswith(_PICTURE_EXTENSIONS) or "/_next/image" in path:
+        return True
+    if _RESIZE_PARAMS & {k.lower() for k, _ in parse_qsl(parts.query)}:
+        return True
+    return host.split(".")[0] in _IMAGE_HOST_LABELS or host.endswith(_IMAGE_HOST_SUFFIXES)
 
 
 def image_links(raw: Any, limit: int = MAX_IMAGE_LINKS) -> list[str]:
