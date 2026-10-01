@@ -1937,9 +1937,9 @@ class SpeechTtsFormatConfig(BaseModel):
       every letter and digit of her reply unchanged and in order; anything
       else, a timeout included, speaks the normalised reply.
 
-    `model` defaults to `nora-gate`; empty inherits `[llm] model`. `timeout_seconds` bounds the whole
-    call and is time added before she is heard, so it is sized on measured
-    latency (the design note has the numbers). A reply with fewer than
+    `model` defaults to `nora-gate`; empty inherits `[llm] model`.
+    `timeout_seconds` bounds the whole call and is time added before she is
+    heard, so it is sized on measured latency (the design note has the numbers). A reply with fewer than
     `min_chars` letters and digits, or more than `max_chars`, skips the model:
     too short to pace, or too long to format inside the timeout.
     """
