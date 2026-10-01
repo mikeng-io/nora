@@ -1139,3 +1139,57 @@ the verb in one paragraph so she never hand-rolls a delete as an empty revision.
 
 **Not built.** Search (still §25's "not built"), a purge (a hard delete is a separate decision), and a
 portal restore of a deleted document. The decision row is DEC-255.
+
+## 32. Present, print, history (2026-10-01)
+
+**The gap.** §15 promised `?view=present` and it was never built; nothing said how a document
+becomes a PDF; and every revision was already a full snapshot (§25) with no way for a reader to see
+one. The operator ruled all three in on 2026-10-01. Long background reports stay `delegate_task`'s
+(§15), parked.
+
+**Present (DEC-260).** `/documents/<id>?view=present` draws the SAME stored spec through the same
+registry, one slide at a time: slide 1 is a cover (the Page's title and subtitle, and every block
+before the first top-level `Section`), then one slide per top-level `Section`, carrying any
+non-Section block that follows it. A nested Section never splits. Each slide is the document with
+its Page and only that slide's children, so `parseDocument` checks it like any document. Full
+window, arrows / space / Page Up and Down / Home / End move, Escape and a visible Leave control exit,
+a horizontal swipe moves on a phone, a counter is always shown, and the portal's existing
+reduced-motion rule turns the entrance into a short fade. A document with no top-level Section
+shows the ordinary page with a note saying why, and the Present button is offered only where the
+split exists. The split and the keys are `app/src/lib/documents/present.ts`.
+
+**Print / PDF (DEC-259): the browser's print is the PDF path.** No server-side renderer and no new
+service: a headless browser beside Nora would be a second renderer of the same spec to keep in step,
+a new attack surface fed with model-written content, and a container to run, for a file every
+reader's browser already makes from the page itself ("Save as PDF" is one of its printers). What the
+portal adds is `app/src/components/documents/print.css`, active only in print and only on a page
+holding `[data-print-document]`: every element that is neither the document, inside it, nor one of
+its ancestors is dropped (shell, back link, meta line, lifecycle and action buttons, the history
+banner), the ancestors are flattened to plain blocks, a Card, Table, Code block, Image, Chart, Map or
+diagram is never split across pages and a heading never ends one, paper is light whatever the theme,
+and a link prints its address only where its text does not already say it
+(`app/src/lib/documents/print.ts`). Maps and Mermaid print as the page draws them. A "Print / save
+as PDF" button calls `window.print()`. This holds unless a document must be produced with no reader
+present (a scheduled PDF in a room), which a browser cannot do and which would reopen a server-side
+renderer.
+
+**History (DEC-261).** Three Nora routes in `nora/web/document_history.py`, through the document's own
+read gate (`get_visible`) before anything else is read: the revisions newest first (number, title,
+sha256, when, who), one revision's stored spec, and a restore. Not readable, deleted, unknown and a
+revision the document never had are one 404; archived is readable. The store gains `revision()` and
+`RevisionRecord.media`; the picture route also serves a picture an EARLIER revision names, so an old
+revision shows its pictures, and a picture no revision of the document names is still a 404. Who
+wrote a revision: Nora records the tag (`tag:<id>`), not a person, so the history shows it as hers; a
+restore records `portal:<person_id>`, shown by name through the list's resolver.
+
+**Restore** publishes an old spec as a NEW revision and never rewrites history. It reuses the store's
+one revision path, `add_revision` with `base_revision` (the current number the viewer saw), so a
+revision that landed since is a `conflict`, and an archived document is refused there (`not_active`),
+the one place every revision is refused. The old spec is checked again with `check_document` first,
+so a spec this build would refuse is `invalid`, never stored. `DocumentService.publish` is not used:
+it re-resolves picture codes against the room's recent messages, which an old revision's content
+addresses need not still be in, and it is room-scoped where the portal is person-scoped.
+
+**Not built.** A diff between revisions (the old revision is shown whole), restoring a deleted
+document from the portal (§31), and opening every collapsed block for print (an Accordion prints as
+the page shows it).
