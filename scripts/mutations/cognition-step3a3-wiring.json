@@ -85,7 +85,7 @@
  },
  {
   "name": "session runner: the prompt carries the clock",
-  "file": "nora/domain/cognition_render.py",
+  "file": "nora/language/cognition_render.py",
   "old": "    if now_ms is not None:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
   "new": "    if False:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
   "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"

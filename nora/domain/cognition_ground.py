@@ -16,7 +16,7 @@ duplicate or contradict. Index lines, never bodies (§1): a body is one read
 tool away, and a pushed body is a disclosure decision nobody made.
 
 **Interpret once.** `Grounding` is built once per session by the caller and
-handed, whole, to the pure renderer (`nora.domain.cognition_render`); nothing
+handed, whole, to the pure renderer (`nora.language.cognition_render`); nothing
 downstream re-reads a row. It is also what the session row records, so a
 session is replayable from what it was actually shown.
 

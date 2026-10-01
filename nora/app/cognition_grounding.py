@@ -1,8 +1,9 @@
 """Building what a Cognition session is shown beside its agenda: the Record rows
 that raised each stimulus and the Register index lines (design/cognition-loop/
 30-cognition.md §1; #637 review, major 2). The pure half is
-`nora.domain.cognition_ground` / `nora.domain.cognition_render`; this is the
-reads that fill it, each a narrow seam and none a tier write.
+`nora.domain.cognition_ground` (the types) / `nora.language.cognition_render`
+(the renderer); this is the reads that fill it, each a narrow seam and none a
+tier write.
 
 **Independent of `record_query`.** `[record_query] enabled` decides whether a
 MODEL is offered the tool. The rows that raised a stimulus are code's own input
