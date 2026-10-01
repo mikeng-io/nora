@@ -1939,9 +1939,10 @@ class SpeechTtsFormatConfig(BaseModel):
 
     `model` defaults to `nora-gate`; empty inherits `[llm] model`.
     `timeout_seconds` bounds the whole call and is time added before she is
-    heard, so it is sized on measured latency (the design note has the numbers). A reply with fewer than
-    `min_chars` letters and digits, or more than `max_chars`, skips the model:
-    too short to pace, or too long to format inside the timeout.
+    heard, so it is sized on measured latency (the design note has the
+    numbers). A reply with fewer than `min_chars` letters and digits, or
+    more than `max_chars`, skips the model: too short to pace, or too long
+    to format inside the timeout.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
