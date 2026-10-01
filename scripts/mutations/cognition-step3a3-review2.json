@@ -30,8 +30,8 @@
   {
     "name": "blocker: the objective promises a Standing line again",
     "file": "nora/dreamer/objectives/cognition.md",
-    "old": "its open events. Those are index lines, not bodies:",
-    "new": "its open events and its Standing. Those are index lines, not bodies:",
+    "old": "its open events. They tell you what exists",
+    "new": "its open events and its Standing. They tell you what exists",
     "target": "tests/unit/test_cognition_grounding.py::test_the_instruction_does_not_promise_a_standing_index_line"
   },
   {
@@ -79,7 +79,7 @@
   {
     "name": "major: the SQL store drops the cause it was given",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "at_ms=outcome.at_ms, cause=cause,",
+    "old": "at_ms=outcome.at_ms, cause=stored_cause(value, cause),",
     "new": "at_ms=outcome.at_ms,",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },
@@ -93,14 +93,14 @@
   {
     "name": "major: the in-memory store drops the cause it was given",
     "file": "nora/testing/stimuli.py",
-    "old": "            cause=cause,\n        )\n        for carry in rows:",
+    "old": "            cause=stored_cause(value, cause),\n        )\n        for carry in rows:",
     "new": "        )\n        for carry in rows:",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },
   {
     "name": "major: an unknown cause is accepted",
     "file": "nora/infra/sql/stimuli.py",
-    "old": "    if outcome.cause not in FAILURE_CAUSES:\n        raise ValueError(f\"unknown failure cause {outcome.cause!r}\")\n",
+    "old": "    if outcome.cause not in OUTCOME_CAUSES:\n        raise ValueError(f\"unknown failure cause {outcome.cause!r}\")\n",
     "new": "",
     "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cause"
   },

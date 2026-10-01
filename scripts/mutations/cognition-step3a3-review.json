@@ -79,36 +79,36 @@
  {
   "name": "major 2: the session is not grounded",
   "file": "nora/app/cognition_session.py",
-  "old": "            grounding = await self._grounder(unit, situation.agenda.items, view.pending)",
+  "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
   "new": "            grounding = Grounding()",
   "target": "tests/unit/test_cognition_grounding.py::test_a_session_with_no_record_query_tool_still_reads_who_said_what tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
  },
  {
   "name": "major 2: a grounding read that fails is swallowed into an empty one",
   "file": "nora/app/cognition_session.py",
-  "old": "            grounding = await self._grounder(unit, situation.agenda.items, view.pending)",
-  "new": "            try:\n                grounding = await self._grounder(unit, situation.agenda.items, view.pending)\n            except Exception:\n                grounding = Grounding()",
+  "old": "            grounding = await self._grounder(unit, situation.agenda.items, pending)",
+  "new": "            try:\n                grounding = await self._grounder(unit, situation.agenda.items, pending)\n            except Exception:\n                grounding = Grounding()",
   "target": "tests/unit/test_cognition_grounding.py::test_a_session_that_cannot_be_grounded_fails_and_makes_no_model_call"
  },
  {
   "name": "major 2: a message line carries no id",
   "file": "nora/language/cognition_render.py",
-  "old": "    return f\"  [#{rec.message_id}] {who}, {when}{edited}: {body}{tags}\"",
-  "new": "    return f\"  {who}, {when}{edited}: {body}{tags}\"",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: \"\",\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {
   "name": "major 2: a message line carries no time",
   "file": "nora/language/cognition_render.py",
-  "old": "    return f\"  [#{rec.message_id}] {who}, {when}{edited}: {body}{tags}\"",
-  "new": "    return f\"  [#{rec.message_id}] {who}{edited}: {body}{tags}\"",
+  "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+  "new": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", None), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
   "target": "tests/unit/test_cognition_grounding.py::test_each_message_carries_its_id_its_author_its_time_and_its_room"
  },
  {
   "name": "major 2: a message body is not collapsed to one line",
-  "file": "nora/language/cognition_render.py",
-  "old": "    line = one_line(text)\n",
-  "new": "    line = str(text)\n",
+  "file": "nora/domain/prompt.py",
+  "old": "    line = one_line(text)\n    if len(line) <= limit:",
+  "new": "    line = str(text)\n    if len(line) <= limit:",
   "target": "tests/unit/test_cognition_grounding.py::test_a_body_with_a_newline_cannot_write_a_second_agenda_line"
  },
  {
@@ -121,8 +121,8 @@
  {
   "name": "major 2: the register index lines are not rendered",
   "file": "nora/language/cognition_render.py",
-  "old": "        else _register(rooms, ground, now_ms=now_ms, tz=tz, budget=spend)",
-  "new": "        else []",
+  "old": "        *_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget),\n",
+  "new": "",
   "target": "tests/unit/test_cognition_grounding.py::test_the_register_index_lines_follow_the_agenda_and_carry_ids"
  },
  {
@@ -212,8 +212,8 @@
  {
   "name": "minor 1: the hook runs for an untracked would-wake",
   "file": "nora/app/wake.py",
-  "old": "                if view.tracked:\n                    self._schedule_on_wake(view, wake_id, now_ms)",
-  "new": "                if True:\n                    self._schedule_on_wake(view, wake_id, now_ms)",
+  "old": "                if view.tracked:\n                    # The session sees what the wake CLAIMED",
+  "new": "                if True:\n                    # The session sees what the wake CLAIMED",
   "target": "tests/unit/test_cognition_session_units.py"
  },
  {

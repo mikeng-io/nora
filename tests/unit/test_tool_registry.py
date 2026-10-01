@@ -377,8 +377,9 @@ def test_budgets_match_todays_table():
         "skills": 2,
         # One message can name two images (a photo AND a screenshot); the
         # per-call vision timeout, not this number, is what keeps two describe
-        # calls inside the loop budget (DEC-56).
-        "media_fetch": 4,
+        # calls inside the loop budget (DEC-56). 8 since 2026-10-02: a document with
+        # pictures looks at one per section, and 4 ended a turn before it published.
+        "media_fetch": 8,
         # One message can ask for one image, maybe a second take after a bad
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
@@ -437,7 +438,7 @@ def test_budgets_match_todays_table():
         # room-scoped read, same answer if called twice). `create_event`/
         # `suggest_venue` are the ones that reach further — `suggest_venue`
         # asks Honcho's dialectic once per roster member and resolves venues
-        # after, sized like `media_fetch`'s 4; `event_propose` is 3, between
+        # after, sized like `media_fetch`'s old 4; `event_propose` is 3, between
         # `remind`'s 2 and `suggest_venue`'s 4, for the same round-trip
         # reason (renamed from `create_event`/`update_event`/`rsvp_event`/
         # `cancel_event`/`list_events`, step 2b, DEC-237).
@@ -971,3 +972,15 @@ def test_a_room_catalog_omits_the_dreamer_only_memory_verb():
     # rewrite that happens to drop this one.
     assert dreamer - tag == {"search_memory_workspace"}
     assert tag - dreamer == set()
+
+
+def test_the_registry_hands_over_the_documents_link_check_only_when_documents_exist() -> None:
+    assert ToolRegistry().own_link_check() is None
+
+    class _Documents:
+        async def unknown_document_link(self, platform: str, conversation_id: str, text: str):
+            return None
+
+    documents = _Documents()
+    check = ToolRegistry(documents=documents).own_link_check()  # type: ignore[arg-type]
+    assert check == documents.unknown_document_link

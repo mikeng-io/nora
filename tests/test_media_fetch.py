@@ -1514,6 +1514,22 @@ async def test_bytes_that_were_also_sent_as_a_photo_are_not_called_a_cover(wirin
     assert _COVER_NOTE not in out["note"]
 
 
+async def test_bytes_shared_as_a_cover_after_they_were_sent_as_a_photo_are_not_called_a_cover(
+    wiring,
+):
+    """The other order of the test above. Sightings are read newest first, so
+    here the COVER is seen first and the earlier photo has to take it back; the
+    one above has the photo first and the cover has to be refused. A resolver
+    that handled only one order passes the other one's test."""
+    await _append_image(wiring["store"], conversation_id="g1", sha256=PNG_SHA, ts=100)
+    await _append_shared_cover(wiring["store"], sha256=PNG_SHA, ts=200)
+
+    out = await _call(wiring["build"](), code=PNG_SHA[:6])
+
+    assert out["status"] == "ok"
+    assert _COVER_NOTE not in out["note"]
+
+
 async def test_layer_2_reads_again_with_the_question_and_bypasses_the_cache(wiring):
     """A question the stored reading does not answer. The cache is not consulted
     (a hit would answer somebody else's question) and the vision call carries

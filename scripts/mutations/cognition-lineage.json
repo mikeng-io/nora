@@ -114,15 +114,15 @@
   {
     "name": "message lineage needs every account in B named and listed in A",
     "file": "nora/agent/lineage.py",
-    "old": "    return live.person_ids <= a.persons",
-    "new": "    return True",
+    "old": "    return bool(live.person_ids) and live.person_ids <= a.persons",
+    "new": "    return bool(live.person_ids)",
     "target": "tests/unit/test_lineage.py::test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists"
   },
   {
     "name": "message lineage needs B's roster read, whole and named",
     "file": "nora/agent/lineage.py",
-    "old": "    if live is None or not live.available or live.degraded or live.unnamed > 0:\n        return False\n    return live.person_ids <= a.persons",
-    "new": "    if live is None:\n        return True\n    return live.person_ids <= a.persons",
+    "old": "    if live is None or not live.available or live.degraded or live.unnamed > 0:\n        return False\n    return bool(live.person_ids) and live.person_ids <= a.persons",
+    "new": "    if live is None:\n        return True\n    return bool(live.person_ids) and live.person_ids <= a.persons",
     "target": "tests/unit/test_lineage.py::test_message_needs_who_is_actually_in_the_room_not_only_who_it_lists"
   },
   {

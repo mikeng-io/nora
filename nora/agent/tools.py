@@ -1061,7 +1061,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # link_owners' module docstring): `media_fetch` came here to look at
     # media, so its note says so (`not_clause`) and points at what to do with
     # the redirect's result (`then`), and it "read"s a picture (`verb`).
-    "media_fetch": NativeTool(4,
+    # Budget 8 (2026-10-02, was 4): a document with pictures looks at one per section. On
+    # 2026-10-01 she got four codes, then made fourteen more calls the ceiling refused, and
+    # ended the turn without ever publishing. Each look is a vision call, so the number is
+    # a cost bound as much as a behaviour one; a message naming two images still needs two.
+    "media_fetch": NativeTool(8,
                              read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
                               output_contract="three_state", level=2,
@@ -2735,6 +2739,10 @@ class DocumentPublisher(Protocol):
         self, *, platform: str, conversation_id: str, person_id: str,
         document_id: UUID | None = None, state: str, handle: str = "",
     ) -> Any: ...
+
+    async def unknown_document_link(
+        self, platform: str, conversation_id: str, text: str,
+    ) -> str | None: ...
 
 
 class RollupReadSource(Protocol):
@@ -13163,7 +13171,7 @@ Args:
             The hold is not about the text, so a shorter rewrite will not get
             through. Do not call this tool again.
           - `refused`: a guard stopped it and it will not go. The same text will
-            be refused again.
+            be refused again. When it says why, fix that and send again.
 
         Args:
             text: One message, in your own voice. An @ right before the name the
@@ -13224,6 +13232,11 @@ Args:
             "ok" if sent else ("held" if status == HELD else "refused"),
             chars=len(text or ""),
         )
+        note = getattr(deliverer, "refusal_note", "")
+        if status == REFUSED and note:
+            # R-100 is the one refusal she can act on, so it says why; every other guard keeps
+            # the bare word (a leak or an identifier is not something to coach around).
+            return f"{status}. {note}"
         return status
 
     gif_candidates: dict[str, GifCandidate] = {}
@@ -14620,6 +14633,19 @@ Args:
             return {"status": "not_found",
                     "note": "There is no document with that id in this room. Nothing "
                             "was stored. Publish without a `document_id` for a new one."}
+        if out.status == "refused" and "json" in rules:
+            # The spec was TEXT that does not parse. A long document written as a string of JSON
+            # breaks on one unescaped quote; sent as an object it cannot (2026-10-02, trace
+            # c3619636: 10,000 characters, the break at 7,247, and a made-up link after).
+            _record(metrics, tool, "bad_arguments", reason="not_json")
+            return {
+                "status": "bad_arguments",
+                "note": "Nothing was stored. The spec was not valid JSON. Send `spec` as an "
+                        "object, not as text, fix the marked place, and call again. Until a "
+                        "call returns ok there is no document and no link: do not tell anybody "
+                        "it was made.",
+                "findings": _document_findings(out.findings),
+            }
         if out.status == "refused":
             _record(metrics, tool, "bad_arguments", reason="findings")
             return {

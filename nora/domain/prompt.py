@@ -54,19 +54,22 @@ _XML_FORBIDDEN = {
 }
 
 
-def _legal(text: object) -> str:
-    """`str()`, with the characters XML cannot carry at all removed."""
+def legal(text: object) -> str:
+    """`str()`, with the characters XML cannot carry at all removed. Public
+    because a name that is VALIDATED against what was rendered has to be put
+    through the same removal the renderer applies (`speaker_of` in
+    `nora.language.cognition_render`, step 3b)."""
     return str(text).translate(_XML_FORBIDDEN)
 
 
 def escape(text: object) -> str:
     """XML-escape text that will sit BETWEEN tags."""
-    return _escape(_legal(text))
+    return _escape(legal(text))
 
 
 def escape_attr(text: object) -> str:
     """XML-escape text that will sit inside a double-quoted attribute value."""
-    return _escape(_legal(text), {'"': "&quot;"})
+    return _escape(legal(text), {'"': "&quot;"})
 
 
 def age(ts_ms: int, now: datetime) -> str:
@@ -179,3 +182,19 @@ def one_line(body: object) -> str:
     return " ".join(
         part.strip() for part in str(body).splitlines() if part.strip()
     )
+
+
+def clip(text: object, limit: int) -> str:
+    """One line, cut to `limit` characters: `one_line` first, so a newline can
+    never survive the cut, then an ellipsis where the text was longer. At least
+    one character of the text is kept (`limit` below 2 keeps one), which is what
+    lets a row that must be shown at all be shown clipped rather than lost.
+
+    Shared by the Cognition renderer's message words and the event renderer's
+    venue (step 3b of `design/context-assembly/04-every-occasion.md`); it was a
+    private function of the first."""
+    line = one_line(text)
+    if len(line) <= limit:
+        return line
+    return line[: max(limit - 1, 1)].rstrip() + "…"
+

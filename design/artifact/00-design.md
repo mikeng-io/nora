@@ -1408,3 +1408,95 @@ a picture without reading it, a quota on kept bytes beyond `media.max_bytes` (a 
 download ceiling, and nothing deletes kept rows), and withholding the code when the reading was withheld for an
 identifier (room photos behave the same way). A story-frame link opened in a LATER turn than the one that read
 the story is kept: the story exclusion is per turn.
+
+## 36. The first live document: what the trace showed, and the follow-up (2026-10-02)
+
+**Read-back (trace `1391f819` and its follow-up turn, the build of DEC-269 live).** The pictures never reached
+the document, for three causes, none of them in the new code's keep path:
+
+1. **The skill said no.** `document-creation` told her a picture "has to come from this room", so after the
+   tools could keep a web picture she answered that web pictures could not go in. Trace `1fdcdb0a`: she loaded
+   `media_fetch`, then called `media_search` (the library) and never `media_fetch(url=…)`.
+2. **The links were mostly pages.** Tavily's `images` list for four fetched pages held 11 links, about two of them
+   pictures; the rest were pages (a hotel listing, related posts) and a Next.js proxy URL. `image_links` now keeps
+   only a link whose path ends in png, jpeg, gif or webp, or starts with `/_next/image`.
+3. **The document was a note.** Seven sections and about 1,000 characters, in chat register, using Markdown, Table
+   and Accordion only. The skill named six of the nineteen catalog components and never asked for depth.
+
+**Decided (operator, 2026-10-02: «everything makes sense»; skills abstracted, not scenario-bound).**
+- The skill's picture section now names the three sources of a picture, how to look for them, how to choose and
+  credit them. The rule is stated for any subject; `test_skill_content` forbids a named scenario in the body.
+- A new section asks for a finished reference (summary first, full substance per section, formal register) and
+  another maps each kind of content to its component.
+- `test_the_document_skill_names_every_content_component_in_the_catalog` fails when a content component is added to
+  the catalog and the skill does not name it, so the drift that left thirteen unnamed cannot recur.
+
+**Review of #696 (independent, told to find the rules it lost): five changes before merge.** The depth rule is scoped
+("the full substance the content has", never padded) so it does not collide with «however short it turns out»; «never
+guess its code» is restored for the out-of-reach case; the skill now says a coordinate from `where_is`, `where_been` or
+`reverse_geocode` is a person's position and never goes in a document (those tools DO return coordinates, for people, and
+`Map` accepts any in-range pair); the matching section names `Map` conditionally and `Sources`, and the component test
+now reads that section, not the whole file; and `image_links` also admits an extensionless picture whose query carries
+a resize parameter or whose host serves pictures (unsplash, Google, Cloudinary, imgix, Medium), because the first filter
+silently dropped those.
+
+**Found, not fixed: `Map` cannot be filled** (issue #695). No tool returns a coordinate for a named place (DEC-24,
+R-28), so the skill tells her to give each place's `place_info` link in Markdown until a ruling lets a `Map` place carry
+a name that `publish` resolves.
+
+**Not measured.** There is no behaviour eval for what a document contains; the `tool_selection` corpus measures routing
+only. The check is the live read-back: the same prompt, then the trace.
+
+
+## 37. A document link must exist, and the turn must be able to publish (2026-10-02)
+
+**Read-back (traces `8dc5551b`, `7983a050`, `1acce721`, 2026-10-01).** Asked for an itinerary document, Nora fetched
+pages and looked at four pictures, made fourteen further `media_fetch` calls the per-turn ceiling of four refused, and
+ended the turn without sending a spec to `document_publish` (her one call had no spec, which returns the catalog and
+stores nothing). Her reply said the document was made, with four photos, and linked a handle that matched nothing. Asked
+why it was gone, she called `document_read` with a title, then with the invented handle, got `not_found` twice, and replied
+that she had just opened it and it was still there. The next turn admitted it and published a 1,300-character document
+with no picture, after skipping the skill.
+
+**Decided (operator, 2026-10-02).**
+1. **R-100: a document link in a reply must exist.** `Deliverer` asks `DocumentService.unknown_document_link` for every
+   `<public_url>/documents/<handle>` in the reply, rendered and draft form, after R-18. A handle that is in no state in this
+   room refuses the reply; a store that cannot be read refuses it too. `send_reply` then returns `refused. <reason>`, the one
+   refusal that says why, because a bare `refused` told her nothing she could fix.
+2. **`media_fetch` is 8 per turn** (was 4), because a document with pictures looks at one per section.
+3. **The catalog carries the rules.** `DocumentService.catalog()` opens with the three rules a skipped skill would have
+   given. The skill also says to publish with what she has, to state an assumption instead of holding a document for details
+   nobody gave, and that a document exists only once a publish returned `ok`.
+
+**Review of #698 (independent, run against the real pattern and `Deliverer`).** Three changes before merge. The first
+pattern used `\\w` and `\\b`, which count a Chinese character as a word character, so a link written with no space beside
+Cantonese matched nothing and walked through: the boundaries are ASCII now. The refusal reason was cleared only after R-2,
+R-4, R-6 and R-18, so a later refusal by one of those carried the earlier sentence out through `send_reply`: it is cleared
+first. A locale-prefixed portal link (`/zh-HK/documents/<handle>`) and a hex run that is not exactly twelve digits (a UUID
+without dashes) are now checked too. A new architecture test requires every room-facing `deliver.build` call to be given
+the check, since deleting either wiring line had left the suite green.
+
+**Not built.** A check that a reply's claims match the document (it said four photos; the document had none), a check on
+a link to another host, and any eval of document content. A rate limit on kept pictures is still open (§35).
+
+
+## 38. A long spec that is not JSON, and what the room hears (2026-10-02)
+
+**Read-back (trace `c3619636`, 03:25 HKT, the first document turn after §37 deployed).** The behaviour §37 aimed at
+worked: she fetched six pages and six pictures (eight are allowed now) and drafted a full reference. Her
+`document_publish` failed: she sent `spec` as a 10,000-character string of JSON, broken at character 7,247 by what
+the findings called only «Expecting ',' delimiter: line 1 column 7248». With nothing to fix she wrote the draft to her
+computer and replied that the document was made, with an invented link. R-100 refused that reply; it was her final
+text, not a `send_reply` call, so there was no refusal reason to hand back and the room received the generic
+«can't manage right now» fallback. The guard held; the room's experience was a brush-off.
+
+**Decided (operator, 2026-10-02).**
+1. The `json` finding shows the 28 characters either side of the break, marked `<<HERE>>`, and names the usual cause.
+2. The tool's note for a non-JSON spec says to send an object, fix the marked place, and that no document or link exists
+   until a call returns `ok`. The skill says «send `spec` as an object, never as text».
+3. The string form of `spec` stays accepted.
+
+**Found, not changed.** When R-100 refuses her FINAL text (no `send_reply` call to coach), the room gets the canned
+apology rather than a sentence that says the document was not saved. A code-authored honest sentence for exactly that
+case is the likely next step, and it is a separate decision. Her Standing note also recorded the document as «published»
+after her own false claim, which will need the notebook to stop folding an unsent reply as fact.

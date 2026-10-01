@@ -1208,3 +1208,59 @@ def test_the_document_skill_gives_the_link_and_never_asks_her_to_say_an_id() -> 
     assert "say it is under Documents, by its title, and do not make one up" in body
     assert "never a path or a host you were not given" in body
     assert scan_reply(body) is None, "the skill itself carries something egress would block"
+
+
+def test_the_document_skill_names_every_content_component_in_the_catalog() -> None:
+    """A component the skill never names is a component she never reaches for: the
+    2026-10-02 itinerary was seven Markdown, Table and Accordion blocks with no Map,
+    Image or Chart, because the skill named six of the nineteen. The layout components
+    (Page, Section, Card, Grid, Tab) are structure, not content, so they are exempt;
+    anything ELSE added to the catalog fails here until the skill says what it is for."""
+    import json
+
+    schema = json.loads(
+        (SKILLS_DIR.parent / "documents" / "document.schema.json").read_text(encoding="utf-8")
+    )
+    catalog = set(schema["$defs"]["n2"]["properties"]["type"]["enum"])
+    layout = {"Page", "Section", "Card", "Grid", "Tab"}
+    body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
+    start = body.index("## Match each piece of content")
+    section = body[start : body.index("\n## ", start + 1)]
+    unnamed = sorted(c for c in catalog - layout if not re.search(rf"\b{c}\b", section))
+    assert not unnamed, f"the matching section never names: {unnamed}"
+
+
+def test_the_document_skill_lets_a_web_picture_into_a_document() -> None:
+    """The skill used to say a picture 'has to come from this room', which made her
+    answer 'web pictures I can't put in' after the tools could (trace 1fdcdb0a)."""
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "`media_fetch(url=...)`" in body and "`images`" in body
+    assert "The picture has to come from this room" not in body
+    assert "never guess" in body and "code" in body, "the no-guessed-code rule survives"
+    assert "never goes in a document" in body, "a person's position is not a Map's data"
+    assert "name the page it came from in `Sources`" in body, "a web picture is credited"
+
+
+def test_the_document_skill_says_a_document_exists_only_once_publish_returned_ok() -> None:
+    """2026-10-01: she wrote «document made, four photos» and linked a document she never
+    stored, then told the room it was still there after two `not_found` reads. The rule was
+    nowhere in her skill, only «do not report it made until the publish returned ok» under
+    refusals, which a turn that never reached a publish never read as applying."""
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "A document exists only once `document_publish` returned `ok` in this turn" in body
+    assert "or `document_read` returned it" in body
+    assert "stop gathering and publish what you hold" in body
+    assert "Do not hold a document for details nobody gave you" in body
+
+
+def test_the_document_skill_tells_her_to_send_the_spec_as_an_object() -> None:
+    """2026-10-02, trace c3619636: a 10,000-character spec sent as a string of JSON broke at one
+    unescaped quote, and the draft was saved elsewhere with the room told it was made."""
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "Send `spec` as an object, never as text" in body

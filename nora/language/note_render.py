@@ -63,6 +63,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
+from typing import Protocol, TypeVar
 
 from ..domain.blocks import ContextBlock, render_elements
 from ..domain.notes import Note, NoteRevision
@@ -127,11 +128,28 @@ from ..domain.prompt import age, escape
 # module docstring argues at length.
 
 
+class IndexedNote(Protocol):
+    """What an index row needs of a note: the three fields every index shows.
+    `Note` is one; so is the Cognition session's `NoteLine`, which carries these
+    three and nothing else (design 30 §1: index lines, never bodies)."""
+
+    @property
+    def id(self) -> str: ...
+    @property
+    def title(self) -> str: ...
+    @property
+    def description(self) -> str: ...
+
+
+N = TypeVar("N", bound=IndexedNote)
+
+
 def render_note_rows(
-    notes: Sequence[Note],
+    notes: Sequence[N],
     *,
     today: int | None = None,
-    extra: Callable[[Note], Sequence[tuple[str, str | None]]] = lambda _: (),
+    extra: Callable[[N], Sequence[tuple[str, str | None]]] = lambda _: (),
+    ids: bool = False,
 ) -> str:
     """The index's ROWS — one element per note, and nothing else (#292).
 
@@ -177,13 +195,24 @@ def render_note_rows(
     block: the proactive pass's `revisit` and `raised`. Additive, so a caller
     that passes none renders byte-identically to the tag path.
 
-    `n` is POSITIONAL, and a caller that needs it to mean anything else is in
-    the wrong place: it is a closed 1..N set, so a reference to a note outside
-    the index is refusable rather than a lookup that might hit another row.
+    `n` is POSITIONAL by default: a closed 1..N set, so a reference to a note
+    outside the index is refusable rather than a lookup that might hit another
+    row, and the tag turn remaps it (`resolve_positions`).
+
+    **`ids=True` is the one opt-in, and it is for a pass whose model writes a
+    verb that takes the note's own id** (the Cognition session's `note_update`,
+    design/context-assembly 04 §5 step 3b): `n` is then the note's real `id`, so
+    what the model reads is what the verb requires, the defect that step closed
+    for message ids. It is a flag and not a second renderer because the row is
+    the same row; the default keeps the tag path's bytes (pinned by
+    `tests/unit/test_tag_notes_block_is_unchanged_by_step3b.py`). A row's `about`
+    needs the note's anchor day, which only a `Note` carries, so an index of
+    bare lines (`NoteLine`) renders no `about`.
     """
-    def _attrs(n: Note, i: int) -> tuple[tuple[str, str | None], ...]:
-        return (("n", str(i)), ("title", n.title),
-                ("about", _about(n, today)), *extra(n))
+    def _attrs(n: N, i: int) -> tuple[tuple[str, str | None], ...]:
+        anchor = n.anchor_date if isinstance(n, Note) else None
+        return (("n", n.id if ids else str(i)), ("title", n.title),
+                ("about", _about(anchor, today)), *extra(n))
 
     return render_elements(
         notes, tag="note", attrs=_attrs, body=lambda n: n.description,
@@ -241,15 +270,15 @@ def today_block(when: date | str) -> ContextBlock:
     return ContextBlock(name="today", body=escape(text))
 
 
-def _about(note: Note, today: int | None) -> str | None:
+def _about(anchor_date: int | None, today: int | None) -> str | None:
     """The day the note is about, as a distance when there is a clock to read it
     against. `None` — no anchor, or no clock — DROPS the attribute rather than
     rendering an empty one, which `render_elements` does for `_when`'s reason."""
-    if note.anchor_date is None:
+    if anchor_date is None:
         return None
     if today is None:
-        return str(note.anchor_date)
-    return _days_from(today, note.anchor_date)
+        return str(anchor_date)
+    return _days_from(today, anchor_date)
 
 
 def _as_date(yyyymmdd: int) -> date | None:

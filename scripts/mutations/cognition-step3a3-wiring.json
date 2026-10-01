@@ -72,8 +72,8 @@
  {
   "name": "session runner: a spanning agenda binds the reads to the home room, not each item's room",
   "file": "nora/app/cognition_session.py",
-  "old": "        read_tools = self._guarded_read_tools(unit, rooms)",
-  "new": "        read_tools = self._guarded_read_tools(unit, [self._home_rooms[unit]])",
+  "old": "        read_tools = watch_reads(self._guarded_read_tools(unit, rooms), state.fetched, keys)",
+  "new": "        read_tools = watch_reads(self._guarded_read_tools(unit, [self._home_rooms[unit]]), state.fetched, keys)",
   "target": "tests/unit/test_cognition_wiring.py -k spanning_rooms_asks"
  },
  {
@@ -86,8 +86,8 @@
  {
   "name": "session runner: the prompt carries the clock",
   "file": "nora/language/cognition_render.py",
-  "old": "    if now_ms is not None:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
-  "new": "    if False:\n        header.append(clock_line(now_ms, last_session_ms, tz))",
+  "old": "    if now_ms is not None:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
+  "new": "    if False:\n        blocks.append(restamp(ContextBlock(\n            name=\"clock\",",
   "target": "tests/unit/test_cognition_wiring.py -k says_what_time_it_is"
  },
  {
@@ -103,27 +103,6 @@
   "old": "        if self._session_mode != \"shadow\":\n            raise RuntimeError(\"probe needs",
   "new": "        if False:\n            raise RuntimeError(\"probe needs",
   "target": "tests/unit/test_cognition_wiring.py -k probe_refuses"
- },
- {
-  "name": "agent runner: the memory ceiling reaches the guard",
-  "file": "nora/app/cognition_agent_runner.py",
-  "old": "            memory_budget=budget.max_memory_calls,",
-  "new": "            memory_budget=None,",
-  "target": "tests/unit/test_cognition_wiring.py -k guard_holds_every_ceiling"
- },
- {
-  "name": "agent runner: the pass ceiling reaches the guard",
-  "file": "nora/app/cognition_agent_runner.py",
-  "old": "            pass_budget=budget.max_tool_calls,",
-  "new": "            pass_budget=None,",
-  "target": "tests/unit/test_cognition_wiring.py -k guard_holds_every_ceiling"
- },
- {
-  "name": "agent runner: a read tool runs on the registry's ceiling, not the default",
-  "file": "nora/app/cognition_agent_runner.py",
-  "old": "budgets={n: self._read_tool_budgets.get(n, self._tool_budget) for n in tool_names},",
-  "new": "budgets=dict.fromkeys(tool_names, self._tool_budget),",
-  "target": "tests/unit/test_cognition_wiring.py -k guard_holds_every_ceiling"
  },
  {
   "name": "agent runner: the root span keeps the trace in Langfuse",
@@ -168,10 +147,10 @@
   "target": "tests/unit/test_cognition_wiring.py -k boot_check tests/test_composition.py -k built_no_runner"
  },
  {
-  "name": "wiring: the result caps, memory tools and argument table reach the agent runner",
+  "name": "wiring: the result caps reach the agent runner",
   "file": "nora/app/cognition_wiring.py",
-  "old": "        result_caps=result_caps, memory_tools=memory_tools,\n    )",
-  "new": "        memory_tools=memory_tools,\n    )",
+  "old": "        result_caps=result_caps,\n    )\n\n    def doctrine()",
+  "new": "    )\n\n    def doctrine()",
   "target": "tests/test_composition.py -k session_mode_shadow_builds_one_runner"
  },
  {

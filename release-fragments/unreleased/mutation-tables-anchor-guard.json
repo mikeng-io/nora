@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Developer tooling only: mutation tables under scripts/mutations were re-anchored to current source and a gate test now checks they still match; no user sees it.",
+  "details": [],
+  "limitations": []
+}

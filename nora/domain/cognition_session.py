@@ -179,7 +179,7 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
     model's job, not code's."""
     if kind == "message":
         noun = "message" if count == 1 else "messages"
-        # No room in the sentence: the item's `[room ...]` says which, by its
+        # No room in the sentence: the item's `room` attribute says which, by its
         # label. The summary is prompt text and a conversation id must never
         # reach a prompt (R-18; the label is the room's name).
         return f"{count} new {noun} in this room"

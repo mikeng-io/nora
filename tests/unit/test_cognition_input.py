@@ -17,6 +17,7 @@ import dataclasses
 from nora.domain.cognition_ground import Grounding, RollupLine
 from nora.domain.stimuli import NewStimulus
 from nora.testing.cognition_grounding import StaticGrounder
+from tests.unit.cognition_view import items, named
 from tests.unit.test_cognition_failure_backoff import _run, _until_calls
 from tests.unit.test_cognition_session_lifecycle import POLICY, ScriptedAgent, T, _rig, ok
 
@@ -201,12 +202,15 @@ async def test_the_prompt_names_a_room_by_its_label_and_lists_ids_beside_a_tools
     await rig.tick()
     await rig.settle()
     prompt = rig.agent.prompts[0]
-    items = [ln for ln in prompt.splitlines() if ln[:1].isdigit()]
-    assert len(items) == 2
-    assert all("room-a" not in ln and "room-b" not in ln for ln in items)
-    assert "[room «Weekend Plans»]" in items[0] or "[room «Weekend Plans»]" in items[1]
-    reads = next(ln for ln in prompt.splitlines() if "read tools" in ln)
-    assert "`signal:room-a` («Weekend Plans»)" in reads
+    agenda = items(prompt)
+    assert len(agenda) == 2
+    assert all(
+        "room-a" not in i.attrib["room"] and "room-b" not in i.attrib["room"]
+        for i in agenda
+    )
+    assert "«Weekend Plans»" in {i.attrib["room"] for i in agenda}
+    (reads,) = named(prompt, "reads")
+    assert "`signal:room-a` («Weekend Plans»)" in (reads.text or "")
 
 
 async def test_a_single_room_agenda_says_only_its_label_in_the_reads_line():

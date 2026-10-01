@@ -65,8 +65,8 @@
   {
     "name": "the unit rollups read messages at or below the watermark's mark only",
     "file": "nora/infra/sql/rollups.py",
-    "old": "            .where(self._in_rooms(unit.rooms), MESSAGES.c.id <= mark.message_id)",
-    "new": "            .where(self._in_rooms(unit.rooms))",
+    "old": "                self._in_rooms(unit.rooms),\n                MESSAGES.c.id <= mark.message_id,\n                MESSAGES.c.hidden_at.is_(None),",
+    "new": "                self._in_rooms(unit.rooms),\n                MESSAGES.c.hidden_at.is_(None),",
     "target": "tests/integration/test_rollup_builds.py::test_every_rollup_recomputes_identically_from_the_record"
   },
   {

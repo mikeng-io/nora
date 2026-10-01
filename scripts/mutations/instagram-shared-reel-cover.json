@@ -70,17 +70,24 @@
     "target": "tests/test_media_fetch.py -k stored_reading_says_so"
   },
   {
-    "name": "any cover sighting marks the handle, not every sighting",
-    "file": "nora/agent/tools.py",
-    "old": "                        covers[sha] = covers.get(sha, True) and (",
-    "new": "                        covers[sha] = covers.get(sha, False) or (",
-    "target": "tests/test_media_fetch.py -k also_sent_as_a_photo"
+    "name": "a newer cover sighting does not take back the earlier photo's: the handle is a cover only if EVERY sighting was",
+    "file": "nora/domain/media.py",
+    "old": "            elif old.cover and not is_cover:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
+    "new": "            elif False:\n                seen[blob.sha256] = replace(old, cover=False, cover_body=\"\")",
+    "target": "tests/test_media_fetch.py -k sent_as_a_photo"
+  },
+  {
+    "name": "an older cover sighting marks the handle although a newer photo of the same bytes is in view",
+    "file": "nora/domain/media.py",
+    "old": "            elif old.cover and is_cover and not old.cover_body:\n                seen[blob.sha256] = replace(old, cover_body=row.body or \"\")",
+    "new": "            elif is_cover:\n                seen[blob.sha256] = replace(old, cover=True, cover_body=row.body or \"\")",
+    "target": "tests/test_media_fetch.py -k sent_as_a_photo"
   },
   {
     "name": "an ordinary photo is called a cover (role check dropped)",
-    "file": "nora/agent/tools.py",
-    "old": "                            blob.get(\"role\") == COVER_ROLE\n",
-    "new": "                            True\n",
+    "file": "nora/domain/media.py",
+    "old": "            is_cover = blob.role == COVER_ROLE",
+    "new": "            is_cover = True",
     "target": "tests/test_media_fetch.py -k ordinary_photo_carries_no_cover_note"
   },
   {
@@ -107,15 +114,15 @@
   {
     "name": "the vision-cache hit does not pass the cover flag",
     "file": "nora/agent/tools.py",
-    "old": "                sha256, cached_description, cached=True, code=serve_code,\n                cover=is_cover,\n",
-    "new": "                sha256, cached_description, cached=True, code=serve_code,\n",
+    "old": "                sha256, cached_description, cached=True, code=serve_code, kept=kept_image,\n                cover=is_cover,",
+    "new": "                sha256, cached_description, cached=True, code=serve_code, kept=kept_image,",
     "target": "tests/test_media_fetch.py::test_a_cover_served_from_a_vision_cache_hit_says_so_too"
   },
   {
     "name": "the question path does not pass the cover flag",
     "file": "nora/agent/tools.py",
-    "old": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code, cover=is_cover,\n            )\n        # A STORY frame read by",
-    "new": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code,\n            )\n        # A STORY frame read by",
+    "old": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code, kept=kept_image, cover=is_cover,\n            )\n        # A STORY frame read by",
+    "new": "            return _serve_media(\n                sha256, description, cached=False, code=serve_code, kept=kept_image,\n            )\n        # A STORY frame read by",
     "target": "tests/test_media_fetch.py::test_a_cover_asked_a_question_says_so_too"
   },
   {

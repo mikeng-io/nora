@@ -23,22 +23,22 @@
   {
     "name": "wake policy: a waits stimulus counts toward a trigger",
     "file": "nora/domain/stimuli.py",
-    "old": "    eligible = [s for s in view.pending if not s.waits]\n    if not eligible:\n        return None",
-    "new": "    eligible = list(view.pending)\n    if not eligible:\n        return None",
+    "old": "    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]\n    if not eligible:\n        return None",
+    "new": "    eligible = [s for s in view.pending if s.kind not in view.inert_kinds]\n    if not eligible:\n        return None",
     "target": "tests/unit/test_wake_evaluator.py::test_a_reply_to_nora_never_wakes_a_unit_by_itself"
   },
   {
-    "name": "watermark: a stimulus due later is consumed by an earlier wake",
+    "name": "watermark: a stimulus due after the watermark's time counts as consumed by the id range",
     "file": "nora/domain/stimuli.py",
     "old": "            and stimulus.pending_since_ms <= self.through_ms",
     "new": "            and True",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
+    "target": "tests/unit/test_wake_evaluator.py::test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_range tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
   },
   {
     "name": "cooldown: a strong cue may cut it twice in a row",
     "file": "nora/domain/stimuli.py",
-    "old": "        if not (strong and cue_quiet and not last_cut):",
-    "new": "        if not (strong and cue_quiet):",
+    "old": "        if not (cooling and view.failures == 0 and strong and cue_quiet and not last_cut):",
+    "new": "        if not (cooling and view.failures == 0 and strong and cue_quiet):",
     "target": "tests/unit/test_wake_evaluator.py::test_one_strong_cue_may_cut_the_cooldown_once"
   },
   {
@@ -51,8 +51,8 @@
   {
     "name": "#1 a wake's watermark falls to its highest pending id (resurrects consumed stimuli)",
     "file": "nora/domain/stimuli.py",
-    "old": "        through_stimulus_id=max(\n            view.watermark.through_stimulus_id,\n            max(s.id for s in view.pending),\n        ),",
-    "new": "        through_stimulus_id=max(s.id for s in view.pending),",
+    "old": "    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))",
+    "new": "    through = max(s.id for s in claimed)",
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed"
   },
   {

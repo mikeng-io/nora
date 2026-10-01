@@ -210,6 +210,7 @@ CONVERTED = (
     "nora/language/standing_render.py",
     "nora/engagement/debrief_render.py",
     "nora/infra/transit/arrivals.py",
+    "nora/language/cognition_render.py",
     "nora/language/culture.py",
     "nora/language/note_candidates.py",
     "nora/language/note_curator.py",
