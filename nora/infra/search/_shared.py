@@ -26,7 +26,10 @@ from typing import Any
 
 from ...domain.blocks import wrap_outside_text
 
-__all__ = ["UNAVAILABLE_FETCH", "UNAVAILABLE_SEARCH", "clamp_chars", "wrap"]
+__all__ = [
+    "MAX_IMAGE_LINKS", "UNAVAILABLE_FETCH", "UNAVAILABLE_SEARCH", "clamp_chars",
+    "image_links", "wrap",
+]
 
 # Re-exported so an adapter imports its wrapper from the search package. It
 # used to reach into `nora.infra.transit.arrivals` for a PRIVATE helper across
@@ -41,6 +44,34 @@ def clamp_chars(text: str, max_chars: int) -> tuple[str, bool]:
     if len(text) <= max_chars:
         return text, False
     return text[:max_chars], True
+
+
+#: How many picture links one fetched page hands back. A result is re-sent on
+#: every later model call, so the list is bounded like the text beside it.
+MAX_IMAGE_LINKS = 8
+_MAX_LINK_CHARS = 2000
+
+
+def image_links(raw: Any, limit: int = MAX_IMAGE_LINKS) -> list[str]:
+    """The http(s) picture links in a vendor's `images`/`imageLinks` list, in
+    order, each once. Anything else (a non-list, a `data:` URI, a relative or
+    absurdly long link, a non-string) is dropped, never raised on: a link is a
+    candidate for `media_fetch`, which downloads under its own guard, so this
+    only has to keep the field a plain list of web addresses."""
+    if not isinstance(raw, list):
+        return []
+    seen: dict[str, None] = {}
+    for item in raw:
+        if isinstance(item, dict):
+            item = item.get("url")
+        if not isinstance(item, str):
+            continue
+        link = item.strip()
+        if link.startswith(("http://", "https://")) and len(link) <= _MAX_LINK_CHARS:
+            seen.setdefault(link)
+        if len(seen) >= limit:
+            break
+    return list(seen)
 
 
 UNAVAILABLE_SEARCH: dict[str, Any] = {

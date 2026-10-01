@@ -57,7 +57,13 @@ from typing import Any
 
 import aiohttp
 
-from ._shared import UNAVAILABLE_FETCH, UNAVAILABLE_SEARCH, clamp_chars, wrap
+from ._shared import (
+    UNAVAILABLE_FETCH,
+    UNAVAILABLE_SEARCH,
+    clamp_chars,
+    image_links,
+    wrap,
+)
 
 log = logging.getLogger("nora.search")
 
@@ -198,6 +204,7 @@ class TavilySearchProvider:
             "urls": [url],
             "extract_depth": self._extract_depth,
             "format": "markdown",
+            "include_images": True,           # links only, for `media_fetch`
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}
         timeout = aiohttp.ClientTimeout(total=self._timeout_seconds)
@@ -248,9 +255,12 @@ class TavilySearchProvider:
         # unchanged, so a bare-string `content` reaches the model outside the
         # standard text-block envelope and reads as "empty". `web_search`
         # works precisely because its dict has no `content` key.
-        return {
+        out: dict[str, Any] = {
             "status": "ok",
             "url": url,
             "text": wrap("fetched_page", url, clamped),
             "truncated": truncated,
         }
+        if images := image_links(item.get("images")):
+            out["images"] = images
+        return out
