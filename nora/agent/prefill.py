@@ -906,7 +906,7 @@ def _standing_block(
 
 
 def _standing_working_set_block(
-    ctx: TagContext, view: DerivedView | None = None, *, now: datetime | None = None,
+    ctx: TagContext, view: DerivedView | None = None,
 ) -> ContextBlock | None:
     """Options she found and has not given this room, as
     `<standing_working_set>` (design/standing-compact/30-working-set.md §4,
@@ -918,17 +918,11 @@ def _standing_working_set_block(
     `ctx.standing` already carries `working_set` — no second context field
     or second store read, the same way `Standing.body` reaches
     `_standing_block` above.
-
-    `now` is the prompt's own clock, the one its «Right now it is» line and
-    the notes and culture blocks read, so the 48-hour TTL is measured from
-    the moment the prompt says it is rather than from a second wall-clock
-    read. Without it a prompt built for a fixed moment kept or dropped items
-    by the time of day the build ran.
     """
     if not _shown(ctx, view, "standing_working_set"):
         return None
     return render_standing_working_set(
-        ctx.standing.working_set if ctx.standing is not None else (), now=now,
+        ctx.standing.working_set if ctx.standing is not None else (),
     )
 
 
@@ -1082,7 +1076,7 @@ def build_prefill(
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(_standing_block(ctx, view)),
-            _restamp(_standing_working_set_block(ctx, view, now=clock)),
+            _restamp(_standing_working_set_block(ctx, view)),
             _transcript_block(ctx, display_name, clock, context_window),
         ])
         # WHICH blocks were actually built (non-empty body — `assemble`'s own
