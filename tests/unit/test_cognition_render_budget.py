@@ -22,7 +22,7 @@ from nora.domain.cognition_ground import EventLine, Grounding, NoteLine, RecordI
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import RenderBudget, render_agenda
-from tests.unit.cognition_view import blocks, ids, items, named, rows
+from tests.unit.cognition_view import blocks, events, ids, items, named, rows
 
 HK = ZoneInfo("Asia/Hong_Kong")
 NOW = 1_800_000_000_000
@@ -152,10 +152,10 @@ def test_a_list_past_register_lines_shows_that_many_rows_and_counts_the_rest():
     prompt = _register(7, 5, RenderBudget(register_lines=3))
     (note_index,) = named(prompt, "note_index")
     assert len(list(note_index)) == 3 and note_index.attrib["not_listed"] == "4"
-    events = named(prompt, "events")
-    assert [len(list(e)) for e in events] == [3, 3, 3]
-    assert [e.attrib["not_listed"] for e in events] == ["2", "2", "2"]
-    assert [e.attrib["room"] for e in events] == ["«Room 0»", "«Room 1»", "«Room 2»"]
+    groups = events(prompt)
+    assert [len(list(g)) for g in groups] == [3, 3, 3]
+    assert [g.attrib["not_listed"] for g in groups] == ["2", "2", "2"]
+    assert [g.attrib["room"] for g in groups] == ["«Room 0»", "«Room 1»", "«Room 2»"]
 
 
 def test_a_list_within_every_cap_says_nothing_was_left_out():
@@ -171,9 +171,10 @@ def test_the_character_budget_leaves_out_whole_rows_and_the_blocks_after_it_say_
     assert 0 < shown < 30 and note_index.attrib["not_listed"] == str(30 - shown)
     assert sum(len(ln) + 1 for ln in prompt.splitlines() if ln.startswith("<note ")) <= 1000
     # nothing after the cut is listed, and each block after it says how much it holds back
-    events = [b for b in top if b.tag == "events"]
-    assert [len(list(e)) for e in events] == [0, 0, 0]
-    assert [e.attrib["not_listed"] for e in events] == ["3", "3", "3"]
+    assert [b.tag for b in top] == ["clock", "agenda", "note_index", "events"]
+    groups = events(prompt)
+    assert [len(list(g)) for g in groups] == [0, 0, 0]
+    assert [g.attrib["not_listed"] for g in groups] == ["3", "3", "3"]
 
 
 def test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_is_one_line():
@@ -188,3 +189,57 @@ def test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_i
     assert note.text is not None and "\n" not in note.text
     assert note.text.startswith("line one line two ") and note.text.endswith("…")
     assert len(note.text) == 200
+
+
+# ---- the cap is measured on what is RENDERED ------------------------------------------
+
+
+def _markup_prompt(record_chars: int, *, items_: int = 12, text: str = '&<"' * 140) -> str:
+    """`items_` items of one message each, every message 420 characters that
+    escape to about 1,900 (`&` is five characters, `<` four, `"` six in an
+    attribute and one in text), the shape that let a cut by RAW length spend 3.1
+    times its share: 12 such items rendered 24.6k characters at the default 8,000."""
+    stimuli: dict[int, Stimulus] = {}
+    records: dict[str, RecordItem] = {}
+    agenda: list[AgendaItem] = []
+    for i in range(items_):
+        room = Room("signal", f"room-{i}")
+        ref = f"messages:{i + 1}"
+        stimuli[i + 1] = Stimulus(
+            id=i + 1, unit="u", kind="message", item="message", ref=ref, at_ms=NOW - 60_000,
+            recorded_at_ms=NOW, platform=room.platform, conversation_id=room.conversation_id,
+        )
+        records[ref] = RecordItem(
+            ref=ref, kind="message", message_id=500 + i, room=room, author="Tom & Jerry",
+            at_ms=NOW - 60_000, text=text,
+        )
+        agenda.append(AgendaItem(
+            kind="message", room=room, summary="1 new message in this room",
+            stimulus_ids=(i + 1,), cues=(), surprise=1.0,
+        ))
+    return render_agenda(
+        agenda, stimuli=stimuli, grounding=Grounding(records=records), now_ms=NOW, tz=HK,
+        budget=RenderBudget(record_chars=record_chars),
+    )
+
+
+@pytest.mark.parametrize("record_chars", [*range(2000, 12001, 500), 8000])
+def test_markup_heavy_words_cannot_spend_more_than_the_budget_once_escaped(record_chars: int):
+    prompt = _markup_prompt(record_chars)
+    assert _spent(prompt) <= record_chars, (record_chars, _spent(prompt))
+    agenda = items(prompt)                              # whole and well-formed
+    assert len(agenda) == 12
+    for item in agenda:
+        (row,) = rows(item)                             # each keeps its one row,
+        assert row.text and row.text.endswith("…")      # its words cut to fit
+        assert row.text.startswith('&<"&<"')            # the START of what was said
+
+
+def test_an_escaped_cut_keeps_as_much_of_the_words_as_fits():
+    """Not merely under the cap: the cut is the LARGEST that fits, so a markup-heavy
+    row is not thrown away for being markup."""
+    (item,) = items(_markup_prompt(900, items_=1))
+    (line,) = (ln for ln in _markup_prompt(900, items_=1).splitlines() if ln.startswith("<m "))
+    assert len(line) + 1 <= 900 and len(line) + 1 > 900 - 12
+    (row,) = rows(item)
+    assert len(row.text or "") > 100

@@ -40,6 +40,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.cognition_view import blocks
 from tests.unit.test_cognition_render_goldens import CASES
 
 BASELINE: dict[str, str] = json.loads(
@@ -214,38 +215,41 @@ def _new_row(el: ET.Element) -> Row:
 
 def new_facts(text: str) -> Facts:
     facts = Facts()
-    root = ET.fromstring(f"<root>{text}</root>")  # noqa: S314 - our own bytes, rooted before parse
-    for block in root:
-        a = block.attrib
+    for block in blocks(text):                   # raises on stray text outside a block
         if block.tag == "clock":
             facts.clock = (block.text or "").strip()
         elif block.tag == "reads":
             facts.reads = (block.text or "").strip()
-        elif block.tag == "agenda_item":
-            returning = re.fullmatch(
-                r"left open by (\d+) earlier sessions?", a.get("returning", ""),
-            )
-            if "returning" in a:
-                assert returning, a["returning"]
-            item = Item(
-                int(a["index"]), a["summary"], a["room"],
-                int(returning[1]) if returning else 0, a.get("window", ""),
-                [_new_row(el) for el in block], int(a.get("earlier_not_shown", 0)),
-                tuple(int(x) for x in a["earlier_range"].split(" to "))  # type: ignore[arg-type]
-                if "earlier_range" in a else None,
-                int(a.get("unreadable", 0)),
-            )
-            facts.items.append(item)
+        elif block.tag == "agenda":
+            for item_el in block:
+                assert item_el.tag == "item", item_el.tag
+                a = item_el.attrib
+                returning = re.fullmatch(
+                    r"left open by (\d+) earlier sessions?", a.get("returning", ""),
+                )
+                if "returning" in a:
+                    assert returning, a["returning"]
+                facts.items.append(Item(
+                    int(a["index"]), a["summary"], a["room"],
+                    int(returning[1]) if returning else 0, a.get("window", ""),
+                    [_new_row(el) for el in item_el], int(a.get("earlier_not_shown", 0)),
+                    tuple(int(x) for x in a["earlier_range"].split(" to "))  # type: ignore[arg-type]
+                    if "earlier_range" in a else None,
+                    int(a.get("unreadable", 0)),
+                ))
         elif block.tag == "note_index":
+            a = block.attrib
             facts.notes += [(n.attrib["n"], n.attrib["title"], n.text or "") for n in block]
             facts.notes_not_listed = int(a.get("not_listed", 0))
         elif block.tag == "events":
-            facts.events[a["room"]] = [
-                (e.attrib["id"], e.text or "", e.attrib["status"], e.attrib["when"],
-                 e.attrib.get("venue", ""), e.attrib.get("revision", ""))
-                for e in block
-            ]
-            facts.events_not_listed += int(a.get("not_listed", 0))
+            for group in block:
+                assert group.tag == "room_events", group.tag
+                facts.events[group.attrib["room"]] = [
+                    (e.attrib["id"], e.text or "", e.attrib["status"], e.attrib["when"],
+                     e.attrib.get("venue", ""), e.attrib.get("revision", ""))
+                    for e in group
+                ]
+                facts.events_not_listed += int(group.attrib.get("not_listed", 0))
         else:
             raise AssertionError(f"a block the parity test does not know: {block.tag}")
     return facts

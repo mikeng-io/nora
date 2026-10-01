@@ -79,7 +79,7 @@
   {
     "name": "3b: a row clipped to its share is cut through its own element, not in its words",
     "file": "nora/language/cognition_render.py",
-    "old": "            text = row.show(max(allowance - overhead, 1))",
+    "old": "            text = _shrunk(row, allowance - 1)",
     "new": "            text = row.show(None)[: max(allowance - 1, 2)]",
     "target": "tests/unit/test_cognition_render_budget.py::test_a_row_clipped_to_its_share_is_a_whole_element_with_its_words_cut"
   },
@@ -145,5 +145,110 @@
     "old": "        (\"returning\", returning(item.strike)),",
     "new": "        (\"returning\", None),",
     "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
+  },
+  {
+    "name": "3b item 2: the forced clip is measured on the raw words, not on what is rendered (escapes spend three times the share)",
+    "file": "nora/language/cognition_render.py",
+    "old": "            text = _shrunk(row, allowance - 1)",
+    "new": "            text = row.show(max(allowance - len(row.show(0)) - 1, 1))",
+    "target": "tests/unit/test_cognition_render_budget.py::test_markup_heavy_words_cannot_spend_more_than_the_budget_once_escaped"
+  },
+  {
+    "name": "3b item 2: the escaped cut stops at the first length that fits instead of the largest",
+    "file": "nora/language/cognition_render.py",
+    "old": "        if len(row.show(mid)) <= room:\n            lo = mid",
+    "new": "        if len(row.show(mid)) <= room // 2:\n            lo = mid",
+    "target": "tests/unit/test_cognition_render_budget.py::test_an_escaped_cut_keeps_as_much_of_the_words_as_fits"
+  },
+  {
+    "name": "3b item 1: every item is its own `agenda` block again, so the type text repeats per item",
+    "file": "nora/language/cognition_render.py",
+    "old": "        restamp(ContextBlock(name=\"agenda\", body=\"\\n\".join(elements)), _ROW),\n        *_register(",
+    "new": "        *[restamp(ContextBlock(name=\"agenda\", body=e), _ROW) for e in elements],\n        *_register(",
+    "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items tests/unit/test_cognition_block_types_explain_every_field.py::test_twelve_items_cost_their_own_rows_and_not_twelve_copies_of_the_type_text"
+  },
+  {
+    "name": "3b item 1: each room's events are their own block again, so the events text repeats per room",
+    "file": "nora/language/cognition_render.py",
+    "old": "        blocks.append(restamp(ContextBlock(name=\"events\", body=\"\\n\".join(groups)), _ROW))",
+    "new": "        blocks += [restamp(ContextBlock(name=\"events\", body=g), _ROW) for g in groups]",
+    "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_type_text_appears_once_per_prompt_however_many_items"
+  },
+  {
+    "name": "3b item 4: an item carries an attribute no annotation explains",
+    "file": "nora/language/cognition_render.py",
+    "old": "        (\"index\", str(index)), (\"kind\", item.kind),",
+    "new": "        (\"index\", str(index)), (\"sort\", item.kind),",
+    "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_every_attribute_the_prompt_emits_has_a_gloss_in_its_block_type"
+  },
+  {
+    "name": "3b item 1: the nesting wrapper does not escape an attribute value, so a room label closes its quote",
+    "file": "nora/domain/blocks.py",
+    "old": "        f' {key}=\"{escape_attr(collapsed)}\"'",
+    "new": "        f' {key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element"
+  },
+  {
+    "name": "3b item 5: the test view lets text sit between an element's children",
+    "file": "tests/unit/cognition_view.py",
+    "old": "            assert not (child.tail or \"\").strip(), (element.tag, child.tag, child.tail)",
+    "new": "            pass",
+    "target": "tests/unit/test_cognition_block_types_explain_every_field.py::test_the_view_rejects_text_outside_a_block_and_between_an_elements_children"
+  },
+  {
+    "name": "3b item 3: the objective says «Below the list» again, a shape of the input that no longer exists",
+    "file": "nora/dreamer/objectives/cognition.md",
+    "old": "After the agenda is what is already written down",
+    "new": "Below the list is what is already written down",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
+  },
+  {
+    "name": "3b item 3: the objective says «the next list» again",
+    "file": "nora/dreamer/objectives/cognition.md",
+    "old": "comes back on the next agenda with a mark against",
+    "new": "comes back on the next list with a mark against",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_names_none_of_the_old_shapes_of_the_input"
+  },
+  {
+    "name": "3b item 3: the returning-item judgement is dropped from the objective",
+    "file": "nora/dreamer/objectives/cognition.md",
+    "old": " An item marked **returning** was left open by earlier looks; the\ngroup's words may have moved since.",
+    "new": "",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds"
+  },
+  {
+    "name": "3b item 4: the `from` field no longer says the name goes in parentheses before the ids",
+    "file": "nora/domain/block_types.py",
+    "old": "goes in parentheses \"\n                   \"before the ids on a Decided, Proposed or Ruled out line that \"\n                   \"rests on it\"",
+    "new": "goes in a line \"\n                   \"that rests on it\"",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b item 4: the agenda description loses the section order",
+    "file": "nora/domain/block_types.py",
+    "old": "Owed, Proposed, Ruled out.\",",
+    "new": "Owed.\",",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b item 4: the agenda description calls every message what a person typed, own sends included",
+    "file": "nora/domain/block_types.py",
+    "old": "what a person typed, or, on a row \"\n       \"marked `own`, what you sent: chat data,",
+    "new": "what a person typed: chat data,",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b item 5: the field that says what an edit is loses its meaning",
+    "file": "nora/domain/block_types.py",
+    "old": "`yes` if its words changed after they were said",
+    "new": "`yes` if it is marked",
+    "target": "tests/unit/test_cognition_wiring.py::test_the_objective_teaches_nothing_the_block_types_already_say"
+  },
+  {
+    "name": "3b item 5: the prompt carries a word that says what to conclude (whole-prompt check)",
+    "file": "nora/domain/block_types.py",
+    "old": "An \"\n       \"item's summary is only what code counted.",
+    "new": "An \"\n       \"item's summary is only what code counted, and a settled one needs no look.",
+    "target": "tests/unit/test_cognition_grounding.py::test_a_cue_is_named_and_an_edit_is_marked_and_neither_is_a_conclusion"
   }
 ]

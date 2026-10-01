@@ -637,25 +637,56 @@ def test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds():
     and it does not enumerate the kinds of write she can make."""
     text = _objective()
     # the agenda it describes is the one the renderer produces: blocks, in order
-    for phrase in ("a clock, which room your read tools", "`agenda_item`",
-                   "the group's open notes", "its open events"):
+    for phrase in ("a clock, which room your read tools", "the agenda: one `item`",
+                   "the group's open notes", "its open events", "marked **returning**"):
         assert phrase in text, phrase
+    # the judgement about a returning item, restored: the words may have moved
+    assert "the\ngroup's words may have moved since" in text
     # no enumeration of the write verbs (they carry their own descriptions)
     assert "Each note, event, Standing revision" not in text
     assert "note_create" not in text and "event_propose" not in text
 
 
-def test_the_objective_teaches_nothing_the_block_types_already_say():
-    """Step 3b of design/context-assembly/04-every-occasion.md: the shape of the
-    input (a message's id, the name to put in a note line, an edit, a cue, a
-    reaction, what a cut means) reaches the model through the block types
-    (`nora.domain.block_types`), so the objective quotes none of it. It used to
-    quote the OLD line shape, which no prompt carries any more."""
-    text = _objective()
-    for old in ("[#101]", "(edited)", "[cues:", "[room ", "Nora (you)", "(returning:",
-                "earlier messages not shown", "(one of these could not be shown)"):
+def test_the_objective_names_none_of_the_old_shapes_of_the_input():
+    """Step 3b of design/context-assembly/04-every-occasion.md: the input is an
+    `agenda` of `item`s, then notes and events. The objective quoted the OLD line
+    shape and kept its vocabulary («the list», «the lines under it», «below the
+    list», «the next list») after the format changed; none of it describes
+    anything the model is handed now."""
+    text = _objective().split("---\n", 2)[2]       # the instruction, not the changelog
+    for old in ("[#", "min ago)", "(edited)", "[cues:", "[room ", "Nora (you)",
+                "(returning:", "earlier messages not shown",
+                "(one of these could not be shown)", "Below the list", "under it",
+                "next list", "the list", "the lines", "agenda_item"):
         assert old not in text, old
+
+
+def test_the_objective_teaches_nothing_the_block_types_already_say():
+    """The shape of the input (a message's id, the name to put in a note line, an
+    edit, a cue, a reaction, what a cut means, the section order) reaches the
+    model through the block types (`nora.domain.block_types`), so the objective
+    quotes none of it, and each of those sentences is PINNED where it lives."""
     from nora.domain.block_types import BLOCK_TYPES
 
-    assert "n" in dict(BLOCK_TYPES["agenda_item"].annotations)    # the shape lives THERE
-    assert "cite it as [n]" in dict(BLOCK_TYPES["agenda_item"].annotations)["n"]
+    text = _objective()
+    for said_by_the_type in ("cite it exactly as [n]", "in parentheses before the ids",
+                             "Decided, Open, Owed, Proposed, Ruled out"):
+        assert said_by_the_type not in text
+    agenda = BLOCK_TYPES["agenda"]
+    fields = dict(agenda.annotations)
+    # the grammar: what each field is for, in the words the model reads
+    assert "cite it exactly as [n] at the end of the note line it supports" in fields["n"]
+    assert "or as digits in an event's cited ids" in fields["n"]
+    assert "this exact name, as written, goes in parentheses before the ids" in fields["from"]
+    assert "Decided, Proposed or Ruled out" in fields["from"]
+    assert "its sections run Decided, Open, Owed, Proposed, Ruled out" in agenda.description
+    assert "`[n]` at the end of the line, after `(names)`" in agenda.description
+    # and what the old objective said about the rest, now on the fields
+    assert "changed after they were said" in fields["edited"]
+    assert "what code noticed" in fields["cues"] and "never a reading of it" in fields["cues"]
+    assert "not readable now" in fields["unreadable"]
+    assert "left out to fit" in fields["earlier_not_shown"]
+    assert "first and last message ids" in fields["earlier_range"]
+    assert "how many earlier looks left the item open" in fields["returning"]
+    assert "what you sent" in agenda.description and "marked `own`" in agenda.description
+    assert "context only, never cited" in fields["own"]

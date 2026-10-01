@@ -25,8 +25,8 @@ over what a later rewrite could disagree on:
 * names and words carrying `[ ] : < & " '`.
 
 **The type text is held out of the goldens.** Every block opens with its type's
-`description` and `fields`, repeated on each item, so a capture that held them
-would change with every edit of a sentence in `nora.domain.block_types`. They are
+`description` and `fields`, so a capture that held them would change with every
+edit of a sentence in `nora.domain.block_types`. They are
 stripped before the comparison, and
 `test_every_block_carries_exactly_its_types_description_and_fields` holds each
 one to the registry's own text, so what a model reads is still pinned.
@@ -855,7 +855,7 @@ def test_the_goldens_vary_what_this_step_is_about():
             "a self-wake is due:", "1 weird stimuli:",
         ),
         "several-rooms-with-an-unlabelled-one-and-events": (
-            "«a room with no name»", '<events room="«Room B»">',
+            "«a room with no name»", '<room_events room="«Room B»">',
         ),
         "reads-line-one-room": ("<reads>\nYour read tools look through room «Room A».\n</reads>",),
         "reads-line-several-rooms-with-first-look": (
@@ -867,13 +867,13 @@ def test_the_goldens_vary_what_this_step_is_about():
         "register-note-and-event-line-caps": ('not_listed="4"',),
         "register-cut-at-its-character-budget": ('not_listed="',),
         "probe-no-clock-no-grounding": ('returning="left open by 2 earlier sessions"',),
-        "a-whole-session": ("<note_index>", "<events ", 'own="yes"', "returning"),
+        "a-whole-session": ("<note_index>", "<events>", 'own="yes"', "returning"),
     }
     for name, parts in must.items():
         for part in parts:
             assert part in GOLDEN[name], (name, part)
     assert "<note_index" not in GOLDEN["register-none-has-no-trailing-block"]
-    assert "\n\n" not in GOLDEN["register-none-has-no-trailing-block"].split("</agenda_item>")[-1]
+    assert GOLDEN["register-none-has-no-trailing-block"].endswith("</agenda>")
     assert "<clock" not in GOLDEN["probe-no-clock-no-grounding"]
     assert "<m " not in GOLDEN["probe-no-clock-with-grounding-ignored"]
     assert "<note_index" not in GOLDEN["register-never-shown-in-a-probe"]

@@ -26,21 +26,29 @@ curator show theirs: `n` is the real message id and `from` the name the validato
 compares a `(<names>)` slot to. `speaker_of` is that one name, read here for the
 render and by the session for the validator (`shown_for`), so the two cannot
 differ, and the block types say what each is for
-(`nora.domain.block_types`: `agenda_item`).
+(`nora.domain.block_types`: `agenda`).
+
+**One block says what it is once.** The agenda is ONE `agenda` block whose body is
+the items, each an `<item>` holding its rows, and the events are ONE `events`
+block holding a `<room_events>` per room; the type's description and field
+glosses are written once per prompt, not once per item (an `agenda_item` block
+per item repeated about 1.7k characters on each: 43k against 12k for twelve
+items). The nesting wrapper is `nora.domain.blocks.render_group`.
 
 **Bounded, and it says when it cut.** The Record rows spend at most
 `RenderBudget.record_chars`, shared across the items by what each needs, counted
-as RENDERED (a row's element, its attributes included), and a message's words are
-cut at `message_chars`. `_fit`, `_shares` and `RenderBudget` are a row-SELECTION
+as RENDERED (a row's element, attributes and escapes included), and a message's
+words are cut at `message_chars`. `_fit`, `_shares` and `RenderBudget` are a row-SELECTION
 pre-step: they choose which rows an item shows and the blocks render what they
 chose. When an item's rows do not fit, the OLDEST are dropped and the item says
 how many and which ids (`earlier_not_shown`, `earlier_range`): a session that is
 not told it was handed a slice reads the slice as the whole conversation. The one
-row an allowance always keeps is shown with its words cut, never with its element
-cut: the element is what keeps one row one row (an allowance smaller than the
-element's own attributes keeps the element and one character of words, so the
-cap is exact for any real budget and exceeded by that overhead only where the
-allowance could not hold a row at all).
+row an allowance always keeps is shown with its words cut so the ESCAPED element
+fits (`&` is five characters, `<` four, and the cut is measured on what is
+rendered), never with its element cut: the element is what keeps one row one row.
+The cap holds for every allowance that can hold a bare element; one smaller than
+a row's own attributes keeps the element with one character of words and so
+exceeds the allowance by that overhead, the only place it yields.
 
 **Group-derived text is one line, and is escaped.** A message's words are
 collapsed to one line (`nora.domain.prompt.clip`, which is `one_line` and a cut)
@@ -68,6 +76,7 @@ from nora.domain.blocks import (
     ContextBlock,
     assemble,
     render_elements,
+    render_group,
     render_row_window,
     restamp,
     speaker_name,
@@ -89,9 +98,10 @@ from nora.language.note_render import render_note_rows
 #: (`design/context-assembly/01-the-registry.md`). `render_agenda` builds its
 #: blocks from this table and walks it with `assemble`, so `order` IS the order
 #: the model reads: the clock, which room(s) the read tools look through, one
-#: `agenda_item` per item (repeated, in the agenda's own order), then what is
-#: already recorded, notes first and then each agenda room's events. The numbers
-#: are the order of the lines they replace (the 3a baseline).
+#: `agenda` (ONE block, the items nested in it in the agenda's own order), then
+#: what is already recorded, the notes and then ONE `events` block holding each
+#: agenda room's events. The numbers are the order of the lines they replace
+#: (the 3a baseline).
 #:
 #: `key="turn"` throughout: this prompt is its own call pattern with no
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS` would not
@@ -100,7 +110,7 @@ from nora.language.note_render import render_note_rows
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("clock", 10, "turn"),
     ("reads", 20, "turn"),
-    ("agenda_item", 30, "turn"),
+    ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
     ("events", 50, "turn"),
 )
@@ -282,22 +292,41 @@ def _own_row(rec: RecordItem, *, now_ms: int, tz: tzinfo, message_chars: int) ->
     return _Row(rec.at_ms, rec.message_id, show)
 
 
+def _shrunk(row: _Row, room: int) -> str:
+    """The row with its words cut so the RENDERED element, escapes included, is
+    at most `room` characters; with one character of words when even the bare
+    element is longer. The cut is measured on the rendered row, never on the raw
+    words: `&` renders as five characters and `<` as four, so a cut by raw
+    length let a run of them spend three times its share."""
+    lo, hi = 1, max(len(row.show(None)), 1)
+    while lo < hi:                     # the largest cut that still fits
+        mid = (lo + hi + 1) // 2
+        if len(row.show(mid)) <= room:
+            lo = mid
+        else:
+            hi = mid - 1
+    while lo > 1 and len(row.show(lo)) > room:     # a trailing space can break monotony
+        lo -= 1
+    return row.show(lo)
+
+
 def _fit(rows: Sequence[_Row], allowance: int) -> tuple[list[str], int]:
     """The NEWEST rows that fit `allowance`, rendered, in order, and how many
     older ones were left out. At least one row is always kept, its WORDS cut to
     fit when the newest is longer than its share: `record_chars` is a hard cap
     (#637 second review: a per-item floor let 12 items spend 10,418 of 8,000).
-    The cut is in the words and never in the element, so a kept row is always a
-    whole row; an allowance smaller than the element's own attributes keeps the
-    element with one character of words, the one case the cap yields."""
+    Cost and cut are both the RENDERED length (`_shrunk`), so the cap holds for
+    markup-heavy words too. The cut is in the words and never in the element, so
+    a kept row is always a whole row; an allowance smaller than the element's own
+    attributes keeps the element with one character of words, the one case the
+    cap yields."""
     kept: list[str] = []
     spent = 0
     for row in reversed(rows):
         text = row.show(None)
         cost = len(text) + 1
         if not kept and cost > allowance:
-            overhead = len(row.show(0)) + 1
-            text = row.show(max(allowance - overhead, 1))
+            text = _shrunk(row, allowance - 1)
             cost = len(text) + 1
         if kept and spent + cost > allowance:
             break
@@ -431,7 +460,8 @@ def _item_attrs(
 def _item_block(
     index: int, item: AgendaItem, stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int, tz: tzinfo, allowance_of: Mapping[int, int], message_chars: int,
-) -> ContextBlock:
+) -> str:
+    """One `<item>`: its attributes, and the rows the budget chose."""
     rows = [stimuli[sid] for sid in item.stimulus_ids if sid in stimuli]
     readable, unreadable = _item_rows(
         item, rows, grounding, grounding.own_sends.get(index, ()),
@@ -449,10 +479,7 @@ def _item_block(
         ]
     if unreadable:
         attrs.append(("unreadable", str(unreadable)))
-    return restamp(ContextBlock(
-        name="agenda_item", body="\n".join(kept), attrs=_attrs(attrs),
-        when_empty="self_close",
-    ), _ROW)
+    return render_group("item", attrs, "\n".join(kept))
 
 
 def _needs(
@@ -479,11 +506,12 @@ def _register(
     rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo,
     budget: RenderBudget,
 ) -> list[ContextBlock]:
-    """The notes and each agenda room's events already recorded, as blocks. At
-    most `register_lines` rows of each list, and every row together within
+    """The notes, and the events of each agenda room, already recorded: a
+    `note_index` block and ONE `events` block of `<room_events>` groups. At most
+    `register_lines` rows of each list, and every row together within
     `register_chars` as rendered: a row that does not fit, and every row after
-    it, is left out, and the block says how many (`not_listed`) rather than
-    cutting a row."""
+    it, is left out, and the block or group says how many (`not_listed`) rather
+    than cutting a row."""
     spent = 0
     exhausted = False
 
@@ -514,6 +542,7 @@ def _register(
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
+    groups: list[str] = []
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
         if not events:
@@ -522,14 +551,14 @@ def _register(
             render_event_rows([e], tz=tz) for e in events[: budget.register_lines]
         ])
         left_out = len(events) - len(rows)
-        blocks.append(restamp(ContextBlock(
-            name="events", body="\n".join(rows),
-            attrs=_attrs([
-                ("room", room_label(room, grounding.room_labels)),
-                ("not_listed", str(left_out) if left_out else None),
-            ]),
-            when_empty="self_close",
-        ), _ROW))
+        groups.append(render_group(
+            "room_events",
+            [("room", room_label(room, grounding.room_labels)),
+             ("not_listed", str(left_out) if left_out else None)],
+            "\n".join(rows),
+        ))
+    if groups:
+        blocks.append(restamp(ContextBlock(name="events", body="\n".join(groups)), _ROW))
     return blocks
 
 
@@ -537,22 +566,20 @@ def _item_blocks(
     items: Sequence[AgendaItem], stimuli: Mapping[int, Stimulus], grounding: Grounding,
     *, now_ms: int | None, tz: tzinfo, budget: RenderBudget,
 ) -> list[ContextBlock]:
-    """One `agenda_item` per item, then the Register. Without a clock an item is
-    its summary alone (the probe's hand-written item), and nothing is recorded."""
+    """The `agenda` block (one `<item>` per item), then the Register. Without a
+    clock an item is its summary alone (the probe's hand-written item), and
+    nothing is recorded."""
     if now_ms is None:
-        return [
-            restamp(ContextBlock(
-                name="agenda_item", body="",
-                attrs=_attrs(_item_attrs(i, item, grounding.room_labels)),
-                when_empty="self_close",
-            ), _ROW)
+        elements = [
+            render_group("item", _item_attrs(i, item, grounding.room_labels), "")
             for i, item in enumerate(items)
         ]
+        return [restamp(ContextBlock(name="agenda", body="\n".join(elements)), _ROW)]
     needs = _needs(
         items, stimuli, grounding, now_ms=now_ms, tz=tz, message_chars=budget.message_chars,
     )
     allowance = dict(enumerate(_shares(needs, budget.record_chars, budget.min_item_chars)))
-    blocks = [
+    elements = [
         _item_block(
             i, item, stimuli, grounding, now_ms=now_ms, tz=tz, allowance_of=allowance,
             message_chars=budget.message_chars,
@@ -563,7 +590,10 @@ def _item_blocks(
     for item in items:
         if item.room not in rooms:
             rooms.append(item.room)
-    return blocks + _register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget)
+    return [
+        restamp(ContextBlock(name="agenda", body="\n".join(elements)), _ROW),
+        *_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget),
+    ]
 
 
 def render_agenda(

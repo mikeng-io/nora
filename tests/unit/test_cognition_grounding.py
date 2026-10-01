@@ -45,7 +45,7 @@ from nora.persons import Persons
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
 from nora.testing.stimuli import InMemoryStimulusStore
-from tests.unit.cognition_view import blocks, ids, items, named, rows, words
+from tests.unit.cognition_view import blocks, events, ids, items, named, rows, words
 
 HK = ZoneInfo("Asia/Hong_Kong")
 NOW = int(dt.datetime(2026, 9, 30, 15, 30, tzinfo=HK).timestamp() * 1000)
@@ -124,9 +124,9 @@ def test_a_cue_is_named_and_an_edit_is_marked_and_neither_is_a_conclusion():
     prompt = _prompt([s], Grounding(records={s.ref: rec}))
     (row,) = rows(items(prompt)[0])
     assert row.attrib["edited"] == "yes" and row.attrib["cues"] == "datetime, rsvp"
-    # a row says what happened and never what to conclude
-    said = f"{row.text} {' '.join(row.attrib.values())}"
-    assert "settled" not in said and "decided" not in said
+    # nothing in the WHOLE prompt (the rows, and every block's own text) says what
+    # to conclude: the check master had, restored from a row's text to the prompt
+    assert "settled" not in prompt and "decided" not in prompt
 
 
 def test_a_reaction_names_the_message_it_is_on_and_a_delete_withholds_the_words():
@@ -255,15 +255,15 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
     assert [(n.attrib["n"], n.attrib["title"], n.text) for n in note_index] == [
         ("n-77", "Trip to Tokyo", "dates and who is flying"),
     ]
-    (events,) = named(prompt, "events")
-    assert events.attrib["room"] == "«Room A»"
-    (event,) = events
+    (group,) = events(prompt)
+    assert group.tag == "room_events" and group.attrib["room"] == "«Room A»"
+    (event,) = group
     assert event.attrib == {
         "id": "e-9", "status": "proposed", "when": "Wed 30 Sep 2026 16:30",
         "venue": "Ramen Ya", "revision": "rev-3",
     } and event.text == "Dinner"
     # the register follows the agenda
-    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda_item", "note_index", "events"]
+    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda", "note_index", "events"]
     assert "Standing" not in prompt                 # pulled, never pushed (30 §1)
     assert "Other room's event" not in prompt                 # only the agenda's rooms
 
@@ -271,7 +271,7 @@ def test_the_register_index_lines_follow_the_agenda_and_carry_ids():
 def test_no_register_lines_when_nothing_is_recorded_and_no_trailing_block():
     s = _stim(1, A, ago=3, mid=12)
     prompt = _prompt([s], Grounding(records={s.ref: _rec(s, author="Ada", text="hi")}))
-    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda_item"]
+    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda"]
     assert "note_index" not in prompt and "<events" not in prompt
 
 
@@ -731,7 +731,7 @@ def test_the_instruction_does_not_promise_a_standing_index_line():
     import pathlib
 
     text = (pathlib.Path(__file__).parents[2] / "nora/dreamer/objectives/cognition.md").read_text()
-    below = text.split("Below the list is what is already written down")[1].split("\n\n")[0]
+    below = text.split("After the agenda is what is already written down")[1].split("\n\n")[0]
     assert "Standing" not in below and "open events" in below
 
 

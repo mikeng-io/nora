@@ -121,8 +121,8 @@
  {
   "name": "major 2: the register index lines are not rendered",
   "file": "nora/language/cognition_render.py",
-  "old": "    return blocks + _register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget)",
-  "new": "    return blocks",
+  "old": "        *_register(rooms, grounding, now_ms=now_ms, tz=tz, budget=budget),\n",
+  "new": "",
   "target": "tests/unit/test_cognition_grounding.py::test_the_register_index_lines_follow_the_agenda_and_carry_ids"
  },
  {
