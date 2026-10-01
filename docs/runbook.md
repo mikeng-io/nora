@@ -945,7 +945,7 @@ docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
 # 7. Wait for Honcho's scope backfill: every entry's "state" must read "completed".
 for ws_scope in nora/friends nora/wedding nora-ridgeline/ridgeline; do
   docker compose exec -T nora curl -fsS \
-    "http://host.docker.internal:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
+    "http://honcho:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
 done
 
 # 8. ONLY with the operator's approval (irreversible): dry run, then --apply,
@@ -1253,3 +1253,141 @@ A passing doctor plus a logged-in profile is the whole health story today —
 read-only probes confirmed Instagram and X as `logged_in=true` after the Chrome
 migration. Threads is not checkable at all: OpenCLI 1.8.7 has no native Threads
 adapter, so Threads support is unimplemented, not broken.
+
+## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-259)
+
+Honcho has no authentication, and the operator ruled (2026-10-01) that it
+will not get any: the fix is **where it listens**. Measured 2026-09-30 on norty:
+`honcho-api-1` published `0.0.0.0:8000`, so any container that could name the
+host (`host.docker.internal`) and anything on the LAN read and wrote Nora's
+memory with one unauthenticated `POST /v3/workspaces/list`.
+
+**Honcho is not in this repository.** Its compose project is
+`~/workspace/honcho/docker-compose.yml` on norty, and nothing here edits it.
+What this repo holds is nora's half (the `honcho` network in
+`docker-compose.yml`, the host-side rewrite in `nora/subject/obtain.py`) and the
+probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on norty
+2026-10-01:
+
+| caller | route today | after |
+|---|---|---|
+| nora (the tag path, the Dreamer, `nora memory ...` in the container) | `host.docker.internal:8000` | `honcho:8000` on `honcho_memory` |
+| the eval suite, host-side scripts, a host `curl` | `127.0.0.1:8000` | unchanged (loopback still published) |
+| another machine on the tailnet (the Mac's Honcho plugin) | `tailscale serve` forwards `:18000` to `localhost:8000` | unchanged |
+| presence, analytics, voice, drop, the portal | none: no environment or config names Honcho | none |
+
+The tailnet forward is deliberate and stays unauthenticated, as it was; that is
+the operator's tailnet, not the LAN. A caller found later that is not in this
+table is reading Honcho through the open port and will break at step 4: the
+access log's source class before and after (below) is how to find one first.
+
+### The order, and why it is this order
+
+Each step leaves every caller working; the door closes last. **Run from
+`~/workspace/nora` and `~/workspace/honcho` on norty. Nothing here is done by
+the PR merging.**
+
+```bash
+# 0. BEFORE the nora deploy of this change. The network is owned by neither
+#    stack (both mark it external), so `down` on either never removes it. If it
+#    is missing, EVERY `docker compose up` that names nora fails at once and
+#    names it (the running container is not touched), so nora-deploy runs this
+#    line first, idempotently:
+docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory
+#    --internal is not optional. A container's default route goes through the
+#    first-sorting non-internal network it joins, so joining an ordinary
+#    network that sorts before `nora_nora` would move nora's route to the
+#    internet onto it. An internal network has no gateway: nora's route stays
+#    on its compose network, and container-to-container traffic on it (nora to
+#    `honcho:8000`) works. Measured on a throwaway local docker 2026-10-01:
+#    two containers on an --internal network resolved and reached each other
+#    by name, the one also on an ordinary network kept its default route and
+#    its egress there, and the other's loopback publish still answered.
+
+# 1. Deploy nora from this branch (nora-deploy). It now also joins honcho_memory.
+#    Nothing has changed for it yet: its config still says host.docker.internal.
+
+# 2. Honcho's compose: add the network and an alias, KEEP the old publish for now.
+#    In ~/workspace/honcho/docker-compose.yml, service `api`:
+#
+#        networks:
+#          default: {}
+#          memory:
+#            aliases: [honcho]
+#
+#    and at the bottom of the file:
+#
+#        networks:
+#          memory:
+#            external: true
+#            name: honcho_memory
+#
+cd ~/workspace/honcho && docker compose up -d api </dev/null
+docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
+
+# 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
+#    config-only edit (nora-deploy step 5: edit a COPY, `nora config validate`
+#    it through the container, cp it in place, recreate). Read it back:
+cd ~/workspace/nora
+docker compose up -d --force-recreate nora </dev/null
+docker compose exec -T nora /app/.venv/bin/python -c \
+  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).memory.base_url)' </dev/null
+
+# 4. Only now close the door. In the honcho compose, service `api`:
+#        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
+cd ~/workspace/honcho && docker compose up -d api </dev/null
+```
+
+Doing step 4 before step 3 shuts nora out of memory: every peer write fails,
+and the failure reads as Honcho being down.
+
+### Read-back
+
+```bash
+cd ~/workspace/nora && deploy/honcho-closed-probe.sh; echo "PROBE_RC=$?"
+```
+
+`PROBE_RC=0` is every check passing: a throwaway container on the default bridge
+is REFUSED on port 8000 at every IPv4 address the host owns (only curl's exit 7,
+connection refused, counts: a timeout or a reset is an ERROR, as is an empty
+result, and each address gets its own control on a port that is open), every
+listening socket on `:8000` is loopback in BOTH families (this is what covers
+IPv6, which the default bridge often cannot route to), a loopback check proves
+Honcho is alive and not merely unreachable, nora reaches it by name, the tailnet
+forward still answers, and the Docker Engine is 28 or newer. `1` is an open door
+or a shut-out caller; `2` is a probe that cannot tell; `3` is a WARN only: on an
+engine older than 28 a loopback-published port can be reached from the LAN, which
+a probe run on the host cannot see, so from a machine on the LAN
+`curl -m 4 http://<norty's LAN address>:8000/health` must fail. The same probe by hand:
+
+```bash
+docker run --rm --network bridge --entrypoint curl nora:latest \
+  -s -m 4 -o /dev/null -w '%{http_code}\n' http://172.17.0.1:8000/health </dev/null   # 000 = refused
+```
+
+A second reading, from Honcho's own access log: nora's calls arrived from the
+compose gateway (`172.21.x.x`, the userland proxy) before step 4 and arrive from
+the `honcho_memory` subnet after it. Counts only, never paths:
+
+```bash
+docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+ - "(GET|POST|PUT|DELETE)' \
+  | awk '{split($1,a,"."); print a[1]"."a[2]".x.x"}' | sort | uniq -c | sort -rn
+```
+
+**Rollback**, in this order (the order is the whole point):
+
+1. Put `[memory] base_url` back to `"http://host.docker.internal:8000"` in nora's
+   live `config.toml` (the config-only edit, `nora-deploy` step 5) and recreate
+   nora on it. Do this FIRST.
+2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
+3. Only after that recreate nora from an OLD compose file if you must.
+
+Each step leaves every caller working. Out of order it does not: nora on an old
+compose has no `honcho` network, so a config still saying `http://honcho:8000`
+resolves nothing and every memory call fails (peer writes, the self card, recall)
+until the config is put back; and reopening the port before nora has moved back
+is fine, but moving nora back before the port is open shuts it out. Nora on the
+name keeps working while the door is open, so reopening the door alone (step 2)
+is the minimal rollback if the problem is a caller of the old port.
+
