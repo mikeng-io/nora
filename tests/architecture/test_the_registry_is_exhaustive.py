@@ -27,15 +27,38 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: The five occasions this bundle declared in S1. `nora/agent/prefill.py` is
-#: deliberately absent — see the module docstring.
-_OCCASIONS = (
-    "nora/ingest/relevance_gate.py",
-    "nora/language/proactive.py",
-    "nora/language/note_curator.py",
-    "nora/language/note_candidates.py",
-    "nora/language/culture.py",
-)
+#: Every module that declares a `_BLOCKS` table, FOUND, not listed: a list of
+#: occasions is exactly what let the Cognition session be built without one
+#: (`test_every_model_call_is_a_declared_occasion.py` is the other half: it
+#: finds the modules that build a prompt and demands they declare). The one
+#: absence is `nora/agent/prefill.py`, see the module docstring.
+def _declared_occasions() -> tuple[str, ...]:
+    found = []
+    for path in sorted((ROOT / "nora").rglob("*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == "nora/agent/prefill.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        if any(
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name) and node.target.id == "_BLOCKS"
+            and isinstance(node.value, ast.Tuple)
+            for node in ast.walk(tree)
+        ):
+            found.append(rel)
+    return tuple(found)
+
+
+_OCCASIONS = _declared_occasions()
+
+
+def test_the_census_finds_the_five_occasions_it_used_to_list():
+    """A census that silently found nothing would pass every test below."""
+    assert {
+        "nora/ingest/relevance_gate.py", "nora/language/proactive.py",
+        "nora/language/note_curator.py", "nora/language/note_candidates.py",
+        "nora/language/culture.py",
+    } <= set(_OCCASIONS)
 
 #: Imported name -> the ONE block name it always builds. Each lives in its
 #: own module (`nora.language.note_render`, `.standing_render`,
