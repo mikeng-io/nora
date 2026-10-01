@@ -16,10 +16,13 @@ Phase B of `design/tool-catalogue/`. Three properties, each pinned here:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import AsyncIterable, Sequence
 from typing import Any
 
+import pytest
+import tiktoken
 from strands import Agent
 from strands.models import Model
 
@@ -408,3 +411,112 @@ def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
     assert ToolRegistry(rollup=object())._withheld & set(_LOOP_ONLY) == {"standing_read"}
     assert ToolRegistry(standing_head=object())._withheld & set(_LOOP_ONLY) == {"rollup_read"}
     assert not ToolRegistry(rollup=object(), standing_head=object())._withheld & set(_LOOP_ONLY)
+
+
+# ---- 4. tools resident on one occasion (DEC-256) ---------------------------
+
+#: The voice members, as MEASURED (`scripts/measure_voice_tool_calls.py`,
+#: 2026-10-01: 26 voice turns, 2026-09-17 .. 09-30). A literal on purpose: a
+#: test that read the members back off `NativeTool.hot_on` would agree with any
+#: declaration, including a dropped one. Changing this set means re-running the
+#: measurement and putting its output in the PR, not editing the line to fit.
+_VOICE_MEASURED = frozenset({
+    "play_music", "set_music_volume", "stop_music", "music_status", "top_music",
+})
+
+#: Schema tokens (cl100k, `json.dumps(tool_spec)`) a voice turn carries on top
+#: of a text turn's resident set, on every model call of the turn. Measured
+#: 658 on 2026-10-01 (play 218, volume 118, top 158, status 84, stop 80); the
+#: ceiling holds one more small verb (`skip_music` is 85). A new `hot_on`
+#: member that does not fit re-sets this with its own measured count.
+_VOICE_EXTRA_TOKEN_CEILING = 750
+
+
+def test_every_declared_occasion_is_in_the_closed_vocabulary():
+    from nora.agent.tools import NATIVE_TOOLS, TOOL_OCCASIONS
+
+    stray = {name: sorted(spec.hot_on - TOOL_OCCASIONS)
+             for name, spec in NATIVE_TOOLS.items() if spec.hot_on - TOOL_OCCASIONS}
+    assert not stray
+    # Positive control: an empty table would pass the line above too.
+    assert any(spec.hot_on for spec in NATIVE_TOOLS.values())
+
+
+def test_an_unknown_occasion_is_refused_not_read_as_text():
+    from nora.agent.tools import hot_tools
+
+    with pytest.raises(ValueError, match="unknown tool occasion"):
+        hot_tools("spoken")
+    with pytest.raises(ValueError, match="unknown tool occasion"):
+        _surface(platform="discord", defer=True, occasion="spoken")
+
+
+def test_the_voice_members_are_the_measured_ones():
+    from nora.agent.tools import NATIVE_TOOLS
+
+    declared = {name for name, spec in NATIVE_TOOLS.items() if "voice" in spec.hot_on}
+    assert declared == _VOICE_MEASURED
+
+
+def test_a_voice_turn_keeps_the_measured_tools_resident_and_a_text_turn_does_not():
+    voice = _surface(platform="discord", defer=True, occasion="voice")
+    text = _surface(platform="discord", defer=True)
+
+    assert voice.resident >= _VOICE_MEASURED
+    assert voice.resident == voice.admitted & (HOT_TOOLS | _VOICE_MEASURED)
+    assert not _VOICE_MEASURED & voice.shelf.names()
+    assert _names(voice.tools) >= _VOICE_MEASURED
+    # The one music verb nobody called on a voice turn stays on the shelf.
+    assert "skip_music" in voice.shelf.names()
+    # The catalogue marks what is resident, so she does not load it again.
+    marked = {line.split(" — ")[0][2:] for line in voice.catalogue.splitlines()
+              if line.startswith("* ")}
+    assert marked >= _VOICE_MEASURED
+
+    assert not _VOICE_MEASURED & text.resident
+    assert text.shelf.names() >= _VOICE_MEASURED
+
+
+def test_a_voice_occasion_adds_nothing_where_the_scope_admits_no_music():
+    """`hot_on` widens the resident set inside the scope, never past it: a
+    voice occasion off Discord (none exists today) still gets no music verb."""
+    surface = _surface(platform="signal", defer=True, occasion="voice")
+    assert not _VOICE_MEASURED & (surface.admitted | surface.resident)
+
+
+def _wire(surface: Any) -> tuple[list[str], str, dict]:
+    return ([json.dumps(t.tool_spec, sort_keys=True) for t in surface.tools],
+            surface.prompt_catalogue, surface.limits({"turns": 6}))
+
+
+def test_a_text_turn_is_byte_identical_with_or_without_any_occasion_declared(monkeypatch):
+    """What a text turn is handed (every tool schema in order, the catalogue
+    and the loop limits) is the same bytes whether or not any tool declares
+    `hot_on`. The comparison arm strips every declaration, which is the table
+    as it was before DEC-256."""
+    from nora.agent import tools as tools_module
+
+    stripped = {name: dataclasses.replace(spec, hot_on=frozenset())
+                for name, spec in tools_module.NATIVE_TOOLS.items()}
+    for platform in ("discord", "signal"):
+        declared = _wire(_surface(platform=platform, defer=True))
+        with monkeypatch.context() as patch:
+            patch.setattr(tools_module, "NATIVE_TOOLS", stripped)
+            before = _wire(_surface(platform=platform, defer=True))
+        assert declared == before, platform
+    # Positive control: the voice turn is NOT the same bytes, or the
+    # comparison above could not see a difference at all.
+    assert (_wire(_surface(platform="discord", defer=True, occasion="voice"))
+            != _wire(_surface(platform="discord", defer=True)))
+
+
+def test_the_voice_occasion_schema_growth_stays_under_its_ceiling():
+    enc = tiktoken.get_encoding("cl100k_base")
+    voice = _surface(platform="discord", defer=True, occasion="voice")
+    text = _surface(platform="discord", defer=True)
+
+    def tokens(surface: Any) -> int:
+        return sum(len(enc.encode(json.dumps(t.tool_spec))) for t in surface.tools)
+
+    extra = tokens(voice) - tokens(text)
+    assert 0 < extra <= _VOICE_EXTRA_TOKEN_CEILING, extra
