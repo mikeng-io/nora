@@ -1137,7 +1137,7 @@ a UUID and one of three words checked before any request), Archive / Delete (wit
 on the document page, and a Current / Archived filter on the list. The `document-creation` skill names
 the verb in one paragraph so she never hand-rolls a delete as an empty revision.
 
-**Not built.** Search (still §25's "not built"), a purge (a hard delete is a separate decision), and a
+**Not built.** Search (built since, §32), a purge (a hard delete is a separate decision), and a
 portal restore of a deleted document. The decision row is DEC-255.
 
 ## 32. Forgetting, reading by link, search, and the portal's rough edges (2026-10-01)
@@ -1174,3 +1174,32 @@ still never sent.
 link as well as the id. `DocumentService._in_room` is the one resolution both share: a handle is matched among THIS
 room's documents in any state, none or two matches are never picked, and another room's document, an unknown id and
 a deleted document answer alike.
+
+**The portal's rough edges, fixed (2026-10-01).**
+- *The title is first.* The detail page hands its meta line and the Archive / Delete controls to the
+  renderer as `chrome` (`DocumentView`), drawn right under the document's own H1 inside its Page, and after the
+  refusal when a stored spec cannot be shown, so they stay reachable. Nothing sits above the title but the back link.
+- *The tab names the document.* A client effect sets `document.title` to `<title> · Nora` (the layout's own template)
+  once the document is read and puts the server's title back on leaving. Server-side `generateMetadata` was not used:
+  it would need a second signed-in read of the same document just for `<title>`.
+- *A new list is not drawn as the old one.* A new filter, page or search keeps the last rows on screen
+  (`keepPreviousData`); while it loads they are dimmed, `aria-busy`, and a status line says the list is updating
+  (`freshness`: `loading`). The selected filter is a filled segment, not only `aria-pressed`.
+- *A failed refetch that keeps rows says so.* `freshness`: `outdated` shows "May be out of date" with a retry,
+  on the list and on a document.
+- *The delete panel is keyboard-operable* (`lib/documents/lifecycle.ts`, a reducer the view follows): opening it
+  moves focus to Cancel, Escape or Cancel returns focus to Delete, and a finished delete goes to
+  `/documents?deleted=1`, where the list says it can be restored by asking Nora in the chat. A delete only marks the
+  cached document stale (it does not refetch it), so the page it leaves never flashes "out of date" on its own 404.
+- *The row* shows the title, who made it and in which room (the room's label, else the platform), the relative time
+  with the absolute date on hover, a revision badge and an Archived badge.
+- *Wider.* Both pages use the shell's `default` frame (1080px) instead of `narrow` (760px).
+- *The renderer speaks both languages.* The strings `registry.tsx` and `blocks.tsx` owned (aria labels, fallbacks,
+  error text) are `documents.renderer.*` in `en.json` and `zh-Hant.json`; a vitest reads both sources and files and
+  fails on a key either lacks, on one the source never asks for, and on a hard-coded English string left in the source.
+  The checker's own refusal reason (`parseDocument`) is a diagnostic and stays as written.
+- *Phone.* Documents joins the bottom bar, which now holds five (`MOBILE_NAV_MAX`); the bar picks its columns from the
+  count and a test pins both the count and a label length that fits a 320px phone. DESIGN.md's "four destinations" says
+  five at most.
+- *The proxy.* `/api/v1/documents` forwards `q` as free text (any script, at most 200 characters, no control
+  characters; the other parameters stay id-shaped), because a search is words, not an id.
