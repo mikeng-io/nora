@@ -206,6 +206,27 @@ async def test_dependencies_builds_a_speaker_when_tts_is_enabled_and_keyed(cfg, 
     assert isinstance(deps.speaker, MiniMaxTtsSpeaker)
 
 
+@pytest.mark.parametrize(("mode", "kind"), [
+    ("off", type(None)), ("normalise", "_NormaliseOnly"), ("model", "SpeechFormatter"),
+])
+async def test_the_speech_formatter_is_wired_by_its_mode(cfg, monkeypatch, mode, kind):
+    """design/voice-channel/08: `off` (the template's value) wires NO
+    formatter, so the speaker sends her reply exactly as written; the other
+    two modes wire the deterministic half alone or the model call."""
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-minimax-key")
+    keyed = override_config(cfg, {
+        "speech.tts.enabled": True,
+        "speech.tts.provider": "minimax_cn",
+        "speech.tts.format.mode": mode,
+    })
+    deps = await build_dependencies(keyed)
+    formatter = deps.speaker._formatter  # type: ignore[union-attr]
+    if kind is type(None):
+        assert formatter is None
+    else:
+        assert type(formatter).__name__ == kind
+
+
 async def test_the_doctrine_the_root_builds_carries_no_capability_section(cfg):
     """DEC-150: the composition root must no longer wire a capability block.
 

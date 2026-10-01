@@ -94,6 +94,7 @@ from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
     RowStyle,
+    assemble,
     render_bullets,
     render_rows,
     restamp,
@@ -450,10 +451,14 @@ class _SelfMemory(Protocol):
 #: sequence of `parts.append(...)` calls in that method — «does proactive
 #: carry `standing`?» used to be a trace through `inputs`, `_people_block`,
 #: `_decision_log`, `_loop_decisions` and `_self_card`; it is now a grep of
-#: this tuple. `order` matches the append order in `inputs` but nothing SORTS
-#: by it — unlike `nora.agent.prefill`, this pass concatenates by hand rather
-#: than through `assemble()`, so reordering this table alone changes nothing;
-#: the append order in `inputs()` is still what renders.
+#: this tuple. `inputs` hands its blocks to `assemble()`, so `order` IS the
+#: order the model reads: reordering this table reorders the prompt. The
+#: numbers were the append order of the hand join this replaced (step 2a of
+#: `design/context-assembly/04-every-occasion.md`), and the goldens in
+#: `tests/unit/test_dreamer_assembly_goldens.py` pin that order byte for byte.
+#:
+#: `<culture>` repeats, once per room, all at one `order`: `assemble` sorts
+#: stably, so the rooms keep the unit's own room order.
 #:
 #: `key="turn"` for all eight, the safe default, for the same reason the
 #: gate's table gives both of ITS rows `"turn"`: this pass is its own call
@@ -681,33 +686,33 @@ class ProactiveAdaptor:
         self._inc("nora_proactive_pass_total", reason=reason)
 
         now_order, now_key = _ROW["now"]
-        parts = [ContextBlock(
+        blocks = [ContextBlock(
             name="now", order=now_order, key=now_key,
             # A CLOCK THIS PROCESS OWNS — nothing in the room wrote it.
             body=f"{now.astimezone(self._tz):%Y-%m-%d %a %H:%M} ({self._tz.key})",
-        ).render()]
+        )]
         home = next(room for room in rooms if room.home)
-        parts.append(await self._presence_block(home))
+        blocks.append(await self._presence_block(home))
         people = await self._people_block(home, unit=key)
-        if people:
-            parts.append(people)
-        parts.append(_open_notes_block(
+        if people is not None:
+            blocks.append(people)
+        blocks.append(_open_notes_block(
             shown_notes, now=now, tz=self._tz, rooms=rooms,
         ))
         rooms_order, rooms_key = _ROW["rooms"]
-        parts.append(ContextBlock(
+        blocks.append(ContextBlock(
             name="rooms", order=rooms_order, key=rooms_key,
             body="\n".join(standing_lines) if standing_lines else "(no positions)",
-        ).render())
-        parts.extend(await self._cultures(rooms))
-        parts.append(await self._decision_log(rooms, now=now))
-        parts.append(await self._loop_decisions(key, rooms, home, now=now))
+        ))
+        blocks.extend(await self._cultures(rooms))
+        blocks.append(await self._decision_log(rooms, now=now))
+        blocks.append(await self._loop_decisions(key, rooms, home, now=now))
         self_card = await self._self_card(key, platform=home.platform)
-        if self_card:
-            parts.append(self_card)
-        return "\n\n".join(parts)
+        if self_card is not None:
+            blocks.append(self_card)
+        return assemble(blocks, sep="\n\n")
 
-    async def _presence_block(self, home: UnitRoom) -> str:
+    async def _presence_block(self, home: UnitRoom) -> ContextBlock:
         """Where she stands for this unit, as `<presence>` — the tag path's
         block from the tag path's renderer (design/self-awareness/02, D2).
 
@@ -732,10 +737,11 @@ class ProactiveAdaptor:
             presence = await self._presence_of(home)
         if presence is None:
             presence = Presence(platform=home.platform)
-        block = restamp(render_presence(presence, room_is=home.description), _ROW)
-        return block.render()
+        return restamp(render_presence(presence, room_is=home.description), _ROW)
 
-    async def _people_block(self, home: UnitRoom, *, unit: str) -> str:
+    async def _people_block(
+        self, home: UnitRoom, *, unit: str,
+    ) -> ContextBlock | None:
         """Who is in the home room, what they are called there, and ONE LINE of
         what she remembers about each.
 
@@ -775,15 +781,15 @@ class ProactiveAdaptor:
         the same reason — this is context, not a claim she will make.
         """
         if self._people_of is None:
-            return ""
+            return None
         try:
             people = await self._people_of(home)
         except Exception:
             log.exception("proactive people block failed (home=%s)",
                           home.label or home.conversation_id)
-            return ""
+            return None
         if not people:
-            return ""
+            return None
         remembered = await self._roster_index(people, platform=home.platform, unit=unit)
         lines = []
         for person in people:
@@ -807,7 +813,7 @@ class ProactiveAdaptor:
         order, key = _ROW["people"]
         return ContextBlock(
             name="people", order=order, key=key, body="\n".join(lines),
-        ).render()
+        )
 
     async def _roster_index(
         self, people: Sequence[_Person], *, platform: str, unit: str,
@@ -995,12 +1001,12 @@ class ProactiveAdaptor:
                 return False
         return True
 
-    async def _cultures(self, rooms: Sequence[UnitRoom]) -> list[str]:
+    async def _cultures(self, rooms: Sequence[UnitRoom]) -> list[ContextBlock]:
         """One `<culture room=…>` per room of the unit with an account
         (DEC-207), in `rooms` order. A room never folded renders nothing; a
         failed read is counted per room (`stage="proactive_culture"`) and
         renders nothing either — `read_culture`'s contract."""
-        out: list[str] = []
+        out: list[ContextBlock] = []
         for room in rooms:
             block = render_culture(
                 await read_culture(
@@ -1013,7 +1019,7 @@ class ProactiveAdaptor:
                 now=self._clock(), room=_room_name(room),
             )
             if block is not None:
-                out.append(restamp(block, _ROW).render())
+                out.append(restamp(block, _ROW))
         return out
 
     async def _standing_lines(
@@ -1079,7 +1085,7 @@ class ProactiveAdaptor:
 
     async def _decision_log(
         self, rooms: Sequence[UnitRoom], *, now: datetime,
-    ) -> str:
+    ) -> ContextBlock:
         """Her own rows over the window, restricted to THIS unit's rooms
         (39 D7): `Reminder` has no unit column, so the join is the
         room map the composition root built from policy."""
@@ -1104,27 +1110,25 @@ class ProactiveAdaptor:
             if (row.platform, row.conversation_id) in mine
         ][-self._history_shown:]
         order, key = _ROW["decisions"]
-        return (
-            ContextBlock(
-                name="decisions", order=order, key=key,
-                # HOW FAR BACK, as data. The description used to say «over the
-                # last {days} days» with the number interpolated at inject
-                # time; a description belongs to the type, so the number is an
-                # attribute and the type annotates it. Dropping it outright
-                # would leave «recently», which is the undated-input failure
-                # the 2026-09-09/10 gate measurement is about.
-                attrs=(("days", str(self._history.days)),),
-                body=(
-                    "\n".join(lines) if lines
-                    else "(nothing decided in this window)"
-                ),
-            ).render()
+        return ContextBlock(
+            name="decisions", order=order, key=key,
+            # HOW FAR BACK, as data. The description used to say «over the
+            # last {days} days» with the number interpolated at inject
+            # time; a description belongs to the type, so the number is an
+            # attribute and the type annotates it. Dropping it outright
+            # would leave «recently», which is the undated-input failure
+            # the 2026-09-09/10 gate measurement is about.
+            attrs=(("days", str(self._history.days)),),
+            body=(
+                "\n".join(lines) if lines
+                else "(nothing decided in this window)"
+            ),
         )
 
     async def _loop_decisions(
         self, key: str, rooms: Sequence[UnitRoom],
         home: UnitRoom, *, now: datetime,
-    ) -> str:
+    ) -> ContextBlock:
         """`<loop_decisions>` — what the OTHER half of the loop did in each of
         this unit's rooms over the last 24 hours (issue #199).
 
@@ -1156,7 +1160,18 @@ class ProactiveAdaptor:
         and `_self_card`'s judgement.
         """
         if self._decisions is None:
-            return ""
+            # No block and no claim, but the SLOT stays (`when_empty="nothing"`):
+            # the hand join this replaced kept an empty string here, and the
+            # two separators round it, in the one prompt that reaches a model
+            # this way — the eval harness, which wires no log. Production
+            # always does (`nora.app.composition`), so this is byte-compat for
+            # the suite's baseline, not a behaviour anyone relies on; deleting
+            # it moves every proactive eval prompt by two blank lines.
+            order, key_ = _ROW["loop_decisions"]
+            return ContextBlock(
+                name="loop_decisions", order=order, key=key_, body="",
+                when_empty="nothing",
+            )
         # ONE unit-scoped read, not one per room. The pass is
         # unit-keyed, the bound is 20 rows over the whole unit rather than
         # 20 per room, and `idx_decision_log_unit_ts` serves it — see
@@ -1174,7 +1189,7 @@ class ProactiveAdaptor:
         # RESTAMPED: `render_decisions` lives in `nora.domain.decision_log`,
         # shared with the tag path, and builds an unstamped block — where it
         # sits in THIS prompt is this occasion's fact, not that module's.
-        block = restamp(
+        return restamp(
             render_decisions(
                 [
                     (
@@ -1193,14 +1208,13 @@ class ProactiveAdaptor:
             ),
             _ROW,
         )
-        return block.render()
 
-    async def _self_card(self, key: str, *, platform: str) -> str:
+    async def _self_card(self, key: str, *, platform: str) -> ContextBlock | None:
         """`<self_card>`, DEC-96's own framing: Honcho's `(nora -> nora)`
         distillation of her own replies — a record she may contradict, never
         a description of who she is. Fail-open and silent, like the tag path's."""
         if self._memory is None or self._self_card_conclusions <= 0:
-            return ""
+            return None
         try:
             recall = await self._memory.representation(
                 peer_id=self._ai_peer,
@@ -1213,13 +1227,10 @@ class ProactiveAdaptor:
             self._inc(
                 "nora_errors_total", stage="proactive_self_card", platform=platform,
             )
-            return ""
+            return None
         if not recall.reachable:
-            return ""
-        block = restamp(render_self_card(recall.conclusions), _ROW)
-        if block is None:
-            return ""
-        return block.render()
+            return None
+        return restamp(render_self_card(recall.conclusions), _ROW)
 
     # -- accept -------------------------------------------------------------
 
@@ -1577,7 +1588,7 @@ def _note_origin(
 def _open_notes_block(
     notes: Sequence[Note], *, now: datetime, tz: ZoneInfo,
     rooms: Sequence[UnitRoom],
-) -> str:
+) -> ContextBlock:
     """The unit's open notes, through the ONE index renderer (#292).
 
     **Everything this pass needs beyond the shared row is an ATTRIBUTE now**,
@@ -1619,7 +1630,7 @@ def _open_notes_block(
     return ContextBlock(
         name="notes", order=order, key=key,
         body=render_note_rows(notes, today=today, extra=_extra) or "(none)",
-    ).render()
+    )
 
 
 def _decision_line(row: Reminder, *, tz: ZoneInfo) -> str:

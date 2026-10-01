@@ -9,7 +9,6 @@
   ],
   "limitations": [
     "A deleted document cannot be restored from the web app, only by asking Nora in its room (she sees its three most recently put-away documents) or by the operator.",
-    "Nothing is ever erased for real: there is no purge.",
-    "Ships with the document tools, behind [documents] enabled."
+    "Nothing is ever erased for real: there is no purge."
   ]
 }

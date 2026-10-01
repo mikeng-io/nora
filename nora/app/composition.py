@@ -121,6 +121,7 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.speech_markup import normalise as normalise_for_speech
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.computer_context import ComputerContextReader
@@ -167,6 +168,7 @@ from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.video_readings import SqlVideoReadingStore
+from nora.infra.tts import TextFormatter as SpeechTextFormatter
 from nora.infra.version import OK as VERSION_OK
 from nora.infra.version import VersionManifest
 from nora.infra.vision import MediaComprehender, VisionClient
@@ -759,6 +761,52 @@ class _DebriefModelClient:
         return DebriefCompletion(
             content=got.content, finish_reason=got.finish_reason,
         )
+
+
+def _speech_formatter(
+    cfg: Config, prompts: DoctrineStore, metrics: Metrics,
+) -> SpeechTextFormatter | None:
+    """`[speech.tts.format]`'s formatter (design/voice-channel/08), or None.
+
+    `off` is None, so the speaker sends her reply exactly as written. The
+    `model` mode's client is the reaction picker's shape, `_DebriefModelClient`
+    over the same OmniRoute base URL: one `ask_text` call, its own Strands
+    agent span (`invoke_agent speech-format`) under the turn that is speaking.
+    """
+    fmt = cfg.speech.tts.format
+    if fmt.mode == "off":
+        return None
+    if fmt.mode == "normalise":
+        return _NormaliseOnly()
+    from nora.agent.speech_format import SpeechFormatter
+    return SpeechFormatter(
+        client=_DebriefModelClient(
+            base_url=cfg.llm.base_url,
+            api_key=os.environ.get(cfg.llm.api_key_env, ""),
+            max_tokens=fmt.max_tokens,
+            temperature=0.0,
+            model=fmt.model or cfg.llm.model,
+            # The client's own bound sits above the formatter's so the
+            # formatter's `wait_for` is the one that fires and is counted.
+            timeout_seconds=fmt.timeout_seconds + 1.0,
+            reasoning_effort=_reasoning_effort(
+                fmt.reasoning_effort or cfg.llm.reasoning_effort,
+                source="[speech.tts.format] reasoning_effort",
+            ),
+            agent_name="speech-format",
+        ),
+        prompts=prompts, metrics=metrics,
+        timeout_seconds=fmt.timeout_seconds,
+        min_chars=fmt.min_chars, max_chars=fmt.max_chars,
+    )
+
+
+class _NormaliseOnly:
+    """`[speech.tts.format] mode = "normalise"`: the deterministic half only,
+    no model call (`nora.domain.speech_markup.normalise`)."""
+
+    async def format(self, *, text: str) -> str:
+        return normalise_for_speech(text)
 
 
 def _describe_models(cfg: Config) -> dict[str, str]:
@@ -1567,6 +1615,21 @@ async def build_dependencies(
     # (stage 3 closure) receives this same instance — the registry's
     # `discord_speaker=` keyword is the one place that knows MiniMax is real;
     # everything downstream receives `Speaker | None`.
+    # Built before the speaker (below) because the speech formatter reads its
+    # instruction from it (design/voice-channel/08); nothing else here moved.
+    doctrine_store = DoctrineStore(
+        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
+        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
+        trigger=cfg.engagement.trigger.text,
+        language_hint=cfg.doctrine.language_hint,
+        tool_names=ToolRegistry().tool_names(),
+        metrics=metrics,
+    )
+    try:
+        doctrine = doctrine_store.get(applies_to="tag")
+    except DoctrineError as exc:
+        raise StartupError(f"doctrine error: {exc}") from exc
+
     speaker: Speaker | None = None
     if cfg.speech.tts.enabled:
         tts_key = os.environ.get(cfg.speech.tts.api_key_env, "")
@@ -1579,6 +1642,9 @@ async def build_dependencies(
                 pitch=cfg.speech.tts.pitch,
                 vol=cfg.speech.tts.vol,
                 emotion=cfg.speech.tts.emotion or None,
+                text_normalization=cfg.speech.tts.text_normalization,
+                pronunciation=tuple(cfg.speech.tts.pronunciation),
+                formatter=_speech_formatter(cfg, doctrine_store, metrics),
             )
         else:
             log.warning(
@@ -1674,19 +1740,6 @@ async def build_dependencies(
     # line — not the isinstance test — is what would catch it.
     _adapter_satisfies_platform_adapter: PlatformAdapter = adapter
     account = registry.identity_for("signal").primary
-
-    doctrine_store = DoctrineStore(
-        cfg.doctrine.dir, strict=cfg.doctrine.strict, reload=cfg.doctrine.reload,
-        canary=cfg.doctrine.canary, display_name=cfg.doctrine.display_name,
-        trigger=cfg.engagement.trigger.text,
-        language_hint=cfg.doctrine.language_hint,
-        tool_names=ToolRegistry().tool_names(),
-        metrics=metrics,
-    )
-    try:
-        doctrine = doctrine_store.get(applies_to="tag")
-    except DoctrineError as exc:
-        raise StartupError(f"doctrine error: {exc}") from exc
 
     # The Dreamer's own instruction corpus — its doctrine plus one objective
     # per adaptor (instruction-substrate spec §4.1). Bind-mounted read-only the

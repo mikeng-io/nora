@@ -81,7 +81,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "custody is off; the route then answers `unavailable`). "
         "57 -> 58 on 2026-10-01: `room_label`, (platform, conversation id) -> the "
         "operator's room label, a callable for the portal's document rows "
-        "because `nora.web` never sees a `Policy` (design/artifact §32)."
+        "because `nora.web` never sees a `Policy` (design/artifact §33)."
     )
 
 

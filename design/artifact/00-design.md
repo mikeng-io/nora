@@ -1,16 +1,16 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Early study. What Smith called an artifact becomes a document: a small JSON spec over a closed catalog of shadcn components (json-render), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme. Retires Drop's artifact half. The sandbox side (files only, never a page; retiring make_artifact and Smith) belongs to design/sandbox-runtime."
-tags: [nora, documents, artifact, json-render, shadcn, react, portal, drop, skill]
-timestamp: '2026-09-30'
-status: draft
+description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 21 components (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are planned and not built. The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
+tags: [nora, documents, artifact, json-render, react, portal, drop, skill]
+timestamp: '2026-10-01'
+status: partly-built
 ---
 
 # Documents
 
 > **Amended 2026-10-01 (coordinator decision, sandbox session; Miles's ruling).** Publishing a document is
-> **`document_publish(spec | path, title?, document_id?)`, a document tool of this session's**, not
+> **`document_publish`, a document tool of this session's** (as built: `document_publish(spec, document_id?, base_revision?)`, §26; the `path` and `title` forms of this note were not built), not
 > `computer_export(to="document")`. `computer_export` never had that option and never publishes a page: as of
 > the sandbox session's #649 `html` is refused and `link` only carries files (CSV, PDF, PNG); design/sandbox-runtime
 > §6 records it (#650). `path` is read through that session's audited workspace-read helper, never through
@@ -19,18 +19,31 @@ status: draft
 > in doctrine. This note supersedes every `computer_export` mention below that predates it; the older text is
 > left, marked, where it records how the design got here.
 
-Status: **early study; direction set by the operator 2026-09-30; open decisions at the end.**
+Status (2026-10-01): **built and live in part.** What exists, by section: the catalog and renderer (§17 to §21,
+#644), the checker (§24, #648), the store, publish service and read API (§25, #654), the tools (§26, #658),
+the portal pages and picture route (§27, #660), the `document-creation` skill (§28, #667), the room's
+`<documents>` block (§29, #670), the sightings resolver for pictures (#668), links (§30, #673) and the
+lifecycle of archive, delete and restore (§31, #674). **Built since** (§33): search, a phone bottom-bar entry, forget reaching documents. **Planned and not built**
+(operator, 2026-10-01, §32): a present view, print/PDF and a revision-history view; nothing claims they exist. **Parked:** long background research reports,
+which are the job of the future `delegate_task` (open issue #22, written while Smith still existed, so its
+wording is stale), not of documents. The sections below are in the order
+they were written: where an early section says something the later ones or the code changed, it carries a
+marker, and the code wins.
 
 ## 1. Decisions already made (operator, 2026-09-30)
 
 1. **An agent emits a JSON spec, never HTML, CSS or JS.** A fixed renderer turns it into a page.
-2. **Built on React, shadcn and json-render** (`vercel-labs/json-render`).
+2. **Built on React, shadcn and json-render** (`vercel-labs/json-render`). *Narrowed while building (§18,
+   ADR 0020 decision 4):* shadcn is NOT used. `@json-render/core` and `/react` stay, and the components are
+   written on the portal's own primitives; `@json-render/shadcn` was removed.
 3. **Documents open only behind the portal's sign-in** (`identity.toml`). There is no public link.
 4. **They are listed and opened in the web app**, not on a separate surface.
 5. **They reuse the portal's whole style and theme.**
 6. **The word is "document"**, not "artifact".
 
 Decisions 3 and 4 remove the reason Drop's artifact half exists (§2), so this design retires it.
+*As built (2026-10-01):* not retired yet. `computer_export(to="link")` still publishes files through Drop's
+`POST`/`PATCH /api/artifacts`, and old links keep reading (DEC-254); only the document use of it is gone.
 
 ## 2. Scope and the line with the sandbox session
 
@@ -45,8 +58,15 @@ The one contract between them (amended 2026-10-01, see the note at the top):
 > structured findings on a refusal. `path` is a spec file the model generated in the computer's workspace,
 > read through the sandbox session's audited helper. The computer produces files and numbers; it never
 > publishes a page.
+>
+> **As built (§26, §30):** `document_publish(spec, document_id?, base_revision?)`. There is no `path` form
+> (the audited helper, `WorkspaceReader`, exists from #649; nothing calls it for a document) and no `title`
+> (the Page's title is the document's title). An edit names the revision it read. The result carries
+> `document_id`, `revision` and, when `[documents] public_url` is set, a `url` made from a 12-hex handle;
+> with it empty there is no `url` at all. Beside it: `document_read(document_id)` and
+> `document_set_status(document_id, state)`.
 
-## 3. Why the present shape fails (read from the tree, 2026-09-30)
+## 3. Why the present shape failed (read from the tree, 2026-09-30; Smith and `make_artifact` were retired 2026-10-01, DEC-254)
 
 - **Smith writes HTML by hand.** `nora/compute/smith/skills/html_report/render.py` wraps
   fragments in `page_shell.py`; the doctrine spends paragraphs on HTML-assembly mistakes
@@ -94,6 +114,9 @@ A test fails when the committed `document.schema.json` is stale against the cata
 
 ## 5. Storage
 
+*The table layout below is the study's. As built it is three tables, `documents`, `document_revision` and
+`document_state` (§25, §31); the spec lives on the revision, not on `documents`.*
+
 - **Table `documents`**, a new one through Nora's alembic chain (Nora owns the schema, as she
   does `artifacts` today):
   `id` (uuid), `title`, `spec` (jsonb), `spec_version`, `sha256`, `room`, `created_by`,
@@ -103,9 +126,11 @@ A test fails when the committed `document.schema.json` is stale against the cata
 - **Specs are small** (KB), so they live in Postgres. RustFS is not involved unless a document
   embeds an image (open decision 5).
 - **Nora is the only writer.** The web app is read-only, matching the proxy's GET-only table.
-- **Retired:** `artifacts`, Drop's `POST /api/artifacts`, `/api/tokens`, `DropArtifactIngest`,
-  the `nora-compute` membership, and the `ArtifactIngest` port for this use. The 4 real HTML
-  artifacts (and 11 other stored files) are open decision 6.
+- **Retired, as built (DEC-254):** `/api/tokens` and the `nora-compute` membership, with Smith. **NOT
+  retired, and the study's list was wrong about them:** the `artifacts` table, Drop's `POST`/`PATCH
+  /api/artifacts`, `DropArtifactIngest` and the `ArtifactIngest` port, because `computer_export`
+  (`to="link"`) is their caller (S3a, #649). The 4 real HTML artifacts (and 11 other stored files) were
+  open decision 6, now settled in §12.
 
 ## 6. In the web app
 
@@ -198,7 +223,7 @@ must also scan the package's output (`@source`).
   Expect a second copy of each in the bundle; measure it in S0.
 - **An exposed component is a public surface.** Take only the ones a document needs, not all 36.
 
-## 9. Catalog, first cut
+## 9. Catalog, first cut (superseded: 21 components, §17, §19, §21; `Chart` is bar and line only)
 
 A closed vocabulary; fix it against what was actually stored (15 rows, of which 4 are real HTML documents, 2026-08-12 →
 09-04) before committing (S1).
@@ -254,30 +279,40 @@ lists components.
 
 S4 needs nothing from the sandbox session; the `path` form of `document_publish` waits on its audited workspace-read helper (amended 2026-10-01: this used to wait on `computer_export`).
 
-## 12. Open decisions
+**Status (2026-10-01).** The steps were built under the names W1 to W7 and a lifecycle step (§17 to §31), not
+S0 to S6. S6, retiring Drop's artifact half, is NOT done and is not wanted yet: `computer_export` publishes
+files through it (§5). The `path` form of `document_publish` was not built.
 
-1. **Who can see a document.** Checked 2026-09-30: `identity.toml` maps persons to *accounts*
-   only. Room membership lives in `policy.toml`, `[[rooms]] persons = [...]`, read at startup,
-   and a room may say `persons = "*"` (anyone in that chat, including people who are not in
-   `identity.toml`). `nora/web/memory.py` already scopes a read by viewer through
-   `workspaces_of_person`; documents need the room-level analogue. Recommend:
-   a document is visible to **its requester and to the persons its room names**, computed at
-   read time from the loaded policy (so removing someone revokes access once the policy reloads, at the next
-   restart; not a stored snapshot);
-   for a `"*"` room, **the requester only** (fail closed, because membership there cannot be
-   enumerated). Everyone else gets 404, the same answer the proxy gives for a bad id.
-2. **Spec authority.** json-render's native spec, or a Nora envelope
-   (`{version, title, spec}`)? Recommend the envelope: a version field is cheap now and
-   impossible to add later. The `spec_version` column assumes it.
-3. **Nav placement** and the DESIGN.md change that goes with it (§6).
-4. **Keep prior revisions?** Cheap to store (KB); "make the chart blue" then has an undo.
-5. **Images inside a document.** Blob store reference, or none at first?
-6. **The 4 existing HTML artifacts** (11 other stored files are tests or uploads). They were public and unauthenticated. Options: let them
-   expire, keep Drop read-only for them, or re-render. Recommend keep Drop read-only until they
-   expire, then retire the artifact half.
-7. **Maps.** Static image from the server-side Static Maps API (key stays on Nora's side), or a
-   client map in the viewer (the portal already ships MapLibre). Recommend reusing MapLibre.
-8. **Which session is the sandbox session**, so the §2 contract change can be sent to it.
+## 12. The decisions that were open (settled by 2026-10-01)
+
+Each was open on 2026-09-30 and has since been settled, by the later section named or by a ruling. Nothing
+here is open except decision 9.
+
+1. **Who can see a document: settled (§25).** A document is visible to **its creator and to the persons a
+   room it was made in names**, computed at read time from the loaded policy (`policy.toml` is read once at
+   startup, so removing someone takes effect at the next restart). A `persons = "*"` room names nobody, so
+   there only the creator reads it. Everyone else gets 404, never 403, the same answer as an unknown id.
+   What the study recommended, restated: `identity.toml` maps persons to *accounts* only; room membership
+   lives in `policy.toml`, `[[rooms]] persons = [...]`, and `nora/web/memory.py` already scopes a read by
+   viewer through `workspaces_of_person`; documents needed the room-level analogue.
+2. **Spec authority: settled (§18).** A Nora envelope, `{version: 1, root: <Page>}`, stored as a nested
+   tree, with no `title` of its own (the Page's title is the document's title).
+3. **Nav placement: settled (§27).** One «Documents» link in the rail's main group and the command palette;
+   the phone bottom bar was four destinations (DESIGN.md §7). **Ruled 2026-10-01 (§32), built (§33):** a phone
+   bottom-bar entry; the bar now holds five and DESIGN.md says so.
+4. **Keep prior revisions: settled (§25).** Yes. `document_revision` keeps one full snapshot per revision,
+   append-only. **Ruled 2026-10-01 (§32):** a view of that history is to be built; none exists yet (§27).
+5. **Images inside a document: settled (§16, §25).** Room media by reference (a media code resolved to a
+   sha256 by Nora), never a URL; no external images in v1.
+6. **The 4 existing HTML artifacts: settled (DEC-254).** Drop's artifact READ path and `POST`/`PATCH
+   /api/artifacts` stay, so every old link keeps working, and Drop's artifact half is not retired (§5).
+7. **Maps: settled (§14, §21).** A custom `Map` component over the portal's MapLibre, with coordinates and
+   never an address.
+8. **Which session is the sandbox session: moot.** The §2 contract was amended 2026-10-01 and the sandbox
+   side landed (#649, #672).
+9. **Render Mermaid in the sandbox instead of the page: still open (§22).** Recommended not yet. The
+   allowlist and a pinned mermaid version are the defence; the trigger to revisit is a third bypass or the
+   audience widening beyond the rooms a document came from.
 
 ## 13. S0 results (2026-09-30)
 
@@ -336,6 +371,9 @@ the portal supplies the look; "adopt shadcn" means this split, not a wholesale s
 
 ## 14. Search, maps, templates, scenarios (2026-09-30)
 
+*Status: the `documents.text` column and the checker's extraction exist (§24, §25); search itself is NOT built
+(§25, §27, §31) and is ruled to be built (§32).*
+
 **Search (web app ⌘K and the agent), what exists.** The `embedding` table (one table, open
 `kind`, `row_key`, `scope`, `v1024` for bge-m3, HNSW cosine, `fingerprint` as the re-embed
 predicate) and a `pg_trgm` lexical channel are in the schema. **Nothing writes or reads the
@@ -369,7 +407,8 @@ chart-led summary; itinerary or plan with a map; comparison table; research brie
 diagram with prose. Each becomes one template and one S5 eval brief.
 
 **Presentation.** Open: slides, or only page layout? Smith's six skills never produced slides, so
-a `Deck` is out of the first catalog unless S1 shows a real need.
+a `Deck` is out of the first catalog unless S1 shows a real need. (Settled in §15 as a view of the same
+document, and ruled 2026-10-01 to be built; see §32. It does not exist yet.)
 
 **Container, layout, Tailwind.** The portal shell owns page width, padding and chrome, so a
 document has no outer container of its own. Layout is `Stack` (one direction) and `Grid` (fixed
@@ -413,12 +452,16 @@ reliably fit one tag turn (360 s, 20 model turns, 12,000 output tokens, which bi
 the first version handles small trips inline, and the real home for this scenario is
 `delegate_task`: research and authoring in the background, deliverable a `document_id`. That is
 the reason the contract between the two designs is fixed now (§2), even though `delegate_task` is
-built later.
+built later. **Parked (operator, 2026-10-01): long background research reports are that future
+`delegate_task`'s job, not documents'** (open issue #22); nothing in the document
+path is waiting on it.
 
 **Presentation is a view of the same document, not a second format.** The portal gets a
 `?view=present` mode: each top-level `Section` becomes a slide, with full-screen and keyboard
 navigation. So no `Deck` component and no slide format. The cost goes into the skill: one idea per
-top-level section. This closes open decision 8 (slides).
+top-level section. This closes open decision 8 (slides). **Not built (2026-10-01):** there is no present
+view and no `?view=present`; it is ruled to be built (§32). Until it merges, nothing may tell a person the
+page can be shown as slides, and the skill says only "one idea per top-level section".
 
 **Catalog additions the scenario forces:** `Timeline` (day by day), `Sources` (URL, title, as-of
 date; provenance is a first-class element, not a footnote), and a static `Checklist`
@@ -899,7 +942,7 @@ well as in the service; the list endpoint clamps `limit` and `offset` (and the p
 100,000) so an absurd value answers a page, not a 500. A room is matched by its conversation id alone, not by
 platform, because conversation ids are unique across platforms by the same convention `media_fetch` relies
 on; if that ever stops being true, the room key here must gain the platform. Not covered: `nora person
-forget` did not reach documents (it does now, §32), and a message the platform deleted may still be resolvable by `recent`;
+forget` did not reach documents (it does now, §33), and a message the platform deleted may still be resolvable by `recent`;
 these are issues #655 and #656.
 
 **Not built, on purpose.** The media byte route (W5, with the portal), the tool and its routing eval
@@ -955,7 +998,7 @@ would need its own route (`DocumentStore.history` exists); not built.
 **Nav.** One link, «Documents», in the rail's main group (`MAIN_NAV`, no `mobile` flag): the phone's bottom
 bar stays four destinations (DESIGN.md §7), and the command palette lists it with the others. No DESIGN.md
 change. (Decision for the operator: whether documents deserve a bottom-bar slot on a phone, which would
-displace one of Today, Map, Plans or Games.)
+displace one of Today, Map, Plans or Games.) **Ruled 2026-10-01 (§32): yes; built, §33.**
 
 **The picture route.** Nora: `GET /app/v1/documents/{id}/media/{sha}?personId=` (`build_document_media`).
 It answers a picture only when ALL of these hold, and every other case is one `404`: the document is
@@ -971,8 +1014,10 @@ checks the session, refuses any id that is not a UUID or sha that is not 64 lowe
 request, sends the SESSION's person id (never the browser's), passes on only a raster content type, repeats the headers, and reads a `400` from Nora (the two sides
 disagreeing about who the viewer is) as `503`, never «not found». `Dependencies` gains `blobs` for this (57 fields).
 
-**Not built here.** Search (⌘K, trigram), the skill (§28), revision history. `[documents] enabled` stays off:
-until it is on, nothing publishes, so the pages are empty for everyone.
+**Not built here.** Search (⌘K, trigram), the skill (§28), revision history. `[documents] enabled` stayed off
+while this section was written, so the pages were empty for everyone. Documents have been live since
+2026-10-01 (the first publish, DEC-254's precondition), so that no longer holds; search and the revision
+history are still not built.
 
 ## 28. W7: the `document-creation` skill (2026-10-01)
 
@@ -1137,12 +1182,43 @@ a UUID and one of three words checked before any request), Archive / Delete (wit
 on the document page, and a Current / Archived filter on the list. The `document-creation` skill names
 the verb in one paragraph so she never hand-rolls a delete as an empty revision.
 
-**Not built.** Search (built since, §32), a purge (a hard delete is a separate decision), and a
+**Not built.** Search (built since, §33), a purge (a hard delete is a separate decision), and a
 portal restore of a deleted document. The decision row is DEC-255.
 
-## 32. Forgetting, reading by link, search, and the portal's rough edges (2026-10-01)
+## 32. Operator rulings of 2026-10-01, and what is planned
 
-Operator rulings of 2026-10-01 on the open items after §31. Parked and NOT built: a present view, print,
+Recorded here as rulings; none of the built-or-not facts below changes until the PR that builds it merges.
+
+**`nora person forget` soft-deletes every document the person created. There is no purge.** Each of that
+person's documents gets a `deleted` row in `document_state` (§31), so it is off every list and every
+person-facing read answers 404, and every revision stays in `document_revision`. The unit is the whole
+document the person created, including one others have revised since, which is one of the three cases issue
+#655 left open. The ruling does not cover a document that quotes a forgotten message in its text, and
+nothing is erased for real: DEC-255's reopen condition (a document that must be erased for real needs its
+own decision and a purge path) stands. **Built since (§33):** `nora/app/person_forget.py` has the step, and #655 is closed by it.
+
+**To be built, in a separate PR (planned; not built; this design claims none of it exists).** Search and the phone
+entry are built since (§33); the rest below stays planned:
+
+- **Search**, v1 lexical over `documents.text` as §14 specifies, behind the same visibility rule.
+- **A phone bottom-bar entry for Documents** (§27, and the DESIGN.md change that goes with it).
+- **A present view** (`?view=present`, §15).
+- **Print and PDF** of a document.
+- **A revision-history view** (§27: `DocumentStore.history` exists, the read API returns the current revision
+  only).
+
+Until each merges, the `document-creation` skill and the room's tools must not tell a person it exists. The
+skill's line about slides was removed on 2026-10-01 for that reason. The generated catalog prompt
+(`nora/documents/catalog-prompt.md`, from `app/src/lib/documents/catalog.ts`) still says a presentation view
+shows each top-level Section as a slide; it is the one place left that does, and it is generated from the
+app, so the present-view PR is where it becomes true or is changed.
+
+**Parked, not designed away:** long background research reports. They are the job of a future
+`delegate_task` (open issue #22), which delivers a `document_id` through the document tool.
+
+## 33. What the rulings built: forget, reading by link, search, and the portal's rough edges (2026-10-01)
+
+Built from §32's rulings (2026-10-01). Parked and NOT built: a present view, print,
 a revision-history view, and `delegate_task`.
 
 **`nora person forget` reaches documents (DEC-259).** A document is the forgotten person's when they

@@ -1,5 +1,5 @@
 """`nora person forget` reaches documents (operator ruling 2026-10-01, DEC-259,
-design/artifact/00-design.md §32).
+design/artifact/00-design.md §33).
 
 A document is the forgotten person's when they CREATED it. Each is soft-deleted through the
 `DocumentStore` port (one more `document_state` row, `set_by` naming the forget), never
