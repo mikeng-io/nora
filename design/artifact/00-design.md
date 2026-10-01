@@ -1569,3 +1569,14 @@ revision re-looks every name up again. No lookup is cached.
 
 **Not built.** A route line between the places (`route` is discarded), a cache, and a way to say which of two ambiguous places was meant
 other than naming it more fully.
+
+
+**Review of #703 (independent, probes run against the PR tree).** Fixed before merge: an address `reverse_geocode` gave out this turn
+could still be pinned (the R-57 set `route` checks is now passed to the service); a coordinate written with a space instead of a comma
+got through (`looks_like_coordinate` accepts either); nothing bounded the lookups per publish (50 different places in total, names
+differing only in case or spacing counted once); the lookups ran before the target's cheap checks (a stale revision paid twice); a document
+pushed over the size limit by the coordinates failed as «could not be re-checked» (now a `size` refusal she can fix); 50 unknown places
+were 50 findings (10); Google's `could_be` candidates skipped the identifier screen `place_info` applies; and the tool's `person_names`
+wiring had no test. Left, stated: other coordinate notations (`N22.3 E114.2`, DMS, plus codes) pass the screen, as they already did for
+`place_info` and `route`; `restore_revision` re-stores a spec as it was, and no stored Map predates this change; the tool's wiring of
+the live-address set is covered by the service test and the signature, not by driving `reverse_geocode` and then a publish.

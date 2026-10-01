@@ -913,3 +913,99 @@ async def test_a_name_used_twice_is_looked_up_once() -> None:
     svc, _ = _service(places=places)
     await _publish(svc, _doc(_map({"name": "Senso-ji"}), _map({"name": "Senso-ji"})))
     assert places.asked == ["Senso-ji"]
+
+
+async def test_a_coordinate_written_with_a_space_instead_of_a_comma_is_refused_too() -> None:
+    """Review of #703: Google Text Search locates a bare pair either way, and the comma-only
+    pattern let `22.4106 114.1245` through as a place name."""
+    places = _Places()
+    svc, _ = _service(places=places)
+    for name in ("22.4106 114.1245", "22.4106,114.1245", "-33.8 151.2"):
+        result = await _publish(svc, _doc(_map({"name": name})))
+        assert result.status == "refused", name
+    assert places.asked == []
+
+
+async def test_an_address_disclosed_this_turn_is_refused_before_any_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    live = frozenset({"flat 5a, 12 nathan road, tsim sha tsui"})
+    result = await _publish(
+        svc, _doc(_map({"name": "Flat 5A, 12 Nathan Road, Tsim Sha Tsui"}, {"name": "Senso-ji"})),
+        live_addresses=live,
+    )
+    assert result.status == "refused" and [f.rule for f in result.findings] == ["place_refused"]
+    assert places.asked == ["Senso-ji"] or places.asked == [], places.asked
+
+
+async def test_one_publish_may_look_up_only_fifty_different_places() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    names = [{"name": f"Place {i}"} for i in range(26)]
+    others = [{"name": f"Other {i}"} for i in range(26)]
+    result = await _publish(svc, _doc(_map(*names), _map(*others)))
+    assert result.status == "refused" and [f.rule for f in result.findings] == ["place_limit"]
+    assert places.asked == [], "nothing was looked up, nothing was billed"
+
+
+async def test_names_that_differ_only_in_case_or_spacing_are_one_lookup() -> None:
+    places = _Places()
+    svc, _ = _service(places=places)
+    result = await _publish(
+        svc, _doc(_map({"name": "Senso-ji"}, {"name": "senso-ji"}, {"name": "Senso-ji  "}))
+    )
+    assert result.status == "ok", result
+    assert places.asked == ["Senso-ji"]
+
+
+async def test_fifty_unknown_places_are_ten_findings_not_fifty() -> None:
+    svc, _ = _service(places=_Places())
+    result = await _publish(svc, _doc(_map(*[{"name": f"Nowhere {i}"} for i in range(40)])))
+    assert result.status == "refused" and len(result.findings) == 10
+
+
+async def test_a_stale_revision_is_answered_before_any_place_is_looked_up() -> None:
+    """Review of #703: the lookups ran before the store checks, so «read it again and publish again»
+    after a conflict paid for the same places twice."""
+    places = _Places()
+    svc, _ = _service(places=places)
+    first = await _publish(svc, _doc(title="v1"))
+    result = await _publish(
+        svc, _doc(_map({"name": "Senso-ji"})), document_id=first.document_id, base_revision=99
+    )
+    assert result.status == "conflict"
+    assert places.asked == []
+
+
+async def test_coordinates_that_push_a_document_over_the_size_limit_are_a_fixable_refusal() -> None:
+    """Review of #703: grounding adds a pair per place, so a document that passed the first
+    check could fail the second as «could not be re-checked», which she cannot fix and a retry
+    pays for."""
+    import json
+
+    from nora.documents.check import MAX_BYTES
+
+    places = _Places()
+    places.KNOWN = {f"P{i}": {"status": "ok", "name": f"P{i}", "lat": 22.123456, "lng": 114.123456}
+                    for i in range(50)}
+    svc, _ = _service(places=places)
+
+    # Five Markdown blocks of at most 20,000 characters hold the padding (3 bytes each).
+    def sized(total: int) -> dict[str, Any]:
+        blocks = [
+            {"type": "Markdown", "props": {"text": "字" * min(20000, max(0, total - 20000 * i))}}
+            for i in range(5)
+        ]
+        return _doc(*blocks, _map(*[{"name": f"P{i}"} for i in range(50)]))
+
+    total = 20000 * 4
+    spec = sized(total)
+    for _ in range(200):
+        if len(json.dumps(spec, ensure_ascii=False).encode()) >= MAX_BYTES - 700:
+            break
+        total += 200
+        spec = sized(total)
+    size = len(json.dumps(spec, ensure_ascii=False).encode())
+    assert MAX_BYTES - 2500 < size <= MAX_BYTES, size
+    result = await _publish(svc, spec)
+    assert result.status == "refused" and result.findings[0].rule == "size", result

@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
+from nora.agent.egress import scan_identifiers
 from nora.agent.security import PlaceLocator, screen_and_locate_place
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
@@ -185,6 +186,13 @@ def _maps(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
 #: fan-out is bounded even though a Map may name up to 50.
 _LOCATE_CONCURRENCY = 5
 
+#: How many DISTINCT places one publish may look up, over every Map in it. Each is a billed
+#: Places call, and the schema bounds a Map at 50 but not how many Maps a document holds.
+_MAX_PLACES_PER_PUBLISH = 50
+
+#: Findings a Map can return, like the checker's own cap, so 50 unknown names are not 50 lines.
+_MAX_PLACE_FINDINGS = 10
+
 
 class DocumentService:
     def __init__(
@@ -312,8 +320,42 @@ class DocumentService:
         return self._public_url
 
 
+    async def _target_problem(
+        self, platform: str, conversation_id: str, document_id: UUID | None,
+        base_revision: int | None,
+    ) -> PublishResult | None:
+        """The refusal a revision's TARGET would earn at the write (another room's or an unknown
+        id, forgotten, not active, a stale revision), or `None`. Read-only, and the write checks
+        again, so a race between the two is still caught there."""
+        if document_id is None:
+            return None
+        try:
+            current = await self._store.get(document_id=document_id)
+        except Exception:  # noqa: BLE001 - the write reports a store that is down
+            return None
+        here = self._room_ids(platform, conversation_id) | {conversation_id}
+        if (
+            current is None
+            or current.summary.platform != platform
+            or current.summary.conversation_id not in here
+            or current.summary.forgotten
+        ):
+            return _no_such_document()
+        if current.summary.state != "active":
+            return _not_active(current.summary.state)
+        if current.summary.revision != base_revision:
+            return PublishResult(
+                "conflict", document_id=document_id, revision=current.summary.revision,
+                note=(
+                    f"This document is at revision {current.summary.revision}, not "
+                    f"{base_revision}. Read it again, apply your change to that, and publish again."
+                ),
+            )
+        return None
+
     async def _ground_maps(
-        self, document: dict[str, Any], person_names: frozenset[str] | None
+        self, document: dict[str, Any], person_names: frozenset[str] | None,
+        live_addresses: frozenset[str] | None = None,
     ) -> tuple[dict[str, Any], list[Finding], bool]:
         """Fill every Map place's coordinate from its NAME (design/artifact §40, issue #695).
 
@@ -330,25 +372,44 @@ class DocumentService:
         findings: list[Finding] = []
         resolved: dict[str, dict[str, Any] | None] = {}
         gate = asyncio.Semaphore(_LOCATE_CONCURRENCY)
+        live = {a.strip().casefold() for a in (live_addresses or ()) if a.strip()}
+
+        def key(name: str) -> str:
+            return " ".join(name.split()).casefold()
 
         async def look(name: str) -> None:
+            folded = key(name)
+            if any(a in folded or folded in a for a in live):
+                # R-57: an address `reverse_geocode` gave out THIS turn is a live position, the
+                # one `route` already refuses; naming it on a Map would pin it in a document.
+                resolved[key(name)] = {"status": "refused", "reason": "live_position"}
+                return
             async with gate:
                 got = await screen_and_locate_place(
                     name, place_locator=self._place_locator, person_names=person_names
                 )
-            resolved[name] = got.data if got.status == "resolved" else {"status": got.status}
+            resolved[key(name)] = got.data if got.status == "resolved" else {"status": got.status}
             if got.status == "refused":
-                resolved[name] = {"status": "refused", "reason": got.reason}
+                resolved[key(name)] = {"status": "refused", "reason": got.reason}
 
-        names = sorted({str(p.get("name", "")) for _, m in maps for p in m["props"]["places"]})
-        await asyncio.gather(*(look(n) for n in names))
-        if any((resolved[n] or {}).get("status") == "unavailable" for n in names):
+        first_spelling: dict[str, str] = {}
+        for _, m in maps:
+            for p in m["props"]["places"]:
+                first_spelling.setdefault(key(str(p.get("name", ""))), str(p.get("name", "")))
+        if len(first_spelling) > _MAX_PLACES_PER_PUBLISH:
+            return rewritten, [Finding(
+                "", "place_limit",
+                f"a document may map at most {_MAX_PLACES_PER_PUBLISH} different places in total, "
+                f"and this one names {len(first_spelling)}; keep the ones that matter",
+            )], False
+        await asyncio.gather(*(look(n) for n in first_spelling.values()))
+        if any((resolved[k] or {}).get("status") == "unavailable" for k in first_spelling):
             return document, [], True
         for where, node in maps:
             props = node["props"]
             props.pop("route", None)
             for index, place in enumerate(props["places"]):
-                got = resolved[str(place.get("name", ""))] or {}
+                got = resolved[key(str(place.get("name", "")))] or {}
                 path = f"{where}/props/places/{index}"
                 status = got.get("status")
                 if status == "ok" and "lat" in got and "lng" in got:
@@ -358,7 +419,10 @@ class DocumentService:
                 place.pop("lng", None)
                 name = str(place.get("name", ""))
                 if status == "ambiguous":
-                    could = ", ".join(str(c) for c in got.get("could_be", [])[:3])
+                    could = ", ".join(
+                        c for c in (str(c) for c in got.get("could_be", [])[:3])
+                        if scan_identifiers(c) is None  # as `place_info` screens its candidates
+                    )
                     findings.append(Finding(
                         path, "place_ambiguous",
                         f"{name!r} matches several places ({could}); name it more fully",
@@ -374,7 +438,7 @@ class DocumentService:
                         path, "place_unknown",
                         f"no place found for {name!r}; name a place a map knows",
                     ))
-        return rewritten, findings, False
+        return rewritten, findings[:_MAX_PLACE_FINDINGS], False
 
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:
@@ -568,6 +632,7 @@ class DocumentService:
         document_id: UUID | None = None,
         base_revision: int | None = None,
         person_names: frozenset[str] | None = None,
+        live_addresses: frozenset[str] | None = None,
     ) -> PublishResult:
         if not self._is_person(person_id):
             return PublishResult(
@@ -607,7 +672,18 @@ class DocumentService:
             )
         if findings:
             return PublishResult("refused", findings=tuple(findings))
-        rewritten, findings, down = await self._ground_maps(rewritten, person_names)
+        if _maps(rewritten):
+            # The target's cheap checks first: a stale `base_revision` or another room's id is
+            # answered before any billed lookup, so the model's «read it again and publish
+            # again» after a conflict does not pay for the same places twice.
+            early = await self._target_problem(
+                platform, conversation_id, document_id, base_revision
+            )
+            if early is not None:
+                return early
+        rewritten, findings, down = await self._ground_maps(
+            rewritten, person_names, live_addresses
+        )
         if down:
             return PublishResult(
                 "unavailable", note="The places could not be looked up, so nothing was saved."
@@ -615,6 +691,10 @@ class DocumentService:
         if findings:
             return PublishResult("refused", findings=tuple(findings))
         final: Checked = check_document(rewritten)
+        if final.status == "refused":
+            # What grounding added (a pair per place) can push a document that passed the first
+            # check past a limit; that is the writer's to fix, not «could not be re-checked».
+            return PublishResult("refused", findings=final.findings)
         if not final.ok or final.document is None:
             return PublishResult(
                 "unavailable", note="The document could not be re-checked, so it was not saved."

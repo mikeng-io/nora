@@ -47,7 +47,9 @@ log = logging.getLogger(__name__)
 # address («12 Larkspur Rd» is integers): no legitimate place NAME is written this
 # way, so a coordinate in a route argument is a leaked machine position, not
 # somewhere a person typed. See `looks_like_coordinate`.
-_COORD_RE = re.compile(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+")
+# A comma OR plain whitespace between the two numbers: Google Text Search locates a bare pair
+# written either way, and a pair with no comma got through while it was only a `route` argument.
+_COORD_RE = re.compile(r"-?\d{1,3}\.\d+(?:\s*,\s*|\s+)-?\d{1,3}\.\d+")
 
 
 def looks_like_coordinate(text: str) -> bool:

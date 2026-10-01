@@ -2729,6 +2729,7 @@ class DocumentPublisher(Protocol):
         self, *, platform: str, conversation_id: str, person_id: str,
         raw: Any, written_by: str, document_id: UUID | None = None,
         base_revision: int | None = None, person_names: frozenset[str] | None = None,
+        live_addresses: frozenset[str] | None = None,
     ) -> Any: ...
 
     async def read(
@@ -14605,6 +14606,7 @@ Args:
             out = await documents.publish(
                 platform=room.platform, conversation_id=bound_conversation_id,
                 person_id=tagger.person_id, raw=spec, person_names=_route_person_names,
+                live_addresses=frozenset(_disclosed_live_addresses),
                 written_by=f"{document_actor}:{current_tag_id() or ''}",
                 document_id=target, base_revision=base_revision,
             )
