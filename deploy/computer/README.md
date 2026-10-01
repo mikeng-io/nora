@@ -64,6 +64,13 @@ when every rule is in place and reads allowed, 1 when a rule could not be added 
 reads denied, 2 when sbx would not give a verdict; `egress check` has the same
 three codes.
 
+A verdict is the first line of `sbx policy check network` **and** its exit
+status: the real tool exits 0 with `Allowed:` for an allowed host and **1** with
+`Denied:` for a denied one (measured 2026-10-01), so the script reads `Allowed`
+at exit 0 as allowed, `Denied` at exit 0 or 1 as denied, and everything else
+(empty output, a crashed sbx, an `Allowed` line with a failing exit) as unknown,
+which is never an allow.
+
 Read it back, both halves (the allowlist reads **allowed**, what must stay shut
 reads **denied**), from sbx's own authorizer:
 
