@@ -154,6 +154,7 @@ from typing import Any, ClassVar, Literal, Protocol, get_args
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
+    assemble,
     render_row_window,
     restamp,
     row_speaker,
@@ -607,12 +608,16 @@ class _Shown:
 #: (`design/context-assembly/01-the-registry.md`) instead of left as a trace
 #: through `inputs`, `_note_block`, `_render_evidence` and `_render_own_sends`.
 #:
-#: **Not four siblings — `today` is the only top-level block; `note` repeats
-#: once per due/expired note and NESTS `evidence`, which in turn nests
-#: `own_sends`.** `order` records the sequence a reader meets them in the
-#: rendered text (top of the prompt, then reading into a `<note>`), not a
-#: sort key `assemble()` applies — this pass, like `nora.language.proactive`,
-#: concatenates by hand.
+#: **Not five siblings. `today`, `culture` and `note` are the top-level blocks,
+#: and `inputs` hands them to `assemble()`, so their `order` IS the order the
+#: model reads (the numbers were the append order of the hand join this
+#: replaced, step 2a of `design/context-assembly/04-every-occasion.md`; the
+#: goldens in `tests/unit/test_dreamer_assembly_goldens.py` pin it). `note`
+#: repeats once per due/expired note and NESTS `evidence`, which in turn nests
+#: `own_sends`**: those two are text inside a `<note>`'s body, never in the
+#: list `assemble` sorts, so their `order` records the sequence a reader meets
+#: them in when reading INTO a note and nothing walks it. A table cannot say
+#: «nested»; this comment is where that is recorded.
 #:
 #: `key="turn"` throughout: this pass is its own call pattern with no
 #: established cache boundary, so a key borrowed from `prefill._BLOCKS`
@@ -1021,7 +1026,7 @@ class NoteCuratorAdaptor:
         anchor_date_by_note: dict[str, int | None] = {}
         due_or_anchored: set[str] = set()
         ordinal = itertools.count(1)
-        parts: list[str] = []
+        parts: list[ContextBlock] = []
         # The rooms' accounts FIRST, so each `<note>` names its room only when
         # that room's `<culture>` actually renders — a label joining to no
         # account is noise, and the prompt of a room never folded stays
@@ -1076,7 +1081,7 @@ class NoteCuratorAdaptor:
         # against the real clock) and nothing catches the other: an `open` on
         # a note whose anchor passed weeks ago is silent, and costs a
         # permanent index line injected on every tag.
-        return "\n".join([_now_block(self._today()), *cultures, *parts])
+        return assemble([_now_block(self._today()), *cultures, *parts], sep="\n")
 
     def _room(self, note: Note) -> tuple[str, str] | None:
         """`(primary_id, label)` of the room `note` was raised in, or `None`
@@ -1103,7 +1108,7 @@ class NoteCuratorAdaptor:
 
     async def _cultures(
         self, notes: Sequence[Note],
-    ) -> tuple[list[str], frozenset[str]]:
+    ) -> tuple[list[ContextBlock], frozenset[str]]:
         """One `<culture room=…>` per distinct room these notes were raised in
         (DEC-207), in first-shown order, and the rooms that rendered one.
 
@@ -1120,7 +1125,7 @@ class NoteCuratorAdaptor:
             if room is not None and room[0] not in rooms:
                 rooms[room[0]] = room[1]
         now = datetime.fromtimestamp(self._clock() / 1000, tz=UTC)
-        out: list[str] = []
+        out: list[ContextBlock] = []
         rendered: set[str] = set()
         for primary_id, label in rooms.items():
             block = render_culture(
@@ -1132,7 +1137,7 @@ class NoteCuratorAdaptor:
                 now=now, room=label,
             )
             if block is not None:
-                out.append(restamp(block, _ROW).render())
+                out.append(restamp(block, _ROW))
                 rendered.add(primary_id)
         return out, frozenset(rendered)
 
@@ -1995,7 +2000,7 @@ def _render_evidence(
     ).render() + tail
 
 
-def _now_block(today: int) -> str:
+def _now_block(today: int) -> ContextBlock:
     """Today, named. The curator had no clock in its prompt at all — not a
     date, not a weekday, not a time on any evidence row — while its objective
     asks it whether an anchor has passed.
@@ -2006,7 +2011,7 @@ def _now_block(today: int) -> str:
     not carry (#314).
     """
     day = _as_date(today)
-    return restamp(today_block(day if day is not None else str(today)), _ROW).render()
+    return restamp(today_block(day if day is not None else str(today)), _ROW)
 
 
 def _as_date(yyyymmdd: int) -> date | None:
@@ -2035,7 +2040,7 @@ def _days_from(today: int, anchor: int) -> str:
 def _note_block(
     handle: str, note: Note, body: str, evidence_text: str | None,
     *, today: int, room: str | None = None,
-) -> str:
+) -> ContextBlock:
     """One note, rendered whole: title, uncertainty, closing condition, body,
     anchor (if any) and evidence. Bodies are rendered whole — the body IS the
     question, and a truncation would have the model deciding whether an
@@ -2081,7 +2086,7 @@ def _note_block(
             f"  closing condition: {escape(note.closing_condition)}\n"
             f"  body: {escape(body)}{evidence_line}"
         ),
-    ).render()
+    )
 
 
 def _covers(

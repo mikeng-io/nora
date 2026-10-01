@@ -67,6 +67,7 @@ from typing import Protocol
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
+    assemble,
     render_messages,
     restamp,
     speaker_name,
@@ -397,9 +398,12 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
 #: `ContextBlock(name=...)` calls misses a block built by a call to a shared
 #: function.
 #:
-#: `order` records the append sequence in `inputs`; nothing sorts by it —
-#: this pass concatenates by hand. `key="turn"` throughout: no established
-#: cache boundary, nothing routes on `key` yet either way.
+#: `inputs` hands its blocks to `assemble()`, so `order` IS the order the model
+#: reads. The numbers were the append order of the hand join this replaced
+#: (step 2a of `design/context-assembly/04-every-occasion.md`), and the goldens
+#: in `tests/unit/test_dreamer_assembly_goldens.py` pin it byte for byte.
+#: `key="turn"` throughout: no established cache boundary, nothing routes on
+#: `key` yet either way.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("room", 10, "turn"),
     ("previous_account", 20, "turn"),
@@ -602,7 +606,7 @@ class CultureAdaptor:
                             "nora_dream_name_resolution_failed_total",
                             adaptor=self.name,
                         )
-        parts: list[str] = [self._room_block(key)]
+        parts: list[ContextBlock] = [self._room_block(key)]
         previous = await self._culture.head(key=key)
         if previous is not None:
             account_order, account_key = _ROW["previous_account"]
@@ -613,7 +617,7 @@ class CultureAdaptor:
                     # See #314: the marker names the wrong axis, and this block
                     # is one of the two the culture chain drops it across.
                     body=escape(previous.body),
-                ).render()
+                )
             )
         # HER POSITION IN THIS ROOM, through the shared renderer — which
         # carries the block's own `note`, its not-an-instruction clause and,
@@ -629,7 +633,7 @@ class CultureAdaptor:
             if block is not None:
                 # RESTAMPED: `render_standing` is shared with the tag path
                 # and builds an unstamped block.
-                parts.append(restamp(block, _ROW).render())
+                parts.append(restamp(block, _ROW))
         # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
@@ -653,7 +657,7 @@ class CultureAdaptor:
             if index is not None:
                 # RESTAMPED, like `render_standing` above: `render_notes` is
                 # shared with the tag path and builds an unstamped block.
-                parts.append(restamp(index, _ROW).render())
+                parts.append(restamp(index, _ROW))
         if standing_key is None or unit is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts
@@ -697,11 +701,11 @@ class CultureAdaptor:
                 name="room_messages", order=_ROW["room_messages"][0],
                 key=_ROW["room_messages"][1],
                 body=_render_batch(batch),
-            ).render()
+            )
         )
-        return "\n\n".join(parts)
+        return assemble(parts, sep="\n\n")
 
-    def _room_block(self, key: str) -> str:
+    def _room_block(self, key: str) -> ContextBlock:
         """What this room is CALLED and what the operator says it IS.
 
         **INLINE, and to be collapsed.** `nora.language.note_candidates` holds
@@ -728,19 +732,19 @@ class CultureAdaptor:
         # the conversion was in flight, which is the census doing its job on a
         # module it had already cleared.
         room_order, room_key = _ROW["room"]
-        block = ContextBlock(
+        return ContextBlock(
             name="room", order=room_order, key=room_key, attrs=(("label", room),),
             # The OPERATOR's sentence and the room's own name — neither is
             # member-authored, and this block is what tells the model how to
             # read the ones that are.
             body=escape(description or ""),
-        )
-        if not description:
             # Self-closing when the operator wrote nothing: an empty body would
             # read as «the operator said this room is nothing» rather than
-            # «nobody has said».
-            return block.render().split(">", 1)[0] + "/>"
-        return block.render()
+            # «nobody has said». And rendered even when `description` is truthy
+            # but escapes to nothing (control characters only), because that
+            # is what the hand join this replaced did with it.
+            when_empty="render" if description else "self_close",
+        )
 
     # -- accept ---------------------------------------------------------
 

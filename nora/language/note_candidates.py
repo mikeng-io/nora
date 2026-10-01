@@ -258,6 +258,7 @@ from typing import ClassVar, Protocol
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
+    assemble,
     render_row_window,
     restamp,
     row_speaker,
@@ -752,10 +753,14 @@ UNNAMED_ROOM = "unnamed room"
 #: reading `ContextBlock(name=...)` literals misses a block built by a call
 #: to a shared function.
 #:
-#: `order` records the append sequence in `inputs`; nothing sorts by it —
-#: this pass concatenates by hand, like `proactive` and the note curator.
-#: `key="turn"` throughout, for the same reason as those two: no established
-#: cache boundary, nothing routes on `key` yet either way.
+#: `inputs` hands its blocks to `assemble()`, so `order` IS the order the model
+#: reads. The numbers were the append order of the hand join this replaced
+#: (step 2a of `design/context-assembly/04-every-occasion.md`), and the goldens
+#: in `tests/unit/test_dreamer_assembly_goldens.py` pin it byte for byte.
+#: `candidate_open_note` repeats, once per open note, all at one `order`:
+#: `assemble` sorts stably, so the notes keep the order `_notebook` chose.
+#: `key="turn"` throughout, for the same reason as the other Dreamer passes: no
+#: established cache boundary, nothing routes on `key` yet either way.
 #:
 #: `culture` (DEC-207) sits right under `<room>`: the operator's sentence says
 #: what the room IS by fiat, and the account says what it has become — both
@@ -787,7 +792,7 @@ def _candidate_open_note(
     )
 
 
-def _room_block(*, room: str, description: str | None) -> str:
+def _room_block(*, room: str, description: str | None) -> ContextBlock:
     """The ONE block that says what room this batch is from — rendered above
     the batch, once, never per line.
 
@@ -825,24 +830,24 @@ def _room_block(*, room: str, description: str | None) -> str:
     must still be a different room from its neighbour.
     """
     order, key = _ROW["room"]
-    block = ContextBlock(
+    # ESCAPED for the same reason a member's line is (R-13): this is
+    # file-authored text landing above blocks with real tags in them, and
+    # "the operator wrote it" is a reason to trust the CONTENT, never a
+    # reason to let it close a tag it did not open — `escape` closes the body
+    # and `escape_attr` closes the label's quote.
+    return ContextBlock(
         name="room", order=order, key=key, attrs=(("label", room),),
         # The OPERATOR's sentence and the room's own name. Neither is
         # member-authored, so the marker would be false — and this block is
         # what tells the model how to read the ones that are.
         body=escape(description or ""),
+        # Self-closing when the operator wrote nothing: an empty body would
+        # read as «the operator said this room is nothing» rather than
+        # «nobody has said», and `assemble` would drop it. Rendered as any
+        # block when `description` is truthy but escapes to nothing (control
+        # characters only), because that is what the hand join did with it.
+        when_empty="render" if description else "self_close",
     )
-    if not description:
-        # Self-closing when the operator wrote nothing: `ContextBlock.render`
-        # always emits a body, and an empty one would read as «the operator
-        # said this room is nothing» rather than «nobody has said».
-        return block.render().split(">", 1)[0] + "/>"
-    # ESCAPED for the same reason a member's line is (R-13): this is
-    # file-authored text landing above blocks with real tags in them, and
-    # "the operator wrote it" is a reason to trust the CONTENT, never a
-    # reason to let it close a tag it did not open — `ContextBlock` escapes the
-    # body and `escape_attr` closes the label's quote.
-    return block.render()
 
 
 #: How a message's moment is rendered: the ROOM's local date, its weekday and
@@ -1225,7 +1230,7 @@ class NoteCandidateAdaptor:
             now=_dt.datetime.fromtimestamp(batch[-1].ts / 1000, tz=_dt.UTC),
         )
         if culture is not None:
-            parts.append(restamp(culture, _ROW).render())
+            parts.append(restamp(culture, _ROW))
         parts += [
             # WRAPPED, and the wrapper is a safety property rather than tidiness
             # (#292 audit). A bare `"Messages in this batch:" + lines` put these
@@ -1236,7 +1241,7 @@ class NoteCandidateAdaptor:
             ContextBlock(
                 name="batch", order=batch_order, key=batch_key,
                 body="\n".join(lines),
-            ).render(),
+            ),
         ]
         if unit is not None:
             # THE NOTEBOOK, WITH BODIES (design 42 S3, §8.6). It replaced the
@@ -1251,11 +1256,11 @@ class NoteCandidateAdaptor:
             # zone, not from a wall clock, so «today» here and in the
             # transcript cannot disagree.
             parts += await self._notebook(key=key, unit=unit, batch=batch)
-        return "\n\n".join(parts)
+        return assemble(parts, sep="\n\n")
 
     async def _notebook(
         self, *, key: str, unit: str, batch: Sequence[TranscriptRow],
-    ) -> list[str]:
+    ) -> list[ContextBlock]:
         """`<today>`, then one `<open_note>` per open note of the unit, each
         with its head body WHOLE (never clipped: a restatement of a prefix
         drops the rest), under `NOTEBOOK_BODY_BUDGET_CHARS`.
@@ -1276,7 +1281,7 @@ class NoteCandidateAdaptor:
             nh[0].established_in != key,
             -(nh[1].written_at if nh[1] is not None else 0),
         ))
-        blocks: list[str] = []
+        blocks: list[ContextBlock] = []
         bodiless: set[str] = set()
         carried: set[int] = set()
         spent = 0
@@ -1304,12 +1309,12 @@ class NoteCandidateAdaptor:
             else:
                 spent += len(block.render())
                 carried |= body_ids
-            blocks.append(block.render())
+            blocks.append(block)
         self._bodiless[key] = frozenset(bodiless)
         self._carried[key] = frozenset(carried)
         if not blocks:
             return []
-        return [restamp(today_block(today), _ROW).render(), *blocks]
+        return [restamp(today_block(today), _ROW), *blocks]
 
     # -- accept -----------------------------------------------------------
 
