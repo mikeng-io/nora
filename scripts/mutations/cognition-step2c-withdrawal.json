@@ -51,8 +51,8 @@
   {
     "name": "forget_person's dry run actually writes nothing",
     "file": "nora/app/person_forget.py",
-    "old": "    if not apply:\n        report.hidden = len(candidate_ids)\n        return report",
-    "new": "    if False:\n        report.hidden = len(candidate_ids)\n        return report",
+    "old": "    if not apply:\n        report.hidden = len(candidate_ids)\n        report.documents = len(live)\n        return report",
+    "new": "    if False:\n        report.hidden = len(candidate_ids)\n        report.documents = len(live)\n        return report",
     "target": "tests/infra/test_withdrawal.py -k test_forget_person_hides_messages_and_cascades"
   },
   {

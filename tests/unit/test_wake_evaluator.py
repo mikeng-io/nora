@@ -601,3 +601,18 @@ def test_an_unclaimed_id_is_not_consumed_by_the_range_that_covers_it():
                  at_ms=10, recorded_at_ms=10)
     assert Watermark(5, 100).consumed(s) is True
     assert Watermark(5, 100, frozenset({3})).consumed(s) is False
+
+
+def test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_range():
+    """A `self` stimulus appended early (a low id) and due at 19:40 is under a
+    15:00 watermark's id but not yet pending at its time, so the wake that set
+    the watermark did not take it. `Watermark.consumed` is what strikes pending
+    stimuli after repeated failed agendas; reading only the id would strike one
+    nobody has seen. The control is the same stimulus once the watermark's time
+    has reached its due time."""
+    from nora.domain.stimuli import Stimulus, Watermark
+
+    due_later = Stimulus(id=3, unit="nora", kind="self", item="self", ref="wake:1",
+                         at_ms=10, recorded_at_ms=10, due_ms=200)
+    assert Watermark(5, 100).consumed(due_later) is False
+    assert Watermark(5, 300).consumed(due_later) is True
