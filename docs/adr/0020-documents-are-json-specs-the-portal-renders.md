@@ -1,12 +1,12 @@
 # 0020 · Documents are JSON specs the portal renders, not HTML a model writes
 
-- **Status:** proposed (2026-09-30)
+- **Status:** accepted as built (2026-10-01, operator): documents are live
 - **Date:** 2026-09-30
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md): its `computer_export`
   publishes through Drop; this changes where a published result goes.
 - **Reverses, in part:** the choice recorded in `nora/compute/smith/page_shell.py`'s docstring to
   use plain HTML and CSS with no React or shadcn dependency for what Smith renders.
-- **Index:** a DEC number is taken at merge.
+- **Index:** DEC-258
 
 ## Context
 
@@ -54,7 +54,10 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
    `@json-render/core` and `/react` with components written on the portal's own primitives.
    `@json-render/shadcn` is not used.
 5. **Drop's artifact half is retired** once the portal serves documents; Drop's link shortener stays.
-   This decision does not retire it: that is a later change.
+   This decision does not retire it: that is a later change. As built (DEC-254, 2026-10-01), Smith,
+   `make_artifact`, Drop's token mint and the `nora-compute` network are gone, but Drop's artifact read path
+   and its `POST`/`PATCH /api/artifacts` stay, because `computer_export` publishes FILES (never a page)
+   through them and old links keep opening. What is retired is the document use of Drop.
 
 ## Consequences
 
@@ -73,11 +76,14 @@ which serves it on a public URL. Read from the tree and from norty on 2026-09-30
   so a stale file is caught only when someone runs the app's tests.
 - **A pre-1.0 dependency** (`@json-render/core` and `/react` 0.21.0) sits under every document.
 - **A heavier portal.** `mermaid` and MapLibre load on demand, but the portal now ships both.
-- **Old public links stop being the model.** The 4 existing HTML documents need a decision
-  (keep Drop read-only until they expire is the working answer).
-- **Nothing publishes a document yet.** The checker, the store and the read API exist
-  (W3, W4a) but no tool calls them. The renderer validates every document before drawing it,
-  so a bad one is reported, not shown.
+- **Old public links stop being the model.** The 4 existing HTML documents were left readable on Drop
+  (DEC-254 keeps its read path), so they stay public and unauthenticated until they are retired or expire.
+- **Documents are live, so a bad one is a live defect.** The checker, the store, the read API, the tools, the
+  portal pages, the skill, links and archive, delete and restore are built and in use (#644, #648, #654, #658,
+  #660, #667, #668, #670, #673, #674). The renderer still validates every document before drawing it, so a
+  bad one is reported, not shown.
+- **Not built.** Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are
+  planned (`design/artifact/00-design.md` §32); `nora person forget` does not yet reach documents (#655).
 - **The portal sends no Content-Security-Policy** (`app/next.config.ts`). Documents rely on the
   schema, the renderer's own checks and the Mermaid source rule; a CSP for the document route would
   be a second wall and is not built here.

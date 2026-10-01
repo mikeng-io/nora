@@ -2243,7 +2243,7 @@ async def test_computer_sweeper_and_block_exist_only_while_on(cfg, monkeypatch):
     assert deps.computer_sweeper is not None
     assert deps.computer_sweep_seconds == 42.0
     assert deps.assembler._computer_reader is not None
-    # DEC-260: the probe of computerd exists only while on, and "off" leaves no
+    # DEC-261: the probe of computerd exists only while on, and "off" leaves no
     # `nora_computer_up` sample (not applicable), where "on" has primed series
     # at zero and still no `up` until the first probe has run.
     assert off.computer_probe is None

@@ -1,4 +1,4 @@
-"""`deploy/computer/lifecycle_event.py` (DEC-261): the closed vocabulary, the
+"""`deploy/computer/lifecycle_event.py` (DEC-262): the closed vocabulary, the
 quoting, the spool, and that the script only records kinds it knows."""
 
 from __future__ import annotations

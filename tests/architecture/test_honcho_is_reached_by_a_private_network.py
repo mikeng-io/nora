@@ -1,4 +1,4 @@
-"""Honcho is reached on a private network, never over the host (#633, DEC-258).
+"""Honcho is reached on a private network, never over the host (#633, DEC-259).
 
 Honcho answers with no authentication, and the operator ruled it must not get
 any (2026-10-01): the fix is where it listens. It lived on `0.0.0.0:8000`, so

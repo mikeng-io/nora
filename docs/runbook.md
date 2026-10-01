@@ -1254,7 +1254,7 @@ read-only probes confirmed Instagram and X as `logged_in=true` after the Chrome
 migration. Threads is not checkable at all: OpenCLI 1.8.7 has no native Threads
 adapter, so Threads support is unimplemented, not broken.
 
-## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-258)
+## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-259)
 
 Honcho has no authentication, and the operator ruled (2026-10-01) that it
 will not get any: the fix is **where it listens**. Measured 2026-09-30 on norty:

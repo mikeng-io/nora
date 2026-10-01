@@ -1,5 +1,5 @@
 """Every label value the computer audit counter can carry is one that start-up
-created at zero (DEC-260).
+created at zero (DEC-261).
 
 `nora_computer_audit_failures_total` is a should-be-zero counter: the audit saw
 it never emitted live, and "never emitted" cannot be told from "never failed"

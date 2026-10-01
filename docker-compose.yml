@@ -226,7 +226,7 @@ services:
     # config.toml's base_urls were switched to match. (SearXNG/Firecrawl network
     # joins removed 2026-08-08, DEC-73 — web_search is Tavily, a public API.)
     #
-    # HONCHO is the exception (#633, DEC-258): it answers with no authentication,
+    # HONCHO is the exception (#633, DEC-259): it answers with no authentication,
     # so it is NOT published on 0.0.0.0. It publishes on 127.0.0.1 only (host
     # evals, the tailnet forward) and nora reaches it BY NAME, `honcho:8000`, on
     # the `honcho` network below, which holds Honcho's api and this one service.

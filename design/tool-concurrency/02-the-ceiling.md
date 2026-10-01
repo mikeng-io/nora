@@ -80,6 +80,10 @@ false the day it ships. Smith appears to carry its own vendored `.venv`, which
 *suggests* a separate runtime — but that is **inference, not proof**, and this
 document did not mention Smith at all. **It must be resolved before merge.**
 
+> **Retired 2026-10-01 (DEC-254):** Smith and `nora/compute/smith/` are gone, so the `smith/agent.py` row of
+> the table and this paragraph describe code that no longer exists; there is nothing left to rule on. Kept as
+> the record of the question that was open when it was written.
+
 Three deliberate properties:
 
 - **It wraps.** The inner executor keeps its ordering guarantee (results land in

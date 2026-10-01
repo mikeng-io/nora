@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Is Honcho closed to everything except the callers that should reach it?
-# (#633, DEC-258). Run ON the deploy host, as a user in the docker group.
+# (#633, DEC-259). Run ON the deploy host, as a user in the docker group.
 # READ-ONLY: it starts throwaway containers and makes GET /health requests; it
 # changes no stack, no config, no network.
 #

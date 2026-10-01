@@ -1,4 +1,4 @@
-"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-260).
+"""Nora's computer as a metric (design/sandbox-runtime §12, DEC-261).
 
 The audit found no computer series in /metrics except `row_history`, and
 `nora_computer_audit_failures_total` never seen live. What these pin is the

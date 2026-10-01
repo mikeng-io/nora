@@ -108,7 +108,7 @@ _DEFAULT_IDENTITY = (
 _DOCKER_HOST = "host.docker.internal"
 _LOOPBACK = "127.0.0.1"
 #: The name nora's container reaches Honcho by on the private `honcho_memory`
-#: network (#633, DEC-258). It exists only inside that network; the host
+#: network (#633, DEC-259). It exists only inside that network; the host
 #: reaches the same service on loopback, where Honcho still publishes.
 _HONCHO_ALIAS = "honcho"
 
@@ -128,7 +128,7 @@ def _from_host(url: str) -> str:
     or `honcho` on the private Honcho network) swapped for loopback; anything
     else untouched.
 
-    `honcho` is here because DEC-258 moved nora's route to Honcho off
+    `honcho` is here because DEC-259 moved nora's route to Honcho off
     `host.docker.internal:8000` (published on every interface, no
     authentication) onto a network of its own. Honcho still publishes on
     loopback, so the suite on the host reaches the same service there; without
@@ -391,7 +391,7 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # THE HOST, FROM THE HOST. The deployment's config reaches OmniRoute at
     # `host.docker.internal`, the name docker gives a container for the machine
     # it runs on, and Honcho at `honcho`, a name on a private docker network
-    # (DEC-258). The suite runs on that machine, outside a
+    # (DEC-259). The suite runs on that machine, outside a
     # container, where the name does not resolve at all — so the model call
     # would fail before the turn and read as "the model was unreachable" for
     # every case. The same services, reached from the host, are on loopback;

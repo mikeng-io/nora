@@ -217,7 +217,7 @@ groups:
 
   - name: computer
     rules:
-      # Nora cannot use her computer, as Nora sees it (DEC-260). `nora_computer_up`
+      # Nora cannot use her computer, as Nora sees it (DEC-261). `nora_computer_up`
       # is set by a timed, AUTHENTICATED probe every 30s and by every real call,
       # so it covers computerd down or hung, the sandbox stopped (a lapsed Docker
       # login stops sbx's local sandboxes), and a token rotation that reached

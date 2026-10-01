@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lifecycle audit events for Nora's computer (design/sandbox-runtime §12, DEC-261).
+"""Lifecycle audit events for Nora's computer (design/sandbox-runtime §12, DEC-262).
 
 `nora-computer` runs on the deploy host as the operator, outside the nora
 container and outside the VM. §12 requires a row for each VM create, recreate,

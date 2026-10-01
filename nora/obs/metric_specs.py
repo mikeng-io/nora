@@ -2799,7 +2799,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
-    # Nora's computer, as Nora sees it (design/sandbox-runtime §12, DEC-260).
+    # Nora's computer, as Nora sees it (design/sandbox-runtime §12, DEC-261).
     # LABELLED on purpose, with one value (`computerd`): an unlabelled gauge is
     # exported at 0 from the moment it is declared, so a deployment with
     # `[computer] enabled = false` would read as a computer that is DOWN. A

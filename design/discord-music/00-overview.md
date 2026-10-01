@@ -27,7 +27,8 @@ shape entirely — see `02-control-surface.md` for why.
 
 **Not built on Nora's existing produced-artifact infrastructure.** RustFS,
 `drop`, and the Smith sandbox (`nora/compute/smith/`, `nora/infra/compute/
-docker_backend.py`) exist for a different problem: genuine arbitrary code
+docker_backend.py`; *retired 2026-10-01, DEC-254: Smith, `LocalDockerBackend` and `make_artifact` are gone,
+and files now leave through `computer_export`*) exist for a different problem: genuine arbitrary code
 execution producing a one-off deliverable, handed to an LLM as a task brief.
 A music download is a fixed template — the same operation every time, no
 LLM interpretation needed — and routing it through `LocalDockerBackend`

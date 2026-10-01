@@ -846,8 +846,10 @@ enabled = false
 #                             # heartbeat section's own tick_seconds has.
 
 # Nora's computer (design/sandbox-runtime, DEC-243, ADR 0019): `computer_run`,
-# `computer_read`, `computer_write` and `computer_edit` against computerd in an
-# sbx microVM, one workspace per room.
+# `computer_read`, `computer_write`, `computer_edit`, `computer_export`,
+# `computer_import` and `computer_session_list` (all seven in
+# `nora.agent.tools.COMPUTER_TOOLS`) against computerd in an sbx microVM, one
+# workspace per room.
 #
 # Ships INERT: every computer tool answers `unavailable` until this is on.
 # Turning it on lets model-authored bash run on a VM on this host, so it is an
@@ -2354,10 +2356,10 @@ mode = "off"
 enabled = false
 
 
-# `document_publish` and `document_read` (design/artifact/00-design.md §26): a
-# document is a JSON spec the web app renders, opened signed in under Documents.
-# SHIPS OFF: off, no turn is offered either tool. Turn it on once the portal's
-# document pages exist and the `route_document_*` tool_selection cases have run.
+# `document_publish`, `document_read` and `document_set_status`
+# (design/artifact/00-design.md §26, §31): a document is a JSON spec the web app
+# renders, opened signed in under Documents. The template SHIPS OFF: off, no turn
+# is offered any of the three. The portal pages that open a document exist (§27).
 [documents]
 enabled = false
 # The web app's public origin, so she can hand the room a LINK to a document she made
