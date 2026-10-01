@@ -100,6 +100,26 @@ def age(ts_ms: int, now: datetime) -> str:
     return f"{seconds // 86400}d ago"
 
 
+def ago(delta_ms: int) -> str:
+    """A span as a person says it: «just now», «42 min», «3 h 5 min», «2 d».
+
+    Moved here from `nora.domain.cognition_render` when that renderer moved to
+    `nora.language` (step 3a of `design/context-assembly/04-every-occasion.md`):
+    `nora.domain.computer_sessions` also calls it, and a domain module may not
+    import `nora.language`. The wording is unchanged and is NOT `age`'s (which
+    says «2h ago»); the two vocabularies are a measured merge, not a tidy-up.
+    """
+    minutes = max(delta_ms, 0) // 60_000
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    if minutes < 24 * 60:
+        hours, rest = divmod(minutes, 60)
+        return f"{hours} h {rest} min ago" if rest else f"{hours} h ago"
+    return f"{minutes // (24 * 60)} d ago"
+
+
 def stamp(ts_ms: int, now: datetime) -> str:
     """When something was, as a calendar moment AND an age:
     «2026-09-24 Thu 21:14 (13h ago)», in `now`'s own zone.

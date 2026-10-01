@@ -23,6 +23,14 @@ not told it was handed a slice reads the slice as the whole conversation.
 (`nora.domain.prompt.one_line`) before it is quoted: a body that contained a
 newline would otherwise write a second line indistinguishable from a real
 agenda line, the forgery the relevance gate measured.
+
+**Where it lives.** In `nora.language`, not `nora.domain`: it was a domain module
+until step 3a of `design/context-assembly/04-every-occasion.md` and moved whole,
+no rendered byte changed (the goldens are
+`tests/unit/test_cognition_render_goldens.py`), so that step 3b can build it from
+the `nora.language` renderers, which a domain module may not import. The types
+it renders (`AgendaItem`, `Room`, `Stimulus`, `Grounding` and its lines) stay in
+`nora.domain`.
 """
 
 from __future__ import annotations
@@ -42,7 +50,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.prompt import one_line
+from nora.domain.prompt import ago, one_line
 from nora.domain.stimuli import Stimulus
 
 
@@ -72,19 +80,6 @@ def room_label(room: Room, labels: Mapping[str, str]) -> str:
     (R-18; `UNNAMED_ROOM` for a room with none). The id is what a tool's `room`
     argument takes, so it stays THERE, in the tool's own schema."""
     return f"«{labels.get(room_key(room)) or UNNAMED_ROOM}»"
-
-
-def ago(delta_ms: int) -> str:
-    """A span as a person says it: «just now», «42 min», «3 h 5 min», «2 d»."""
-    minutes = max(delta_ms, 0) // 60_000
-    if minutes < 1:
-        return "just now"
-    if minutes < 60:
-        return f"{minutes} min ago"
-    if minutes < 24 * 60:
-        hours, rest = divmod(minutes, 60)
-        return f"{hours} h {rest} min ago" if rest else f"{hours} h ago"
-    return f"{minutes // (24 * 60)} d ago"
 
 
 def clock_line(now_ms: int, last_session_ms: int | None, tz: tzinfo) -> str:
@@ -418,5 +413,5 @@ def render_agenda(
 
 
 __all__ = [
-    "RenderBudget", "ago", "clock_line", "render_agenda", "returning", "room_key", "room_label",
+    "RenderBudget", "clock_line", "render_agenda", "returning", "room_key", "room_label",
 ]

@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "The Cognition session's prompt renderer moved from nora.domain to nora.language with every rendered byte unchanged, so nothing a person sees or a model reads differs.",
+  "details": [],
+  "limitations": []
+}
