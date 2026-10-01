@@ -94,6 +94,7 @@ from .tools import (
     RoomDirectory,
     StandingHeadSource,
     build_tool_specs,
+    hot_tools,
     utc_now,
 )
 from .whereis import Circle, PresenceReader
@@ -1154,6 +1155,7 @@ class ToolRegistry:
         grant: frozenset[str] | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         defer: bool = False,
+        occasion: str | None = None,
     ) -> ToolSurface:
         """The ONE builder every loop takes its tools from.
 
@@ -1171,6 +1173,14 @@ class ToolRegistry:
         `load_tools` so the model can register what it names. `load_tools` is
         in `tools` only when the shelf holds something, so a turn with nothing
         deferred pays nothing for it.
+
+        `occasion` (DEC-256) is the turn's kind, from `turn_occasion` (`None`
+        for a text turn). Under `defer` the resident set is
+        `hot_tools(occasion)`: `HOT_TOOLS` plus every tool whose
+        `NativeTool.hot_on` names the occasion, still cut by the scope, so a
+        voice turn keeps the music verbs resident and a text turn is exactly
+        what it was. Without `defer` everything admitted is resident anyway and
+        the occasion changes nothing.
 
         `allowed_mcp` groups are appended resident, after the native tools,
         for `build()`'s reason: they are already Strands objects, and
@@ -1198,10 +1208,11 @@ class ToolRegistry:
             if spec.name != LOADER_TOOL and scope.admits(spec.name)
             and spec.name not in self._withheld
         ]
-        resident = [spec for spec in admitted if not defer or spec.name in HOT_TOOLS]
+        hot = hot_tools(occasion)
+        resident = [spec for spec in admitted if not defer or spec.name in hot]
         shelf.stock({
             spec.name: adapt(spec) for spec in admitted
-            if defer and spec.name not in HOT_TOOLS
+            if defer and spec.name not in hot
         })
         tools = [adapt(spec) for spec in resident]
         if shelf:
