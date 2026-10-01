@@ -12,7 +12,7 @@ Rooms, units and people are placeholders.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -281,6 +281,27 @@ def _ctx(room: RoomFacts, *, notes=(), standing=None, culture=None,
 def _body(ctx: TagContext) -> str:
     content = build_prefill(ctx, display_name="Nora", context_window=40, now=NOW)[1]["content"]
     return content if isinstance(content, str) else "".join(c["text"] for c in content)
+
+
+def _body_at(ctx: TagContext, now: datetime) -> str:
+    content = build_prefill(ctx, display_name="Nora", context_window=40, now=now)[1]["content"]
+    return content if isinstance(content, str) else "".join(c["text"] for c in content)
+
+
+def test_the_working_set_ages_against_the_clock_the_prefill_was_given():
+    """The block is aged against `build_prefill`'s `now`, not the wall clock.
+
+    It called `render_standing_working_set` without `now`, so it fell back to
+    `datetime.now()` while every other block used the prefill's. The lineage
+    tests pin `now` to 2026-09-29 12:00 UTC and give the item `found_at=NOW`,
+    so on 2026-10-01 12:00 UTC (48 h on) the item expired in the real world and
+    `test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage`
+    went red on an untouched master. A prefill built for a given instant must
+    render the same on any day; that is also what makes a replayed turn
+    reproducible."""
+    ctx = _ctx(A, standing=_standing("a"))
+    assert "<standing_working_set" in _body_at(ctx, NOW + timedelta(hours=47))
+    assert "<standing_working_set" not in _body_at(ctx, NOW + timedelta(hours=49))
 
 
 # Backfilled rows, as `0073_lineage` writes them for a room's own data.
