@@ -40,10 +40,12 @@ and the last step of the plan deletes the ledger and this paragraph with it.
 
   - text a module hand-builds INSIDE a RUNNER or a MECHANISM. The net knows a
     module runs a prompt, not that it also writes one. KNOWN_HAND_BUILT is the
-    by-hand record of the ones found by reading (fire's headers, the vision
-    summarizer's unframed text; the debrief's `_prompt` was one until step 2b
-    moved it into its renderer): each is a ledger entry like any other, but a
-    NEW one is found by a person, not by this test;
+    by-hand record of the ones found by reading (the vision summarizer's
+    unframed text; the debrief's `_prompt` was one until step 2b moved it into
+    its renderer, and fire's header paragraphs until step 4b made them typed
+    builders in `nora.domain.framing`, which `test_framing_is_one_typed_place`
+    now watches): each is a ledger entry like any other, but a NEW one is found
+    by a person, not by this test;
   - a model door this file does not know. Honcho's `chat` (a dialectic query
     to a memory service's own model) and image generation are not matched;
   - a model call reached only through an imported helper (the net is
@@ -136,11 +138,6 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
 #: ledger entry below; this table is how a debt the net cannot detect is still
 #: recorded and counted.
 KNOWN_HAND_BUILT = {
-    "nora/app/fire.py": (
-        "five header paragraphs (_fire_header, _gathering_header, "
-        "_proactive_header, _compute_header, _participation_header) built "
-        "from f-strings, outside any block"
-    ),
     "nora/infra/vision/comprehend.py": (
         "summarize sends a voice note's transcript or a video's chunk text, "
         "members' words, as a raw second user message with no framing"
@@ -153,14 +150,13 @@ KNOWN_HAND_BUILT = {
 #: comment) or `hand_built` (text written by hand inside a runner, from
 #: KNOWN_HAND_BUILT).
 PENDING: dict[tuple[str, str], str] = {
-    ("nora/app/fire.py", "hand_built"): "step 4",
     ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",
 }
 
 #: The ledger's size, pinned exactly. Pay one down and this test fails until
 #: you lower the number in the same diff; add one and it fails until you raise
 #: it, which should never be done.
-CEILING = 2
+CEILING = 1
 
 
 def _rel(path: Path) -> str:

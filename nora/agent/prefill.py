@@ -23,6 +23,7 @@ from ..domain.blocks import (
 from ..domain.decision_log import (
     render_decisions,
 )
+from ..domain.framing import CLOSING_LINE, TAG_HEADER, ClockLine, ContextHeader
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
 from ..domain.self_presence import Presence
@@ -37,30 +38,16 @@ from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 from .lineage import DerivedView, derived_view
 
-_CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
-
+# `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
+# `<context_header>` message live in `nora.domain.framing` with every other
+# piece of authored framing text (step 4b of design/context-assembly); this
+# module names the pieces and says where they go.
+#
 # `escape`/`_escape_attr` moved to `nora.domain.prompt` when the doctrine loader
 # started rendering frontmatter into section attributes and needed the identical
 # rule: the layer contract runs agent -> doctrine, so the loader cannot import
 # them from here. Re-exported under the names this module has always used.
 __all__ = ["TAG_HEADER", "build_prefill", "build_tag_message", "escape", "render_transcript"]
-
-# The opening paragraph of `<context_header>` for a TAG — the situation, in the
-# model's own terms. Every clause of it is FALSE on a heartbeat fire turn
-# (nobody called her, and that is not why the turn is happening), so it is a
-# named default rather than a literal inside `_context_header`: the fire path
-# passes its own (`nora.app.fire`), and everything around it — the block
-# blocks and every escaping rule in this module — is shared rather than
-# copied. Duplicating `build_prefill` for the fire path is the thing this
-# parameter exists to prevent: R-13/R-13b escaping is pinned to THIS function
-# by two named acceptance tests, and a hand-rolled second prefill rendering the
-# same transcript would sit outside both.
-TAG_HEADER = (
-    "You are in a group chat you have been reading all along. You do not "
-    "speak unless somebody calls you, and somebody just did — that is why "
-    "this turn is happening."
-)
-
 
 # THERE IS NO `_where_line` ANY MORE (design/self-awareness/02). It was one
 # sentence — «You are on Discord right now.» — added after she answered a
@@ -99,7 +86,7 @@ def _now_line(now: datetime | None) -> str:
     """
     if now is None:
         now = local_now()
-    return f"Right now it is {state_time(now)}.\n"
+    return ClockLine(state_time(now)).render()
 
 
 
@@ -392,17 +379,7 @@ def _context_header(header: str = TAG_HEADER) -> str:
     # sentence telling her the blocks are material rather than scenery. That
     # sentence is not a catalogue: it says what to DO with what follows, which
     # nothing else says.
-    return ContextBlock(
-        name="context_header",
-        body=(
-            f"{header}\n"
-            "This is your material, not just scenery: what you know about these "
-            "people is what makes a reply theirs rather than anybody's. Use it "
-            "the way a friend who was there would, where it fits. Quoting "
-            "somebody's own words back at them is for when they asked what was "
-            "said, not for winning a point."
-        ),
-    ).render()
+    return ContextBlock(name="context_header", body=ContextHeader(header).render()).render()
 
 
 def _label(row: TranscriptRow, display_name: str) -> str:
@@ -1125,7 +1102,7 @@ def build_prefill(
                 # that table.
                 _now_line(clock) + assemble(declared),
             ),
-            _message("assistant", _CLOSING_LINE),
+            _message("assistant", CLOSING_LINE),
         ]
 
 

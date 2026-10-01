@@ -31,6 +31,7 @@ from nora.app.fire import (
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.decision_log import DecisionLogRecorder, DecisionRow
 from nora.domain.events import Event
+from nora.domain.framing import ReminderHeader
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.ports import (
@@ -790,7 +791,7 @@ def test_a_one_shot_fire_header_is_unchanged_by_recurrence() -> None:
     adds is asserted ABSENT here, so a clause that leaked into the ordinary path
     — telling her every reminder is a standing arrangement — is caught by the
     test that says the ordinary path did not change."""
-    header = fire_module._fire_header([_reminder()], MILES, T0)
+    header = ReminderHeader((_reminder(),), MILES).render()
 
     assert "every" not in header
     assert "repeat" not in header
@@ -808,7 +809,7 @@ def test_a_recurring_fire_header_says_it_repeats_and_how_much_is_left() -> None:
     """
     row = _reminder(series=_series(occurrence=2, count=14))
 
-    header = fire_module._fire_header([row], MILES, T0)
+    header = ReminderHeader((row,), MILES).render()
 
     assert "(every day, 11 more after this)" in header
     assert "A repeat is not a new arrangement" in header
@@ -819,7 +820,7 @@ def test_the_final_occurrence_says_so_rather_than_counting_zero() -> None:
     sentence about the thing. She is being asked to speak, not to report."""
     row = _reminder(series=_series(occurrence=13, count=14))
 
-    header = fire_module._fire_header([row], MILES, T0)
+    header = ReminderHeader((row,), MILES).render()
 
     assert "(every day, last one)" in header
 
@@ -1882,7 +1883,7 @@ async def test_a_missing_shadow_adapter_fails_soft_and_is_counted(
 def test_a_sub_day_reminder_renders_its_cadence_in_the_fire_header():
     """R-89/DEC-159, and the bug review caught before this shipped.
 
-    `_EVERY` maps every `Recurrence` member to a word and `_repeat_clause`
+    `CADENCE_UNITS` maps every `Recurrence` member to a word and `RepeatClause`
     subscripts it BARE. When #109 added `minutely`/`hourly` and left that table
     at five entries, a sub-day reminder raised KeyError inside `_fire_header` —
     which runs AFTER `claim` has minted the successor and BEFORE the model is
@@ -1895,22 +1896,22 @@ def test_a_sub_day_reminder_renders_its_cadence_in_the_fire_header():
     minute» — wrong by the whole multiplier, in the one paragraph whose stated
     job is stopping her misdescribing a standing arrangement.
     """
-    from nora.app.fire import _EVERY, _repeat_clause
+    from nora.domain.framing import CADENCE_UNITS, RepeatClause
     from nora.domain.reminders import Recurrence
 
     # Total, not just the two added: a future unit that forgets this table
     # breaks the fire path, not the domain, and would be found in production.
-    assert set(_EVERY) == set(Recurrence) - {Recurrence.NONE}
+    assert set(CADENCE_UNITS) == set(Recurrence) - {Recurrence.NONE}
 
-    assert "every 10 minutes" in _repeat_clause(
-        _recurring_row(Recurrence.MINUTELY, interval=10))
-    assert "every hour" in _repeat_clause(
-        _recurring_row(Recurrence.HOURLY, interval=1))
-    assert "every 2 weeks" in _repeat_clause(
-        _recurring_row(Recurrence.WEEKLY, interval=2))
+    assert "every 10 minutes" in RepeatClause(
+        _recurring_row(Recurrence.MINUTELY, interval=10).series).render()
+    assert "every hour" in RepeatClause(
+        _recurring_row(Recurrence.HOURLY, interval=1).series).render()
+    assert "every 2 weeks" in RepeatClause(
+        _recurring_row(Recurrence.WEEKLY, interval=2).series).render()
     # The pre-#109 shape is byte-identical, so no existing prompt moved.
-    assert "every day" in _repeat_clause(
-        _recurring_row(Recurrence.DAILY, interval=1))
+    assert "every day" in RepeatClause(
+        _recurring_row(Recurrence.DAILY, interval=1).series).render()
 
 
 def _recurring_row(unit, *, interval: int):

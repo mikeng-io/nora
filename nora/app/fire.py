@@ -79,7 +79,6 @@ from nora.agent.outbound import OutboundComposer
 from nora.agent.prefill import (
     build_prefill,
     build_tag_message,
-    escape,
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
@@ -99,6 +98,18 @@ from nora.domain.decision_log import (
 )
 from nora.domain.documents_context import DocumentsView
 from nora.domain.events import Event, EventFactory
+from nora.domain.framing import (
+    ComputeBody,
+    ComputeHeader,
+    GatheringHeader,
+    LostJobBody,
+    LostJobHeader,
+    ParticipationHeader,
+    ProactiveHeader,
+    RelayHeader,
+    ReminderHeader,
+    RequestBody,
+)
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
     ConversationTarget,
@@ -112,7 +123,6 @@ from nora.domain.ports import (
     DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
     CultureReader,
     JobResult,
-    JobStatus,
     LinkPreviewSource,
     MemoryStore,
     PlatformAdapter,
@@ -122,7 +132,7 @@ from nora.domain.ports import (
 )
 from nora.domain.prompt import one_line
 from nora.domain.quote_window import QuoteWindow
-from nora.domain.reminders import Recurrence, Reminder, remaining_occurrences
+from nora.domain.reminders import Reminder
 from nora.domain.self_presence import Presence
 from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
@@ -259,27 +269,6 @@ SHADOW_AUDIENCE = audience_names.SHADOW
 # through" and "she drafted 40 replies" the same number.
 GATE_SHADOW_AUDIENCE = audience_names.GATE_SHADOW
 
-# How a recurrence reads in the fire header. English prose, like the rest of the
-# header: the header is the SITUATION she is told about, and `doctrine` decides
-# what language she answers in — the two have never been the same choice.
-_EVERY = {
-    # EVERY member of `Recurrence` except NONE, and it must stay that way:
-    # `_repeat_clause` subscripts this bare. When #109 added the two sub-day
-    # units and this table was not extended, a `minutely` reminder raised
-    # KeyError inside `_fire_header` — AFTER `claim` had minted the successor
-    # and BEFORE the model was called. Every occurrence claimed a row, said
-    # nothing, and armed the next one: the exact «promise of eleven updates,
-    # zero delivered» failure #109 exists to fix, reproduced by the fix.
-    # `tests/unit/test_fire_path.py` covers the shape now.
-    Recurrence.MINUTELY: "minute",
-    Recurrence.HOURLY: "hour",
-    Recurrence.DAILY: "day",
-    Recurrence.WEEKLY: "week",
-    Recurrence.MONTHLY: "month",
-    Recurrence.YEARLY: "year",
-}
-
-
 def reminder_occasion(rows: Sequence[Reminder]) -> Event:
     """One conversation's due reminders, as the occasion they are.
 
@@ -298,8 +287,8 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Event:
         conversation_id=row.conversation_id,
         conversation_type=row.conversation_type,
         person_id=row.requester_person_id,
-        body="\n".join(r.text for r in rows),
-        header=lambda tagger, now: _fire_header(rows, tagger, now),
+        body=RequestBody(tuple(r.text for r in rows)).render(),
+        header=lambda tagger, now: ReminderHeader(tuple(rows), tagger).render(),
         kind="reminder",
     )
 
@@ -341,31 +330,8 @@ def gathering_occasion(rows: Sequence[Reminder]) -> Event:
         conversation_type=row.conversation_type,
         person_id=row.requester_person_id,
         body=title,
-        header=lambda tagger, now: _gathering_header(title, tagger, now),
+        header=lambda tagger, now: GatheringHeader(title, tagger).render(),
         kind="gathering",
-    )
-
-
-def _gathering_header(
-    title: str, tagger: PersonRef | None, now: datetime,
-) -> str:
-    """The situation paragraph for a gathering-notify fire turn.
-
-    Same shape as `_fire_header`: nobody called her, and that is not why
-    this turn is happening. `title` arrives from the factory AFTER its
-    payload guard, so it is a `str` here, never a missing key. The
-    requester's name and the title are escaped because everything else this
-    module puts in a prompt is (R-13).
-    """
-    who = escape(tagger.name if tagger is not None else "")
-    safe_title = escape(str(title))
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        f"just called you. Earlier, {who} asked you to remind the room about "
-        f"«{safe_title}», and that time has come — that is why this turn is "
-        "happening, and it is the only reason.\n"
-        f"Bring the gathering up to {who} and the room now, in your own words. "
-        "Do not read the time back at them unless they asked in those terms."
     )
 
 
@@ -402,79 +368,9 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
         conversation_id=row.conversation_id,
         conversation_type=row.conversation_type,
         person_id=None,
-        body="\n".join(r.text for r in rows),
-        header=lambda tagger, now: _proactive_header(rows, now),
+        body=RequestBody(tuple(r.text for r in rows)).render(),
+        header=lambda tagger, now: ProactiveHeader(tuple(rows)).render(),
         kind="proactive",
-    )
-
-
-def _proactive_header(rows: Sequence[Reminder], now: datetime) -> str:
-    """The situation paragraph for a proactive act turn.
-
-    Same opening shape as every fire header — nobody called her, and that is
-    not why this turn is happening — with the reason clause that is true
-    here and nowhere else: SHE decided, earlier, that this was worth raising
-    at about this time. The right to decline is stated here as well as in
-    `silence.md`, for `_participation_header`'s reason: the header is the
-    sentence she reads first.
-
-    Times are stamped the way `_fire_header` stamps them — the reader's own
-    zone, never UTC. The note title is escaped like every other value this
-    module puts in a prompt (R-13); it was model-chosen and code-resolved.
-
-    **The closing clause is about the whole apparatus, not just the reminder**
-    (issue #226). It carried exactly one instance of this rule — «never as «I
-    set myself a reminder»» — written for the row and nothing else, while the
-    turn's prompt also carries the note's title, the `<notes>` index, and the
-    intent her own earlier pass wrote. A turn that fired on all of that then
-    explained the mechanism to the room («the note was still open and the
-    deadline was near») and read a curator-written summary back at the person
-    it was written about. One named forbidden sentence generalises to none; the
-    clause now names the note beside the reminder, rules out the note's own
-    words, and says what the whole of it is FOR — the reason she is here, never
-    the content of what she says.
-
-    It deliberately does NOT go on to say where what she says comes from
-    instead, because the paragraph above already does («Read what is in front
-    of you NOW — the transcript, the standing, the notes … and decide again»),
-    and a version that repeated it here read 2/15 and 3/15 on the act suite's
-    `a01` where the same baseline prompt read 5 to 12 of 15 across four windows. The
-    band is far too wide to call that a regression; it is narrow enough to say
-    a duplicated sentence has nothing to buy with the risk.
-
-    `nora.language.note_render.NOTES_BLOCK_NOTE` carries the same identity on
-    the tier's own block, which is the half that reaches an ordinary tag turn.
-    """
-    decided = "".join(
-        f"- decided {_stamp(row.created_at)}, for {_stamp(row.due_at)}"
-        + (
-            f", about the note «{escape(str(row.payload['note_title']))}»"
-            if isinstance(row.payload, Mapping)
-            and isinstance(row.payload.get("note_title"), str)
-            else ""
-        )
-        + "\n"
-        for row in rows
-    )
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        "called you — not just now, and not earlier. YOU decided, on your own "
-        "pass over what this group has left open, that something here was "
-        "worth raising at about this time, and wrote yourself the note below "
-        "so you would come back to it. That time has come — that is why this "
-        "turn is happening, and it is the only reason.\n"
-        f"{decided}"
-        "The tag_message below is what you wrote to yourself then: an "
-        "intention, not a script, and not a fact about the room. Read what "
-        "is in front of you NOW — the transcript, the standing, the notes "
-        "(note_read gives you a note's current body; where_is and route are "
-        "worth asking now, not earlier) — and decide again. If the thing has "
-        "since been settled, or somebody already said it, or it would not "
-        "help, stay silent: silence is a complete answer here, not a failure. "
-        "If it is still worth saying, say it once, briefly, in your own words, "
-        "and never as «I set myself a reminder» or «my note says», and never "
-        "in the note's own words — the note and the reminder are WHY you are "
-        "here, never WHAT you have to say."
     )
 
 
@@ -490,18 +386,13 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Event:
     Nora composes the actual group-facing message from this in her own
     voice; this function only assembles what she is TOLD, not what she says.
     """
-    outcome = (
-        f"It finished: {result.summary}\n{result.url}"
-        if result.status is JobStatus.SUCCEEDED
-        else f"It failed: {result.error or 'no reason given'}"
-    )
     return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=f"(asked earlier) {job.task}\n\n{outcome}",
-        header=lambda tagger, now: _compute_header(job, tagger, now),
+        body=ComputeBody(job.task, result).render(),
+        header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
     )
 
@@ -533,23 +424,8 @@ def relay_occasion(
         person_id=requester.person_id,
         body=text,
         speaker=requester.name,
-        header=lambda tagger, now: _relay_header(requester, from_platform, tagger, now),
+        header=lambda tagger, now: RelayHeader(requester, from_platform).render(),
         kind="relay",
-    )
-
-
-def _relay_header(
-    requester: PersonRef, from_platform: str, tagger: PersonRef | None, now: datetime,
-) -> str:
-    who = escape(requester.name)
-    where = escape(from_platform)
-    return (
-        "You are in a group chat you have been reading all along. Nobody here "
-        f"has just called you. {who} asked you, over on {where}, to pass "
-        "something on to this room — that is why this turn is happening, and "
-        "it is the only reason.\n"
-        f"Pass it on, and make it unmistakable that {who} said it and not you. "
-        "You are carrying somebody's message, not making a remark of your own."
     )
 
 
@@ -573,22 +449,9 @@ def lost_job_occasion(job: ComputeJob) -> Event:
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=f"(asked earlier) {job.task}",
-        header=_lost_job_header,
+        body=LostJobBody(job.task).render(),
+        header=lambda tagger, now: LostJobHeader(tagger).render(),
         kind="compute_lost",
-    )
-
-
-def _lost_job_header(tagger: PersonRef | None, now: datetime) -> str:
-    who = escape(tagger.name if tagger is not None else "")
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        f"just called you. Earlier, {who} asked you to build something and you "
-        "said you were on it — then you were restarted and lost the thread of "
-        "it. That is why this turn is happening, and it is the only reason.\n"
-        "Own it briefly and tell them to ask again if they still want it. Do "
-        "NOT say it failed and do NOT say it worked — you genuinely do not "
-        "know which, and guessing either way would be a claim you cannot back."
     )
 
 
@@ -622,71 +485,8 @@ def participation_occasion(
         conversation_type=conversation_type,
         person_id=None,
         body="",
-        header=lambda tagger, now: _participation_header(relevance_score),
+        header=lambda tagger, now: ParticipationHeader(relevance_score).render(),
         kind="participation",
-    )
-
-
-def _participation_header(relevance_score: float | None = None) -> str:
-    """The situation paragraph for a participation turn.
-
-    Same opening shape as the other fire headers — nobody called her, and
-    that is not why this turn is happening — but the reason clause differs:
-    no one asked for anything, earlier or otherwise. The room went quiet and
-    the floor was offered. The right to decline it is stated HERE as well as
-    here rather than only in `silence.md`, because the doctrine can only
-    oblige a model that reads it and the header is the sentence she reads
-    first.
-    """
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        "called you — not just now, and not earlier. The conversation has gone "
-        "quiet, and this turn is the offer of the floor, nothing more.\n"
-        "The tag_message below is deliberately empty: nothing was put to you. "
-        "Decide from what is already in front of you — the transcript above, "
-        "and whatever standing and notes came with it. If speaking "
-        "would add something the room can use, say it — once, briefly. If "
-        "not, stay silent: silence is a complete answer here, not a failure."
-        + _gate_note(relevance_score)
-    )
-
-
-def _gate_note(relevance_score: float | None) -> str:
-    """The Relevance Gate's score, as a sentence she may ignore
-    (design/dreamer-agent-loop/36 decision 5).
-
-    Rendered as what it IS — a cheap upstream guess made without her notes,
-    facts or memory — and not as an instruction, because the moment it reads
-    as one the second layer stops being a second judgement. The gate decided
-    the room is ASKING; only this turn can decide whether she HOLDS anything,
-    and the sentence has to leave that decision where it is.
-
-    `None` renders nothing at all rather than "no score": an absent score is
-    the shape every turn had before the gate existed, and a header that
-    announces the absence would make the gate's own plumbing part of what she
-    reads about the room.
-    """
-    if relevance_score is None:
-        return ""
-    return (
-        f"\nA relevance check upstream scored this room {relevance_score:.2f} "
-        "before you saw it. It read only the transcript and your standing — "
-        "not your notes, facts or memory — so it is a guess about whether the "
-        "room is asking, never a judgement that you have an answer. Weigh it "
-        "as such, and stay silent anyway if you hold nothing."
-    )
-
-
-def _compute_header(job: ComputeJob, tagger: PersonRef | None, now: datetime) -> str:
-    who = escape(tagger.name if tagger is not None else "")
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        f"just called you. Earlier, {who} asked you to build something, and "
-        "the job has now finished (or failed) — that is why this turn is "
-        "happening, and it is the only reason.\n"
-        "Tell them what you built (or what went wrong), in your own words, "
-        "including the link if there is one. Do not just repeat the raw "
-        "summary verbatim — say it the way you'd actually tell a friend."
     )
 
 
@@ -2866,85 +2666,3 @@ def _synthetic_message(
         body=occasion.body,
         raw={},
     )
-
-
-def _stamp(moment: datetime) -> str:
-    """A due/set time in the reader's own timezone. Local, not UTC: the rest of
-    the prompt states time locally (`_now_line`), and two clocks in one prompt
-    is how she answers with the wrong hour."""
-    return moment.astimezone().strftime("%-d %b %H:%M")
-
-
-def _fire_header(
-    rows: Sequence[Reminder], tagger: PersonRef | None, now: datetime,
-) -> str:
-    """The situation paragraph for a fire turn — `build_prefill`'s `header`.
-
-    Every clause of the tag header is false here: nobody called her, and that is
-    not why this turn is happening. `_context_header` is parameterised rather
-    than branched so the block catalogue, the notation and — the part that
-    actually matters — R-13/R-13b escaping stay shared (§6.3).
-
-    The name is escaped because everything else this module puts in a prompt is,
-    and `identity.toml` is operator-authored text like any other.
-
-    `tagger` is typed optional only because `Event.header` is one callable
-    type for both occasions; a reminders occasion always names a requester, and
-    a turn whose requester fell out of `identity.toml` is refused by `_turn`
-    before this is ever rendered.
-    """
-    who = escape(tagger.name if tagger is not None else "")
-    when = "".join(
-        f"- asked {_stamp(row.created_at)}, due {_stamp(row.due_at)}"
-        f"{_repeat_clause(row)}\n" for row in rows
-    )
-    request = "request" if len(rows) == 1 else "requests"
-    recurring = (
-        # Stated only when it is true, so an ordinary one-shot turn's prompt is
-        # byte-identical to what it was before DEC-85. It has to be stated at
-        # all because without it she has no way to know this is the third of
-        # fourteen — and the failure is specific, not vague: she announces a
-        # standing arrangement as if it were new («記住喇, 我會日日提你»), every
-        # single day, which is exactly how a helpful daily reminder becomes a
-        # thing people mute.
-        "\nSome of these repeat, as marked. A repeat is not a new arrangement — "
-        "you already told them you would do this, so bring the thing up rather "
-        "than announcing the reminder again.\n"
-        if any(row.series is not None for row in rows) else ""
-    )
-    return (
-        "You are in a group chat you have been reading all along. Nobody has "
-        f"just called you. Earlier, {who} asked you to bring something back up "
-        "at a particular time, and that time has come — that is why this turn "
-        "is happening, and it is the only reason.\n"
-        f"When the {request} in tag_message below were made, and when each came "
-        f"due (in the same order):\n"
-        f"{when}{recurring}"
-        f"Say it to {who} now, in your own words, as the person who was asked to "
-        "remember. Do not read the times back at them unless they asked in those "
-        "terms."
-    )
-
-
-def _repeat_clause(row: Reminder) -> str:
-    """« (every day, 11 more after this) » — or nothing at all for a one-shot.
-
-    `remaining_occurrences` is the series' COUNT bound, so this over-states when
-    an `until` or a cancel will end the series sooner. That is the right way to
-    be wrong here: the number is context for her tone, not a promise she is
-    asked to repeat, and the header already tells her not to read the times back
-    unless they asked in those terms.
-    """
-    series = row.series
-    if series is None:
-        return ""
-    left = remaining_occurrences(series)
-    more = "last one" if left == 0 else f"{left} more after this"
-    # The INTERVAL, not just the unit (#109). Reading only `rule.every` renders
-    # a fortnightly arrangement as «every week» and a ten-minute one as «every
-    # minute» — wrong by the whole multiplier, in the one paragraph whose
-    # stated job is stopping her from misdescribing a standing arrangement.
-    step = series.rule.interval
-    unit = _EVERY[series.rule.every]
-    cadence = unit if step == 1 else f"{step} {unit}s"
-    return f" (every {cadence}, {more})"

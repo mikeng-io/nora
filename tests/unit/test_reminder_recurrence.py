@@ -622,19 +622,20 @@ def test_an_interval_past_the_ceiling_is_refused_rather_than_overflowing():
 
 def test_every_per_unit_table_covers_every_recurrence():
     """Three hand-maintained per-unit tables now exist, each subscripted BARE
-    somewhere, and one of them already fell out of sync in production: `_EVERY`
-    was left at five entries when #109 added two units, so every sub-day
-    reminder raised KeyError in its own fire header after claiming the row.
+    somewhere, and one of them already fell out of sync in production:
+    `CADENCE_UNITS` (then `_EVERY` in `nora/app/fire.py`) was left at five
+    entries when #109 added two units, so every sub-day reminder raised KeyError
+    in its own fire header after claiming the row.
 
     A table missing a member is a runtime crash on a background path nobody is
     watching, which is the worst place to find one. This is the gate that makes
     adding a unit fail here instead.
     """
     from nora.agent.tools import _PERIOD_DAYS
-    from nora.app.fire import _EVERY
+    from nora.domain.framing import CADENCE_UNITS
 
     repeating = set(Recurrence) - {Recurrence.NONE}
-    assert set(_EVERY) == repeating, "nora.app.fire._EVERY"
+    assert set(CADENCE_UNITS) == repeating, "nora.domain.framing.CADENCE_UNITS"
     assert set(_PERIOD_DAYS) == repeating, "nora.agent.tools._PERIOD_DAYS"
     # UNIT_SECONDS is deliberately PARTIAL — a calendar unit has no fixed
     # period — so it is checked as a subset with the sub-day units required.

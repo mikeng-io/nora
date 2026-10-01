@@ -2,9 +2,10 @@
 
 Promoted from `Occasion`, a private type in `nora/app/fire.py`, into a
 first-class domain type. The shape is unchanged — this is a promotion, not
-a redesign — and the factories that BUILD events remain app-layer prose in
-`nora/app/fire.py` (they close over header callables and escaping that
-domain may not import, per the layered import contract).
+a redesign — and the factories that BUILD events remain app-layer code in
+`nora/app/fire.py` (they close over the rows and jobs a turn is about). What a
+header SAYS is not there: each kind's situation paragraph is a typed builder in
+`nora.domain.framing` (`FIRE_HEADERS`), and a factory only names its inputs.
 
 `Event` answers *what happens* (via `kind`); `nora.domain.reminders`
 answers *when* (the scheduler). A fire turn's shape is one Event, and the

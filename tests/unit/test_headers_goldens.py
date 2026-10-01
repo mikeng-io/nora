@@ -661,7 +661,8 @@ def _prefill_tag_header() -> Any:
 
 @_case("prefill-the-closing-line")
 def _prefill_closing() -> Any:
-    return prefill._CLOSING_LINE
+    last = prefill.build_prefill(_ctx(), display_name="Nora", context_window=40)[-1]
+    return last["content"][0]["text"]
 
 
 @_case("prefill-the-three-messages-for-the-default-header")
