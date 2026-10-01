@@ -3,11 +3,11 @@
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/cn";
-import { MAIN_NAV, isActive } from "./nav";
+import { BOTTOM_NAV_COLUMNS, MAIN_NAV, MOBILE_NAV_MAX, isActive } from "./nav";
 import { NavIcon } from "./nav-icon";
 
-// Phone navigation: a bottom bar on surface, four destinations, no raised
-// centre button (DESIGN.md §7).
+// Phone navigation: a bottom bar on surface, up to MOBILE_NAV_MAX destinations, no
+// raised centre button (DESIGN.md §7).
 export function BottomNav() {
   const t = useTranslations("nav");
   const pathname = usePathname();
@@ -17,7 +17,12 @@ export function BottomNav() {
       aria-label={t("main")}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-surface/92 backdrop-blur-xl backdrop-saturate-150 lg:hidden"
     >
-      <ul className="mx-auto grid max-w-xl grid-cols-4 pb-[env(safe-area-inset-bottom)]">
+      <ul
+        className={cn(
+          "mx-auto grid max-w-xl pb-[env(safe-area-inset-bottom)]",
+          BOTTOM_NAV_COLUMNS[Math.min(items.length, MOBILE_NAV_MAX)],
+        )}
+      >
         {items.map((it) => {
           const active = isActive(pathname, it);
           return (

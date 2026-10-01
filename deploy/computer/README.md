@@ -19,6 +19,10 @@ echo "NORA_COMPUTER_TOKEN=$(openssl rand -hex 32)" >> ~/workspace/nora/.env
 mkdir -p ~/.config/systemd/user
 ln -sf ~/workspace/nora/deploy/computer/nora-computer.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now nora-computer.service
+# the nightly /workspace backup (see "Backup and restore"):
+ln -sf ~/workspace/nora/deploy/computer/nora-computer-backup.service \
+       ~/workspace/nora/deploy/computer/nora-computer-backup.timer ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now nora-computer-backup.timer
 ```
 
 User lingering must be on (`loginctl show-user "$USER" -p Linger`), or the
@@ -34,6 +38,224 @@ depends on that session. `sbx run` needs a read-write primary workspace: an
 empty dedicated host directory under `~/.local/state/nora-computer/`, which
 nothing on the host reads.
 
+## Network egress: PyPI and the Ubuntu archive, nothing else
+
+sbx's policy is deny-all (`sbx policy ls` shows `default-deny-all` and
+`local-policy`). The VM may fetch packages and nothing more (operator ruling,
+2026-10-01), so `nora-computer` adds these allow rules, **scoped to the
+`nora-computer` sandbox** (`--sandbox`), in its `EGRESS_ALLOW` list:
+
+| host | port | for |
+|---|---|---|
+| `pypi.org` | 443 | pip: the index |
+| `files.pythonhosted.org` | 443 | pip: the wheels and sdists |
+| `archive.ubuntu.com` | 80, 443 | apt (its default sources are plain HTTP) |
+| `security.ubuntu.com` | 80, 443 | apt security updates |
+
+Nothing of Nora's own services is on it: not computerd's own port, Honcho,
+OmniRoute, Langfuse, the LAN or the tailnet. The list is part of `serve`
+(`prepare` applies it on every start, idempotently, because a rule lives in
+sbx's daemon and not in the VM, so a recreate or a policy reset loses it), and
+it is applied by hand with `nora-computer egress apply`.
+
+`nora-computer egress apply` reads sbx's rule list first and adds only what is missing
+(it never trusts `sbx policy allow` to de-duplicate), reads each rule back, and exits 0
+when every rule is in place and reads allowed, 1 when a rule could not be added or
+reads denied, 2 when sbx would not give a verdict; `egress check` has the same
+three codes.
+
+Read it back, both halves (the allowlist reads **allowed**, what must stay shut
+reads **denied**), from sbx's own authorizer:
+
+```bash
+nora-computer egress check; echo "RC=$?"     # 0 all as required, 1 a violation, 2 sbx would not say
+nora-computer status                         # ... egress=ok|WRONG|unknown
+sbx policy ls --wide                         # the rules themselves, with ids
+sbx policy log nora-computer                 # what the proxy allowed and refused, with counts
+```
+
+A fetch from inside is the end-to-end proof (`pip download` of a small package
+as a scope user; a `curl` to `example.com` must get HTTP 403). `egress check` is
+the read-back that does not depend on a package existing. The policy log's
+refusals of `pypi.org` and the Ubuntu hosts stop appearing once the rules are in.
+
+## Lifecycle audit: who did what to the machine
+
+The computer's audit (design/sandbox-runtime §12) covers every tool call, and
+until 2026-10-01 nothing else: a VM create, a recreate, a computerd restart or a
+token rotation left no row. `nora-computer` runs on the host as the operator,
+outside the nora container and outside the VM, so it cannot append to Postgres
+the way the tools do; it keeps a **host-side spool first** and replays it into
+`computer_events`:
+
+- The spool is `~/.local/state/nora-computer/lifecycle-events.jsonl`, one JSON
+  line per event, written before anything else. It survives Postgres being down
+  at boot, which is the ordinary case: the unit starts before the db is healthy.
+- Each event is then synced into `computer_events` through
+  `docker compose exec db psql` (`ON CONFLICT DO NOTHING` with no conflict target,
+  so a row already there is skipped on whichever unique key it hits, and two
+  syncs racing on the same event cannot fail each other). A sync sends only what
+  is **after the offset the last good sync reached** (`lifecycle-events.synced`
+  beside the spool, moved forward only after psql succeeded), not the whole
+  history. A db that is not up yet logs `not yet in Postgres` and leaves the
+  offset alone; `nora-computer sync-events` retries by hand, and
+  `sync-events --all` replays everything. A line in the spool that is not a valid
+  event is logged and skipped, never raised, so one bad line cannot park the
+  events after it; a last line with no newline is a write in progress and is left
+  for the next sync.
+- Rows have `actor = 'operator'` (a value the table's constraint already
+  allowed: no migration), `tool = 'computer_vm'`, and the event in `request`
+  (`{"event": ..., "name": ..., "host": ...}`) with its facts in `result`. The
+  append-only triggers are untouched: nothing here updates or deletes.
+- The kinds: `create`, `recreate` (a create after an earlier one: `/workspace` was
+  lost to it), `destroy`, `computerd_start` (every `serve` start: a crash restart,
+  a deploy, a boot), `token_rotation`, `policy_log_read`, `egress_apply`,
+  `backup`, `restore`. A rotation is the token's SHA-256 fingerprint (12 hex,
+  never the token) differing from the last start's.
+- `nora-computer policy-log [--json]` is the audited way to read `sbx policy log`:
+  it records the read first and does not read if it could not record it.
+
+Read it back:
+
+```bash
+cd ~/workspace/nora && docker compose exec -T db psql -U nora -d nora -Atc \
+  "select created_at, request->>'event', status, result::text from computer_events where tool = 'computer_vm' order by created_at desc limit 10" </dev/null
+tail -n 3 ~/.local/state/nora-computer/lifecycle-events.jsonl      # the spool
+```
+
+Rows count only; read the table, not the spool, for what the record says.
+`nora-computer sync-events` and a re-read are how a row that is in the spool and
+not in the table is closed.
+
+## Backup and restore
+
+A **recreate deletes /workspace**, and the audit of 2026-10-01 saw three of them in
+24 hours: the VM's disk is the only copy of every room's files. So:
+
+- **Nightly**, `nora-computer-backup.timer` (03:20, persistent: a night the host was
+  off is made up) runs `nora-computer backup`: a tar of `/workspace` made inside
+  the VM as root, copied out with `sbx cp`, **verified** (the digest computed in
+  the VM must equal the copy's, and the copy must read back as a gzip tar, or it is
+  deleted and the run fails), and written to
+  `~/nora-backups/computer-workspace/workspace-<UTC time>.tar.gz` with a
+  `.sha256` beside it, mode 700. The newest 14 are kept
+  (`NORA_COMPUTER_BACKUP_KEEP`; a zero or a non-number prunes nothing, and a failed
+  run never removes an older archive). A stopped VM is skipped, not started: `sbx
+  exec` would start it, and a stopped disk has not changed.
+- **Inside the VM the archive is never in the shared `/tmp`.** It is made under
+  `umask 077` in a `mktemp -d` directory (root's, mode 0700), copied out, and the
+  whole directory is removed and checked gone; a directory that cannot be removed
+  fails the backup (exit 5) and names the path to remove by hand, because a
+  leftover archive of every room's files is the exposure.
+- **A VM with no rooms is not backed up.** After a recreate `/workspace` is empty;
+  a backup of that would verify, count toward the 14, and in 14 nights push out the
+  last backup that holds any room. It logs `holds no rooms; nothing to back up`,
+  makes no archive and prunes nothing.
+- **Not in it:** each room's `browser/` directory (a Chromium profile is a
+  credential store; its cookies are never backed up, design §7) and computerd's
+  `.tmux` sockets. A project folder that happens to be called `browser` is kept.
+- **It is rollback, not off-host backup** (design §7): the same machine, the same
+  disk. Copy `~/nora-backups` off the host if the host's loss matters.
+- **`nora-computer destroy` takes a backup first and refuses if it cannot**
+  (exit 9, the VM untouched). That backup is filed under
+  `~/nora-backups/computer-workspace/destroy/`, OUTSIDE the nightly rotation, so
+  nothing ever prunes it. `nora-computer destroy --no-backup` deletes `/workspace`
+  without one, on purpose, and the audit row says so.
+- A failed run leaves the unit `failed`: `systemctl --user --failed`,
+  `journalctl --user -u nora-computer-backup -n 30`.
+
+Restore (after a recreate the VM's `/workspace` is empty):
+
+```bash
+ls -lt ~/nora-backups/computer-workspace/ | head                   # pick an archive
+deploy/computer/nora-computer restore ~/nora-backups/computer-workspace/workspace-<time>.tar.gz
+```
+
+It needs the archive's `.sha256` beside it and checks it, then **reads the archive on
+the host and refuses it whole** if any member could write outside a room: an absolute
+or `..` name, a top level that is not a room directory, a device node or fifo, a
+link that leaves its own room (to `/etc`, to another room, to anywhere above), or a
+member written through a link in the archive (`archive_check.py`; exit 3, nothing
+copied to the VM). It refuses when the VM's `/workspace` already holds rooms
+(restoring over them would overwrite files; `--force` if that is meant). It copies the
+archive into a private `mktemp -d` directory in the VM (never a fixed shared path),
+checks the digest AGAIN inside the VM on the file tar will read (exit 4 if it
+differs, nothing extracted), extracts as root preserving modes, removes the
+directory, and gives each room's directory to `c-<first 12 hex of the scope>`
+(`chown -hR`: a link is never followed), creating that user the way computerd does
+if it is not there yet: the uids inside an archive mean nothing in a new VM.
+Every backup, restore and destroy is a lifecycle audit row.
+
+Read it back (the nightly job ran, and the archive is a good one):
+
+```bash
+systemctl --user list-timers nora-computer-backup.timer          # LAST and NEXT
+ls -l ~/nora-backups/computer-workspace/ | tail -n 4
+f=$(ls -t ~/nora-backups/computer-workspace/workspace-*.tar.gz | head -n 1)
+(cd "$(dirname "$f")" && sha256sum -c "$(basename "$f").sha256") && tar -tzf "$f" | head
+```
+
+## Rotating the token
+
+computerd reads its bearer token when `nora-computer serve` starts it, and **nora
+reads `NORA_COMPUTER_TOKEN` from the environment when her container is created**
+(`docker-compose.yml` passes it through `environment:`). So restarting the unit
+alone, which this file used to say, leaves nora holding the old token: every
+computer call is a 401 and `nora_computer_up` goes to 0 (`ComputerDown` fires after
+5 minutes). `/v1/health` stays green throughout, which is why `nora-computer
+status` reads `computerd=up` and not `healthy` in that state.
+
+One procedure, in this order, on the deploy host (take `nora-deploy`'s lock first:
+step 4 recreates nora):
+
+1. Make the new token, and keep the old one for step 6. Neither is printed.
+   ```bash
+   cd ~/workspace/nora && umask 077
+   OLD=$(grep -E '^NORA_COMPUTER_TOKEN=' .env | tail -n 1 | cut -d= -f2-)
+   NEW=$(openssl rand -hex 32)
+   cp .env ~/nora-backups/env.$(date +%Y%m%dT%H%M%S)          # the rollback copy
+   ```
+2. Write it to `.env` (the unit and compose both read it) **without the token on
+   any command line**: `printf` is a shell builtin, so the value never reaches
+   an `argv` another user's `ps` or `/proc` can read (a `sed` whose
+   expression holds `$NEW` would). The new file is made under the `umask 077` from step 1 and copied
+   over `.env` so the file keeps its inode and mode:
+   ```bash
+   { grep -v '^NORA_COMPUTER_TOKEN=' .env; printf 'NORA_COMPUTER_TOKEN=%s\n' "$NEW"; } > .env.new \
+     && cat .env.new > .env && rm -f .env.new
+   grep -c '^NORA_COMPUTER_TOKEN=' .env                       # 1
+   ```
+3. Restart computerd's unit, so it starts with the new token:
+   ```bash
+   systemctl --user restart nora-computer
+   ```
+4. **Recreate nora**, because a restart keeps the old environment:
+   ```bash
+   docker compose up -d --force-recreate nora </dev/null
+   ```
+5. Wait for both to be up: `deploy/computer/nora-computer status` reads
+   `computerd=healthy` (it asks something that needs the token).
+6. Verify from both sides, with the tokens in header files so neither is on a
+   command line:
+   ```bash
+   printf 'Authorization: Bearer %s\n' "$OLD" > /tmp/h.old
+   printf 'Authorization: Bearer %s\n' "$NEW" > /tmp/h.new
+   B='{"scope": "0000000000000000", "pattern": "*"}'
+   U=http://172.17.0.1:18765/v1/files
+   curl -s -o /dev/null -w 'old token: %{http_code}\n' -H @/tmp/h.old -H 'Content-Type: application/json' -d "$B" $U   # 401
+   curl -s -o /dev/null -w 'new token: %{http_code}\n' -H @/tmp/h.new -H 'Content-Type: application/json' -d "$B" $U   # 200
+   rm -f /tmp/h.old /tmp/h.new
+   curl -s localhost:9100/metrics | grep '^nora_computer_up'  # ... 1.0, from nora's own side
+   ```
+   Old token 401 and new token 200 means computerd took it; `nora_computer_up` 1.0
+   means **nora holds it** (the gauge reads 1 only after a call or the 30-second
+   probe got an answer, so give it a minute).
+7. The rotation is an audit row: `token_rotation` with the two fingerprints (never a
+   token) in `computer_events` (see "Lifecycle audit"). A rotation that left nora
+   on the old token shows as `ComputerDown`, not silence.
+
+Rollback is the same procedure with the rollback copy of `.env`.
+
 ## Operating it
 
 | want | run |
@@ -41,9 +263,11 @@ nothing on the host reads.
 | state | `nora-computer status` |
 | stop it | `systemctl --user stop nora-computer` FIRST, then `nora-computer stop`: while the unit runs, `Restart=always` and its `sbx exec` start the VM again within seconds |
 | logs | `journalctl --user -u nora-computer -n 50`; computerd's own output is in the unit's journal (it runs in the foreground) |
-| new image | `nora-computer build`, `nora-computer destroy`, then `systemctl --user restart nora-computer`. **Destroy deletes /workspace**: export what matters first |
-| what the network refused | `sbx policy log nora-computer` |
-| token rotated | `systemctl --user restart nora-computer` |
+| new image | `nora-computer build`, `nora-computer destroy`, `systemctl --user restart nora-computer`, then `nora-computer restore <the archive destroy printed>`. **Destroy deletes /workspace**: it takes a verified backup first and refuses without one, unless you pass `--no-backup` (see "Backup and restore") |
+| back up now / restore | `nora-computer backup`; `nora-computer restore ARCHIVE [--force]` |
+| what the network refused | `nora-computer policy-log` (the audited form of `sbx policy log nora-computer`) |
+| token rotated | **two steps, not one**: see "Rotating the token" |
+| a lifecycle row is missing in Postgres | `nora-computer sync-events` |
 
 The CLI needs `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent` when run by
 hand on a headless host (the script sets it): the desktop keyring is locked.

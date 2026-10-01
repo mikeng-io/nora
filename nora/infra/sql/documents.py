@@ -29,6 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
+    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -41,6 +42,7 @@ from nora.domain.documents import (
     VisiblePage,
     ensure_utc_document,
     is_handle,
+    normalize_query,
 )
 from nora.infra.sql.schema import DOCUMENT_REVISION, DOCUMENT_STATE, DOCUMENTS
 
@@ -58,6 +60,19 @@ def _latest_state(document_id: Any) -> sa.Select[Any]:
         .order_by(_S.id.desc())
         .limit(1)
     )
+
+
+def _state_by() -> sa.ColumnElement[str]:
+    """Who wrote each document's latest state row, "" when there is none."""
+    latest = (
+        sa.select(_S.set_by)
+        .where(_S.document_id == _D.id)
+        .order_by(_S.id.desc())
+        .limit(1)
+        .correlate(DOCUMENTS)
+        .scalar_subquery()
+    )
+    return sa.func.coalesce(latest, sa.literal(""))
 
 
 def _lock(document_id: UUID) -> sa.Select[Any]:
@@ -82,6 +97,7 @@ def _summary(r: Row[Any], created_at: Any) -> DocumentSummary:
         created_at=ensure_utc_document(created_at, field="created_at"),
         updated_at=ensure_utc_document(r.recorded_at, field="updated_at"),
         state=r.state,
+        state_by=r.state_by,
     )
 
 
@@ -96,13 +112,21 @@ def _stored(r: Row[Any]) -> StoredDocument:
     )
 
 
-def _current() -> sa.Select[Any]:
-    """Each document at its highest revision."""
+def _current_join() -> sa.Join:
+    """`documents` joined to its highest revision."""
     top = (
         sa.select(_R.document_id, sa.func.max(_R.revision).label("top"))
         .group_by(_R.document_id)
         .subquery()
     )
+    return DOCUMENTS.join(top, top.c.document_id == _D.id).join(
+        DOCUMENT_REVISION,
+        sa.and_(_R.document_id == top.c.document_id, _R.revision == top.c.top),
+    )
+
+
+def _current() -> sa.Select[Any]:
+    """Each document at its highest revision."""
     return sa.select(
         _D.id,
         _D.platform,
@@ -118,12 +142,26 @@ def _current() -> sa.Select[Any]:
         _R.written_by,
         _R.recorded_at,
         _state().label("state"),
-    ).select_from(
-        DOCUMENTS.join(top, top.c.document_id == _D.id).join(
-            DOCUMENT_REVISION,
-            sa.and_(_R.document_id == top.c.document_id, _R.revision == top.c.top),
-        )
+        _state_by().label("state_by"),
+    ).select_from(_current_join())
+
+
+def _matches(needle: str) -> sa.ColumnElement[bool]:
+    """The CURRENT revision's title or search text contains `needle`, ignoring case. A
+    plain `ILIKE '%needle%'` with `%`, `_` and the escape character escaped, so a query is
+    text and never a pattern. It runs only over what `_visible` and `_state` already kept
+    (one person's documents), so it needs no trigram index."""
+    return sa.or_(
+        _spaced(_R.title).icontains(needle, autoescape=True),
+        _spaced(_R.text).icontains(needle, autoescape=True),
     )
+
+
+def _spaced(column: sa.ColumnElement[str]) -> sa.ColumnElement[str]:
+    """`column` with every run of whitespace collapsed to one space: the query is collapsed
+    the same way (`normalize_query`), so "two words" finds text that has them on two lines
+    (the checker joins a document's parts with a newline) or with a doubled space."""
+    return sa.func.regexp_replace(column, r"\s+", " ", "g")
 
 
 def _visible(person_id: str, rooms: frozenset[RoomKey]) -> sa.ColumnElement[bool]:
@@ -215,11 +253,23 @@ class SqlDocumentStore:
         return RevisionOutcome("ok", stored)
 
     async def set_state(
-        self, *, document_id: UUID, state: DocumentState, set_by: str
+        self,
+        *,
+        document_id: UUID,
+        state: DocumentState,
+        set_by: str,
+        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         async with self._engine.begin() as conn:
             if (await conn.execute(_lock(document_id))).first() is None:
                 return False
+            if only_if_state is not None:
+                # Read UNDER the lock: a change another writer committed while this one
+                # waited for it is seen here, so a caller deciding from a snapshot never
+                # overwrites it.
+                current = (await conn.execute(_latest_state(document_id))).scalar_one_or_none()
+                if (current or "active") not in only_if_state:
+                    return False
             await conn.execute(
                 sa.insert(DOCUMENT_STATE).values(
                     document_id=document_id, state=state, set_by=set_by
@@ -230,6 +280,29 @@ class SqlDocumentStore:
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         async with self._engine.connect() as conn:
             return await self._one(conn, document_id)
+
+    async def list_created_by(
+        self,
+        *,
+        person_id: str,
+        states: tuple[DocumentState, ...] = ("active", "archived"),
+        limit: int,
+        offset: int = 0,
+    ) -> tuple[DocumentSummary, ...]:
+        limit = min(max(limit, 0), _MAX_LIMIT)
+        offset = min(max(offset, 0), _MAX_OFFSET)
+        if limit == 0 or not states:
+            return ()
+        stmt = (
+            _current()
+            .where(_D.created_by == person_id, _state().in_(states))
+            .order_by(_D.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return tuple(_summary(r, r.created_at) for r in rows)
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         stmt = (
@@ -258,15 +331,23 @@ class SqlDocumentStore:
         limit: int,
         offset: int,
         state: ListedState = "active",
+        query: str = "",
     ) -> VisiblePage:
         # `deleted` is never a listing, whatever a caller passes.
         listed = "archived" if state == "archived" else "active"
         where = sa.and_(_visible(person_id, rooms), _state() == listed)
+        needle = normalize_query(query)
+        if needle:
+            where = sa.and_(where, _matches(needle))
         # Bounded here as well as by the caller: an unbounded OFFSET is a DataError, and
         # the fake answers an empty page, so the two stores must agree at the extremes.
         limit = min(max(limit, 0), _MAX_LIMIT)
         offset = min(max(offset, 0), _MAX_OFFSET)
-        count = sa.select(sa.func.count()).select_from(DOCUMENTS).where(where)
+        # A search filters on the current revision's columns, so its count reads the same
+        # join the page does; an unfiltered list counts the identity rows alone.
+        count = sa.select(sa.func.count()).select_from(
+            _current_join() if needle else DOCUMENTS
+        ).where(where)
         page = (
             _current()
             .where(where)
@@ -289,6 +370,7 @@ class SqlDocumentStore:
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
+        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
@@ -297,6 +379,10 @@ class SqlDocumentStore:
         in_room = sa.and_(
             _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
         )
+        if hide_forgotten:
+            in_room = sa.and_(
+                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)
+            )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
         top = (
@@ -316,6 +402,7 @@ class SqlDocumentStore:
                 _R.title,
                 _R.recorded_at,
                 _state().label("state"),
+                _state_by().label("state_by"),
             )
             .select_from(
                 DOCUMENTS.join(top, top.c.document_id == _D.id).join(

@@ -10,8 +10,11 @@ export const DocumentSummarySchema = z.object({
   id: z.string(),
   title: z.string(),
   revision: z.number().int().min(1),
-  // The room's platform only ("signal"): never its chat id.
+  // The room's platform ("signal"), never its chat id.
   platform: z.string(),
+  // The operator's label of the room, only when the viewer is in that room; "" otherwise
+  // (and from a Nora that predates it), and the platform is shown instead.
+  roomLabel: z.string().default(""),
   createdAt: z.string(),
   updatedAt: z.string(),
   createdBy: z.object({ personId: z.string(), name: z.string() }),
@@ -25,6 +28,8 @@ export const DocumentsPageSchema = z.object({
   page: z.number().int(),
   pageSize: z.number().int(),
   total: z.number().int(),
+  // The search the list answers, as Nora normalised it; "" for the whole list.
+  query: z.string().default(""),
 });
 export type DocumentsPage = z.infer<typeof DocumentsPageSchema>;
 
@@ -39,9 +44,14 @@ export type DocumentFilter = "active" | "archived";
 /** What a person can set: archive, delete (restorable by Nora only), or restore. */
 export type DocumentStateChange = "active" | "archived" | "deleted";
 
-export const fetchDocuments = (page: number, state: DocumentFilter = "active", signal?: AbortSignal) =>
+export const fetchDocuments = (
+  page: number,
+  state: DocumentFilter = "active",
+  search = "",
+  signal?: AbortSignal,
+) =>
   apiGet("/documents", DocumentsPageSchema, {
-    query: { page, state: state === "active" ? undefined : state },
+    query: { page, state: state === "active" ? undefined : state, q: search || undefined },
     signal,
   });
 
