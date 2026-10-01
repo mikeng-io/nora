@@ -30,7 +30,7 @@
   {
     "name": "check: the added-symbol rule is removed, so an emoji the model added is spoken",
     "file": "nora/domain/speech_markup.py",
-    "old": "    if _STRAY.search(stripped) or any(\n        unicodedata.category(ch) in (\"So\", \"Sk\", \"Cs\", \"Co\") for ch in stripped\n    ):\n        return \"bad_markup\"\n",
+    "old": "    if _STRAY.search(stripped) or any(_unsaid_symbol(ch) for ch in stripped):\n        return \"bad_markup\"\n",
     "new": "",
     "target": "tests/unit/test_speech_markup.py::test_an_emoji_the_model_added_is_refused"
   },
