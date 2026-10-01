@@ -383,6 +383,16 @@ def test_a_directory_that_cannot_be_removed_fails_the_backup_and_says_where(host
     assert event["status"] == "failed"
 
 
+def test_a_remove_that_reports_success_but_left_the_directory_is_still_a_failure(
+    host: Host,
+) -> None:
+    """The removal is checked, not trusted: `rm` exiting 0 is a claim, and the
+    directory being gone is the fact."""
+    result = host.run("backup", STUB_VM_RM_LIES="1")
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert host.archives() == []
+
+
 def test_a_vm_that_answers_something_else_for_mktemp_is_refused(host: Host) -> None:
     sbx = host.dir.parent / "bin" / "sbx"
     before = 'exec)\n      exec "$STUB_DIR/bin-vm-exec" "$@" ;;'

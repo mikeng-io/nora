@@ -131,6 +131,8 @@ if os.environ.get("STUB_VM_TAR_GARBAGE") == "1":
     env["PATH"] = shim + ":" + env["PATH"]
 if os.environ.get("STUB_VM_RM_FAILS") == "1" and args and args[0] == "rm":
     sys.exit(1)
+if os.environ.get("STUB_VM_RM_LIES") == "1" and args and args[0] == "rm":
+    sys.exit(0)   # says it removed it, and did not
 if os.environ.get("STUB_VM_TAR_RECORD") == "1":
     # Records what the real tar was handed: the umask it ran under and the mode
     # of the directory it writes into, then of the archive it wrote.
