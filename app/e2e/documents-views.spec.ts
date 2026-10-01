@@ -101,9 +101,14 @@ test("a focused code block keeps its arrows, the slide stays in the URL, and a r
   await expect(page).toHaveURL(/[?&]slide=2(&|$)/);
   // The code block is a scroll region: its arrow keys scroll it, they do not turn slides.
   await page.getByTestId("present-view").getByRole("region", { name: "text code" }).focus();
+  // One key at a time: two keys could move back and forth again and read as "kept".
+  // A "still 2 / 2" assertion passes at once, so give a wrong move time to render first.
   await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("Space");
-  await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
+  await page.waitForTimeout(300);
+  expect(await page.getByTestId("slide-counter").textContent()).toBe("2 / 2");
+  await page.keyboard.press("Home");
+  await page.waitForTimeout(300);
+  expect(await page.getByTestId("slide-counter").textContent()).toBe("2 / 2");
   // Escape is never the block's.
   await page.reload();
   await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
