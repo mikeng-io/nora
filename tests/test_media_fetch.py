@@ -216,6 +216,70 @@ async def test_a_url_is_downloaded_and_described_like_a_code(wiring, monkeypatch
     assert wiring["vision"].calls == 1
 
 
+async def _fake_download(monkeypatch, data=RED_PNG, media_type="image/png"):
+    async def fake_download(url: str) -> tuple[bytes, str]:
+        return data, media_type
+    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
+
+
+async def test_a_looked_at_web_picture_is_kept_and_gets_a_code(wiring, monkeypatch):
+    """design/artifact §35: the picture Nora chose to look at goes into custody
+    as a `fetched` row born in THIS room, so a document's Image can name it."""
+    await _fake_download(monkeypatch)
+    index = FakeMediaObjectStore([])
+    out = await _call(wiring["build"](media_store=index), url="https://x.com/pic.png")
+    assert out["status"] == "ok"
+    assert out["code"] == PNG_SHA[:6]
+    assert "kept" in out["note"]
+    row = await index.get(sha256=PNG_SHA)
+    assert row is not None and row.source == "fetched"
+    assert row.provenance == {
+        "url": "https://x.com/pic.png", "platform": "signal", "conversation_id": "g1",
+    }
+    assert await wiring["blobs"].get(key=PNG_SHA) == RED_PNG
+
+
+async def test_a_picture_first_indexed_in_another_room_gets_no_code(wiring, monkeypatch):
+    """First source wins on a sha256 collision, so the row stays born elsewhere
+    and would not resolve here: no code is offered rather than one that lies."""
+    await _fake_download(monkeypatch)
+    elsewhere = MediaObject(
+        sha256=PNG_SHA, media_type="image/png", size=len(RED_PNG), source="generated",
+        description="", provenance={"platform": "signal", "conversation_id": "other-room"},
+        created_at_ms=1,
+    )
+    index = FakeMediaObjectStore([elsewhere])
+    out = await _call(wiring["build"](media_store=index), url="https://x.com/pic.png")
+    assert out["status"] == "ok"
+    assert out["code"] is None
+    assert "kept" not in out["note"]
+
+
+async def test_a_clip_from_a_url_is_never_kept(wiring, monkeypatch):
+    await _fake_download(monkeypatch, data=b"\x00\x00\x00\x18ftypmp42", media_type="video/mp4")
+    index = FakeMediaObjectStore([])
+    await _call(
+        wiring["build"](media_store=index, describe_models={"video": "test/video-model"}),
+        url="https://x.com/clip.mp4",
+    )
+    assert await index.get(sha256=hashlib.sha256(b"\x00\x00\x00\x18ftypmp42").hexdigest()) is None
+
+
+async def test_an_automatic_reading_keeps_nothing(wiring, monkeypatch):
+    """`instagram_read` and a summons look through `media_look`; only a look
+    the model asked for is kept."""
+    from nora.agent.tools import media_look
+    await _fake_download(monkeypatch)
+    index = FakeMediaObjectStore([])
+    tool = wiring["build"](media_store=index)
+    look = media_look(tool._tool_func, caller="instagram_read", persist=True,
+                      max_video_seconds=60)
+    out = await look.fetch(url="https://x.com/pic.png")
+    assert out["status"] == "ok"
+    assert out["code"] is None
+    assert await index.get(sha256=PNG_SHA) is None
+
+
 async def test_a_url_cache_hit_makes_no_vision_call(wiring, monkeypatch):
     """The description cache is keyed by content hash, and the URL path uses
     the SAME key as the code path — a URL view of bytes the conversation
