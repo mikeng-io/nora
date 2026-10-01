@@ -1408,3 +1408,41 @@ a picture without reading it, a quota on kept bytes beyond `media.max_bytes` (a 
 download ceiling, and nothing deletes kept rows), and withholding the code when the reading was withheld for an
 identifier (room photos behave the same way). A story-frame link opened in a LATER turn than the one that read
 the story is kept: the story exclusion is per turn.
+
+## 36. The first live document: what the trace showed, and the follow-up (2026-10-02)
+
+**Read-back (trace `1391f819` and its follow-up turn, the build of DEC-269 live).** The pictures never reached
+the document, for three causes, none of them in the new code's keep path:
+
+1. **The skill said no.** `document-creation` told her a picture "has to come from this room", so after the
+   tools could keep a web picture she answered that web pictures could not go in. Trace `1fdcdb0a`: she loaded
+   `media_fetch`, then called `media_search` (the library) and never `media_fetch(url=…)`.
+2. **The links were mostly pages.** Tavily's `images` list for four fetched pages held 11 links, about two of them
+   pictures; the rest were pages (a hotel listing, related posts) and a Next.js proxy URL. `image_links` now keeps
+   only a link whose path ends in png, jpeg, gif or webp, or starts with `/_next/image`.
+3. **The document was a note.** Seven sections and about 1,000 characters, in chat register, using Markdown, Table
+   and Accordion only. The skill named six of the nineteen catalog components and never asked for depth.
+
+**Decided (operator, 2026-10-02: «everything makes sense»; skills abstracted, not scenario-bound).**
+- The skill's picture section now names the three sources of a picture, how to look for them, how to choose and
+  credit them. The rule is stated for any subject; `test_skill_content` forbids a named scenario in the body.
+- A new section asks for a finished reference (summary first, full substance per section, formal register) and
+  another maps each kind of content to its component.
+- `test_the_document_skill_names_every_content_component_in_the_catalog` fails when a content component is added to
+  the catalog and the skill does not name it, so the drift that left thirteen unnamed cannot recur.
+
+**Review of #696 (independent, told to find the rules it lost): five changes before merge.** The depth rule is scoped
+("the full substance the content has", never padded) so it does not collide with «however short it turns out»; «never
+guess its code» is restored for the out-of-reach case; the skill now says a coordinate from `where_is`, `where_been` or
+`reverse_geocode` is a person's position and never goes in a document (those tools DO return coordinates, for people, and
+`Map` accepts any in-range pair); the matching section names `Map` conditionally and `Sources`, and the component test
+now reads that section, not the whole file; and `image_links` also admits an extensionless picture whose query carries
+a resize parameter or whose host serves pictures (unsplash, Google, Cloudinary, imgix, Medium), because the first filter
+silently dropped those.
+
+**Found, not fixed: `Map` cannot be filled** (issue #695). No tool returns a coordinate for a named place (DEC-24,
+R-28), so the skill tells her to give each place's `place_info` link in Markdown until a ruling lets a `Map` place carry
+a name that `publish` resolves.
+
+**Not measured.** There is no behaviour eval for what a document contains; the `tool_selection` corpus measures routing
+only. The check is the live read-back: the same prompt, then the trace.
