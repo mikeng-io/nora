@@ -156,6 +156,25 @@ def _images(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     return sorted(found, key=lambda pair: pair[0])
 
 
+_CATALOG_RULES = (
+    "Write a finished reference, not notes: open with a short summary, give every section its full "
+    "substance, and use the component built for each kind of content rather than Markdown alone. "
+    "A picture comes from the room, from something you made, or from a page you opened "
+    "(`media_fetch` on a link in `web_fetch`'s `images`). Publish with what you have: a document "
+    "exists only once `document_publish` returns `ok`, so until then say it was not made and give "
+    "no link.\n\n"
+)
+
+
+def _own_link_pattern(public_url: str) -> re.Pattern[str]:
+    """`<public_url>/documents/<12-hex handle>`, scheme optional, any case: the shape
+    `DocumentService` builds a link in, and the only one a reply is checked for."""
+    host = public_url.split("://", 1)[-1].strip("/")
+    return re.compile(
+        rf"(?<![\w.-])(?:https?://)?{re.escape(host)}/documents/([0-9a-f]{{12}})\b", re.IGNORECASE
+    )
+
+
 class DocumentService:
     def __init__(
         self,
@@ -272,11 +291,55 @@ class DocumentService:
                 named.append(sha)
         return rewritten, tuple(sorted(set(named))), findings, False
 
+    async def unknown_document_link(
+        self, platform: str, conversation_id: str, text: str
+    ) -> str | None:
+        """A refusal note when `text` links to a document that is not this room's, else `None`
+        (design/artifact §37, R-100).
+
+        A reply may carry a link to one of OUR documents (`<public_url>/documents/<handle>`) only
+        when the document exists in this room, in any state (an archived or deleted one is still
+        a real thing to mention). A handle that matches none is a made-up link: on 2026-10-01
+        Nora wrote «document made, with four photos» and a link to a document she never stored,
+        then told the room it was still there. The check runs where the text leaves
+        (`Deliverer`), not in a prompt, because the rule «do not say it was made until the publish
+        returned ok» was already in her skill. FAILS CLOSED: a store that cannot be read refuses
+        the reply, since «I could not check» is not «it exists». A reply with no such link, and a
+        deployment with no `[documents] public_url`, never reach the store."""
+        if not self._public_url:
+            return None
+        pattern = _own_link_pattern(self._public_url)
+        handles = {m.group(1).lower() for m in pattern.finditer(text)}
+        for handle in sorted(handles):
+            try:
+                found = await self._in_room(
+                    platform=platform, conversation_id=conversation_id,
+                    document_id=None, handle=handle,
+                )
+            except Exception:  # noqa: BLE001 - a store that is down is a refusal, not a pass
+                return (
+                    "I could not check that document link just now, so the reply was not sent. "
+                    "Say it in words without the link."
+                )
+            if found is None:
+                return (
+                    f"That reply links to a document ({handle}) that is not one of this room's "
+                    "documents. Give only a link that document_publish or document_read returned "
+                    "to you. If you never published it, or it was refused, say so in words."
+                )
+        return None
+
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:
         """The catalog prompt the checker's schema was generated with, so a model
-        that has not seen the catalog can learn it from the tool, not from memory."""
-        return catalog_prompt()
+        that has not seen the catalog can learn it from the tool, not from memory.
+
+        It opens with the three rules a document most often loses when the skill was never loaded
+        (2026-10-01: a correction turn skipped it and published a 1,300-character note with no
+        picture): this is a finished reference, a picture can come from a page she opened, and a
+        document exists only once a publish returned `ok`. The catalog is the one thing she always
+        reads before she writes, so the rules ride with it rather than only in an optional skill."""
+        return _CATALOG_RULES + catalog_prompt()
 
     async def _in_room(
         self,

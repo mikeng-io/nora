@@ -1241,3 +1241,17 @@ def test_the_document_skill_lets_a_web_picture_into_a_document() -> None:
     assert "never guess" in body and "code" in body, "the no-guessed-code rule survives"
     assert "never goes in a document" in body, "a person's position is not a Map's data"
     assert "name the page it came from in `Sources`" in body, "a web picture is credited"
+
+
+def test_the_document_skill_says_a_document_exists_only_once_publish_returned_ok() -> None:
+    """2026-10-01: she wrote «document made, four photos» and linked a document she never
+    stored, then told the room it was still there after two `not_found` reads. The rule was
+    nowhere in her skill, only «do not report it made until the publish returned ok» under
+    refusals, which a turn that never reached a publish never read as applying."""
+    body = " ".join(
+        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+    )
+    assert "A document exists only once `document_publish` returned `ok` in this turn" in body
+    assert "or `document_read` returned it" in body
+    assert "stop gathering and publish what you hold" in body
+    assert "Do not hold a document for details nobody gave you" in body

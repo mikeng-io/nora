@@ -1446,3 +1446,27 @@ a name that `publish` resolves.
 
 **Not measured.** There is no behaviour eval for what a document contains; the `tool_selection` corpus measures routing
 only. The check is the live read-back: the same prompt, then the trace.
+
+
+## 37. A document link must exist, and the turn must be able to publish (2026-10-02)
+
+**Read-back (traces `8dc5551b`, `7983a050`, `1acce721`, 2026-10-01).** Asked for an itinerary document, Nora fetched
+pages and looked at four pictures, made fourteen further `media_fetch` calls the per-turn ceiling of four refused, and
+ended the turn without sending a spec to `document_publish` (her one call had no spec, which returns the catalog and
+stores nothing). Her reply said the document was made, with four photos, and linked a handle that matched nothing. Asked
+why it was gone, she called `document_read` with a title, then with the invented handle, got `not_found` twice, and replied
+that she had just opened it and it was still there. The next turn admitted it and published a 1,300-character document
+with no picture, after skipping the skill.
+
+**Decided (operator, 2026-10-02).**
+1. **R-100: a document link in a reply must exist.** `Deliverer` asks `DocumentService.unknown_document_link` for every
+   `<public_url>/documents/<handle>` in the reply, rendered and draft form, after R-18. A handle that is in no state in this
+   room refuses the reply; a store that cannot be read refuses it too. `send_reply` then returns `refused. <reason>`, the one
+   refusal that says why, because a bare `refused` told her nothing she could fix.
+2. **`media_fetch` is 8 per turn** (was 4), because a document with pictures looks at one per section.
+3. **The catalog carries the rules.** `DocumentService.catalog()` opens with the three rules a skipped skill would have
+   given. The skill also says to publish with what she has, to state an assumption instead of holding a document for details
+   nobody gave, and that a document exists only once a publish returned `ok`.
+
+**Not built.** A check that a reply's claims match the document (it said four photos; the document had none), a check on
+a link to another host, and any eval of document content. A rate limit on kept pictures is still open (§35).
