@@ -35,7 +35,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
@@ -46,7 +46,7 @@ from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.self_presence import Presence, PresenceRoom
 from nora.domain.standing import Standing
-from nora.language import note_candidates
+from nora.language import culture_render, note_candidates, standing_render
 from nora.language.note_candidates import NoteCandidateAdaptor
 from nora.language.note_curator import NoteCuratorAdaptor
 from nora.language.note_render import FORM_NOT_SHOWN
@@ -70,6 +70,27 @@ GOLDEN: dict[str, str] = json.loads(
 )
 
 CASES: dict[str, Callable[[], Awaitable[str]]] = {}
+
+
+#: The wall clock the culture and Standing blocks' `written=` ages are measured
+#: against. `render_culture` and `render_standing` default to `datetime.now()`
+#: (production wants exactly that), so a golden that records "391d ago" was true
+#: on the day it was captured and false the next day: it went red on
+#: 2026-10-02, a day after merging. 391 days and half a day after the culture
+#: fixtures' `T0` (`cul.T0`), so every age lands well inside its bucket.
+_FROZEN_NOW = datetime.fromtimestamp((cul.T0 + 391 * 86_400_000 + 43_200_000) / 1000, tz=UTC)
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return _FROZEN_NOW if tz is None else _FROZEN_NOW.astimezone(tz)
+
+
+@pytest.fixture(autouse=True)
+def _frozen_wall_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(culture_render, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(standing_render, "datetime", _FrozenDatetime)
 
 
 def _case(name: str):
