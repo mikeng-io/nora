@@ -78,7 +78,7 @@ from datetime import date, datetime
 from typing import ClassVar, Literal, Protocol, get_args
 from zoneinfo import ZoneInfo
 
-from nora.domain.blocks import ContextBlock
+from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.notes import (
     BODY_MAX_CHARS,
     MERGE_REASON_MAX_CHARS,
@@ -230,6 +230,37 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+#: What this pass carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) instead of left as the `parts`
+#: list `NoteMergeAdaptor.inputs` used to build by hand.
+#:
+#: `inputs` hands its blocks to `assemble()`, so `order` IS the order the model
+#: reads (the numbers are the append order of the hand join this replaced, step
+#: 2b of `design/context-assembly/04-every-occasion.md`; the goldens in
+#: `tests/unit/test_step2b_assembly_goldens.py` pin it byte for byte). `today`
+#: is `nora.language.note_render.today_block`, restamped with its row here.
+#: `open_note` REPEATS, once per open note the pass can read, all at one
+#: `order`: `assemble` sorts stably, so the notes keep the order `standing`
+#: returned them in, which is also the order of their ordinal handles. A table
+#: cannot say «once per note»; this comment is where that is recorded.
+#:
+#: There is no `culture` row: this pass reads no room's account (it compares
+#: titles, bodies and ages, and the room it names is a label, not a context).
+#: `key="turn"` throughout, for the same reason as the other Dreamer passes: no
+#: established cache boundary, nothing routes on `key` yet either way
+#: (`design/context-assembly/00-overview.md` §3).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("today", 10, "turn"),
+    ("open_note", 20, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
 class NoteMergeAdaptor:
     """One `DreamAdaptor` — see the module docstring."""
 
@@ -325,7 +356,7 @@ class NoteMergeAdaptor:
         rooms = _room_names(open_notes, self._label_for)
         by_handle: dict[str, str] = {}
         heads: dict[str, NoteRevision] = {}
-        parts = [today_block(today).render()]
+        blocks = [restamp(today_block(today), _ROW)]
         for n, note in enumerate(open_notes, start=1):
             handle = str(n)
             by_handle[handle] = note.id
@@ -341,7 +372,7 @@ class NoteMergeAdaptor:
                 del by_handle[handle]
                 continue
             heads[note.id] = head
-            parts.append(_note_block(
+            blocks.append(_note_block(
                 handle, note, head,
                 room=rooms[note.established_in], now=now, today=today,
                 changed=(
@@ -356,7 +387,7 @@ class NoteMergeAdaptor:
             notes={note.id: note for note in open_notes if note.id in heads},
             heads=heads, changed=changed,
         )
-        prompt = "\n".join(parts)
+        prompt = assemble(blocks, sep="\n")
         if self._metrics is not None:
             # The prompt's size in characters. Its size in TOKENS is the
             # model call's own usage, on the pass's Langfuse trace — this
@@ -619,7 +650,7 @@ def _room_names(
 def _note_block(
     handle: str, note: Note, head: NoteRevision, *, room: str, now: datetime,
     today: date, changed: str | None, excerpt: int,
-) -> str:
+) -> ContextBlock:
     """One open note, through the renderer note-candidates shares
     (`nora.language.note_render.open_note_block`, design 42 §8.6): this pass
     sets the handle, `changed` and the excerpt, and nothing else."""
@@ -627,4 +658,7 @@ def _note_block(
         note, head, room=room, now=now, today=today, handle=handle,
         changed=changed, excerpt=excerpt,
     )
-    return ContextBlock(name="open_note", attrs=attrs, body=body).render()
+    order, key = _ROW["open_note"]
+    return ContextBlock(
+        name="open_note", order=order, key=key, attrs=attrs, body=body,
+    )

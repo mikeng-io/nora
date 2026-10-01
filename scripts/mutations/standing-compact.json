@@ -2,22 +2,22 @@
  {
   "name": "standing-compact §2: <standing_prior> carries written (the_prior_carries_when_it_was_written_against_the_turns_time)",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
-  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
+  "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
   "target": "tests/unit/test_debrief_render.py -k the_prior_carries_when_it_was_written_against_the_turns_time"
  },
  {
   "name": "standing-compact §2: <standing_prior> carries written (the_rollup_prior_carries_when_it_was_written_against_now_ms)",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
-  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
+  "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
   "target": "tests/unit/test_debrief_render.py -k the_rollup_prior_carries_when_it_was_written_against_now_ms"
  },
  {
   "name": "standing-compact §2: the rollup's prior age reaches the event fold's prompt",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    if prior is None or not prior.body.strip():\n        return ContextBlock(\n            name=\"standing_prior\",\n            body=\"(no position yet — this is the first fold for this conversation)\",\n        ).render()\n    return ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ).render()",
-  "new": "    body = prior.body.strip() if prior is not None and prior.body.strip() else \"\"\n    return ContextBlock(\n        name=\"standing_prior\", body=escape(body) if body else (\n            \"(no position yet — this is the first fold for this conversation)\"\n        ),\n    ).render()",
+  "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
+  "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
   "target": "tests/unit/test_standing_event.py -k the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age"
  },
  {
@@ -163,8 +163,8 @@
  {
   "name": "standing-compact §5: the rollup's <conversation> carries at",
   "file": "nora/engagement/debrief_render.py",
-  "old": "        name=\"conversation\", attrs=((\"at\", at),), body=block,",
-  "new": "        name=\"conversation\", body=block,",
+  "old": "        name=\"conversation\", attrs=((\"at\", at),),",
+  "new": "        name=\"conversation\",",
   "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
  },
  {
@@ -260,7 +260,7 @@
  },
  {
   "name": "standing-compact §5: the consolidate retry states the three-rank order",
-  "file": "nora/engagement/stages/debrief.py",
+  "file": "nora/engagement/debrief_render.py",
   "old": "        f\"What you CONCLUDED or COMMITTED to outranks what you FOUND and have \"\n        f\"not shared, and what you found outranks what the room SAID: drop in \"\n        f\"the reverse of that order, even when the thing you drop is the more \"\n        f\"recent. Recency decides only between two things of the same \"\n        f\"kind.\\n\\n\"",
   "new": "        f\"What you CONCLUDED outranks what the room SAID: if the choice is \"\n        f\"between dropping a judgement of your own and dropping something \"\n        f\"someone actually said, drop what they said — even when their words \"\n        f\"are the more recent of the two. Recency decides only between two \"\n        f\"things of the same kind.\\n\\n\"",
   "target": "tests/unit/test_debrief.py -k test_the_tiebreak_is_reversed_and_recency_scoped_in_the_retry"
@@ -408,8 +408,8 @@
  {
   "name": "working-set #445 fix: the tag fold's own input is shown its working-set prior",
   "file": "nora/engagement/debrief_render.py",
-  "old": "    return _with_culture(\n        culture,\n        f\"{prior_block}\\n\\n{working_set_prior_block}\\n\\n{turn}\",\n        now_ms=trace.created_at,\n    )\n",
-  "new": "    return _with_culture(\n        culture, f\"{prior_block}\\n\\n{turn}\", now_ms=trace.created_at,\n    )\n",
+  "old": "            prior_block, working_set_prior_block, turn,",
+  "new": "            prior_block, turn,",
   "target": "tests/unit/test_debrief.py -k test_the_fold_is_shown_its_own_working_set_prior"
  },
  {

@@ -46,7 +46,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nora.domain.blocks import ContextBlock, speaker_name
+from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp, speaker_name
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import GifSource, OutboundAttachment
@@ -62,6 +62,36 @@ MODES = ("with", "alone")
 #: How many of the room's latest lines the picker reads. A reaction answers
 #: the moment, not the thread; the prototype that measured 17/104 read 8.
 RECENT_LINES = 8
+
+#: What this picker carries, declared as data
+#: (`design/context-assembly/01-the-registry.md`) instead of left as the two
+#: hand joins `_pick` used to write.
+#:
+#: `_pick` hands its blocks to `assemble()`, so `order` IS the order the model
+#: reads (the numbers are the order the hand join wrote them, step 2b of
+#: `design/context-assembly/04-every-occasion.md`; the goldens in
+#: `tests/unit/test_step2b_assembly_goldens.py` pin both prompts byte for
+#: byte). The occasion is TWO calls over one table: the first question sees
+#: `recent_chat` and `nora_reply`, the second adds `gif_candidates` after them.
+#: `key="turn"` throughout: nothing here is a cached prefix.
+#:
+#: Every block is built `when_empty="render"`. A hand join kept an empty window
+#: or a reply that escapes to nothing as an empty pair, and the picker's
+#: prompt is not changed by this step.
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("recent_chat", 10, "turn"),
+    ("nora_reply", 20, "turn"),
+    ("gif_candidates", 30, "turn"),
+)
+
+#: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
+#: already gives it.
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+#: What the hand join put between the blocks, and `assemble` now does.
+_SEP = "\n"
 
 
 class Completion(Protocol):
@@ -102,7 +132,14 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
     """The room's last few lines as `name: body`, the picker's whole view of
     the moment, escaped and collapsed to one line per row (`one_line`: a
     newline inside a message must not forge a second speaker). An empty body
-    (a bare attachment) is skipped rather than rendered as nobody speaking."""
+    (a bare attachment) is skipped rather than rendered as nobody speaking.
+
+    **KNOWN, and not fixed here:** these rows are hand-built and skip
+    `nora.domain.blocks.speaker_label`'s strip of `[ ] :`, so a sender whose
+    name contains `: ` renders a row that reads as another speaker's line.
+    Routing them through `speaker_label` CHANGES the prompt, so it is step 4c of
+    `design/context-assembly/04-every-occasion.md`, not step 2b (which is
+    byte-identical by construction)."""
     lines = []
     for row in rows[-RECENT_LINES:]:
         body = one_line((row.body or "")[:300]).strip()
@@ -167,13 +204,18 @@ class ReactionPicker:
         if not instruction or not reply.strip():
             self._count("no_instruction" if not instruction else "none")
             return None
-        material = "\n".join((
-            ContextBlock(name="recent_chat", body=recent).render(),
-            ContextBlock(name="nora_reply", body=escape(reply)).render(),
-        ))
+        material = [
+            restamp(ContextBlock(
+                name="recent_chat", body=recent, when_empty="render",
+            ), _ROW),
+            restamp(ContextBlock(
+                name="nora_reply", body=escape(reply), when_empty="render",
+            ), _ROW),
+        ]
 
         first = await self._client.complete(
-            system=instruction, prompt=f"{material}\n\nAnswer the first question.",
+            system=instruction,
+            prompt=f"{assemble(material, sep=_SEP)}\n\nAnswer the first question.",
         )
         if first.finish_reason == "length":
             # A cut-off body can still parse into something; it is not the
@@ -198,11 +240,16 @@ class ReactionPicker:
             [{"id": c.id, "title": c.title, "description": c.alt_text} for c in found],
             ensure_ascii=False,
         )
+        candidates = restamp(ContextBlock(
+            name="gif_candidates", body=escape(listing), attrs=(("query", query),),
+            when_empty="render",
+        ), _ROW)
         second = await self._client.complete(
             system=instruction,
-            prompt="\n".join((material, ContextBlock(
-                name="gif_candidates", body=escape(listing), attrs=(("query", query),),
-            ).render(), "", "Answer the second question.")),
+            prompt=(
+                f"{assemble([*material, candidates], sep=_SEP)}"
+                "\n\nAnswer the second question."
+            ),
         )
         chosen = {c.id: c for c in found}.get(str(_json(second.content).get("id") or ""))
         if chosen is None:

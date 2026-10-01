@@ -26,7 +26,6 @@ impossible and what this file keeps impossible.
 from __future__ import annotations
 
 import ast
-import inspect
 import re
 from pathlib import Path
 
@@ -84,9 +83,9 @@ def _wrapper_names() -> set[str]:
                 continue
             fn = node.func.id if isinstance(node.func, ast.Name) else ""
             # `wrap_outside_text(name, …)` takes it FIRST and positionally;
-            # `_transcript_block(…, name=…)` takes it as a keyword with a
-            # default. Both build their `ContextBlock` from a parameter, so
-            # the literal is at the call site either way.
+            # a `*_block(…, name=…)` helper takes it as a keyword. Both build
+            # their `ContextBlock` from a parameter, so the literal is at the
+            # call site either way.
             found = [
                 a.value for a in node.args[:1]
                 if fn in {"wrap", "wrap_outside_text"}
@@ -98,14 +97,11 @@ def _wrapper_names() -> set[str]:
                 and isinstance(kw.value.value, str)
             ]
             names.update(found)
-    # `_transcript_block`'s DEFAULT is a literal in its signature, not at any
-    # call site, so the callers that take it name nothing and it has to be read
-    # from the function. Missing this reported `transcript` as unrendered.
-    from nora.engagement.debrief_render import _transcript_block
-
-    names.add(
-        inspect.signature(_transcript_block).parameters["name"].default,
-    )
+    # `_transcript_block` was the third caller of this shape (a `name=`
+    # keyword with a DEFAULT in its signature, read with `inspect`). It is gone
+    # since step 2b of `design/context-assembly/04-every-occasion.md`: the
+    # debrief's `transcript` and `stretch` are literal `ContextBlock(name=…)`
+    # constructors now, so the source walk in `_rendered_names` finds both.
     return names
 
 

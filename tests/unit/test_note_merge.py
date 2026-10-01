@@ -667,7 +667,8 @@ _ANNOTATION_BEFORE = '`id` is its handle for this pass; `title` is what the note
 def test_merge_renders_an_open_note_byte_identical_to_master():
     """Design 42 S3 shares note-merge's open-note LINE renderer with
     note-candidates and not its type, so merge's prompt, which runs live in
-    shadow and is not measured by S3's eval, cannot move."""
+    shadow and is not measured by S3's eval, cannot move. (`_note_block`
+    returns the stamped block since step 2b, so it is rendered here.)"""
     from datetime import UTC, datetime
 
     from nora.domain.blocks import ContextBlock
@@ -690,8 +691,8 @@ def test_merge_renders_an_open_note_byte_identical_to_master():
     assert _note_block(
         "1", note, head, room="Friends", now=now, today=now.date(),
         changed="revised", excerpt=600,
-    ) == _MERGE_BEFORE_WHOLE
+    ).render() == _MERGE_BEFORE_WHOLE
     assert _note_block(
         "2", note, head, room="Friends", now=now, today=now.date(),
         changed=None, excerpt=10,
-    ) == _MERGE_BEFORE_EXCERPT
+    ).render() == _MERGE_BEFORE_EXCERPT
