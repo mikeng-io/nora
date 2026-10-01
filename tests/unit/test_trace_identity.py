@@ -1,0 +1,159 @@
+"""A trace says WHICH CONVERSATION it belongs to, and WHAT KIND of work each
+span is, in the vocabulary Langfuse and OTel GenAI read.
+
+Read back from Langfuse on norty 2026-10-01: `/api/public/sessions` held 0
+items and 100 of 100 recent traces had a null `sessionId`, although every
+engagement root already carried `nora.conversation_id`; and 55-70% of an
+engagement trace's observations were untyped `SPAN`s (`store.*` reads, stage
+spans, one `execute_event_loop_cycle` per model call), so the 4-16 that are
+model calls could not be separated from the rest without reading names.
+"""
+
+from __future__ import annotations
+
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+import nora.agent.telemetry as telemetry
+from nora.agent.telemetry import TraceIdentityProcessor
+from nora.obs.tracing import build_sampler
+
+
+@pytest.fixture
+def rig():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=build_sampler())
+    provider.add_span_processor(TraceIdentityProcessor())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    yield provider.get_tracer("t"), exporter
+    provider.shutdown()
+
+
+def _attrs(exporter: InMemorySpanExporter) -> dict[str, dict]:
+    return {s.name: dict(s.attributes or {}) for s in exporter.get_finished_spans()}
+
+
+def test_a_span_carrying_a_conversation_id_gets_the_session_keys(rig):
+    tracer, exporter = rig
+    with tracer.start_as_current_span("engagement", attributes={"nora.conversation_id": "g1/c2"}):
+        pass
+    got = _attrs(exporter)["engagement"]
+    assert got["session.id"] == "g1/c2"
+    assert got["gen_ai.conversation.id"] == "g1/c2"
+
+
+def test_a_child_inherits_the_session_from_its_parent(rig):
+    """The Strands spans and the `store.*` reads are opened below the root and
+    never carry the id themselves; Langfuse wants it on each span."""
+    tracer, exporter = rig
+    with (
+        tracer.start_as_current_span(
+            "engagement", attributes={"nora.conversation_id": "g1/c2"},
+        ),
+        tracer.start_as_current_span("invoke_agent nora"),
+        tracer.start_as_current_span("store.notes.standing"),
+    ):
+        pass
+    got = _attrs(exporter)
+    assert got["invoke_agent nora"]["session.id"] == "g1/c2"
+    assert got["store.notes.standing"]["session.id"] == "g1/c2"
+
+
+def test_the_bare_conversation_id_key_of_trace_attributes_counts_too(rig):
+    """`nora.obs.tracing.trace_attributes` spells it `conversation_id`."""
+    tracer, exporter = rig
+    with tracer.start_as_current_span("invoke_agent nora", attributes={"conversation_id": "g1/c2"}):
+        pass
+    assert _attrs(exporter)["invoke_agent nora"]["session.id"] == "g1/c2"
+
+
+def test_a_span_with_no_conversation_gets_no_session(rig):
+    tracer, exporter = rig
+    with tracer.start_as_current_span("dream.pass"):
+        pass
+    assert "session.id" not in _attrs(exporter)["dream.pass"]
+
+
+@pytest.mark.parametrize("bad", ["x" * 201, "房間/頻道", ""])
+def test_an_id_langfuse_would_drop_is_not_stamped(rig, bad):
+    """Langfuse drops a session id over 200 characters or non-ASCII — silently.
+    Not stamping it keeps the trace in no session, which is what it would end
+    up in anyway, and says so in the data rather than hiding it."""
+    tracer, exporter = rig
+    with tracer.start_as_current_span("engagement", attributes={"nora.conversation_id": bad}):
+        pass
+    assert "session.id" not in _attrs(exporter)["engagement"]
+
+
+@pytest.mark.parametrize(("name", "kind"), [
+    ("store.notes.standing", "retriever"),
+    ("store.memory.peer_card", "retriever"),
+    ("engagement.admission", "guardrail"),
+    ("engagement.turn", "chain"),
+    ("engagement.deliver", "chain"),
+    ("agent.prefill", "chain"),
+    ("execute_event_loop_cycle", "chain"),
+])
+def test_a_span_is_typed_by_what_it_is(rig, name, kind):
+    tracer, exporter = rig
+    with tracer.start_as_current_span(name):
+        pass
+    assert _attrs(exporter)[name]["langfuse.observation.type"] == kind
+
+
+@pytest.mark.parametrize(
+    "name", ["invoke_agent nora", "chat", "execute_tool web_fetch", "engagement"],
+)
+def test_a_span_that_is_not_in_the_table_is_left_to_langfuse(rig, name):
+    """Model calls, agents and tools are typed by Langfuse from the GenAI
+    attributes (AGENT, GENERATION, TOOL read back the same day); typing them
+    here would put a second opinion over the SDK's."""
+    tracer, exporter = rig
+    with tracer.start_as_current_span(name):
+        pass
+    assert "langfuse.observation.type" not in _attrs(exporter)[name]
+
+
+def test_a_type_the_span_already_declared_is_kept(rig):
+    tracer, exporter = rig
+    with tracer.start_as_current_span(
+        "store.x", attributes={"langfuse.observation.type": "tool"},
+    ):
+        pass
+    assert _attrs(exporter)["store.x"]["langfuse.observation.type"] == "tool"
+
+
+def test_a_broken_attribute_read_never_costs_the_span(rig, monkeypatch):
+    """Never load-bearing: the same rule `span()` and provider setup hold."""
+    tracer, exporter = rig
+
+    def boom(*_a, **_k):
+        raise RuntimeError("tracer exploded")
+
+    monkeypatch.setattr(telemetry, "_session_id_for", boom)
+    with tracer.start_as_current_span("engagement", attributes={"nora.conversation_id": "a"}):
+        pass
+    assert "engagement" in _attrs(exporter)
+
+
+def test_the_provider_that_setup_registers_carries_the_processor(monkeypatch):
+    """The 14-hour lesson of `test_setup_agent_tracing_registers_the_provider_
+    globally`: a class that exists and is tested alone proves nothing about the
+    provider the deployment runs. Read the EFFECT through the provider setup
+    hands to `set_tracer_provider`."""
+    registered: list[TracerProvider] = []
+    monkeypatch.setattr(telemetry.trace, "set_tracer_provider", registered.append, raising=True)
+    telemetry.setup_agent_tracing(
+        sampler=build_sampler(), service_name="nora", exporter="otlp_http",
+        endpoint="http://127.0.0.1:1/v1/traces", headers_env="",
+    )
+    exporter = InMemorySpanExporter()
+    provider = registered[0]
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    with provider.get_tracer("t").start_as_current_span(
+        "engagement", attributes={"nora.conversation_id": "g1/c2"},
+    ):
+        pass
+    assert _attrs(exporter)["engagement"]["session.id"] == "g1/c2"
