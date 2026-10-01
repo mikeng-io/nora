@@ -97,11 +97,13 @@ KINDS = (*AUTHORED_KINDS, *DERIVED_KINDS)
 # `reaction` is the reaction picker's (`nora.agent.reaction`), and `summons`
 # is the public Instagram summons (`nora.app.summons`, design/instagram-adoption
 # /19): strangers read what she writes there, so it loads only `core/` and
-# `public/` and never a room file. Adding an occasion means adding it here —
-# which is the point.
+# `public/` and never a room file. `speech_format` is the speech formatter's
+# (`nora.agent.speech_format`, design/voice-channel/08), which paces a reply
+# for the TTS voice and never sees her doctrine. Adding an occasion means
+# adding it here — which is the point.
 AUDIENCES = (
     "tag", "heartbeat", "participation", "proactive",
-    "relevance_gate", "dreamer", "reaction", "summons",
+    "relevance_gate", "dreamer", "reaction", "summons", "speech_format",
 )
 
 AUTHORITY_TERMINALS = ("situation", "message-content", "tool-output")

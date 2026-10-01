@@ -6,7 +6,7 @@
   publishes through Drop; this changes where a published result goes.
 - **Reverses, in part:** the choice recorded in `nora/compute/smith/page_shell.py`'s docstring to
   use plain HTML and CSS with no React or shadcn dependency for what Smith renders.
-- **Index:** DEC-257
+- **Index:** DEC-258
 
 ## Context
 
