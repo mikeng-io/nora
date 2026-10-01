@@ -1,0 +1,149 @@
+[
+  {
+    "name": "3b (a): n is a position (1), not the message's own id: the id shown is no longer the id required",
+    "file": "nora/language/cognition_render.py",
+    "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+    "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)),\n                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle"
+  },
+  {
+    "name": "3b (a): her own send's n is a position, not its id",
+    "file": "nora/language/cognition_render.py",
+    "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)), (\"own\", \"yes\"),",
+    "new": "            [rec], row_id=lambda r: 1,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)), (\"own\", \"yes\"),",
+    "target": "tests/unit/test_cognition_grounding.py::test_her_own_send_is_shown_in_the_items_window_marked_as_hers_and_is_no_stimulus"
+  },
+  {
+    "name": "3b (b): the reads line is not escaped, so a room label writes markup",
+    "file": "nora/language/cognition_render.py",
+    "old": "blocks.append(restamp(ContextBlock(name=\"reads\", body=escape(reads_note)), _ROW))",
+    "new": "blocks.append(restamp(ContextBlock(name=\"reads\", body=reads_note), _ROW))",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element"
+  },
+  {
+    "name": "3b (b): the shared element renderer does not escape a row's words",
+    "file": "nora/domain/blocks.py",
+    "old": "        out.append(f\"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>\")",
+    "new": "        out.append(f\"<{tag} {rendered}>{body(row) or ''}</{tag}>\")",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_a_forged_row_or_item_cannot_be_counted_as_one"
+  },
+  {
+    "name": "3b (b): the shared element renderer does not escape an attribute value, so a name closes its quote",
+    "file": "nora/domain/blocks.py",
+    "old": "            f'{key}=\"{escape_attr(collapsed)}\"'",
+    "new": "            f'{key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create"
+  },
+  {
+    "name": "3b (b): a message's words are not collapsed to one line, so a newline writes a second line",
+    "file": "nora/domain/prompt.py",
+    "old": "    line = one_line(text)\n    if len(line) <= limit:",
+    "new": "    line = str(text)\n    if len(line) <= limit:",
+    "target": "tests/unit/test_cognition_grounding.py::test_a_body_with_a_newline_cannot_write_a_second_agenda_line"
+  },
+  {
+    "name": "3b (b): an event's title is not collapsed to one line",
+    "file": "nora/language/event_render.py",
+    "old": "        body=lambda e: one_line(e.title),",
+    "new": "        body=lambda e: e.title,",
+    "target": "tests/unit/test_event_render.py::test_there_is_one_line_per_event_whatever_a_title_holds"
+  },
+  {
+    "name": "3b (b): a note's description is not cut to one line of 200",
+    "file": "nora/language/cognition_render.py",
+    "old": "            replace(n, description=clip(n.description, _NOTE_LINE_CHARS))\n            for n in grounding.notes",
+    "new": "            n\n            for n in grounding.notes",
+    "target": "tests/unit/test_cognition_render_budget.py::test_every_note_and_event_is_listed_with_its_own_id_and_an_old_description_is_one_line"
+  },
+  {
+    "name": "3b (c): the validated sender is the stored author, not the name the prompt showed",
+    "file": "nora/app/cognition_session.py",
+    "old": "id=r.message_id, sender=speaker_of(r.author), person_id=r.person_id,",
+    "new": "id=r.message_id, sender=r.author, person_id=r.person_id,",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create"
+  },
+  {
+    "name": "3b (c): speaker_of keeps a character the attribute cannot carry, so the shown and validated names part",
+    "file": "nora/language/cognition_render.py",
+    "old": "    return speaker_name(legal(author))",
+    "new": "    return speaker_name(author)",
+    "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_a_name_that_cannot_render_as_it_is_is_the_one_the_floor_or_the_collapse_gives"
+  },
+  {
+    "name": "3b (d): the prompt is joined by hand, so the table's order is a comment again",
+    "file": "nora/language/cognition_render.py",
+    "old": "    return assemble(blocks, sep=_SEP)",
+    "new": "    return _SEP.join(b.render() for b in sorted(blocks, key=lambda b: b.order) if b.body or b.when_empty != \"drop\")",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_no_pending_entry_has_been_paid_and_left_behind tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger"
+  },
+  {
+    "name": "3b: a row clipped to its share is cut through its own element, not in its words",
+    "file": "nora/language/cognition_render.py",
+    "old": "            text = row.show(max(allowance - overhead, 1))",
+    "new": "            text = row.show(None)[: max(allowance - 1, 2)]",
+    "target": "tests/unit/test_cognition_render_budget.py::test_a_row_clipped_to_its_share_is_a_whole_element_with_its_words_cut"
+  },
+  {
+    "name": "3b: the cut range does not name the oldest ids left out",
+    "file": "nora/language/cognition_render.py",
+    "old": "            (\"earlier_range\", f\"{dropped[0]} to {dropped[-1]}\"),",
+    "new": "            (\"earlier_range\", f\"{dropped[-1]} to {dropped[-1]}\"),",
+    "target": "tests/unit/test_cognition_render_budget.py::test_the_cut_range_names_the_oldest_ids_left_out"
+  },
+  {
+    "name": "3b: the Register's character budget is never spent, so a long index is not cut",
+    "file": "nora/language/cognition_render.py",
+    "old": "            if exhausted or spent + cost > budget.register_chars:",
+    "new": "            if False:",
+    "target": "tests/unit/test_cognition_render_budget.py::test_the_character_budget_leaves_out_whole_rows_and_the_blocks_after_it_say_so"
+  },
+  {
+    "name": "3b: a list past register_lines is cut without saying how many",
+    "file": "nora/language/cognition_render.py",
+    "old": "        left_out = len(notes) - len(rows)\n",
+    "new": "        left_out = 0\n",
+    "target": "tests/unit/test_cognition_render_budget.py::test_a_list_past_register_lines_shows_that_many_rows_and_counts_the_rest"
+  },
+  {
+    "name": "3b: the note index is not given the real note id",
+    "file": "nora/language/note_render.py",
+    "old": "        return ((\"n\", n.id if ids else str(i)), (\"title\", n.title),",
+    "new": "        return ((\"n\", str(i)), (\"title\", n.title),",
+    "target": "tests/unit/test_note_render_ids.py::test_the_opt_in_carries_the_notes_own_id"
+  },
+  {
+    "name": "3b: the tag turn's note index takes the real id by default (the opt-in is no opt-in)",
+    "file": "nora/language/note_render.py",
+    "old": "    ids: bool = False,\n",
+    "new": "    ids: bool = True,\n",
+    "target": "tests/unit/test_tag_notes_block_is_unchanged_by_step3b.py::test_the_tag_turns_notes_block_is_byte_identical_to_master tests/unit/test_note_render_ids.py::test_the_default_is_the_positional_n_the_tag_turn_remaps"
+  },
+  {
+    "name": "3b: the parity test would notice a message row that loses its cues",
+    "file": "nora/language/cognition_render.py",
+    "old": "                (\"cues\", \", \".join(cues) if cues else None),",
+    "new": "                (\"cues\", None),",
+    "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
+  },
+  {
+    "name": "3b: the parity test would notice an edit that loses its flag",
+    "file": "nora/language/cognition_render.py",
+    "old": "                (\"edited\", \"yes\" if edited else None),",
+    "new": "                (\"edited\", None),",
+    "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
+  },
+  {
+    "name": "3b: the parity test would notice a reaction that loses its emoji",
+    "file": "nora/language/cognition_render.py",
+    "old": "                (\"reaction\", (r.emoji or \"?\") if reacted else None),",
+    "new": "                (\"reaction\", \"?\" if reacted else None),",
+    "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
+  },
+  {
+    "name": "3b: the parity test would notice an item that loses its returning mark",
+    "file": "nora/language/cognition_render.py",
+    "old": "        (\"returning\", returning(item.strike)),",
+    "new": "        (\"returning\", None),",
+    "target": "tests/unit/test_cognition_render_parity.py::test_the_new_render_is_well_formed_and_loses_no_fact_of_the_old"
+  }
+]

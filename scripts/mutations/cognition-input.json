@@ -107,15 +107,15 @@
   {
     "name": "render: her own send is marked as hers",
     "file": "nora/language/cognition_render.py",
-    "old": "{rec.author} (you), {when}",
-    "new": "{rec.author}, {when}",
+    "old": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)), (\"own\", \"yes\"),",
+    "new": "            [rec], row_id=lambda r: r.message_id,\n            attrs=lambda r: (\n                (\"at\", when), (\"from\", speaker_of(r.author)), (\"own\", None),",
     "target": "tests/unit/test_cognition_grounding.py -k her_own_send_is_shown_in_the_items_window"
   },
   {
     "name": "render: only her sends in the item's own room appear under it",
     "file": "nora/language/cognition_render.py",
-    "old": "        if rec.room == item.room:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
-    "new": "        if True:\n            lines.append((rec.at_ms, rec.message_id, _own_line(",
+    "old": "        if rec.room == item.room:\n            out.append(_own_row(",
+    "new": "        if True:\n            out.append(_own_row(",
     "target": "tests/unit/test_cognition_grounding.py -k another_room_is_never_rendered"
   },
   {
@@ -128,8 +128,8 @@
   {
     "name": "render: an item is headed by its room's label, never its id",
     "file": "nora/language/cognition_render.py",
-    "old": "        f\"[room {room_label(item.room, grounding.room_labels)}]\"\n        f\"{_item_age(",
-    "new": "        f\"[room {room_key(item.room)}]\"\n        f\"{_item_age(",
+    "old": "        (\"room\", room_label(item.room, labels)), (\"summary\", item.summary),",
+    "new": "        (\"room\", room_key(item.room)), (\"summary\", item.summary),",
     "target": "tests/unit/test_cognition_grounding.py -k each_message_carries_its_id"
   },
   {
