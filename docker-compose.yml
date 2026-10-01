@@ -1046,7 +1046,8 @@ services:
 networks:
   nora:
   # Honcho's API and nora, and nothing else (#633). Owned by NEITHER compose
-  # project: it is created once by hand (`docker network create honcho_memory`)
+  # project: it is created once by hand, INTERNAL (`docker network create --internal
+  # honcho_memory`: no gateway, so nora's default route stays on `nora`)
   # and both stacks mark it external, so taking either stack down never removes
   # it. Absent, `docker compose up nora` fails at once and names it, before the
   # running container is touched.

@@ -1290,9 +1290,19 @@ the PR merging.**
 ```bash
 # 0. BEFORE the nora deploy of this change. The network is owned by neither
 #    stack (both mark it external), so `down` on either never removes it. If it
-#    is missing, `docker compose up nora` fails at once and names it, and the
-#    running container is not touched.
-docker network create honcho_memory
+#    is missing, EVERY `docker compose up` that names nora fails at once and
+#    names it (the running container is not touched), so nora-deploy runs this
+#    line first, idempotently:
+docker network inspect honcho_memory >/dev/null 2>&1 || docker network create --internal honcho_memory
+#    --internal is not optional. A container's default route goes through the
+#    first-sorting non-internal network it joins, so joining an ordinary
+#    network that sorts before `nora_nora` would move nora's route to the
+#    internet onto it. An internal network has no gateway: nora's route stays
+#    on its compose network, and container-to-container traffic on it (nora to
+#    `honcho:8000`) works. Measured on a throwaway local docker 2026-10-01:
+#    two containers on an --internal network resolved and reached each other
+#    by name, the one also on an ordinary network kept its default route and
+#    its egress there, and the other's loopback publish still answered.
 
 # 1. Deploy nora from this branch (nora-deploy). It now also joins honcho_memory.
 #    Nothing has changed for it yet: its config still says host.docker.internal.
@@ -1338,11 +1348,17 @@ cd ~/workspace/nora && deploy/honcho-closed-probe.sh; echo "PROBE_RC=$?"
 ```
 
 `PROBE_RC=0` is every check passing: a throwaway container on the default bridge
-is REFUSED on port 8000 at every address the host owns (with a control that
-proves the probe can reach a port that is open, and a loopback check that
-proves Honcho is alive and not merely unreachable), nora reaches it by name,
-and the tailnet forward still answers. `1` is an open door or a shut-out caller;
-`2` is a probe that cannot tell. The same probe by hand:
+is REFUSED on port 8000 at every IPv4 address the host owns (only curl's exit 7,
+connection refused, counts: a timeout or a reset is an ERROR, as is an empty
+result, and each address gets its own control on a port that is open), every
+listening socket on `:8000` is loopback in BOTH families (this is what covers
+IPv6, which the default bridge often cannot route to), a loopback check proves
+Honcho is alive and not merely unreachable, nora reaches it by name, the tailnet
+forward still answers, and the Docker Engine is 28 or newer. `1` is an open door
+or a shut-out caller; `2` is a probe that cannot tell; `3` is a WARN only: on an
+engine older than 28 a loopback-published port can be reached from the LAN, which
+a probe run on the host cannot see, so from a machine on the LAN
+`curl -m 4 http://<norty's LAN address>:8000/health` must fail. The same probe by hand:
 
 ```bash
 docker run --rm --network bridge --entrypoint curl nora:latest \
@@ -1359,6 +1375,19 @@ docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
   | awk '{split($1,a,"."); print a[1]"."a[2]".x.x"}' | sort | uniq -c | sort -rn
 ```
 
-**Rollback** is the reverse of step 4 (publish `8000:8000` again, `up -d api`):
-the door reopens and nora, now on the name, keeps working either way.
+**Rollback**, in this order (the order is the whole point):
+
+1. Put `[memory] base_url` back to `"http://host.docker.internal:8000"` in nora's
+   live `config.toml` (the config-only edit, `nora-deploy` step 5) and recreate
+   nora on it. Do this FIRST.
+2. Only then publish `8000:8000` again in the honcho compose and `up -d api`.
+3. Only after that recreate nora from an OLD compose file if you must.
+
+Each step leaves every caller working. Out of order it does not: nora on an old
+compose has no `honcho` network, so a config still saying `http://honcho:8000`
+resolves nothing and every memory call fails (peer writes, the self card, recall)
+until the config is put back; and reopening the port before nora has moved back
+is fine, but moving nora back before the port is open shuts it out. Nora on the
+name keeps working while the door is open, so reopening the door alone (step 2)
+is the minimal rollback if the problem is a caller of the old port.
 

@@ -64,7 +64,9 @@ def test_the_network_is_external_and_named_as_the_runbook_creates_it() -> None:
     assert declared["external"] is True
     assert declared["name"] == NETWORK_NAME
     runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
-    assert f"docker network create {NETWORK_NAME}" in runbook
+    # INTERNAL, or joining it can move nora's default route (measured).
+    assert f"docker network create --internal {NETWORK_NAME}" in runbook
+    assert f"docker network create {NETWORK_NAME}" not in runbook
 
 
 def test_no_service_is_pointed_at_honcho_through_the_host_any_more() -> None:
@@ -90,3 +92,26 @@ def test_the_host_reaches_honcho_on_loopback_where_the_container_uses_its_name()
     # Not a substring rewrite: a host that merely contains the name is untouched.
     assert obtain._from_host("http://honcho.example.org:8000") == "http://honcho.example.org:8000"
     assert obtain._from_host("http://omniroute:20128/v1") == "http://omniroute:20128/v1"
+
+
+def test_the_nora_deploy_skill_creates_the_network_before_any_compose_up() -> None:
+    """Merging blocks every `compose up` that names nora until the external
+    network exists, so the deploy procedure carries the idempotent check."""
+    skill = (ROOT / ".agents" / "skills" / "nora-deploy" / "SKILL.md").read_text(encoding="utf-8")
+    line = (f"docker network inspect {NETWORK_NAME} >/dev/null 2>&1 "
+            f"|| docker network create --internal {NETWORK_NAME}")
+    assert line in skill
+    assert skill.index(line) < skill.index("up -d --force-recreate")
+
+
+def test_the_rollback_puts_the_config_back_before_it_touches_the_compose_or_the_port() -> None:
+    """Nora on an old compose has no `honcho` network, so a config still naming
+    `honcho:8000` resolves nothing and every memory call fails. The runbook says
+    so, and says the config goes back FIRST."""
+    runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+    rollback = runbook[runbook.index("**Rollback**, in this order"):]
+    config_back = rollback.index('`[memory] base_url` back to')
+    port_back = rollback.index("publish `8000:8000` again")
+    old_compose = rollback.index("recreate nora from an OLD compose")
+    assert config_back < port_back < old_compose
+    assert "every memory call fails" in rollback
