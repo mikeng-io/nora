@@ -404,9 +404,17 @@ def assemble(blocks: Sequence[ContextBlock], *, sep: str | None = None) -> str:
     proactive, culture and note-candidates, `"\\n".join` in the curator and
     note-merge), and a hand join is how `_BLOCKS`' `order` came to be a comment
     the text did not obey (`design/context-assembly/04-every-occasion.md` §5,
-    step 2). With a `sep` the blocks are JOINED by it, so nothing trails the last
-    one — the shape those hand joins produce, byte for byte — and the filter and
-    the ordering are the same as without.
+    step 2a). With a `sep` the blocks are JOINED by it, so nothing trails the
+    last one, and the ordering is the same as without.
+
+    **It is the hand join's shape, not its filter.** A hand join joins whatever
+    strings it is given; `assemble` still drops an empty-body block. Two places
+    differ when step 2a converts them, found by review of the PR that added
+    `sep`: a block built with an empty body and rendered self-closing (the
+    `<room label="..."/>` of culture and note-candidates) would vanish, and
+    proactive's `loop_decisions` is `""` when no decision log is wired (a hand
+    join leaves a trailing separator, `assemble` does not). Step 2a handles each
+    explicitly and its goldens catch either; do not assume `sep` is a drop-in.
     """
     chosen = sorted((b for b in blocks if b.body), key=lambda b: b.order)
     if sep is None:
