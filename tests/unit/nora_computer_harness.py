@@ -129,7 +129,33 @@ if os.environ.get("STUB_VM_TAR_GARBAGE") == "1":
         )
     os.chmod(os.path.join(shim, "tar"), 0o755)
     env["PATH"] = shim + ":" + env["PATH"]
-sys.exit(subprocess.call(args, env=env))
+if os.environ.get("STUB_VM_RM_FAILS") == "1" and args and args[0] == "rm":
+    sys.exit(1)
+if os.environ.get("STUB_VM_TAR_RECORD") == "1":
+    # Records what the real tar was handed: the umask it ran under and the mode
+    # of the directory it writes into, then of the archive it wrote.
+    shim = os.path.join(os.environ["STUB_DIR"], "record-bin")
+    os.makedirs(shim, exist_ok=True)
+    with open(os.path.join(shim, "tar"), "w") as fh:
+        fh.write(
+            "#!/bin/bash\n"
+            'log="$STUB_DIR/vm-tar.log"\n'
+            'echo "umask $(umask)" >> "$log"\n'
+            'for ((i=1;i<=$#;i++)); do\n'
+            '  if [ "${!i}" = "-czf" ]; then j=$((i+1)); out="${!j}"; fi\n'
+            "done\n"
+            'd=$(dirname "$out")\n'
+            'echo "dir $(ls -ld "$d" | cut -c1-10) $(echo "$d" | sed "s|.*/vm||")" >> "$log"\n'
+            '/usr/bin/tar "$@"; rc=$?\n'
+            'echo "archive $(ls -l "$out" | cut -c1-10)" >> "$log"\n'
+            'echo "tmp-top $(ls /tmp 2>/dev/null | grep -c nora-backup-)" >> "$log"\n'
+            "exit $rc\n"
+        )
+    os.chmod(os.path.join(shim, "tar"), 0o755)
+    env["PATH"] = shim + ":" + env["PATH"]
+done = subprocess.run(args, env=env, stdout=subprocess.PIPE)
+sys.stdout.write(done.stdout.decode().replace(vm, ""))
+sys.exit(done.returncode)
 """
 
 _VM_CP_RUN = r"""#!/usr/bin/env python3
@@ -143,6 +169,10 @@ def tr(p):
 src_p, dst_p = tr(src), tr(dst)
 if src.startswith("nora-computer:") is False and dst.startswith("nora-computer:") is False:
     sys.exit("neither side is the sandbox")
+if os.environ.get("STUB_CP_IN_CORRUPTS") == "1" and dst.startswith("nora-computer:"):
+    data = open(src_p, "rb").read()
+    open(dst_p, "wb").write(data[:-7] + b"garbage")
+    sys.exit(0)
 if os.environ.get("STUB_CP_CORRUPTS") == "1" and src.startswith("nora-computer:"):
     data = open(src_p, "rb").read()
     open(dst_p, "wb").write(data[:-7] + b"garbage")
@@ -242,6 +272,8 @@ class Host:
             "PATH": f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": str(self.home), "STUB_DIR": str(self.dir),
             "NORA_ENV_FILE": str(self.env_file), "XDG_RUNTIME_DIR": str(self.dir),
+            # macOS bsdtar adds `._*` AppleDouble members; GNU tar on the host never does.
+            "COPYFILE_DISABLE": "1",
             **env,
         }
         return subprocess.run(  # noqa: S603 - a fixed local script, stubbed PATH
@@ -309,9 +341,19 @@ class Host:
         return self.home / "nora-backups" / "computer-workspace"
 
     def archives(self) -> list[Path]:
+        """The nightly rotation: `workspace-*.tar.gz` directly in the backup dir."""
         if not self.backup_dir.exists():
             return []
         return sorted(self.backup_dir.glob("workspace-*.tar.gz"))
+
+    def destroy_archives(self) -> list[Path]:
+        """What `destroy` took: outside the rotation, never pruned."""
+        folder = self.backup_dir / "destroy"
+        return sorted(folder.glob("workspace-*.tar.gz")) if folder.exists() else []
+
+    def vm_tar_log(self) -> list[str]:
+        path = self.dir / "vm-tar.log"
+        return path.read_text().splitlines() if path.exists() else []
 
 
 def load_lifecycle_event():

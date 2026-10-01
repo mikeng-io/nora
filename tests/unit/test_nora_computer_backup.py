@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -49,7 +50,8 @@ def _names(archive: Path) -> set[str]:
 def _copied_in(host: Host) -> list[str]:
     """`sbx cp` calls that copy an archive INTO the VM (a restore's first act);
     the backup's own cp is the other direction."""
-    return [c for c in host.sbx_calls("cp") if c.endswith("nora-computer:/tmp/nora-restore.tar.gz")]
+    return [c for c in host.sbx_calls("cp")
+            if c.endswith("/archive.tar.gz") and "nora-computer:/tmp/nora-restore." in c]
 
 
 def _backup(host: Host) -> Path:
@@ -219,7 +221,7 @@ def test_a_restore_rebuilds_ownership_the_way_computerd_makes_users(host: Host) 
     for scope in (ROOM_A, ROOM_B):
         user = f"c-{scope[:12]}"
         assert any(c.startswith("useradd ") and c.endswith(user) for c in calls), calls
-        assert f"chown -R {user}:{user} {host.vm}/workspace/{scope}" in calls
+        assert f"chown -hR {user}:{user} {host.vm}/workspace/{scope}" in calls
     # Only rooms: computerd's `.tmux` and any stray directory are not scopes.
     assert not any(".tmux" in c for c in calls)
 
@@ -288,7 +290,7 @@ def test_restore_wants_a_sandbox_to_restore_into(host: Host) -> None:
 def test_destroy_takes_a_backup_first_and_only_then_removes_the_vm(host: Host) -> None:
     result = host.run("destroy")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert len(host.archives()) == 1
+    assert len(host.destroy_archives()) == 1 and host.archives() == []
     calls = host.sbx_calls()
     cp = next(i for i, c in enumerate(calls) if c.startswith("cp "))
     rm = next(i for i, c in enumerate(calls) if c.startswith("rm "))
@@ -296,7 +298,7 @@ def test_destroy_takes_a_backup_first_and_only_then_removes_the_vm(host: Host) -
     assert not host.sandbox_exists()
     (event,) = [e for e in host.events() if e["event"] == "destroy"]
     assert event["detail"]["no_backup_flag"] == "0"
-    assert event["detail"]["backup"] == str(host.archives()[0])
+    assert event["detail"]["backup"] == str(host.destroy_archives()[0])
 
 
 def test_destroy_refuses_when_the_backup_fails_and_removes_nothing(host: Host) -> None:
@@ -324,7 +326,7 @@ def test_destroy_of_a_stopped_vm_still_backs_it_up_first(host: Host) -> None:
     (host.dir / "sandbox").write_text("stopped")
     result = host.run("destroy")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert len(host.archives()) == 1
+    assert len(host.destroy_archives()) == 1
 
 
 def test_destroy_does_not_take_a_flag_it_does_not_know(host: Host) -> None:
@@ -347,3 +349,217 @@ def test_the_nightly_units_run_the_backup_subcommand_on_a_persistent_timer() -> 
     assert "Unit=nora-computer-backup.service" in timer
     readme = (ROOT / "deploy" / "computer" / "README.md").read_text()
     assert "systemctl --user enable --now nora-computer-backup.timer" in readme
+
+
+# -- the archive never sits in a shared /tmp --------------------------------
+
+
+def test_the_archive_is_made_in_a_private_directory_under_a_077_umask(host: Host) -> None:
+    """The archive holds every room's files. Written straight into /tmp under
+    root's usual umask of 022 it would be a world-readable file in a
+    world-listable directory for as long as it lived: it is made in a
+    `mktemp -d` directory (0700, root's) under umask 077."""
+    result = host.run("backup", STUB_VM_TAR_RECORD="1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = host.vm_tar_log()
+    assert "umask 0077" in log, log
+    (directory,) = [ln for ln in log if ln.startswith("dir ")]
+    assert directory.split()[1] == "drwx------", directory
+    assert re.fullmatch(r"dir drwx------ /tmp/nora-backup\.[A-Za-z0-9]{6}", directory), directory
+    assert "archive -rw-------" in log, log
+    # Nothing is directly in /tmp, and the whole directory is gone afterwards.
+    assert host.vm_tmp_files() == []
+
+
+def test_a_directory_that_cannot_be_removed_fails_the_backup_and_says_where(host: Host) -> None:
+    """Not `|| true`: a leftover archive of every room's files is the exposure,
+    so a failed cleanup is a failed backup, the copy on the host is discarded,
+    and the log names the directory to remove by hand."""
+    result = host.run("backup", STUB_VM_RM_FAILS="1")
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "could NOT remove /tmp/nora-backup." in result.stderr
+    assert host.archives() == [] and not list(host.backup_dir.glob("*.partial"))
+    (event,) = [e for e in host.events() if e["event"] == "backup"]
+    assert event["status"] == "failed"
+
+
+def test_a_vm_that_answers_something_else_for_mktemp_is_refused(host: Host) -> None:
+    sbx = host.dir.parent / "bin" / "sbx"
+    before = 'exec)\n      exec "$STUB_DIR/bin-vm-exec" "$@" ;;'
+    after = ('exec)\n      [ "$5" = mktemp ] && { echo /tmp; exit 0; }\n'
+             '      exec "$STUB_DIR/bin-vm-exec" "$@" ;;')
+    text = sbx.read_text().replace(before, after)
+    assert text != sbx.read_text()
+    sbx.write_text(text)
+    result = host.run("backup")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert host.archives() == []
+
+
+# -- retention against an empty VM ------------------------------------------
+
+
+def _wipe_rooms(host: Host) -> None:
+    import shutil
+
+    shutil.rmtree(host.vm / "workspace")
+    (host.vm / "workspace").mkdir()
+
+
+def test_an_empty_workspace_is_not_backed_up_and_prunes_nothing(host: Host) -> None:
+    """A recreated VM has an empty /workspace. Backed up, that archive would
+    verify, count toward the window, and after KEEP nights push out the last
+    backup that holds any room."""
+    for age in (300, 200):
+        _age(_backup(host), age)
+    keep = {p.name for p in host.archives()}
+    assert len(keep) == 2
+    _wipe_rooms(host)
+    for _ in range(6):
+        result = host.run("backup", NORA_COMPUTER_BACKUP_KEEP="2")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "holds no rooms; nothing to back up" in result.stderr
+    assert {p.name for p in host.archives()} == keep
+    assert [e for e in host.events() if e["event"] == "backup"][-1]["status"] == "ok"
+    # the skips are no events
+    assert len([e for e in host.events() if e["event"] == "backup"]) == 2
+
+
+def test_a_room_less_vm_with_only_hidden_entries_is_still_empty(host: Host) -> None:
+    _wipe_rooms(host)
+    (host.vm / "workspace" / ".tmux").mkdir()
+    (host.vm / "workspace" / "lost+found").mkdir()
+    result = host.run("backup")
+    assert result.returncode == 0 and host.archives() == []
+
+
+def test_the_backup_a_destroy_takes_is_outside_the_rotation_and_never_pruned(host: Host) -> None:
+    host.run("destroy")
+    (kept,) = host.destroy_archives()
+    (host.dir / "sandbox").touch()
+    for age in (500, 400, 300):
+        h = host.run("backup", NORA_COMPUTER_BACKUP_KEEP="1")
+        assert h.returncode == 0, h.stdout + h.stderr
+        _age(Path(h.stdout.strip().splitlines()[-1]), age)
+    assert len(host.archives()) == 1                     # the rotation kept its one
+    assert kept.exists() and Path(f"{kept}.sha256").exists()
+
+
+def test_destroy_of_a_vm_with_no_rooms_has_nothing_to_back_up(host: Host) -> None:
+    _wipe_rooms(host)
+    result = host.run("destroy")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert host.destroy_archives() == [] and not host.sandbox_exists()
+    (event,) = [e for e in host.events() if e["event"] == "destroy"]
+    assert event["detail"]["backup"] == "empty"
+
+
+# -- restore: private directory, digest inside the VM ------------------------
+
+
+def test_a_restore_copies_into_a_private_directory_and_leaves_none_behind(host: Host) -> None:
+    archive = _backup(host)
+    _wipe_rooms(host)
+    assert host.run("restore", str(archive)).returncode == 0
+    (copy,) = _copied_in(host)
+    pattern = r"nora-computer:/tmp/nora-restore\.[A-Za-z0-9]{6}/archive\.tar\.gz$"
+    assert re.search(pattern, copy), copy
+    assert host.vm_tmp_files() == []
+
+
+def test_the_digest_is_checked_inside_the_vm_before_anything_is_extracted(host: Host) -> None:
+    """The copy into the VM changed on the way (or was swapped there): the VM's
+    own sha256 of the file tar will read differs, and nothing is extracted."""
+    archive = _backup(host)
+    _wipe_rooms(host)
+    result = host.run("restore", str(archive), STUB_CP_IN_CORRUPTS="1")
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not any((host.vm / "workspace").iterdir())
+    assert host.vm_tmp_files() == []
+    assert [e["status"] for e in host.events() if e["event"] == "restore"] == ["failed"]
+
+
+def test_a_restore_whose_directory_cannot_be_removed_says_so(host: Host) -> None:
+    archive = _backup(host)
+    _wipe_rooms(host)
+    result = host.run("restore", str(archive), STUB_VM_RM_FAILS="1")
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert "could NOT be removed" in result.stderr
+
+
+def _hostile(path: Path, build) -> Path:
+    with tarfile.open(path, "w:gz") as tar:
+        build(tar)
+    import hashlib
+
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    Path(f"{path}.sha256").write_text(f"{digest}  {path.name}\n")
+    return path
+
+
+def _member(tar: tarfile.TarFile, name: str, data: bytes = b"x", **kw) -> None:
+    import io
+
+    info = tarfile.TarInfo(name)
+    info.size = len(data)
+    for key, value in kw.items():
+        setattr(info, key, value)
+    tar.addfile(info, io.BytesIO(data) if info.isreg() else None)
+
+
+def _link(tar: tarfile.TarFile, name: str, target: str, kind: bytes = tarfile.SYMTYPE) -> None:
+    info = tarfile.TarInfo(name)
+    info.type = kind
+    info.linkname = target
+    tar.addfile(info)
+
+
+HOSTILE = {
+    "a parent-directory member": lambda t: _member(t, f"{ROOM_A}/../../x"),
+    "an absolute path": lambda t: _member(t, "/etc/cron.d/x"),
+    "a top level that is not a room": lambda t: _member(t, "etc/passwd"),
+    "a symlink to /etc": lambda t: _link(t, f"{ROOM_A}/etc", "/etc"),
+    "a symlink that climbs out": lambda t: _link(t, f"{ROOM_A}/up", "../../x"),
+    "a symlink into another room": lambda t: _link(t, f"{ROOM_A}/other", f"../{ROOM_B}"),
+    "a hard link to /etc/passwd": lambda t: _link(t, f"{ROOM_A}/p", "/etc/passwd", tarfile.LNKTYPE),
+    "a device node": lambda t: _member(t, f"{ROOM_A}/null", b"", type=tarfile.CHRTYPE),
+    "a fifo": lambda t: _member(t, f"{ROOM_A}/pipe", b"", type=tarfile.FIFOTYPE),
+}
+
+
+@pytest.mark.parametrize("what", sorted(HOSTILE))
+def test_a_hostile_archive_is_refused_before_a_byte_reaches_the_vm(
+    host: Host, tmp_path: Path, what: str,
+) -> None:
+    archive = _hostile(tmp_path / "hostile.tar.gz", HOSTILE[what])
+    _wipe_rooms(host)
+    result = host.run("restore", str(archive))
+    assert result.returncode == 3, (what, result.stdout, result.stderr)
+    assert "could write outside /workspace" in result.stderr
+    assert _copied_in(host) == []
+    assert not any((host.vm / "workspace").iterdir())
+    assert not (host.vm / "x").exists() and not (host.vm / "etc").exists()
+
+
+def test_a_write_through_a_symlink_that_is_in_the_archive_is_refused(
+    host: Host, tmp_path: Path,
+) -> None:
+    def build(tar):
+        _link(tar, f"{ROOM_A}/d", "sub")
+        _member(tar, f"{ROOM_A}/d/file")
+
+    archive = _hostile(tmp_path / "through.tar.gz", build)
+    result = host.run("restore", str(archive))
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "written through the symlink" in result.stderr
+
+
+def test_a_real_backup_passes_the_archive_check(host: Host) -> None:
+    """The positive control: the check refuses hostile archives and not the
+    archives this script makes."""
+    archive = _backup(host)
+    check = subprocess.run(  # noqa: S603
+        ["python3", str(ROOT / "deploy" / "computer" / "archive_check.py"), str(archive)],
+        capture_output=True, text=True, check=False,
+    )
+    assert check.returncode == 0, check.stdout

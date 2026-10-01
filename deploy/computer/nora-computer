@@ -246,13 +246,33 @@ cmd_egress() {
 # each room's browser/ directory (a Chromium profile is a credential store: its
 # cookies are never backed up, design sec 7) and computerd's .tmux sockets.
 
+# A private directory INSIDE the VM, root-only (mktemp -d is 0700), for one
+# archive: every room's files in one gzip tar must never sit in /tmp itself,
+# which is world-listable and where the root umask of 022 would make the archive
+# world-readable. Prints the directory's path.
+vm_mkdtemp() {
+    local dir
+    dir=$(sbx exec -u root "$NAME" mktemp -d "/tmp/nora-$1.XXXXXX" </dev/null | tail -n 1) || return 1
+    case "$dir" in /tmp/nora-"$1".??????) ;; *) log "the VM's mktemp answered '$dir', not a /tmp/nora-$1.* directory"; return 1 ;; esac
+    printf '%s\n' "$dir"
+}
+
+# Remove that directory and PROVE it is gone. A leftover archive of every room's
+# files is the exposure this exists to prevent, so a failure here is a failure of
+# the backup, never `|| true`.
+vm_rmdir() {
+    sbx exec -u root "$NAME" rm -rf "$1" </dev/null >/dev/null 2>&1 \
+        && sbx exec -u root "$NAME" test ! -e "$1" </dev/null >/dev/null 2>&1
+}
+
 # Tar /workspace INSIDE the VM, as root (each room's directory is 0700 and owned
-# by its own user), to $1, and print the archive's sha256. The excludes are
-# literal paths built from what exists, never a wildcard, so a project directory
-# that happens to be called `browser` is kept. tar's exit 1 is "a file changed
-# while it was read", which a live disk has; 2 is fatal.
+# by its own user), to $1 under umask 077, and print the archive's sha256. The
+# excludes are literal paths built from what exists, never a wildcard, so a
+# project directory that happens to be called `browser` is kept. tar's exit 1 is
+# "a file changed while it was read", which a live disk has; 2 is fatal.
 backup_in_vm() {
     sbx exec -u root "$NAME" sh -c '
+        umask 077
         out=$1; ex=""
         for d in /workspace/*/browser; do
             [ -d "$d" ] || continue
@@ -262,11 +282,26 @@ backup_in_vm() {
         tar $ex --exclude=./.tmux -C /workspace -czf "$out" .
         rc=$?
         [ "$rc" -le 1 ] || exit "$rc"
+        chmod 600 "$out" || exit 1
         sha256sum "$out" | cut -d" " -f1' sh "$1" </dev/null | tail -n 1
 }
 
-# Keep the newest BACKUP_KEEP archives (by modification time) and their
-# checksums. Never fewer than one: a zero or a non-number prunes nothing.
+# How many room directories /workspace holds in the VM (the 16-64 hex names a
+# scope is made of). An empty /workspace has nothing to lose and nothing to back
+# up: see backup_workspace.
+vm_room_count() {
+    local n
+    n=$(sbx exec -u root "$NAME" sh -c 'ls /workspace 2>/dev/null | grep -cE "^[0-9a-f]{16,64}$"; true' </dev/null | tail -n 1)
+    case "$n" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$n"
+}
+
+# Keep the newest BACKUP_KEEP archives of the NIGHTLY rotation (by modification
+# time) and their checksums. Never fewer than one: a zero or a non-number prunes
+# nothing. Only `workspace-*.tar.gz` directly in the backup directory is in the
+# rotation: the backups `destroy` takes live in `destroy/` and are never pruned,
+# and a backup of an empty /workspace is never made, so neither can push the last
+# backup that holds rooms out of the window.
 prune_backups() {
     local f
     case "$BACKUP_KEEP" in
@@ -279,9 +314,16 @@ prune_backups() {
 # One archive of /workspace, verified before it counts: the checksum computed in
 # the VM equals the one of the copy on the host, and the copy reads back as a
 # gzip tar. Prints the archive's path. 4 no sandbox, 2 the copy failed, 3 it did
-# not verify. An archive that is not verified is deleted, never kept.
+# not verify, 5 the VM's private directory could not be removed (the archive of
+# every room's files may still be in it), 10 skipped (stopped), 11 nothing to
+# back up (no rooms). An archive that is not verified is deleted, never kept.
+#
+# $1 `start` allows starting a stopped VM; $2 `destroy` files the archive under
+# destroy/, outside the nightly rotation, so the backup taken before a destroy is
+# never auto-pruned.
 backup_workspace() {
-    local allow_start=${1:-} state stamp dest part vm_tar want got n=1
+    local allow_start=${1:-} kind=${2:-nightly} state stamp dest part want got rooms vmdir
+    local dir=$BACKUP_DIR n=1 tar_rc cp_rc clean_rc
     state=$(sandbox_state)
     [ "$state" != absent ] || { log "backup: there is no sandbox $NAME"; return 4; }
     # `sbx exec` starts a stopped sandbox, so a nightly backup would undo a
@@ -292,15 +334,34 @@ backup_workspace() {
         log "backup: $NAME is $state, not running; skipped (a stopped disk is unchanged since the last backup, and sbx exec would start it)"
         return 10
     fi
-    mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR" || { log "backup: cannot use $BACKUP_DIR"; return 1; }
+    # A VM recreated and not yet restored has an empty /workspace. A backup of
+    # that would verify, count toward the window, and after 14 nights prune the
+    # last backup that holds any room: so there is none.
+    rooms=$(vm_room_count) || { log "backup: could not count the rooms in $NAME"; return 2; }
+    if [ "$rooms" = 0 ]; then
+        log "backup: /workspace in $NAME holds no rooms; nothing to back up (no archive made, none pruned)"
+        return 11
+    fi
+    [ "$kind" != destroy ] || dir=$BACKUP_DIR/destroy
+    mkdir -p "$dir" && chmod 700 "$BACKUP_DIR" "$dir" || { log "backup: cannot use $dir"; return 1; }
     stamp=$(date -u +%Y%m%dT%H%M%SZ)
-    dest=$BACKUP_DIR/workspace-$stamp.tar.gz
-    while [ -e "$dest" ]; do dest=$BACKUP_DIR/workspace-$stamp-$n.tar.gz; n=$((n + 1)); done
+    dest=$dir/workspace-$stamp.tar.gz
+    while [ -e "$dest" ]; do dest=$dir/workspace-$stamp-$n.tar.gz; n=$((n + 1)); done
     part=$dest.partial
-    vm_tar=/tmp/nora-backup-$stamp.tar.gz
-    want=$(backup_in_vm "$vm_tar") || { log "backup: tar inside $NAME failed"; return 2; }
-    sbx cp "$NAME:$vm_tar" "$part" </dev/null || { rm -f "$part"; log "backup: copying the archive out of $NAME failed"; return 2; }
-    sbx exec -u root "$NAME" rm -f "$vm_tar" </dev/null >/dev/null 2>&1 || true
+    vmdir=$(vm_mkdtemp backup) || { log "backup: could not make a private directory in $NAME"; return 2; }
+    want=$(backup_in_vm "$vmdir/archive.tar.gz"); tar_rc=$?
+    cp_rc=1
+    if [ "$tar_rc" = 0 ]; then
+        sbx cp "$NAME:$vmdir/archive.tar.gz" "$part" </dev/null; cp_rc=$?
+    fi
+    vm_rmdir "$vmdir"; clean_rc=$?
+    if [ "$tar_rc" != 0 ]; then rm -f "$part"; log "backup: tar inside $NAME failed"; return 2; fi
+    if [ "$cp_rc" != 0 ]; then rm -f "$part"; log "backup: copying the archive out of $NAME failed"; return 2; fi
+    if [ "$clean_rc" != 0 ]; then
+        rm -f "$part"
+        log "backup: could NOT remove $vmdir inside $NAME: an archive of every room's files may still be there. Remove it by hand (sbx exec -u root $NAME rm -rf $vmdir); this backup is discarded and counts as failed"
+        return 5
+    fi
     got=$(sha256sum "$part" | cut -d' ' -f1)
     if [ -z "$want" ] || [ "$want" != "$got" ]; then
         rm -f "$part"; log "backup: checksum mismatch (in the VM: ${want:-none}, on the host: $got)"; return 3
@@ -308,15 +369,15 @@ backup_workspace() {
     tar -tzf "$part" >/dev/null 2>&1 || { rm -f "$part"; log "backup: the archive does not read back"; return 3; }
     mv "$part" "$dest" || return 1
     printf '%s  %s\n' "$got" "$(basename "$dest")" > "$dest.sha256" || return 1
-    prune_backups
+    [ "$kind" = destroy ] || prune_backups
     printf '%s\n' "$dest"
 }
 
 cmd_backup() {
     local out rc size sum
     out=$(backup_workspace); rc=$?
-    if [ "$rc" = 10 ]; then
-        exit 0           # skipped, with its reason already logged: nothing failed
+    if [ "$rc" = 10 ] || [ "$rc" = 11 ]; then
+        exit 0           # skipped (stopped, or no rooms), reason already logged: nothing failed
     fi
     if [ "$rc" != 0 ]; then
         record_event backup failed rc="$rc"
@@ -339,7 +400,7 @@ cmd_backup() {
 # to `c-<first 12 hex of the scope>` (computerd's scope_user), creating that user
 # the way computerd does if it is not there yet.
 cmd_restore() {
-    local file="" force=0 arg want got existing rc
+    local file="" force=0 arg want got existing rc refused vmdir clean_rc
     for arg in "$@"; do
         case "$arg" in
             --force) force=1 ;;
@@ -353,16 +414,31 @@ cmd_restore() {
     got=$(sha256sum "$file" | cut -d' ' -f1)
     [ -n "$want" ] && [ "$want" = "$got" ] || { log "restore: $file does not match its checksum"; exit 3; }
     tar -tzf "$file" >/dev/null 2>&1 || { log "restore: $file does not read as a gzip tar"; exit 3; }
+    # Extracted as root, so read first, on the host, for anything that could write
+    # outside a room: absolute or .. names, a top level that is not a room, a
+    # device node, a link that leaves its room, a write through a link
+    # (archive_check.py). The VM's copy has this digest, so this is what is extracted.
+    refused=$(python3 "$HERE/archive_check.py" "$file"); rc=$?
+    if [ "$rc" != 0 ]; then
+        log "restore: $file is refused, it could write outside /workspace: $(printf '%s' "$refused" | head -n 3 | tr '\n' ';')"
+        exit 3
+    fi
     [ "$(sandbox_state)" != absent ] || { log "restore: there is no sandbox $NAME; start the unit first"; exit 6; }
     existing=$(sbx exec -u root "$NAME" sh -c 'ls /workspace | grep -E "^[0-9a-f]{16,64}$" | head -n 1' </dev/null) || existing=unknown
     if [ -n "$existing" ] && [ "$force" != 1 ]; then
         log "restore: /workspace already holds rooms; restoring would overwrite their files. Pass --force if that is meant"
         exit 7
     fi
-    sbx cp "$file" "$NAME:/tmp/nora-restore.tar.gz" </dev/null || { log "restore: copying the archive in failed"; record_event restore failed stage=copy; exit 2; }
+    vmdir=$(vm_mkdtemp restore) || { log "restore: could not make a private directory in $NAME"; exit 2; }
+    if ! sbx cp "$file" "$NAME:$vmdir/archive.tar.gz" </dev/null; then
+        vm_rmdir "$vmdir"
+        log "restore: copying the archive in failed"; record_event restore failed stage=copy; exit 2
+    fi
+    # The digest is checked INSIDE the VM, on the file tar will read, not on the
+    # host's copy: what was copied is what is extracted.
     sbx exec -u root "$NAME" sh -c '
-        tar -C /workspace -xzpf /tmp/nora-restore.tar.gz || exit 1
-        rm -f /tmp/nora-restore.tar.gz
+        [ "$(sha256sum "$1/archive.tar.gz" | cut -d" " -f1)" = "$2" ] || exit 4
+        tar -C /workspace -xzpf "$1/archive.tar.gz" || exit 1
         for d in /workspace/*/; do
             scope=$(basename "$d")
             case "$scope" in *[!0-9a-f]*|"") continue ;; esac
@@ -370,13 +446,19 @@ cmd_restore() {
             user=c-$(printf %s "$scope" | cut -c1-12)
             id -u "$user" >/dev/null 2>&1 || useradd --system --no-create-home --user-group \
                 --shell /usr/sbin/nologin --home-dir /nonexistent "$user" || exit 2
-            chown -R "$user:$user" "/workspace/$scope" || exit 3
-        done' </dev/null
+            chown -hR "$user:$user" "/workspace/$scope" || exit 3
+        done' sh "$vmdir" "$got" </dev/null
     rc=$?
+    vm_rmdir "$vmdir"; clean_rc=$?
     if [ "$rc" != 0 ]; then
         record_event restore failed stage=extract rc="$rc" sha256="$got"
-        log "restore FAILED inside the VM (rc=$rc); /workspace may be partly restored"
+        log "restore FAILED inside the VM (rc=$rc; 4 is the digest not matching in the VM); /workspace may be partly restored"
         exit "$rc"
+    fi
+    if [ "$clean_rc" != 0 ]; then
+        record_event restore failed stage=cleanup sha256="$got"
+        log "restore: the files were restored but $vmdir could NOT be removed inside $NAME (a copy of the archive is still there): sbx exec -u root $NAME rm -rf $vmdir"
+        exit 5
     fi
     record_event restore ok path="$file" sha256="$got"
     log "restored $file into $NAME:/workspace"
@@ -515,13 +597,18 @@ cmd_destroy() {
     # takes a verified backup FIRST and refuses if it cannot: the operator who
     # means to lose the files says so with --no-backup, and that is recorded.
     if [ "$backup" = 1 ] && [ "$(sandbox_state)" != absent ]; then
-        if ! out=$(backup_workspace start); then
+        out=$(backup_workspace start destroy); rc=$?
+        if [ "$rc" = 11 ]; then
+            kept=empty       # no room directories: nothing to lose, so nothing to back up
+            log "destroy: /workspace holds no rooms, so there is nothing to back up"
+        elif [ "$rc" != 0 ]; then
             log "destroy REFUSED: the backup before it failed, so nothing was removed. Fix that, or pass --no-backup to delete /workspace without one"
             record_event destroy failed reason=backup_failed
             exit 9
+        else
+            kept=$out
+            log "backed up /workspace to $out before destroying $NAME"
         fi
-        kept=$out
-        log "backed up /workspace to $out before destroying $NAME"
     fi
     sbx rm --force "$NAME" </dev/null; rc=$?
     if [ "$rc" = 0 ]; then

@@ -128,14 +128,25 @@ A **recreate deletes /workspace**, and the audit of 2026-10-01 saw three of them
   (`NORA_COMPUTER_BACKUP_KEEP`; a zero or a non-number prunes nothing, and a failed
   run never removes an older archive). A stopped VM is skipped, not started: `sbx
   exec` would start it, and a stopped disk has not changed.
+- **Inside the VM the archive is never in the shared `/tmp`.** It is made under
+  `umask 077` in a `mktemp -d` directory (root's, mode 0700), copied out, and the
+  whole directory is removed and checked gone; a directory that cannot be removed
+  fails the backup (exit 5) and names the path to remove by hand, because a
+  leftover archive of every room's files is the exposure.
+- **A VM with no rooms is not backed up.** After a recreate `/workspace` is empty;
+  a backup of that would verify, count toward the 14, and in 14 nights push out the
+  last backup that holds any room. It logs `holds no rooms; nothing to back up`,
+  makes no archive and prunes nothing.
 - **Not in it:** each room's `browser/` directory (a Chromium profile is a
   credential store; its cookies are never backed up, design §7) and computerd's
   `.tmux` sockets. A project folder that happens to be called `browser` is kept.
 - **It is rollback, not off-host backup** (design §7): the same machine, the same
   disk. Copy `~/nora-backups` off the host if the host's loss matters.
 - **`nora-computer destroy` takes a backup first and refuses if it cannot**
-  (exit 9, the VM untouched). `nora-computer destroy --no-backup` deletes
-  `/workspace` without one, on purpose, and the audit row says so.
+  (exit 9, the VM untouched). That backup is filed under
+  `~/nora-backups/computer-workspace/destroy/`, OUTSIDE the nightly rotation, so
+  nothing ever prunes it. `nora-computer destroy --no-backup` deletes `/workspace`
+  without one, on purpose, and the audit row says so.
 - A failed run leaves the unit `failed`: `systemctl --user --failed`,
   `journalctl --user -u nora-computer-backup -n 30`.
 
@@ -146,11 +157,19 @@ ls -lt ~/nora-backups/computer-workspace/ | head                   # pick an arc
 deploy/computer/nora-computer restore ~/nora-backups/computer-workspace/workspace-<time>.tar.gz
 ```
 
-It needs the archive's `.sha256` beside it and checks it, refuses when the VM's
-`/workspace` already holds rooms (restoring over them would overwrite files; `--force`
-if that is meant), extracts as root preserving modes, and gives each room's
-directory to `c-<first 12 hex of the scope>`, creating that user the way computerd
-does if it is not there yet: the uids inside an archive mean nothing in a new VM.
+It needs the archive's `.sha256` beside it and checks it, then **reads the archive on
+the host and refuses it whole** if any member could write outside a room: an absolute
+or `..` name, a top level that is not a room directory, a device node or fifo, a
+link that leaves its own room (to `/etc`, to another room, to anywhere above), or a
+member written through a link in the archive (`archive_check.py`; exit 3, nothing
+copied to the VM). It refuses when the VM's `/workspace` already holds rooms
+(restoring over them would overwrite files; `--force` if that is meant). It copies the
+archive into a private `mktemp -d` directory in the VM (never a fixed shared path),
+checks the digest AGAIN inside the VM on the file tar will read (exit 4 if it
+differs, nothing extracted), extracts as root preserving modes, removes the
+directory, and gives each room's directory to `c-<first 12 hex of the scope>`
+(`chown -hR`: a link is never followed), creating that user the way computerd does
+if it is not there yet: the uids inside an archive mean nothing in a new VM.
 Every backup, restore and destroy is a lifecycle audit row.
 
 Read it back (the nightly job ran, and the archive is a good one):
