@@ -266,3 +266,151 @@ async def test_every_outcome_is_counted_on_the_tool_metric() -> None:
     text = metrics.render() if hasattr(metrics, "render") else ""
     assert 'tool="document_publish"' in text and 'status="ok"' in text
     assert 'status="bad_arguments"' in text and 'tool="document_read"' in text
+
+
+# ------------------------------------------------------------- document_set_status
+async def test_set_status_archives_deletes_and_restores_through_the_service() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store, public_url="https://nora.example"))
+    made = await tools["document_publish"](spec=_doc("Trip"))
+    doc = made["document_id"]
+    archived = await tools["document_set_status"](document_id=doc, state="archived")
+    assert archived["status"] == "ok" and archived["state"] == "archived"
+    assert archived["previous"] == "active" and "url" not in archived
+    # An archived document still reads, says so, and refuses an edit with a way out.
+    seen = await tools["document_read"](document_id=doc)
+    assert seen["status"] == "ok" and seen["state"] == "archived"
+    edit = await tools["document_publish"](spec=_doc("v2"), document_id=doc, base_revision=1)
+    assert edit["status"] == "bad_arguments" and "document_set_status" in edit["note"]
+    deleted = await tools["document_set_status"](document_id=doc, state="deleted")
+    assert deleted["status"] == "ok" and "Nothing was erased" in deleted["note"]
+    assert (await tools["document_read"](document_id=doc))["status"] == "not_found"
+    back = await tools["document_set_status"](document_id=doc, state="active")
+    assert back["status"] == "ok" and back["previous"] == "deleted"
+    assert back["url"].startswith("https://nora.example/documents/")
+    again = await tools["document_set_status"](document_id=doc, state="active")
+    assert again["status"] == "ok" and "already active" in again["note"]
+    assert [s for s, _ in store._states[UUID(doc)]] == ["archived", "deleted", "active"]
+    assert {by for _, by in store._states[UUID(doc)]} == {"miles"}
+    # Her reply may carry what the result gives her; the result never carries the UUID
+    # in a field she is told to repeat.
+    assert "document_id" not in back["note"]
+
+
+async def test_set_status_on_another_rooms_document_is_not_found_and_changes_nothing() -> None:
+    store = FakeDocumentStore()
+    made = await _tools(_service(store), conversation_id=ROOM)["document_publish"](spec=_doc())
+    there = _tools(_service(store), conversation_id=OTHER)
+    out = await there["document_set_status"](document_id=made["document_id"], state="deleted")
+    unknown = await there["document_set_status"](document_id=str(uuid4()), state="deleted")
+    assert out["status"] == unknown["status"] == "not_found"
+    assert store._states == {}
+
+
+async def test_a_turn_nobody_asked_for_changes_no_state() -> None:
+    for kwargs in ({"tagger": None}, {"fire_turn": True}, {"dream_adaptor": "proactive"}):
+        store = FakeDocumentStore()
+        made = await _tools(_service(store))["document_publish"](spec=_doc())
+        out = await _tools(_service(store), **kwargs)["document_set_status"](
+            document_id=made["document_id"], state="deleted"
+        )
+        assert out["status"] == "unavailable", kwargs
+        assert store._states == {}, kwargs
+
+
+async def test_set_status_with_no_service_or_a_bad_id_or_a_down_store_changes_nothing() -> None:
+    assert (await _tools(None)["document_set_status"](
+        document_id=str(uuid4()), state="archived"))["status"] == "unavailable"
+    assert (await _tools(_service())["document_set_status"](
+        document_id="nope", state="archived"))["status"] == "not_found"
+
+    class _Down(FakeDocumentStore):
+        async def get(self, **kw: Any):
+            raise RuntimeError("db down")
+
+    out = await _tools(_service(_Down()))["document_set_status"](
+        document_id=str(uuid4()), state="archived")
+    assert out["status"] == "unavailable"
+
+
+# ------------------------------------------- restore from what a later turn can see
+async def _later_turn_block(store: FakeDocumentStore, conversation_id: str = ROOM) -> str:
+    from datetime import UTC, datetime
+
+    from nora.engagement.documents_context import DocumentsContextReader
+    from nora.language.documents_render import render_documents
+
+    reader = DocumentsContextReader(
+        store=store, room_ids=lambda platform, cid: frozenset({cid}),
+        clock=lambda: datetime(2026, 10, 2, tzinfo=UTC), metrics=Metrics(),
+    )
+    block = render_documents(await reader.read(platform="signal", conversation_id=conversation_id))
+    return "" if block is None else block.body
+
+
+def _id_on(body: str, prefix: str) -> str:
+    import re
+
+    (line,) = [row for row in body.splitlines() if row.startswith(prefix)]
+    return re.search(r" · id ([0-9a-f-]{36}) · ", line).group(1)
+
+
+async def test_a_deleted_document_is_restored_from_what_a_later_turn_sees() -> None:
+    store = FakeDocumentStore()
+    # Turn 1 publishes. Its result is deliberately dropped: no id survives from here.
+    await _tools(_service(store))["document_publish"](spec=_doc("Packing list"))
+
+    # Turn 2, «delete that packing list»: the id comes from <documents> only.
+    body = await _later_turn_block(store)
+    gone = await _tools(_service(store))["document_set_status"](
+        document_id=_id_on(body, '"Packing list"'), state="deleted"
+    )
+    assert gone["status"] == "ok"
+
+    # Turn 3, «bring it back»: the live list is empty, the put-away line carries the id.
+    body = await _later_turn_block(store)
+    assert not any(row.startswith('"') for row in body.splitlines())
+    back = await _tools(_service(store))["document_set_status"](
+        document_id=_id_on(body, 'deleted · "Packing list"'), state="active"
+    )
+    assert back["status"] == "ok" and back["previous"] == "deleted"
+    assert (await _later_turn_block(store)).startswith('"Packing list"')
+
+
+async def test_a_put_away_document_is_restored_by_the_handle_its_link_carries() -> None:
+    store = FakeDocumentStore()
+    tools = _tools(_service(store, public_url="https://nora.example"))
+    made = await tools["document_publish"](spec=_doc("Trip"))
+    handle = made["url"].rsplit("/", 1)[1]
+    archived = await tools["document_set_status"](document_id=handle, state="archived")
+    assert archived["status"] == "ok"
+    back = await tools["document_set_status"](document_id=handle.upper(), state="active")
+    assert back["status"] == "ok" and back["previous"] == "archived"
+
+
+async def test_a_handle_from_another_room_or_no_document_is_not_found() -> None:
+    store = FakeDocumentStore()
+    made = await _tools(_service(store, public_url="https://nora.example"))["document_publish"](
+        spec=_doc("Mine")
+    )
+    handle = made["url"].rsplit("/", 1)[1]
+    there = _tools(_service(store), conversation_id=OTHER)
+    other = await there["document_set_status"](document_id=handle, state="deleted")
+    unknown = await there["document_set_status"](document_id="0" * 12, state="deleted")
+    assert other["status"] == unknown["status"] == "not_found"
+    assert other["note"] == unknown["note"]
+    assert store._states == {}
+
+
+def test_the_lifecycle_texts_never_route_a_remove_to_a_delete() -> None:
+    """«remove that line» is an edit (`document_publish`). The tool's sent description and
+    the skill's lifecycle paragraph say archive, delete, bring back: never «remove»."""
+    import re
+    from pathlib import Path
+
+    described = dict(ToolRegistry(documents=_service())._descriptions())["document_set_status"]
+    skill = Path("nora/skills/document-creation/SKILL.md").read_text(encoding="utf-8")
+    para = skill.split("## Archive, delete or restore with the tool", 1)[1].split("\n## ", 1)[0]
+    for text in (described, para):
+        assert not re.search(r"\bremov", text, re.IGNORECASE)
+    assert "edit, not a delete" in para

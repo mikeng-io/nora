@@ -23,6 +23,12 @@ matches more than one picture is refused and the model is told to use a longer o
 never picks. A row with no room on it (a sticker, a comprehension-born row) cannot be
 placed, so it never resolves: the rule fails closed.
 
+LIFECYCLE (`set_state`). A document made in this room can be archived, deleted or
+restored by Nora on behalf of a known person, through the same same-room rule a revision
+takes; the store appends a `document_state` row and never touches a revision. A revision
+of a document that is not `active` is refused (`document_not_active`), and `read` answers
+a deleted document like an unknown one, so only `set_state` reaches it, to restore it.
+
 `rooms_named` answers the other question, for the read side: which rooms name a
 person, from the CURRENT policy, so a removal revokes access. A `persons = "*"` room
 names nobody (the policy cannot say who is in it), so only a document's creator reads
@@ -36,12 +42,21 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding, check_document
-from nora.domain.documents import DocumentStore, RevisionIn, RoomKey, handle_of
+from nora.domain.documents import (
+    DOCUMENT_STATES,
+    DocumentState,
+    DocumentStore,
+    RevisionIn,
+    RoomKey,
+    StoredDocument,
+    handle_of,
+    is_handle,
+)
 from nora.domain.media import code_matches, parse_media_type, resolve_room_media, room_sightings
 from nora.domain.ports import MediaObjectStore, RecordStore
 from nora.policy import Policy
@@ -81,6 +96,25 @@ class ReadResult:
     revision: int = 0
     title: str = ""
     spec: dict[str, Any] | None = None
+    url: str = ""
+    findings: tuple[Finding, ...] = ()
+    note: str = ""
+    state: str = "active"
+
+
+@dataclass(frozen=True, slots=True)
+class StateResult:
+    """`ok` carries the state the document is now in and the one it was in (`changed` is
+    false when it was already there, and nothing was written). `refused` carries a
+    finding: `no_such_document` (unknown here, or another room's), `unknown_person`,
+    `bad_state`. `unavailable` means nothing is known to have changed."""
+
+    status: Literal["ok", "refused", "unavailable"]
+    document_id: UUID | None = None
+    state: str = ""
+    previous: str = ""
+    changed: bool = False
+    title: str = ""
     url: str = ""
     findings: tuple[Finding, ...] = ()
     note: str = ""
@@ -245,6 +279,7 @@ class DocumentService:
             current is None
             or current.summary.platform != platform
             or current.summary.conversation_id not in here
+            or current.summary.state == "deleted"  # gone from every read; `set_state` restores
         ):
             return ReadResult("refused", findings=_no_such_document().findings)
         return ReadResult(
@@ -254,10 +289,85 @@ class DocumentService:
             title=current.summary.title,
             spec=current.spec,
             url=self._link(document_id),
+            state=current.summary.state,
+        )
+
+    async def set_state(
+        self,
+        *,
+        platform: str,
+        conversation_id: str,
+        person_id: str,
+        document_id: UUID | None = None,
+        state: str,
+        handle: str = "",
+    ) -> StateResult:
+        """Archive, delete or restore a document made in THIS room, for `person_id`.
+
+        The document is named by its id, or by the 12-hex handle its link carries. The gate
+        is the one a revision takes: a known person, and a document made in this room (any
+        id the room answers to). A handle is resolved among THIS room's documents in any
+        state, and one that matches none or more than one, like another room's document,
+        answers exactly like an unknown id. A deleted document is found here, and only
+        here, so it can be restored.
+        """
+        if not self._is_person(person_id):
+            return StateResult(
+                "refused",
+                findings=(Finding("", "unknown_person", "only a known member can do that"),),
+            )
+        if state not in DOCUMENT_STATES:
+            return StateResult(
+                "refused",
+                findings=(
+                    Finding("", "bad_state", "state must be one of " + ", ".join(DOCUMENT_STATES)),
+                ),
+            )
+        wanted = cast(DocumentState, state)  # checked against DOCUMENT_STATES just above
+        try:
+            here = self._room_ids(platform, conversation_id) | {conversation_id}
+            current: StoredDocument | None = None
+            if document_id is not None:
+                current = await self._store.get(document_id=document_id)
+            elif is_handle(handle):
+                mine = [
+                    d
+                    for d in await self._store.find_by_handle(handle=handle)
+                    if d.summary.platform == platform and d.summary.conversation_id in here
+                ]
+                current = mine[0] if len(mine) == 1 else None  # two is never picked
+            if (
+                current is None
+                or current.summary.platform != platform
+                or current.summary.conversation_id not in here
+            ):
+                return StateResult("refused", findings=_no_such_document().findings)
+            previous = current.summary.state
+            target = current.summary.id
+            if previous != wanted:
+                written = await self._store.set_state(
+                    document_id=target, state=wanted, set_by=person_id
+                )
+                if not written:
+                    return StateResult("refused", findings=_no_such_document().findings)
+        except Exception:  # noqa: BLE001 - a store that is down is `unavailable`
+            return StateResult(
+                "unavailable", note="The document's state could not be changed right now."
+            )
+        return StateResult(
+            "ok",
+            document_id=target,
+            state=wanted,
+            previous=previous,
+            changed=previous != wanted,
+            title=current.summary.title,
+            url="" if wanted == "deleted" else self._link(target),
         )
 
     async def _fresh_id(self, platform: str, conversation_id: str, person_id: str) -> UUID:
-        """A new document id whose 12-hex handle no document its room can read already has.
+        """A new document id whose 12-hex handle no document its room can read already has,
+        in ANY state: an archived or deleted one counts, because a restore would bring it
+        back and two documents would then share the handle.
 
         A link resolves its handle among what the viewer may read and refuses a handle that
         matches two, so a clash would make both documents' links 404 for the whole room
@@ -267,12 +377,15 @@ class DocumentService:
             (platform, cid)
             for cid in self._room_ids(platform, conversation_id) | {conversation_id}
         )
+
+        def _reads(d: StoredDocument) -> bool:
+            s = d.summary
+            return s.created_by == person_id or (s.platform, s.conversation_id) in rooms
+
         candidate = self._new_id()
         for _ in range(_HANDLE_TRIES - 1):
-            clash = await self._store.get_visible_by_handle(
-                handle=handle_of(candidate), person_id=person_id, rooms=rooms
-            )
-            if clash is None:
+            found = await self._store.find_by_handle(handle=handle_of(candidate))
+            if not any(_reads(d) for d in found):
                 break
             candidate = self._new_id()
         return candidate
@@ -374,6 +487,8 @@ class DocumentService:
                 or current.summary.conversation_id not in here
             ):
                 return _no_such_document()
+            if current.summary.state != "active":
+                return _not_active(current.summary.state)
             if current.summary.revision != base_revision:
                 return PublishResult(
                     "conflict",
@@ -400,6 +515,9 @@ class DocumentService:
                 document_id=document_id,
                 note="Someone revised this document a moment ago. Read it again and publish again.",
             )
+        if outcome.status == "not_active":
+            # Archived or deleted between the read above and the write.
+            return _not_active("no longer active")
         if outcome.status == "not_found" or outcome.document is None:
             return _no_such_document()
         return self._ok(document_id, outcome.document.summary.revision)
@@ -412,4 +530,17 @@ def _no_such_document() -> PublishResult:
     )
 
 
-__all__ = ["DocumentService", "PublishResult", "ReadResult", "rooms_named"]
+def _not_active(state: str) -> PublishResult:
+    return PublishResult(
+        "refused",
+        findings=(
+            Finding(
+                "",
+                "document_not_active",
+                f"this document is {state}; restore it (state active) before revising it",
+            ),
+        ),
+    )
+
+
+__all__ = ["DocumentService", "PublishResult", "ReadResult", "StateResult", "rooms_named"]

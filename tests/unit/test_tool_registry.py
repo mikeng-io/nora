@@ -89,7 +89,7 @@ def test_the_document_tools_are_offered_only_when_documents_are_wired():
     """`[documents] enabled = false` (the shipped default) builds the registry with
     no document service, and then no turn and no gate digest carries either tool:
     the portal pages that open a document ship later. Wired, both are offered."""
-    names = {"document_publish", "document_read"}
+    names = {"document_publish", "document_read", "document_set_status"}
     off = ToolRegistry()
     assert names.isdisjoint({t.tool_name for t in _built_tools(off)})
     assert "document_read" not in off.capability_digest()
@@ -98,6 +98,7 @@ def test_the_document_tools_are_offered_only_when_documents_are_wired():
     # The digest lists what she can ANSWER: the read, never the act.
     assert "document_read" in on.capability_digest()
     assert "document_publish" not in on.capability_digest()
+    assert "document_set_status" not in on.capability_digest()
 
 
 def _surface(registry: ToolRegistry, *, defer: bool):
@@ -213,7 +214,7 @@ def test_the_registry_exposes_every_declared_tool():
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
         # design/artifact §26: a document is published to the web app, read back to edit.
-        "document_publish", "document_read",
+        "document_publish", "document_read", "document_set_status",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -320,6 +321,9 @@ def test_budgets_match_todays_table():
         "computer_session_list": 2,
         # design/artifact §26: no-spec catalog read, publish, a fix, an edit; a read.
         "document_publish": 4, "document_read": 2,
+        # Archive, delete or restore one document; a second call is an undo or
+        # another document.
+        "document_set_status": 2,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -800,6 +804,8 @@ ACT_VERBS = frozenset({
     "computer_export", "computer_import",
     # design/artifact §26: commits a document other people can open.
     "document_publish",
+    # Appends a `document_state` row: archives, deletes or restores a document.
+    "document_set_status",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.

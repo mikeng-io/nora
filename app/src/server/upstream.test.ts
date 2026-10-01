@@ -23,7 +23,10 @@ describe("resolveUpstream", () => {
     expect(ok(["events", id], "personId=ken", "jo")).toBe(`/app/v1/events/${id}?personId=jo`);
   });
 
-  it("scopes documents to the session's person and forwards only page and pageSize", () => {
+  it("scopes documents to the session's person and forwards only page, pageSize and state", () => {
+    expect(ok(["documents"], "state=archived&evil=1", "jo")).toBe(
+      "/app/v1/documents?state=archived&personId=jo",
+    );
     const id = "9c48dbf1-7c25-4467-84b3-ac9d8d61a584";
     expect(ok(["documents"], "personId=ken&page=2&pageSize=10&evil=1", "jo")).toBe(
       "/app/v1/documents?page=2&pageSize=10&personId=jo",

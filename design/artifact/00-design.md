@@ -856,7 +856,8 @@ sha256, the full sha256 of every picture it names, who wrote it). Both are **app
 changes in place and neither needs the row-history trigger; the current document is the highest
 revision, which removes the head pointer that could drift. `(document_id, revision)` is the primary
 key, so two revisions from one base resolve to one winner and one `conflict` (the contract suite races
-six writers and expects exactly one).
+six writers and expects exactly one). A document's lifecycle (archive, delete, restore) is a third
+append-only table, `document_state`, added later: §31.
 
 **Visibility is in the read.** A person reads what they created plus what was made in a room that names
 them; the rooms come from the current policy at the moment of each request (`rooms_named`), so removing a
@@ -1082,3 +1083,59 @@ result's note says so plainly, and a description change needs a `tool_selection`
 **Not changed.** Egress, doctrine, the `<documents>` block's content (its note now says a reply carries
 the link a publish returned, or the title). Live step: set `[documents] public_url` to the web app's
 origin (its `AUTH_URL`) through nora-deploy step 5.
+
+## 31. Lifecycle: archive, delete, restore (2026-10-01)
+
+**The gap.** A document could be made and revised and never put away: the operator asked for
+**archive** and a **restorable delete**. Both tables are append-only by design (§25), so neither gains a
+mutable column and nothing is updated.
+
+**Storage.** A third append-only table, `document_state` (migration `0087_document_state`): one row per
+change, `(document_id, state, set_by, recorded_at)`, `state` one of `active`, `archived`, `deleted`
+(a CHECK), no foreign key for §25's reason, and `nora.infra.sql.history.APPEND_ONLY` names its system
+time. A document's state is its **latest row**; no row is `active`, so every document written before
+it is active with no backfill. A restore is one more row (`active`). Nothing is ever removed:
+a deleted document keeps every revision in `document_revision`.
+
+**What each state does, all in the store's SQL (and the fake's), never in a caller.**
+- `archived`: off the portal's default list and off the room's `<documents>` block; listed under the
+  portal's Archived filter (`state=archived`); still opens by its link and its id; a revision is refused
+  (`RevisionOutcome("not_active")`, `document_not_active` from the service) until it is restored.
+- `deleted`: off every list and off the block's live lines; every person-facing read (by id, by a
+  link's handle, a picture) is the same 404 as an unknown id, so nothing leaks. Only the publish
+  service's own room-scoped reads still find it, which is how a room restores it through Nora.
+
+**Restorable from the chat (review of PR #674).** After a delete nothing a later turn saw carried the
+id, so "ask Nora to bring it back" could not work. The room's `<documents>` block now ends with at
+most three put-away documents of THAT room (`PUT_AWAY_SHOWN`), each line led by its state
+(`deleted · "title" · id … · revision … · age`), and renders nothing extra when there are none (the
+one-document block is byte-identical). `document_set_status` also takes the 12-hex handle a link
+carries, resolved among this room's documents in any state; a handle matching none or two, like
+another room's document, is the same `not_found`. The test that proves it deletes and restores using
+only ids parsed from the block a later turn renders.
+
+**Serialized.** `add_revision` and `set_state` both take the identity row `FOR UPDATE` first, so a
+revision that read `active` cannot land after a concurrent delete (two-connection tests on Postgres, in
+both directions). A new document's handle is drawn clear of every document its room reads in any state
+(`find_by_handle`), so a restore never brings back a clash.
+
+**Known and left (review of PR #674).** The portal write is read-then-write with no compare-and-set: two
+people changing one document's state at once each succeed in order, and the later row wins, which is
+the intended outcome. A document's creator outside its room may change its state, because they may
+read it (DEC-255 as written).
+
+**Who may change it.** In the portal, whoever may READ the document (its creator, or a person a room it
+was made in names): the read gate is the write gate (`change_document_state` calls `get_visible` first),
+so a deleted document is out of reach there. Through Nora, the tool `document_set_status` (`archived`,
+`deleted`, `active`) goes through `DocumentService.set_state`, the same same-room rule a revision takes,
+for a known person who tagged her; `set_by` is that person. A delete is therefore restorable from the
+chat (or the database), never from the portal.
+
+**Surfaces.** `POST /app/v1/documents/{id}/state` behind the portal's own route
+(`app/src/app/api/v1/documents/[id]/state/route.ts`; same-origin and JSON only, the session's person,
+a UUID and one of three words checked before any request), Archive / Delete (with a confirm) / Restore
+on the document page, and a Current / Archived filter on the list. The `document-creation` skill names
+the verb in one paragraph so she never hand-rolls a delete as an empty revision.
+
+**Not built.** Search (still §25's "not built"), a purge (a hard delete is a separate decision), and a
+portal restore of a deleted document. The decision row is DEC-255.

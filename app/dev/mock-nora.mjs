@@ -1773,7 +1773,13 @@ const DOCUMENTS = [
     document: DOC_SPEC("Saturday packing list"),
   },
 ];
-const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => rest;
+// nora/web/documents.py: a document's lifecycle state, the latest change wins and none
+// is `active`. A deleted document is in no list and every read of it is a 404.
+const DOC_STATES = new Map();
+const docState = (d) => DOC_STATES.get(d.id) ?? "active";
+/** Every document back to `active` (tests share this module's state). */
+export const resetDocumentStates = () => DOC_STATES.clear();
+const docSummary = ({ readers: _r, media: _m, document: _d, ...rest }) => ({ ...rest, state: docState(rest) });
 const DOC_HANDLE = /^[0-9a-f]{12}$/;
 const DOC_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1790,9 +1796,13 @@ get("/app/v1/documents", (params, sp) => {
   const { value: pageSize, error: sizeErr } = intParam(sp, "pageSize", 20);
   if (pageErr) return { status: 400, body: { error: "invalid page" } };
   if (sizeErr) return { status: 400, body: { error: "invalid pageSize" } };
+  const listed = sp.get("state") ?? "active";
+  if (listed !== "active" && listed !== "archived") return { status: 400, body: { error: "invalid state" } };
   const mine = isEmptied("documents")
     ? []
-    : DOCUMENTS.filter((d) => d.readers.includes(personId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    : DOCUMENTS.filter((d) => d.readers.includes(personId) && docState(d) === listed).sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt),
+      );
   const size = Math.min(Math.max(1, pageSize), 50);
   const at = Math.max(1, page);
   return {
@@ -1802,6 +1812,7 @@ get("/app/v1/documents", (params, sp) => {
       page: at,
       pageSize: size,
       total: mine.length,
+      state: listed,
     },
   };
 });
@@ -1815,7 +1826,8 @@ get("/app/v1/documents/:id", (params, sp) => {
   // the same 404 as an unreadable document.
   if (DOC_HANDLE.test(params.id)) {
     const readable = DOCUMENTS.filter(
-      (d) => d.readers.includes(personId) && d.id.replaceAll("-", "").startsWith(params.id),
+      (d) =>
+        d.readers.includes(personId) && docState(d) !== "deleted" && d.id.replaceAll("-", "").startsWith(params.id),
     );
     if (readable.length !== 1) return { status: 404, body: { status: "not_found" } };
     const [only] = readable;
@@ -1823,8 +1835,10 @@ get("/app/v1/documents/:id", (params, sp) => {
   }
   if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
   const doc = DOCUMENTS.find((d) => d.id === params.id);
-  // Unreadable is unknown: never a distinct "forbidden".
-  if (!doc || !doc.readers.includes(personId)) return { status: 404, body: { status: "not_found" } };
+  // Unreadable is unknown: never a distinct "forbidden". Deleted is unknown too.
+  if (!doc || !doc.readers.includes(personId) || docState(doc) === "deleted") {
+    return { status: 404, body: { status: "not_found" } };
+  }
   return { status: 200, body: { ...docSummary(doc), document: doc.document, media: doc.media } };
 });
 
@@ -1834,7 +1848,7 @@ get("/app/v1/documents/:id/media/:sha", (params, sp) => {
   if (!personId) return { status: 400, body: { error: "personId required" } };
   if (!DOC_UUID.test(params.id)) return { status: 400, body: { status: "refused", note: "bad id" } };
   const doc = DOCUMENTS.find((d) => d.id === params.id);
-  if (!doc || !doc.readers.includes(personId) || !doc.media.includes(params.sha)) {
+  if (!doc || !doc.readers.includes(personId) || docState(doc) === "deleted" || !doc.media.includes(params.sha)) {
     return { status: 404, body: { status: "not_found" } };
   }
   return { status: 200, bytes: DOC_PNG, contentType: "image/png" };
@@ -2039,11 +2053,46 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function readJson(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+// POST /app/v1/documents/:id/state (nora/web/api.py documents_state): the viewer who may
+// read a document may archive, delete or restore it; a deleted one is a 404 here.
+export function handleDocumentState(pathname, sp, payload) {
+  const m = /^\/app\/v1\/documents\/([^/]+)\/state$/.exec(pathname);
+  if (!m) return { status: 404, body: ERR_NOT_FOUND };
+  if (isFailing("documents")) return { status: 503, body: ERR_UNAVAILABLE };
+  const personId = documentViewer(sp);
+  if (!personId) return { status: 400, body: { error: "personId required" } };
+  if (!DOC_UUID.test(m[1])) return { status: 400, body: { status: "refused", note: "bad id" } };
+  const state = payload?.state;
+  if (!["active", "archived", "deleted"].includes(state)) {
+    return { status: 400, body: { status: "refused", note: "bad state" } };
+  }
+  const doc = DOCUMENTS.find((d) => d.id === m[1]);
+  if (!doc || !doc.readers.includes(personId) || docState(doc) === "deleted") {
+    return { status: 404, body: { status: "not_found" } };
+  }
+  DOC_STATES.set(doc.id, state);
+  return { status: 200, body: docSummary(doc) };
+}
+
 function startServer() {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     const { status, body, bytes, contentType } =
-      req.method === "GET" ? handle(url.pathname, url.searchParams, Date.now()) : { status: 404, body: ERR_NOT_FOUND };
+      req.method === "GET"
+        ? handle(url.pathname, url.searchParams, Date.now())
+        : req.method === "POST"
+          ? handleDocumentState(url.pathname, url.searchParams, await readJson(req))
+          : { status: 404, body: ERR_NOT_FOUND };
     await sleep(jitteredLatencyMs());
     if (bytes) {
       // A picture: the only non-JSON answer this mock gives.

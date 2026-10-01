@@ -145,6 +145,9 @@ APPEND_ONLY: dict[str, str] = {
     # neither ever updated; the current document is the highest revision.
     "documents": "recorded_at",
     "document_revision": "recorded_at",
+    # 0087_document_state: a document's lifecycle, one row per change; the current
+    # state is the latest row, so archive, delete and restore never update anything.
+    "document_state": "recorded_at",
     "standing_revision": "recorded_at",
     "culture_revision": "recorded_at",
     "decision_log": "recorded_at",

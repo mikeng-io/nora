@@ -710,3 +710,96 @@ def test_0086_downgrade_drops_what_the_old_vocabulary_cannot_hold_and_reapplies(
     assert ("event_revision", "field_meta") not in columns
     run_migrations(pg_url)
     assert current_revision(pg_url) == head_revision()
+
+
+def _document_state_exists(url: str) -> bool:
+    engine = sa.create_engine(sync_url_for(url))
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.text(
+                "SELECT to_regclass('public.document_state') IS NOT NULL"
+            )).scalar_one()
+    finally:
+        engine.dispose()
+
+
+def test_0087_builds_document_state_on_a_clean_database(pg_url):
+    """`0087_document_state` from nothing: the chain reaches it as the head and the
+    table is there with its latest-row index."""
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
+    assert _document_state_exists(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            index = conn.execute(sa.text(
+                "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_document_state_latest'"
+            )).scalar_one()
+    finally:
+        engine.dispose()
+    assert "(document_id, id)" in index
+
+
+def test_0087_applies_on_the_0086_head_with_documents_in_it_and_goes_back_down(pg_url):
+    """On a database already at `0086_event_citations` holding a document (0084's tables),
+    0087 adds only `document_state`: the document is untouched and reads `active` (no row
+    is active), and going back down drops the table and keeps the document and its
+    revision."""
+    from alembic import command as alembic_command
+
+    run_migrations(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0086_event_citations")
+    assert current_revision(pg_url) == "0086_event_citations"
+    assert not _document_state_exists(pg_url)
+    doc = uuid.uuid4()
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO documents (id, platform, conversation_id, created_by) "
+                "VALUES (:id, 'signal', 'r1', 'ken')"
+            ), {"id": doc})
+            conn.execute(sa.text(
+                "INSERT INTO document_revision (document_id, revision, title, spec, text, "
+                "sha256, written_by) VALUES (:id, 1, 'Trip', '{}'::jsonb, 'Trip', :sha, 'tag:1')"
+            ), {"id": doc, "sha": "a" * 64})
+    finally:
+        engine.dispose()
+
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(sa.text("SELECT count(*) FROM document_state")).scalar_one() == 0
+    finally:
+        engine.dispose()
+
+    import asyncio
+
+    from nora.infra.sql.documents import SqlDocumentStore
+    from nora.infra.sql.engine import create_sql_engine
+
+    async def _read() -> tuple[str, str]:
+        store = SqlDocumentStore(create_sql_engine(pg_url))
+        try:
+            got = await store.get(document_id=doc)
+            assert got is not None
+            return got.summary.title, got.summary.state
+        finally:
+            await store.aclose()
+
+    assert asyncio.run(_read()) == ("Trip", "active")
+
+    alembic_command.downgrade(alembic_config(pg_url), "0086_event_citations")
+    assert not _document_state_exists(pg_url)
+    engine = sa.create_engine(sync_url_for(pg_url))
+    try:
+        with engine.connect() as conn:
+            assert conn.execute(sa.text(
+                "SELECT count(*) FROM document_revision WHERE document_id = :id"
+            ), {"id": doc}).scalar_one() == 1
+    finally:
+        engine.dispose()
+    run_migrations(pg_url)
+    assert current_revision(pg_url) == head_revision()

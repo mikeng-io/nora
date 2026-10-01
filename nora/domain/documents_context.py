@@ -13,6 +13,10 @@ from datetime import datetime
 #: Documents shown, most recently revised first. A room that outgrows this is the
 #: moment to add a list tool, and a real miss is what says so.
 DOCUMENTS_SHOWN = 5
+#: Archived and deleted documents shown, most recently revised first, each led by its
+#: state. A put-away document is in no list anybody else reads, so this is the one place a
+#: later turn can learn its id to restore it; none put away renders nothing.
+PUT_AWAY_SHOWN = 3
 #: A title is a model's words about a room's work, cut to this on one line.
 TITLE_CHARS = 50
 
@@ -23,9 +27,11 @@ class DocumentLine:
     document_id: str
     revision: int
     revised_at: datetime
+    state: str = "active"
 
 
 @dataclass(frozen=True)
 class DocumentsView:
     lines: tuple[DocumentLine, ...]
     now: datetime
+    put_away: tuple[DocumentLine, ...] = ()

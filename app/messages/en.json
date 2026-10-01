@@ -247,7 +247,22 @@
     "notFoundTitle": "Not one of your documents",
     "notFound": "You can open documents you asked for, or that were made in a room you're in. This one isn't among them, or it no longer exists.",
     "made": "Made by {name} in {platform}",
-    "madeRevised": "Made by {name} in {platform} · revision {n}, updated {ago}"
+    "madeRevised": "Made by {name} in {platform} · revision {n}, updated {ago}",
+    "filterLabel": "Which documents",
+    "filterActive": "Current",
+    "filterArchived": "Archived",
+    "archivedEmptyTitle": "Nothing archived",
+    "archivedEmpty": "Documents you archive show here, and can be restored.",
+    "archived": "Archived",
+    "archivedNote": "Archived: it is off the list, and Nora won't change it until it is restored.",
+    "archive": "Archive",
+    "restore": "Restore",
+    "delete": "Delete",
+    "deleteConfirmTitle": "Delete this document?",
+    "deleteConfirm": "It leaves every list and its link stops opening, for everyone in the room. Nothing is erased: ask Nora in the chat and she can bring it back.",
+    "deleteConfirmAction": "Delete it",
+    "cancel": "Cancel",
+    "actionFailed": "That didn't go through. Try again."
   },
   "map": {
     "title": "Where everyone is",
