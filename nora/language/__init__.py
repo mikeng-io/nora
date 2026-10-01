@@ -1,4 +1,5 @@
-"""The Dreamer adaptors' prompts and the renderers they share: the note tier, `<standing>`, and the Cognition session's agenda.
+"""The Dreamer adaptors' prompts and the renderers they share: the note tier,
+`<standing>`, and the Cognition session's agenda.
 
 **The package name is now wrong and is kept anyway, deliberately.** It was
 "language and lexicon tools" and held the room-language tier — the lexeme
