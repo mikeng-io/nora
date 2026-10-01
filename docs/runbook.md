@@ -945,7 +945,7 @@ docker compose exec -T nora /app/.venv/bin/nora --config config.toml \
 # 7. Wait for Honcho's scope backfill: every entry's "state" must read "completed".
 for ws_scope in nora/friends nora/wedding nora-ridgeline/ridgeline; do
   docker compose exec -T nora curl -fsS \
-    "http://host.docker.internal:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
+    "http://honcho:8000/v3/workspaces/${ws_scope%%/*}/scopes/${ws_scope#*/}/status" </dev/null; echo
 done
 
 # 8. ONLY with the operator's approval (irreversible): dry run, then --apply,
@@ -1253,3 +1253,112 @@ A passing doctor plus a logged-in profile is the whole health story today —
 read-only probes confirmed Instagram and X as `logged_in=true` after the Chrome
 migration. Threads is not checkable at all: OpenCLI 1.8.7 has no native Threads
 adapter, so Threads support is unimplemented, not broken.
+
+## 11. "Honcho answers anyone" — closing it without authentication (#633, DEC-255)
+
+Honcho has no authentication, and the operator ruled (2026-10-01) that it
+will not get any: the fix is **where it listens**. Measured 2026-09-30 on norty:
+`honcho-api-1` published `0.0.0.0:8000`, so any container that could name the
+host (`host.docker.internal`) and anything on the LAN read and wrote Nora's
+memory with one unauthenticated `POST /v3/workspaces/list`.
+
+**Honcho is not in this repository.** Its compose project is
+`~/workspace/honcho/docker-compose.yml` on norty, and nothing here edits it.
+What this repo holds is nora's half (the `honcho` network in
+`docker-compose.yml`, the host-side rewrite in `nora/subject/obtain.py`) and the
+probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on norty
+2026-10-01:
+
+| caller | route today | after |
+|---|---|---|
+| nora (the tag path, the Dreamer, `nora memory ...` in the container) | `host.docker.internal:8000` | `honcho:8000` on `honcho_memory` |
+| the eval suite, host-side scripts, a host `curl` | `127.0.0.1:8000` | unchanged (loopback still published) |
+| another machine on the tailnet (the Mac's Honcho plugin) | `tailscale serve` forwards `:18000` to `localhost:8000` | unchanged |
+| presence, analytics, voice, drop, the portal | none: no environment or config names Honcho | none |
+
+The tailnet forward is deliberate and stays unauthenticated, as it was; that is
+the operator's tailnet, not the LAN. A caller found later that is not in this
+table is reading Honcho through the open port and will break at step 4: the
+access log's source class before and after (below) is how to find one first.
+
+### The order, and why it is this order
+
+Each step leaves every caller working; the door closes last. **Run from
+`~/workspace/nora` and `~/workspace/honcho` on norty. Nothing here is done by
+the PR merging.**
+
+```bash
+# 0. BEFORE the nora deploy of this change. The network is owned by neither
+#    stack (both mark it external), so `down` on either never removes it. If it
+#    is missing, `docker compose up nora` fails at once and names it, and the
+#    running container is not touched.
+docker network create honcho_memory
+
+# 1. Deploy nora from this branch (nora-deploy). It now also joins honcho_memory.
+#    Nothing has changed for it yet: its config still says host.docker.internal.
+
+# 2. Honcho's compose: add the network and an alias, KEEP the old publish for now.
+#    In ~/workspace/honcho/docker-compose.yml, service `api`:
+#
+#        networks:
+#          default: {}
+#          memory:
+#            aliases: [honcho]
+#
+#    and at the bottom of the file:
+#
+#        networks:
+#          memory:
+#            external: true
+#            name: honcho_memory
+#
+cd ~/workspace/honcho && docker compose up -d api </dev/null
+docker exec nora curl -fsS -m 5 http://honcho:8000/health </dev/null   # {"status":"ok"}
+
+# 3. nora's live config: [memory] base_url = "http://honcho:8000". This is a
+#    config-only edit (nora-deploy step 5: edit a COPY, `nora config validate`
+#    it through the container, cp it in place, recreate). Read it back:
+cd ~/workspace/nora
+docker compose up -d --force-recreate nora </dev/null
+docker compose exec -T nora /app/.venv/bin/python -c \
+  'from pathlib import Path; from nora.config import load; print(load(Path("config.toml"), require_secrets=False).memory.base_url)' </dev/null
+
+# 4. Only now close the door. In the honcho compose, service `api`:
+#        ports: ["127.0.0.1:8000:8000"]        # was "8000:8000"
+cd ~/workspace/honcho && docker compose up -d api </dev/null
+```
+
+Doing step 4 before step 3 shuts nora out of memory: every peer write fails,
+and the failure reads as Honcho being down.
+
+### Read-back
+
+```bash
+cd ~/workspace/nora && deploy/honcho-closed-probe.sh; echo "PROBE_RC=$?"
+```
+
+`PROBE_RC=0` is every check passing: a throwaway container on the default bridge
+is REFUSED on port 8000 at every address the host owns (with a control that
+proves the probe can reach a port that is open, and a loopback check that
+proves Honcho is alive and not merely unreachable), nora reaches it by name,
+and the tailnet forward still answers. `1` is an open door or a shut-out caller;
+`2` is a probe that cannot tell. The same probe by hand:
+
+```bash
+docker run --rm --network bridge --entrypoint curl nora:latest \
+  -s -m 4 -o /dev/null -w '%{http_code}\n' http://172.17.0.1:8000/health </dev/null   # 000 = refused
+```
+
+A second reading, from Honcho's own access log: nora's calls arrived from the
+compose gateway (`172.21.x.x`, the userland proxy) before step 4 and arrive from
+the `honcho_memory` subnet after it. Counts only, never paths:
+
+```bash
+docker logs --since 1h honcho-api-1 </dev/null 2>&1 \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+ - "(GET|POST|PUT|DELETE)' \
+  | awk '{split($1,a,"."); print a[1]"."a[2]".x.x"}' | sort | uniq -c | sort -rn
+```
+
+**Rollback** is the reverse of step 4 (publish `8000:8000` again, `up -d api`):
+the door reopens and nora, now on the name, keeps working either way.
+

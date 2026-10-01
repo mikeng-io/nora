@@ -68,6 +68,11 @@ base_url = "http://instagram-bridge:18082"  # the containerized Go/instameow bri
                                   # platforms.instagram.degraded to see it.
 
 [memory]
+# This default is for a checkout talking to Honcho on its own machine. In the
+# deployment nora is a container and Honcho is NOT published on every
+# interface (it has no authentication, #633): it reaches Honcho by name on the
+# private `honcho_memory` network, `http://honcho:8000`. docs/runbook.md
+# "Closing Honcho" says how that is set up and proven.
 base_url = "http://127.0.0.1:8000"
 # The Honcho workspace of the IMPLICIT Nora workspace — the one every unit is
 # in when policy.toml has no [units] table (DEC-214). Only that: once
