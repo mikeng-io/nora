@@ -139,6 +139,11 @@ function Loaded({ id, data }: { id: string; data: DocumentRevision }) {
         ) : null}
       </div>
       <PrintableDocument>
+        {/* Paper only: the banner above never prints, so an old revision's printout says
+            itself which revision it is, and never passes for the current document. */}
+        <p className="mb-4 hidden text-meta text-ink-soft print:block" data-testid="printed-revision">
+          {t("printedRevision", { n: data.revision, total: data.currentRevision })}
+        </p>
         <DocumentView doc={data.document} documentId={id} />
       </PrintableDocument>
     </PageFrame>

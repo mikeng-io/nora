@@ -249,6 +249,7 @@
     "revisionMeta": "By {who} · {ago} · {sha}",
     "writtenByNora": "Nora",
     "oldRevisionBanner": "You are viewing revision {n} of {total}, not the current one.",
+    "printedRevision": "Revision {n} of {total}: not the current version of this document.",
     "restoreArchivedNote": "This document is archived. Restore the document first to bring this version back.",
     "openCurrent": "Open the current version",
     "restoreRevision": "Restore revision {n}",

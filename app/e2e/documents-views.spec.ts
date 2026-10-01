@@ -46,6 +46,13 @@ test("Present shows one Section per slide, moves on the keyboard, and Escape lea
   await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
+  // Space on a focused control presses it; it does not also move a slide.
+  await page.getByRole("button", { name: "Next" }).focus();
+  await page.keyboard.press(" ");
+  await expect(page.getByTestId("slide-counter")).toHaveText("2 / 2");
+  await page.getByRole("button", { name: "Previous" }).focus();
+  await page.keyboard.press(" ");
+  await expect(page.getByTestId("slide-counter")).toHaveText("1 / 2");
 
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(new RegExp(`/documents/${LISBON}$`));
@@ -145,9 +152,14 @@ test("history lists every revision, an old one opens read-only with a banner and
   await expect(page.getByRole("link", { name: "Present" })).toHaveCount(0);
   expect(await seriousViolations(page)).toEqual([]);
   // The banner is the screen's; on paper only the revision prints.
+  await expect(page.getByTestId("printed-revision")).toBeHidden();
   await page.emulateMedia({ media: "print" });
   await expect(page.getByTestId("old-revision-banner")).toBeHidden();
   await expect(page.getByText("Draft 1.")).toBeVisible();
+  // ...but the paper still says it is an old revision, never passing for the current one.
+  await expect(page.getByTestId("printed-revision")).toHaveText(
+    "Revision 1 of 3: not the current version of this document.",
+  );
   errors.expectNone();
 });
 

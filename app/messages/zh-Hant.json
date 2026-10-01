@@ -249,6 +249,7 @@
     "revisionMeta": "{who} · {ago} · {sha}",
     "writtenByNora": "Nora",
     "oldRevisionBanner": "你而家睇緊第 {n} 版（共 {total} 版），唔係現行版本。",
+    "printedRevision": "第 {n} 版（共 {total} 版）：唔係呢份文件嘅現行版本。",
     "restoreArchivedNote": "呢份文件已封存。要先還原文件，先可以攞返呢一版。",
     "openCurrent": "開現行版本",
     "restoreRevision": "還原第 {n} 版",

@@ -73,7 +73,9 @@ function Deck({
   const touch = useRef<{ x: number; y: number } | null>(null);
   useRegisterTitle(title);
   const count = slides.length;
-  const current = slides[Math.min(index, count - 1)];
+  // A refetch can bring fewer slides than the one on screen: read the index clamped.
+  const at = Math.min(index, count - 1);
+  const current = slides[at];
   const leave = useCallback(() => router.replace(`/documents/${id}`), [router, id]);
 
   useEffect(() => {
@@ -86,7 +88,9 @@ function Deck({
       // stays with that control.
       const target = e.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [role='tablist']")) return;
-      const action = slideKey(e, index, count);
+      // Space and Enter on a focused button or link press it (Leave, Previous, Next).
+      if ((e.key === " " || e.key === "Enter") && target?.closest("button, a")) return;
+      const action = slideKey(e, at, count);
       if (!action) return;
       e.preventDefault();
       if (action.type === "exit") leave();
@@ -94,7 +98,7 @@ function Deck({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [index, count, leave]);
+  }, [at, count, leave]);
 
   const onTouchStart = (e: TouchEvent) => {
     const p = e.touches[0];
@@ -106,7 +110,7 @@ function Deck({
     touch.current = null;
     if (!start || !p) return;
     const step = swipeStep(p.clientX - start.x, p.clientY - start.y);
-    if (step) setIndex((i) => Math.min(Math.max(i + step, 0), count - 1));
+    if (step) setIndex(Math.min(Math.max(at + step, 0), count - 1));
   };
 
   return (
@@ -124,7 +128,7 @@ function Deck({
       <div className="safe-top flex items-center gap-3 border-b border-hairline bg-surface px-4 py-2">
         <p className="min-w-0 flex-1 truncate text-meta font-semibold text-ink">{title}</p>
         <p className="font-mono text-meta text-ink-muted" aria-live="polite" data-testid="slide-counter">
-          {t("slideCounter", { n: index + 1, total: count })}
+          {t("slideCounter", { n: at + 1, total: count })}
         </p>
         <Button variant="outline" size="sm" onClick={leave}>
           <X aria-hidden="true" />
@@ -146,12 +150,12 @@ function Deck({
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-hairline bg-surface px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <Button variant="quiet" size="sm" disabled={index === 0} onClick={() => setIndex(index - 1)}>
+        <Button variant="quiet" size="sm" disabled={at === 0} onClick={() => setIndex(at - 1)}>
           <ChevronLeft aria-hidden="true" />
           {t("previousSlide")}
         </Button>
         <p className="hidden text-label text-ink-muted sm:block">{t("presentHint")}</p>
-        <Button variant="quiet" size="sm" disabled={index >= count - 1} onClick={() => setIndex(index + 1)}>
+        <Button variant="quiet" size="sm" disabled={at >= count - 1} onClick={() => setIndex(at + 1)}>
           {t("nextSlide")}
           <ChevronRight aria-hidden="true" />
         </Button>
