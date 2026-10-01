@@ -162,6 +162,62 @@ f=$(ls -t ~/nora-backups/computer-workspace/workspace-*.tar.gz | head -n 1)
 (cd "$(dirname "$f")" && sha256sum -c "$(basename "$f").sha256") && tar -tzf "$f" | head
 ```
 
+## Rotating the token
+
+computerd reads its bearer token when `nora-computer serve` starts it, and **nora
+reads `NORA_COMPUTER_TOKEN` from the environment when her container is created**
+(`docker-compose.yml` passes it through `environment:`). So restarting the unit
+alone, which this file used to say, leaves nora holding the old token: every
+computer call is a 401 and `nora_computer_up` goes to 0 (`ComputerDown` fires after
+5 minutes). `/v1/health` stays green throughout, which is why `nora-computer
+status` reads `computerd=up` and not `healthy` in that state.
+
+One procedure, in this order, on the deploy host (take `nora-deploy`'s lock first:
+step 4 recreates nora):
+
+1. Make the new token, and keep the old one for step 6. Neither is printed.
+   ```bash
+   cd ~/workspace/nora && umask 077
+   OLD=$(grep -E '^NORA_COMPUTER_TOKEN=' .env | tail -n 1 | cut -d= -f2-)
+   NEW=$(openssl rand -hex 32)
+   cp .env ~/nora-backups/env.$(date +%Y%m%dT%H%M%S)          # the rollback copy
+   ```
+2. Write it to `.env` (the last assignment wins; the unit and compose both read it):
+   ```bash
+   sed -i "s/^NORA_COMPUTER_TOKEN=.*/NORA_COMPUTER_TOKEN=$NEW/" .env
+   grep -c '^NORA_COMPUTER_TOKEN=' .env                       # 1
+   ```
+3. Restart computerd's unit, so it starts with the new token:
+   ```bash
+   systemctl --user restart nora-computer
+   ```
+4. **Recreate nora**, because a restart keeps the old environment:
+   ```bash
+   docker compose up -d --force-recreate nora </dev/null
+   ```
+5. Wait for both to be up: `deploy/computer/nora-computer status` reads
+   `computerd=healthy` (it asks something that needs the token).
+6. Verify from both sides, with the tokens in header files so neither is on a
+   command line:
+   ```bash
+   printf 'Authorization: Bearer %s\n' "$OLD" > /tmp/h.old
+   printf 'Authorization: Bearer %s\n' "$NEW" > /tmp/h.new
+   B='{"scope": "0000000000000000", "pattern": "*"}'
+   U=http://172.17.0.1:18765/v1/files
+   curl -s -o /dev/null -w 'old token: %{http_code}\n' -H @/tmp/h.old -H 'Content-Type: application/json' -d "$B" $U   # 401
+   curl -s -o /dev/null -w 'new token: %{http_code}\n' -H @/tmp/h.new -H 'Content-Type: application/json' -d "$B" $U   # 200
+   rm -f /tmp/h.old /tmp/h.new
+   curl -s localhost:9100/metrics | grep '^nora_computer_up'  # ... 1.0, from nora's own side
+   ```
+   Old token 401 and new token 200 means computerd took it; `nora_computer_up` 1.0
+   means **nora holds it** (the gauge reads 1 only after a call or the 30-second
+   probe got an answer, so give it a minute).
+7. The rotation is an audit row: `token_rotation` with the two fingerprints (never a
+   token) in `computer_events` (see "Lifecycle audit"). A rotation that left nora
+   on the old token shows as `ComputerDown`, not silence.
+
+Rollback is the same procedure with the rollback copy of `.env`.
+
 ## Operating it
 
 | want | run |
@@ -172,7 +228,7 @@ f=$(ls -t ~/nora-backups/computer-workspace/workspace-*.tar.gz | head -n 1)
 | new image | `nora-computer build`, `nora-computer destroy`, `systemctl --user restart nora-computer`, then `nora-computer restore <the archive destroy printed>`. **Destroy deletes /workspace**: it takes a verified backup first and refuses without one, unless you pass `--no-backup` (see "Backup and restore") |
 | back up now / restore | `nora-computer backup`; `nora-computer restore ARCHIVE [--force]` |
 | what the network refused | `nora-computer policy-log` (the audited form of `sbx policy log nora-computer`) |
-| token rotated | `systemctl --user restart nora-computer` |
+| token rotated | **two steps, not one**: see "Rotating the token" |
 | a lifecycle row is missing in Postgres | `nora-computer sync-events` |
 
 The CLI needs `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent` when run by
