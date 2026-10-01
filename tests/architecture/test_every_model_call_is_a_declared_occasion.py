@@ -124,7 +124,7 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     "nora/app/fire.py": (("nora/agent/prefill.py",), "imports"),
     "nora/app/summons.py": (("nora/domain/summons.py",), "imports"),
     "nora/app/cognition_agent_runner.py": (
-        ("nora/domain/cognition_render.py",), "dispatched",
+        ("nora/language/cognition_render.py",), "dispatched",
     ),
     "nora/engagement/stages/debrief.py": (
         ("nora/engagement/debrief_render.py",), "imports",
@@ -153,7 +153,7 @@ KNOWN_HAND_BUILT = {
 #: comment) or `hand_built` (text written by hand inside a runner, from
 #: KNOWN_HAND_BUILT).
 PENDING: dict[tuple[str, str], str] = {
-    ("nora/domain/cognition_render.py", "undeclared"): "step 3",
+    ("nora/language/cognition_render.py", "undeclared"): "step 3",
     ("nora/domain/summons.py", "undeclared"): "step 4",
     ("nora/app/fire.py", "hand_built"): "step 4",
     ("nora/infra/vision/comprehend.py", "hand_built"): "step 4",

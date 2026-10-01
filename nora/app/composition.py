@@ -87,7 +87,6 @@ from nora.app.voice_events import VoiceEventConsumer
 from nora.app.wake import Floor, WakeEvaluator
 from nora.config import Config, DreamBudgetConfig
 from nora.doctrine.loader import Doctrine, DoctrineError, DoctrineStore
-from nora.domain.cognition_render import RenderBudget
 from nora.domain.compute import ComputeJobStore
 from nora.domain.computer import ComputerToolSettings
 from nora.domain.computer_context import ComputerContextCaps
@@ -194,6 +193,7 @@ from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
+from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.note_candidates import NoteCandidateAdaptor, granted_tools
 from nora.language.note_curator import NoteCuratorAdaptor

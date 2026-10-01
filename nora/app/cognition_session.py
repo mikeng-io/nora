@@ -97,7 +97,6 @@ from nora.domain.cognition_pace import (
     PendingSelfWake,
 )
 from nora.domain.cognition_remind import PendingMirroredRemind, RemindAnswer
-from nora.domain.cognition_render import RenderBudget, render_agenda, room_key, room_label
 from nora.domain.cognition_session import (
     Agenda,
     AgendaItem,
@@ -132,6 +131,7 @@ from nora.domain.stimuli import (
     is_context_overflow,
     prove_overflow_is_the_agenda,
 )
+from nora.language.cognition_render import RenderBudget, render_agenda, room_key, room_label
 
 log = logging.getLogger("nora.app.cognition_session")
 

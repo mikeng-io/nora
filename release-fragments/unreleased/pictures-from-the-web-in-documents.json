@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can keep a picture from a web page she looked at and show it in a document. Opening a page now lists the page's picture links, looking at one with the media tool keeps it, and its code goes in the document's Image block.",
+  "details": [
+    "Only a picture she chose to look at is kept, in the room where she looked. Clips, story frames and the automatic readings of Instagram posts keep nothing.",
+    "She is told to credit the page under Sources."
+  ],
+  "limitations": [
+    "Only png, jpeg, gif and webp pictures are kept; an SVG or AVIF is looked at but not kept.",
+    "A picture already held from another room gets no code, so it cannot be put in a document here.",
+    "A kept picture is findable and sendable only in the room where she looked at it.",
+    "There is no image search: pictures come from pages somebody collected, and nothing yet limits how many a room keeps."
+  ]
+}

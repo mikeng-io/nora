@@ -172,16 +172,27 @@ load_token() {
 # Does sbx's own authorizer allow `$1` (host:port) from this sandbox? Prints
 # allowed, denied or unknown. `sbx policy check` is read-only and "evaluates the
 # same daemon-side policy authorizer used by sandbox network enforcement", so it
-# is the measurement, not a grep of the rule list. Anything it does not say in
-# the words below is unknown: an unreadable answer is never an allow.
+# is the measurement, not a grep of the rule list.
+#
+# The exit status is NOT the verdict, and the real tool makes that matter: it
+# exits 0 for an allowed host and 1 for a DENIED one, printing the verdict on
+# stdout either way (measured 2026-10-01 on the deploy host:
+# `Denied: example.com:443`, then `Governance:`, `Context:` and `Reason:` lines).
+# Treating any non-zero exit as unknown made every denial unknown. So the first
+# line is read whatever the exit status was, and the pair decides:
+#   Allowed + exit 0          allowed
+#   Denied  + exit 0 or 1     denied
+#   anything else             unknown: empty output, a crash (a signal, a missing
+#                             binary), a first line that is neither, and an
+#                             Allowed line that came with a non-zero exit. An
+#                             unreadable answer is never an allow.
 egress_verdict() {
-    local out first
-    out=$(sbx policy check network --sandbox "$NAME" "$1" </dev/null 2>&1) \
-        || { echo unknown; return; }
+    local out first rc
+    out=$(sbx policy check network --sandbox "$NAME" "$1" </dev/null 2>&1); rc=$?
     first=$(printf '%s\n' "$out" | head -n 1)
     case "$first" in
-        Allowed*) echo allowed ;;
-        Denied*) echo denied ;;
+        Allowed*) [ "$rc" = 0 ] && echo allowed || echo unknown ;;
+        Denied*) { [ "$rc" = 0 ] || [ "$rc" = 1 ]; } && echo denied || echo unknown ;;
         *) echo unknown ;;
     esac
 }

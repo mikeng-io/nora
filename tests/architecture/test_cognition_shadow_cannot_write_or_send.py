@@ -102,9 +102,12 @@ _SESSION_RUNNER_ALLOWED: frozenset[str] = frozenset({
     "nora.agent.cognition_dry_run", "nora.agent.cognition_pace", "nora.agent.fetch_watch",
     "nora.agent.cognition_remind_mirror", "nora.domain.cognition_pace",
     "nora.domain.cognition_ground", "nora.domain.cognition_remind",
-    "nora.domain.cognition_render", "nora.domain.cognition_session",
+    "nora.domain.cognition_session",
     "nora.domain.gatherings", "nora.domain.note_body", "nora.domain.ports",
     "nora.domain.standing", "nora.domain.stimuli",
+    # The prompt renderer moved here from `nora.domain` (design/context-assembly/
+    # 04-every-occasion.md step 3a): pure strings-in, string-out, no store.
+    "nora.language.cognition_render",
 })
 
 _ALL = {

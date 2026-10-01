@@ -1366,3 +1366,45 @@ is built.
 
 **Not built.** A diff between revisions, restoring a deleted document from the portal (§31), redaction, and
 opening collapsed blocks for print.
+
+## 35. Pictures from the web in a document (2026-10-02)
+
+**The gap (operator question, 2026-10-02).** Nora could look at a web picture (`media_fetch(url=…)`), but kept
+nothing, and a document's `Image` accepts only a media code, so a picture from a site someone collected could
+not reach a document. `web_search` and `web_fetch` also never returned a page's picture links, so she met a
+picture's address only when the page text happened to contain it.
+
+**Decided (operator, 2026-10-02: «just implement it», plain storage).**
+
+1. **`web_fetch` returns `images`.** Up to 8 http(s) picture links of the page, deduplicated, in the page's
+   order, from Tavily (`include_images`) and Exa (`extras.imageLinks`) through one shared cleaner
+   (`nora.infra.search._shared.image_links`) so both vendors hand back one shape. Links only: nothing is
+   downloaded by the search adapters, so the no-SSRF property of the port is unchanged. `web_search` is not
+   changed: Tavily returns search pictures unattached to a result, and a link with no page is no use to a document.
+2. **A picture she looks at is kept.** `media_fetch(url=…)` on an image, asked for by the model itself, writes the
+   bytes to the blob store and a `fetched` row to `media_objects`, with `provenance = {url, platform,
+   conversation_id}` (the room that looked), and returns the row's 6-hex `code`. The download is the
+   existing guarded one, and the identifier screen on the URL and the reading is unchanged.
+3. **The document needs no new rule.** `DocumentService` already resolves an `Image` code against the room's
+   messages and the media rows born in that room, whatever their source (the 2026-10-01 test
+   `test_a_picture_born_in_this_room_resolves_whatever_its_source`). A kept picture is such a row.
+4. **Not kept:** a clip, a story frame (it expires in 24 hours), and an automatic reading (`instagram_read`, a
+   summons). Only a look the model chose is custody.
+5. **No code for bytes first indexed in another room.** The first source of a sha256 wins and its provenance is
+   never overwritten, so the row stays born elsewhere and would not resolve here. `media_fetch` then returns
+   no code rather than one a document would refuse.
+6. **Only the types the portal shows.** png, jpeg, gif and webp. An SVG or AVIF would get a code, pass the
+   checker and render broken (`app/src/server/document-media.ts`), so it is not kept.
+7. **The room that looked owns it** (review of #693). `media_search` (library scope) and `media_send` show a
+   `fetched` row only in the room it was born in; what she generated stays global (DEC-138). Without this, filling
+   the `fetched` source made every looked-at web picture findable and sendable from any room.
+8. **The code works for a follow-up look.** `media_fetch(code=…)` also resolves a `fetched` row born in this room
+   (a kept picture has no message row, so the sightings cannot see it).
+9. **Credit.** The result's note tells her to put the page under `Sources`; the `Image` caption carries the
+   rest. Third-party pictures are kept in custody for this one private group, not republished.
+
+**Not built.** An image-search tool (the discovery path is a page the person already collected), downloading
+a picture without reading it, a quota on kept bytes beyond `media.max_bytes` (a picture can be up to the
+download ceiling, and nothing deletes kept rows), and withholding the code when the reading was withheld for an
+identifier (room photos behave the same way). A story-frame link opened in a LATER turn than the one that read
+the story is kept: the story exclusion is per turn.

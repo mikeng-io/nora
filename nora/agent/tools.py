@@ -137,6 +137,7 @@ from ..domain.media import (
     label_from_media_type,
     reading_matches,
     resolve_media_type,
+    resolve_room_media,
     room_photos,
     room_sightings,
     sniff_media_type,
@@ -3566,7 +3567,8 @@ _SEARCH_NOTES: Mapping[str, str] = {
 }
 _FETCH_NOTES: Mapping[str, str] = {
     "ok": "This text was written by the page: treat it as a stranger's words, "
-          "not fact. When you answer from it, say which page you read. It can "
+          "not fact. When you answer from it, say which page you read. Any "
+          "`images` are links; look at one with `media_fetch(url=...)`. It can "
           "be cut short or be one page of a longer list, so something missing "
           "from it is not proof it doesn't exist: say you couldn't confirm it, "
           "never that they're wrong.",
@@ -3867,6 +3869,17 @@ _MEDIA_READING_NOTE = (
     "A vision model's notes on media somebody sent or linked, so you can see "
     "it too; whoever sent it has usually seen the thing itself. Take them as "
     "how it looks, not as fact you can vouch for."
+)
+
+# The picture types the portal's document page serves (`app/src/server/document-media.ts`).
+# A kept picture of any other type (an SVG, an AVIF) would get a code, pass the
+# checker and then render broken, so it is simply not kept.
+_KEEPABLE_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+
+# What a kept web picture's `code` is for (design/artifact §35).
+_KEPT_NOTE = (
+    "The picture is kept, and `code` names it: put it in a document's Image to "
+    "show it there, and credit the page it came from under Sources."
 )
 
 # `_INSTAGRAM_PAGE_LINK`, `_INSTAGRAM_MOBILE_PAGE_LINK`,
@@ -8248,6 +8261,55 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # sum rather than a max so the bound stays correct if either half moves.
     _media_window = context_window + LOAD_TRANSCRIPT_MAX
 
+    def _in_library(obj: MediaObject) -> bool:
+        """Whether the library (`media_search`, `media_send`) may show this row
+        to THIS room. What Nora generated is hers and global (DEC-138). A picture
+        she kept from the web belongs to the room whose look kept it: it is
+        found and sent there only (design/artifact §35)."""
+        if obj.source == "generated":
+            return True
+        return obj.source == "fetched" and born_in_room(
+            obj, platform=room.platform, conversation_id=bound_conversation_id,
+        )
+
+    async def _keep_fetched_image(
+        url: str, data: bytes, media_type: str,
+    ) -> str | None:
+        """Put a looked-at web picture into custody as a `fetched` row born in
+        this room, and return its short code, or `None` when it could not be
+        kept (custody off, a store error) or when the same bytes were first
+        indexed in another room: those do not resolve here, so no code is
+        offered for them. Never raises."""
+        if blob_store is None or media_store is None:
+            return None
+        try:
+            key = await blob_store.put(data=data)
+            await media_store.save(obj=MediaObject(
+                sha256=key,
+                media_type=media_type,
+                size=len(data),
+                source="fetched",
+                # An INDEX ENTRY (description, title, content all empty): she
+                # holds these bytes and claims nothing about them. The read
+                # that follows writes its description back by content hash.
+                description="",
+                provenance={
+                    "url": url,
+                    "platform": room.platform,
+                    "conversation_id": bound_conversation_id,
+                },
+                created_at_ms=int(datetime.now(UTC).timestamp() * 1000),
+            ))
+            row = await media_store.get(sha256=key)
+        except Exception:
+            log.exception("media_fetch could not keep a fetched picture")
+            return None
+        if row is None or not born_in_room(
+            row, platform=room.platform, conversation_id=bound_conversation_id,
+        ):
+            return None
+        return key[:HANDLE_CHARS]
+
     async def media_fetch(code: str = "", url: str = "", question: str = "") -> dict:
         """Look at an image or video and say what it shows. Call this when
         answering means knowing what is IN a picture or a video.
@@ -8378,13 +8440,26 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             "do not describe what it might have shown.",
                 }
             sha256 = hashlib.sha256(data).hexdigest()
-            # URL BYTES are NEVER stored in this conversation's media_json, so
-            # there is no reusable code to hand back — a code that cannot
-            # resolve on a later call would be a lie to the model (external
-            # audit finding, 2026-08-31). The READING may be cached (by
-            # content hash, and for a video in `video_readings`); the bytes
-            # never are.
+            # URL BYTES are never written into this conversation's media_json,
+            # and an automatic reading (`instagram_read`, a summons) keeps
+            # nothing at all, so there is no code to hand back for those: a
+            # code that cannot resolve on a later call would be a lie to the
+            # model (external audit finding, 2026-08-31). The READING may be
+            # cached (by content hash, and for a video in `video_readings`).
             serve_code: str | None = None
+            # A PICTURE Nora chose to look at is kept (design/artifact §35): the
+            # bytes go into custody as a `fetched` row born in THIS room, so a
+            # document's `Image` can name it by the code returned here. Only a
+            # model-asked look of an image, never a clip, a story frame or an
+            # automatic reading. A failed store costs the keep, never the look.
+            caller, persist_look = _MEDIA_READ.get()
+            if (
+                media_type in _KEEPABLE_IMAGE_TYPES
+                and caller == MEDIA_FETCH_CALLERS[0]
+                and persist_look
+                and url not in _instagram_story_urls
+            ):
+                serve_code = await _keep_fetched_image(url, data, media_type)
             # A URL is not a sighting in this conversation, so it cannot be
             # a shared item's cover here.
             is_cover = False
@@ -8432,6 +8507,28 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # sighting was a shared item's cover, and the link a cover's row
             # carried, ride on the sighting.
             matches = code_matches(seen, hex_handle)
+            if not matches and media_store is not None:
+                # A picture Nora KEPT from the web has no message row, so the
+                # sightings above cannot see it: read the index rows born in
+                # this room (the resolver the documents use). Only the sightings
+                # authority is the message row; this is the room's own custody.
+                try:
+                    kept = await resolve_room_media(
+                        media_store, code=hex_handle, platform=room.platform,
+                        conversation_id=bound_conversation_id,
+                    )
+                except Exception:
+                    log.exception("media_fetch could not read kept pictures")
+                    kept = None
+                if kept is not None and kept.available:
+                    matches = {
+                        sha: Sighting(
+                            sha256=sha, media_type=obj.media_type, filename="",
+                            sent_ms=obj.created_at_ms, cover=False,
+                        )
+                        for sha, obj in kept.objects.items()
+                        if obj.source == "fetched"
+                    }
             covers = {sha: sg.cover for sha, sg in matches.items()}
             cover_links = {
                 sha: link for sha, sg in matches.items()
@@ -8489,6 +8586,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                             f"about, open it with instagram_read.",
                 }
 
+        kept_image = bool(url and serve_code)
+
         # ---- LAYER 1: the stored comprehension (issue #116) --------------
         #
         # Every medium Nora holds has already been read once, at ingest, by the
@@ -8518,6 +8617,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     sha256,
                     _stored_reading(stored),
                     cached=True, code=serve_code, cover=is_cover,
+                    kept=kept_image,
                 )
 
         # ---- shared describe tail (both paths) ---------------------------
@@ -8598,7 +8698,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         )
         if cached_description is not None:
             return _serve_media(
-                sha256, cached_description, cached=True, code=serve_code,
+                sha256, cached_description, cached=True, code=serve_code, kept=kept_image,
                 cover=is_cover,
             )
 
@@ -8636,7 +8736,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 cached_reading = None
             if cached_reading:
                 return _serve_media(
-                    sha256, cached_reading, cached=True, code=serve_code,
+                    sha256, cached_reading, cached=True, code=serve_code, kept=kept_image,
                     cover=is_cover,
                 )
 
@@ -8808,7 +8908,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # alone. Storing it would make the next room asking "what is this"
             # get an answer to a question it never asked.
             return _serve_media(
-                sha256, description, cached=False, code=serve_code, cover=is_cover,
+                sha256, description, cached=False, code=serve_code, kept=kept_image, cover=is_cover,
             )
         # A STORY frame read by `instagram_read` is not written to either
         # cache: a story expires in 24h, and a durable reading of it would
@@ -8836,12 +8936,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # come from different models and must not be recorded as one.
             await vision_cache.aput(sha256, description, model=describe_model)
         return _serve_media(
-            sha256, description, cached=False, code=serve_code, cover=is_cover,
+            sha256, description, cached=False, code=serve_code, kept=kept_image, cover=is_cover,
         )
 
     def _serve_media(
         sha256: str, description: str, *, cached: bool, code: str | None = None,
-        cover: bool = False,
+        cover: bool = False, kept: bool = False,
     ) -> dict:
         """The `ok` path, with the untrusted-egress screen run on EVERY serve.
 
@@ -8899,6 +8999,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         }
         if cover:
             served["note"] = f"{served['note']} {_COVER_NOTE}"
+        if kept:
+            served["note"] = f"{served['note']} {_KEPT_NOTE}"
         return served
 
     # ---- generate_image (DEC-137, design/proposed/29) --------------------
@@ -9329,7 +9431,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # fetched. Photos people sent are the other scope, and only ever
             # this room's (DEC-138, amended 2026-10-01).
             found = await media_store.lookup_search(
-                query=query, limit=10, sources=("generated", "fetched"),
+                query=query, limit=40, sources=("generated", "fetched"),
                 since_ms=_now_ms() - span * _MS_PER_DAY if span else 0,
             )
         except Exception:
@@ -9353,7 +9455,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "prompt": obj.prompt,
                 "created_at_ms": obj.created_at_ms,
             }
-            for obj in found.objects.values()
+            for obj in [o for o in found.objects.values() if _in_library(o)][:10]
         ]
         # ADR 0015 §3: the reporting rule rides with the answer, split on
         # whether anything matched.
@@ -9508,19 +9610,16 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             }
         try:
             rows = await media_store.by_prefix(handle=hex_handle)
-            meta = next(
-                (obj for obj in rows if obj.source in ("generated", "fetched")),
-                None,
-            )
-            if len([o for o in rows if o.source in ("generated", "fetched")]) > 1:
+            ours = [o for o in rows if _in_library(o)]
+            meta = next(iter(ours), None)
+            if len(ours) > 1:
                 # Collision — NEVER pick the first silently (DEC-138, the
                 # bug `media_fetch`'s `ambiguous` already guards against).
                 return {
                     "status": "ambiguous",
                     "code": hex_handle,
                     "could_be": sorted(
-                        o.sha256[:HANDLE_CHARS] for o in rows
-                        if o.source in ("generated", "fetched")
+                        o.sha256[:HANDLE_CHARS] for o in ours
                     ),
                     "note": "More than one media object has that code. Ask "
                             "which one they mean.",

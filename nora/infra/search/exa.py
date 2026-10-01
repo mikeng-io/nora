@@ -64,7 +64,14 @@ from typing import Any
 
 import aiohttp
 
-from ._shared import UNAVAILABLE_FETCH, UNAVAILABLE_SEARCH, clamp_chars, wrap
+from ._shared import (
+    MAX_IMAGE_LINKS,
+    UNAVAILABLE_FETCH,
+    UNAVAILABLE_SEARCH,
+    clamp_chars,
+    image_links,
+    wrap,
+)
 
 log = logging.getLogger("nora.search")
 
@@ -230,6 +237,7 @@ class ExaSearchProvider:
         body: dict[str, Any] = {
             "urls": [url],
             "text": {"maxCharacters": self._request_chars(self._extract_max_chars)},
+            "extras": {"imageLinks": MAX_IMAGE_LINKS},   # links only, for `media_fetch`
             "maxAgeHours": max_age_hours,
         }
         if max_age_hours >= 0:
@@ -296,12 +304,16 @@ class ExaSearchProvider:
         # and `content` through unchanged, so a bare-string `content` reaches
         # the model outside the standard text-block envelope and reads as
         # "empty" (the Tavily adapter's identical note).
-        return {
+        out: dict[str, Any] = {
             "status": "ok",
             "url": url,
             "text": wrap("fetched_page", url, clamped),
             "truncated": truncated,
         }
+        extras = item.get("extras")
+        if images := image_links(extras.get("imageLinks") if isinstance(extras, dict) else None):
+            out["images"] = images
+        return out
 
     async def _post(self, url: str, body: dict[str, Any], what: str) -> Any | None:
         """One authenticated POST, or `None` for any failure of the CALL.

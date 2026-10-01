@@ -43,8 +43,8 @@ from datetime import datetime, timedelta
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
-from nora.domain.cognition_render import ago
 from nora.domain.computer_events import ComputerEvent, ensure_utc_event
+from nora.domain.prompt import ago
 
 __all__ = [
     "EXPIRED",
