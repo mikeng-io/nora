@@ -807,6 +807,21 @@ services:
     container_name: stt
     restart: unless-stopped
     networks: [nora]
+    # NEVER SWAPPED (2026-10-01). Every slow first wake of a voice session
+    # (3 of 14 recorded turns, 8.6-9.1s before the turn even began; on
+    # 2026-10-01 the stt log shows forward=4.97s for 5.3s of speech, RTF 0.94,
+    # against 0.06 warm) came after hours of idle, and a restart does NOT
+    # reproduce it (first call 0.71s), so it is not model init. norty holds
+    # ~14GB of swap with RAM to spare and its idle containers are the ones
+    # paged out (`voice-wake` 187MB, `omniroute` 432MB, `signal-cli` 544MB on
+    # 2026-10-01); the first call after a long idle faults the weights back
+    # in. `memswap_limit` equal to `mem_limit` gives the cgroup no swap, so
+    # its anonymous pages (the loaded weights) stay resident. 8g is headroom,
+    # not a measurement: sensevoice alone is ~3.2GB and the lazily loaded
+    # noise-detection whisper adds ~3.5GB, and a cap is not a reservation.
+    # Pinned by tests/architecture/test_voice_path_never_swaps.py.
+    mem_limit: 8g
+    memswap_limit: 8g
     volumes:
       - stt-modelscope-cache:/home/stt/.cache/modelscope
       - stt-huggingface-cache:/home/stt/.cache/huggingface
@@ -944,6 +959,12 @@ services:
     container_name: voice-wake
     restart: unless-stopped
     networks: [nora]
+    # NEVER SWAPPED, same reason as `stt` above: the wake model and its
+    # onnxruntime state are resident memory the first utterance after an idle
+    # stretch needs at once (187MB of this container was in swap on
+    # 2026-10-01). ~0.4-0.5GB resident; 2g is headroom.
+    mem_limit: 2g
+    memswap_limit: 2g
     environment:
       # NO GUILD IDENTITY HERE EITHER (multi-guild, 2026-09-17). The guild
       # arrives per CONNECTION in the sidecar's hello frame, so one gate
