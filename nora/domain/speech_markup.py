@@ -41,7 +41,7 @@ MAX_PAUSE_SECONDS = 2.0
 #: a model performing.
 MAX_INTERJECTIONS = 2
 #: At most one pause per this many spoken characters (letters and digits).
-CHARS_PER_PAUSE = 6
+CHARS_PER_PAUSE = 3
 
 #: Every outcome of one formatting attempt, the label vocabulary of
 #: `nora_speech_format_total`. DERIVED by `get_args`, so the help text and the

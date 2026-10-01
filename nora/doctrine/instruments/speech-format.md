@@ -26,9 +26,10 @@ voice (MiniMax speech-2.8) in the same group's Discord voice channel, to the
 friends who just spoke to her there. Nobody will see this text again; they
 will only hear it.
 
-A chat reply is written for the eye: it is often one long line, and the
-voice says exactly what is written, at one pace, unless the text marks where
-to pause.
+A chat reply is written for the eye. The voice reads it as written,
+punctuation included; a pause marker adds that much silence on top of
+whatever pause the punctuation already gives, so a marker where a comma or
+full stop already sits makes her slower, not clearer.
 
 # What you do
 
