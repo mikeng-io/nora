@@ -49,8 +49,8 @@ imports:
 # gate must judge the tree as it stands, not just the tree at HEAD — an
 # uncommitted fix is still untested if the gate skips it). It fails closed: an
 # unmapped or broad change, or a selector that fails or says nothing, runs the
-# whole suite, so it is never weaker than full-gate on a change it cannot scope. `full-gate` is the whole suite,
-# serial, unconditionally.
+# whole suite, so it is never weaker than full-gate on a change it cannot
+# scope. `full-gate` is the whole suite, serial, unconditionally.
 gate: lint typecheck imports
 	@$(MAKE) --no-print-directory test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree
 
@@ -85,11 +85,13 @@ test-fast:
 # answer), runs the whole suite. This recipe used to read empty as "docs-only
 # change", ignore the exit status, and pass with zero tests run when the script
 # raised. SELECTOR and PYTEST are variables so tests/test_affected_tests.py can
-# drive this exact recipe against a stub; nobody else sets them.
+# drive this exact recipe against a stub from the COMMAND LINE. They are
+# assigned with `:=`, not `?=`, so an exported SELECTOR='echo NONE' in someone's
+# shell cannot replace the gate's command: only `make SELECTOR=...` can.
 BASE ?= HEAD~1
 INCLUDE_WORKTREE ?=
-SELECTOR ?= uv run python scripts/affected_tests.py
-PYTEST ?= uv run pytest -q -n 8
+SELECTOR := uv run python scripts/affected_tests.py
+PYTEST := uv run pytest -q -n 8
 test-affected:
 	@targets="$$($(SELECTOR) --base $(BASE) $(INCLUDE_WORKTREE))"; rc=$$?; \
 	if [ "$$rc" -ne 0 ] || [ -z "$$targets" ]; then \

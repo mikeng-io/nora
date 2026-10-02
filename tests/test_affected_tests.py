@@ -63,9 +63,18 @@ def test_doctrine_change_outranks_docs_only_even_when_mixed_with_real_docs():
     assert select(["docs/README.md", "nora/doctrine/voice.md"]) == ALL
 
 
-def test_tests_only_change_selects_exactly_those_files():
+META = "tests/architecture"
+
+
+def test_tests_only_change_selects_those_files_and_the_meta_tests():
+    """A test change is no longer "exactly those files": the architecture
+    tests read tests/ itself (2026-10-02 review: a new tests/test_zz.py plus
+    a release fragment passed the gate with test_tests_root_takes_no_new_files
+    red)."""
     changed = ["tests/test_whereis.py", "tests/unit/test_blocks.py"]
-    assert select(changed) == changed
+    selected = select(changed)
+    assert selected != ALL
+    assert set(changed) <= set(selected) and META in selected
 
 
 def test_a_non_collectible_helper_alone_selects_all():
@@ -88,8 +97,10 @@ def test_a_real_test_file_mixed_with_a_helper_selects_all():
 
 def test_a_real_test_file_alone_still_selects_narrowly():
     """The fix above must not blunt the feature: a genuine test-only change
-    still gets the narrow selection."""
-    assert select(["tests/test_whereis.py"]) == ["tests/test_whereis.py"]
+    is itself plus the meta tests, never the whole suite."""
+    selected = select(["tests/test_whereis.py"])
+    assert selected != ALL and len(selected) <= 4
+    assert {"tests/test_whereis.py", META} <= set(selected)
 
 
 @pytest.mark.parametrize("path", [
@@ -175,10 +186,6 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
      ["tests/architecture/test_decision_index_ids_are_unique.py",
       "tests/architecture/test_decision_index_tests_exist.py",
       "tests/test_architecture_doc.py"]),
-    ("deploy/computer/README.md",
-     ["tests/test_deploy_assets.py", "tests/unit/test_nora_computer_readme.py",
-      "tests/unit/test_nora_computer_script.py",
-      "tests/unit/test_nora_computer_backup.py"]),
     ("release-fragments/README.md",
      ["tests/test_release_commands.py", "tests/test_release_notes.py"]),
     ("release-fragments/unreleased/x.json", ["tests/test_release_notes.py"]),
@@ -334,7 +341,7 @@ def test_a_deleted_test_file_selects_all(tmp_path):
 
 def test_a_new_test_file_selects_itself(tmp_path):
     repo = _synthetic(tmp_path, **{"test_new.py": "def test_x():\n    assert 1\n"})
-    assert select(["tests/test_new.py"], repo) == ["tests/test_new.py"]
+    assert select(["tests/test_new.py"], repo) == [META, "tests/test_new.py"]
 
 
 def test_a_test_fixture_selects_all():
@@ -471,7 +478,7 @@ def test_default_base_does_not_re_flag_an_earlier_dreamer_commit(
     rc = main(["--repo", str(tiny_repo)])  # no --base: exercises the default
 
     assert rc == 0
-    assert capsys.readouterr().out.strip() == "tests/test_small.py"
+    assert capsys.readouterr().out.split() == [META, "tests/test_small.py"]
 
 
 def test_default_base_still_selects_all_when_the_latest_commit_is_dreamer(
@@ -695,3 +702,339 @@ def test_the_gate_recipe_fails_when_the_tests_it_runs_fail(tmp_path):
         capture_output=True, text=True, check=False,
     )
     assert done.returncode != 0
+
+
+# --- review round 2026-10-02: tests-only diffs, imports, helpers, tables ----
+
+
+def _tree(root: Path, files: dict[str, str]) -> Path:
+    """A repo-shaped tree from {relative path: source}, any depth."""
+    for rel, source in files.items():
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source)
+    return root
+
+
+_TRIVIAL = "def test_x():\n    assert 1\n"
+
+
+def test_a_new_root_test_is_judged_by_the_test_that_forbids_new_root_tests(tmp_path):
+    """Evasion (a): a new tests/test_zz.py + a release fragment used to select
+    five files and pass while `test_tests_root_takes_no_new_files` was red."""
+    repo = _tree(tmp_path, {
+        "tests/test_zz.py": _TRIVIAL,
+        "tests/architecture/test_tests_root_takes_no_new_files.py": _TRIVIAL,
+        "release-fragments/unreleased/zz.json": "{}",
+    })
+    selected = select(["tests/test_zz.py", "release-fragments/unreleased/zz.json"], repo)
+    assert selected != ALL
+    assert META in selected
+    # the target is the directory, so the matching test is inside what runs
+    assert (repo / META / "test_tests_root_takes_no_new_files.py").is_file()
+    assert not any(t.startswith(META + "/") for t in selected)   # no double listing
+
+
+def test_a_new_test_that_reads_the_config_template_reaches_its_architecture_test(tmp_path):
+    """Evasion (b): a new tests/unit/test_zz.py reading config.example.toml +
+    a fragment, with `test_config_comes_from_the_template` red."""
+    repo = _tree(tmp_path, {
+        "tests/unit/test_zz.py":
+            "from pathlib import Path\n"
+            "def test_x():\n    Path('config.example.toml').read_text()\n",
+        "tests/architecture/test_config_comes_from_the_template.py": _TRIVIAL,
+        "release-fragments/unreleased/zz.json": "{}",
+    })
+    selected = select(["tests/unit/test_zz.py", "release-fragments/unreleased/zz.json"], repo)
+    assert META in selected and "tests/unit/test_zz.py" in selected
+    assert "tests/test_release_notes.py" in selected
+
+
+def test_the_two_evasion_diffs_end_to_end_through_the_cli(tiny_repo, capsys):
+    (tiny_repo / "tests" / "architecture").mkdir(parents=True)
+    (tiny_repo / "tests" / "architecture" / "test_meta.py").write_text(_TRIVIAL)
+    (tiny_repo / "tests" / "test_zz.py").write_text(_TRIVIAL)
+    (tiny_repo / "release-fragments" / "unreleased").mkdir(parents=True)
+    (tiny_repo / "release-fragments" / "unreleased" / "zz.json").write_text("{}")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "a test and a fragment")
+
+    assert main(["--base", "base-ref", "--repo", str(tiny_repo)]) == 0
+
+    out = capsys.readouterr().out.split()
+    assert META in out and "tests/test_zz.py" in out
+
+
+def test_an_edit_to_an_existing_test_also_selects_the_meta_tests(tmp_path):
+    repo = _tree(tmp_path, {"tests/test_old.py": _TRIVIAL})
+    assert META in select(["tests/test_old.py"], repo)
+
+
+def test_a_test_that_imports_another_test_module_is_selected_with_it(tmp_path):
+    """tests/unit/test_cognition_failure_backoff.py imports
+    test_cognition_session_lifecycle: the audit-hook trace showed it opening
+    that file, and no literal in it names the path."""
+    repo = _tree(tmp_path, {
+        "tests/unit/test_base.py": _TRIVIAL,
+        "tests/unit/test_absolute.py": "from tests.unit.test_base import test_x\n",
+        "tests/unit/test_package.py": "from tests.unit import test_base\n",
+        "tests/unit/test_relative.py": "from .test_base import test_x\n",
+        "tests/unit/test_plain.py": "import tests.unit.test_base\n",
+        "tests/unit/test_chain.py": "from tests.unit.test_absolute import test_x\n",
+        "tests/unit/test_unrelated.py": "import os\n" + _TRIVIAL,
+    })
+    selected = select(["tests/unit/test_base.py"], repo)
+    assert {"tests/unit/test_absolute.py", "tests/unit/test_package.py",
+            "tests/unit/test_relative.py", "tests/unit/test_plain.py",
+            "tests/unit/test_chain.py"} <= set(selected)
+    assert "tests/unit/test_unrelated.py" not in selected
+
+
+def test_the_real_importer_of_a_test_module_is_selected():
+    selected = select(["tests/unit/test_cognition_session_lifecycle.py"])
+    assert "tests/unit/test_cognition_failure_backoff.py" in selected
+
+
+def test_a_helper_that_imports_a_test_module_selects_all(tmp_path):
+    repo = _tree(tmp_path, {
+        "tests/test_base.py": _TRIVIAL,
+        "tests/helpers.py": "from tests.test_base import test_x\n",
+    })
+    assert select(["tests/test_base.py"], repo) == ALL
+
+
+def test_a_test_that_names_another_test_file_reads_it(tmp_path):
+    repo = _tree(tmp_path, {
+        "tests/test_target.py": _TRIVIAL,
+        "tests/test_reader.py": "NAME = 'test_target.py'\n" + _TRIVIAL,
+        "tests/test_scanner.py": "import glob\nX = glob.glob('*.py')\n" + _TRIVIAL,
+    })
+    selected = select(["tests/test_target.py"], repo)
+    assert "tests/test_reader.py" in selected
+    # a bare `*.py` glob sits in a hundred modules that scan nora/: not a reader
+    assert "tests/test_scanner.py" not in selected
+
+
+# --- scripts/mutations: a data-driven path the scan cannot see ---------------
+
+
+def test_a_file_named_in_a_mutation_table_selects_the_anchor_test(tmp_path):
+    repo = _tree(tmp_path, {
+        "scripts/mutations/t.json":
+            '[{"name": "n", "file": ".github/pull_request_template.md",'
+            ' "old": "a", "new": "b", "target": "t"}]',
+    })
+    selected = select([".github/pull_request_template.md"], repo)
+    assert "tests/architecture/test_mutation_tables_anchor_to_their_source.py" in selected
+    # a doc no table names does not
+    assert "tests/architecture/test_mutation_tables_anchor_to_their_source.py" \
+        not in select(["docs/other.md"], repo)
+
+
+def test_the_real_pull_request_template_selects_the_anchor_test():
+    assert "tests/architecture/test_mutation_tables_anchor_to_their_source.py" in \
+        select([".github/pull_request_template.md"])
+
+
+def test_an_unreadable_mutation_table_fails_closed_to_all(tmp_path, capsys):
+    repo = _tree(tmp_path, {"scripts/mutations/broken.json": "{ not json"})
+    with pytest.raises(ValueError):
+        select(["docs/x.md"], repo)
+    # and through main, which turns any failure into ALL
+    _run_git(repo, "init", "-q")
+    _run_git(repo, "config", "user.email", "t@example.com")
+    _run_git(repo, "config", "user.name", "T")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-q", "-m", "base")
+    _run_git(repo, "branch", "b")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "x.md").write_text("x\n")
+    _run_git(repo, "add", ".")
+    _run_git(repo, "commit", "-q", "-m", "doc")
+    assert main(["--base", "b", "--repo", str(repo)]) == 0
+    assert capsys.readouterr().out.strip() == ALL
+
+
+# --- helpers and conftests: any shape of read forces ALL ---------------------
+
+
+@pytest.mark.parametrize(("helper_source", "why"), [
+    ("def read(root, n):\n    return (root / f'{n}.md').read_text()\n",
+     "builds a name from a suffix"),
+    ("def read(root):\n    return list((root / 'docs').iterdir())\n",
+     "iterates a directory"),
+    ("from pathlib import Path\n"
+     "def read():\n    return list(Path('.').rglob('*.md'))\n",
+     "globs by extension"),
+    ("NAME = 'runbook.md'\n", "names the file"),
+])
+def test_a_helper_or_conftest_that_could_read_a_doc_selects_all(
+    tmp_path, helper_source, why,
+):
+    for helper in ("helpers.py", "conftest.py"):
+        repo = _tree(tmp_path / helper, {
+            f"tests/{helper}": helper_source,
+            "tests/test_a.py": _TRIVIAL,
+        })
+        assert select(["docs/runbook.md"], repo) == ALL, f"{helper} {why}"
+
+
+def test_a_helper_that_reads_nothing_near_a_doc_does_not_force_all(tmp_path):
+    repo = _tree(tmp_path, {"tests/helpers.py": "X = 1\n", "tests/test_a.py": _TRIVIAL})
+    assert select(["docs/runbook.md"], repo) == [UNIVERSAL_DOC_READER]
+
+
+def test_a_deploy_readme_is_all_because_a_helper_walks_deploy_computer():
+    """tests/unit/nora_computer_harness.py names deploy/computer and walks
+    directories; a shared helper that might read the README makes it ALL."""
+    assert select(["deploy/computer/README.md"]) == ALL
+
+
+# --- the survivors the reviewer's mutation run found -------------------------
+
+
+def test_a_path_with_a_space_in_its_name_is_found(tmp_path):
+    repo = _tree(tmp_path, {
+        "tests/test_spaces.py": "NAME = 'meeting notes.md'\n" + _TRIVIAL,
+    })
+    assert "tests/test_spaces.py" in select(["docs/meeting notes.md"], repo)
+
+
+def test_git_ls_files_makes_a_module_a_traverser(tmp_path):
+    repo = _tree(tmp_path, {
+        "tests/test_lists.py":
+            "import subprocess\n"
+            "def test_x():\n"
+            "    subprocess.run(['git', 'ls-files', 'design'])\n",
+    })
+    assert "tests/test_lists.py" in select(["design/x/y.yaml"], repo)
+
+
+@pytest.mark.parametrize("call", [
+    "root.iterdir()", "root.glob('x')", "root.rglob('x')", "os.walk(root)",
+    "os.listdir(root)", "os.scandir(root)", "glob.iglob(root)",
+])
+def test_every_traversal_call_makes_a_module_a_traverser(tmp_path, call):
+    repo = _tree(tmp_path, {
+        "tests/test_walks.py":
+            "import glob, os\n"
+            "def test_x(root):\n"
+            f"    list({call})\n"
+            "    DIR = 'design'\n",
+    })
+    assert "tests/test_walks.py" in select(["design/x/y.yaml"], repo)
+
+
+def test_a_bare_name_import_of_a_traversal_call_counts(tmp_path):
+    repo = _tree(tmp_path, {
+        "tests/test_walks.py":
+            "from os import walk\n"
+            "def test_x(root):\n    list(walk(root))\n    DIR = 'design'\n",
+    })
+    assert "tests/test_walks.py" in select(["design/x/y.yaml"], repo)
+
+
+def test_a_directory_literal_without_traversal_is_not_a_reader(tmp_path):
+    repo = _tree(tmp_path, {"tests/test_names.py": "DIR = 'design'\n" + _TRIVIAL})
+    assert select(["design/x/y.yaml"], repo) == []
+
+
+def test_a_trailing_part_of_the_path_names_the_file(tmp_path):
+    """`'computer/README.md'` is neither the path, nor the basename."""
+    repo = _tree(tmp_path, {
+        "tests/test_trailing.py": "REL = 'guides/intro.md'\n" + _TRIVIAL,
+    })
+    assert "tests/test_trailing.py" in select(["docs/guides/intro.md"], repo)
+    assert "tests/test_trailing.py" not in select(["docs/other/intro.md"], repo)
+
+
+@pytest.mark.parametrize("path", ["evals/README.md", "scripts/NOTES.md",
+                                  "evals/corpora/notes.md"])
+def test_markdown_under_the_code_trees_is_all_not_docs(tmp_path, path):
+    repo = _tree(tmp_path, {"tests/test_a.py": _TRIVIAL})
+    assert select([path], repo) == ALL
+
+
+def test_a_directory_named_like_a_test_is_not_a_test_file(tmp_path):
+    """`exists()` would take a directory called test_x.py for a test target."""
+    (tmp_path / "tests" / "test_dir.py").mkdir(parents=True)
+    assert select(["tests/test_dir.py"], tmp_path) == ALL
+
+
+def test_the_diff_is_against_the_merge_base_not_the_base_tip(tiny_repo):
+    """The base moved on after the branch point: its new commit is not this
+    branch's change, and must not appear in either mode."""
+    _run_git(tiny_repo, "checkout", "-q", "-b", "feature")
+    (tiny_repo / "docs" / "mine.md").write_text("mine\n")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "mine")
+    _run_git(tiny_repo, "checkout", "-q", "base-ref")
+    (tiny_repo / "docs" / "theirs.md").write_text("theirs\n")
+    _run_git(tiny_repo, "add", ".")
+    _run_git(tiny_repo, "commit", "-q", "-m", "theirs")
+    _run_git(tiny_repo, "checkout", "-q", "feature")
+
+    assert git_changed_paths(tiny_repo, "base-ref") == ["docs/mine.md"]
+    assert git_changed_paths(
+        tiny_repo, "base-ref", include_worktree=True,
+    ) == ["docs/mine.md"]
+
+
+# --- `make gate` itself, dry-run ---------------------------------------------
+
+
+def _dry_run(target: str, env: dict[str, str] | None = None) -> list[str]:
+    import os
+    done = subprocess.run(  # noqa: S603 - fixed argv
+        ["make", "-n", "--no-print-directory", "-C", str(REPO), target],
+        capture_output=True, text=True, check=True,
+        env={**os.environ, **(env or {})},
+    )
+    return done.stdout.splitlines()
+
+
+def _first(lines: list[str], needle: str) -> int:
+    hits = [i for i, line in enumerate(lines) if needle in line]
+    assert hits, f"{needle!r} not in the dry run:\n" + "\n".join(lines)
+    return hits[0]
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+def test_gate_runs_its_static_steps_then_the_selector_against_origin_master():
+    lines = _dry_run("gate")
+    ruff = _first(lines, "uv run ruff check")
+    mypy = _first(lines, "uv run mypy")
+    imports = _first(lines, "uv run lint-imports")
+    selector = _first(lines, "scripts/affected_tests.py")
+    assert max(ruff, mypy, imports) < selector
+    assert "--base origin/master" in lines[selector]
+    assert "--include-worktree" in lines[selector]
+    assert "--base HEAD~1" not in "\n".join(lines)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+def test_gate_cannot_be_redirected_from_the_environment():
+    """An exported SELECTOR / PYTEST / BASE / INCLUDE_WORKTREE in a shell must
+    not change what the gate runs (only `make X=...` may)."""
+    lines = _dry_run("gate", env={
+        "SELECTOR": "echo NONE", "PYTEST": "true",
+        "BASE": "HEAD~1", "INCLUDE_WORKTREE": "",
+    })
+    selector = _first(lines, "affected_tests.py")
+    assert "uv run python scripts/affected_tests.py" in lines[selector]
+    assert "--base origin/master --include-worktree" in lines[selector]
+    assert "echo NONE" not in "\n".join(lines)
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+def test_full_gate_and_the_loop_default_are_unchanged():
+    full = _dry_run("full-gate")
+    assert [line.split()[:3] for line in full[:3]] == [
+        ["uv", "run", "ruff"], ["uv", "run", "mypy"], ["uv", "run", "lint-imports"],
+    ]
+    assert full[3] == "uv run pytest -q"
+    assert not any("affected_tests" in line for line in full)
+
+    loop = _dry_run("test-affected")
+    selector = loop[_first(loop, "affected_tests.py")]
+    assert "--base HEAD~1" in selector and "--include-worktree" not in selector

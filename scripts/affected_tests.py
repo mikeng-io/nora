@@ -1,5 +1,5 @@
-"""Change-aware test selection (fast-test-pass spec §3,
-docs/superpowers/specs/2026-08-21-fast-test-pass-design.md).
+"""Change-aware test selection (the fast-test-pass design, spec §3; its release
+note is release-fragments/released/V4/fast-test-pass.json).
 
 Takes a base ref, reads the changed paths from git, and decides which pytest
 targets are worth running for *that diff*. This backs BOTH `make test-affected`
@@ -41,16 +41,30 @@ wrong one. The classes, in order:
   runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
   list for these rotted twice (2026-09-25: `nora/skills` was missing
   `tests/test_factory.py` and `tests/unit/test_generate_image_description.py`).
-* `tests/**`: a collectible `test_*.py` that still exists selects itself. Any
-  other path (`conftest.py`, `builders.py`, fixtures, a deleted or renamed-away
-  test) is `ALL`: a helper is imported by many modules and collects nothing
-  itself, and a deleted test can break the tests that enumerate tests.
+* `tests/**`: a collectible `test_*.py` that still exists selects itself, the
+  whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
+  an added, edited or deleted test can redden them — a new `tests/test_zz.py`
+  reddens `test_tests_root_takes_no_new_files`, a new test that reads
+  `config.example.toml` reddens `test_config_comes_from_the_template`), every
+  test module that IMPORTS it (`tests/unit/test_cognition_failure_backoff.py`
+  imports `test_cognition_session_lifecycle`), and the tests the reader scan
+  below finds reading it. Any other path (`conftest.py`, `builders.py`,
+  fixtures, a deleted or renamed-away test) is `ALL`: a helper is imported by
+  many modules and collects nothing itself, and a deleted test can break the
+  tests that enumerate tests. This was measured, not guessed: a full-suite run
+  with an audit hook on `open`/`listdir`/`scandir` lists which test modules
+  touch other `tests/` files (2026-10-02).
 * documentation and data files outside the code trees (`.md` anywhere but
   `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
   `docs/`, `design/`, `release-fragments/`): the tests that READ them, found by
   scanning `tests/` at select time (`_readers`), plus the universal
   doc-reference scan for a `.md`, plus `tests/test_release_notes.py` under
   `release-fragments/`. A file read by a shared test helper is `ALL`.
+* ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
+  selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
+  (read from the tables at select time, so a new table is covered with no edit
+  here): the anchor test reads those files by a name held in data, which no
+  literal in a test module shows the scan.
 * everything else (`scripts/`, `evals/`, `app/` code, `deploy/` non-markdown,
   `pyproject.toml`, `uv.lock`, `Makefile`, `Dockerfile`, `docker-compose.yml`,
   `config.example.toml`, `policy.example.toml`, `identity.example.toml`,
@@ -66,15 +80,26 @@ file selects only itself. The scan recomputes the answer from the tests as they
 stand, so a new reader is found without anyone editing this file.
 
 What the scan reads (`_TestFacts`): every string literal in a test module
-(docstrings excluded; prose with whitespace excluded), and whether the module
-traverses a directory (`glob`/`rglob`/`iterdir`/`walk`/`listdir`/`scandir` or
-`git ls-files`). A module reads path P if a literal is P, ends P, equals P's
-basename, is a glob P matches (`*.md`), or, when the module traverses, is a
-directory containing P or P's extension (`.md`). It over-selects on purpose.
-What it cannot see: a path built with no literal naming the file, directory,
-glob or extension (`ROOT / name` with `name` read from a data file). That
-residual is why the doc classes only ever NARROW within docs trees and the code
-trees are `ALL`.
+(docstrings excluded; literals over 200 characters excluded), what it imports,
+and whether the module traverses a directory (`glob`/`rglob`/`iglob`/`iterdir`/
+`walk`/`listdir`/`scandir` or `git ls-files`). A module reads path P if a
+literal is P, ends P (`computer/README.md`), equals P's basename, is a glob P
+matches (`*.md`), is P's extension (`.md`, always: it catches
+`f"{name}.md"`), or, only when the module traverses, is a directory containing
+P. A shared helper or conftest (collects nothing, imported by an unknown set of
+modules) that matches by ANY of those makes the answer `ALL`; so a deploy
+README is `ALL` while `tests/unit/nora_computer_harness.py` walks
+`deploy/computer`. It over-selects on purpose.
+
+What the scan CANNOT see, stated because the omission is the whole risk:
+- a path built with no literal naming the file, directory, glob or extension
+  (`ROOT / name` with `name` read from a data file or computed). The mutation
+  tables are the one such case found and have their own rule above;
+- a read made by code a test calls (a `nora/` function that opens a file): the
+  file must then sit under `nora/`, which is `ALL`, or be named by the test;
+- an import of a test module through `importlib` or a string.
+That residual is why the doc classes only ever NARROW within docs trees and the
+code trees are `ALL`.
 """
 
 from __future__ import annotations
@@ -82,6 +107,7 @@ from __future__ import annotations
 import argparse
 import ast
 import fnmatch
+import json
 import re
 import subprocess
 import sys
@@ -96,10 +122,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ALL = "ALL"
 NONE = "NONE"
 
-# Runtime-loaded or imported by the application: any file, any extension.
-_ALL_PREFIXES = ("nora/",)
-
-# Code trees whose `.md` is not documentation for selection purposes.
+# Code trees whose `.md` is not documentation for selection purposes. `nora/`
+# is loaded or imported by the application, so every file in it, any extension,
+# falls through every class below to the ALL default; naming it here is what
+# keeps its `.md` (doctrine, dreamer, skills, documents/catalog-prompt.md) out
+# of the doc classes.
 _CODE_TREE_PREFIXES = ("nora/", "evals/", "scripts/")
 
 # Whole-directory docs trees: a data file under them is looked up in the scan.
@@ -119,6 +146,18 @@ _TRAVERSAL_CALLS = frozenset(
     {"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"},
 )
 _MAX_LITERAL = 200
+
+# scripts/mutations/*.json entries name the source they mutate in a `file`
+# field; tests/architecture/test_mutation_tables_anchor_to_their_source.py
+# opens each of those paths by that data. A change to any of them selects it.
+_MUTATION_TABLES = "scripts/mutations"
+_MUTATION_ANCHOR_TEST = (
+    "tests/architecture/test_mutation_tables_anchor_to_their_source.py"
+)
+
+# Every test under here reads `tests/` itself or the tree around it (the
+# fitness functions); a change to any test selects the whole directory.
+_META_TESTS = "tests/architecture"
 
 
 def _git(repo: Path, *args: str, nul: bool = False) -> list[str]:
@@ -170,6 +209,7 @@ def git_changed_paths(
 class _TestFacts:
     literals: frozenset[str]
     traverses: bool
+    imports: frozenset[str] = frozenset()   # dotted module names, relative ones resolved
 
 
 def _docstring_ids(tree: ast.AST) -> set[int]:
@@ -183,25 +223,48 @@ def _docstring_ids(tree: ast.AST) -> set[int]:
     return ids
 
 
-def _facts_of(source: str) -> _TestFacts:
+def _imported_names(node: ast.AST, package: list[str]) -> set[str]:
+    """Dotted module names an import statement can bind, relative ones resolved
+    against `package` (the importing file's directory as dotted parts)."""
+    names: set[str] = set()
+    if isinstance(node, ast.Import):
+        names.update(alias.name for alias in node.names)
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            base = package[: len(package) - (node.level - 1)] if node.level > 1 else package
+            prefix = ".".join([*base, node.module] if node.module else base)
+        else:
+            prefix = node.module or ""
+        if prefix:
+            names.add(prefix)
+            # `from tests.unit import test_x` imports a submodule
+            names.update(f"{prefix}.{alias.name}" for alias in node.names)
+    return names
+
+
+def _facts_of(source: str, rel: str = "") -> _TestFacts:
     tree = ast.parse(source)
     docstrings = _docstring_ids(tree)
+    package = rel.split("/")[:-1]
     literals: set[str] = set()
+    imports: set[str] = set()
     traverses = False
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            imports |= _imported_names(node, package)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if id(node) in docstrings:
                 continue
             value = node.value
             if "ls-files" in value:
                 traverses = True
-            if len(value) <= _MAX_LITERAL and not any(c.isspace() for c in value):
+            if len(value) <= _MAX_LITERAL:
                 literals.add(value)
         elif (isinstance(node, ast.Attribute) and node.attr in _TRAVERSAL_CALLS) or (
             isinstance(node, ast.Name) and node.id in _TRAVERSAL_CALLS
         ):
             traverses = True
-    return _TestFacts(frozenset(literals), traverses)
+    return _TestFacts(frozenset(literals), traverses, frozenset(imports))
 
 
 def _scan_tests(repo: Path) -> dict[str, _TestFacts]:
@@ -215,7 +278,7 @@ def _scan_tests(repo: Path) -> dict[str, _TestFacts]:
     for file in sorted((repo / "tests").rglob("*.py")):
         rel = file.relative_to(repo).as_posix()
         try:
-            facts[rel] = _facts_of(file.read_text(encoding="utf-8"))
+            facts[rel] = _facts_of(file.read_text(encoding="utf-8"), rel)
         except (SyntaxError, UnicodeDecodeError, OSError):
             facts[rel] = _TestFacts(frozenset({"*.md", "*.json", "*.toml"}), True)
     return facts
@@ -228,15 +291,15 @@ def _normalise_literal(value: str) -> str:
     return value.strip("/")
 
 
-def _reads(facts: _TestFacts, path: str, *, named_only: bool = False) -> bool:
+def _reads(facts: _TestFacts, path: str, *, loose: bool = True) -> bool:
     """Could a module with these facts open `path`? Over-approximate.
 
-    `named_only` drops the two loosest tests (a traversed directory that
-    contains `path`, a bare extension) and keeps the ones that name the file:
-    the literal path, its basename, a glob that matches it. A shared helper
-    often mentions a directory (`ROOT / "deploy" / "computer"`) to run a
-    script from it, and counting that as reading every doc beneath would send
-    each deploy README edit to `ALL`.
+    `loose=False` keeps only the rules that NAME the file (the literal path,
+    its basename, a trailing part of it) and drops the glob, traversed-directory
+    and bare-extension rules. Used for a path under `tests/`: `*.py` and `.py`
+    sit in a hundred modules that scan `nora/`, and counting them would select a
+    dozen unrelated tests for every test edit; the tests that really scan
+    `tests/` are `tests/architecture/`, selected whole.
     """
     name = path.rsplit("/", 1)[-1]
     suffix = "." + name.rsplit(".", 1)[-1] if "." in name else ""
@@ -246,6 +309,8 @@ def _reads(facts: _TestFacts, path: str, *, named_only: bool = False) -> bool:
             continue
         if lit in (path, name) or path.endswith("/" + lit):
             return True
+        if not loose:
+            continue
         if any(c in lit for c in "*?["):
             # a bare `*` or `**` names nothing: it matches every path
             if not re.sub(r"[*?\[\]/]", "", lit):
@@ -253,26 +318,65 @@ def _reads(facts: _TestFacts, path: str, *, named_only: bool = False) -> bool:
             if (fnmatch.fnmatch(name, lit) or fnmatch.fnmatch(path, lit)
                     or fnmatch.fnmatch(path, lit.removeprefix("**/"))):
                 return True
-        elif not named_only and (
-            (facts.traverses and path.startswith(lit + "/")) or lit == suffix
-        ):
+        elif (facts.traverses and path.startswith(lit + "/")) or lit == suffix:
             return True
     return False
 
 
-def _readers(path: str, scan: dict[str, _TestFacts]) -> tuple[set[str], bool]:
+def _readers(
+    path: str, scan: dict[str, _TestFacts], *, loose: bool = True,
+) -> tuple[set[str], bool]:
     """(collectible test files that read `path`, a shared helper reads it)."""
     tests: set[str] = set()
     helper = False
     for rel, facts in scan.items():
         if rel == path:
             continue
+        if not _reads(facts, path, loose=loose):
+            continue
         if _is_collectible_test_file(rel):
-            if _reads(facts, path):
-                tests.add(rel)
-        elif _reads(facts, path, named_only=True):
+            tests.add(rel)
+        else:
             helper = True
     return tests, helper
+
+
+def _dotted(path: str) -> str:
+    return path.removesuffix(".py").replace("/", ".")
+
+
+def _importers(path: str, scan: dict[str, _TestFacts]) -> tuple[set[str], bool]:
+    """(collectible test modules that import `path`, directly or through other
+    test modules; a shared helper imports one of them). A test that imports
+    another test module runs it as part of itself."""
+    importers: set[str] = set()
+    helper = False
+    frontier = {_dotted(path)}
+    while frontier:
+        nxt: set[str] = set()
+        for rel, facts in scan.items():
+            if rel == path or rel in importers or not (facts.imports & frontier):
+                continue
+            if _is_collectible_test_file(rel):
+                importers.add(rel)
+                nxt.add(_dotted(rel))
+            else:
+                helper = True
+        frontier = nxt
+    return importers, helper
+
+
+def _mutation_files(repo: Path) -> set[str]:
+    """Every path named by a `file` field in `scripts/mutations/*.json`. A table
+    that cannot be read raises, and `main` turns that into ALL."""
+    files: set[str] = set()
+    for table in sorted((repo / _MUTATION_TABLES).glob("*.json")):
+        entries = json.loads(table.read_text(encoding="utf-8"))
+        files.update(
+            entry["file"] for entry in entries
+            if isinstance(entry, dict) and isinstance(entry.get("file"), str)
+        )
+    return files
 
 
 # --- classification ---------------------------------------------------------
@@ -319,18 +423,27 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
 
     targets: set[str] = set()
     scan: dict[str, _TestFacts] | None = None
+    mutated = _mutation_files(repo)
 
     for path in changed:
-        if path.startswith(_ALL_PREFIXES):
-            return ALL
+        if path in mutated:
+            targets.add(_MUTATION_ANCHOR_TEST)
         if path.startswith("tests/"):
             # Not every path under tests/ is collectible (conftest.py,
             # builders.py, fixtures, ...) and a deleted or renamed-away test
             # cannot be run: both are ALL, never a target that collects nothing.
-            if _is_collectible_test_file(path) and (repo / path).is_file():
-                targets.add(path)
-                continue
-            return ALL
+            if not (_is_collectible_test_file(path) and (repo / path).is_file()):
+                return ALL
+            # An existing test: itself, the meta tests (they read tests/
+            # itself), and whatever reads or imports it.
+            if scan is None:
+                scan = _scan_tests(repo)
+            readers, helper_reads = _readers(path, scan, loose=False)
+            importers, helper_imports = _importers(path, scan)
+            if helper_reads or helper_imports:
+                return ALL
+            targets.update({path, _META_TESTS, *readers, *importers})
+            continue
         if _is_doc_or_data(path):
             if scan is None:
                 scan = _scan_tests(repo)
@@ -345,6 +458,9 @@ def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
             continue
         return ALL
 
+    if _META_TESTS in targets:
+        # the directory target already runs every file in it
+        targets = {t for t in targets if not t.startswith(_META_TESTS + "/")}
     return sorted(targets)
 
 

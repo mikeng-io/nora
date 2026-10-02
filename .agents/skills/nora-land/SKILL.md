@@ -67,19 +67,28 @@ on the final head; fix rounds run their own tests. `make full-gate` = whole suit
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only** (every path is `.md` outside `nora/doctrine` and `nora/dreamer`,
-or under `docs/`, `design/`, `release-fragments/`):
+**Docs-only** (every path is a `.md` outside `nora/`, `evals/` and `scripts/`, or a
+data file under `docs/`, `design/`, `release-fragments/`): the selector half of
+the gate, which skips ruff, mypy and lint-imports (a doc changes none of them):
 
 ```bash
 git add <paths>    # the doc gate scans `git ls-files`: an unstaged new doc is never read (#391)
-uv run pytest -q tests/architecture/test_doc_references_resolve.py tests/test_release_notes.py \
-  tests/architecture/test_agent_skills.py > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
+make test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree \
+  > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
 ```
 
-`design/09-decision-index.md` changed: add `tests/architecture/test_decision_index_tests_exist.py`
-and `tests/architecture/test_decision_index_ids_are_unique.py`. This IS the gate
-for a docs-only diff, merge included; no `make gate` (operator, 2026-09-26). The
-2026-09-22 red master was a doc reference this command now checks.
+`scripts/affected_tests.py` finds the tests that read each doc by scanning
+`tests/` (README.md and DESIGN.md reach `tests/test_docs.py`, AGENTS.md and
+ARCHITECTURE.md `tests/test_architecture_doc.py`, CONTRIBUTING.md
+`tests/architecture/test_contribution_conventions.py`, the decision index its
+two tests, release-fragments/README.md `tests/test_release_commands.py`),
+adds the doc-reference scan for any `.md`, and runs everything when a path is
+under `nora/` (`nora/documents/catalog-prompt.md` is loaded at runtime), is a
+`.md` under `evals/` or `scripts/`, or is unmapped. Do not hand-pick test files
+here: a hand-picked list omitted these readers until 2026-10-02. PASS is
+`GATE_RC=0` and a `passed` count, or the line `affected_tests: no test reads
+this diff (NONE)`; a changed doc that prints `selector failed` ran the whole
+suite instead. Anything else outside the docs classes: `make gate` as above.
 
 ## 4. Commit
 
