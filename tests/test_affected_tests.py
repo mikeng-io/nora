@@ -11,6 +11,7 @@ and the git plumbing around it are covered.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -662,7 +663,7 @@ def _make_test_affected(tmp_path: Path, stub: str) -> subprocess.CompletedProces
     return subprocess.run(  # noqa: S603 - fixed argv, a stub script under tmp_path
         ["make", "-C", str(REPO), "--no-print-directory", "test-affected",
          f"SELECTOR=sh {script}", "PYTEST=echo PYTEST-RAN"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, env=_clean_env(),
     )
 
 
@@ -699,7 +700,7 @@ def test_the_gate_recipe_fails_when_the_tests_it_runs_fail(tmp_path):
     done = subprocess.run(  # noqa: S603 - fixed argv, a stub script under tmp_path
         ["make", "-C", str(REPO), "--no-print-directory", "test-affected",
          f"SELECTOR=sh {script}", "PYTEST=false"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, text=True, check=False, env=_clean_env(),
     )
     assert done.returncode != 0
 
@@ -983,12 +984,18 @@ def test_the_diff_is_against_the_merge_base_not_the_base_tip(tiny_repo):
 # --- `make gate` itself, dry-run ---------------------------------------------
 
 
+def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment minus make's own bookkeeping: when this suite runs under
+    `make gate`, MAKEFLAGS carries that run's `BASE=origin/master` override,
+    and a nested `make test-affected` here would inherit it."""
+    dropped = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
+    return {**{k: v for k, v in os.environ.items() if k not in dropped}, **(extra or {})}
+
+
 def _dry_run(target: str, env: dict[str, str] | None = None) -> list[str]:
-    import os
     done = subprocess.run(  # noqa: S603 - fixed argv
         ["make", "-n", "--no-print-directory", "-C", str(REPO), target],
-        capture_output=True, text=True, check=True,
-        env={**os.environ, **(env or {})},
+        capture_output=True, text=True, check=True, env=_clean_env(env),
     )
     return done.stdout.splitlines()
 

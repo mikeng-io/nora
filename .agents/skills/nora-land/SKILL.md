@@ -67,9 +67,8 @@ on the final head; fix rounds run their own tests. `make full-gate` = whole suit
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only** (every path is a `.md` outside `nora/`, `evals/` and `scripts/`, or a
-data file under `docs/`, `design/`, `release-fragments/`): the selector half of
-the gate, which skips ruff, mypy and lint-imports (a doc changes none of them):
+**Docs-only** (every path a `.md` outside `nora/`, `evals/`, `scripts/`, or data under
+`docs/`, `design/`, `release-fragments/`): the gate's selector, without the static steps:
 
 ```bash
 git add <paths>    # the doc gate scans `git ls-files`: an unstaged new doc is never read (#391)
@@ -77,18 +76,10 @@ make test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree \
   > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
 ```
 
-`scripts/affected_tests.py` finds the tests that read each doc by scanning
-`tests/` (README.md and DESIGN.md reach `tests/test_docs.py`, AGENTS.md and
-ARCHITECTURE.md `tests/test_architecture_doc.py`, CONTRIBUTING.md
-`tests/architecture/test_contribution_conventions.py`, the decision index its
-two tests, release-fragments/README.md `tests/test_release_commands.py`),
-adds the doc-reference scan for any `.md`, and runs everything when a path is
-under `nora/` (`nora/documents/catalog-prompt.md` is loaded at runtime), is a
-`.md` under `evals/` or `scripts/`, or is unmapped. Do not hand-pick test files
-here: a hand-picked list omitted these readers until 2026-10-02. PASS is
-`GATE_RC=0` and a `passed` count, or the line `affected_tests: no test reads
-this diff (NONE)`; a changed doc that prints `selector failed` ran the whole
-suite instead. Anything else outside the docs classes: `make gate` as above.
+The selector scans `tests/` for each doc's readers and runs everything for an
+unmapped path. Never hand-pick test files: a hand-picked list omitted real readers
+until 2026-10-02. PASS is `GATE_RC=0` with a `passed` count, or `NONE`. Other
+paths: `make gate`.
 
 ## 4. Commit
 
