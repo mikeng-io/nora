@@ -463,12 +463,17 @@ async def test_the_prelude_calls_her_notebook_her_own_record_as_the_block_types_
     assert "as what the group said" not in text
 
 
-async def test_the_prelude_does_not_forbid_a_surprise():
-    """design/cognition-loop/40-register.md §6: a surprise IS written, with
-    `exclude_persons`, and no ruling removed that."""
-    _real, prelude, _skill_text = await real_names()
-    assert "surprise" not in prelude.lower()
-    assert "confidence" in prelude.lower()          # the half the design is silent on stays
+async def test_the_prelude_keeps_a_surprise_and_a_confidence_out_of_the_notebook():
+    """design/cognition-loop/40-register.md §6 has a surprise written, with
+    `exclude_persons`, but the session's verbs carry no `exclude_persons` (and
+    nothing derives one from a surprise cue), so a surprise she wrote could be read
+    by the person it is for. Until a verb carries the exclusion the prelude keeps
+    it out: this DIFFERS from §6 on purpose."""
+    real, prelude, _skill_text = await real_names()
+    text = " ".join(prelude.split())
+    assert "a surprise or a confidence, is not written into the notebook" in text
+    # the premise: no verb has the argument that would make writing it safe
+    assert "exclude_persons" not in real
 
 
 async def test_the_prelude_is_true_about_what_she_writes_and_where_her_own_words_go():

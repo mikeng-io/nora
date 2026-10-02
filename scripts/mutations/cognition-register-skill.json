@@ -224,11 +224,11 @@
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_skill_teaches_no_cross_room_revision"
  },
  {
-  "name": "(6) a surprise is forbidden again",
+  "name": "(6) the surprise prohibition is dropped",
   "file": "nora/dreamer/preludes/cognition-prelude.md",
-  "old": "What a member told you in\nconfidence, and meant for no one else, is not written into the notebook.",
-  "new": "Something a member asked to keep from someone, a surprise or a confidence, is not written\ninto the notebook.",
-  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_prelude_does_not_forbid_a_surprise"
+  "old": "Something a member asked to keep from someone, a surprise or a confidence, is not written\ninto the notebook.",
+  "new": "What a member told you in\nconfidence, and meant for no one else, is not written into the notebook.",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_prelude_keeps_a_surprise_and_a_confidence_out"
  },
  {
   "name": "(9) she is told never to write about herself again",
@@ -327,5 +327,12 @@
   "old": "keeping the ids each line\ncites when you reword it",
   "new": "every line it had keeps the ids\nit cites when you reword it",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_what_the_validator_does_not_check_is_a_request_and_never_a_refusal"
+ },
+ {
+  "name": "(6b) the prohibition is deleted with its sentence",
+  "file": "nora/dreamer/preludes/cognition-prelude.md",
+  "old": "Something a member asked to keep from someone, a surprise or a confidence, is not written\ninto the notebook.",
+  "new": "",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_prelude_keeps_a_surprise_and_a_confidence_out"
  }
 ]

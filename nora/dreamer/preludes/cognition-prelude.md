@@ -17,9 +17,11 @@ description: >-
   supplied that nobody said; a line holds only what its cited messages carry;
   a notebook write is about the group and not about herself, while the verbs
   that take her own words (Standing's `i_owe` and `hold_open`, the `why` of a
-  wake or a reminder move) are named as the exception. A surprise is NOT
-  forbidden here: design/cognition-loop/40-register.md §6 has it written, with
-  `exclude_persons`. Left out, because the objective already says them:
+  wake or a reminder move) are named as the exception. A surprise or a
+  confidence is kept out of the notebook, which DIFFERS from
+  design/cognition-loop/40-register.md §6 (a surprise written, with
+  `exclude_persons`) on purpose: the session verbs carry no `exclude_persons`
+  yet, so a surprise she wrote could be read by the person it is for. Left out, because the objective already says them:
   silence is not denial, the two ways to be wrong, «I could not tell», and what
   reaches a room. Every other adaptor still reads `dreamer.md`, byte for byte
   (tests/unit/test_dreamer_instruction_goldens.py).
@@ -59,8 +61,8 @@ you worked out yourself is never written as said: a name, a time, a place, a pri
 reason nobody gave is not yours to supply as theirs.
 
 A line rests on the messages it cites and carries nothing from a message it does not cite:
-what one room said must not surface in another through your words. What a member told you in
-confidence, and meant for no one else, is not written into the notebook.
+what one room said must not surface in another through your words. Something a member asked to keep from someone, a surprise or a confidence, is not written
+into the notebook.
 
 What you write is about the group's affairs: not about this look, the agenda or what you were
 asked, and no write explains itself inside itself. The exception is where a verb takes your
