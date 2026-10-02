@@ -920,25 +920,40 @@ class RecordStore(Protocol):
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int:
+    ) -> int | None:
         """Keep a delete whose target is not on record (yet), in its own transaction;
         returns the row's id. `touch.target` is the key (`handle`, or Signal's
         `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`,
         `person_id`). It is applied when the message is recorded
         (`match_orphan_deletes`) or by the start-up sweep, and purged if it never is.
-        Ids and times only. See `OrphanDelete`."""
+        Ids and times only. See `OrphanDelete`.
+
+        BOUNDED. The same delivery again returns the row it already has and adds none.
+        A write that would pass a cap (per room, per deleter, overall:
+        `nora.domain.delete_authorship.ORPHAN_CAP_*`) writes nothing and returns None
+        (the caller counts `orphan_dropped`): authorship is only checkable once a target
+        exists, so the table must not be growable by revoking ids that do not exist.
+        Expired rows (`ORPHAN_TTL_MS`) are purged in the same transaction, a bounded few."""
+        ...
+
+    async def is_hidden(self, *, row_id: int) -> bool:
+        """Whether the `messages` row `row_id` is hidden (`hidden_at`): one read by
+        primary key. The pipeline asks it right before it hands an audited message to
+        any downstream stage, the one fail-closed point every race against a delete
+        ends at."""
         ...
 
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
     ) -> list[OrphanDelete]:
         """The held deletes that name `message` (a message just recorded, or one a
-        job asks about): the same platform and room, a non-empty `handle` equal to its
-        platform id or `sent_ts` equal to its timestamp, and, on a platform where only
-        the author can delete (`nora.domain.delete_authorship`), a deleter who IS its
-        author. A non-author's is never returned. It removes nothing: the caller
-        applies what it returns and then `discard_orphan_delete`s each, so a crash in
-        between leaves the row for the start-up sweep and nothing is lost."""
+        job asks about), by the one rule `nora.domain.delete_authorship.
+        orphan_names_message`: the same platform and room, a non-empty `handle` equal to
+        its platform id or `sent_ts` equal to its timestamp, and, on a platform where
+        only the author can delete, a deleter who IS its author. A non-author's is never
+        returned. It removes nothing: the caller applies what it returns and then
+        `discard_orphan_delete`s each, so a crash in between leaves the row for the
+        start-up sweep and nothing is lost."""
         ...
 
     async def discard_orphan_delete(self, *, orphan_id: int) -> bool:

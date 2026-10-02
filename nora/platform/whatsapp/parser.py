@@ -142,13 +142,15 @@ def revoker_ids(event: dict) -> tuple[str, ...]:
     by an author nobody mapped is the same account, so the authorship check reads
     all of them (`nora.domain.delete_authorship`). Also read back from a recorded
     delete's `raw_json` by the start-up sweep."""
-    phone = event.get("sender_phone")
-    lid = event.get("sender_lid")
-    jid = event.get("sender_jid")
+    def text(key: str) -> str:
+        value = event.get(key)
+        return value.strip() if isinstance(value, str) else ""
+
+    phone, lid, jid = text("sender_phone"), text("sender_lid"), text("sender_jid")
     forms = (
-        phone_form(phone) if isinstance(phone, str) and phone else "",
-        lid_form(lid) if isinstance(lid, str) and lid else "",
-        jid if isinstance(jid, str) else "",
+        phone_form(phone) if phone.lstrip("+") else "",
+        lid_form(lid) if lid.lstrip("+") else "",
+        jid,
     )
     return tuple(dict.fromkeys(f for f in forms if f))
 

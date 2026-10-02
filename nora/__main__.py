@@ -405,9 +405,11 @@ class App:
             report.refused, report.failed, report.total_marked, report.total_healed,
             report.orphans_applied, report.orphans_expired,
         )
+        # `refused` is LOGGED above and not counted here: the same old records are read
+        # again at every start, so a counter would grow by the same number on each
+        # restart. The metric counts live refusals only (`touch.run`).
         for outcome, count in (
             ("reconciled", report.hidden), ("cascade_failed", report.failed),
-            ("refused_not_author", report.refused),
             ("applied_from_orphan", report.orphans_applied),
             ("orphan_expired", report.orphans_expired),
         ):

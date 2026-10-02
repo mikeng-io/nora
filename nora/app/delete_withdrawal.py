@@ -88,7 +88,13 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.app.withdrawal import EVIDENCE_STORES, withdraw_message, withdraw_messages
-from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
+from nora.domain.delete_authorship import (
+    AUTHOR_ONLY_DELETES,
+    ORPHAN_TTL_MS,
+    deleter_is_author,
+    orphan_names_message,
+)
+from nora.domain.models import OrphanDelete
 from nora.domain.ports import DeleteWithdrawal
 from nora.infra.sql.audit import orphan_delete_of
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES, ORPHAN_DELETE
@@ -156,11 +162,6 @@ class SqlDeleteWithdrawer:
         return result
 
 
-#: An orphan delete older than this that never found its message is purged
-#: (`orphan_expired`): nothing is going to arrive for it, and the table is not an archive.
-ORPHAN_TTL_MS = 30 * 24 * 3600 * 1000
-
-
 @dataclass(frozen=True)
 class _Record:
     """One `message_delete` record beside the message it names."""
@@ -185,13 +186,21 @@ class _Record:
         if self.platform not in AUTHOR_ONLY_DELETES:
             return True
         ids: tuple[str, ...] = ()
-        if self.platform == "whatsapp" and self.raw_json:
+        if self.raw_json:
             try:
                 event = json.loads(self.raw_json)
             except ValueError:
                 event = None
             if isinstance(event, dict):
-                ids = revoker_ids(event)
+                # The id forms the deleter had when the delete was recorded:
+                # `actor_ids` (written by the touch stage and by every orphan application
+                # since the rule existed) and, for a WhatsApp record from before that, the
+                # phone, LID and JID of the raw event.
+                stored = event.get("actor_ids")
+                ids = tuple(i for i in stored if isinstance(i, str)) if isinstance(
+                    stored, list) else ()
+                if self.platform == "whatsapp":
+                    ids = tuple(dict.fromkeys((*ids, *revoker_ids(event))))
         return deleter_is_author(
             author_sender_id=self.author_sender_id, author_person_id=self.author_person_id,
             deleter_sender_id=self.deleter_sender_id,
@@ -320,7 +329,21 @@ async def reconcile_deletes(
                         continue
                     _count(report, result, marked)
                 await _heal(conn, report, hidden, now_ms)
-                await _orphans(conn, report, now_ms)
+                after = 0
+                while True:
+                    pairs, last = await _match_orphans(conn, after_id=after)
+                    for orphan, message_id in pairs:
+                        try:
+                            async with conn.begin_nested():
+                                await _apply_orphan(conn, report, orphan, message_id, now_ms)
+                        except Exception:
+                            log.exception("dry-run application of held delete %d failed",
+                                          orphan.id)
+                            report.failed += 1
+                    if last is None:
+                        break
+                    after = last
+                await _purge_expired(conn, report, now_ms)
             finally:
                 await trans.rollback()
         return report
@@ -339,19 +362,26 @@ async def reconcile_deletes(
     except Exception:
         log.exception("re-scan of the edges of hidden messages failed; rolled back")
         report.failed += 1
-    async with engine.connect() as conn:
-        orphan_ids = [
-            int(i) for i in (await conn.execute(
-                sa.select(ORPHAN_DELETE.c.id).order_by(ORPHAN_DELETE.c.id)
-            )).scalars()
-        ]
-    for orphan_id in orphan_ids:
-        try:
-            async with engine.begin() as conn:
-                await _orphans(conn, report, now_ms, only=orphan_id)
-        except Exception:
-            log.exception("held delete %d could not be resolved; rolled back", orphan_id)
-            report.failed += 1
+    after = 0
+    while True:
+        async with engine.connect() as conn:
+            pairs, last = await _match_orphans(conn, after_id=after)
+        for orphan, message_id in pairs:
+            try:
+                async with engine.begin() as conn:
+                    await _apply_orphan(conn, report, orphan, message_id, now_ms)
+            except Exception:
+                log.exception("held delete %d could not be applied; rolled back", orphan.id)
+                report.failed += 1
+        if last is None:
+            break
+        after = last
+    try:
+        async with engine.begin() as conn:
+            await _purge_expired(conn, report, now_ms)
+    except Exception:
+        log.exception("purge of expired held deletes failed")
+        report.failed += 1
     return report
 
 
@@ -369,64 +399,95 @@ async def _heal(
         report.healed[store] = report.healed.get(store, 0) + len(keys)
 
 
-async def _orphans(
-    conn: AsyncConnection, report: ReconcileReport, now_ms: int, *, only: int | None = None,
-) -> None:
-    """Resolve held deletes against what is stored: a message that matches (the same
-    key and authorship rule as the pipeline's check, `RecordStore.match_orphan_deletes`)
-    gets the delete's record, the hide and the cascade and the row is removed, in one
-    transaction; one that matches nothing and is older than `ORPHAN_TTL_MS` is purged."""
-    stmt = sa.select(ORPHAN_DELETE).order_by(ORPHAN_DELETE.c.id)
-    if only is not None:
-        stmt = stmt.where(ORPHAN_DELETE.c.id == only)
-    for row in (await conn.execute(stmt)).all():
-        orphan = orphan_delete_of(row)
-        key = []
-        if orphan.handle:
-            key.append(MESSAGES.c.platform_message_id == orphan.handle)
-        if orphan.sent_ts is not None:
-            key.append(sa.or_(
-                MESSAGES.c.ts == orphan.sent_ts,
-                sa.exists().where(
-                    MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
-                    MESSAGE_EDIT.c.ts == orphan.sent_ts,
+_ORPHAN_BATCH = 300
+
+
+async def _match_orphans(
+    conn: AsyncConnection, *, after_id: int,
+) -> tuple[list[tuple[OrphanDelete, int]], int | None]:
+    """The next batch of held deletes and the stored message each names. ONE
+    set-based query per batch of up to `_ORPHAN_BATCH` orphans (a join to the messages of
+    its room on the handle and sent-timestamp indexes), then the one rule
+    (`orphan_names_message`, the pipeline's own) decides in Python. Returns the pairs and
+    the last orphan id read (None when there are no more): bounded, whatever the table
+    holds, and a keyset so an orphan that names nothing is not read twice."""
+    batch = (
+        sa.select(ORPHAN_DELETE.c.id).where(ORPHAN_DELETE.c.id > after_id)
+        .order_by(ORPHAN_DELETE.c.id).limit(_ORPHAN_BATCH)
+    ).subquery()
+    edit_ts = (
+        sa.select(sa.func.array_agg(MESSAGE_EDIT.c.ts))
+        .where(MESSAGE_EDIT.c.message_id == MESSAGES.c.id).scalar_subquery()
+    )
+    rows = (await conn.execute(
+        sa.select(
+            ORPHAN_DELETE, MESSAGES.c.id.label("message_id"),
+            MESSAGES.c.sender_id.label("m_sender"), MESSAGES.c.person_id.label("m_person"),
+            MESSAGES.c.platform_message_id.label("m_handle"), MESSAGES.c.ts.label("m_ts"),
+            edit_ts.label("m_edit_ts"),
+        )
+        .select_from(ORPHAN_DELETE.join(MESSAGES, sa.and_(
+            MESSAGES.c.platform == ORPHAN_DELETE.c.platform,
+            MESSAGES.c.conversation_id == ORPHAN_DELETE.c.conversation_id,
+            sa.or_(
+                sa.and_(ORPHAN_DELETE.c.handle != "",
+                        MESSAGES.c.platform_message_id == ORPHAN_DELETE.c.handle),
+                sa.and_(
+                    ORPHAN_DELETE.c.sent_ts.is_not(None),
+                    sa.or_(
+                        MESSAGES.c.ts == ORPHAN_DELETE.c.sent_ts,
+                        sa.exists().where(
+                            MESSAGE_EDIT.c.message_id == MESSAGES.c.id,
+                            MESSAGE_EDIT.c.ts == ORPHAN_DELETE.c.sent_ts,
+                        ),
+                    ),
                 ),
-            ))
-        candidates = (await conn.execute(
-            sa.select(MESSAGES.c.id, MESSAGES.c.sender_id, MESSAGES.c.person_id)
-            .where(
-                MESSAGES.c.platform == orphan.platform,
-                MESSAGES.c.conversation_id == orphan.conversation_id,
-                sa.or_(*key),
-            )
-            .order_by(MESSAGES.c.id)
-        )).all()
-        author_only = orphan.platform in AUTHOR_ONLY_DELETES
-        target = next((
-            c for c in candidates
-            if not author_only or deleter_is_author(
-                author_sender_id=c.sender_id, author_person_id=c.person_id,
-                deleter_sender_id=orphan.deleter_id,
-                deleter_person_id=orphan.deleter_person_id,
-                deleter_ids=orphan.deleter_ids,
-            )
-        ), None)
-        if target is None:
-            if orphan.recorded_at < now_ms - ORPHAN_TTL_MS:
-                await conn.execute(
-                    sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id)
-                )
-                report.orphans_expired += 1
+            ),
+        )))
+        .where(ORPHAN_DELETE.c.id.in_(sa.select(batch.c.id)))
+        .order_by(ORPHAN_DELETE.c.id, MESSAGES.c.id)
+    )).all()
+    last = (await conn.execute(sa.select(sa.func.max(batch.c.id)))).scalar_one()
+    chosen: dict[int, tuple[OrphanDelete, int]] = {}
+    for r in rows:
+        if r.id in chosen:
             continue
-        await conn.execute(sa.insert(MESSAGE_DELETE).values(
-            message_id=target.id, sender_id=orphan.deleter_id,
-            person_id=orphan.deleter_person_id, ts=orphan.event_ts, raw_json=None,
-        ))
-        _, marked = await _withdraw_in(conn, message_id=target.id, now_ms=now_ms)
-        await conn.execute(sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id))
-        report.orphans_applied += 1
-        for store, n in marked.items():
-            report.marked[store] = report.marked.get(store, 0) + n
+        orphan = orphan_delete_of(r)
+        if orphan_names_message(
+            orphan, platform=orphan.platform, conversation_id=orphan.conversation_id,
+            handle=r.m_handle or "", timestamps={int(r.m_ts), *(r.m_edit_ts or ())},
+            sender_id=r.m_sender, person_id=r.m_person,
+        ):
+            chosen[r.id] = (orphan, int(r.message_id))
+    return list(chosen.values()), (int(last) if last is not None else None)
+
+
+async def _apply_orphan(
+    conn: AsyncConnection, report: ReconcileReport, orphan: OrphanDelete, message_id: int,
+    now_ms: int,
+) -> None:
+    """One held delete applied to the message it names: the delete's own record (with the
+    deleter's id forms, so the authorship rule can read them back), the hide and the
+    cascade, and the held row removed, in one transaction."""
+    await conn.execute(sa.insert(MESSAGE_DELETE).values(
+        message_id=message_id, sender_id=orphan.deleter_id,
+        person_id=orphan.deleter_person_id, ts=orphan.event_ts,
+        raw_json=json.dumps({"actor_ids": list(orphan.deleter_ids), "from_orphan": orphan.id}),
+    ))
+    _, marked = await _withdraw_in(conn, message_id=message_id, now_ms=now_ms)
+    await conn.execute(sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id))
+    report.orphans_applied += 1
+    for store, n in marked.items():
+        report.marked[store] = report.marked.get(store, 0) + n
+
+
+async def _purge_expired(conn: AsyncConnection, report: ReconcileReport, now_ms: int) -> None:
+    """Held deletes past `ORPHAN_TTL_MS` that the pass above did not apply (nothing ever
+    named them, or only a message that is not their author's)."""
+    result = await conn.execute(
+        sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.recorded_at < now_ms - ORPHAN_TTL_MS)
+    )
+    report.orphans_expired += int(result.rowcount or 0)
 
 
 def _count(

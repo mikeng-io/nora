@@ -1,6 +1,6 @@
 """The touch stage hands a found delete to the `DeleteWithdrawer`, counts how it
-ended, and never withdraws on anything else; `PendingDeletes` holds a delete that
-overtook its message. In-memory, so the sequencing is pinned without a database;
+ended, and never withdraws on anything else; a delete whose target is not on record is
+kept as an orphan for its message. In-memory, so the sequencing is pinned without a database;
 `tests/infra/test_delete_withdraws.py` is the same behaviour against Postgres.
 """
 

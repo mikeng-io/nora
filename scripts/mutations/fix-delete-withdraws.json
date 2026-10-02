@@ -211,51 +211,51 @@
   },
   {
     "name": "a held delete is applied without the authorship rule",
-    "file": "nora/infra/sql/audit.py",
-    "old": "            if not author_only or deleter_is_author(",
-    "new": "            if True or deleter_is_author(",
-    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_delete_that_is_not_the_authors_is_never_applied"
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    if platform not in AUTHOR_ONLY_DELETES:\n        return True\n    return deleter_is_author(",
+    "new": "    if True:\n        return True\n    return deleter_is_author(",
+    "target": "tests/unit/test_delete_authorship.py tests/infra/test_delete_withdraws.py::test_a_held_delete_that_is_not_the_authors_is_never_applied"
   },
   {
     "name": "a held delete matches a message with no handle on an empty string",
-    "file": "nora/infra/sql/audit.py",
-    "old": "        if message.message_id:\n            key.append(sa.and_(ORPHAN_DELETE.c.handle != \"\",\n                               ORPHAN_DELETE.c.handle == message.message_id))",
-    "new": "        if True:\n            key.append(ORPHAN_DELETE.c.handle == message.message_id)",
-    "target": "tests/contract/test_audit_store_contract.py -k test_a_kept_delete_never_matches_on_an_empty_handle"
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    by_handle = bool(orphan.handle) and orphan.handle == handle",
+    "new": "    by_handle = orphan.handle == handle",
+    "target": "tests/unit/test_delete_authorship.py"
   },
   {
     "name": "a held delete ignores the platform",
-    "file": "nora/infra/sql/audit.py",
-    "old": "                ORPHAN_DELETE.c.platform == message.platform,\n",
-    "new": "",
-    "target": "tests/contract/test_audit_store_contract.py -k test_a_kept_delete_is_per_platform_room_and_handle"
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    if orphan.platform != platform or orphan.conversation_id != conversation_id:",
+    "new": "    if orphan.conversation_id != conversation_id:",
+    "target": "tests/unit/test_delete_authorship.py"
   },
   {
     "name": "a held delete ignores the room",
-    "file": "nora/infra/sql/audit.py",
-    "old": "                ORPHAN_DELETE.c.conversation_id == message.conversation_id,\n",
-    "new": "",
-    "target": "tests/contract/test_audit_store_contract.py -k test_a_kept_delete_is_per_platform_room_and_handle"
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    if orphan.platform != platform or orphan.conversation_id != conversation_id:",
+    "new": "    if orphan.platform != platform:",
+    "target": "tests/unit/test_delete_authorship.py"
   },
   {
     "name": "a held delete is not discarded once applied",
     "file": "nora/ingest/pipeline.py",
-    "old": "                    await self._audit.discard_orphan_delete(orphan_id=orphan.id)",
-    "new": "                    pass",
+    "old": "            await self._audit.discard_orphan_delete(orphan_id=orphan.id)\n        except Exception:\n            log.exception(\"held delete %d could not be discarded\", orphan.id)\n        if withdrawal",
+    "new": "            pass\n        except Exception:\n            log.exception(\"held delete %d could not be discarded\", orphan.id)\n        if withdrawal",
     "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_that_arrives_before_its_message_is_kept"
   },
   {
     "name": "the sweep never applies a held delete to a message stored since",
     "file": "nora/app/delete_withdrawal.py",
-    "old": "        if target is None:\n            if orphan.recorded_at",
-    "new": "        if True:\n            if orphan.recorded_at",
+    "old": "                async with engine.begin() as conn:\n                    await _apply_orphan(conn, report, orphan, message_id, now_ms)",
+    "new": "                async with engine.begin() as conn:\n                    await conn.execute(sa.text(\"SELECT 1\"))\n                    _ = (report, orphan, message_id)",
     "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_whose_lookup_failed_is_not_lost"
   },
   {
     "name": "the sweep never purges a held delete nothing matched",
     "file": "nora/app/delete_withdrawal.py",
-    "old": "            if orphan.recorded_at < now_ms - ORPHAN_TTL_MS:",
-    "new": "            if False:",
+    "old": "        sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.recorded_at < now_ms - ORPHAN_TTL_MS)",
+    "new": "        sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id < 0)",
     "target": "tests/infra/test_delete_withdraws.py -k test_the_sweep_purges_a_held_delete"
   },
   {
@@ -296,9 +296,9 @@
   {
     "name": "an applied held delete does not stop the late message being read, fed and answered",
     "file": "nora/ingest/pipeline.py",
-    "old": "        if self._delete_withdrawer is not None and await self._apply_orphans(",
-    "new": "        if False and self._delete_withdrawer is not None and await self._apply_orphans(",
-    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_that_arrives_before_its_message_is_kept"
+    "old": "            if held != \"none\":",
+    "new": "            if held != \"none\" and False:",
+    "target": "tests/infra/test_delete_withdraws.py::test_a_matched_delete_that_cannot_be_applied_feeds_and_raises_nothing tests/infra/test_delete_withdraws.py::test_a_delete_that_arrives_before_its_message_is_kept_and_applied_when_it_lands"
   },
   {
     "name": "unforget brings a deleted message back",
@@ -320,5 +320,187 @@
     "old": "            NOTE_CANDIDATE.c.status.in_((\"pending\", \"refused\")),",
     "new": "            NOTE_CANDIDATE.c.status == \"pending\",",
     "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_removes_pending_and_refused_proposals"
+  },
+  {
+    "name": "the central guard is gone, so a message a delete hid in the race goes on to the memory feed",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        stopped = await self._guard(row_id, message)",
+    "new": "        stopped = None",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_racing_its_message_stops_the_message_at_the_guard"
+  },
+  {
+    "name": "the guard fails open when it cannot read the hidden state",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            return \"withdrawal_pending\"\n        return \"withdrawn\" if hidden else None",
+    "new": "            return None\n        return \"withdrawn\" if hidden else None",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_message_whose_hidden_state_cannot_be_read"
+  },
+  {
+    "name": "a matched delete that could not be applied lets the message go on",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            verdict = \"applied\" if ok and verdict != \"failed\" else \"failed\"",
+    "new": "            verdict = \"applied\"",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_matched_delete_that_cannot_be_applied"
+  },
+  {
+    "name": "held deletes that cannot be read let the message go on",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            return \"failed\"\n        verdict = \"none\"",
+    "new": "            return \"none\"\n        verdict = \"none\"",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_message_whose_held_deletes_cannot_be_read"
+  },
+  {
+    "name": "an orphan-applied delete writes no record of its own",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            await self._audit.append_delete(\n                message_id=row_id, message=delete, person_id=orphan.deleter_person_id,\n            )",
+    "new": "            pass",
+    "target": "tests/infra/test_delete_withdraws.py -k test_unforget_keeps_a_delete_hidden_that_was_applied_from_a_held_delete"
+  },
+  {
+    "name": "an orphan-applied delete's record loses the deleter's id forms",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            raw={\"actor_ids\": list(orphan.deleter_ids), \"from_orphan\": orphan.id},",
+    "new": "            raw={},",
+    "target": "tests/infra/test_delete_withdraws.py -k test_unforget_keeps_a_delete_hidden_that_was_applied_from_a_held_delete"
+  },
+  {
+    "name": "a sweep-applied delete's record loses the deleter's id forms",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "        raw_json=json.dumps({\"actor_ids\": list(orphan.deleter_ids), \"from_orphan\": orphan.id}),",
+    "new": "        raw_json=None,",
+    "target": "tests/infra/test_delete_withdraws.py -k test_unforget_keeps_a_delete_hidden_that_the_sweep_applied"
+  },
+  {
+    "name": "the authorship rule ignores the id forms stored with a delete record",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "                ids = tuple(i for i in stored if isinstance(i, str)) if isinstance(\n                    stored, list) else ()",
+    "new": "                ids = ()",
+    "target": "tests/infra/test_delete_withdraws.py -k test_unforget_keeps_a_delete_hidden_that_the_sweep_applied"
+  },
+  {
+    "name": "a writer locks its note row before the cited message (the reverse lock order), so it deadlocks with the delete",
+    "file": "nora/infra/sql/notes.py",
+    "old": "        await lock_cited_messages(conn, cited_ids_in(revision.body))\n        # LINEAGE (migration",
+    "new": "        # LINEAGE (migration",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_note_revised_while_the_delete_runs"
+  },
+  {
+    "name": "a held delete delivered again adds another row",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                pg_insert(orphan).values(**values).on_conflict_do_nothing().returning(orphan.c.id)",
+    "new": "                sa.insert(orphan).values(**values).returning(orphan.c.id)",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_same_delivery_again_adds_no_row"
+  },
+  {
+    "name": "the per-room cap on held deletes is off",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                    per_room > ORPHAN_CAP_PER_ROOM or ",
+    "new": "                    False or ",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_delete_over_the_per_room_cap"
+  },
+  {
+    "name": "the per-deleter cap on held deletes is off",
+    "file": "nora/infra/sql/audit.py",
+    "old": "per_deleter > ORPHAN_CAP_PER_DELETER",
+    "new": "False",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_delete_over_the_per_deleter_cap"
+  },
+  {
+    "name": "the overall cap on held deletes is off",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                    or total > ORPHAN_CAP_GLOBAL",
+    "new": "                    or False",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_delete_over_the_overall_cap"
+  },
+  {
+    "name": "a held delete dropped by a cap is not counted",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "            platform=message.platform, outcome=\"orphan_dropped\",",
+    "new": "            platform=message.platform, outcome=\"not_stored\",",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_dropped_held_delete_is_counted"
+  },
+  {
+    "name": "an expired held delete is not purged when a new one is written",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            await self._purge_orphans(conn, before_ms=now_ms - ORPHAN_TTL_MS, limit=100)",
+    "new": "            pass",
+    "target": "tests/infra/test_delete_withdraws.py -k test_an_expired_held_delete_is_purged_when_a_new_one_is_written"
+  },
+  {
+    "name": "a held delete waits thirty days instead of three",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "ORPHAN_TTL_MS = 3 * 24 * 3600 * 1000",
+    "new": "ORPHAN_TTL_MS = 30 * 24 * 3600 * 1000",
+    "target": "tests/unit/test_delete_authorship.py -k test_a_held_delete_waits_three_days"
+  },
+  {
+    "name": "the sweep leaves an applied held delete in the table",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "    await conn.execute(sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id))\n    report.orphans_applied += 1",
+    "new": "    report.orphans_applied += 1",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_set_based_sweep_agrees_with_the_per_message_rule_at_scale"
+  },
+  {
+    "name": "the sweep's join ignores the edit timestamps of a Signal message",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "                    sa.or_(\n                        MESSAGES.c.ts == ORPHAN_DELETE.c.sent_ts,\n                        sa.exists().where(\n                            MESSAGE_EDIT.c.message_id == MESSAGES.c.id,\n                            MESSAGE_EDIT.c.ts == ORPHAN_DELETE.c.sent_ts,\n                        ),\n                    ),",
+    "new": "                    MESSAGES.c.ts == ORPHAN_DELETE.c.sent_ts,",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_set_based_sweep_agrees_with_the_per_message_rule_at_scale"
+  },
+  {
+    "name": "the sweep's rule ignores the edit timestamps of a Signal message",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "timestamps={int(r.m_ts), *(r.m_edit_ts or ())},",
+    "new": "timestamps={int(r.m_ts)},",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_set_based_sweep_agrees_with_the_per_message_rule_at_scale"
+  },
+  {
+    "name": "the sweep applies a held delete without the one rule",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "        if orphan_names_message(\n            orphan, platform=orphan.platform,",
+    "new": "        if True or orphan_names_message(\n            orphan, platform=orphan.platform,",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_set_based_sweep_agrees_with_the_per_message_rule_at_scale"
+  },
+  {
+    "name": "the match reads the whole table: the handle and timestamp are not in its WHERE",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            or_(*key),\n        )\n        .order_by(ORPHAN_DELETE.c.id.asc())",
+    "new": "            sa.true(),\n        )\n        .order_by(ORPHAN_DELETE.c.id.asc())",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_match_reads_the_handle_and_timestamp_indexes"
+  },
+  {
+    "name": "the rule accepts an empty deleter id (both sides empty are «the same id»)",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    if author_sender_id and author_sender_id == deleter_sender_id:",
+    "new": "    if author_sender_id == deleter_sender_id:",
+    "target": "tests/unit/test_delete_authorship.py"
+  },
+  {
+    "name": "the rule does not filter empty ids and accepts an empty author",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    return bool(author_sender_id) and author_sender_id in {i for i in deleter_ids if i}",
+    "new": "    return author_sender_id in set(deleter_ids)",
+    "target": "tests/unit/test_delete_authorship.py"
+  },
+  {
+    "name": "two EMPTY person ids count as the same person",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    if author_person_id and author_person_id == deleter_person_id:",
+    "new": "    if author_person_id is not None and author_person_id == deleter_person_id:",
+    "target": "tests/unit/test_delete_authorship.py"
+  },
+  {
+    "name": "the raw JID is stripped of its @domain, so a phone JID's digits collide with a LID",
+    "file": "nora/platform/whatsapp/parser.py",
+    "old": "        jid,\n    )\n    return tuple",
+    "new": "        jid.split(\"@\")[0],\n    )\n    return tuple",
+    "target": "tests/unit/test_delete_authorship.py"
+  },
+  {
+    "name": "the phone is given the LID form (no +)",
+    "file": "nora/platform/whatsapp/parser.py",
+    "old": "        phone_form(phone) if phone.lstrip(\"+\") else \"\",",
+    "new": "        lid_form(phone) if phone.lstrip(\"+\") else \"\",",
+    "target": "tests/unit/test_delete_authorship.py"
   }
 ]

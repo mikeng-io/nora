@@ -24,10 +24,18 @@ import json
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy import and_, or_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
-from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
+from nora.domain.delete_authorship import (
+    ORPHAN_CAP_GLOBAL,
+    ORPHAN_CAP_PER_DELETER,
+    ORPHAN_CAP_PER_ROOM,
+    ORPHAN_TTL_MS,
+    orphan_names_message,
+)
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
@@ -103,6 +111,29 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
         MESSAGES.c.hidden_at.is_(None),
+    )
+
+
+def orphan_candidates_stmt(message: NormalizedMessage) -> Any | None:
+    """The held deletes that MIGHT name `message`, narrowed through the handle and
+    sent-timestamp indexes of its room (`orphan_names_message` decides). `None` when the
+    message offers nothing to match on."""
+    key = []
+    if message.message_id:
+        key.append(and_(ORPHAN_DELETE.c.handle != "",
+                        ORPHAN_DELETE.c.handle == message.message_id))
+    if message.timestamp is not None:
+        key.append(ORPHAN_DELETE.c.sent_ts == message.timestamp)
+    if not key:
+        return None
+    return (
+        sa.select(ORPHAN_DELETE)
+        .where(
+            ORPHAN_DELETE.c.platform == message.platform,
+            ORPHAN_DELETE.c.conversation_id == message.conversation_id,
+            or_(*key),
+        )
+        .order_by(ORPHAN_DELETE.c.id.asc())
     )
 
 
@@ -538,59 +569,109 @@ class SqlRecordStore:
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int:
-        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One INSERT, in
-        its own transaction."""
+    ) -> int | None:
+        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One transaction:
+        the opportunistic purge of a few expired rows, the three caps (per room, per
+        deleter, overall) and the INSERT, which is `ON CONFLICT DO NOTHING` on the
+        delivery's unique key, so a re-delivered event returns the row it already has and
+        adds nothing. `None` is a drop by a cap."""
         ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
-        stmt = sa.insert(ORPHAN_DELETE).values(
-            platform=message.platform,
-            conversation_id=message.conversation_id,
-            handle=touch.target.message_id,
-            sent_ts=touch.target.sent_ts,
-            deleter_id=message.sender_id,
-            deleter_ids=list(ids),
-            deleter_person_id=person_id,
-            event_ts=message.timestamp,
-            recorded_at=now_ms,
-        ).returning(ORPHAN_DELETE.c.id)
+        values = {
+            "platform": message.platform,
+            "conversation_id": message.conversation_id,
+            "handle": touch.target.message_id,
+            "sent_ts": touch.target.sent_ts,
+            "deleter_id": message.sender_id,
+            "deleter_ids": list(ids),
+            "deleter_person_id": person_id,
+            "event_ts": message.timestamp,
+            "recorded_at": now_ms,
+        }
+        orphan = ORPHAN_DELETE
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.scalar_one())
+            await self._purge_orphans(conn, before_ms=now_ms - ORPHAN_TTL_MS, limit=100)
+            inserted = (await conn.execute(
+                pg_insert(orphan).values(**values).on_conflict_do_nothing().returning(orphan.c.id)
+            )).scalar_one_or_none()
+            if inserted is not None:
+                # Counted AFTER the insert, in this transaction: over a cap rolls it back.
+                per_room = (await conn.execute(
+                    sa.select(sa.func.count()).select_from(orphan).where(
+                        orphan.c.platform == message.platform,
+                        orphan.c.conversation_id == message.conversation_id,
+                    )
+                )).scalar_one()
+                per_deleter = (await conn.execute(
+                    sa.select(sa.func.count()).select_from(orphan).where(
+                        orphan.c.platform == message.platform,
+                        orphan.c.deleter_id == message.sender_id,
+                    )
+                )).scalar_one()
+                total = (await conn.execute(
+                    sa.select(sa.func.count()).select_from(orphan)
+                )).scalar_one()
+                if (
+                    per_room > ORPHAN_CAP_PER_ROOM or per_deleter > ORPHAN_CAP_PER_DELETER
+                    or total > ORPHAN_CAP_GLOBAL
+                ):
+                    await conn.execute(sa.delete(ORPHAN_DELETE).where(orphan.c.id == inserted))
+                    return None
+                return int(inserted)
+            existing = (await conn.execute(
+                sa.select(orphan.c.id).where(
+                    orphan.c.platform == message.platform,
+                    orphan.c.conversation_id == message.conversation_id,
+                    orphan.c.handle == values["handle"],
+                    sa.func.coalesce(orphan.c.sent_ts, -1) == (
+                        -1 if touch.target.sent_ts is None else touch.target.sent_ts
+                    ),
+                    orphan.c.deleter_id == message.sender_id,
+                ).limit(1)
+            )).scalar_one()
+        return int(existing)
+
+    @staticmethod
+    async def _purge_orphans(conn: Any, *, before_ms: int, limit: int) -> int:
+        doomed = (
+            sa.select(ORPHAN_DELETE.c.id)
+            .where(ORPHAN_DELETE.c.recorded_at < before_ms)
+            .order_by(ORPHAN_DELETE.c.recorded_at)
+            .limit(limit)
+        )
+        result = await conn.execute(
+            sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id.in_(doomed))
+        )
+        return int(result.rowcount or 0)
 
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
     ) -> list[OrphanDelete]:
-        """See `nora.domain.ports.RecordStore.match_orphan_deletes`. The candidates
-        are one indexed read of the room; the authorship rule is the domain's, applied
-        here in Python so it is one rule everywhere (`delete_authorship`)."""
-        key = []
-        if message.message_id:
-            key.append(sa.and_(ORPHAN_DELETE.c.handle != "",
-                               ORPHAN_DELETE.c.handle == message.message_id))
-        if message.timestamp is not None:
-            key.append(ORPHAN_DELETE.c.sent_ts == message.timestamp)
-        if not key:
+        """See `nora.domain.ports.RecordStore.match_orphan_deletes`. SQL narrows the
+        candidates through the handle and sent-timestamp indexes (per room); the rule
+        that decides is the domain's, `orphan_names_message`, the same function the
+        start-up sweep uses."""
+        stmt = orphan_candidates_stmt(message)
+        if stmt is None:
             return []
-        stmt = (
-            sa.select(ORPHAN_DELETE)
-            .where(
-                ORPHAN_DELETE.c.platform == message.platform,
-                ORPHAN_DELETE.c.conversation_id == message.conversation_id,
-                sa.or_(*key),
-            )
-            .order_by(ORPHAN_DELETE.c.id.asc())
-        )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
-        author_only = message.platform in AUTHOR_ONLY_DELETES
+        orphans = [orphan_delete_of(r) for r in rows]
         return [
-            orphan_delete_of(r) for r in rows
-            if not author_only or deleter_is_author(
-                author_sender_id=message.sender_id, author_person_id=person_id,
-                deleter_sender_id=r.deleter_id, deleter_person_id=r.deleter_person_id,
-                deleter_ids=r.deleter_ids,
+            o for o in orphans
+            if orphan_names_message(
+                o, platform=message.platform, conversation_id=message.conversation_id,
+                handle=message.message_id, timestamps=(message.timestamp,),
+                sender_id=message.sender_id, person_id=person_id,
             )
         ]
+
+    async def is_hidden(self, *, row_id: int) -> bool:
+        """See `nora.domain.ports.RecordStore.is_hidden`: one read by primary key."""
+        async with self._engine.connect() as conn:
+            hidden = (await conn.execute(
+                sa.select(MESSAGES.c.hidden_at).where(MESSAGES.c.id == row_id)
+            )).first()
+        return hidden is not None and hidden.hidden_at is not None
 
     async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
         """See `nora.domain.ports.RecordStore.discard_orphan_delete`."""

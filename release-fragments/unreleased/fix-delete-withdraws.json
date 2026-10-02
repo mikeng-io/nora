@@ -5,7 +5,7 @@
     "Before this, an unsent message stayed visible to Nora in every transcript and in everything derived from it.",
     "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused, including old ones the first start after this change finds on record.",
     "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives.",
-    "A photo unsent within seconds is no longer read by the vision model or passed to her memory.",
+    "A message deleted in the instant it arrives is not read, fed to her memory or answered, whether it is text or a photo that is unsent within seconds (it is no longer read by the vision model either).",
     "An operator command, `nora withdrawal reconcile-deletes`, applies the same to deletes that were already recorded, and it also runs every time she starts."
   ],
   "limitations": [

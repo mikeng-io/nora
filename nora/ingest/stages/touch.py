@@ -152,7 +152,7 @@ async def _record_orphan(
     if not touch.target.message_id and touch.target.sent_ts is None:
         return None             # it names nothing: nothing could ever match it
     try:
-        return await audit.record_orphan_delete(
+        orphan_id = await audit.record_orphan_delete(
             message=message, touch=touch, person_id=person_id,
             now_ms=int(time.time() * 1000),
         )
@@ -161,6 +161,17 @@ async def _record_orphan(
         log.exception("an orphan delete could not be recorded; it is lost")
         metrics.inc("nora_errors_total", stage="touch_orphan", platform=message.platform)
         return None
+    if orphan_id is None:
+        # Over a cap (per room, per deleter, overall). Authorship is only checkable once a
+        # target exists, so the table must not be growable by revoking ids that do not
+        # exist. The drop is the safe direction: the race it serves lasts seconds, and a
+        # message that arrives hours later is rare; it stays visible, never the reverse.
+        log.warning("an orphan delete was dropped by a cap (%s)", message.platform)
+        metrics.inc(
+            "nora_delete_withdrawals_total",
+            platform=message.platform, outcome="orphan_dropped",
+        )
+    return orphan_id
 
 
 async def _discard_orphan(audit: RecordStore, orphan_id: int) -> None:
@@ -207,7 +218,14 @@ async def _record(
             )
         else:
             row_id = await audit.append_delete(
-                message_id=target.id, message=message, person_id=person_id,
+                message_id=target.id, person_id=person_id,
+                # The deleter's other id forms ride in the stored event
+                # (`actor_ids`): the authorship rule reads them back later (the
+                # start-up sweep, `unforget`), so a record never depends on a
+                # reconstructed event.
+                message=dataclasses.replace(
+                    message, raw={**message.raw, "actor_ids": list(touch.actor_ids)},
+                ),
             )
     except Exception:
         log.exception("%s append failed; dropping it", touch.kind)

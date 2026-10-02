@@ -25,12 +25,31 @@ from nora.domain.note_body import cited_ids_in, rollup_keys_in
 from nora.infra.sql.schema import CITATION, EVENTS, MESSAGES, NOTE
 
 __all__ = [
+    "lock_cited_messages",
     "mark_if_cites_hidden",
     "record_citations",
     "record_message_citation",
 ]
 
 _MESSAGE_ID_MAX = 2**31 - 1
+
+
+async def lock_cited_messages(conn: AsyncConnection, message_ids: Collection[int]) -> None:
+    """Take `FOR SHARE` on the messages a write is about to cite, at the START of the
+    writer's transaction, BEFORE it locks its own note or event row. ONE lock order
+    everywhere: message rows first, then the row that cites them. A delete hides the
+    message (the row lock) and its cascade then updates the citing rows; a writer that
+    locked its citing row first and the message second is the opposite order, and the
+    two deadlock (the delete ends `cascade_failed` and its hide is rolled back). The
+    write-time check (`mark_if_cites_hidden`) re-reads the same rows under the lock this
+    already holds. Ordered by id so two writers never wait on each other's rows."""
+    lookup = sorted({i for i in message_ids if 0 < i <= _MESSAGE_ID_MAX})
+    if not lookup:
+        return
+    await conn.execute(
+        sa.select(MESSAGES.c.id).where(MESSAGES.c.id.in_(lookup))
+        .order_by(MESSAGES.c.id).with_for_update(read=True)
+    )
 
 
 async def mark_if_cites_hidden(

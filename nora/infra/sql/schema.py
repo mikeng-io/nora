@@ -4644,9 +4644,23 @@ ORPHAN_DELETE = sa.Table(
         "handle <> '' OR sent_ts IS NOT NULL", name="ck_orphan_delete_names_a_target",
     ),
 )
-IDX_ORPHAN_DELETE_ROOM = sa.Index(
-    "idx_orphan_delete_room", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+IDX_ORPHAN_DELETE_HANDLE = sa.Index(
+    "idx_orphan_delete_handle", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.handle, postgresql_where=sa.text("handle <> ''"),
+)
+IDX_ORPHAN_DELETE_SENT_TS = sa.Index(
+    "idx_orphan_delete_sent_ts", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.sent_ts, postgresql_where=sa.text("sent_ts IS NOT NULL"),
+)
+IDX_ORPHAN_DELETE_DELETER = sa.Index(
+    "idx_orphan_delete_deleter", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.deleter_id,
 )
 IDX_ORPHAN_DELETE_RECORDED = sa.Index(
     "idx_orphan_delete_recorded", ORPHAN_DELETE.c.recorded_at,
+)
+# One row per delivery (the key the store's ON CONFLICT DO NOTHING relies on).
+UQ_ORPHAN_DELETE_DELIVERY = sa.Index(
+    "uq_orphan_delete_delivery", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.handle, sa.func.coalesce(ORPHAN_DELETE.c.sent_ts, -1),
+    ORPHAN_DELETE.c.deleter_id, unique=True,
 )

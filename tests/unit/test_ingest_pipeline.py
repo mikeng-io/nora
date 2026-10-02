@@ -547,6 +547,25 @@ async def _drive_recorded(metrics=None):
     return await pipeline.run(message=_msg(body="just chatting"))
 
 
+async def _drive_guarded(metrics=None, *, read_fails=False):
+    """A message recorded and then stopped by the central guard: its row is hidden (a
+    delete won the race), or the read of that fact fails (fail closed)."""
+    store = FakeRecordStore()
+
+    async def _hidden(*, row_id):
+        if read_fails:
+            raise RuntimeError("db down")
+        return True
+
+    store.is_hidden = _hidden
+    pipeline = _pipeline(
+        memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(), metrics=metrics, audit=store,
+    )
+    return await pipeline.run(message=_msg(body="just chatting"))
+
+
 async def _drive_engaged(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
@@ -660,6 +679,8 @@ def _all_drivers(monkeypatch, metrics):
         "edit_refused": lambda: _drive_edit(
             metrics, edit_body="dinner at 8", original_is_nora=True,
         ),
+        "withdrawn": lambda: _drive_guarded(metrics),
+        "withdrawal_pending": lambda: _drive_guarded(metrics, read_fails=True),
         "reaction_recorded": lambda: _drive_touch(metrics, kind="reaction"),
         "reaction_orphaned": lambda: _drive_touch(metrics, kind="reaction", recorded=False),
         "delete_recorded": lambda: _drive_touch(metrics, kind="delete"),

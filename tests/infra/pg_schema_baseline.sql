@@ -704,8 +704,10 @@ CREATE INDEX idx_note_merge_decision_unit_ts ON public.note_merge_decision USING
 CREATE INDEX idx_note_revision_body_trgm ON public.note_revision USING gin (body public.gin_trgm_ops);
 CREATE INDEX idx_note_revision_note_id ON public.note_revision USING btree (note_id);
 CREATE INDEX idx_note_standing ON public.note USING btree (unit) WHERE (retired_at IS NULL);
+CREATE INDEX idx_orphan_delete_deleter ON public.orphan_delete USING btree (platform, deleter_id);
+CREATE INDEX idx_orphan_delete_handle ON public.orphan_delete USING btree (platform, conversation_id, handle) WHERE (handle <> ''::text);
 CREATE INDEX idx_orphan_delete_recorded ON public.orphan_delete USING btree (recorded_at);
-CREATE INDEX idx_orphan_delete_room ON public.orphan_delete USING btree (platform, conversation_id);
+CREATE INDEX idx_orphan_delete_sent_ts ON public.orphan_delete USING btree (platform, conversation_id, sent_ts) WHERE (sent_ts IS NOT NULL);
 CREATE INDEX idx_presence_corridors_build_subject ON public.presence_corridors USING btree (build_id, subject_id);
 CREATE INDEX idx_presence_corridors_subject ON public.presence_corridors USING btree (subject_id);
 CREATE INDEX idx_presence_derived_places_build_subject ON public.presence_derived_places USING btree (build_id, subject_id);
@@ -917,6 +919,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.video_reading
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX uq_orphan_delete_delivery ON public.orphan_delete USING btree (platform, conversation_id, handle, COALESCE(sent_ts, ('-1'::integer)::bigint), deleter_id);
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
 CREATE UNIQUE INDEX uq_row_history_open ON public.row_history USING btree (table_name, row_key) WHERE (superseded_at IS NULL);

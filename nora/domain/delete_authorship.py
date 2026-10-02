@@ -14,9 +14,35 @@ two answers to «was that a real delete».
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
-__all__ = ["AUTHOR_ONLY_DELETES", "deleter_is_author"]
+from nora.domain.models import OrphanDelete
+
+__all__ = [
+    "AUTHOR_ONLY_DELETES",
+    "ORPHAN_CAP_GLOBAL",
+    "ORPHAN_CAP_PER_DELETER",
+    "ORPHAN_CAP_PER_ROOM",
+    "ORPHAN_TTL_MS",
+    "deleter_is_author",
+    "orphan_names_message",
+]
+
+#: How long a delete waits for a message that has not arrived. The race it exists for
+#: lasts seconds (a photo's custody fetch) to minutes, and a bridge backlog after an
+#: outage hours: three days covers every real case. A row older than this is purged, by
+#: the start-up sweep and opportunistically whenever one is written. A message that
+#: arrives later than this after its own delete is rare, and the drop is the safe
+#: direction (the message stays visible, never the reverse).
+ORPHAN_TTL_MS = 3 * 24 * 3600 * 1000
+
+#: Caps on held deletes, enforced when one is written (a drop is counted
+#: `orphan_dropped` and logged without text). Authorship can only be checked once a
+#: target exists, so any WhatsApp member can write rows by revoking ids that do not
+#: exist: the table is bounded per room, per deleter, and overall.
+ORPHAN_CAP_PER_ROOM = 300
+ORPHAN_CAP_PER_DELETER = 300
+ORPHAN_CAP_GLOBAL = 5000
 
 #: Platforms where only a message's author can delete it for everyone, so a
 #: delete naming someone else's message is not a member's action: Signal's remote
@@ -49,6 +75,36 @@ def deleter_is_author(
     names nobody never matches."""
     if author_sender_id and author_sender_id == deleter_sender_id:
         return True
-    if author_person_id is not None and author_person_id == deleter_person_id:
+    # Two EMPTY person ids are not «the same person»: both sides unresolved.
+    if author_person_id and author_person_id == deleter_person_id:
         return True
     return bool(author_sender_id) and author_sender_id in {i for i in deleter_ids if i}
+
+
+def orphan_names_message(
+    orphan: OrphanDelete, *, platform: str, conversation_id: str, handle: str,
+    timestamps: Collection[int], sender_id: str, person_id: str | None,
+) -> bool:
+    """Whether a held delete names a stored (or just-recorded) message: THE one rule,
+    used by the pipeline's check after a message is audited
+    (`RecordStore.match_orphan_deletes`), by its fake, and by the start-up sweep, so the
+    two can never disagree about what a held delete applies to.
+
+    The same platform and room; a NON-EMPTY platform handle equal to the message's, or
+    Signal's sent-timestamp equal to the message's own timestamp or one of its edits'
+    (`timestamps`); and, where only the author can delete (`AUTHOR_ONLY_DELETES`), a
+    deleter who is the message's author. SQL narrows the candidates for speed; this
+    decides."""
+    if orphan.platform != platform or orphan.conversation_id != conversation_id:
+        return False
+    by_handle = bool(orphan.handle) and orphan.handle == handle
+    by_ts = orphan.sent_ts is not None and orphan.sent_ts in timestamps
+    if not (by_handle or by_ts):
+        return False
+    if platform not in AUTHOR_ONLY_DELETES:
+        return True
+    return deleter_is_author(
+        author_sender_id=sender_id, author_person_id=person_id,
+        deleter_sender_id=orphan.deleter_id, deleter_person_id=orphan.deleter_person_id,
+        deleter_ids=orphan.deleter_ids,
+    )

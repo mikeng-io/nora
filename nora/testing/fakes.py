@@ -41,7 +41,13 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
-from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
+from nora.domain.delete_authorship import (
+    ORPHAN_CAP_GLOBAL,
+    ORPHAN_CAP_PER_DELETER,
+    ORPHAN_CAP_PER_ROOM,
+    ORPHAN_TTL_MS,
+    orphan_names_message,
+)
 from nora.domain.documents import (
     FORGET_SET_BY_PREFIX,
     DocumentExistsError,
@@ -176,6 +182,8 @@ class FakeRecordStore:
         self.deletes: list[dict[str, Any]] = []
         # `orphan_delete`, as `OrphanDelete`s (deletes waiting for their message).
         self.orphans: list[OrphanDelete] = []
+        # Row ids a test hid (`FakeRecordStore` has no withdrawal of its own).
+        self.hidden_ids: set[int] = set()
         self.fail_on_nora = False
         self.fail_on_recent = False
         self.closed = False
@@ -341,9 +349,24 @@ class FakeRecordStore:
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int:
-        """Mirrors `SqlRecordStore.record_orphan_delete`."""
+    ) -> int | None:
+        """Mirrors `SqlRecordStore.record_orphan_delete`: the unique delivery key, the
+        three caps and the opportunistic purge."""
+        self.orphans = [o for o in self.orphans if o.recorded_at >= now_ms - ORPHAN_TTL_MS]
         ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
+        key = (message.platform, message.conversation_id, touch.target.message_id,
+               touch.target.sent_ts, message.sender_id)
+        for o in self.orphans:
+            if (o.platform, o.conversation_id, o.handle, o.sent_ts, o.deleter_id) == key:
+                return o.id
+        mine = [o for o in self.orphans if o.platform == message.platform]
+        if (
+            sum(o.conversation_id == message.conversation_id for o in mine)
+            >= ORPHAN_CAP_PER_ROOM
+            or sum(o.deleter_id == message.sender_id for o in mine) >= ORPHAN_CAP_PER_DELETER
+            or len(self.orphans) >= ORPHAN_CAP_GLOBAL
+        ):
+            return None
         self.orphans.append(OrphanDelete(
             id=(max((o.id for o in self.orphans), default=0) + 1),
             platform=message.platform, conversation_id=message.conversation_id,
@@ -353,28 +376,22 @@ class FakeRecordStore:
         ))
         return self.orphans[-1].id
 
+    async def is_hidden(self, *, row_id: int) -> bool:
+        """Mirrors `SqlRecordStore.is_hidden`: a row is hidden when `hide` marked it."""
+        return row_id in self.hidden_ids
+
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
     ) -> list[OrphanDelete]:
-        """Mirrors `SqlRecordStore.match_orphan_deletes`, key and authorship rule
-        included; pinned for both by the contract suite."""
-        author_only = message.platform in AUTHOR_ONLY_DELETES
-        found = []
-        for o in self.orphans:
-            if o.platform != message.platform or o.conversation_id != message.conversation_id:
-                continue
-            by_handle = bool(o.handle) and o.handle == message.message_id
-            by_ts = o.sent_ts is not None and o.sent_ts == message.timestamp
-            if not (by_handle or by_ts):
-                continue
-            if author_only and not deleter_is_author(
-                author_sender_id=message.sender_id, author_person_id=person_id,
-                deleter_sender_id=o.deleter_id, deleter_person_id=o.deleter_person_id,
-                deleter_ids=o.deleter_ids,
-            ):
-                continue
-            found.append(o)
-        return found
+        """Mirrors `SqlRecordStore.match_orphan_deletes`: the same one rule."""
+        return [
+            o for o in self.orphans
+            if orphan_names_message(
+                o, platform=message.platform, conversation_id=message.conversation_id,
+                handle=message.message_id, timestamps=(message.timestamp,),
+                sender_id=message.sender_id, person_id=person_id,
+            )
+        ]
 
     async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
         """Mirrors `SqlRecordStore.discard_orphan_delete`."""
@@ -583,6 +600,8 @@ class FakeDeleteWithdrawer:
         if message_id in self.hidden:
             return DeleteWithdrawal(outcome="already_hidden")
         self.hidden[message_id] = now_ms
+        if self._records is not None:
+            self._records.hidden_ids.add(message_id)
         return DeleteWithdrawal(outcome="hidden")
 
 

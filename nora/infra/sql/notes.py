@@ -137,7 +137,7 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
-from nora.infra.sql.citation import record_citations
+from nora.infra.sql.citation import lock_cited_messages, record_citations
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
@@ -517,6 +517,8 @@ class SqlNoteStore:
         Lineage and `as_of` (migration `0073_lineage`) are computed here from
         the body's citations: the first revision rests on the room the note
         was raised in and on every room it cites."""
+        # The cited messages first (`citation.lock_cited_messages`): one lock order.
+        await lock_cited_messages(conn, cited_ids_in(revision.body))
         lineage, cited_at = await _revision_lineage(
             conn, body=revision.body, origin=note.established_in, first=True,
             unit=note.unit,
@@ -744,6 +746,9 @@ class SqlNoteStore:
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
+        # The cited messages first, BEFORE the note row below is locked
+        # (`citation.lock_cited_messages`): one lock order, message then note.
+        await lock_cited_messages(conn, cited_ids_in(revision.body))
         # LINEAGE (migration `0073_lineage`): this revision rests on the rooms
         # its body cites and, from the tag path, the room it was written in;
         # the note rests on the union. Read under the row lock the CAS below

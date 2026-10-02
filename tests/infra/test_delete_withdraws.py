@@ -1839,3 +1839,491 @@ async def test_a_delete_removes_pending_and_refused_proposals_and_keeps_created_
 
     assert await _candidates(engine) == {sc.cand_s, created}, "pending and refused went"
     assert sc.cand_m not in await _candidates(engine) and refused not in await _candidates(engine)
+
+
+# =============================================================================
+# the one central guard: every race ends at a hidden row
+# =============================================================================
+
+
+async def test_a_delete_racing_its_message_stops_the_message_at_the_guard(engine, monkeypatch):
+    """The exact interleaving, with a forced await order: the delete's first lookup
+    misses and writes its orphan; the message is audited; the delete's SECOND lookup
+    finds it, hides it and discards the orphan; only THEN does the message's own check of
+    held deletes run, and finds nothing. Without the guard the message went on to the
+    memory feed."""
+    shape = SHAPES[2]
+    w = World(engine)
+    real_find = w.audit.find_edited
+    at_second, second = asyncio.Event(), asyncio.Event()
+    looks = {"n": 0}
+
+    async def find(**k: Any) -> Any:
+        if k["target"].message_id == "H-RACE":
+            looks["n"] += 1
+            if looks["n"] == 2:
+                at_second.set()
+                await second.wait()
+        return await real_find(**k)
+
+    real_match = w.audit.match_orphan_deletes
+    at_match, go_match = asyncio.Event(), asyncio.Event()
+
+    async def match(**k: Any) -> Any:
+        at_match.set()
+        await go_match.wait()
+        return await real_match(**k)
+
+    monkeypatch.setattr(w.audit, "find_edited", find)
+    monkeypatch.setattr(w.audit, "match_orphan_deletes", match)
+
+    delete = asyncio.create_task(w.pipeline.run(message=shape.deletion(M_TS, "H-RACE", at=T0 + 9)))
+    await asyncio.wait_for(at_second.wait(), 10)
+    late = asyncio.create_task(w.pipeline.run(message=shape.said(M_TS, "raced words", "H-RACE")))
+    await asyncio.wait_for(at_match.wait(), 10)  # audited, and about to ask for held deletes
+    second.set()
+    await asyncio.wait_for(delete, 10)          # found, hidden, orphan discarded
+    assert await _orphans(engine) == []
+    go_match.set()
+    result = await asyncio.wait_for(late, 10)
+    await w.settle()
+
+    assert result.message is None and result.decision is None
+    assert w.memory.fed == [], "the message must never reach the memory feed"
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+    assert w.metrics.get(
+        "nora_ingest_outcomes_total", platform=shape.platform, conversation_type="group",
+        outcome="withdrawn") == 1
+
+
+async def test_a_message_whose_hidden_state_cannot_be_read_goes_no_further(engine, monkeypatch):
+    shape = SHAPES[2]
+    w = World(engine)
+
+    async def boom(**_k: Any) -> bool:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(w.audit, "is_hidden", boom)
+    result = await w.run(shape.said(M_TS, "fail closed", "H-1"))
+
+    assert result.message is None and w.memory.fed == []
+    assert w.metrics.get(
+        "nora_ingest_outcomes_total", platform=shape.platform, conversation_type="group",
+        outcome="withdrawal_pending") == 1
+
+
+async def test_a_matched_delete_that_cannot_be_applied_feeds_and_raises_nothing(
+    engine, monkeypatch,
+):
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-EARLY", at=T0 + 9))
+
+    async def boom(**_k: Any) -> int:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(w.audit, "append_delete", boom)
+    result = await w.run(shape.said(M_TS, "arrives while the apply fails", "H-EARLY"))
+
+    assert result.message is None and w.memory.fed == []
+    assert w.count("apply_failed", shape.platform) == 1
+    assert w.metrics.get(
+        "nora_ingest_outcomes_total", platform=shape.platform, conversation_type="group",
+        outcome="withdrawal_pending") == 1, "stopped as pending, not as withdrawn"
+    assert len(await _orphans(engine)) == 1, "left for the start-up sweep"
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is None
+
+
+async def test_a_lookup_that_fails_while_a_matched_delete_is_applied_does_not_fail_open(
+    engine, monkeypatch,
+):
+    """The held delete is applied DIRECTLY against the row the message was just given: no
+    second lookup. A lookup that raised there left the message flowing on to the memory
+    feed and wrote a second orphan row for a delete already matched."""
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-EARLY", at=T0 + 9))
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("lookup down")
+
+    monkeypatch.setattr(w.audit, "find_edited", boom)
+    result = await w.run(shape.said(M_TS, "late words", "H-EARLY"))
+
+    assert result.message is None and w.memory.fed == []
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+    assert await _orphans(engine) == [], "applied and discarded, never a second row"
+    async with engine.connect() as conn:
+        assert (await conn.execute(
+            sa.select(sa.func.count()).select_from(MESSAGE_DELETE))).scalar_one() == 1
+
+
+# =============================================================================
+# unforget and the sweep read the deleter's id forms back from the record
+# =============================================================================
+
+
+async def _set_person(engine: Any, room: str, person: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.conversation_id == room)
+                           .values(person_id=person))
+
+
+async def test_unforget_keeps_a_delete_hidden_that_was_applied_from_a_held_delete(engine):
+    """An unmapped WhatsApp author stored under the LID form revokes under the phone form
+    and the revoke overtakes the message. The record the application writes carries the
+    revoker's id forms, so it still reads as the author's later; it used to be written
+    with an empty event and then read as «not the author's», so `unforget` restored the
+    message."""
+    w = World(engine)
+    await w.run(_wa_revoke("MSG-L", phone="85211112222", lid="999", ts=T0 + 5))
+    await w.run(_wa_message("MSG-L", phone=None, lid="999", ts=T0 + 1))
+    mid = await w.row(_WA_ROOM, T0 + 1)
+    assert await w.hidden_at(mid) is not None
+    await _set_person(engine, _WA_ROOM, "zed")
+
+    done = await unforget_person(engine, person_id="zed", apply=True)
+
+    assert (done.restored, done.kept_deleted) == (0, 1)
+    assert await w.hidden_at(mid) is not None
+
+
+async def test_unforget_keeps_a_delete_hidden_that_the_sweep_applied_from_a_held_delete(engine):
+    w = World(engine)
+    revoke = _wa_revoke("MSG-S", phone="85211112222", lid="999", ts=T0 + 5)
+    assert revoke.touch is not None
+    await w.audit.record_orphan_delete(
+        message=revoke, touch=revoke.touch, person_id=None, now_ms=T0 + 6)
+    mid = await w.audit.append(message=_wa_message("MSG-S", phone=None, lid="999", ts=T0 + 1))
+
+    swept = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50)
+    assert swept.orphans_applied == 1
+    await _set_person(engine, _WA_ROOM, "zed")
+    done = await unforget_person(engine, person_id="zed", apply=True)
+
+    assert (done.restored, done.kept_deleted) == (0, 1)
+    assert await w.hidden_at(mid) is not None
+
+
+async def test_an_orphan_applied_delete_whose_hide_keeps_failing_is_not_refused_by_the_sweep(
+    engine, monkeypatch,
+):
+    w = World(engine, retry_delays=())
+    await w.run(_wa_revoke("MSG-F", phone="85211112222", lid="999", ts=T0 + 5))
+
+    async def boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("cascade down")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(delete_withdrawal, "withdraw_message", boom)
+        await w.run(_wa_message("MSG-F", phone=None, lid="999", ts=T0 + 1))
+    mid = await w.row(_WA_ROOM, T0 + 1)
+    assert await w.hidden_at(mid) is None
+
+    swept = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50)
+
+    assert (swept.refused, swept.hidden) == (0, 1)
+    assert await w.hidden_at(mid) == T0 + 50
+
+
+# =============================================================================
+# one lock order: message rows first, then the row that cites them
+# =============================================================================
+
+
+async def test_a_note_revised_while_the_delete_runs_neither_deadlocks_nor_stays_supported(
+    engine, monkeypatch,
+):
+    """The writer used to lock its note row (the UPDATE) and THEN take FOR SHARE on the
+    message while the delete held the message and its cascade waited for the note:
+    a deadlock, the delete ended `cascade_failed` and its hide rolled back. With message
+    rows locked first by both, one waits for the other and both finish."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    notes = SqlNoteStore(engine)
+    head = (await notes.note_by_id(unit="u", note_id=sc.note_m)).head_revision_id  # type: ignore[union-attr]
+    real = delete_withdrawal.withdraw_message
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def held(*a: Any, **k: Any) -> Any:
+        entered.set()
+        await release.wait()
+        return await real(*a, **k)
+
+    monkeypatch.setattr(delete_withdrawal, "withdraw_message", held)
+    withdrawer = SqlDeleteWithdrawer(engine)
+    delete = asyncio.create_task(withdrawer.withdraw(message_id=sc.m, now_ms=T0 + 77))
+    await asyncio.wait_for(entered.wait(), 10)   # the message row is hidden and locked
+    revise = asyncio.create_task(notes.append_revision(
+        unit="u", note_id=sc.note_m, parent_revision_id=head,
+        body=f"revised, still resting on [{sc.m}]", established_by="test", now_ms=T0 + 5,
+    ))
+    await asyncio.sleep(0.5)
+    release.set()
+    outcome, _ = await asyncio.wait_for(asyncio.gather(delete, revise), 15)
+
+    assert outcome.outcome == "hidden", "the delete must not end cascade_failed"
+    assert await _note_unsupported(engine, sc.note_m) is not None
+
+
+# =============================================================================
+# the held-delete table is bounded
+# =============================================================================
+
+
+async def _keep(store: Any, *, platform: str = "discord", room: str = "g1",
+                handle: str = "H1", deleter: str = "", now: int = T0, ts: int | None = None,
+                ) -> int | None:
+    msg = NormalizedMessage(platform, room, "group", deleter, None, 5, "", {})
+    touch = Touch(kind="delete", target=EditTarget(message_id=handle, sent_ts=ts))
+    return await store.record_orphan_delete(
+        message=msg, touch=touch, person_id=None, now_ms=now)
+
+
+async def test_the_same_delivery_again_adds_no_row(engine):
+    store = SqlRecordStore(engine)
+    ids = {await _keep(store) for _ in range(5)}
+    assert len(ids) == 1 and None not in ids
+    assert len(await _orphans(engine)) == 1
+    # A different delivery (another handle, another deleter) is another row.
+    assert await _keep(store, handle="H2") not in ids
+    assert await _keep(store, deleter="d2") not in ids
+    assert len(await _orphans(engine)) == 3
+
+
+async def test_a_signal_delivery_is_keyed_by_its_timestamp(engine):
+    store = SqlRecordStore(engine)
+    a = await _keep(store, platform="signal", handle="", ts=100, deleter="+1")
+    b = await _keep(store, platform="signal", handle="", ts=100, deleter="+1")
+    c = await _keep(store, platform="signal", handle="", ts=101, deleter="+1")
+    assert a == b and c != a and len(await _orphans(engine)) == 2
+
+
+async def test_a_held_delete_over_the_per_room_cap_is_dropped(engine, monkeypatch):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 3)
+    store = SqlRecordStore(engine)
+    kept = [await _keep(store, handle=f"A{i}", deleter=f"x{i}") for i in range(5)]
+    assert [k is not None for k in kept] == [True, True, True, False, False]
+    assert await _keep(store, room="g2", handle="A0", deleter="x0") is not None, "another room"
+
+
+async def test_a_held_delete_over_the_per_deleter_cap_is_dropped(engine, monkeypatch):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_DELETER", 4)
+    store = SqlRecordStore(engine)
+    mine = [await _keep(store, room=f"r{i}", handle="H", deleter="same") for i in range(6)]
+    assert [k is not None for k in mine] == [True, True, True, True, False, False]
+    assert await _keep(store, room="r0", handle="H2", deleter="someone-else") is not None
+
+
+async def test_a_held_delete_over_the_overall_cap_is_dropped(engine, monkeypatch):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_GLOBAL", 3)
+    store = SqlRecordStore(engine)
+    kept = [await _keep(store, room=f"r{i}", handle="H", deleter=f"d{i}") for i in range(5)]
+    assert [k is not None for k in kept] == [True, True, True, False, False]
+    assert len(await _orphans(engine)) == 3
+
+
+async def test_a_dropped_held_delete_is_counted_and_logged_without_text(engine, monkeypatch):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 1)
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-ONE", at=T0 + 9))
+    await w.run(shape.deletion(M_TS + 1, "H-TWO", at=T0 + 9))
+    assert len(await _orphans(engine)) == 1
+    assert w.count("orphan_dropped", shape.platform) == 1
+
+
+async def test_an_expired_held_delete_is_purged_when_a_new_one_is_written(engine):
+    from nora.domain.delete_authorship import ORPHAN_TTL_MS
+
+    store = SqlRecordStore(engine)
+    await _keep(store, handle="OLD", now=1)
+    await _keep(store, handle="FRESH", now=ORPHAN_TTL_MS + 10)
+    assert [o.handle for o in await _orphans(engine)] == ["FRESH"]
+
+
+# --- the set-based sweep, against the per-message rule -----------------------
+
+
+async def _seed(engine: Any, rng: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    platforms = ("signal", "whatsapp", "discord")
+    rooms = ("r0", "r1", "r2")
+    persons = (None, "ada", "ben", "cy")
+    messages: list[dict[str, Any]] = []
+    for n in range(2400):
+        platform = rng.choice(platforms)
+        messages.append({
+            "platform": platform, "conversation_id": rng.choice(rooms),
+            "conversation_type": "group", "sender_id": f"s{rng.randrange(40)}",
+            "person_id": rng.choice(persons), "ts": 10_000 + rng.randrange(900),
+            "body": f"m{n}", "is_nora": 0, "delivery_status": "sent", "raw_json": "{}",
+            "platform_message_id": None if platform == "signal" else f"h{n}",
+        })
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MESSAGES), messages)
+        signal_ids = [int(i) for i in (await conn.execute(
+            sa.select(MESSAGES.c.id).where(MESSAGES.c.platform == "signal")
+            .order_by(MESSAGES.c.id).limit(150))).scalars()]
+        # Signal names a message by its ORIGINAL timestamp or by one of its edits'.
+        await conn.execute(sa.insert(MESSAGE_EDIT), [
+            {"message_id": i, "ts": 50_000 + i, "body": "edited", "raw_json": "{}"}
+            for i in signal_ids
+        ])
+        rows = (await conn.execute(
+            sa.select(MESSAGES.c.id, MESSAGES.c.platform, MESSAGES.c.conversation_id,
+                      MESSAGES.c.sender_id, MESSAGES.c.person_id, MESSAGES.c.ts,
+                      MESSAGES.c.platform_message_id).order_by(MESSAGES.c.id))).all()
+    stored = [dict(r._mapping) | {"edit_ts": 50_000 + r.id if r.id in signal_ids else None}
+              for r in rows]
+    orphans: list[dict[str, Any]] = []
+    for n in range(2400):
+        target = rng.choice(stored)
+        names = rng.random() < 0.6
+        platform = target["platform"] if names or rng.random() < 0.5 else rng.choice(platforms)
+        room = target["conversation_id"] if names or rng.random() < 0.5 else rng.choice(rooms)
+        if platform == "signal":
+            handle, sent_ts = "", target["ts"] + (0 if names else rng.choice((0, 7, 1000)))
+            if names and target["edit_ts"] is not None and rng.random() < 0.5:
+                sent_ts = target["edit_ts"]          # named by one of its edits' timestamps
+        else:
+            handle = (target["platform_message_id"] or "") if names else f"nope{n}"
+            handle = handle if rng.random() < 0.9 else ""
+            sent_ts = None if handle else 99_999
+        author_like = rng.random() < 0.7
+        deleter = target["sender_id"] if author_like else f"s{rng.randrange(40)}"
+        person = target["person_id"] if rng.random() < 0.6 else rng.choice(persons)
+        orphans.append({
+            "platform": platform, "conversation_id": room, "handle": handle,
+            "sent_ts": sent_ts, "deleter_id": deleter,
+            "deleter_ids": [deleter] + ([target["sender_id"]] if rng.random() < 0.1 else []),
+            "deleter_person_id": person, "event_ts": 5, "recorded_at": T0 + n,
+        })
+    # The unique delivery key: drop the repeats the generator may have made.
+    seen: set[tuple[Any, ...]] = set()
+    unique = []
+    for o in orphans:
+        key = (o["platform"], o["conversation_id"], o["handle"], o["sent_ts"], o["deleter_id"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(o)
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(ORPHAN_DELETE), unique)
+    return stored, unique
+
+
+async def test_the_set_based_sweep_agrees_with_the_per_message_rule_at_scale(engine):
+    """A few thousand held deletes and messages, random overlap, mixed platforms, authors
+    and strangers. What the sweep hides is exactly what the one rule says each held delete
+    names (the rule the pipeline applies message by message), the pipeline's own match
+    returns the same orphans for a sample of messages, and the whole sweep is bounded."""
+    import random
+    import time
+
+    from nora.domain.delete_authorship import ORPHAN_TTL_MS, orphan_names_message
+    from nora.infra.sql.audit import orphan_delete_of
+
+    stored, _ = await _seed(engine, random.Random(20261003))
+    async with engine.connect() as conn:
+        orphans = [orphan_delete_of(r) for r in (await conn.execute(
+            sa.select(ORPHAN_DELETE).order_by(ORPHAN_DELETE.c.id))).all()]
+    by_room: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for m in stored:
+        by_room.setdefault((m["platform"], m["conversation_id"]), []).append(m)
+
+    def names(o: Any, m: dict[str, Any], *, arriving: bool = False) -> bool:
+        edits = [] if arriving or m["edit_ts"] is None else [m["edit_ts"]]
+        return orphan_names_message(
+            o, platform=m["platform"], conversation_id=m["conversation_id"],
+            handle=m["platform_message_id"] or "", timestamps=(m["ts"], *edits),
+            sender_id=m["sender_id"], person_id=m["person_id"])
+
+    expected: set[int] = set()
+    for o in orphans:
+        hit = next((m for m in by_room.get((o.platform, o.conversation_id), []) if names(o, m)),
+                   None)
+        if hit is not None:
+            expected.add(hit["id"])
+    assert 300 < len(expected) < 2000, "the generator exercises both outcomes"
+
+    store = SqlRecordStore(engine)
+    for m in stored[:120]:                       # the pipeline's own check, a sample
+        msg = NormalizedMessage(
+            m["platform"], m["conversation_id"], "group", m["sender_id"], None, m["ts"], "x",
+            {}, message_id=m["platform_message_id"] or "")
+        matched = await store.match_orphan_deletes(message=msg, person_id=m["person_id"])
+        got = {o.id for o in matched}
+        # A message just recorded has no edits yet: only its own timestamp can name it.
+        want = {o.id for o in orphans if names(o, m, arriving=True)}
+        assert got == want
+
+    started = time.monotonic()
+    done = await reconcile_deletes(engine, apply=True, now_ms=T0 + ORPHAN_TTL_MS // 2)
+    assert time.monotonic() - started < 60
+
+    async with engine.connect() as conn:
+        hidden = {int(i) for i in (await conn.execute(
+            sa.select(MESSAGES.c.id).where(MESSAGES.c.hidden_at.is_not(None)))).scalars()}
+        left = (await conn.execute(sa.select(sa.func.count()).select_from(ORPHAN_DELETE))
+                ).scalar_one()
+    assert hidden == expected
+    assert done.failed == 0 and done.orphans_applied >= len(expected)
+    # What is left is exactly the held deletes that name nothing: an applied one is consumed.
+    unmatched = {
+        o.id for o in orphans
+        if not any(names(o, m) for m in by_room.get((o.platform, o.conversation_id), []))
+    }
+    async with engine.connect() as conn:
+        remaining = {int(i) for i in (await conn.execute(
+            sa.select(ORPHAN_DELETE.c.id))).scalars()}
+    assert remaining == unmatched and left == len(unmatched)
+
+
+async def test_the_match_reads_the_handle_and_timestamp_indexes_not_the_whole_table(engine):
+    """At 200k rows the match was a parallel sequential scan (~12 ms per message). It now
+    reads `idx_orphan_delete_handle` / `idx_orphan_delete_sent_ts` through the room."""
+    from nora.infra.sql.audit import orphan_candidates_stmt
+
+    rows = [
+        {"platform": "whatsapp" if i % 2 else "signal", "conversation_id": f"r{i % 50}",
+         "handle": f"h{i}" if i % 2 else "", "sent_ts": None if i % 2 else 1000 + i,
+         "deleter_id": f"d{i % 700}", "deleter_ids": [], "event_ts": 5, "recorded_at": T0 + i}
+        for i in range(30_000)
+    ]
+    async with engine.begin() as conn:
+        for start in range(0, len(rows), 5000):
+            await conn.execute(sa.insert(ORPHAN_DELETE), rows[start:start + 5000])
+        await conn.execute(sa.text("ANALYZE orphan_delete"))
+    msg = NormalizedMessage("whatsapp", "r1", "group", "d1", None, 1001, "x", {}, message_id="h1")
+    stmt = orphan_candidates_stmt(msg)
+    assert stmt is not None
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    async with engine.connect() as conn:
+        plan = "\n".join(
+            r[0] for r in (await conn.execute(sa.text("EXPLAIN " + sql))).all())
+    assert "Seq Scan on orphan_delete" not in plan, plan
+    assert "idx_orphan_delete_handle" in plan or "idx_orphan_delete_sent_ts" in plan, plan
+
+
+async def test_a_message_whose_held_deletes_cannot_be_read_goes_no_further(engine, monkeypatch):
+    shape = SHAPES[2]
+    w = World(engine)
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(w.audit, "match_orphan_deletes", boom)
+    result = await w.run(shape.said(M_TS, "unknown whether a delete names it", "H-1"))
+
+    assert result.message is None and w.memory.fed == []
+    assert w.metrics.get(
+        "nora_ingest_outcomes_total", platform=shape.platform, conversation_type="group",
+        outcome="withdrawal_pending") == 1

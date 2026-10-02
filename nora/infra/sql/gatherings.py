@@ -46,7 +46,7 @@ from nora.domain.gatherings import (
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
-from nora.infra.sql.citation import mark_if_cites_hidden
+from nora.infra.sql.citation import lock_cited_messages, mark_if_cites_hidden
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
@@ -57,6 +57,12 @@ from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 _PG_UNIQUE_VIOLATION = "23505"
 
 
+def _cited_message_ids(evidence: EventEvidence | None) -> set[int]:
+    if evidence is None:
+        return set()
+    return {int(c.ref) for c in evidence.citations if c.store == "message" and c.ref.isdigit()}
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -65,9 +71,7 @@ async def _cites_hidden(conn: Any, event_id: UUID, evidence: EventEvidence) -> b
     """Mark the event `unsupported` when a message it now cites is already hidden:
     a write after the withdrawal the cascade has already run (`citation.
     mark_if_cites_hidden`). The event row exists by now."""
-    ids = {
-        int(c.ref) for c in evidence.citations if c.store == "message" and c.ref.isdigit()
-    }
+    ids = _cited_message_ids(evidence)
     return await mark_if_cites_hidden(
         conn, citing_store="event", citing_key=str(event_id), message_ids=ids,
         now_ms=_now_ms(),
@@ -235,6 +239,9 @@ class SqlGatheringStore:
         row = normalise_gathering(event)
         try:
             async with self._engine.begin() as conn:
+                # The cited messages first (`citation.lock_cited_messages`): one lock
+                # order, message rows before the event row.
+                await lock_cited_messages(conn, _cited_message_ids(evidence))
                 if evidence is not None:
                     lineage, as_of = await apply_evidence(
                         conn, event=row, held=row.lineage, evidence=evidence,
@@ -324,6 +331,8 @@ class SqlGatheringStore:
     ) -> Gathering:
         row = normalise_gathering(event)
         async with self._engine.begin() as conn:
+            # The cited messages BEFORE the event row below is locked: one lock order.
+            await lock_cited_messages(conn, _cited_message_ids(evidence))
             current = (await conn.execute(
                 sa.select(EVENTS.c.head_revision_id, EVENTS.c.lineage)
                 .where(EVENTS.c.id == row.id)
