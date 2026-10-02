@@ -46,6 +46,7 @@ from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
 from nora.domain.note_body import NORA_NAMES
 from nora.domain.ports import CognitionDryRunStore, NoteHead, StimulusStore
+from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 
 log = logging.getLogger("nora.app.cognition_wiring")
@@ -349,6 +350,8 @@ def build_cognition_runner(
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
     note_head: Callable[[str, str], Awaitable[NoteHead | None]],
     room_proactive: Callable[[str, str], bool],
+    requester_pending: Callable[[], Awaitable[int]],
+    reminder_caps: ReminderCaps,
     open_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
@@ -427,8 +430,12 @@ def build_cognition_runner(
         max_self_wakes=cfg.cognition.max_self_wakes,
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
         note_head=note_head, room_proactive=room_proactive,
-        max_reminds_per_room_per_day=cfg.cognition.max_reminds_per_room_per_day,
-        max_pending_reminds=cfg.cognition.max_pending_reminds,
+        # The LIVE `remind` tool's own limits (`ReminderCaps`, from `[reminders]`),
+        # never a second set: the shadow refuses what the live path would.
+        requester_pending=requester_pending,
+        max_pending_per_requester=reminder_caps.max_pending_per_requester,
+        remind_min_lead_seconds=reminder_caps.min_lead_seconds,
+        remind_max_horizon_days=reminder_caps.max_horizon_days,
         model_id=model_id, model_route=model_route, metrics=metrics, clock=clock,
         tz=ZoneInfo(cfg.cognition.timezone),
         model_window_tokens=cfg.cognition.model_window_tokens,

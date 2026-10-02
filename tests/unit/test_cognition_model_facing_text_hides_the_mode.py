@@ -214,6 +214,12 @@ async def _results() -> list[Any]:
         out.append(await by["wake_cancel"](wake_id="nope", why="x"))
         out.append(await by["remind"](intent="tell", subject_rows=[], at=at))
         out.append(await by["remind"](intent="shout", subject_rows=["note:1"], at=at))
+        out.append(await by["remind"](
+            intent="tell", subject_rows=["note:3"], at=iso(NOW - 3_600_000)))
+        out.append(await by["remind"](
+            intent="tell", subject_rows=["note:3"], at=iso(NOW + 1_000)))
+        out.append(await by["remind"](
+            intent="tell", subject_rows=["note:3"], at=iso(NOW + 4000 * 86_400_000)))
         out.append(await by["remind"](intent="tell", subject_rows=["note:2"], at=at))
         out.append(await by["remind"](intent="tell", subject_rows=["note:1"], at=at))
         out.append(await by["remind_move"](reminder_id="nope", at=at, why="x"))
@@ -231,7 +237,8 @@ async def _results() -> list[Any]:
     ),)
     await _session(behave, pending_reminds=waiting, runner_kwargs={
         "note_head": head_of, "room_proactive": lambda p, c: True,
-        "max_reminds_per_room_per_day": 100, "max_pending_reminds": 100,
+        "max_pending_per_requester": 100, "remind_min_lead_seconds": 120,
+        "remind_max_horizon_days": 365,
     })
     return out
 
@@ -240,9 +247,9 @@ async def test_no_result_a_verb_returns_names_the_mode_or_a_cap():
     results = await _results()
     reasons = {r.get("reason") for r in results if isinstance(r, dict)}
     # the scan read the refusals it is about, and the ok path
-    assert {"stale_base", "not_found", "no_subject", "horizon_too_soon", "horizon_too_far",
+    assert {"stale_head", "not_found", "no_subject", "horizon_too_soon", "horizon_too_far",
             "no_citations", "duplicate_pending", "no_such_item", "no_write_for_item",
-            "bad_intent"} <= reasons, reasons
+            "bad_intent", "past", "too_soon", "too_far", "already_closed"} <= reasons, reasons
     assert any(r == {"status": "ok"} for r in results)
     assert any(r.get("status") == "ok" and "wake_id" in r for r in results)
     for result in results:
@@ -252,6 +259,91 @@ async def test_no_result_a_verb_returns_names_the_mode_or_a_cap():
 async def test_every_status_a_verb_returns_is_one_the_live_verb_returns():
     results = await _results()
     assert {r["status"] for r in results} <= {"ok", "refused", "unavailable"}
+
+
+async def test_every_refusal_says_why_in_words():
+    """The objective promises «you are told why, in words»: a refusal or an
+    unavailable with no `detail` breaks it (event `not_found` and `close` did)."""
+    for result in await _results():
+        if result["status"] != "ok":
+            assert result.get("detail"), result
+
+
+class _Down(InMemoryCognitionDryRunStore):
+    """A ledger every call of which raises, with a message that would leak."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in ("record_would_write", "record_pace", "record_remind_mirror") or name.startswith(
+            ("pending_", "count_"),
+        ):
+            async def boom(*args: Any, **kwargs: Any) -> Any:
+                raise RuntimeError("postgresql://nora:hunter2@db.internal/nora: connection refused")
+            return boom
+        return super().__getattribute__(name)
+
+
+async def _failures(*, store_down: bool, seams_down: bool) -> list[Any]:
+    """Every verb called with a store, or every read seam, that raises."""
+    out: list[Any] = []
+
+    async def down(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("postgresql://nora:hunter2@db.internal/nora: connection refused")
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        at = iso(NOW + 3_600_000)
+        common = {"reasoning": "told", "confidence": "high", "cited_ids": ["101"]}
+        calls = {
+            "close": {"item_index": 0, "reason": "no_change"},
+            "note_create": dict(**NOTE, body=GOOD_BODY),
+            "note_update": {"note_id": "n1", "body": GOOD_BODY, "parent_revision_id": "rev-1"},
+            "event_propose": dict(title="dinner", **common),
+            "event_revise": dict(event_id="e", venue_text="v", **common),
+            "event_set_status": dict(event_id="e", status="confirmed", **common),
+            "standing_revise": {"where_it_stands": "fine"},
+            "wake_at": {"subject_rows": ["event:1"], "at": at, "why": "x"},
+            "wake_move": {"wake_id": "w", "at": at, "why": "x"},
+            "wake_cancel": {"wake_id": "w", "why": "x"},
+            "remind": {"intent": "tell", "subject_rows": ["note:1"], "at": at},
+            "remind_move": {"reminder_id": "r", "at": at, "why": "x"},
+            "remind_cancel": {"reminder_id": "r", "why": "x"},
+        }
+        for verb, args in calls.items():
+            out.append((verb, await by[verb](**args)))
+
+    kwargs: dict[str, Any] = {"note_head": down, "requester_pending": down}
+    if seams_down:
+        kwargs.update(
+            pending_self_wakes=down, pending_mirrored_reminds=down, open_events=down,
+            open_note_titles=down, prior_standing=down,
+        )
+    await _session(
+        behave, store=_Down() if store_down else None, runner_kwargs=kwargs,
+    )
+    return out
+
+
+@pytest.mark.parametrize("store_down,seams_down", [(True, False), (False, True), (True, True)])
+async def test_a_store_or_a_read_that_raises_never_reaches_the_model_as_raw_text(
+    store_down, seams_down,
+):
+    for verb, result in await _failures(store_down=store_down, seams_down=seams_down):
+        assert isinstance(result, dict), verb
+        assert result["status"] in {"ok", "refused", "unavailable"}, (verb, result)
+        assert "hunter2" not in json.dumps(result) and "postgresql" not in json.dumps(result), verb
+        assert findings(json.dumps(result)) == [], (verb, result)
+
+
+async def test_the_failure_path_was_really_exercised_for_every_verb():
+    got = await _failures(store_down=True, seams_down=True)
+    assert len(got) == 13
+    unavailable = {verb for verb, r in got if r["status"] == "unavailable"}
+    # a verb that refused before it ever touched a store (a bad argument) is not in this
+    # set, but each of these reached one and was answered `unavailable`
+    assert unavailable == {
+        "note_create", "note_update", "event_propose", "event_revise", "event_set_status",
+        "standing_revise", "wake_at", "wake_move", "wake_cancel", "remind", "remind_move",
+        "remind_cancel",
+    }
 
 
 def test_no_refusal_detail_the_pure_checks_can_produce_names_the_mode_or_a_cap():
@@ -297,9 +389,13 @@ def test_no_refusal_detail_the_pure_checks_can_produce_names_the_mode_or_a_cap()
                      pending=(), context=RemindContext(room_proactive=False)),
         check_remind(subject_rows=["a"], intent="tell", platform="s", conversation_id="c",
                      pending=(), context=RemindContext(abduced_subject=True)),
-        check_remind(subject_rows=["a"], intent="tell", platform="s", conversation_id="c",
-                     pending=(), context=RemindContext(
-                         acts_in_room_today=5, max_acts_per_room_per_day=5)),
+        *(
+            check_remind(subject_rows=["a"], intent="tell", platform="s", conversation_id="c",
+                         pending=(), context=RemindContext(
+                             now_ms=NOW, at_ms=NOW + delta, min_lead_seconds=120,
+                             max_horizon_days=365))
+            for delta in (-1, 1_000, 4000 * 86_400_000)
+        ),
         check_remind(subject_rows=["a"], intent="tell", platform="s", conversation_id="c",
                      pending=(pending_remind,) * 3, context=RemindContext(max_pending=3)),
         check_remind_move(reminder_ref="x", pending=(), created_by_session_id=1),
@@ -316,6 +412,6 @@ def test_no_refusal_detail_the_pure_checks_can_produce_names_the_mode_or_a_cap()
     ):
         assert base is not None
         details.append(base[1])
-    assert len(details) == 24 and all(details)
+    assert len(details) == 26 and all(details)
     for detail in details:
         assert findings(detail) == [], detail

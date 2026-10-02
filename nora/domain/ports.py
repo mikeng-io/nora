@@ -1210,15 +1210,6 @@ class CognitionDryRunStore(Protocol):
         after `since_ms` (the per-day cap's count; moves do not count)."""
         ...
 
-    async def count_reminds_created(
-        self, *, unit: str, platform: str, conversation_id: str, since_ms: int,
-    ) -> int:
-        """`remind` rows recorded (not refused) for the unit's room at or after
-        `since_ms`: the per-room daily act cap's count. Moves and cancels do not
-        count, and a reminder cancelled after it was made still counts (it was an
-        act cognition chose to make)."""
-        ...
-
     async def pending_mirrored_reminds(
         self, *, unit: str, now_ms: int,
     ) -> Sequence[PendingMirroredRemind]:

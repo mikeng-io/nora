@@ -2433,6 +2433,20 @@ session_mode = "off"
 # 30-cognition.md §1/§2 starting values.
 max_items = 12
 max_strikes = 3
+# How long a tracked wake may stay OPEN (no outcome row) before it is EXPIRED and
+# read as failed, its stimuli pending again (DEC-242). The session's own wall
+# clock, `[dreamer.budgets.cognition] timeout_seconds`, must end at least 60 s
+# before it (the runner refuses to start otherwise).
+# (left at its default so the config tests exercise the default: 3900)
+# session_timeout_seconds = 3900
+# `wake_at`, the session's own next look (20-observe.md §3, DEC-242): at most
+# this many self-wakes pending per unit, and at most this many `wake_at` calls
+# per unit in a rolling 24 hours (a fired wake frees its slot, so the pending cap
+# alone does not bound a session that re-arms itself every pass). Code guards,
+# never shown to the model: a refusal says it is refused, never by how much.
+# Starting values; `nora_cognition_refused_total{verb="wake_at"}` counts each.
+max_self_wakes = 5
+max_self_wakes_per_day = 12
 # A failing session is not retried at the cooldown for ever (#637 review, major
 # 1: 283 failed sessions a day were measured, one per `cooldown_seconds`). After
 # `n` consecutive failed or timed-out sessions the unit's next wake waits

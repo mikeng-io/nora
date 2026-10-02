@@ -37,7 +37,7 @@ from typing import Any
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.ports import ToolSpec, adapt
-from nora.app.cognition_session import AdaptorBudget, CognitionRunResult
+from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
 from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
@@ -73,13 +73,35 @@ def as_strands_tools(tools: list[Any]) -> list[Any]:
     return out
 
 
+def _spent(usage: Any) -> int | None:
+    """`usage["totalTokens"]` of a Strands accounting mapping, or None when it is
+    absent, not a number, or ZERO: a loop that made a model call spent something,
+    so a zero is a provider that reported no usage (Strands then accumulates a
+    dict of zeros), not a free session. An unread count is never a zero."""
+    total = usage.get("totalTokens") if isinstance(usage, Mapping) else None
+    ok = isinstance(total, int) and not isinstance(total, bool) and total > 0
+    return total if ok else None
+
+
 def _total_tokens(result: Any) -> int | None:
     """The loop's total tokens as Strands accumulated them over every cycle
-    (`AgentResult.metrics.accumulated_usage["totalTokens"]`), or None when the
-    result carries no usage: an unread count is never a zero."""
-    usage = getattr(getattr(result, "metrics", None), "accumulated_usage", None)
-    total = usage.get("totalTokens") if isinstance(usage, Mapping) else None
-    return total if isinstance(total, int) and not isinstance(total, bool) else None
+    (`AgentResult.metrics.accumulated_usage`), or None (see `_spent`)."""
+    return _spent(getattr(getattr(result, "metrics", None), "accumulated_usage", None))
+
+
+def _leave_spend(agent: Any) -> None:
+    """Leave what the agent has spent where the session can read it, whatever
+    happened to the loop (it returned, raised, timed out or was cancelled): a
+    failed session is the costliest and has no result to read it from. Best
+    effort and never raising, since it runs in a `finally`."""
+    spend = SESSION_TOKENS.get()
+    if spend is None:
+        return
+    try:
+        usage = getattr(getattr(agent, "event_loop_metrics", None), "accumulated_usage", None)
+        spend.total = _spent(usage)
+    except Exception:
+        log.exception("could not read the tokens a cognition session spent")
 
 
 class LiveCognitionAgentRunner:
@@ -188,3 +210,5 @@ class LiveCognitionAgentRunner:
             log.exception("cognition session failed")
             self._metrics.inc("nora_errors_total", stage="cognition_session")
             raise
+        finally:
+            _leave_spend(agent)

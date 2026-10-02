@@ -134,7 +134,9 @@ def test_the_reviewers_scenario_one_waiting_close_does_not_close_three_writers_r
     # `closed == 1`, which counted the model's word as a closed row).
     assert sum(w.closed for w in result.writers) == 0
     assert sum(w.closed_self_attested for w in result.writers) == 1
-    assert sum(w.open for w in result.writers) == 2
+    # `open` is "not closed by code": the self-attested row stays in it, so all three
+    # rows are open and no number reads as progress the model's own word produced
+    assert sum(w.open for w in result.writers) == 3
 
 
 def test_each_row_takes_the_nearest_unused_close_in_time_order():
@@ -282,38 +284,92 @@ def test_a_window_where_every_session_closes_by_its_own_say_so_closes_nothing():
         tolerance_ms=50, since_ms=0, until_ms=1000,
     )
     w = tier.writers[0]
-    assert (len(w.clocked_only), w.closed, w.closed_self_attested, w.open) == (3, 0, 3, 0)
+    # all three are open: the three closes are the model's, and none is evidence
+    assert (len(w.clocked_only), w.closed, w.closed_self_attested, w.open) == (3, 0, 3, 3)
     line = verdict_lines(_report(tier))[0]
-    assert "0 closed by code, 3 closed self-attested: not evidence, 0 open" in line
+    assert (
+        "0 closed by code, 3 closed self-attested: not evidence, 3 open: everything not "
+        "closed by code" in line
+    )
     assert all(not g.closed_by_code for g in w.clocked_only)
 
 
-def test_a_mix_counts_the_proven_close_apart_from_the_say_so_ones():
-    backed = frozenset({("standing", "r", "")})
+def _note_rows(*ids: str) -> list[ClockedWrite]:
+    return [
+        ClockedWrite(
+            writer="note-curation", tier="note", id=f"rev-{i}", room="r", at_ms=100 + n, key=i,
+        )
+        for n, i in enumerate(ids)
+    ]
+
+
+def _noted(reason: str, key: str, *, at: int = 110, session: int = 1, writes=frozenset()):
+    return Close(
+        session_id=session, room="r", reason=reason, at_ms=at, kind="message",
+        cited=frozenset({key}), session_writes=writes,
+    )
+
+
+def test_a_mix_counts_the_proven_close_apart_from_the_say_so_ones_and_the_open_one():
     closes = [
-        Close(session_id=1, room="r", reason="covered", at_ms=110, session_writes=backed),
-        Close(session_id=2, room="r", reason="no_change", at_ms=111),
+        _noted("covered", "n1", writes=frozenset({("note", "r", "n1")})),     # backed
+        _noted("no_change", "n2", at=111, session=2),                         # say-so
     ]
     tier = compare_tier(
-        "standing", cognition=[], refusals=[], clocked=_rows("a", "b", "c"), closes=closes,
+        "note", cognition=[], refusals=[], clocked=_note_rows("n1", "n2", "n3"), closes=closes,
         tolerance_ms=50, since_ms=0, until_ms=1000,
     )
-    w = tier.writers[0]
-    assert (w.closed, w.closed_self_attested, w.open) == (1, 1, 1)
+    w = next(v for v in tier.writers if v.writer == "note-curation")
+    assert (w.closed, w.closed_self_attested, w.open) == (1, 1, 2)
+    assert w.closed + w.open == len(w.clocked_only)             # open = not closed by code
     assert sorted((g.closed_by, g.closed_by_code) for g in w.clocked_only if g.closed_by) == [
         ("covered", True), ("no_change", False),
     ]
 
 
 def test_a_proven_close_is_taken_before_a_say_so_one_at_the_same_distance():
-    backed = frozenset({("standing", "r", "")})
+    backed = frozenset({("note", "r", "n1")})
     ledger = CloseLedger([
-        Close(session_id=1, room="r", reason="covered", at_ms=110),               # unbacked
-        Close(session_id=2, room="r", reason="covered", at_ms=110, session_writes=backed),
+        _noted("covered", "n1", session=1),                                   # unbacked
+        _noted("covered", "n1", session=2, writes=backed),
     ], tolerance_ms=50)
-    assert ledger.claim_with_proof(tier="standing", room="r", at_ms=100, key="") == (
+    assert ledger.claim_with_proof(tier="note", room="r", at_ms=100, key="n1") == (
         "covered", True,
     )
+
+
+def test_a_row_with_no_id_is_never_closed_by_code_however_much_the_session_wrote():
+    # The reviewer's case: a `covered` rollup close plus ANY standing write of the same
+    # session and room, hours away. Nothing links that write to THIS clocked row but the
+    # room and the hour, which is not a proof.
+    backed = frozenset({("standing", "r", ""), ("standing", "r", "anything")})
+    tier = compare_tier(
+        "standing", cognition=[], refusals=[], clocked=_rows("a"),
+        closes=[Close(session_id=1, room="r", reason="covered", at_ms=110, kind="rollup",
+                      session_writes=backed)],
+        tolerance_ms=50, since_ms=0, until_ms=1000,
+    )
+    w = tier.writers[0]
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1)
+    # and a keyless PROACTIVE row is the same
+    ledger = CloseLedger([Close(session_id=1, room="r", reason="covered", at_ms=110,
+                                kind="message", session_writes=frozenset({("act", "r", "")}))],
+                         tolerance_ms=50)
+    assert ledger.claim_with_proof(tier="act", room="r", at_ms=100, key="") == ("covered", False)
+
+
+def test_a_creation_or_another_tier_or_another_id_cannot_prove_a_note_row():
+    def proof(writes):
+        ledger = CloseLedger([_noted("covered", "n1", writes=frozenset(writes))], 50)
+        got = ledger.claim_with_proof(tier="note", room="r", at_ms=100, key="n1")
+        assert got is not None                        # the close explains the row either way
+        return got[1]
+    assert proof({("note", "r", "n1")}) is True
+    assert proof({("note", "r", "")}) is False        # a `note_create` names no existing id
+    assert proof({("note", "r", "n2")}) is False      # another note
+    assert proof({("event", "r", "n1")}) is False     # another tier, even for the same id
+    assert proof({("event", "r", "")}) is False
+    assert proof({("note", "elsewhere", "n1")}) is False   # another room
 
 
 def test_a_close_is_proven_only_for_the_same_tier_room_and_id():

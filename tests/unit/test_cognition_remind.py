@@ -197,32 +197,75 @@ def test_a_tell_on_an_abduced_row_is_refused_and_an_ask_is_not():
     assert _check(abduced, intent="ask") is None
 
 
-def test_the_daily_cap_is_per_room_and_binds_at_the_cap_not_over_it():
-    assert _check(RemindContext(acts_in_room_today=2, max_acts_per_room_per_day=3)) is None
-    refusal = _check(RemindContext(acts_in_room_today=3, max_acts_per_room_per_day=3))
-    assert refusal is not None and refusal.reason == "room_daily_cap"
-    assert _check(RemindContext(acts_in_room_today=99, max_acts_per_room_per_day=None)) is None
-
-
-def test_the_pending_ceiling_counts_every_pending_reminder_of_the_unit():
-    other_room = PendingMirroredRemind(
+def test_the_pending_ceiling_is_the_live_one_and_counts_the_live_rows_and_the_mirrored_ones():
+    mirrored = PendingMirroredRemind(
         reminder_ref="r1", platform="signal", conversation_id="room-b",
         subject_rows=("note:9",), created_by_session_id=None,
     )
-    assert _check(RemindContext(max_pending=2), pending=(other_room,)) is None
-    refusal = _check(RemindContext(max_pending=1), pending=(other_room,))
+    # live rows 3 + mirrored 1 = 4 held; the ceiling is `>=`, as the live tool's is
+    assert _check(RemindContext(max_pending=5, live_pending=3), pending=(mirrored,)) is None
+    refusal = _check(RemindContext(max_pending=4, live_pending=3), pending=(mirrored,))
     assert refusal is not None and refusal.reason == "pending_ceiling"
+    assert _check(RemindContext(max_pending=None, live_pending=99), pending=(mirrored,)) is None
+    only_live = _check(RemindContext(max_pending=3, live_pending=3))
+    assert only_live is not None and only_live.reason == "pending_ceiling"
 
 
-def test_a_duplicate_is_refused_before_a_cap_so_the_reason_is_the_specific_one():
+def test_there_is_no_daily_cap_because_the_live_remind_has_none():
+    assert "acts_in_room_today" not in RemindContext.__dataclass_fields__
+    assert "max_acts_per_room_per_day" not in RemindContext.__dataclass_fields__
+
+
+MIN_LEAD, HORIZON = 120, 365
+
+
+def _timed(delta_ms, **over):
+    return _check(RemindContext(
+        now_ms=NOW, at_ms=NOW + delta_ms, min_lead_seconds=MIN_LEAD, max_horizon_days=HORIZON,
+        **over,
+    ))
+
+
+def test_a_moment_in_the_past_or_now_is_refused_past_as_the_live_tool_does():
+    for delta in (-3_600_000, 0):
+        refusal = _timed(delta)
+        assert refusal is not None and refusal.reason == "past"
+
+
+def test_a_moment_nearer_than_the_live_lead_is_too_soon_and_the_lead_itself_is_not():
+    refusal = _timed(1_000)
+    assert refusal is not None and refusal.reason == "too_soon"
+    assert _timed(MIN_LEAD * 1000 - 1).reason == "too_soon"     # type: ignore[union-attr]
+    assert _timed(MIN_LEAD * 1000) is None
+
+
+def test_a_moment_further_than_the_live_horizon_is_too_far_and_the_horizon_itself_is_not():
+    day = 86_400_000
+    assert _timed(HORIZON * day) is None
+    refusal = _timed(HORIZON * day + 1)
+    assert refusal is not None and refusal.reason == "too_far"
+    ten_years = _timed(3650 * day)
+    assert ten_years is not None and ten_years.reason == "too_far"
+
+
+def test_no_time_refusal_states_a_number():
+    for delta in (-1, 1_000, 3650 * 86_400_000):
+        refusal = _timed(delta)
+        assert refusal is not None and not any(ch.isdigit() for ch in refusal.detail)
+
+
+def test_a_missing_clock_leaves_the_time_checks_out_and_a_missing_lead_only_its_own():
+    assert _check(RemindContext(at_ms=NOW, min_lead_seconds=MIN_LEAD)) is None
+    assert _check(RemindContext(now_ms=NOW, at_ms=NOW + 1)) is None          # no lead, no horizon
+    assert _check(RemindContext(now_ms=NOW, at_ms=NOW - 9)).reason == "past"  # type: ignore[union-attr]
+
+
+def test_a_duplicate_is_refused_before_the_ceiling_so_the_reason_is_the_specific_one():
     same = PendingMirroredRemind(
         reminder_ref="r1", platform="signal", conversation_id="room-a",
         subject_rows=("note:1",), created_by_session_id=None,
     )
-    refusal = _check(
-        RemindContext(max_pending=1, acts_in_room_today=9, max_acts_per_room_per_day=1),
-        pending=(same,),
-    )
+    refusal = _check(RemindContext(max_pending=1, live_pending=9), pending=(same,))
     assert refusal is not None and refusal.reason == "duplicate_pending"
 
 

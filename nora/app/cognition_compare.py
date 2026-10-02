@@ -16,8 +16,9 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Any, TypeVar
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -63,6 +64,9 @@ from nora.infra.sql.schema import (
     ROW_HISTORY,
     STANDING_REVISION,
 )
+
+#: The default zone a day is counted in: `[cognition] timezone`'s default.
+HKT = ZoneInfo("Asia/Hong_Kong")
 
 
 @dataclass(frozen=True)
@@ -329,13 +333,17 @@ async def _session_writes(
 
 async def read_coverage(
     engine: AsyncEngine, window: CompareWindow, *, unit: str | None,
-    policy_units: int | None,
+    policy_units: int | None, tz: tzinfo = HKT,
 ) -> SessionCoverage:
     """How many sessions ran in the window, over how many units and days, and
-    how many wakes never became one. Plain SELECTs; the window is the window
-    asked for (not widened by the tolerance, which only decides matching)."""
+    how many wakes never became one. Plain SELECTs. The window is the window asked
+    for (not widened by the tolerance, which only decides matching): a session
+    belongs to it by when it STARTED, a wake by when it was recorded, and a wake
+    became a session if ANY session names it (`wake_id`), however late that session
+    started, so a session that began after `until` does not make its wake
+    «never a session». A day is a day in `tz` (the `[cognition]` zone), not UTC."""
     s, w, o = COGNITION_SESSION, COGNITION_WAKE, COGNITION_WAKE_OUTCOME
-    sess = sa.select(s.c.id, s.c.unit, s.c.started_at_ms, s.c.skill_versions, s.c.wake_id).where(
+    sess = sa.select(s.c.id, s.c.unit, s.c.started_at_ms, s.c.skill_versions).where(
         s.c.started_at_ms >= window.since_ms, s.c.started_at_ms < window.until_ms,
     )
     wakes = sa.select(w.c.id, w.c.tracked).where(
@@ -349,6 +357,7 @@ async def read_coverage(
         wake_rows = (await conn.execute(wakes)).all()
         wake_ids = [r.id for r in wake_rows]
         failed: set[int] = set()
+        with_session: set[int] = set()
         if wake_ids:
             failed = {
                 r.wake_id for r in (await conn.execute(
@@ -357,14 +366,18 @@ async def read_coverage(
                     )
                 )).all()
             }
-    with_session = {r.wake_id for r in session_rows if r.wake_id is not None}
+            with_session = {
+                r.wake_id for r in (await conn.execute(
+                    sa.select(s.c.wake_id).where(s.c.wake_id.in_(wake_ids))
+                )).all()
+            }
     without = [r.id for r in wake_rows if r.id not in with_session]
     days = (window.until_ms - window.since_ms) / 86_400_000
     return SessionCoverage(
         sessions=len(session_rows),
         units_with_sessions=len({r.unit for r in session_rows}),
         policy_units=policy_units, days=days,
-        active_days=len({r.started_at_ms // 86_400_000 for r in session_rows}),
+        active_days=len({_at(r.started_at_ms).astimezone(tz).date() for r in session_rows}),
         wakes=len(wake_rows), wakes_without_session=len(without),
         wakes_failed_without_session=sum(1 for i in without if i in failed),
         sessions_without_skills=sum(1 for r in session_rows if not _obj(r.skill_versions)),
@@ -547,7 +560,7 @@ def _in_rooms(act: Any, rooms: frozenset[str] | None) -> bool:
 
 async def run_shadow_compare(
     engine: AsyncEngine, window: CompareWindow, *, tolerance_ms: int, unit: str | None,
-    directory: RoomDirectory,
+    directory: RoomDirectory, tz: tzinfo = HKT,
 ) -> ShadowReport:
     rooms = directory.rooms_of(unit) if unit is not None else None
     # COVERAGE FIRST, and fail-closed: a window with no session is an ERROR with no
@@ -555,7 +568,7 @@ async def run_shadow_compare(
     # is never a PASS), and the numbers below are read against this denominator.
     policy_units = len(directory.unit_rooms) if directory.unit_rooms else None
     coverage, err_coverage = await _try(
-        read_coverage(engine, window, unit=unit, policy_units=policy_units),
+        read_coverage(engine, window, unit=unit, policy_units=policy_units, tz=tz),
     )
     header: dict[str, Any] = {
         "since_ms": window.since_ms, "until_ms": window.until_ms,

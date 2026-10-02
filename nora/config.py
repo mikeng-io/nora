@@ -3622,15 +3622,6 @@ class CognitionConfig(BaseModel):
     #: The pending cap alone does not bound a session that re-arms itself on
     #: every pass, because a fired wake frees its slot.
     max_self_wakes_per_day: int = Field(default=12, ge=1)
-    #: 30 §3, "enforced by code on every act": a daily cap on the reminders a
-    #: session makes for one room (the rolling 24 h before the call), and the
-    #: pending ceiling (a unit's reminders still waiting). Both are STARTING
-    #: values nothing has measured, set high so that neither binds before a
-    #: shadow week has sized it; every refusal they make is counted
-    #: (`nora_cognition_refused_total{verb="remind",rule="room_daily_cap"|
-    #: "pending_ceiling"}`). Neither number is ever shown to the model.
-    max_reminds_per_room_per_day: int = Field(default=6, ge=1)
-    max_pending_reminds: int = Field(default=12, ge=1)
     #: #637 review, major 1 (DEC-244 (7)): a unit whose sessions fail is not
     #: woken again every `cooldown_seconds`, for ever. The next wake after `n`
     #: consecutive failed or timed-out sessions waits `cooldown_seconds *

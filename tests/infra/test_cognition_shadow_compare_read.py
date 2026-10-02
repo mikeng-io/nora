@@ -293,7 +293,7 @@ async def test_a_close_in_the_same_room_naming_the_note_explains_a_clocked_only_
     # The close EXPLAINS the row, but it is the model's own word: it is counted as
     # self-attested and never as closed (no same-session write backs it).
     assert [g.closed_by for g in w.clocked_only] == [reason]
-    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 0)
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1)   # open: not closed by code
 
 
 @pytest.mark.parametrize("reason", ["written", "struck"])
@@ -301,7 +301,7 @@ async def test_written_and_struck_do_not_explain_anything(engine, reason):
     note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
     await _session_close(engine, T0, reason, cites=note_id)
     _, w = _writer(await _run(engine), "note", "note-curation")
-    assert w.closed == 0 and w.open == 1
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 0, 1)
 
 
 async def test_a_close_in_another_room_or_outside_the_tolerance_does_not_close_it(engine):
@@ -309,14 +309,14 @@ async def test_a_close_in_another_room_or_outside_the_tolerance_does_not_close_i
     await _session_close(engine, T0, "no_change", room="room-b", cites=note_id)
     await _session_close(engine, T0 + timedelta(hours=5), "no_change", cites=note_id)
     _, w = _writer(await _run(engine, tolerance_min=60), "note", "note-curation")
-    assert w.open == 1
+    assert (w.closed_self_attested, w.open) == (0, 1)
 
 
 async def test_a_close_before_the_clocked_write_does_not_explain_it(engine):
     note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
     await _session_close(engine, T0 - timedelta(minutes=5), "no_change", cites=note_id)
     _, w = _writer(await _run(engine), "note", "note-curation")
-    assert w.open == 1
+    assert (w.closed_self_attested, w.open) == (0, 1)
 
 
 async def test_a_close_that_names_another_note_or_none_does_not_close_a_note_row(engine):
@@ -324,20 +324,22 @@ async def test_a_close_that_names_another_note_or_none_does_not_close_a_note_row
     await _session_close(engine, T0 + timedelta(minutes=5), "no_change", cites=str(uuid4()))
     await _session_close(engine, T0 + timedelta(minutes=6), "no_change")
     _, w = _writer(await _run(engine), "note", "note-curation")
-    assert w.open == 1 and note_id
+    assert (w.closed_self_attested, w.open) == (0, 1) and note_id
 
 
 async def test_a_rollup_close_does_not_close_a_note_row(engine):
     note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
     await _session_close(engine, T0 + timedelta(minutes=1), "no_change", kind="rollup",
                          cites=note_id)
-    assert _writer(await _run(engine), "note", "note-curation")[1].open == 1
+    w = _writer(await _run(engine), "note", "note-curation")[1]
+    assert (w.closed_self_attested, w.open) == (0, 1)
 
 
 async def test_a_time_close_does_not_close_a_standing_row_but_a_rollup_close_does(engine):
     await _standing(engine, T0, 2)
     await _session_close(engine, T0 + timedelta(minutes=2), "no_change", kind="time")
-    assert _writer(await _run(engine), "standing", "standing-debrief")[1].open == 1
+    unexplained = _writer(await _run(engine), "standing", "standing-debrief")[1]
+    assert (unexplained.closed_self_attested, unexplained.open) == (0, 1)
     await _session_close(engine, T0 + timedelta(minutes=3), "no_change", kind="rollup")
     explained = _writer(await _run(engine), "standing", "standing-debrief")[1]
     assert (explained.closed, explained.closed_self_attested) == (0, 1)
@@ -353,7 +355,7 @@ async def test_one_waiting_close_does_not_close_three_writers_rows(engine):
     tier = next(t for t in report.tiers if t.tier == "standing")
     assert sum(w.closed for w in tier.writers) == 0    # a `waiting` is the model's say-so
     assert sum(w.closed_self_attested for w in tier.writers) == 1
-    assert sum(w.open for w in tier.writers) == 2      # 3 rows in the window, one explained
+    assert sum(w.open for w in tier.writers) == 3      # 3 rows in the window, none closed by code
 
 
 async def test_a_refused_would_write_nearby_does_not_close_a_row(engine):
@@ -361,14 +363,15 @@ async def test_a_refused_would_write_nearby_does_not_close_a_row(engine):
     await _would(engine, T0 + timedelta(minutes=1), "standing", "standing_revise",
                  outcome="refused")
     _, w = _writer(await _run(engine), "standing", "standing-debrief")
-    assert w.open == 1 and w.clocked_only[0].refused_nearby == 1
+    assert (w.closed_self_attested, w.open) == (0, 1) and w.clocked_only[0].refused_nearby == 1
 
 
 async def test_a_close_with_an_unreadable_agenda_explains_nothing_and_says_so(engine):
     await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
     await _session_close(engine, T0 + timedelta(minutes=1), "no_change", agenda={"items": []})
     tier, w = _writer(await _run(engine), "note", "note-curation")
-    assert w.open == 1 and any("unreadable agenda" in n for n in tier.notes)
+    assert (w.closed_self_attested, w.open) == (0, 1)
+    assert any("unreadable agenda" in n for n in tier.notes)
 
 
 # ---- standing ---------------------------------------------------------------
@@ -682,7 +685,7 @@ async def test_a_covered_close_whose_session_wrote_another_note_or_another_room_
     await _would(engine, T0 + timedelta(hours=3), "note", "note_update", room="room-b",
                  candidate={"note_id": note_id}, session_id=sid)               # another room
     _, w = _writer(await _run(engine), "note", "note-curation")
-    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 0)
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1)
 
 
 async def test_a_would_write_of_another_session_does_not_back_a_covered_close(engine):
@@ -718,13 +721,21 @@ async def test_the_output_says_plainly_that_a_self_attested_close_is_not_evidenc
     await _session_close(engine, T0 + timedelta(minutes=10), "no_change", cites=f"note {note_id}")
     report = await _run(engine)
     line = next(ln for ln in verdict_lines(report) if ln.startswith("note-curation"))
-    assert "0 closed by code, 1 closed self-attested: not evidence, 0 open" in line
+    assert "0 closed by code, 1 closed self-attested: not evidence, 1 open: everything" in line
     text = "\n".join(render_text(report, DIRECTORY))
     assert "closed_by=no_change(self-attested)" in text
     assert "never closed or matched" in text
     unmatched = report_json(report, DIRECTORY)["tiers"][0]["writers"]
     row = next(w for w in unmatched if w["writer"] == "note-curation")
-    assert (row["closed"], row["closed_by_code"], row["closed_self_attested"]) == (0, 0, 1)
+    # the ambiguous `closed` key is GONE (it counted the model's closes), the three
+    # numbers are named, `open` is "not closed by code", and the report is versioned
+    assert "closed" not in row
+    assert (row["closed_by_code"], row["closed_self_attested"], row["open"]) == (0, 1, 1)
+    data = report_json(report, DIRECTORY)
+    assert data["schema"] == 2
+    assert all(
+        "closed" not in u for t in data["tiers"] for w in t["writers"] for u in w["unmatched"]
+    )
 
 
 async def test_an_unreadable_coverage_is_an_error_naming_the_class_and_no_tiers(engine):
@@ -734,3 +745,81 @@ async def test_an_unreadable_coverage_is_an_error_naming_the_class_and_no_tiers(
     assert report.any_error and report.tiers == () and report.coverage is None
     assert "could not be read" in (report.error or "") and "cognition_wake" not in report.error
     assert report_json(report, DIRECTORY)["coverage"] is None
+
+
+async def test_a_covered_rollup_close_and_any_standing_write_of_the_session_prove_nothing(engine):
+    """The reviewer's case: Standing rows have no id, so a `covered` close and ANY
+    `standing_revise` of the same session and room, hours away, used to give closed=1."""
+    await _standing(engine, T0, 2)
+    sid = await _session_close(engine, T0 + timedelta(minutes=10), "covered", kind="rollup")
+    await _would(engine, T0 + timedelta(hours=3), "standing", "standing_revise", session_id=sid)
+    _, w = _writer(await _run(engine), "standing", "standing-debrief")
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1)
+
+
+async def test_a_note_create_of_the_session_does_not_prove_a_note_row_of_another_id(engine):
+    note_id, _ = await _note(engine, by="dream:note-curation:k:1", at=T0, parent=True)
+    sid = await _session_close(engine, T0 + timedelta(minutes=10), "covered",
+                               cites=f"note {note_id}")
+    await _would(engine, T0 + timedelta(hours=3), "note", "note_create", session_id=sid,
+                 candidate={"anchor_date": 20260930, "anchor_entity_ids": [], "title": "T"})
+    await _would(engine, T0 + timedelta(hours=3), "event", "event_revise", session_id=sid,
+                 candidate={"id": note_id})                          # another tier, same id
+    _, w = _writer(await _run(engine), "note", "note-curation")
+    assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1)
+
+
+# ---- coverage edges (a case that separates what a small one cannot) --------------------
+
+async def test_coverage_separates_sessions_units_days_wakes_and_timeouts(engine):
+    from nora.infra.sql.schema import COGNITION_WAKE, COGNITION_WAKE_OUTCOME
+    await _no_sessions(engine)
+    # HKT is UTC+8: 12:00 and 13:00 UTC are 20:00 and 21:00 HKT the same day; 17:00 UTC
+    # is 01:00 HKT the NEXT day. So these three sessions, in two units, fall on two HKT
+    # days (and on ONE UTC day: sessions, units and days are three different numbers).
+    await _bare_session(engine, T0, unit="u", wake_id=1)
+    await _bare_session(engine, T0 + timedelta(hours=1), unit="u", wake_id=2)
+    await _bare_session(engine, T0 + timedelta(hours=5), unit="v", wake_id=3)
+    # And one that starts AFTER the window ends: its wake is still a wake that became
+    # a session. WINDOW ends at T0 + 1 day.
+    await _bare_session(engine, T0 + timedelta(days=1, hours=1), unit="u", wake_id=4)
+    async with engine.begin() as conn:
+        for wid, unit in ((1, "u"), (2, "u"), (3, "v"), (4, "u"), (5, "u"), (6, "u"), (7, "v")):
+            await conn.execute(sa.insert(COGNITION_WAKE).values(
+                id=wid, unit=unit, mode="shadow", reason="settled", from_stimulus_id=0,
+                through_stimulus_id=1, stimulus_count=1, eligible_count=1,
+                at_ms=_ms(T0 + timedelta(minutes=wid)), tracked=1,
+            ))
+        # 5 timed out, 6 failed, 7 (another unit) failed: only 5 and 6 are unit u's
+        for wid, unit, outcome in ((5, "u", "timeout"), (6, "u", "failed"), (7, "v", "failed"),
+                                   (1, "u", "closed")):
+            await conn.execute(sa.insert(COGNITION_WAKE_OUTCOME).values(
+                wake_id=wid, unit=unit, outcome=outcome, at_ms=_ms(T0)))
+    both = (await _run(engine)).coverage
+    assert both is not None
+    assert (both.sessions, both.units_with_sessions, both.active_days) == (3, 2, 2)
+    assert both.wakes == 7
+    # wakes 5, 6 and 7 have no session; wake 4's session starts after `until` and counts
+    assert (both.wakes_without_session, both.wakes_failed_without_session) == (3, 3)
+    only_u = (await _run(engine, unit="u")).coverage
+    assert only_u is not None
+    # the unit filter reaches the wakes too: unit u has 6 wakes (not v's 3 and 7)
+    assert (only_u.sessions, only_u.units_with_sessions, only_u.active_days) == (2, 1, 1)
+    assert only_u.wakes == 5 and only_u.wakes_without_session == 2
+    assert only_u.wakes_failed_without_session == 2          # `timeout` counts as failed
+
+
+async def test_a_day_is_a_day_in_the_configured_zone_not_in_utc(engine):
+    from zoneinfo import ZoneInfo
+    await _no_sessions(engine)
+    # 23:30 and 00:30 UTC are one UTC-day apart but, at UTC+8, 07:30 and 08:30 the same day;
+    # 15:30 and 16:30 UTC are the same UTC day but 23:30 and 00:30 HKT, two days
+    await _bare_session(engine, T0.replace(hour=15, minute=30))
+    await _bare_session(engine, T0.replace(hour=16, minute=30))
+    hkt = (await _run(engine)).coverage
+    utc = (await run_shadow_compare(
+        engine, WINDOW, tolerance_ms=3_600_000, unit=None, directory=DIRECTORY,
+        tz=ZoneInfo("UTC"),
+    )).coverage
+    assert hkt is not None and utc is not None
+    assert (hkt.active_days, utc.active_days) == (2, 1)

@@ -421,9 +421,12 @@ async def dry_run_event_revise(
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
 
     if current is None:
-        return await refuse("not_found")
+        return await refuse("not_found", "there is no open event by that id in this room")
     if stale_event_base(base_revision_id=base_revision_id, current_head_revision_id=current_head):
-        return await refuse("stale_base", f"current head is {current_head!r}")
+        return await refuse(
+            "stale_base", "the event changed since you read it; read it again and redo "
+            "your change against what it says now",
+        )
     if current.status in TERMINAL_STATUSES:
         # 40 §3: only a status BEFORE `happened` may be revised.
         return await refuse(

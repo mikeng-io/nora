@@ -387,8 +387,8 @@
  {
   "name": "cognition_session: a self-wake set by an earlier session can actually be cancelled",
   "file": "nora/app/cognition_session.py",
-  "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            self._inc(\n                \"nora_self_wake_total\", outcome=\"refused\" if answer.refused else \"cancelled\",\n            )\n            return _answer(answer)",
-  "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            self._inc(\n                \"nora_self_wake_total\", outcome=\"refused\" if answer.refused else \"cancelled\",\n            )\n            return _answer(answer)",
+  "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            if not answer.refused:\n                self._inc(\"nora_self_wake_total\", outcome=\"cancelled\")",
+  "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            if not answer.refused:\n                self._inc(\"nora_self_wake_total\", outcome=\"cancelled\")",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_cancelled_self_wake_never_fires"
  },
  {

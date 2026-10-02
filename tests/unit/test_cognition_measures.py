@@ -14,6 +14,7 @@ What each test catches if its fix is reverted is named in
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -22,9 +23,8 @@ import pytest
 from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.cognition_session import Room
 from nora.domain.gatherings import FieldMeta, GatheringStatus
-from nora.domain.ports import NewCognitionRemindMirror, NoteHead
+from nora.domain.ports import NoteHead
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from tests.unit.test_cognition_session_events_d import _event
 from tests.unit.test_cognition_session_verbs_c import (
     GOOD_BODY,
@@ -80,11 +80,15 @@ async def test_a_note_update_against_the_head_it_read_would_commit():
     assert [w.outcome for _, w, _ in store.would_writes] == ["would_commit"]
 
 
-async def test_a_note_update_against_a_stale_head_is_refused_and_recorded_refused():
+async def test_a_stale_head_is_unavailable_to_the_model_and_refused_in_the_ledger():
     # The tool text says «A stale one is refused»; the dry run recorded it
-    # `would_commit` and overstated what the live path would write.
+    # `would_commit` and overstated what the live path would write. The LIVE verb
+    # reports a head that moved as `unavailable` (never `refused`), in its own
+    # words and without the head's id, so the model reads the same; the ledger row
+    # stays `refused` / `stale_base`, which is what compare reads.
     answer, store = await _update(NoteHead(head_revision_id="rev-9"))
-    assert answer["status"] == "refused" and answer["reason"] == "stale_base"
+    assert answer["status"] == "unavailable" and answer["reason"] == "stale_head"
+    assert "changed under you" in answer["detail"] and "rev-" not in answer["detail"]
     assert _reasons(store) == ["stale_base"]
     assert [w.outcome for _, w, _ in store.would_writes] == ["refused"]
 
@@ -95,9 +99,10 @@ async def test_a_note_update_of_a_note_the_unit_does_not_hold_is_refused_not_fou
     assert _reasons(store) == ["not_found"]
 
 
-async def test_a_note_update_of_a_retired_note_is_refused_note_retired():
-    answer, _ = await _update(NoteHead(head_revision_id=HEAD, retired=True))
-    assert (answer["status"], answer["reason"]) == ("refused", "note_retired")
+async def test_a_retired_note_reads_as_the_live_verb_says_it_and_is_refused_in_the_ledger():
+    answer, store = await _update(NoteHead(head_revision_id=HEAD, retired=True))
+    assert (answer["status"], answer["reason"]) == ("unavailable", "stale_head")
+    assert _reasons(store) == ["note_retired"]
 
 
 async def test_a_refused_note_update_does_not_back_a_written_close():
@@ -210,53 +215,182 @@ async def test_a_tell_resting_on_an_abduced_row_is_refused_and_an_ask_is_recorde
     assert other["status"] == "ok"       # the abduced event is not one of the cited rows
 
 
-async def test_a_remind_past_the_rooms_daily_cap_is_refused_and_one_a_day_later_is_not():
-    store = InMemoryCognitionDryRunStore()
-    for n, age_ms in enumerate((1_000, 2_000)):
-        await store.record_remind_mirror(
-            mirror=NewCognitionRemindMirror(
-                session_id=None, unit="u", verb="remind", reminder_ref=f"r{n}",
-                platform="signal", conversation_id="room-a", intent="tell",
-                subject_rows=(f"note:{n}",), at_ms=NOW + 10_000, why=None, outcome="recorded",
-            ),
-            recorded_at_ms=NOW - age_ms,
-        )
-    answer, _ = await _remind(
-        store=store, runner_kwargs=_kw(max_reminds_per_room_per_day=2),
-    )
-    assert (answer["status"], answer["reason"]) == ("refused", "room_daily_cap")
-    assert _no_digits(answer["detail"])
-    roomy, _ = await _remind(store=store, runner_kwargs=_kw(max_reminds_per_room_per_day=3))
-    assert roomy["status"] == "ok"
-    # Another room's reminders and ones older than a day are not this room's day.
-    old = InMemoryCognitionDryRunStore()
-    await old.record_remind_mirror(
-        mirror=NewCognitionRemindMirror(
-            session_id=None, unit="u", verb="remind", reminder_ref="old", platform="signal",
-            conversation_id="room-a", intent="tell", subject_rows=("note:9",), at_ms=NOW,
-            why=None, outcome="recorded",
-        ),
-        recorded_at_ms=NOW - 25 * 3_600_000,
-    )
-    fresh, _ = await _remind(store=old, runner_kwargs=_kw(max_reminds_per_room_per_day=1))
-    assert fresh["status"] == "ok"
-
-
-async def test_a_remind_past_the_pending_ceiling_is_refused_and_says_no_number():
+async def test_a_remind_past_the_live_pending_ceiling_is_refused_and_says_no_number():
+    """The ceiling is the live tool's `max_pending_per_requester`, counted as the live
+    tool counts it (Nora's own rows in the live store) plus the mirrored ones that
+    would be rows at cut-over."""
     waiting = tuple(
         PendingMirroredRemind(
             reminder_ref=f"r{n}", platform="signal", conversation_id="room-b",
             subject_rows=(f"note:{n}",), created_by_session_id=None,
         )
-        for n in range(3)
+        for n in range(2)
     )
-    answer, _ = await _remind(
-        pending_reminds=waiting, runner_kwargs=_kw(max_pending_reminds=3),
+
+    async def live(n: int) -> Any:
+        async def count() -> int:
+            return n
+        return count
+
+    over, _ = await _remind(
+        pending_reminds=waiting,
+        runner_kwargs=_kw(max_pending_per_requester=5, requester_pending=await live(3)),
     )
-    assert (answer["status"], answer["reason"]) == ("refused", "pending_ceiling")
-    assert _no_digits(answer["detail"])
-    under, _ = await _remind(pending_reminds=waiting, runner_kwargs=_kw(max_pending_reminds=4))
+    assert (over["status"], over["reason"]) == ("refused", "pending_ceiling")
+    assert _no_digits(over["detail"])
+    under, _ = await _remind(
+        pending_reminds=waiting,
+        runner_kwargs=_kw(max_pending_per_requester=6, requester_pending=await live(3)),
+    )
     assert under["status"] == "ok"
+
+
+async def test_a_remind_the_live_tool_would_refuse_for_its_moment_is_refused_the_same_way():
+    kw = _kw(remind_min_lead_seconds=120, remind_max_horizon_days=365)
+
+    async def at(delta_ms: int):
+        answers: list[Any] = []
+
+        async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+            answers.append(await by["remind"](
+                intent="tell", subject_rows=["note:1"], at=iso(NOW + delta_ms),
+            ))
+
+        store, _ = await _session(behave, runner_kwargs=kw)
+        return answers[0], store
+
+    day = 86_400_000
+    for delta, reason in (
+        (-3_600_000, "past"), (1_000, "too_soon"), (3650 * day, "too_far"),
+    ):
+        answer, store = await at(delta)
+        assert (answer["status"], answer["reason"]) == ("refused", reason), delta
+        assert _no_digits(answer["detail"]) and [m.outcome for _, m, _ in store.remind_mirrors] == [
+            "refused",
+        ]
+    fine, store = await at(3_600_000)
+    assert fine["status"] == "ok"
+
+
+async def test_a_remind_read_that_fails_answers_unavailable_with_the_live_words_and_no_exception():
+    async def broken() -> int:
+        raise RuntimeError("postgresql://nora:hunter2@db/nora refused the connection")
+
+    answer, store = await _remind(runner_kwargs=_kw(requester_pending=broken))
+    assert answer["status"] == "unavailable" and answer["reason"] == "reminder_state"
+    assert "couldn't check" in answer["detail"]
+    assert "hunter2" not in json.dumps(answer) and store.remind_mirrors == []
+
+
+async def test_an_event_whose_row_says_abduced_but_whose_stated_fields_are_told_is_not_abduced():
+    # `nora.domain.gatherings.field_mode`: the field's own mode wins over the row's.
+    told_fields = tuple(
+        FieldMeta(field=part, reasoning="told")
+        for part in ("what", "start", "end", "place", "people", "status")
+    )
+    row_only = _event(GatheringStatus.PROPOSED, reasoning="abduced", field_meta=told_fields)
+    answer, _ = await _remind(intent="tell", rows=(f"event:{row_only.id}",), events=(row_only,))
+    assert answer["status"] == "ok"
+    # and the converse: a told row with one abduced field IS a guess to ask about
+    guess = _event(
+        GatheringStatus.PROPOSED, reasoning="told",
+        field_meta=(FieldMeta(field="place", reasoning="abduced"),),
+    )
+    refused, _ = await _remind(intent="tell", rows=(f"event:{guess.id}",), events=(guess,))
+    assert refused["reason"] == "abduced_must_ask"
+    # a row-level abduced event with NO field stating otherwise falls back to the row
+    bare = _event(GatheringStatus.PROPOSED, reasoning="abduced")
+    fallback, _ = await _remind(intent="tell", rows=(f"event:{bare.id}",), events=(bare,))
+    assert fallback["reason"] == "abduced_must_ask"
+
+
+# ---------------------------------------------------------------------------
+# one session's own earlier writes are what its later writes are held to
+# ---------------------------------------------------------------------------
+
+async def test_a_second_note_with_the_title_of_the_first_is_refused_duplicate_title():
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["note_create"](**NOTE, body=GOOD_BODY))
+        answers.append(await by["note_create"](**NOTE, body=GOOD_BODY))
+        answers.append(await by["note_create"](**{**NOTE, "title": "another"}, body=GOOD_BODY))
+
+    store, _ = await _session(behave)
+    assert [a["status"] for a in answers] == ["ok", "refused", "ok"]
+    assert answers[1]["reason"] == "duplicate_title"
+    assert [w.outcome for _, w, _ in store.would_writes] == [
+        "would_commit", "refused", "would_commit",
+    ]
+
+
+async def test_a_refused_note_create_does_not_hold_its_title():
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["note_create"](**NOTE, body="## Decided\n- x\n## Open\n- y\n"))
+        answers.append(await by["note_create"](**NOTE, body=GOOD_BODY))
+
+    await _session(behave)
+    assert [a["status"] for a in answers] == ["refused", "ok"]
+
+
+async def test_a_second_note_update_on_the_same_parent_is_stale_and_another_note_still_lands():
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["note_update"](
+            note_id="n1", body=GOOD_BODY, parent_revision_id=HEAD))
+        answers.append(await by["note_update"](
+            note_id="n1", body=GOOD_BODY, parent_revision_id=HEAD))
+        answers.append(await by["note_update"](
+            note_id="n2", body=GOOD_BODY, parent_revision_id=HEAD))
+
+    store, _ = await _session(
+        behave, runner_kwargs=_kw(note_head=_heads(n1=NoteHead(HEAD), n2=NoteHead(HEAD))),
+    )
+    assert answers[0] == {"status": "ok"}
+    assert (answers[1]["status"], answers[1]["reason"]) == ("unavailable", "stale_head")
+    assert answers[2] == {"status": "ok"}
+    assert _reasons(store) == [None, "stale_base", None]
+
+
+async def test_a_second_event_revision_on_the_same_base_is_stale_and_one_without_a_base_lands():
+    event = _event(GatheringStatus.PROPOSED)
+    base = str(event.head_revision_id)
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        common = {"reasoning": "told", "confidence": "high", "cited_ids": ["101"]}
+        for venue, kw in (
+            ("place two", {"base_revision_id": base}),
+            ("place three", {"base_revision_id": base}),      # the head moved under it
+            ("place four", {}),                               # no base asserted: lands
+        ):
+            answers.append(await by["event_revise"](
+                event_id=str(event.id), venue_text=venue, **kw, **common,
+            ))
+
+    store, _ = await _session(behave, events=(event,))
+    assert [a.get("reason") or a["status"] for a in answers] == ["ok", "stale_base", "ok"]
+    assert [w.outcome for _, w, _ in store.would_writes] == [
+        "would_commit", "refused", "would_commit",
+    ]
+
+
+async def test_an_event_moved_to_a_terminal_status_takes_no_second_move():
+    event = _event(GatheringStatus.PROPOSED)
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        common = {"reasoning": "told", "confidence": "high", "cited_ids": ["101"]}
+        answers.append(await by["event_set_status"](
+            event_id=str(event.id), status="cancelled", **common))
+        answers.append(await by["event_set_status"](
+            event_id=str(event.id), status="confirmed", **common))
+
+    await _session(behave, events=(event,))
+    assert [a.get("reason") or a["status"] for a in answers] == ["ok", "terminal_status"]
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +420,7 @@ async def test_every_refusal_is_counted_by_verb_and_rule_whatever_path_refused_i
     def n(verb: str, rule: str) -> float:
         return metrics.get("nora_cognition_refused_total", verb=verb, rule=rule)
 
-    assert n("note_update", "stale_base") == 1
+    assert n("note_update", "unavailable_stale_head") == 1
     assert n("close", "no_such_item") == 1
     assert n("close", "no_write_for_item") == 1
     assert n("wake_at", "no_subject") == 1
@@ -296,7 +430,7 @@ async def test_every_refusal_is_counted_by_verb_and_rule_whatever_path_refused_i
     assert sum(
         metrics.get("nora_cognition_refused_total", verb=v, rule=r)
         for v, r in (
-            ("note_update", "stale_base"), ("close", "no_such_item"),
+            ("note_update", "unavailable_stale_head"), ("close", "no_such_item"),
             ("close", "no_write_for_item"), ("wake_at", "no_subject"),
             ("remind", "no_citations"), ("remind_cancel", "not_found"),
             ("event_revise", "not_found"),
@@ -374,12 +508,20 @@ async def test_self_wakes_are_counted_by_outcome():
         await by["wake_at"](subject_rows=[], at=iso(NOW + 3_600_000), why="refused")
         await by["wake_move"](wake_id=made[0]["wake_id"], at=iso(NOW + 7_200_000), why="m")
         await by["wake_cancel"](wake_id="nope", why="refused")
+        await by["wake_at"](subject_rows=["event:1"], at="tomorrow evening", why="bad time")
+        await by["wake_move"](wake_id="x", at="soon", why="bad time")
 
     await _session(behave, metrics=metrics)
     out = {o: metrics.get("nora_self_wake_total", outcome=o)
            for o in ("created", "moved", "cancelled", "refused", "fired")}
-    # the pending seam of this rig reads nothing, so the move finds no wake: refused
-    assert out == {"created": 1, "moved": 0, "cancelled": 0, "refused": 3, "fired": 0}
+    # the pending seam of this rig reads nothing, so the move finds no wake: refused;
+    # and the two EARLY returns (a time that is no time) are refused too
+    assert out == {"created": 1, "moved": 0, "cancelled": 0, "refused": 5, "fired": 0}
+    # every refusal of a pace verb is counted by the verb's own counter as well
+    assert out["refused"] == sum(
+        metrics.get("nora_cognition_refused_total", verb=v)
+        for v in ("wake_at", "wake_move", "wake_cancel")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -399,13 +541,13 @@ async def test_a_write_that_lands_answers_exactly_status_ok_as_a_live_verb_would
     assert answers == [{"status": "ok"}, {"status": "ok"}]
 
 
-@pytest.mark.parametrize("rule", ["room_not_proactive", "abduced_must_ask", "room_daily_cap"])
+@pytest.mark.parametrize("rule", ["room_not_proactive", "abduced_must_ask", "pending_ceiling"])
 def test_no_remind_refusal_detail_carries_a_number_or_a_mode_word(rule):
     from nora.domain.cognition_remind import RemindContext, check_remind
     contexts = {
         "room_not_proactive": RemindContext(room_proactive=False),
         "abduced_must_ask": RemindContext(abduced_subject=True),
-        "room_daily_cap": RemindContext(acts_in_room_today=9, max_acts_per_room_per_day=9),
+        "pending_ceiling": RemindContext(max_pending=9, live_pending=9),
     }
     refusal = check_remind(
         subject_rows=["note:1"], intent="tell", platform="signal", conversation_id="c",
@@ -427,15 +569,24 @@ def test_the_composition_requires_and_passes_every_check_the_runner_would_otherw
     for name in ("note_head", "room_proactive"):
         assert params[name].default is inspect.Parameter.empty, name
     wiring = inspect.getsource(build_cognition_runner)
+    for name in ("requester_pending", "reminder_caps"):
+        assert params[name].default is inspect.Parameter.empty, name
     for name in (
         "note_head=note_head", "room_proactive=room_proactive",
-        "max_reminds_per_room_per_day=cfg.cognition.max_reminds_per_room_per_day",
-        "max_pending_reminds=cfg.cognition.max_pending_reminds",
+        "requester_pending=requester_pending",
+        "max_pending_per_requester=reminder_caps.max_pending_per_requester",
+        "remind_min_lead_seconds=reminder_caps.min_lead_seconds",
+        "remind_max_horizon_days=reminder_caps.max_horizon_days",
     ):
         assert name in wiring, name
     call = inspect.getsource(composition).split("cognition_runner = build_cognition_runner(")[1]
     call = call.split("homes=homes")[0]
     assert "note_head=_note_head" in call and "room_proactive=" in call
+    assert "requester_pending=_requester_pending" in call and "reminder_caps=reminder_caps" in call
+    # and there is no second set of numbers: the keys the first round added are gone
+    from nora.config import CognitionConfig
+    assert "max_pending_reminds" not in CognitionConfig.model_fields
+    assert "max_reminds_per_room_per_day" not in CognitionConfig.model_fields
 
 
 def test_every_metric_a_cognition_module_cites_exists_with_the_labels_it_cites():
@@ -460,3 +611,46 @@ def test_every_metric_a_cognition_module_cites_exists_with_the_labels_it_cites()
             for label in (x.strip() for x in labels.split(",") if x.strip() and "=" not in x):
                 assert label in declared[name], f"{path.name}: {name} has no label {label!r}"
     assert seen > 10                                  # it read the citations, not nothing
+
+
+# ---------------------------------------------------------------------------
+# tokens spent by a session that did not return
+# ---------------------------------------------------------------------------
+
+async def test_a_session_that_raised_still_counts_the_tokens_its_loop_spent():
+    from nora.app.cognition_session import SESSION_TOKENS
+    metrics = Metrics()
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        holder = SESSION_TOKENS.get()
+        assert holder is not None               # the session offers one around the loop
+        holder.total = 4321                     # what the runner leaves, as it does in a `finally`
+        raise RuntimeError("the provider fell over")
+
+    with pytest.raises(RuntimeError, match="fell over"):
+        await _session(behave, metrics=metrics)
+    assert metrics.get("nora_cognition_unit_tokens_total", unit_kind="message") == 4321
+
+
+async def test_a_session_that_raised_and_left_no_usage_counts_nothing():
+    metrics = Metrics()
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        raise RuntimeError("down")
+
+    with pytest.raises(RuntimeError):
+        await _session(behave, metrics=metrics)
+    assert _series(metrics, "nora_cognition_unit_tokens_total") == []
+
+
+async def test_the_result_count_wins_over_the_one_left_in_the_holder():
+    from nora.app.cognition_session import SESSION_TOKENS
+    metrics = Metrics()
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        holder = SESSION_TOKENS.get()
+        assert holder is not None
+        holder.total = 999
+
+    await _session(behave, metrics=metrics, tokens=100)
+    assert metrics.get("nora_cognition_unit_tokens_total", unit_kind="message") == 100

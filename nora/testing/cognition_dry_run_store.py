@@ -108,16 +108,6 @@ class InMemoryCognitionDryRunStore:
             and at >= since_ms
         )
 
-    async def count_reminds_created(
-        self, *, unit: str, platform: str, conversation_id: str, since_ms: int,
-    ) -> int:
-        return sum(
-            1 for _, m, at in self.remind_mirrors
-            if m.unit == unit and m.verb == "remind" and m.outcome == "recorded"
-            and m.platform == platform and m.conversation_id == conversation_id
-            and at >= since_ms
-        )
-
     async def pending_mirrored_reminds(
         self, *, unit: str, now_ms: int,
     ) -> Sequence[PendingMirroredRemind]:

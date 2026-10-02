@@ -4492,6 +4492,11 @@ async def build_dependencies(
                     retired=note.retired_at is not None,
                 )
 
+            async def _requester_pending() -> int:
+                if reminders is None:
+                    raise RuntimeError("no reminder store: pending rows cannot be counted")
+                return await reminders.count_pending(cfg.memory.ai_peer)
+
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
             cognition_unit_rooms: dict[str, set[tuple[str, str]]] = {}
@@ -4531,6 +4536,10 @@ async def build_dependencies(
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, open_events_in=_open_events,
                 note_head=_note_head,
+                # Nora's own pending rows in the LIVE reminder store: what the live
+                # `remind` tool counts against `max_pending_per_requester`.
+                requester_pending=_requester_pending,
+                reminder_caps=reminder_caps,
                 room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                     platform=platform, conversation_id=conversation_id,
                 ),

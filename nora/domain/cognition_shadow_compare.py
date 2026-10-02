@@ -84,14 +84,22 @@ covers it", "I cannot settle it"), and the model is the thing under measurement:
 a count of such closes is self-attestation (AGENTS.md: no self-attestation; DEC-252
 (3) admits it). So an explaining close is reported in one of two ways, never summed:
 
-- `closed_by_code`: the close is `covered` and the SAME session recorded a
-  `would_commit` write in the same room and tier (and, for a row with a note or
-  event id, for that same id). That is "another item's write already handles it"
-  proven from the would-write rows, not from the model's word. It is the one
-  close code can prove from the store.
+- `closed_by_code`: the row carries a note or event id, the close is `covered`,
+  and the SAME session recorded a `would_commit` write of the same tier in the same
+  room for THAT id (a `note_update`, `event_revise` or `event_set_status`; a
+  creation names no existing id, so it proves no row). That is "another item's
+  write already handles it" proven from the would-write rows, not from the model's
+  word. **A row with no id (a Standing row, a keyless proactive row) is never
+  closed by code**: nothing links one session write to that clocked row except the
+  room and the hour, which is not a proof, so such a close is always self-attested.
 - `closed_self_attested`: every other explaining close (`no_change`, `waiting`,
   and a `covered` no write backs). The model said it; nothing independent shows
   it. It is NOT evidence and is not counted as `closed`.
+
+`open` is "not closed by code": it INCLUDES the self-attested rows, so no number
+reads as progress that the model's own word produced. The three numbers are printed
+in one order everywhere: closed by code, closed self-attested (not evidence), open
+(everything not closed by code).
 
 A `struck` close is code closing an item at `max_strikes`: it says the model
 never settled the item, so it proves nothing about the clocked row either way
@@ -340,9 +348,12 @@ class WriterVerdict:
 
     @property
     def open(self) -> int | None:
+        """Rows NOT closed by code: the self-attested ones stay open, because the
+        model's own close is not evidence (so `closed + open == clocked_only`, and
+        `closed_self_attested` is a part of `open`, not a third pile)."""
         if self.status == "error":
             return None
-        return sum(1 for g in self.clocked_only if not g.closed_by)
+        return sum(1 for g in self.clocked_only if not (g.closed_by and g.closed_by_code))
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +381,13 @@ class TierResult:
         )
 
 
+#: The version of the JSON report. 2 (2026-10-02): the `closed` key is gone and
+#: `closed_by_code` and `closed_self_attested` replace it (`closed` counted the
+#: model's own closes, and an old reader must fail loudly rather than read a
+#: different number under the same name); `open` is "not closed by code"; a
+#: `coverage` object is present. Unversioned before; no in-repo consumer reads it.
+REPORT_SCHEMA = 2
+
 #: What `matched` establishes, said in every report (module docstring).
 MATCHED_MEANS: tuple[str, ...] = (
     "matched = the same KIND (tier; both a creation or both a revision) and the same "
@@ -381,9 +399,10 @@ MATCHED_MEANS: tuple[str, ...] = (
 
 #: The line every verdict block carries: which closes are evidence.
 CLOSE_IS_NOT_EVIDENCE = (
-    "closes: only `closed by code` (a `covered` close that a same-session write backs) is "
-    "evidence; a close the model wrote (no_change, waiting, an unbacked covered) is its own "
-    "say-so, counted apart as `self-attested`, and is never closed or matched"
+    "closes: only `closed by code` (a `covered` close of a row with a note or event id that "
+    "the same session wrote) is evidence; a close the model wrote (no_change, waiting, an "
+    "unbacked covered, any close of a row with no id) is its own say-so, counted apart as "
+    "`self-attested`, never closed or matched, and still counted in `open`"
 )
 
 
@@ -521,15 +540,15 @@ class CloseLedger:
 
 def _proven_by_code(close: Close, *, tier: str, room: str, key: str) -> bool:
     """A `covered` close is "another item's write already handles it" (30 §2):
-    code can check that from the would-write rows. True only when the close's own
-    session recorded a `would_commit` write of this tier in this room, and, when
-    the clocked row names a note or event, for that same id."""
-    if close.reason != "covered":
-        return False
+    code can check that from the would-write rows. True only when the clocked row
+    names a note or event id AND the close's own session recorded a `would_commit`
+    write of this tier in this room for that same id. A row with no id is never
+    proven (nothing but room and hour would link it)."""
+    if close.reason != "covered" or not key:
+        return False                      # a row with no id is never proven by code
     bare = room_id(room)
     return any(
-        t == tier and room_id(r) == bare and (not key or k == key)
-        for t, r, k in close.session_writes
+        t == tier and room_id(r) == bare and k == key for t, r, k in close.session_writes
     )
 
 
@@ -716,7 +735,8 @@ def verdict_lines(report: ShadowReport) -> list[str]:
             lines.append(
                 f"{w.writer}: {w.matched} matched, {w.coincident} coincident, {cog}, "
                 f"{len(w.clocked_only)} clocked-only ({w.closed} closed by code, "
-                f"{w.closed_self_attested} closed self-attested: not evidence, {w.open} open)"
+                f"{w.closed_self_attested} closed self-attested: not evidence, "
+                f"{w.open} open: everything not closed by code)"
             )
     return lines
 
@@ -757,6 +777,7 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
     return {
         "since": _iso(report.since_ms), "until": _iso(report.until_ms),
         "tolerance_seconds": report.tolerance_ms // 1000, "unit": report.unit,
+        "schema": REPORT_SCHEMA,
         "status": "error" if report.any_error else "compared",
         "error": report.error,
         "coverage": None if report.coverage is None else coverage_json(report.coverage),
@@ -774,8 +795,9 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
                         "writer": w.writer, "status": w.status, "matched": w.matched,
                         "coincident": w.coincident,
                         "clocked_only": None if w.status == "error" else len(w.clocked_only),
-                        "closed": w.closed, "closed_by_code": w.closed,
-                        "closed_self_attested": w.closed_self_attested, "open": w.open,
+                        "closed_by_code": w.closed,
+                        "closed_self_attested": w.closed_self_attested,
+                        "open": w.open,
                         "unmatched": [_gap_json(g, directory) for g in w.clocked_only],
                     }
                     for w in t.writers
@@ -830,8 +852,8 @@ def render_text(report: ShadowReport, directory: RoomDirectory) -> list[str]:
                     f"  clocked-only    {w.writer}  id={g.id}  room={directory.label(g.room)}  "
                     f"at={_iso(g.at_ms)}" + (f"  key={g.key}" if g.key else "")
                     + (
-                        f"  closed_by={g.closed_by}"
-                        + ("(code)" if g.closed_by_code else "(self-attested)")
+                        f"  closed_by={g.closed_by}(code)" if g.closed_by and g.closed_by_code
+                        else f"  closed_by={g.closed_by}(self-attested)  OPEN"
                         if g.closed_by else "  OPEN"
                     )
                     + (f"  refused_nearby={g.refused_nearby}" if g.refused_nearby else "")

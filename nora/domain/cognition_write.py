@@ -105,9 +105,9 @@ def note_base_refusal(
     observed head, `RetiredNoteError`, `StaleNoteHeadError`), spelled as the
     event and Standing tiers spell theirs (`not_found`, `stale_base`)."""
     if head_revision_id is None:
-        return "not_found", "no note by that id in this unit; read the notebook again"
+        return "not_found", "there is no note by that id to revise"
     if retired:
         return "note_retired", "the note was retired; read the notebook again"
     if parent_revision_id != head_revision_id:
-        return "stale_base", f"the note's head is {head_revision_id!r}; read it again"
+        return "stale_base", "the note changed since you read it; read it again"
     return None

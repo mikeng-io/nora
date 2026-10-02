@@ -125,7 +125,7 @@ async def test_note_update_against_a_head_that_moved_is_refused_stale_base_and_r
     # record it `would_commit`, which overstated what the live path would write.
     write, ledger = await _update(NoteHead(head_revision_id="rev-2"))
     assert (write.outcome, write.refusal_reason) == ("refused", "stale_base")
-    assert "rev-2" in (write.refusal_detail or "")
+    assert "rev-2" not in (write.refusal_detail or "")     # the head's id is not shown
     assert write.base_revision_id == "rev-1"
     assert [w.outcome for _, w, _ in ledger.would_writes] == ["refused"]
 

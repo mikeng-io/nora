@@ -57,13 +57,16 @@ def _report(*, error: bool = False, no_sessions: bool = False) -> ShadowReport:
 async def _run(monkeypatch, capsys, *, since="2026-09-29T00:00:00+08:00", until=None,
                as_json=False, error=False, unit=None, tolerance=360, no_sessions=False):
     seen: dict = {}
-    monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace())
+    monkeypatch.setattr(
+        cli, "_config",
+        lambda args: SimpleNamespace(cognition=SimpleNamespace(timezone="Asia/Hong_Kong")),
+    )
     monkeypatch.setattr(cli, "_database_url", lambda cfg: "postgresql://unused")
     monkeypatch.setattr(cli, "create_sql_engine", lambda url: _FakeEngine())
     monkeypatch.setattr(cli, "_room_directory", lambda cfg, u: cli.RoomDirectory({}, {}))
 
-    async def _fake(engine, window, *, tolerance_ms, unit, directory):
-        seen.update(window=window, tolerance_ms=tolerance_ms, unit=unit)
+    async def _fake(engine, window, *, tolerance_ms, unit, directory, tz):
+        seen.update(window=window, tolerance_ms=tolerance_ms, unit=unit, tz=tz)
         return _report(error=error, no_sessions=no_sessions)
 
     monkeypatch.setattr(cli, "cognition_run_shadow_compare", _fake)
@@ -91,6 +94,7 @@ async def test_an_error_tier_exits_one_and_says_error_not_zero(monkeypatch, caps
 async def test_json_is_one_parseable_object_with_the_verdicts(monkeypatch, capsys):
     rc, out, _ = await _run(monkeypatch, capsys, as_json=True)
     data = json.loads(out)
+    assert data["schema"] == 2          # a reader of the old, unversioned report fails loudly
     assert rc == 0 and data["status"] == "compared"
     assert data["verdicts"][0].startswith("note-candidates: 14 matched")
 
@@ -139,3 +143,8 @@ async def test_the_json_of_a_window_with_no_session_is_an_error_with_its_coverag
     data = json.loads(out)
     assert rc == 1 and data["status"] == "error" and data["tiers"] == []
     assert data["coverage"]["sessions"] == 0
+
+
+async def test_the_day_is_counted_in_the_configured_zone(monkeypatch, capsys):
+    _, _, seen = await _run(monkeypatch, capsys)
+    assert str(seen["tz"]) == "Asia/Hong_Kong"
