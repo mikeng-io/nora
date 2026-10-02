@@ -82,6 +82,23 @@ are the same everywhere the codebase reasons, decides, or commits state.)
    carries provenance, so a turn — or an eval verdict — can be reconstructed and
    checked *without trusting the producer*.
 
+**Every decision and every judgement passes the five Cs** — a design, a
+review finding, a fix, a report, a "done". Name the C that fails; a verdict
+that names none is not a verdict.
+
+1. **Coherence** — it holds together as one model: no part contradicts
+   another, one name per thing, one owner per job.
+2. **Consistency** — it agrees with what already exists: the same component,
+   pattern, store and word the repo already uses (context assembly for every
+   block, the existing verbs and stores). A parallel custom part fails here.
+3. **Conformance** — it follows what was ruled: this file, the decision
+   index, the design, the operator's rulings.
+4. **Correctness** — it is true and it works, measured against evidence (a
+   named test, a read-back), never asserted by whoever built it.
+5. **Completeness** — it covers the whole scope: every caller, every doc,
+   every deleted name, nothing left "still in shadow" or "not yet built".
+   Coverage, not correctness; each C is checked on its own.
+
 **Apply it at every grain** — the whole turn AND each sub-step, down to one tool
 call. `serialize(N)` is the input you `comprehend(N+1)`. The **eval layer is this
 same loop one level up**: comprehend a real user-journey into a typed case,
