@@ -297,25 +297,6 @@
       ],
       "additionalProperties": false
     },
-    "props_Tabs": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    },
-    "props_Tab": {
-      "type": "object",
-      "properties": {
-        "label": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 60
-        }
-      },
-      "required": [
-        "label"
-      ],
-      "additionalProperties": false
-    },
     "props_Chart": {
       "type": "object",
       "properties": {
@@ -653,7 +634,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -916,36 +896,6 @@
                 "children"
               ]
             }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab2"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
           }
         },
         {
@@ -1162,7 +1112,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -1431,36 +1380,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab3"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -1650,30 +1569,6 @@
           }
         }
       ]
-    },
-    "tab2": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n3"
-          }
-        }
-      }
     },
     "n3": {
       "type": "object",
@@ -1695,7 +1590,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -1964,36 +1858,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab4"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -2183,30 +2047,6 @@
           }
         }
       ]
-    },
-    "tab3": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n4"
-          }
-        }
-      }
     },
     "n4": {
       "type": "object",
@@ -2228,7 +2068,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -2497,36 +2336,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab5"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -2716,30 +2525,6 @@
           }
         }
       ]
-    },
-    "tab4": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n5"
-          }
-        }
-      }
     },
     "n5": {
       "type": "object",
@@ -2761,7 +2546,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -3030,36 +2814,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab6"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -3249,30 +3003,6 @@
           }
         }
       ]
-    },
-    "tab5": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n6"
-          }
-        }
-      }
     },
     "n6": {
       "type": "object",
@@ -3294,7 +3024,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -3563,36 +3292,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab7"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -3782,30 +3481,6 @@
           }
         }
       ]
-    },
-    "tab6": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n7"
-          }
-        }
-      }
     },
     "n7": {
       "type": "object",
@@ -3827,7 +3502,6 @@
             "Stat",
             "Accordion",
             "Code",
-            "Tabs",
             "Chart",
             "Mermaid",
             "Map",
@@ -4096,36 +3770,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Tabs"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "properties": {
-              "props": {
-                "$ref": "#/$defs/props_Tabs"
-              },
-              "children": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 12,
-                "items": {
-                  "$ref": "#/$defs/tab8"
-                }
-              }
-            },
-            "required": [
-              "children"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "Chart"
               }
             },
@@ -4315,30 +3959,6 @@
           }
         }
       ]
-    },
-    "tab7": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 200,
-          "items": {
-            "$ref": "#/$defs/n8"
-          }
-        }
-      }
     },
     "n8": {
       "type": "object",
@@ -4808,27 +4428,6 @@
           }
         }
       ]
-    },
-    "tab8": {
-      "type": "object",
-      "required": [
-        "type",
-        "props",
-        "children"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "const": "Tab"
-        },
-        "props": {
-          "$ref": "#/$defs/props_Tab"
-        },
-        "children": {
-          "type": "array",
-          "maxItems": 0
-        }
-      }
     }
   }
 }

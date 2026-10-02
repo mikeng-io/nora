@@ -303,7 +303,7 @@ def _describe(error: ValidationError) -> str:
 
 
 def _schema_findings(document: Any) -> list[Finding]:
-    # Most useful first. A wrong `type` (a Markdown where a Tab belongs) is the
+    # Most useful first. A wrong `type` (a Markdown where a Section belongs) is the
     # finding that explains several below it, so it leads; then a missing or an
     # unknown key; then the detail. Within a rank, document order.
     def order(error: ValidationError) -> tuple[int, list[str]]:
@@ -523,8 +523,6 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
             return [s for i in items for s in (i["title"], _markdown(i["text"]))]
         case "Code":
             return [p.get("language", ""), p["text"]]
-        case "Tab":
-            return [p["label"]]
         case "Chart":
             unit = p.get("unit", "")
             return [p.get("title", ""), unit, p["caption"], *(d["label"] for d in p["data"])]

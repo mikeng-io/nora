@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 21 components (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are planned and not built. The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
+description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 19 components (21 until §42 removed Tabs) (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are built (§33, §34). The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
 tags: [nora, documents, artifact, json-render, react, portal, drop, skill]
 timestamp: '2026-10-01'
 status: partly-built
@@ -23,8 +23,10 @@ Status (2026-10-01): **built and live in part.** What exists, by section: the ca
 #644), the checker (§24, #648), the store, publish service and read API (§25, #654), the tools (§26, #658),
 the portal pages and picture route (§27, #660), the `document-creation` skill (§28, #667), the room's
 `<documents>` block (§29, #670), the sightings resolver for pictures (#668), links (§30, #673) and the
-lifecycle of archive, delete and restore (§31, #674). **Built since** (§33): search, a phone bottom-bar entry, forget reaching documents. **Planned and not built**
-(operator, 2026-10-01, §32): a present view, print/PDF and a revision-history view; nothing claims they exist. **Parked:** long background research reports,
+lifecycle of archive, delete and restore (§31, #674). **Built since** (§33): search, a phone bottom-bar entry, forget reaching documents. **Built since (§34):**
+a present view, print/PDF and a revision-history view. **Later still:** web pictures (§35), the first live read-back (§36),
+the link guard and minted links (§37 to §39), Map by name (§40), one home for each rule and the not-saved note (§41),
+and `Tabs` removed (§42). A statement below that says one of these is not built or is read-only is marked where it stands. **Parked:** long background research reports,
 which are the job of the future `delegate_task` (open issue #22, written while Smith still existed, so its
 wording is stale), not of documents. The sections below are in the order
 they were written: where an early section says something the later ones or the code changed, it carries a
@@ -98,7 +100,7 @@ Nora container: document-check                        ← §7
   ▼
 Postgres: documents (spec as jsonb)                   ← Nora writes it directly (§5)
   ▲
-  │  GET /web/documents, /web/documents/<id>          ← Nora's :9100 API, read-only
+  │  GET /web/documents, /web/documents/<id>          ← as first designed; built as /app/v1/documents* (§27, §34)
   │
 app/ (Next, signed in via identity.toml)
   │  proxy allowlist row → list + detail routes (§6)
@@ -125,7 +127,8 @@ A test fails when the committed `document.schema.json` is stale against the cata
   changes. Keep prior revisions? Open decision 4.
 - **Specs are small** (KB), so they live in Postgres. RustFS is not involved unless a document
   embeds an image (open decision 5).
-- **Nora is the only writer.** The web app is read-only, matching the proxy's GET-only table.
+- **Nora is the only writer.** The web app is read-only, matching the proxy's GET-only table. **Superseded (§31, §34):**
+  the portal also writes a document's state (`POST /app/v1/documents/{id}/state`) and restores a revision, each on its own route.
 - **Retired, as built (DEC-254):** `/api/tokens` and the `nora-compute` membership, with Smith. **NOT
   retired, and the study's list was wrong about them:** the `artifacts` table, Drop's `POST`/`PATCH
   /api/artifacts`, `DropArtifactIngest` and the `ArtifactIngest` port, because `computer_export`
@@ -301,13 +304,15 @@ here is open except decision 9.
    the phone bottom bar was four destinations (DESIGN.md §7). **Ruled 2026-10-01 (§32), built (§33):** a phone
    bottom-bar entry; the bar now holds five and DESIGN.md says so.
 4. **Keep prior revisions: settled (§25).** Yes. `document_revision` keeps one full snapshot per revision,
-   append-only. **Ruled 2026-10-01 (§32):** a view of that history is to be built; none exists yet (§27).
+   append-only. **Ruled 2026-10-01 (§32), built (§34):** a view of that history and a restore.
 5. **Images inside a document: settled (§16, §25).** Room media by reference (a media code resolved to a
-   sha256 by Nora), never a URL; no external images in v1.
+   sha256 by Nora), never a URL; no external images in v1. **Reversed (§35, DEC-269):** a web picture she looked at with
+   `media_fetch` is kept and named by its code, never by its URL.
 6. **The 4 existing HTML artifacts: settled (DEC-254).** Drop's artifact READ path and `POST`/`PATCH
    /api/artifacts` stay, so every old link keeps working, and Drop's artifact half is not retired (§5).
 7. **Maps: settled (§14, §21).** A custom `Map` component over the portal's MapLibre, with coordinates and
-   never an address.
+   never an address. **Amended (§40, DEC-272):** the model writes place names only and the service looks the
+   coordinates up.
 8. **Which session is the sandbox session: moot.** The §2 contract was amended 2026-10-01 and the sandbox
    side landed (#649, #672).
 9. **Render Mermaid in the sandbox instead of the page: still open (§22).** Recommended not yet. The
@@ -796,7 +801,7 @@ rooms they came from.** Recorded as an open decision below.
 **Open decision 9.** Render Mermaid in the sandbox instead of the page? Recommend not yet, for the
 reasons above, and revisit at the W4 visibility work, when the audience becomes real.
 
-## 23. No checker in the VM; Tabs on the portal's Radix tabs (2026-10-01)
+## 23. No checker in the VM; Tabs on the portal's Radix tabs (2026-10-01; Tabs removed, §42)
 
 **No VM-side checker.** §10 had the skill run a local check (`nora-artifact-check`) before export.
 Dropped. The authoritative check has to run in Nora's container, because the VM is untrusted, so a
@@ -1489,7 +1494,7 @@ a link to another host, and any eval of document content. A rate limit on kept p
 worked: she fetched six pages and six pictures (eight are allowed now) and drafted a full reference. Her
 `document_publish` failed: she sent `spec` as a 10,000-character string of JSON, broken at character 7,247 by what
 the findings called only «Expecting ',' delimiter: line 1 column 7248». With nothing to fix she wrote the draft to her
-computer and replied that the document was made, with an invented link. R-100 refused that reply; it was her final
+computer and replied that the document was made, with an invented link. R-100 refused that reply (§39 later replaced the refusal with removing the link); it was her final
 text, not a `send_reply` call, so there was no refusal reason to hand back and the room received the generic
 «can't manage right now» fallback. The guard held; the room's experience was a brush-off.
 
@@ -1623,3 +1628,25 @@ the catalog is about 2,000. The picture and Map refusal rounds are not merged: p
 billed Map lookups are not spent on a document that will be refused. `conduct.md`'s one line about documents is
 doctrine, so changing it needs the eval suite and is left. DEC-270 (2) and (3) and DEC-271's skill sentence are amended
 in part: the rules moved, the decisions stand.
+
+## 42. `Tabs` is removed from the catalog (2026-10-02, DEC-275)
+
+**What was measured.** On 2026-10-02 norty held 4 documents and 7 revisions. `Timeline` was in 4 of 4, `Callout` in 4 of 4,
+`Checklist` in 3 of 4, `Sources` in 3 of 4; `Tabs` was in none, and neither were `Map`, `Mermaid`, `Badge`, `KeyValue`,
+`Stat`, `Chart` or `Code`. Four documents on one day say nothing about the rarely used components, so none of those
+was cut on usage. `Tabs` was cut on cost: the one component with a rule of its own (`Tab` valid only inside `Tabs`,
+`Tabs` holding nothing else), which took three extra schema branches in `emit.ts`, a `toFlatSpec` pass to derive the
+tab strip, a `Tab` case in the checker's text extraction, six corpus cases and a Radix-backed e2e pair. A document
+that wants options side by side uses two `Card`s, and one that wants them folded uses an `Accordion`.
+
+**Decided.** The catalog has 19 components; `Tabs` and `Tab` are refused like any unknown type (corpus case "a Tabs").
+The checker, the emitted schema and the prompt are regenerated, and the runbook demo uses two `Card`s. A stored
+document that held a `Tabs` would show "cannot be shown"; none exists. The portal's own `ui/tabs.tsx` stays, for its
+pages. The renderer no longer shows a reader the schema's raw reason when a stored document cannot be drawn; it says
+only that it cannot be shown.
+
+**Considered and not done, with the reason.** `Badge` stays: it is the cheapest leaf and the fixture of about 25
+tests. The `spike` page and the demos stay: `app/e2e/documents.spec.ts` drives the renderer's script, image and
+`javascript:` sink tests through the spike page, which is a security harness and not a leftover. `Map`, history and
+restore, and present and print stay: they are operator decisions of the last two days (DEC-266 to DEC-268, DEC-272) and
+four documents give no evidence to reverse them. `Checklist` stays (3 of 4 documents use it).

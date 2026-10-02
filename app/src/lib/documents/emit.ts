@@ -4,7 +4,6 @@
 // scripts/emit-document-schema.mjs and documents.test.ts call the same code.
 import { z } from "zod";
 import {
-  CHILDREN,
   COMPONENT_NAMES,
   CONTAINERS,
   DOCUMENT_VERSION,
@@ -64,7 +63,7 @@ type Json = Record<string, unknown>;
 // described once. The two validators are compared on a shared corpus in
 // documents.test.ts (ajv) and tests/unit/test_document_schema.py (Python).
 const ref = (name: string): Json => ({ $ref: `#/$defs/${name}` });
-const NODE_TYPES = COMPONENT_NAMES.filter((n) => n !== "Page" && n !== "Tab");
+const NODE_TYPES = COMPONENT_NAMES.filter((n) => n !== "Page");
 
 export function buildSchema(): Json {
   const defs: Record<string, Json> = {};
@@ -83,38 +82,19 @@ export function buildSchema(): Json {
 
   for (let d = 1; d <= MAX_DEPTH; d++) {
     const last = d === MAX_DEPTH;
-    const types = NODE_TYPES.filter((n) => !(last && n === "Tabs")); // its Tab children would be one level too deep
     defs[`n${d}`] = {
       type: "object",
       required: ["type", "props"],
       additionalProperties: false,
-      // `children` is constrained per type below; here it is only "an array", so a
-      // Tabs can hold Tab nodes without also having to be a general node.
-      properties: { type: { enum: types }, props: { type: "object" }, children: { type: "array" } },
-      allOf: types.map((name) => ({
+      // `children` is constrained per type below; here it is only "an array".
+      properties: { type: { enum: NODE_TYPES }, props: { type: "object" }, children: { type: "array" } },
+      allOf: NODE_TYPES.map((name) => ({
         if: { properties: { type: { const: name } }, required: ["type"] },
-        then:
-          name === "Tabs"
-            ? {
-                properties: {
-                  props: ref(`props_${name}`),
-                  children: { type: "array", minItems: 1, maxItems: 12, items: ref(`tab${d + 1}`) },
-                },
-                required: ["children"],
-              }
-            : CONTAINERS.has(name)
-              ? { properties: { props: ref(`props_${name}`), children: kids(last ? null : `n${d + 1}`) } }
-              : { properties: { props: ref(`props_${name}`) }, not: { required: ["children"] } },
+        then: CONTAINERS.has(name)
+          ? { properties: { props: ref(`props_${name}`), children: kids(last ? null : `n${d + 1}`) } }
+          : { properties: { props: ref(`props_${name}`) }, not: { required: ["children"] } },
       })),
     };
-    if (d >= 2) {
-      defs[`tab${d}`] = {
-        type: "object",
-        required: ["type", "props", "children"],
-        additionalProperties: false,
-        properties: { type: { const: "Tab" }, props: ref("props_Tab"), children: kids(d === MAX_DEPTH ? null : `n${d + 1}`) },
-      };
-    }
   }
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -178,9 +158,8 @@ function describe(s: JsonSchema): string {
 export function emitPrompt(): string {
   const lines = COMPONENT_NAMES.map((name) => {
     const js = z.toJSONSchema(components[name].props, { io: "input" }) as JsonSchema;
-    const kids = CHILDREN[name]
-      ? ` children: ${CHILDREN[name]}.`
-      : name === "Page"
+    const kids =
+      name === "Page"
         ? " children: Sections first, then other blocks."
         : CONTAINERS.has(name)
           ? " children: blocks."
