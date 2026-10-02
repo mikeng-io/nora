@@ -14,7 +14,14 @@ import json
 import pytest
 
 from nora.domain.media import MediaBlob
-from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Quote, RowEdit
+from nora.domain.models import (
+    DeliveryStatus,
+    EditTarget,
+    NormalizedMessage,
+    Quote,
+    RowEdit,
+    Touch,
+)
 from nora.domain.ports import RecordStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -852,3 +859,86 @@ async def test_a_delete_is_recorded_and_the_message_still_reads(store):
     assert deletes == [(target, "", None, 7, {"touch": "delete", "ts": 7})]
     rows = await store.recent(conversation_id="g1", limit=10)
     assert [r.body for r in rows] == ["dinner at 8"]
+
+
+# --- orphan deletes: a delete whose target is not on record yet ---------------
+# `record_orphan_delete` / `match_orphan_deletes` / `discard_orphan_delete`: the key rule
+# (same platform and room, a NON-EMPTY handle or Signal's sent-timestamp) and the
+# authorship rule (`nora.domain.delete_authorship`) are the contract; both stores answer
+# the same, so the pipeline's check after an audit write and the gate's peek cannot drift
+# from what the sweep applies.
+
+
+def _orphan(store, *, platform="whatsapp", room="g1", handle="H1", sent_ts=None,
+            deleter="w1", ids=(), person=None):
+    msg = NormalizedMessage(
+        platform=platform, conversation_id=room, conversation_type="group",
+        sender_id=deleter, sender_name=None, timestamp=50, body="", raw={},
+    )
+    touch = Touch(
+        kind="delete", target=EditTarget(message_id=handle, sent_ts=sent_ts), actor_ids=ids,
+    )
+    return store.record_orphan_delete(message=msg, touch=touch, person_id=person, now_ms=1000)
+
+
+def _arriving(*, platform="whatsapp", room="g1", handle="H1", ts=7, sender="w1"):
+    return NormalizedMessage(
+        platform=platform, conversation_id=room, conversation_type="group",
+        sender_id=sender, sender_name=None, timestamp=ts, body="x", raw={},
+        message_id=handle,
+    )
+
+
+async def test_a_kept_delete_matches_the_message_it_names_by_handle_and_peeking_keeps_it(store):
+    oid = await _orphan(store)
+    first = await store.match_orphan_deletes(message=_arriving(), person_id=None)
+    again = await store.match_orphan_deletes(message=_arriving(), person_id=None)
+    assert [o.id for o in first] == [oid] and [o.id for o in again] == [oid]
+    assert (first[0].platform, first[0].handle, first[0].deleter_id) == ("whatsapp", "H1", "w1")
+    assert await store.discard_orphan_delete(orphan_id=oid) is True
+    assert await store.discard_orphan_delete(orphan_id=oid) is False
+    assert await store.match_orphan_deletes(message=_arriving(), person_id=None) == []
+
+
+async def test_a_kept_signal_delete_matches_by_timestamp_and_only_for_its_author(store):
+    oid = await _orphan(store, platform="signal", handle="", sent_ts=777, deleter="+1")
+    mine = _arriving(platform="signal", handle="", ts=777, sender="+1")
+    other = _arriving(platform="signal", handle="", ts=777, sender="+2")
+    assert [o.id for o in await store.match_orphan_deletes(message=mine, person_id=None)] == [oid]
+    assert await store.match_orphan_deletes(message=other, person_id=None) == []
+    assert await store.match_orphan_deletes(
+        message=_arriving(platform="signal", handle="", ts=778, sender="+1"), person_id=None,
+    ) == []
+
+
+async def test_a_kept_delete_never_matches_on_an_empty_handle(store):
+    await _orphan(store, platform="signal", handle="", sent_ts=777, deleter="+1")
+    assert await store.match_orphan_deletes(
+        message=_arriving(platform="signal", handle="", ts=5, sender="+1"), person_id=None,
+    ) == []
+
+
+async def test_a_kept_delete_is_per_platform_room_and_handle(store):
+    await _orphan(store, platform="discord", handle="H1", deleter="")
+    for message in (
+        _arriving(platform="whatsapp"), _arriving(platform="instagram"),
+        _arriving(platform="discord", room="g2"), _arriving(platform="discord", handle="H2"),
+    ):
+        assert await store.match_orphan_deletes(message=message, person_id=None) == []
+    assert len(await store.match_orphan_deletes(
+        message=_arriving(platform="discord", sender="d1"), person_id=None)) == 1
+
+
+async def test_a_kept_whatsapp_delete_is_the_authors_by_id_by_person_or_by_any_id_form(store):
+    await _orphan(store, handle="H1", deleter="+85211112222", ids=("+85211112222", "999"))
+    assert len(await store.match_orphan_deletes(
+        message=_arriving(sender="999"), person_id=None)) == 1, "stored under the other form"
+    assert len(await store.match_orphan_deletes(
+        message=_arriving(sender="+85211112222"), person_id=None)) == 1
+    assert await store.match_orphan_deletes(
+        message=_arriving(sender="+85299999999"), person_id=None) == []
+    oid = await _orphan(store, handle="H2", deleter="a-phone", person="ada")
+    assert [o.id for o in await store.match_orphan_deletes(
+        message=_arriving(handle="H2", sender="a-lid"), person_id="ada")] == [oid]
+    assert await store.match_orphan_deletes(
+        message=_arriving(handle="H2", sender="a-lid"), person_id="ben") == []

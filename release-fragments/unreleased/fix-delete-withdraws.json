@@ -1,15 +1,16 @@
 {
   "type": "security",
-  "summary": "A message someone deletes or unsends in a chat is now forgotten by Nora too: she stops quoting it, and the notes, positions and events built on it stop being shown.",
+  "summary": "A message someone deletes or unsends in a chat is now forgotten by Nora too: she stops quoting it, and the notes and events built on it stop being shown.",
   "details": [
     "Before this, an unsent message stayed visible to Nora in every transcript and in everything derived from it.",
-    "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused.",
+    "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused, including old ones the first start after this change finds on record.",
+    "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives.",
     "A photo unsent within seconds is no longer read by the vision model or passed to her memory.",
     "An operator command, `nora withdrawal reconcile-deletes`, applies the same to deletes that were already recorded, and it also runs every time she starts."
   ],
   "limitations": [
     "Honcho, her long-term memory, has no way to delete one message, so something it already learned from a deleted message may remain there.",
-    "A deleted message stays hidden, and a note or event that rested on it stays withdrawn until it is written again; the room's overall position and culture are not withdrawn.",
+    "A deleted message stays hidden, and a note or event that rested on it stays withdrawn: nothing clears the mark when a note is rewritten, and an operator has to clear it. The room's overall position and culture are not withdrawn, so in a quiet room they can keep the deleted message's content until the next time they are rewritten.",
     "On WhatsApp a group admin removing someone else's message is not recognised, and deleting one of Nora's own messages is only recognised on Signal."
   ]
 }

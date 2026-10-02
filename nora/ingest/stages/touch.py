@@ -19,15 +19,22 @@ Four endings, each counted on `nora_ingest_outcomes_total`:
 
 * **`<kind>_recorded`** — the target is on record and the row is written.
 * **`<kind>_orphaned`** — nothing on record to attach it to (a message from
-  before Nora joined, pruned, or never recorded). Dropped, for
-  `edit_target`'s reason: a touch of nothing cannot be attached, and a
-  lookup that FAILED counts an error besides — «could not look» is not «not
-  there».
+  before Nora joined, pruned, or never recorded, or one not recorded YET). A
+  reaction is dropped, for `edit_target`'s reason: a touch of nothing cannot be
+  attached, and a lookup that FAILED counts an error besides — «could not look»
+  is not «not there». A DELETE is not dropped: with a withdrawer wired it is kept
+  as an `orphan_delete` row (the durable record, written first, in its own
+  transaction), which the pipeline applies the moment the message is audited and
+  the start-up sweep resolves against what is stored. That one row covers a delete
+  that overtook its message (Discord dispatches events as separate tasks and a
+  photo is recorded after its custody fetch), one that arrives after a restart or
+  a long hold, and one whose lookup failed.
 * **`delete_refused`** — a delete on a platform where only a message's author
-  can delete it (Signal's remote delete), naming a message whose author is
-  not the deleter: a malformed or forged event, refused as
-  `edit_target` refuses an edit by someone else. Authorship is the platform
-  id first, the resolved person second (one person, two id forms).
+  can delete it (Signal's remote delete, WhatsApp's revoke), naming a message
+  whose author is not the deleter: a malformed or forged event, refused as
+  `edit_target` refuses an edit by someone else
+  (`nora.domain.delete_authorship`: the platform id, the resolved person, or any
+  id form the event gives for the deleter).
 * **`audit_refused`** — the write failed; dropped and counted, never raised
   (this runs on the listener's await path, like the audit write).
 
@@ -46,34 +53,23 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
-from collections import OrderedDict
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import DeleteWithdrawal, DeleteWithdrawer, RecordStore
 from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.touch")
 
+__all__ = ["AUTHOR_ONLY_DELETES", "TouchEnding", "TouchResult", "run"]
+
 TouchEnding = Literal[
     "reaction_recorded", "reaction_orphaned",
     "delete_recorded", "delete_orphaned", "delete_refused",
     "audit_refused",
 ]
-
-#: Platforms where only a message's author can delete it for everyone, so a
-#: delete naming someone else's message is not a member's action: Signal's remote
-#: delete and WhatsApp's revoke. On WhatsApp the platform enforces nothing the
-#: server can refuse (end-to-end encrypted: the bridge forwards any REVOKE), and
-#: the event carries the REVOKER (`sender_*`, the envelope's sender), so the check
-#: is ours; a group admin revoking someone else's message cannot be verified
-#: without group metadata Python does not hold and is REFUSED (`refused_not_author`:
-#: the message stays visible). Discord's gateway and Instagram's unsend name no
-#: deleter at all (`sender_id == ""`), so there is nothing to compare; both are
-#: server-authenticated events and are honoured as the platform reports them.
-AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({"signal", "whatsapp"})
 
 
 @dataclass(frozen=True)
@@ -90,114 +86,6 @@ class TouchResult:
     withdrawal: DeleteWithdrawal | None = None
 
 
-@dataclass(frozen=True)
-class _Held:
-    until: float
-    message: NormalizedMessage
-    touch: Touch
-    #: Who the platform says deleted it, resolved when it arrived: the author
-    #: check on a platform where only the author can delete.
-    person_id: str | None
-
-
-class PendingDeletes:
-    """Deletes whose target was not on record when they arrived, held for a
-    short while so the message, when it IS recorded, is withdrawn at once.
-
-    A delete can overtake the message it names: Discord dispatches each event as
-    its own task, and a message with an attachment is only recorded after its
-    custody fetch, so a photo sent and unsent within seconds is deleted before it
-    is stored. Without this the late row is recorded visible and nothing ever
-    withdraws it. Bounded in size and in time and held in this process only: a
-    restart inside the window loses the hold (nothing durable names it: a
-    `message_delete` row needs a target), and a delete that outlives `ttl_seconds`
-    unmatched is `hold_expired`, counted by `on_expired`, never `not_stored`.
-
-    **A hold matches the message it names, and only it.** The same platform, the
-    same room, and the platform handle (never an empty one: a platform that gave
-    the message no handle must not match every message that has none) or Signal's
-    sent-timestamp. And on a platform where only the author can delete
-    (`AUTHOR_ONLY_DELETES`) the arriving message must be the deleter's own: two
-    members posting in one millisecond are two messages, and one of them must not
-    consume the other's delete."""
-
-    def __init__(
-        self, *, ttl_seconds: float = 300.0, max_entries: int = 256,
-        clock: Callable[[], float] = time.monotonic,
-        on_expired: Callable[[NormalizedMessage], None] | None = None,
-    ) -> None:
-        self._ttl = ttl_seconds
-        self._max = max_entries
-        self._clock = clock
-        self._on_expired = on_expired
-        self._held: OrderedDict[int, _Held] = OrderedDict()
-        self._next = 0
-
-    def add(self, message: NormalizedMessage, touch: Touch, *, person_id: str | None) -> int:
-        self._expire()
-        self._next += 1
-        self._held[self._next] = _Held(self._clock() + self._ttl, message, touch, person_id)
-        while len(self._held) > self._max:
-            _, dropped = self._held.popitem(last=False)
-            self._lost(dropped)
-        return self._next
-
-    def discard(self, entry: int) -> bool:
-        """True when this call removed it (nobody had taken it)."""
-        return self._held.pop(entry, None) is not None
-
-    def matches(self, message: NormalizedMessage, *, person_id: str | None) -> bool:
-        """Whether a held delete names `message`, without taking it."""
-        return bool(self._matching(message, person_id))
-
-    def take(
-        self, message: NormalizedMessage, *, person_id: str | None,
-    ) -> list[tuple[NormalizedMessage, Touch]]:
-        """Every held delete that names `message`, removed."""
-        out: list[tuple[NormalizedMessage, Touch]] = []
-        for entry in self._matching(message, person_id):
-            held = self._held.pop(entry)
-            out.append((held.message, held.touch))
-        return out
-
-    def _matching(self, message: NormalizedMessage, person_id: str | None) -> list[int]:
-        self._expire()
-        author_only = message.platform in AUTHOR_ONLY_DELETES
-        found: list[int] = []
-        for entry, held in self._held.items():
-            delete = held.message
-            if delete.platform != message.platform or (
-                delete.conversation_id != message.conversation_id
-            ):
-                continue
-            target = held.touch.target
-            by_handle = (
-                bool(target.message_id) and bool(message.message_id)
-                and target.message_id == message.message_id
-            )
-            by_ts = target.sent_ts is not None and target.sent_ts == message.timestamp
-            if not (by_handle or by_ts):
-                continue
-            if author_only and not (
-                (bool(delete.sender_id) and delete.sender_id == message.sender_id)
-                or (held.person_id is not None and held.person_id == person_id)
-            ):
-                continue
-            found.append(entry)
-        return found
-
-    def _expire(self) -> None:
-        now = self._clock()
-        for entry, held in list(self._held.items()):
-            if held.until <= now:
-                del self._held[entry]
-                self._lost(held)
-
-    def _lost(self, held: _Held) -> None:
-        if self._on_expired is not None:
-            self._on_expired(held.message)
-
-
 async def run(
     *, message: NormalizedMessage, touch: Touch, audit: RecordStore,
     persons: Persons, metrics: Any, withdrawer: DeleteWithdrawer | None = None,
@@ -211,28 +99,90 @@ async def run(
         # A platform that gives no time for the touch: stamped on ARRIVAL,
         # seconds late, never wrong in kind (the edit path's fallback).
         message = dataclasses.replace(message, timestamp=int(time.time() * 1000))
-    try:
-        target = await audit.find_edited(
-            conversation_id=message.conversation_id, target=touch.target,
-            sender_id=touch.target_author or message.sender_id,
-        )
-    except Exception:
-        log.exception("%s target lookup failed; dropping it", touch.kind)
-        metrics.inc("nora_errors_total", stage="touch_target", platform=message.platform)
-        return TouchResult(ending=orphaned, message=message)
+    withdrawing = touch.kind == "delete" and withdrawer is not None
+    person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
+    person_id = person.person_id if person is not None else None
+    target = await _lookup(audit, message, touch, metrics)
+    orphan_id: int | None = None
+    if target is None and withdrawing:
+        # THE DURABLE RECORD, FIRST, in its own transaction, then one more look:
+        # the message may have been recorded between the first lookup and this
+        # write, and the pipeline's check after a message's audit write has
+        # already run. Written whether the target was absent or the lookup FAILED
+        # («could not look» is not «not there»), so neither loses the delete.
+        orphan_id = await _record_orphan(audit, message, touch, person_id, metrics)
+        target = await _lookup(audit, message, touch, metrics)
     if target is None:
-        if touch.kind == "delete" and withdrawer is not None:
+        if withdrawing:
             metrics.inc(
                 "nora_delete_withdrawals_total",
                 platform=message.platform, outcome="not_stored",
             )
         return TouchResult(ending=orphaned, message=message)
+    try:
+        return await _record(
+            message=message, touch=touch, target=target, person_id=person_id,
+            audit=audit, metrics=metrics, withdrawer=withdrawer,
+        )
+    finally:
+        if orphan_id is not None:
+            # The delete found its message after all: the orphan has been applied
+            # (or refused) here, and a row left would apply it a second time.
+            await _discard_orphan(audit, orphan_id)
 
-    person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
-    person_id = person.person_id if person is not None else None
+
+async def _lookup(
+    audit: RecordStore, message: NormalizedMessage, touch: Touch, metrics: Any,
+) -> EditedMessage | None:
+    try:
+        return await audit.find_edited(
+            conversation_id=message.conversation_id, target=touch.target,
+            sender_id=touch.target_author or message.sender_id,
+        )
+    except Exception:
+        log.exception("%s target lookup failed", touch.kind)
+        metrics.inc("nora_errors_total", stage="touch_target", platform=message.platform)
+        return None
+
+
+async def _record_orphan(
+    audit: RecordStore, message: NormalizedMessage, touch: Touch,
+    person_id: str | None, metrics: Any,
+) -> int | None:
+    if not touch.target.message_id and touch.target.sent_ts is None:
+        return None             # it names nothing: nothing could ever match it
+    try:
+        return await audit.record_orphan_delete(
+            message=message, touch=touch, person_id=person_id,
+            now_ms=int(time.time() * 1000),
+        )
+    except Exception:
+        # Dropped, counted, never raised, and logged without a word of the message.
+        log.exception("an orphan delete could not be recorded; it is lost")
+        metrics.inc("nora_errors_total", stage="touch_orphan", platform=message.platform)
+        return None
+
+
+async def _discard_orphan(audit: RecordStore, orphan_id: int) -> None:
+    try:
+        await audit.discard_orphan_delete(orphan_id=orphan_id)
+    except Exception:
+        # A row left behind is applied again, idempotently, and then purged.
+        log.exception("orphan delete %d could not be discarded", orphan_id)
+
+
+async def _record(
+    *, message: NormalizedMessage, touch: Touch, target: EditedMessage,
+    person_id: str | None, audit: RecordStore, metrics: Any,
+    withdrawer: DeleteWithdrawer | None,
+) -> TouchResult:
     if (
         touch.kind == "delete" and message.platform in AUTHOR_ONLY_DELETES
-        and not _same_author(message.sender_id, person_id, target)
+        and not deleter_is_author(
+            author_sender_id=target.sender_id, author_person_id=target.person_id,
+            deleter_sender_id=message.sender_id, deleter_person_id=person_id,
+            deleter_ids=touch.actor_ids,
+        )
     ):
         if withdrawer is not None:
             metrics.inc(
@@ -291,11 +241,3 @@ async def _withdraw(
         "nora_delete_withdrawals_total", platform=platform, outcome=withdrawal.outcome,
     )
     return withdrawal
-
-
-def _same_author(sender_id: str, person_id: str | None, target: EditedMessage) -> bool:
-    """`edit_target._same_author`'s rule: the same platform id, or the same
-    resolved person (a Signal sender seen by phone once and by ACI once)."""
-    if sender_id and sender_id == target.sender_id:
-        return True
-    return person_id is not None and person_id == target.person_id

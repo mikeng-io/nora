@@ -60,9 +60,11 @@ from nora.domain.standing import Standing
 from nora.domain.withdrawal import render_supported
 from nora.engagement.debrief_render import render_rollup_input
 from nora.infra.sql.audit import SqlRecordStore
+from nora.infra.sql.citation import mark_if_cites_hidden, record_citations
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.event_evidence import record_event_citations
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
@@ -73,6 +75,7 @@ from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
     NOTE_CANDIDATE,
+    ORPHAN_DELETE,
 )
 from nora.infra.sql.standing import SqlStandingStore
 from nora.ingest.comprehension import MediaComprehension
@@ -82,6 +85,7 @@ from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.platform.registry import MediaSourceRegistry
+from nora.platform.whatsapp.parser import parse_event
 from nora.policy import permissive_policy
 from nora.testing import FakeBlobStore, FakeMediaInterpreter, FakeMediaObjectStore, FakeMediaSource
 
@@ -126,7 +130,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             for table in (
                 "citation", "event_revision", "event_rsvps", "events", "note_revision",
                 "note", "standing_revision", "standing", "culture_revision", "culture",
-                "note_candidate", "messages", "row_history",
+                "note_candidate", "orphan_delete", "messages", "row_history",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
@@ -1242,7 +1246,7 @@ async def test_a_withdrawal_that_keeps_failing_is_tried_a_bounded_number_of_time
 
 
 # =============================================================================
-# the hold: keyed to the message it names
+# a held delete: keyed to the message it names
 # =============================================================================
 
 
@@ -1295,22 +1299,6 @@ async def test_a_held_delete_on_one_platform_does_not_withdraw_the_same_handle_o
 
     assert result.message is not None
     assert await w.hidden_at(await w.row("shared-room", M_TS)) is None
-
-
-async def test_a_held_delete_that_ran_out_is_counted_hold_expired_not_not_stored(engine):
-    shape = SHAPES[2]
-    w = World(engine)
-    now = [0.0]
-    w.pipeline._pending_deletes = type(w.pipeline._pending_deletes)(
-        ttl_seconds=10, clock=lambda: now[0], on_expired=w.pipeline._hold_expired)
-    await w.run(shape.deletion(M_TS, "H-NEVER", at=T0 + 9000))
-    assert w.count("not_stored", shape.platform) == 1
-    now[0] = 11.0
-
-    await w.run(shape.said(M_TS + 1, "an unrelated message", "H-OTHER"))
-
-    assert w.count("hold_expired", shape.platform) == 1
-    assert w.count("not_stored", shape.platform) == 1, "an expiry is not another not_stored"
 
 
 # =============================================================================
@@ -1374,9 +1362,12 @@ async def test_a_clip_unsent_while_it_was_being_read_is_not_fed_afterwards(engin
     assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
 
 
-async def test_the_withdrawn_check_failing_skips_the_feed_rather_than_leaking_it(
+async def test_a_withdrawn_check_that_keeps_failing_skips_this_pass_and_is_not_counted_a_delete(
     engine, monkeypatch,
 ):
+    """A database outage must not read as a run of deletes: the pass is skipped (fail
+    closed) and counted `check_failed`, never `withdrawn`, and nothing is marked read,
+    so the next sighting of the bytes runs the job again."""
     shape = SHAPES[0]
     w = World(engine, media=True)
 
@@ -1390,6 +1381,33 @@ async def test_the_withdrawn_check_failing_skips_the_feed_rather_than_leaking_it
     w.interpreter.release.set()
     await w.settle()
     assert not any("unsent kind" in t for t in w.memory.fed)
+    assert w.metrics.get(
+        "nora_media_comprehension_total", platform=shape.platform, label="image",
+        status="nothing_found", reason="check_failed") == 1
+    assert w.metrics.get(
+        "nora_media_comprehension_total", platform=shape.platform, label="image",
+        status="nothing_found", reason="withdrawn") == 0
+
+
+async def test_a_withdrawn_check_that_fails_once_is_asked_again_and_the_read_goes_on(
+    engine, monkeypatch,
+):
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+    real = w.audit.find_edited
+    calls = {"n": 0}
+
+    async def flaky(**k: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("one hiccup")
+        return await real(**k)
+
+    monkeypatch.setattr(w.audit, "find_edited", flaky)
+    await w.run(_photo(shape, M_TS, ""))
+
+    assert len(w.interpreter.calls) == 1
+    assert any("unsent kind" in t for t in w.memory.fed)
 
 
 async def test_the_reconcile_counts_a_message_hidden_in_the_meantime_as_already_hidden(
@@ -1436,3 +1454,388 @@ async def test_the_reconcile_dry_run_is_bounded_by_timeouts_inside_its_one_trans
     await reconcile_deletes(engine, apply=False, now_ms=T0 + 50_000)
 
     assert seen == ["5s", "1min"], "a dry run never waits on a lock or a statement for long"
+
+
+# =============================================================================
+# the start-up sweep applies the SAME authorship rule as ingest
+# =============================================================================
+
+
+async def _record_for(w: World, shape: Shape, ts: int, handle: str, *, sender: str,
+                      raw: dict[str, Any] | None = None) -> None:
+    """A delete recorded the way the code before the authorship rule did, whoever sent it."""
+    target = await w.audit.find_edited(
+        conversation_id=shape.room, target=shape.target(ts, handle), sender_id=shape.author,
+    )
+    assert target is not None
+    delete = dataclasses.replace(
+        shape.deletion(ts, handle, sender=sender, at=T0 + 8000), raw=raw or {},
+    )
+    await w.audit.append_delete(message_id=target.id, message=delete, person_id=None)
+
+
+async def test_the_sweep_does_not_apply_an_old_delete_record_that_is_not_the_authors(engine):
+    """Before the rule existed WhatsApp deletes were recorded whoever sent them, so the
+    first start after a deploy must not hide what an admin or a forger revoked then."""
+    shape = SHAPES[1]
+    w = World(engine, withdrawer=None)
+    sc = await _scene(w, shape)
+    await _record_for(w, shape, M_TS, "H-M", sender="w2-stranger")
+
+    dry = await reconcile_deletes(engine, apply=False, now_ms=T0 + 50_000)
+    done = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50_000)
+
+    assert (dry.visible, dry.hidden, dry.refused) == (0, 0, 1)
+    assert (done.visible, done.hidden, done.refused) == (0, 0, 1)
+    assert await w.hidden_at(sc.m) is None
+    assert await _note_unsupported(engine, sc.note_m) is None
+    assert "not their author" in "\n".join(render_reconcile(done))
+
+
+async def test_unforget_is_not_blocked_by_a_delete_record_that_is_not_the_authors(engine):
+    shape = SHAPES[1]
+    w = World(engine, withdrawer=None)
+    sc = await _scene(w, shape)
+    await _record_for(w, shape, M_TS, "H-M", sender="w2-stranger")
+    await forget_person(engine, documents=SqlDocumentStore(engine), person_id="ada",
+                        apply=True, now_ms=T0 + 10_000)
+    assert await w.visible(shape.room) == []
+
+    done = await unforget_person(engine, person_id="ada", apply=True)
+
+    assert done.kept_deleted == 0 and done.restored == 3
+    assert sc.m in await w.visible(shape.room)
+
+
+async def test_the_sweep_applies_an_authors_record_and_one_under_another_of_their_id_forms(
+    engine,
+):
+    shape = SHAPES[1]
+    w = World(engine, withdrawer=None)
+    sc = await _scene(w, shape)
+    # The message is stored under the author's id "w1"; the recorded revoke was picked as
+    # the phone form but its raw event also carried the LID form the message is under.
+    await _record_for(
+        w, shape, M_TS, "H-M", sender="+85200000001",
+        raw={"sender_phone": "85200000001", "sender_lid": "w1", "sender_jid": "w1@lid"},
+    )
+
+    done = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50_000)
+
+    assert (done.visible, done.hidden, done.refused) == (1, 1, 0)
+    assert await w.hidden_at(sc.m) == T0 + 50_000
+
+
+async def test_the_sweep_rescans_what_cites_a_message_a_delete_already_hid(engine):
+    """A note or event written at the moment of the delete can be missed by the
+    cascade; the sweep re-scans the edges of messages already hidden by a delete, and
+    the dry run says so without writing."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+    async with engine.begin() as conn:               # the lost race: edge written, never marked
+        await conn.execute(sa.update(NOTE).where(NOTE.c.id == sc.note_m)
+                           .values(unsupported_at=None))
+
+    dry = await reconcile_deletes(engine, apply=False, now_ms=T0 + 60_000)
+    assert dry.healed == {"note": 1} and await _note_unsupported(engine, sc.note_m) is None
+
+    done = await reconcile_deletes(engine, apply=True, now_ms=T0 + 60_000)
+    assert done.healed == {"note": 1}
+    assert await _note_unsupported(engine, sc.note_m) == T0 + 60_000
+    again = await reconcile_deletes(engine, apply=True, now_ms=T0 + 70_000)
+    assert again.healed == {}, "idempotent"
+
+
+# =============================================================================
+# a note or event written at the same moment as the delete
+# =============================================================================
+
+
+async def _interleave(engine: Any, *, write: Any, mid: int) -> int:
+    """Writer W holds an open transaction that has written its citation edge and run the
+    write-time check; THEN the delete starts. Returns the time the delete was stamped."""
+    withdrawer = SqlDeleteWithdrawer(engine)
+    stamp = T0 + 123_456
+    async with engine.connect() as wconn:
+        trans = await wconn.begin()
+        await write(wconn)
+        task = asyncio.create_task(withdrawer.withdraw(message_id=mid, now_ms=stamp))
+        await asyncio.sleep(0.5)
+        assert not task.done(), (
+            "the hide must WAIT for the writer that read the message FOR SHARE"
+        )
+        await trans.commit()
+    assert (await asyncio.wait_for(task, 10)).outcome == "hidden"
+    return stamp
+
+
+async def test_a_note_written_while_the_delete_runs_is_marked_by_one_of_the_two(engine):
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    late = await _note(engine, cites=sc.s, title="late-note", room=shape.room,
+                       platform=shape.platform)
+
+    async def write(conn: Any) -> None:
+        await record_citations(
+            conn, citing_store="note", citing_key=late, body=f"x [{sc.m}]", now_ms=T0 + 1,
+        )
+
+    stamp = await _interleave(engine, write=write, mid=sc.m)
+
+    assert await _note_unsupported(engine, late) == stamp
+
+
+async def test_an_event_written_while_the_delete_runs_is_marked_by_one_of_the_two(engine):
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    event_id = await _cited_event(engine, shape.room, "late event", sc.s)
+
+    async def write(conn: Any) -> None:
+        await record_event_citations(
+            conn, event_id=str(event_id), parts=("what",),
+            citations=(EventCitation(part="what", store="message", ref=str(sc.m)),),
+        )
+        await mark_if_cites_hidden(
+            conn, citing_store="event", citing_key=str(event_id), message_ids={sc.m},
+            now_ms=T0 + 1,
+        )
+
+    stamp = await _interleave(engine, write=write, mid=sc.m)
+
+    event = await SqlGatheringStore(engine).get(event_id)
+    assert event is not None and event.unsupported_at == stamp
+
+
+# =============================================================================
+# a delete whose target is not on record: the durable orphan
+# =============================================================================
+
+
+async def _orphans(engine: Any) -> list[Any]:
+    async with engine.connect() as conn:
+        return list((await conn.execute(sa.select(ORPHAN_DELETE))).all())
+
+
+async def test_a_delete_that_arrives_before_its_message_is_kept_and_applied_when_it_lands(
+    engine,
+):
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-EARLY", at=T0 + 9000))
+    held = await _orphans(engine)
+    assert [(o.platform, o.conversation_id, o.handle) for o in held] == [
+        (shape.platform, shape.room, "H-EARLY"),
+    ]
+
+    result = await w.run(shape.said(M_TS, "unsent before it was stored", "H-EARLY"))
+
+    assert result.message is None and result.decision is None
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+    assert w.memory.fed == []
+    assert await _orphans(engine) == [], "applied, then discarded"
+    assert w.count("applied_from_orphan", shape.platform) == 1
+    async with engine.connect() as conn:
+        assert (await conn.execute(
+            sa.select(sa.func.count()).select_from(MESSAGE_DELETE))).scalar_one() == 1
+
+
+async def test_a_message_that_arrives_long_after_its_delete_is_still_withdrawn(engine):
+    """No hold to run out: the orphan is a row, not a timer."""
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-EARLY", at=T0 + 9000))
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(ORPHAN_DELETE).values(recorded_at=1))   # an old row
+    await w.run(shape.said(M_TS, "arrives six minutes later", "H-EARLY"))
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+
+
+async def test_a_restart_between_the_delete_and_the_message_loses_nothing(engine):
+    shape = SHAPES[0]
+    before = World(engine)
+    await before.run(shape.deletion(M_TS, "", at=T0 + 9000))
+    after = World(engine)                       # a fresh pipeline object, the same database
+
+    await after.run(shape.said(M_TS, "the author's words", ""))
+
+    assert await after.hidden_at(await after.row(shape.room, M_TS)) is not None
+
+
+async def test_a_delete_whose_lookup_failed_is_not_lost(engine, monkeypatch):
+    shape = SHAPES[1]
+    w = World(engine)
+    await w.run(shape.said(M_TS, "stored already", "H-M"))
+    mid = await w.row(shape.room, M_TS)
+    real = w.audit.find_edited
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(w.audit, "find_edited", boom)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+    monkeypatch.setattr(w.audit, "find_edited", real)
+    assert await w.hidden_at(mid) is None
+    assert len(await _orphans(engine)) == 1, "kept: «could not look» is not «not there»"
+
+    done = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50_000)
+
+    assert done.orphans_applied == 1
+    assert await w.hidden_at(mid) == T0 + 50_000
+    assert await _orphans(engine) == []
+
+
+async def test_a_held_delete_that_is_not_the_authors_is_never_applied(engine):
+    for shape in SHAPES[:2]:
+        w = World(engine)
+        await w.run(shape.deletion(M_TS, "H-M" if not shape.by_ts else "", sender="stranger-9",
+                                   at=T0 + 9000))
+        # Signal names the target by timestamp and WhatsApp by handle; either way held.
+        # A held delete from a stranger is refused when the message lands, and never hides it.
+        assert len(await _orphans(engine)) == 1
+        result = await w.run(shape.said(M_TS, "the author's own words", "H-M"))
+        assert result.message is not None, shape.platform
+        assert await w.hidden_at(await w.row(shape.room, M_TS)) is None
+        assert len(await _orphans(engine)) == 1, (
+            "a stranger's held delete is not matched, so it is not consumed either")
+        swept = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50_000)
+        assert swept.orphans_applied == 0
+        assert await w.hidden_at(await w.row(shape.room, M_TS)) is None
+        async with engine.begin() as conn:
+            await conn.execute(sa.delete(ORPHAN_DELETE))
+            await conn.execute(sa.delete(MESSAGES))
+
+
+async def test_a_held_delete_never_matches_another_room_or_handle(engine):
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-X", at=T0 + 9000))
+    await w.run(shape.said(M_TS, "other handle", "H-Y"))
+    await w.run(shape.said(M_TS + 1, "same handle, other room", "H-X", room="elsewhere"))
+    await w.run(SHAPES[1].said(M_TS + 2, "same handle, other platform", "H-X",
+                               room=shape.room))
+    for room, ts in ((shape.room, M_TS), ("elsewhere", M_TS + 1), (shape.room, M_TS + 2)):
+        assert await w.hidden_at(await w.row(room, ts)) is None
+    assert len(await _orphans(engine)) == 1
+
+
+async def test_the_sweep_purges_a_held_delete_nothing_ever_matched_and_keeps_a_recent_one(engine):
+    shape = SHAPES[2]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "H-OLD", at=T0 + 9000))
+    await w.run(shape.deletion(M_TS + 1, "H-NEW", at=T0 + 9000))
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(ORPHAN_DELETE).where(ORPHAN_DELETE.c.handle == "H-OLD")
+            .values(recorded_at=T0)
+        )
+        await conn.execute(
+            sa.update(ORPHAN_DELETE).where(ORPHAN_DELETE.c.handle == "H-NEW")
+            .values(recorded_at=T0 + 29 * 24 * 3600 * 1000)
+        )
+    now = T0 + 31 * 24 * 3600 * 1000
+
+    dry = await reconcile_deletes(engine, apply=False, now_ms=now)
+    assert dry.orphans_expired == 1 and len(await _orphans(engine)) == 2
+    done = await reconcile_deletes(engine, apply=True, now_ms=now)
+
+    assert done.orphans_expired == 1
+    assert [o.handle for o in await _orphans(engine)] == ["H-NEW"]
+
+
+async def test_the_gate_sees_a_held_delete_so_a_photo_is_not_read_in_the_gap(engine):
+    """The hold used to be removed before the hide committed, leaving a moment in which
+    the message was neither held nor hidden. The orphan stays until the delete has
+    been applied."""
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+    await w.run(shape.deletion(M_TS, "", at=T0 + 9000))
+    await w.run(_photo(shape, M_TS, ""))
+    assert w.interpreter.calls == [] and w.memory.fed == []
+
+
+# =============================================================================
+# WhatsApp: an unmapped author's id form flips between the message and the revoke
+# =============================================================================
+
+_WA_ROOM = "176569000000@g.us"
+
+
+def _wa_message(msg_id: str, *, phone: str | None, lid: str | None, ts: int) -> NormalizedMessage:
+    msg = parse_event({
+        "type": "message", "id": msg_id, "chat_jid": _WA_ROOM, "is_group": True,
+        "sender_jid": f"{lid}@lid" if lid else f"{phone}@s.whatsapp.net",
+        "sender_phone": phone, "sender_lid": lid, "push_name": "X", "text": "private words",
+        "timestamp_ms": ts, "from_me": False, "media": [], "mentioned": [],
+    })
+    assert msg is not None
+    return msg
+
+
+def _wa_revoke(target: str, *, phone: str | None, lid: str | None, ts: int) -> NormalizedMessage:
+    msg = parse_event({
+        "type": "delete", "id": "REV-" + target, "chat_jid": _WA_ROOM, "is_group": True,
+        "sender_jid": f"{lid}@lid" if lid else f"{phone}@s.whatsapp.net",
+        "sender_phone": phone, "sender_lid": lid, "target_id": target,
+        "timestamp_ms": ts, "from_me": False,
+    })
+    assert msg is not None
+    return msg
+
+
+@pytest.mark.parametrize(
+    ("stored", "revoked_by", "hidden"),
+    [
+        ({"phone": None, "lid": "999"}, {"phone": "85211112222", "lid": "999"}, True),
+        ({"phone": "85211112222", "lid": None}, {"phone": "85211112222", "lid": "999"}, True),
+        ({"phone": "85211112222", "lid": "999"}, {"phone": "85299990000", "lid": "555"}, False),
+    ],
+    ids=["stored-under-lid", "stored-under-phone", "a-different-person"],
+)
+async def test_a_whatsapp_revoke_is_the_authors_under_any_id_form_the_event_carries(
+    engine, stored, revoked_by, hidden,
+):
+    w = World(engine)
+    await w.run(_wa_message("MSG-1", ts=T0 + 1, **stored))
+    mid = await w.row(_WA_ROOM, T0 + 1)
+
+    await w.run(_wa_revoke("MSG-1", ts=T0 + 5, **revoked_by))
+
+    assert (await w.hidden_at(mid) is not None) is hidden
+    assert w.count("refused_not_author", "whatsapp") == (0 if hidden else 1)
+
+
+async def test_an_event_updated_after_the_delete_to_cite_it_is_born_unsupported(engine):
+    """The second place an event's edges are written: a revision that newly cites the
+    deleted message."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+    store = SqlGatheringStore(engine)
+    event = await store.get(sc.event_s)
+    assert event is not None and event.unsupported_at is None
+
+    await store.update(event, evidence=EventEvidence(
+        parts=frozenset({"what"}),
+        citations=(EventCitation(part="what", store="message", ref=str(sc.m)),),
+    ))
+
+    after = await store.get(sc.event_s)
+    assert after is not None and after.unsupported_at is not None
+
+
+async def test_a_delete_removes_pending_and_refused_proposals_and_keeps_created_ones(engine):
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    refused = await _candidate(engine, "refused-one", sc.m, status="refused")
+    created = await _candidate(engine, "created-one", sc.m, status="created")
+
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert await _candidates(engine) == {sc.cand_s, created}, "pending and refused went"
+    assert sc.cand_m not in await _candidates(engine) and refused not in await _candidates(engine)

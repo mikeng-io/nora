@@ -399,12 +399,17 @@ class App:
         # «never ran» must not read the same.
         log.info(
             "delete reconcile: %d visible, %d hidden, %d already hidden, %d no "
-            "longer on record, %d failed, %d derived row(s) withdrawn",
+            "longer on record, %d refused (not the author), %d failed, %d derived "
+            "row(s) withdrawn, %d healed, %d held deletes applied, %d expired",
             report.visible, report.hidden, report.already_hidden, report.not_stored,
-            report.failed, report.total_marked,
+            report.refused, report.failed, report.total_marked, report.total_healed,
+            report.orphans_applied, report.orphans_expired,
         )
         for outcome, count in (
             ("reconciled", report.hidden), ("cascade_failed", report.failed),
+            ("refused_not_author", report.refused),
+            ("applied_from_orphan", report.orphans_applied),
+            ("orphan_expired", report.orphans_expired),
         ):
             if count:
                 self.deps.metrics.inc(

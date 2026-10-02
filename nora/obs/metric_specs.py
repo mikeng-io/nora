@@ -332,20 +332,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # A delete or unsend of a message, by how it was HONOURED
     # (`nora.app.delete_withdrawal`): `hidden` (newly hidden, the cascade run),
     # `already_hidden` (a redelivered or second delete), `not_stored` (its target
-    # was not on record when it arrived: it is held, and counts `hidden` if the
-    # message lands inside the hold), `hold_expired` (a held delete that matched
-    # nothing before its hold ran out), `refused_not_author` (Signal or WhatsApp,
-    # the deleter is not the message's author: nothing changes), `cascade_failed`
-    # (the hide was rolled back; the message is still visible, and is retried and
-    # then swept at the next start), `reconciled` (a failed withdrawal that a retry
-    # or the start-up sweep finished; the sweep counts under platform="all"). Rare
-    # by nature, so an empty series after a restart means nothing was deleted
+    # was not on record when it arrived: it is kept durably as an `orphan_delete`),
+    # `applied_from_orphan` (a kept delete applied when its message was recorded; the
+    # message also counts `hidden`), `refused_not_author` (Signal or WhatsApp, the
+    # deleter is not the message's author: nothing changes), `cascade_failed` (the
+    # hide was rolled back; the message is still visible, and is retried and then
+    # swept at the next start), `reconciled` (a failed withdrawal that a retry or the
+    # start-up sweep finished) and `orphan_expired` (a kept delete older than 30 days
+    # that found nothing, purged). The start-up sweep counts under platform="all".
+    # Rare by nature, so an empty series after a restart means nothing was deleted
     # since, never that nothing can fail.
     _CounterSpec(
         "nora_delete_withdrawals_total",
         "Deletes or unsends of a message, by how they were honoured (hidden, "
-        "already_hidden, not_stored, hold_expired, refused_not_author, "
-        "cascade_failed, reconciled).",
+        "already_hidden, not_stored, applied_from_orphan, refused_not_author, "
+        "cascade_failed, reconciled, orphan_expired).",
         ("platform", "outcome"),
     ),
     _CounterSpec(

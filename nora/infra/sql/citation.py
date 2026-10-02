@@ -54,12 +54,22 @@ async def mark_if_cites_hidden(
     lookup = [i for i in message_ids if 0 < i <= _MESSAGE_ID_MAX]
     if not lookup:
         return False
-    hidden = (await conn.execute(
-        sa.select(sa.literal(1)).where(
-            sa.exists().where(MESSAGES.c.id.in_(lookup), MESSAGES.c.hidden_at.is_not(None))
-        )
-    )).first()
-    if hidden is None:
+    # FOR SHARE, not FOR KEY SHARE, and BEFORE the answer is read: under READ
+    # COMMITTED the writer's edge is invisible to a delete that hides the message
+    # and scans the edges at the same moment, and the writer's own check would see
+    # the message not hidden yet; both would commit and nothing would mark the row,
+    # for good (the sweep only looks at messages still visible). FOR SHARE conflicts
+    # with the hide's UPDATE, so the hide WAITS until this transaction commits and its
+    # cascade then sees the edge, or it has committed first and this read sees it
+    # hidden. One of the two marks the row. Ordered by id so two writers do not
+    # deadlock on the same rows.
+    rows = (await conn.execute(
+        sa.select(MESSAGES.c.hidden_at)
+        .where(MESSAGES.c.id.in_(lookup))
+        .order_by(MESSAGES.c.id)
+        .with_for_update(read=True)
+    )).all()
+    if not any(r.hidden_at is not None for r in rows):
         return False
     if citing_store == "note":
         stmt = (

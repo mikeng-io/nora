@@ -242,10 +242,10 @@ class IngestPipeline:
 
         `delete_withdrawer` is what honours a delete or unsend
         (`nora.app.delete_withdrawal`): present, a delete of a recorded message
-        hides it and marks what cites it `unsupported`, and a delete that
-        arrives before its message is held briefly so the message is withdrawn
-        when it lands (`touch.PendingDeletes`). `None` — an offline or eval
-        composition — records the delete and withdraws nothing, as before.
+        hides it and marks what cites it `unsupported`, and a delete whose target is
+        not on record is kept durably (`orphan_delete`) and applied when the message
+        is audited. `None` — an offline or eval composition — records the delete and
+        withdraws nothing, as before.
         `withdrawal_retry_delays` is the bounded retry after a withdrawal that
         failed (`cascade_failed`): one attempt per delay, then the start-up sweep
         (`nora.app.delete_withdrawal.reconcile_deletes`) is what finishes it.
@@ -268,7 +268,6 @@ class IngestPipeline:
         self._stimulus_wiring = stimulus_wiring
         self._delete_withdrawer = delete_withdrawer
         self._withdrawal_retry_delays = withdrawal_retry_delays
-        self._pending_deletes = touch_stage.PendingDeletes(on_expired=self._hold_expired)
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -416,16 +415,12 @@ class IngestPipeline:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
         # A DELETE THAT OVERTOOK THIS MESSAGE (a photo unsent while its custody
-        # fetch ran): withdrawn now, before anything reads it or feeds it on.
-        if self._delete_withdrawer is not None:
-            for early, early_touch in self._pending_deletes.take(
-                message, person_id=person.person_id if person else None,
-            ):
-                done = await self._record_touch(message=early, touch=early_touch)
-                if done.ending in ("delete_recorded", "audit_refused"):
-                    # Named by a delete: not read, not fed, not answered (a
-                    # withdrawal that failed is retried, `_retry_withdrawal`).
-                    return IngestResult(message=None, decision=None)
+        # fetch ran, or a delete that came before a restart): applied now, before
+        # anything reads it or feeds it on.
+        if self._delete_withdrawer is not None and await self._apply_orphans(
+            message, person.person_id if person else None,
+        ):
+            return IngestResult(message=None, decision=None)
         # The STIMULUS, right behind the Record row it names (20 §3). Inside the
         # guard for `standing_event`'s reason: a span for a stage that cannot
         # run would claim work that never happened.
@@ -576,24 +571,51 @@ class IngestPipeline:
         """A reaction or a delete/unsend (design/cognition-loop/20 §1):
         found, recorded beside its target, raising a stimulus — never a turn,
         never fed to Honcho, never a transcript line. A delete also withdraws
-        its target (`touch_stage.run`). `touch` decides and records; this only
-        sequences, and holds a delete that found nothing for the message it
-        may be racing."""
-        held: int | None = None
-        if touch.kind == "delete" and self._delete_withdrawer is not None:
-            # Held BEFORE the lookup, not after a miss: a message recorded
-            # between the lookup and a later hold would find nothing to take.
-            deleter = (
-                self._persons.resolve(message.platform, message.sender_id)
-                if message.sender_id else None
-            )
-            held = self._pending_deletes.add(
-                message, touch, person_id=deleter.person_id if deleter else None,
-            )
-        done = await self._record_touch(message=message, touch=touch)
-        if held is not None and done.ending != "delete_orphaned":
-            self._pending_deletes.discard(held)
+        its target, or, when its target is not on record, is kept durably until it
+        is (`touch_stage.run`). `touch` decides and records; this only sequences."""
+        await self._record_touch(message=message, touch=touch)
         return IngestResult(message=None, decision=None)
+
+    async def _apply_orphans(self, message: NormalizedMessage, person_id: str | None) -> bool:
+        """Apply the held deletes that name the message just audited (the same key and
+        authorship rules as every other place a delete takes effect). True when one
+        was applied, so the message is not read, fed or answered. A held delete is
+        discarded only AFTER it was applied (its `message_delete` record and the hide
+        committed): a crash in between leaves the row, and the start-up sweep applies
+        it again, idempotently. A failed read of the held deletes is counted, logged
+        without text, and left to that sweep."""
+        try:
+            orphans = await self._audit.match_orphan_deletes(
+                message=message, person_id=person_id,
+            )
+        except Exception:
+            log.exception("held deletes could not be read; the start-up sweep will")
+            self._metrics.inc(
+                "nora_errors_total", stage="orphan_match", platform=message.platform,
+            )
+            return False
+        applied = False
+        for orphan in orphans:
+            touch = Touch(
+                kind="delete",
+                target=EditTarget(message_id=orphan.handle, sent_ts=orphan.sent_ts),
+                actor_ids=orphan.deleter_ids,
+            )
+            delete = NormalizedMessage(
+                platform=orphan.platform, conversation_id=orphan.conversation_id,
+                conversation_type=message.conversation_type, sender_id=orphan.deleter_id,
+                sender_name=None, timestamp=orphan.event_ts, body="", raw={}, touch=touch,
+            )
+            done = await self._record_touch(message=delete, touch=touch)
+            if done.ending in ("delete_recorded", "audit_refused"):
+                self._count_withdrawal(message.platform, "applied_from_orphan")
+                applied = True
+            if done.ending != "delete_orphaned":
+                try:
+                    await self._audit.discard_orphan_delete(orphan_id=orphan.id)
+                except Exception:
+                    log.exception("held delete %d could not be discarded", orphan.id)
+        return applied
 
     async def _record_touch(
         self, *, message: NormalizedMessage, touch: Touch,
@@ -651,11 +673,6 @@ class IngestPipeline:
             "will try again", message_id, len(self._withdrawal_retry_delays),
         )
 
-    def _hold_expired(self, message: NormalizedMessage) -> None:
-        """A held delete that matched nothing before its hold ran out (or was
-        pushed out by a newer one): its own outcome, not `not_stored`."""
-        self._count_withdrawal(message.platform, "hold_expired")
-
     def _count_withdrawal(self, platform: str, outcome: str) -> None:
         try:
             self._metrics.inc(
@@ -671,8 +688,8 @@ class IngestPipeline:
         just before its vision call and again before its Honcho feed: that job is
         scheduled by the custody stage before the row exists, so the delete can
         land at any point after (held, then hidden, or already hidden). True when
-        a delete for it is held, or its row is hidden; a lookup that fails is
-        True too (fail closed: a skipped feed is cheaper than a leaked one).
+        a delete for it is held, or its row is hidden. It RAISES when it cannot
+        look; the job decides what that means (`MediaComprehension`).
         `None` when no withdrawer is wired."""
         if self._delete_withdrawer is None:
             return None
@@ -686,16 +703,18 @@ class IngestPipeline:
             target = EditTarget(sent_ts=message.timestamp)
 
         async def withdrawn() -> bool:
-            if edit is None and self._pending_deletes.matches(message, person_id=person_id):
+            # A delete held for it (the durable `orphan_delete`, which stays until
+            # the delete has been applied: no moment when it is neither held nor
+            # hidden), or its row hidden. A lookup that FAILS raises: the caller
+            # distinguishes «could not check» from «withdrawn».
+            if edit is None and await self._audit.match_orphan_deletes(
+                message=message, person_id=person_id,
+            ):
                 return True
-            try:
-                found = await self._audit.find_edited(
-                    conversation_id=message.conversation_id, target=target,
-                    sender_id=message.sender_id,
-                )
-            except Exception:
-                log.exception("withdrawn check failed; treating the message as withdrawn")
-                return True
+            found = await self._audit.find_edited(
+                conversation_id=message.conversation_id, target=target,
+                sender_id=message.sender_id,
+            )
             return found is not None and found.hidden
 
         return withdrawn

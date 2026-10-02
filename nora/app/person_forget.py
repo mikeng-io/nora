@@ -88,13 +88,13 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.app.delete_withdrawal import genuine_delete_ids
 from nora.app.withdrawal import WithdrawalReport, withdraw_messages
 from nora.domain.documents import FORGET_SET_BY_PREFIX, DocumentState, DocumentStore
 from nora.infra.sql.schema import (
     CITATION,
     CULTURE,
     EVENTS,
-    MESSAGE_DELETE,
     MESSAGES,
     NOTE,
     STANDING,
@@ -229,11 +229,6 @@ async def forget_person(
     return report
 
 
-def _was_deleted() -> Any:
-    """The message has a delete or unsend on record (`message_delete`)."""
-    return sa.exists().where(MESSAGE_DELETE.c.message_id == MESSAGES.c.id)
-
-
 async def unforget_person(
     engine: AsyncEngine, *, person_id: str, apply: bool,
 ) -> UnforgetReport:
@@ -241,29 +236,33 @@ async def unforget_person(
     one stays hidden (`kept_deleted`, counted separately, nothing else said about
     it). A delete is the author taking the words back, which forgetting a person
     and un-forgetting them has no say in, and `--clear-unsupported` would otherwise
-    clear the marks on everything that cited it."""
+    clear the marks on everything that cited it. «A delete» is a GENUINE record
+    (`nora.app.delete_withdrawal.genuine_delete_ids`: the same authorship rule ingest
+    applies), so a revoke an admin or a forger sent before that rule existed does not
+    keep a message hidden."""
     hidden_of_person = (
         MESSAGES.c.person_id == person_id, MESSAGES.c.hidden_at.is_not(None),
     )
     async with engine.connect() as conn:
-        hidden_count = (await conn.execute(
-            sa.select(sa.func.count()).select_from(MESSAGES)
-            .where(*hidden_of_person, ~_was_deleted())
-        )).scalar_one()
-        kept_deleted = (await conn.execute(
-            sa.select(sa.func.count()).select_from(MESSAGES)
-            .where(*hidden_of_person, _was_deleted())
-        )).scalar_one()
-    report = UnforgetReport(person_id=person_id, applied=apply, kept_deleted=kept_deleted)
+        hidden_ids = [
+            int(i) for i in (await conn.execute(
+                sa.select(MESSAGES.c.id).where(*hidden_of_person)
+            )).scalars()
+        ]
+        deleted = await genuine_delete_ids(conn, message_ids=hidden_ids)
+    restorable = [i for i in hidden_ids if i not in deleted]
+    report = UnforgetReport(
+        person_id=person_id, applied=apply, kept_deleted=len(deleted),
+    )
     if not apply:
-        report.restored = hidden_count
+        report.restored = len(restorable)
         return report
-    if not hidden_count:
+    if not restorable:
         return report
     async with engine.begin() as conn:
         result = await conn.execute(
             sa.update(MESSAGES)
-            .where(*hidden_of_person, ~_was_deleted())
+            .where(MESSAGES.c.id.in_(restorable), MESSAGES.c.hidden_at.is_not(None))
             .values(hidden_at=None)
             .returning(MESSAGES.c.id)
         )

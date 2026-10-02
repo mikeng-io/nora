@@ -304,9 +304,10 @@ class MediaComprehension:
             self._count(platform, label, "nothing_found", "already_read")
             return
 
-        if await self._is_withdrawn(withdrawn):
-            # BEFORE the model is paid for it: the message was deleted.
-            self._count(platform, label, "nothing_found", "withdrawn")
+        # BEFORE the model is paid for it: has the message been deleted?
+        verdict = await self._gate(withdrawn)
+        if verdict != "clear":
+            self._count(platform, label, "nothing_found", verdict)
             return
 
         started = time.perf_counter()
@@ -486,12 +487,13 @@ class MediaComprehension:
         """
         if person is None:
             return
-        if await self._is_withdrawn(withdrawn):
-            # AFTER the read, BEFORE the feed: a clip that took minutes to read
-            # can be unsent while it was being read, and Honcho cannot forget
-            # what it is fed (`design/context-assembly/04-every-occasion.md`
-            # §7), so the last place to stop it is here.
-            self._count(platform, label, "nothing_found", "withdrawn")
+        # AFTER the read, BEFORE the feed: a clip that took minutes to read can be
+        # unsent while it was being read, and Honcho cannot forget what it is fed
+        # (`design/context-assembly/04-every-occasion.md` §7), so the last place to
+        # stop it is here.
+        verdict = await self._gate(withdrawn)
+        if verdict != "clear":
+            self._count(platform, label, "nothing_found", verdict)
             return
         marker = f"[{label} {blob.handle}]"
         detail = "\n".join(
@@ -523,15 +525,22 @@ class MediaComprehension:
         self._metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
 
     @staticmethod
-    async def _is_withdrawn(withdrawn: Callable[[], Awaitable[bool]] | None) -> bool:
-        """The gate's answer; a gate that raises is «withdrawn» (fail closed)."""
+    async def _gate(withdrawn: Callable[[], Awaitable[bool]] | None) -> str:
+        """`clear`, `withdrawn` (the message was deleted), or `check_failed` (the
+        check could not look). A check that raises is asked ONCE more; if it fails
+        again this pass is skipped and counted under its own reason, never as a
+        delete (a database outage must not read as a run of deletes), and not
+        queued: the bytes are not marked read, so the next sighting of them, or a
+        read on demand, runs the job again. Fail closed for THIS pass (a skipped
+        read is cheaper than a leaked one), never permanently."""
         if withdrawn is None:
-            return False
-        try:
-            return await withdrawn()
-        except Exception:
-            log.exception("withdrawn check raised; treating the message as withdrawn")
-            return True
+            return "clear"
+        for attempt in (1, 2):
+            try:
+                return "withdrawn" if await withdrawn() else "clear"
+            except Exception:
+                log.exception("withdrawn check raised (attempt %d of 2)", attempt)
+        return "check_failed"
 
     @staticmethod
     def _already_read(existing: MediaObject, label: str) -> bool:

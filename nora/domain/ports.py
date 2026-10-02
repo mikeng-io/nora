@@ -228,7 +228,9 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    OrphanDelete,
     TagContext,
+    Touch,
     TranscriptRow,
     UnattributedRow,
     WeatherObservation,
@@ -913,6 +915,35 @@ class RecordStore(Protocol):
         `DeleteWithdrawer.withdraw`, one transaction of its own, which the
         touch stage runs beside this write and `nora withdrawal
         reconcile-deletes` re-runs for a record whose hide never landed."""
+        ...
+
+    async def record_orphan_delete(
+        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
+        now_ms: int,
+    ) -> int:
+        """Keep a delete whose target is not on record (yet), in its own transaction;
+        returns the row's id. `touch.target` is the key (`handle`, or Signal's
+        `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`,
+        `person_id`). It is applied when the message is recorded
+        (`match_orphan_deletes`) or by the start-up sweep, and purged if it never is.
+        Ids and times only. See `OrphanDelete`."""
+        ...
+
+    async def match_orphan_deletes(
+        self, *, message: NormalizedMessage, person_id: str | None,
+    ) -> list[OrphanDelete]:
+        """The held deletes that name `message` (a message just recorded, or one a
+        job asks about): the same platform and room, a non-empty `handle` equal to its
+        platform id or `sent_ts` equal to its timestamp, and, on a platform where only
+        the author can delete (`nora.domain.delete_authorship`), a deleter who IS its
+        author. A non-author's is never returned. It removes nothing: the caller
+        applies what it returns and then `discard_orphan_delete`s each, so a crash in
+        between leaves the row for the start-up sweep and nothing is lost."""
+        ...
+
+    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
+        """Remove one held delete once it has been applied. True when this call
+        removed it (nobody had)."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...

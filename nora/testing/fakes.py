@@ -41,6 +41,7 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
+from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
 from nora.domain.documents import (
     FORGET_SET_BY_PREFIX,
     DocumentExistsError,
@@ -71,7 +72,9 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    OrphanDelete,
     RowEdit,
+    Touch,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
@@ -171,6 +174,8 @@ class FakeRecordStore:
         # columns `SqlRecordStore.append_reaction`/`append_delete` write.
         self.reactions: list[dict[str, Any]] = []
         self.deletes: list[dict[str, Any]] = []
+        # `orphan_delete`, as `OrphanDelete`s (deletes waiting for their message).
+        self.orphans: list[OrphanDelete] = []
         self.fail_on_nora = False
         self.fail_on_recent = False
         self.closed = False
@@ -332,6 +337,50 @@ class FakeRecordStore:
             "ts": message.timestamp, "raw_json": json.dumps(message.raw),
         })
         return len(self.deletes)
+
+    async def record_orphan_delete(
+        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
+        now_ms: int,
+    ) -> int:
+        """Mirrors `SqlRecordStore.record_orphan_delete`."""
+        ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
+        self.orphans.append(OrphanDelete(
+            id=(max((o.id for o in self.orphans), default=0) + 1),
+            platform=message.platform, conversation_id=message.conversation_id,
+            handle=touch.target.message_id, sent_ts=touch.target.sent_ts,
+            deleter_id=message.sender_id, deleter_ids=ids, deleter_person_id=person_id,
+            event_ts=message.timestamp, recorded_at=now_ms,
+        ))
+        return self.orphans[-1].id
+
+    async def match_orphan_deletes(
+        self, *, message: NormalizedMessage, person_id: str | None,
+    ) -> list[OrphanDelete]:
+        """Mirrors `SqlRecordStore.match_orphan_deletes`, key and authorship rule
+        included; pinned for both by the contract suite."""
+        author_only = message.platform in AUTHOR_ONLY_DELETES
+        found = []
+        for o in self.orphans:
+            if o.platform != message.platform or o.conversation_id != message.conversation_id:
+                continue
+            by_handle = bool(o.handle) and o.handle == message.message_id
+            by_ts = o.sent_ts is not None and o.sent_ts == message.timestamp
+            if not (by_handle or by_ts):
+                continue
+            if author_only and not deleter_is_author(
+                author_sender_id=message.sender_id, author_person_id=person_id,
+                deleter_sender_id=o.deleter_id, deleter_person_id=o.deleter_person_id,
+                deleter_ids=o.deleter_ids,
+            ):
+                continue
+            found.append(o)
+        return found
+
+    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
+        """Mirrors `SqlRecordStore.discard_orphan_delete`."""
+        before = len(self.orphans)
+        self.orphans = [o for o in self.orphans if o.id != orphan_id]
+        return len(self.orphans) < before
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         if self.fail_on_recent:

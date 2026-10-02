@@ -135,6 +135,24 @@ def _quoted(quoted: object) -> Quote | None:
     )
 
 
+def revoker_ids(event: dict) -> tuple[str, ...]:
+    """Every id form a touch event gives for the account that acted: the phone form,
+    the LID form and the raw JID, whichever it carries, in the shapes `sender_id`
+    takes (`sender_form`). A message stored under one form and revoked under another
+    by an author nobody mapped is the same account, so the authorship check reads
+    all of them (`nora.domain.delete_authorship`). Also read back from a recorded
+    delete's `raw_json` by the start-up sweep."""
+    phone = event.get("sender_phone")
+    lid = event.get("sender_lid")
+    jid = event.get("sender_jid")
+    forms = (
+        phone_form(phone) if isinstance(phone, str) and phone else "",
+        lid_form(lid) if isinstance(lid, str) and lid else "",
+        jid if isinstance(jid, str) else "",
+    )
+    return tuple(dict.fromkeys(f for f in forms if f))
+
+
 def _parse_touch(event: dict) -> NormalizedMessage | None:
     """A bridge `reaction` or `delete` event → a `Touch` (see the module
     docstring). Nora's own (`from_me`) is dropped (R-12); so is one naming no
@@ -159,7 +177,10 @@ def _parse_touch(event: dict) -> NormalizedMessage | None:
             emoji=emoji, removed=bool(event.get("removed")) or not emoji,
         )
     else:
-        touch = Touch(kind="delete", target=EditTarget(message_id=target))
+        touch = Touch(
+            kind="delete", target=EditTarget(message_id=target),
+            actor_ids=revoker_ids(event),
+        )
     is_group = bool(event.get("is_group")) or is_group_jid(chat_jid)
     resolved_phone = event.get("sender_phone")
     timestamp_ms = event.get("timestamp_ms")

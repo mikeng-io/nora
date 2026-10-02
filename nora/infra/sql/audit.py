@@ -27,13 +27,16 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
+from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
     EditedMessage,
     EditTarget,
     NormalizedMessage,
+    OrphanDelete,
     RowEdit,
+    Touch,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
@@ -41,7 +44,13 @@ from nora.domain.models import (
 )
 from nora.domain.ports import RoomActivity
 from nora.infra.sql.migrations_runner import head_revision
-from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGE_REACTION, MESSAGES
+from nora.infra.sql.schema import (
+    MESSAGE_DELETE,
+    MESSAGE_EDIT,
+    MESSAGE_REACTION,
+    MESSAGES,
+    ORPHAN_DELETE,
+)
 
 DEFAULT_MAX_PER_CONVERSATION = 500
 
@@ -94,6 +103,17 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
         MESSAGES.c.hidden_at.is_(None),
+    )
+
+
+def orphan_delete_of(r: Any) -> OrphanDelete:
+    """The `OrphanDelete` of one `orphan_delete` row (the sweep reads the table too)."""
+    return OrphanDelete(
+        id=int(r.id), platform=r.platform, conversation_id=r.conversation_id,
+        handle=r.handle, sent_ts=None if r.sent_ts is None else int(r.sent_ts),
+        deleter_id=r.deleter_id, deleter_ids=tuple(r.deleter_ids or ()),
+        deleter_person_id=r.deleter_person_id, event_ts=int(r.event_ts),
+        recorded_at=int(r.recorded_at),
     )
 
 
@@ -514,6 +534,71 @@ class SqlRecordStore:
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
         return int(result.scalar_one())
+
+    async def record_orphan_delete(
+        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
+        now_ms: int,
+    ) -> int:
+        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One INSERT, in
+        its own transaction."""
+        ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
+        stmt = sa.insert(ORPHAN_DELETE).values(
+            platform=message.platform,
+            conversation_id=message.conversation_id,
+            handle=touch.target.message_id,
+            sent_ts=touch.target.sent_ts,
+            deleter_id=message.sender_id,
+            deleter_ids=list(ids),
+            deleter_person_id=person_id,
+            event_ts=message.timestamp,
+            recorded_at=now_ms,
+        ).returning(ORPHAN_DELETE.c.id)
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return int(result.scalar_one())
+
+    async def match_orphan_deletes(
+        self, *, message: NormalizedMessage, person_id: str | None,
+    ) -> list[OrphanDelete]:
+        """See `nora.domain.ports.RecordStore.match_orphan_deletes`. The candidates
+        are one indexed read of the room; the authorship rule is the domain's, applied
+        here in Python so it is one rule everywhere (`delete_authorship`)."""
+        key = []
+        if message.message_id:
+            key.append(sa.and_(ORPHAN_DELETE.c.handle != "",
+                               ORPHAN_DELETE.c.handle == message.message_id))
+        if message.timestamp is not None:
+            key.append(ORPHAN_DELETE.c.sent_ts == message.timestamp)
+        if not key:
+            return []
+        stmt = (
+            sa.select(ORPHAN_DELETE)
+            .where(
+                ORPHAN_DELETE.c.platform == message.platform,
+                ORPHAN_DELETE.c.conversation_id == message.conversation_id,
+                sa.or_(*key),
+            )
+            .order_by(ORPHAN_DELETE.c.id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        author_only = message.platform in AUTHOR_ONLY_DELETES
+        return [
+            orphan_delete_of(r) for r in rows
+            if not author_only or deleter_is_author(
+                author_sender_id=message.sender_id, author_person_id=person_id,
+                deleter_sender_id=r.deleter_id, deleter_person_id=r.deleter_person_id,
+                deleter_ids=r.deleter_ids,
+            )
+        ]
+
+    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
+        """See `nora.domain.ports.RecordStore.discard_orphan_delete`."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan_id)
+            )
+        return bool(result.rowcount)
 
     async def aclose(self) -> None:
         await self._engine.dispose()
