@@ -361,7 +361,7 @@ async def test_reading_the_catalog_and_never_publishing_is_a_turn_that_saved_not
     carrier = LinkCarry()
     tools = await _tools_with(carrier, _service(public_url=""))
     assert (await tools["document_publish"]())["status"] == "bad_arguments"
-    text, _ = carrier.apply("份嘢整好喇")
+    text, _ = carrier.apply("份嘢整好喇", final=True)
     assert text.endswith(UNSAVED_DOCUMENT_NOTE)
 
 
@@ -381,3 +381,28 @@ async def test_the_note_reaches_the_room_once_through_the_delivery_path() -> Non
     assert await handle.deliverer.deliver("仲等你答") is True
     sent = [text for _, text in adapter.sent]
     assert [t.count(UNSAVED_DOCUMENT_NOTE) for t in sent] == [1, 0], sent
+
+
+def test_a_progress_message_after_a_catalog_read_alone_is_not_marked_but_the_last_one_is() -> None:
+    """Review of #708: «on it» sent between the catalog read and a good publish was told
+    «No document was saved». A catalog read alone marks only a message the turn ends on."""
+    carrier = LinkCarry()
+    carrier.document_called()
+    assert carrier.apply("等我整") == ("等我整", 0)
+    assert carrier.apply("整好喇", final=True)[0].endswith(UNSAVED_DOCUMENT_NOTE)
+
+
+def test_a_publish_that_was_tried_and_refused_marks_any_message_after_it() -> None:
+    carrier = LinkCarry()
+    carrier.document_tried()
+    assert carrier.apply("再試一次")[0].endswith(UNSAVED_DOCUMENT_NOTE)
+
+
+async def test_only_a_message_the_turn_ends_on_follows_a_catalog_read_alone() -> None:
+    adapter = _FakeAdapter()
+    handle = _handle(adapter, Metrics())
+    handle.links.document_called()
+    assert await handle.deliverer.deliver("等我整") is True
+    assert await handle.deliverer.deliver("整好喇", source="recovered") is True
+    sent = [text for _, text in adapter.sent]
+    assert [t.count(UNSAVED_DOCUMENT_NOTE) for t in sent] == [0, 1], sent

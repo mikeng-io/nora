@@ -60,7 +60,7 @@ The one contract between them (amended 2026-10-01, see the note at the top):
 > publishes a page.
 >
 > **As built (§26, §30):** `document_publish(spec, document_id?, base_revision?)`. There is no `path` form
-> (the audited helper, `WorkspaceReader`, exists from #649; nothing calls it for a document) and no `title`
+> (the audited helper, `WorkspaceReader`, existed from #649 and nothing called it for a document; deleted in §41) and no `title`
 > (the Page's title is the document's title). An edit names the revision it read. The result carries
 > `document_id`, `revision` and, when `[documents] public_url` is set, a `url` made from a 12-hex handle;
 > with it empty there is no `url` at all. Beside it: `document_read(document_id)` and
@@ -1607,8 +1607,16 @@ spent one of four calls, so a refusal left three tries, each a full resend; the 
 4. A write tool's R-7 ceiling says only an `ok` call did anything; the generic sentence stays for read tools.
 5. `LinkCarry` appends «(No document was saved.)» once to a reply when `document_publish` was called this turn and none
    stored a document, with or without a public origin. It is true whatever she wrote, so it reads none of her words.
+   It goes on a message the turn ends on, or on any message after a publish that was tried and refused; a `send_reply`
+   after a catalog read alone may be a progress message, so it is left alone (review of #708, which found the false note).
+   Not caught: a turn that ends through `send_reply` after only a catalog read, and a failed edit in a turn that had
+   already saved a document.
 6. `WorkspaceReader` (§26 built it so `document_publish` could read a spec from a file; nothing ever called it) is
    deleted. A `spec_path` argument is the next step only if she still publishes nothing after reading the catalog.
+
+**Review of #708 (independent).** Fixed before merge: the note on a progress message (above); the Map fallback, the
+location rule and "look for pictures" were lost with the skill's old sections and are back in the catalog; the tool's
+`unavailable` note, which replaced every service note, now carries the Map fallback; the budget comment.
 
 **Not done, and why.** The catalog is not in the tool's description: ADR 0015 caps a Level 3 description at 320 tokens and
 the catalog is about 2,000. The picture and Map refusal rounds are not merged: pictures refuse first on purpose, so the

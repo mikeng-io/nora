@@ -1589,9 +1589,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # (`ToolRegistry._withheld`).
     #
     # `document_publish` 6: one call with no spec to read the catalog, the
-    # publish, three fixes after a refusal with findings (each refusal reports one
-    # layer: shape, then rules, then pictures, then places), and one edit. A budget
-    # of 4 left three tries once the catalog read had spent one (2026-10-02). Not
+    # publish and four fixes, one for each layer a refusal can report in turn (shape,
+    # rules, pictures, places); an edit costs the same publish calls. A budget of 4
+    # left three tries once the catalog read had spent one (2026-10-02). Not
     # `read_only`: it commits a document. `confirmed`: the answer is the
     # store's own, a document id and revision, not a claim about a request.
     # `non_idempotent`: the same spec with no `document_id` is a second
@@ -14582,7 +14582,7 @@ Args:
                 "note": "I can't publish documents right now. Say so; do not invent "
                         "a link and do not say one was made.",
             }
-        link_carry.document_tried()
+        link_carry.document_called()
         if spec is None or (isinstance(spec, str) and not spec.strip()):
             _record(metrics, tool, "bad_arguments", reason="no_spec")
             return {
@@ -14591,6 +14591,7 @@ Args:
                         "here: write the document against it and call again.",
                 "catalog": documents.catalog(),
             }
+        link_carry.document_tried()
         tagger = getattr(room, "tagger", None) if room is not None else None
         if document_actor != "tag" or tagger is None:
             _record(metrics, tool, "unavailable", reason="no_requester")
@@ -14688,7 +14689,8 @@ Args:
         _record(metrics, tool, "unavailable", reason=out.status)
         return {"status": "unavailable",
                 "note": "The document could not be checked or saved, so nothing was "
-                        "stored. Say you could not."}
+                        "stored. If it holds a Map, publish again with each place named in "
+                        "Markdown text instead; otherwise say it was not made."}
 
     async def document_read(document_id: str) -> dict:
         """Read a document made in this room: its current `revision` and `spec`.

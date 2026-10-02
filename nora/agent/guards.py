@@ -395,7 +395,9 @@ class Deliverer:
             # R-100: the recorded copy of a GIF caption never keeps a link the room did not see.
             record_text = self._links.scrub(record_text)
         stripped_before, documents_before = self._links.stripped, self._links.documents_added
-        text, carried = self._links.apply(text)
+        # A message the turn ends on may carry the not-saved note after a catalog read alone;
+        # a `send_reply` may be a progress message, so it does not (`LinkCarry.apply`).
+        text, carried = self._links.apply(text, final=source != "tool")
         documents = self._links.documents_added - documents_before
         if carried - documents > 0:
             self._metrics.inc("nora_reply_links_carried_total", outcome="appended")

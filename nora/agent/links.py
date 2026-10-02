@@ -58,6 +58,12 @@ receipt; if it is not there, nothing was saved.
 told the room it was made, with no link in the reply for anything to strip. The one fact that
 is true in every such turn, whatever she wrote, is that nothing was saved, so the reply carries
 it once, whether or not a public origin is configured.
+
+It goes on a message that can be the last one, never on a progress message sent before the
+work: a catalog read alone does not mark a message sent through `send_reply` (she may still be
+writing), while a publish that was tried and refused does, and so does any message the turn
+ends on (recovered, salvaged, drafted or the fallback). A turn that ends through `send_reply`
+after reading the catalog and nothing else is not caught.
 """
 
 from __future__ import annotations
@@ -117,7 +123,8 @@ class LinkCarry:
         self._doc_receipts: dict[str, str] = {}        # handle -> url, published this turn
         self._stripped = 0
         self._documents_added = 0
-        self._document_tried = False                   # `document_publish` was called this turn
+        self._document_called = False                  # `document_publish` was called this turn
+        self._document_tried = False                   # ... with a spec, so a save was attempted
         self._document_saved = False                   # ... and one call stored a document
         self._unsaved_noted = False                    # a sent message carries the note
 
@@ -128,9 +135,13 @@ class LinkCarry:
         if public_url and self._doc_pattern is None:
             self._doc_pattern = own_document_link_pattern(public_url)
 
+    def document_called(self) -> None:
+        """`document_publish` was called this turn, with or without a spec."""
+        self._document_called = True
+
     def document_tried(self) -> None:
-        """`document_publish` was called this turn, whatever it returned."""
-        self._document_tried = True
+        """`document_publish` was called with a spec this turn, whatever it returned."""
+        self._document_called = self._document_tried = True
 
     def document_saved(self) -> None:
         """A `document_publish` call stored a document this turn."""
@@ -197,13 +208,16 @@ class LinkCarry:
         """Every url offered this turn, in offer order. For tests and logging."""
         return tuple(self._offered)
 
-    def apply(self, text: str) -> tuple[str, int]:
+    def apply(self, text: str, *, final: bool = False) -> tuple[str, int]:
         """`text` with every earned-but-missing link appended, and how many were added.
 
         A link is EARNED when the reply names the place (case-folded substring
         of one of its anchors) and MISSING when the url is not already in the
         reply. Appended on their own lines, in offer order, so the shape is the
         one a person sends: the answer, then the links.
+
+        `final` is true for a message the turn ends on, which is where the not-saved note may
+        follow a catalog read that was never followed by a publish.
 
         The count is returned rather than counted internally because the
         `Metrics` instance lives with the `Deliverer`, and giving this class one
@@ -223,12 +237,13 @@ class LinkCarry:
                          len(additions))
                 text = text.rstrip() + "\n" + "\n".join(additions)
                 added += len(additions)
-        return self._note_unsaved(text), added
+        return self._note_unsaved(text, final), added
 
-    def _note_unsaved(self, text: str) -> str:
+    def _note_unsaved(self, text: str, final: bool) -> str:
         """`text` with the not-saved note added once, when `document_publish` was called this
         turn and no call stored a document. The note is true whatever the reply says."""
-        if (not text.strip() or not self._document_tried or self._document_saved
+        if (not text.strip() or not self._document_called or self._document_saved
+                or not (self._document_tried or final)
                 or self._unsaved_noted or UNSAVED_DOCUMENT_NOTE in text):
             return text
         log.warning("reply_document_not_saved: document_publish was called and stored nothing")
