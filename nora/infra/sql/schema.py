@@ -4614,3 +4614,53 @@ DOCUMENT_STATE = sa.Table(
 IDX_DOCUMENT_STATE_LATEST = sa.Index(
     "idx_document_state_latest", DOCUMENT_STATE.c.document_id, DOCUMENT_STATE.c.id,
 )
+
+# `orphan_delete` (migration `0088_orphan_delete`): a platform delete whose target was not
+# on record when it arrived, kept until the message lands (applied: hide plus cascade) or
+# it is purged. Keyed by what `RecordStore.find_edited` matches on: the platform handle
+# (`handle`, '' when the platform names the target by timestamp) or Signal's sent-timestamp
+# (`sent_ts`), in one conversation of one platform. The deleter is every id form the
+# platform gave (`deleter_ids`), the one the parser picked (`deleter_id`) and the person it
+# resolved to: the authorship check a delete on Signal or WhatsApp needs is made when the
+# message arrives (`nora.domain.delete_authorship`). Ids and times only. In place (a row is
+# deleted when applied or purged), so a `HISTORY_TABLES` table (the trigger keeps a
+# `delete` version, as `citation` does).
+ORPHAN_DELETE = sa.Table(
+    "orphan_delete",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("handle", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("sent_ts", sa.BigInteger),
+    sa.Column("deleter_id", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column(
+        "deleter_ids", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
+    ),
+    sa.Column("deleter_person_id", sa.Text),
+    sa.Column("event_ts", sa.BigInteger, nullable=False),
+    sa.Column("recorded_at", sa.BigInteger, nullable=False),
+    sa.CheckConstraint(
+        "handle <> '' OR sent_ts IS NOT NULL", name="ck_orphan_delete_names_a_target",
+    ),
+)
+IDX_ORPHAN_DELETE_HANDLE = sa.Index(
+    "idx_orphan_delete_handle", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.handle, postgresql_where=sa.text("handle <> ''"),
+)
+IDX_ORPHAN_DELETE_SENT_TS = sa.Index(
+    "idx_orphan_delete_sent_ts", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.sent_ts, postgresql_where=sa.text("sent_ts IS NOT NULL"),
+)
+IDX_ORPHAN_DELETE_DELETER = sa.Index(
+    "idx_orphan_delete_deleter", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.deleter_id,
+)
+IDX_ORPHAN_DELETE_RECORDED = sa.Index(
+    "idx_orphan_delete_recorded", ORPHAN_DELETE.c.recorded_at,
+)
+# One row per delivery (the key the store's ON CONFLICT DO NOTHING relies on).
+UQ_ORPHAN_DELETE_DELIVERY = sa.Index(
+    "uq_orphan_delete_delivery", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
+    ORPHAN_DELETE.c.handle, sa.func.coalesce(ORPHAN_DELETE.c.sent_ts, -1),
+    ORPHAN_DELETE.c.deleter_id, unique=True,
+)

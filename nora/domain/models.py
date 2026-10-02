@@ -129,6 +129,11 @@ class Touch:
     target_author: str = ""
     emoji: str = ""
     removed: bool = False
+    #: Every id form the platform gave for the account that acted (WhatsApp's
+    #: phone, LID and raw JID, of which `NormalizedMessage.sender_id` is the one the
+    #: parser picked). Empty where the platform gives one. The authorship check for
+    #: a delete reads these (`nora.domain.delete_authorship`).
+    actor_ids: tuple[str, ...] = ()
 
 
 #: What Signal puts in a message body where an @-mention's name appears
@@ -322,6 +327,39 @@ class RowEdit:
 
 
 @dataclass(frozen=True)
+class OrphanDelete:
+    """A delete whose target was not on record when it arrived, kept so the message
+    is withdrawn the moment it is (`RecordStore.record_orphan_delete`).
+
+    `handle` is the platform's id for the target ("" where the platform names it by
+    timestamp) and `sent_ts` Signal's sent-timestamp (None otherwise): the same key
+    the lookup uses. `deleter_id` is the sender id the parser picked, `deleter_ids`
+    every form the platform gave, `deleter_person_id` the person they resolved to
+    when it arrived: what the authorship rule compares."""
+
+    id: int
+    platform: str
+    conversation_id: str
+    handle: str
+    sent_ts: int | None
+    deleter_id: str
+    deleter_ids: tuple[str, ...]
+    deleter_person_id: str | None
+    event_ts: int
+    recorded_at: int
+
+
+@dataclass(frozen=True)
+class OrphanRecord:
+    """What `RecordStore.record_orphan_delete` did: the row that now holds the delete
+    (a delivery already held returns its own) and how many OLDER held deletes were
+    evicted to make room for it (`nora.domain.delete_authorship.ORPHAN_CAP_*`)."""
+
+    id: int
+    evicted: int = 0
+
+
+@dataclass(frozen=True)
 class EditedMessage:
     """The recorded message an edit targets, as the edit path needs it
     (`RecordStore.find_edited`, design/message-edits/01 §2).
@@ -363,6 +401,11 @@ class EditedMessage:
     # attachment placeholders are given back, instead of re-fetching bytes
     # Nora already holds (`nora.ingest.stages.edit_media`).
     media_json: str | None = None
+    # `messages.hidden_at IS NOT NULL`: withdrawn (a delete or unsend, or
+    # `nora person forget`). The row is still on record, so a lookup still
+    # finds it; a stage that would attach or fold something onto it must not
+    # (`nora.ingest.stages.edit_target`).
+    hidden: bool = False
 
 
 def mentions_json(mentions: frozenset[str]) -> str:

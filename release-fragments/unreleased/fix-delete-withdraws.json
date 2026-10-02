@@ -1,0 +1,17 @@
+{
+  "type": "security",
+  "summary": "A message someone deletes or unsends in a chat is now forgotten by Nora too: she stops quoting it, and the notes and events built on it stop being shown.",
+  "details": [
+    "Before this, an unsent message stayed visible to Nora in every transcript and in everything derived from it.",
+    "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused, including old ones the first start after this change finds on record.",
+    "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives. That fails, and the message stays visible, if the kept delete was evicted by a flood, lost to a write that failed four times, or older than three days, or if it was DROPPED because its target (a Discord or Signal message whose age shows in its id or timestamp) was already more than 30 minutes old when the delete arrived. That last rule is an assumption that a message reaches her within seconds of being sent, not a proof: a Discord reconnect replaying an outage longer than 30 minutes, or a linked Signal device with a skewed clock, can bring the message after its own delete, and it then stays visible. The operator command does not recover that case, because nothing was kept; the sender deleting the message again does.",
+    "A message deleted in the instant it arrives is held back from her memory feed, her notes and her replies (and a photo unsent within seconds is no longer read by the vision model); a delete that lands after those steps have run is the ordinary after-the-fact case, and what was already passed on is not taken back.",
+    "An operator command, `nora withdrawal reconcile-deletes`, applies the same to deletes that were already recorded, and it also runs every time she starts."
+  ],
+  "limitations": [
+    "Honcho, her long-term memory, has no way to delete one message, so something it already learned from a deleted message may remain there.",
+    "A deleted message stays hidden, and a note or event that rested on it stays withdrawn: nothing clears the mark when a note is rewritten, and an operator has to clear it. The room's overall position and culture are not withdrawn, so in a quiet room they can keep the deleted message's content until the next time they are rewritten.",
+    "On WhatsApp a group admin removing someone else's message is not recognised, and deleting one of Nora's own messages is only recognised on Signal.",
+    "A flood of deletes of messages that do not exist can push a legitimate early delete out of the table before its message arrives, and that message then stays visible. On Discord and Instagram a delete names nobody, so 500 deletes of recent-looking, unrecorded messages in one room while the real message is on its way do it (deletes of messages already more than 30 minutes old are not kept at all, so ordinary traffic does not); on WhatsApp the per-member cap of 40 holds across the whole platform, so a room is reached only by more than 25 flooding members, and a modified client otherwise only evicts its own. A write that fails four times in a row is lost the same way. Evictions and lost writes are counted and now alert (`OrphanDeleteEvicted`, `OrphanDeleteLost`), but a delete lost to either is gone."
+  ]
+}

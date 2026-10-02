@@ -60,3 +60,10 @@ Other images: ADD the service to the build and up lines (voice:
 `nora:latest`, so read each other image back per container, as
 `docs/runbook.md` 3b shows: `docker inspect --format '{{.Image}}' <svc>` must
 equal `docker image inspect <svc-image> --format '{{.Id}}'`.
+
+## A revert PR keeps its migration
+
+`MIGRATION_SINCE` sends a rollback forward, and the revert PR that follows must KEEP
+the migration file (`0088_orphan_delete` is the live case): the database is already at
+that revision, and every container fails at start on a revision its image does not
+know. Revert the code that uses the table, never the file that creates it.

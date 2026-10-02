@@ -156,7 +156,7 @@
  {
   "name": "E1a: the cascade skips events",
   "file": "nora/app/withdrawal.py",
-  "old": "    if by_store.get(\"event\"):",
+  "old": "    if \"event\" in stores and by_store.get(\"event\"):",
   "new": "    if False:",
   "target": "tests/infra/test_event_citations.py::test_withdrawing_a_cited_message_marks_the_event_and_only_once tests/infra/test_event_citations.py::test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it"
  },

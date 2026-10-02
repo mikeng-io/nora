@@ -68,6 +68,7 @@ words.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Any
 
@@ -103,6 +104,7 @@ async def run(
     comprehension: MediaComprehension | None = None,
     person: PersonRef | None = None,
     language: str = "",
+    withdrawn: Callable[[], Awaitable[bool]] | None = None,
 ) -> NormalizedMessage:
     """Return `message` with every attachment Nora could copy in her custody.
 
@@ -358,7 +360,7 @@ async def run(
         comprehension.schedule(
             subjects=tuple(subjects), platform=message.platform,
             conversation_id=message.conversation_id, person=person,
-            timestamp=message.timestamp,
+            timestamp=message.timestamp, withdrawn=withdrawn,
         )
 
     return replace(

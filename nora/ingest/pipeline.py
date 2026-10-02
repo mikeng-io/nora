@@ -26,15 +26,26 @@ than propagating).
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
-from collections.abc import Callable, Coroutine
+import time
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from nora.domain.models import EditedMessage, NormalizedMessage, Touch
+from nora.domain.delete_authorship import DELETER_IDS_KEY
+from nora.domain.models import (
+    EditedMessage,
+    EditTarget,
+    NormalizedMessage,
+    OrphanDelete,
+    Touch,
+)
 from nora.domain.ports import (
     BlobStore,
+    DeleteWithdrawal,
+    DeleteWithdrawer,
     EngageDecision,
     EngagePolicy,
     MediaObjectStore,
@@ -103,6 +114,16 @@ IngestOutcome = Literal[
     "delete_recorded",      # recorded beside the message it deletes
     "delete_orphaned",      # no message on record to attach it to; dropped
     "delete_refused",       # an author-only delete naming someone else's message
+    # A message RECORDED and then stopped before any downstream stage (the central
+    # guard, `_guard`): `withdrawn` when a delete hid it (or was applied to it from a
+    # held delete); `withdrawal_pending` when a held delete is KNOWN to name it and
+    # could not be applied (the start-up sweep applies it); `guard_read_failed` when the
+    # question «is a delete holding this message?» could not be answered twice running.
+    # That last one is a DELIBERATE stop, counted: no delete is known to exist, the
+    # database is failing, and a message fed on a guess is the worse way to be wrong.
+    "withdrawn",
+    "withdrawal_pending",
+    "guard_read_failed",
 ]
 
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
@@ -158,6 +179,13 @@ def _outcome(metrics: Any, message: NormalizedMessage, value: IngestOutcome) -> 
     annotate(**{"nora.outcome": value})
 
 
+def _held_outcome(held: str) -> IngestOutcome:
+    """The ending of a message a held delete stopped: see `IngestOutcome`."""
+    if held == "applied":
+        return "withdrawn"
+    return "guard_read_failed" if held == "unreadable" else "withdrawal_pending"
+
+
 @dataclass(frozen=True)
 class IngestResult:
     message: NormalizedMessage | None
@@ -184,6 +212,8 @@ class IngestPipeline:
         language: str = "",
         standing_event_wiring: Any | None = None,
         stimulus_wiring: stimulus_stage.Wiring | None = None,
+        delete_withdrawer: DeleteWithdrawer | None = None,
+        withdrawal_retry_delays: tuple[float, ...] = (2.0, 15.0, 120.0),
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -233,6 +263,16 @@ class IngestPipeline:
         eval composition — writes no stimulus. Present, every recorded
         person-authored item (a message, a changed edit, a reaction, a delete)
         appends one stimulus row with its cues.
+
+        `delete_withdrawer` is what honours a delete or unsend
+        (`nora.app.delete_withdrawal`): present, a delete of a recorded message
+        hides it and marks what cites it `unsupported`, and a delete whose target is
+        not on record is kept durably (`orphan_delete`) and applied when the message
+        is audited. `None` — an offline or eval composition — records the delete and
+        withdraws nothing, as before.
+        `withdrawal_retry_delays` is the bounded retry after a withdrawal that
+        failed (`cascade_failed`): one attempt per delay, then the start-up sweep
+        (`nora.app.delete_withdrawal.reconcile_deletes`) is what finishes it.
         """
         self._audit = audit
         self._memory = memory
@@ -250,6 +290,8 @@ class IngestPipeline:
         self._language = language
         self._standing_event_wiring = standing_event_wiring
         self._stimulus_wiring = stimulus_wiring
+        self._delete_withdrawer = delete_withdrawer
+        self._withdrawal_retry_delays = withdrawal_retry_delays
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -375,6 +417,7 @@ class IngestPipeline:
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
+                withdrawn=self._withdrawn_gate(message, person),
                 # `person` is resolved above and rides in ONLY so a spawned
                 # comprehension can be fed to Honcho under the sender's own
                 # peer (D6, mapped senders only). The custody stage neither
@@ -394,6 +437,21 @@ class IngestPipeline:
             )
         if row_id is None:
             _outcome(m, message, "audit_refused")
+            return IngestResult(message=None, decision=None)
+        # A DELETE THAT OVERTOOK THIS MESSAGE (a photo unsent while its custody
+        # fetch ran, or a delete that came before a restart): applied now, before
+        # anything reads it or feeds it on. Then THE ONE GUARD: whatever raced, the row
+        # is read again and a hidden one stops here (see `_guard`).
+        if self._delete_withdrawer is not None:
+            held = await self._apply_orphans(
+                message, person.person_id if person else None, row_id,
+            )
+            if held != "none":
+                _outcome(m, message, _held_outcome(held))
+                return IngestResult(message=None, decision=None)
+        stopped = await self._guard(row_id, message)
+        if stopped is not None:
+            _outcome(m, message, stopped)
             return IngestResult(message=None, decision=None)
         # The STIMULUS, right behind the Record row it names (20 §3). Inside the
         # guard for `standing_event`'s reason: a span for a stage that cannot
@@ -493,6 +551,7 @@ class IngestPipeline:
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
+                withdrawn=self._withdrawn_gate(msg, person),
                 person=person, language=self._language,
             )
 
@@ -506,6 +565,30 @@ class IngestPipeline:
             )
         if recorded != "recorded":
             _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
+            return IngestResult(message=None, decision=None)
+        # A held delete that names this message BY THIS EDIT (Signal names an edit by its
+        # own timestamp, and the delete may have arrived before the edit did) or the
+        # original: applied now, before anything reads or feeds the edit on. The same
+        # rule as the message path, asked about the original and the edit just recorded.
+        if self._delete_withdrawer is not None:
+            about_original = NormalizedMessage(
+                platform=message.platform, conversation_id=message.conversation_id,
+                conversation_type=message.conversation_type, sender_id=original.sender_id,
+                sender_name=None, timestamp=original.ts, body="", raw={},
+                message_id=original.platform_message_id,
+            )
+            held = await self._apply_orphans(
+                about_original, original.person_id, original.id,
+                edit_timestamps=(message.timestamp,),
+            )
+            if held != "none":
+                _outcome(m, message, _held_outcome(held))
+                return IngestResult(message=None, decision=None)
+        # The one guard, for the edit path too: a delete may have hidden the original
+        # since `edit_target` read it, and nothing below may feed or open a turn on it.
+        stopped = await self._guard(original.id, message)
+        if stopped is not None:
+            _outcome(m, message, stopped)
             return IngestResult(message=None, decision=None)
         # Only an edit that CHANGED what a reader sees is a stimulus: an
         # unchanged one stopped above, and would wake nothing new.
@@ -543,13 +626,134 @@ class IngestPipeline:
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
         """A reaction or a delete/unsend (design/cognition-loop/20 §1):
         found, recorded beside its target, raising a stimulus — never a turn,
-        never fed to Honcho, never a transcript line. `touch` decides and
-        records; this only sequences."""
+        never fed to Honcho, never a transcript line. A delete also withdraws
+        its target, or, when its target is not on record, is kept durably until it
+        is (`touch_stage.run`). `touch` decides and records; this only sequences."""
+        await self._record_touch(message=message, touch=touch)
+        return IngestResult(message=None, decision=None)
+
+    async def _guard(self, row_id: int, message: NormalizedMessage) -> IngestOutcome | None:
+        """THE ONE FAIL-CLOSED POINT for the window between a message's audit write and the
+        stages that read it. Immediately before an audited message is handed to any
+        downstream consumer (the memory feed, the stimulus, the Standing and note stages,
+        the gate) its row is read again, one read by primary key, and a hidden row stops the
+        pipeline here: a delete that hid the row since the audit write, one whose orphan the
+        delete's own second lookup discarded, one applied by another task.
+
+        It closes THAT window and no other. A delete that arrives after this read is the
+        ordinary after-the-fact case: it hides the row for every later read, and what was
+        already fed or answered stays so (Honcho cannot forget what it was fed, design 04
+        §7 (A2)); no reply path re-checks the flag before sending.
+
+        A read that fails is asked ONCE more. If it fails again the message stops
+        (`guard_read_failed`, counted), deliberately: no delete is known to exist, but the
+        database is failing, and a message fed on a guess is the worse way to be wrong. A
+        single transient failure costs nothing. `None` when it may go on."""
+        for attempt in (1, 2):
+            try:
+                hidden = await self._audit.is_hidden(row_id=row_id)
+            except Exception:
+                log.exception(
+                    "could not read whether message row %d is hidden (attempt %d of 2)",
+                    row_id, attempt,
+                )
+                continue
+            return "withdrawn" if hidden else None
+        self._metrics.inc("nora_errors_total", stage="guard", platform=message.platform)
+        return "guard_read_failed"
+
+    async def _apply_orphans(
+        self, message: NormalizedMessage, person_id: str | None, row_id: int,
+        edit_timestamps: tuple[int, ...] = (),
+    ) -> str:
+        """Apply the held deletes that name the message just audited (`row_id`), by the
+        one rule every place a delete takes effect shares. `none` when nothing named it;
+        `applied` when every match was; `failed` when a KNOWN match could not be applied
+        (the held delete stays for the start-up sweep, counted `apply_failed`, the message
+        must NOT go on); `unreadable` when the held deletes could not be read twice
+        running (no delete is known to exist: a deliberate, counted stop,
+        `guard_read_failed`). A single failed read is asked again and costs nothing.
+
+        DIRECTLY against `row_id`: no second lookup (a lookup that failed there
+        used to leave the message flowing on and write a second orphan row for a delete
+        already matched), no replay through the touch stage. The delete's own record is
+        written first, then the hide and the cascade, and the held delete is discarded
+        only AFTER (a crash in between leaves the row, and the sweep applies it
+        again, idempotently). `edit_timestamps` are the timestamps of the message's edits
+        (the edit path: a Signal delete may name an edit by its own)."""
+        orphans = None
+        for attempt in (1, 2):
+            try:
+                orphans = await self._audit.match_orphan_deletes(
+                    message=message, person_id=person_id, edit_timestamps=edit_timestamps,
+                )
+                break
+            except Exception:
+                log.exception("held deletes could not be read (attempt %d of 2)", attempt)
+        if orphans is None:
+            self._metrics.inc(
+                "nora_errors_total", stage="orphan_match", platform=message.platform,
+            )
+            return "unreadable"
+        verdict = "none"
+        for orphan in orphans:
+            ok = await self._apply_orphan(orphan, row_id, message)
+            verdict = "applied" if ok and verdict != "failed" else "failed"
+        return verdict
+
+    async def _apply_orphan(
+        self, orphan: OrphanDelete, row_id: int, message: NormalizedMessage,
+    ) -> bool:
+        withdrawer = self._delete_withdrawer
+        if withdrawer is None:
+            return False
+        delete = NormalizedMessage(
+            platform=orphan.platform, conversation_id=orphan.conversation_id,
+            conversation_type=message.conversation_type, sender_id=orphan.deleter_id,
+            sender_name=None, timestamp=orphan.event_ts, body="",
+            # The deleter's id forms ride in the stored event, as the touch stage's own
+            # record does, so the authorship rule can read them back (`unforget`, the sweep).
+            raw={DELETER_IDS_KEY: list(orphan.deleter_ids), "from_orphan": orphan.id},
+        )
+        try:
+            await self._audit.append_delete(
+                message_id=row_id, message=delete, person_id=orphan.deleter_person_id,
+            )
+        except Exception:
+            log.exception("the delete of message row %d could not be recorded", row_id)
+            self._count_withdrawal(message.platform, "apply_failed")
+            return False                            # the held delete stays
+        try:
+            withdrawal = await withdrawer.withdraw(
+                message_id=row_id, now_ms=int(time.time() * 1000),
+            )
+        except Exception:
+            log.exception("delete withdrawal of message %d raised", row_id)
+            withdrawal = DeleteWithdrawal(outcome="cascade_failed")
+        self._count_withdrawal(message.platform, withdrawal.outcome)
+        # The record is committed, so the held delete has done its job either way: a
+        # failed hide is retried (and swept) from the record.
+        try:
+            await self._audit.discard_orphan_delete(orphan_id=orphan.id)
+        except Exception:
+            log.exception("held delete %d could not be discarded", orphan.id)
+        if withdrawal.outcome == "cascade_failed":
+            self._spawn(self._retry_withdrawal(message_id=row_id, platform=message.platform))
+            return False
+        self._count_withdrawal(message.platform, "applied_from_orphan")
+        return True
+
+    async def _record_touch(
+        self, *, message: NormalizedMessage, touch: Touch,
+    ) -> touch_stage.TouchResult:
+        """One touch, found, recorded and (a delete) withdrawn; the stimulus rides
+        behind it. The ending is the caller's to read."""
         m = self._metrics
         with span("ingest.touch"):
             done = await touch_stage.run(
                 message=message, touch=touch, audit=self._audit,
                 persons=self._persons, metrics=m,
+                withdrawer=self._delete_withdrawer,
             )
         if done.row_id is not None and self._stimulus_wiring is not None:
             with span("ingest.stimulus"):
@@ -558,5 +762,85 @@ class IngestPipeline:
                     person_id=done.person_id, wiring=self._stimulus_wiring,
                     metrics=m, target=done.target,
                 )
+        if (
+            done.withdrawal is not None and done.withdrawal.outcome == "cascade_failed"
+            and done.target is not None
+        ):
+            self._spawn(self._retry_withdrawal(
+                message_id=done.target.id, platform=message.platform,
+            ))
         _outcome(m, message, done.ending)
-        return IngestResult(message=None, decision=None)
+        return done
+
+    async def _retry_withdrawal(self, *, message_id: int, platform: str) -> None:
+        """A withdrawal that failed is tried again, a bounded number of times
+        (`withdrawal_retry_delays`), off the listener's path. The delete's record
+        is already committed, so what is left after the last attempt is found by
+        the start-up sweep. Logs ids and counts only."""
+        withdrawer = self._delete_withdrawer
+        if withdrawer is None:
+            return
+        for delay in self._withdrawal_retry_delays:
+            await asyncio.sleep(delay)
+            try:
+                result = await withdrawer.withdraw(
+                    message_id=message_id, now_ms=int(time.time() * 1000),
+                )
+            except Exception:
+                log.exception("retry of the withdrawal of message %d raised", message_id)
+                result = DeleteWithdrawal(outcome="cascade_failed")
+            if result.outcome == "cascade_failed":
+                self._count_withdrawal(platform, "cascade_failed")
+                continue
+            self._count_withdrawal(platform, "reconciled")
+            return
+        log.error(
+            "withdrawal of message %d failed after %d retries; the start-up sweep "
+            "will try again", message_id, len(self._withdrawal_retry_delays),
+        )
+
+    def _count_withdrawal(self, platform: str, outcome: str) -> None:
+        try:
+            self._metrics.inc(
+                "nora_delete_withdrawals_total", platform=platform, outcome=outcome,
+            )
+        except Exception:  # an observation must never stop an ingest
+            log.debug("delete withdrawal outcome %r not counted", outcome, exc_info=True)
+
+    def _withdrawn_gate(
+        self, message: NormalizedMessage, person: Any,
+    ) -> Callable[[], Awaitable[bool]] | None:
+        """Is this message withdrawn NOW? Asked by the spawned comprehension job
+        just before its vision call and again before its Honcho feed: that job is
+        scheduled by the custody stage before the row exists, so the delete can
+        land at any point after (held, then hidden, or already hidden). True when
+        a delete for it is held, or its row is hidden. It RAISES when it cannot
+        look; the job decides what that means (`MediaComprehension`).
+        `None` when no withdrawer is wired."""
+        if self._delete_withdrawer is None:
+            return None
+        person_id = person.person_id if person is not None else None
+        edit = message.edit_of
+        if edit is not None:
+            target = edit
+        elif message.message_id:
+            target = EditTarget(message_id=message.message_id)
+        else:
+            target = EditTarget(sent_ts=message.timestamp)
+
+        async def withdrawn() -> bool:
+            # A delete held for it (the durable `orphan_delete`, which stays until
+            # the delete has been applied: no moment when it is neither held nor
+            # hidden), or its row hidden. A lookup that FAILS raises: the caller
+            # distinguishes «could not check» from «withdrawn».
+            if edit is None and await self._audit.match_orphan_deletes(
+                message=message, person_id=person_id,
+            ):
+                return True
+            found = await self._audit.find_edited(
+                conversation_id=message.conversation_id, target=target,
+                sender_id=message.sender_id,
+            )
+            return found is not None and found.hidden
+
+        return withdrawn
