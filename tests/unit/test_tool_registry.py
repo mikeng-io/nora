@@ -320,7 +320,7 @@ def test_budgets_match_todays_table():
         # second is a different status filter.
         "computer_session_list": 2,
         # design/artifact §26: no-spec catalog read, publish, a fix, an edit; a read.
-        "document_publish": 4, "document_read": 2,
+        "document_publish": 6, "document_read": 2,
         # Archive, delete or restore one document; a second call is an undo or
         # another document.
         "document_set_status": 2,

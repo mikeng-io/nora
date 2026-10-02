@@ -4,6 +4,19 @@ A document is ONE JSON object: `{ "version": 1, "root": <Page> }`. `root` is a P
 `{ "type", "props", "children"? }` with `children` a nested array (no ids, no references).
 Nothing else exists: no classes, styles, HTML, scripts, state or actions. A link is an http(s) address in `Sources` or in Markdown text; no other prop takes a URL.
 Unknown types, unknown props and extra keys are rejected, so do not invent them.
+A document has at most 500 nodes, 8 levels of nesting, 200 children per node and 256 KB.
+
+Write a finished reference, not notes: open with a short summary, give each top-level Section one idea
+and its full substance, in complete sentences in the room's language and a written-report register.
+Do not paste the chat or repeat a fact. Use the component built for each kind of content; Markdown is for prose only.
+Every figure comes from a run on your computer, a source or the room, never from memory. Anything you looked up
+carries a `Sources` entry with the date you read it; a number somebody in the room gave is sourced to them;
+a number you cannot source is left out.
+
+Pictures: an `Image` takes a media code from an `[image ...]` marker in the room, from a picture you made, or from
+a page you opened (`media_fetch` on a link in `web_fetch`'s `images` returns the code). Read a picture with
+`media_fetch` before you caption it, name its page in `Sources`, skip logos, icons, avatars and adverts, and never guess
+a code. A picture more than 90 days old in the room is out of reach: leave it out.
 
 Components:
 

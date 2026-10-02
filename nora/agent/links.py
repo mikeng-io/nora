@@ -52,6 +52,12 @@ stale, and the room got a canned apology). This does the one thing that makes th
 claim true or absent: a document link the carrier was not handed is REMOVED, and
 the link of a document published this turn is added. The link in the room is the
 receipt; if it is not there, nothing was saved.
+
+**A turn that reached for `document_publish` and saved nothing says so (2026-10-02, trace
+3ba6b39c).** She read the catalog, wrote the spec to her own computer, never published it and
+told the room it was made, with no link in the reply for anything to strip. The one fact that
+is true in every such turn, whatever she wrote, is that nothing was saved, so the reply carries
+it once, whether or not a public origin is configured.
 """
 
 from __future__ import annotations
@@ -67,6 +73,9 @@ log = logging.getLogger("nora.links")
 # is the common case here, the same way `strip_markdown` had to be rewritten
 # once for having reasoned about `\w` in an alphabet Nora does not write in.
 _MIN_ANCHOR = 2
+
+# Appended to a reply when `document_publish` was called this turn and none stored a document.
+UNSAVED_DOCUMENT_NOTE = "(No document was saved.)"
 
 
 def own_document_link_pattern(public_url: str) -> re.Pattern[str]:
@@ -108,6 +117,9 @@ class LinkCarry:
         self._doc_receipts: dict[str, str] = {}        # handle -> url, published this turn
         self._stripped = 0
         self._documents_added = 0
+        self._document_tried = False                   # `document_publish` was called this turn
+        self._document_saved = False                   # ... and one call stored a document
+        self._unsaved_noted = False                    # a sent message carries the note
 
     def claim_documents(self, public_url: str) -> None:
         """Arm the document rule for this turn with the origin documents are linked under.
@@ -115,6 +127,14 @@ class LinkCarry:
         a reply written after a publish that never returned `ok`."""
         if public_url and self._doc_pattern is None:
             self._doc_pattern = own_document_link_pattern(public_url)
+
+    def document_tried(self) -> None:
+        """`document_publish` was called this turn, whatever it returned."""
+        self._document_tried = True
+
+    def document_saved(self) -> None:
+        """A `document_publish` call stored a document this turn."""
+        self._document_saved = True
 
     def mint_document(self, url: str, *, published: bool) -> None:
         """Record a document URL a tool returned. `published` means it was saved THIS turn, so
@@ -137,6 +157,8 @@ class LinkCarry:
         """A message carrying these documents' links reached the room: they are not added to the
         next message of the turn. A link that was due but not in what was sent (a refusal, a GIF
         with no words) stays pending, so the next message still carries it."""
+        if UNSAVED_DOCUMENT_NOTE in (text or ""):
+            self._unsaved_noted = True
         pattern = self._doc_pattern
         if pattern is None or not self._doc_receipts:
             return
@@ -190,18 +212,27 @@ class LinkCarry:
         added = 0
         if text and self._doc_pattern is not None:
             text, added = self._apply_documents(text, self._doc_pattern)
-        if not text or not self._offered:
-            return text, added
-        haystack = text.casefold()
-        additions = [
-            url for url, anchors in self._offered.items()
-            if url not in text and any(a.casefold() in haystack for a in anchors)
-        ]
-        if not additions:
-            return text, added
-        log.info("reply_links_carried: %d link(s) the reply had earned and dropped",
-                 len(additions))
-        return text.rstrip() + "\n" + "\n".join(additions), added + len(additions)
+        if text and self._offered:
+            haystack = text.casefold()
+            additions = [
+                url for url, anchors in self._offered.items()
+                if url not in text and any(a.casefold() in haystack for a in anchors)
+            ]
+            if additions:
+                log.info("reply_links_carried: %d link(s) the reply had earned and dropped",
+                         len(additions))
+                text = text.rstrip() + "\n" + "\n".join(additions)
+                added += len(additions)
+        return self._note_unsaved(text), added
+
+    def _note_unsaved(self, text: str) -> str:
+        """`text` with the not-saved note added once, when `document_publish` was called this
+        turn and no call stored a document. The note is true whatever the reply says."""
+        if (not text.strip() or not self._document_tried or self._document_saved
+                or self._unsaved_noted or UNSAVED_DOCUMENT_NOTE in text):
+            return text
+        log.warning("reply_document_not_saved: document_publish was called and stored nothing")
+        return text.rstrip() + "\n\n" + UNSAVED_DOCUMENT_NOTE
 
     def _remove_documents(self, text: str, pattern: re.Pattern[str]) -> tuple[str, int]:
         """`text` without the document links she was not handed, and how many were removed. The

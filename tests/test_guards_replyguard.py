@@ -347,6 +347,26 @@ def test_the_veto_names_the_number_it_is_counting():
     assert f"{BUDGETS['place_info']} time(s)" in message
 
 
+def test_a_write_tools_veto_does_not_tell_her_to_answer_from_what_it_did():
+    """R-7's generic sentence says «you have that context, answer from what you already have».
+    For a tool that WRITES, every earlier call may have failed: on 2026-10-02 twelve
+    `computer_run` calls failed to parse a spec, the veto told her to answer, and she told the
+    room the document was made. The sentence for a write tool says only an `ok` call did anything.
+
+    Reverting the `read_only` branch in `ReplyGuard.evaluate` turns this red."""
+    g = _guard()
+    for _ in range(BUDGETS["computer_run"]):
+        g.evaluate("computer_run", {"command": "ls"})
+        g.reserve("computer_run")
+
+    message = g.evaluate("computer_run", {"command": "ls"})
+
+    assert message is not None
+    assert f"{BUDGETS['computer_run']} time(s)" in message
+    assert "have that context" not in message and "from what you already have" not in message
+    assert "Only a call that returned ok did anything" in message
+
+
 def test_the_skills_veto_does_not_claim_she_holds_a_skill_she_never_loaded():
     """R-7's generic sentence — «you already called X N time(s) and have that
     context, answer from what you already have» — is true of every tool on the

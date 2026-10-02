@@ -159,16 +159,6 @@ def _images(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     return sorted(found, key=lambda pair: pair[0])
 
 
-_CATALOG_RULES = (
-    "Write a finished reference, not notes: open with a short summary, give every section its full "
-    "substance, and use the component built for each kind of content rather than Markdown alone. "
-    "A picture comes from the room, from something you made, or from a page you opened "
-    "(`media_fetch` on a link in `web_fetch`'s `images`). Publish with what you have: a document "
-    "exists only once `document_publish` returns `ok`, so until then say it was not made and give "
-    "no link.\n\n"
-)
-
-
 def _maps(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """Every Map node and its JSON Pointer, in document order (see `_images`)."""
     found: list[tuple[str, dict[str, Any]]] = []
@@ -442,15 +432,10 @@ class DocumentService:
 
     # ------------------------------------------------------------ catalog, read
     def catalog(self) -> str:
-        """The catalog prompt the checker's schema was generated with, so a model
-        that has not seen the catalog can learn it from the tool, not from memory.
-
-        It opens with the three rules a document most often loses when the skill was never loaded
-        (2026-10-01: a correction turn skipped it and published a 1,300-character note with no
-        picture): this is a finished reference, a picture can come from a page she opened, and a
-        document exists only once a publish returned `ok`. The catalog is the one thing she always
-        reads before she writes, so the rules ride with it rather than only in an optional skill."""
-        return _CATALOG_RULES + catalog_prompt()
+        """The catalog prompt the checker's schema was generated with: the components, the
+        limits and the rules for writing one, so a model that has not seen them learns them
+        from the tool."""
+        return catalog_prompt()
 
     async def _in_room(
         self,

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nora.agent.links import LinkCarry, own_document_link_pattern
+from nora.agent.links import UNSAVED_DOCUMENT_NOTE, LinkCarry, own_document_link_pattern
 from nora.engagement.stages import deliver
 from nora.obs.metrics import Metrics
 from nora.testing import FakeRecordStore
@@ -319,3 +319,65 @@ def test_removing_a_link_does_not_reflow_the_rest_of_her_reply() -> None:
     """Only the blank lines the removal itself leaves are tidied; her own spacing is not touched."""
     cleaned, _ = _armed().apply(f"第一行  \n\n{MADE_UP}\n\n\n第二行")
     assert cleaned == "第一行  \n\n第二行"
+
+
+# ---- a turn that reached for document_publish and saved nothing says so ----------------------
+
+
+def test_a_turn_that_called_publish_and_saved_nothing_carries_the_note_once() -> None:
+    carrier = LinkCarry()
+    carrier.document_tried()
+    text, added = carrier.apply("份 document 整好喇")
+    assert text == f"份 document 整好喇\n\n{UNSAVED_DOCUMENT_NOTE}" and added == 0
+    carrier.mark_sent(text)
+    assert carrier.apply("仲等你答") == ("仲等你答", 0), "the next message is left alone"
+
+
+def test_the_note_is_not_added_when_a_document_was_saved_or_publish_was_never_called() -> None:
+    saved = LinkCarry()
+    saved.document_tried()
+    saved.document_saved()
+    assert saved.apply("搞掂") == ("搞掂", 0)
+    assert LinkCarry().apply("搞掂") == ("搞掂", 0)
+
+
+def test_the_note_never_makes_an_empty_reply_sendable() -> None:
+    carrier = LinkCarry()
+    carrier.document_tried()
+    assert carrier.apply("") == ("", 0)
+
+
+def test_a_note_that_was_due_but_not_sent_stays_due_for_the_next_message() -> None:
+    carrier = LinkCarry()
+    carrier.document_tried()
+    carrier.apply("搞掂")  # refused downstream: never reached the room
+    assert carrier.apply("再講過")[0].count(UNSAVED_DOCUMENT_NOTE) == 1
+
+
+async def test_reading_the_catalog_and_never_publishing_is_a_turn_that_saved_nothing() -> None:
+    """The 2026-10-02 turn (trace 3ba6b39c): the catalog was read, the spec went to her own
+    computer, and the reply said it was made. With no public origin there is no link to strip,
+    so the note is what the room is given."""
+    carrier = LinkCarry()
+    tools = await _tools_with(carrier, _service(public_url=""))
+    assert (await tools["document_publish"]())["status"] == "bad_arguments"
+    text, _ = carrier.apply("份嘢整好喇")
+    assert text.endswith(UNSAVED_DOCUMENT_NOTE)
+
+
+async def test_a_publish_that_stored_a_document_carries_no_note() -> None:
+    for public_url in (PUBLIC, ""):
+        carrier = LinkCarry()
+        tools = await _tools_with(carrier, _service(public_url=public_url))
+        assert (await tools["document_publish"](spec=_doc()))["status"] == "ok"
+        assert UNSAVED_DOCUMENT_NOTE not in carrier.apply("搞掂")[0]
+
+
+async def test_the_note_reaches_the_room_once_through_the_delivery_path() -> None:
+    adapter = _FakeAdapter()
+    handle = _handle(adapter, Metrics())
+    handle.links.document_tried()
+    assert await handle.deliverer.deliver("份嘢整好喇") is True
+    assert await handle.deliverer.deliver("仲等你答") is True
+    sent = [text for _, text in adapter.sent]
+    assert [t.count(UNSAVED_DOCUMENT_NOTE) for t in sent] == [1, 0], sent

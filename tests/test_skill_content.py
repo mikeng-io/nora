@@ -1175,17 +1175,12 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
 
 
 def test_the_document_skill_names_only_tools_that_exist() -> None:
-    """A rule that tells her to call a tool she does not hold is a dead rule.
-
-    The skill names five tools by backtick; each must be a registered tool (a
-    rename would otherwise leave her following an instruction to nothing)."""
+    """A rule that tells her to call a tool she does not hold is a dead rule: a rename would
+    otherwise leave her following an instruction to nothing."""
     from nora.agent.tools import NATIVE_TOOLS
 
     body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
-    named = {
-        "document_publish", "document_read", "document_set_status", "media_fetch",
-        "computer_export",
-    }
+    named = {"document_publish", "document_read", "document_set_status", "computer_export"}
     for tool in named:
         assert f"`{tool}`" in body, f"the skill stopped naming {tool}"
         assert tool in NATIVE_TOOLS, f"the skill names {tool}, which is not a tool"
@@ -1195,73 +1190,58 @@ def test_the_document_skill_gives_the_link_and_never_asks_her_to_say_an_id() -> 
     """A reply carrying a bare UUID is blocked at egress (`nora.agent.egress`): a skill that
     told her to give a `url` built from the UUID made the turn fail silently (measured
     2026-10-01, the documents-on routing arm: 3 of 5 draws ERROR, 6 `egress_blocked: uuid`
-    lines). The `url` is now `<public_url>/documents/<12-hex handle>`, which egress passes,
-    so she gives it verbatim; the id itself is still never written, and with no `url`
-    there is no link and she invents none."""
+    lines). The link is added to her reply by the carrier (R-100), so she writes none, and with
+    no `url` there is no link and she invents none."""
     from nora.agent.egress import scan_reply
 
     body = " ".join(
         (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
     )
     assert "The link is added to your reply for you" in body
-    assert "never write a path, a host or the document's id, and never make up a link" in body
-    assert "repeat a `url` exactly as a document tool returned it this turn" in body
-    assert "any other document link is removed" in body
+    assert "never write a path, a host or the document's id" in body
     assert "If the result carries no `url`, there is no link yet: say it is under Documents" in body
     assert scan_reply(body) is None, "the skill itself carries something egress would block"
 
 
-def test_the_document_skill_names_every_content_component_in_the_catalog() -> None:
-    """A component the skill never names is a component she never reaches for: the
-    2026-10-02 itinerary was seven Markdown, Table and Accordion blocks with no Map,
-    Image or Chart, because the skill named six of the nineteen. The layout components
-    (Page, Section, Card, Grid, Tab) are structure, not content, so they are exempt;
-    anything ELSE added to the catalog fails here until the skill says what it is for."""
-    import json
-
-    schema = json.loads(
-        (SKILLS_DIR.parent / "documents" / "document.schema.json").read_text(encoding="utf-8")
+def test_the_document_catalog_carries_the_rules_for_a_picture_and_a_figure() -> None:
+    """The rules for writing one live in the catalog `document_publish` returns, which she
+    always reads before she writes, and nowhere else: a web picture is allowed and credited, a
+    code is never guessed, and a figure has a source."""
+    body = " ".join(
+        (SKILLS_DIR.parent / "documents" / "catalog-prompt.md").read_text(encoding="utf-8").split()
     )
-    catalog = set(schema["$defs"]["n2"]["properties"]["type"]["enum"])
-    layout = {"Page", "Section", "Card", "Grid", "Tab"}
-    body = (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8")
-    start = body.index("## Match each piece of content")
-    section = body[start : body.index("\n## ", start + 1)]
-    unnamed = sorted(c for c in catalog - layout if not re.search(rf"\b{c}\b", section))
-    assert not unnamed, f"the matching section never names: {unnamed}"
+    assert "`media_fetch` on a link in `web_fetch`'s `images`" in body
+    assert "never guess a code" in body
+    assert "name its page in `Sources`" in body, "a web picture is credited"
+    assert "Write a finished reference, not notes" in body
+    assert "carries a `Sources` entry with the date you read it" in body
+    assert "at most 500 nodes" in body, "the limits are told, not found by refusal"
 
 
-def test_the_document_skill_lets_a_web_picture_into_a_document() -> None:
-    """The skill used to say a picture 'has to come from this room', which made her
-    answer 'web pictures I can't put in' after the tools could (trace 1fdcdb0a)."""
+def test_a_document_exists_only_once_publish_returned_ok_in_the_tool_and_the_skill() -> None:
+    """2026-10-01: she wrote \u00abdocument made, four photos\u00bb and linked a document she never
+    stored. The rule is stated where she calls the tool and where she is told what to say, and
+    the receipt (`LinkCarry`, UNSAVED_DOCUMENT_NOTE) covers the turn that ignores both."""
+    from nora.agent.registry import ToolRegistry
+
+    description = " ".join(dict(ToolRegistry()._descriptions())["document_publish"].split())
+    assert "A document exists only once a call returns `ok`" in description
     body = " ".join(
         (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
     )
-    assert "`media_fetch(url=...)`" in body and "`images`" in body
-    assert "The picture has to come from this room" not in body
-    assert "never guess" in body and "code" in body, "the no-guessed-code rule survives"
-    assert "never goes in a document" in body, "a person's position is not a Map's data"
-    assert "name the page it came from in `Sources`" in body, "a web picture is credited"
+    assert "Until a call returns `ok` there is no document: say it was not made" in body
 
 
-def test_the_document_skill_says_a_document_exists_only_once_publish_returned_ok() -> None:
-    """2026-10-01: she wrote «document made, four photos» and linked a document she never
-    stored, then told the room it was still there after two `not_found` reads. The rule was
-    nowhere in her skill, only «do not report it made until the publish returned ok» under
-    refusals, which a turn that never reached a publish never read as applying."""
+def test_the_publish_tool_says_the_spec_is_an_object_never_a_file() -> None:
+    """2026-10-02, traces c3619636 and 3ba6b39c: a spec sent as a string of JSON broke at one
+    unescaped quote, and a spec written to a file on her computer was never published; in both
+    the room was told it was made."""
+    from nora.agent.registry import ToolRegistry
+
+    description = " ".join(dict(ToolRegistry()._descriptions())["document_publish"].split())
+    assert "send the document as a JSON object in `spec`" in description
+    assert "never HTML, markup or a file on your computer" in description
     body = " ".join(
-        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
+        (SKILLS_DIR / "computer-use" / "SKILL.md").read_text(encoding="utf-8").split()
     )
-    assert "A document exists only once `document_publish` returned `ok` in this turn" in body
-    assert "or `document_read` returned it" in body
-    assert "stop gathering and publish what you hold" in body
-    assert "Do not hold a document for details nobody gave you" in body
-
-
-def test_the_document_skill_tells_her_to_send_the_spec_as_an_object() -> None:
-    """2026-10-02, trace c3619636: a 10,000-character spec sent as a string of JSON broke at one
-    unescaped quote, and the draft was saved elsewhere with the room told it was made."""
-    body = " ".join(
-        (SKILLS_DIR / "document-creation" / "SKILL.md").read_text(encoding="utf-8").split()
-    )
-    assert "Send `spec` as an object, never as text" in body
+    assert "Never write the spec to a file" in body

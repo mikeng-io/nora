@@ -35,7 +35,7 @@ from .egress import LeakGuard, scan_reply
 from .links import LinkCarry
 from .markdown import render_markdown
 from .outbound import Outbound, OutboundComposer
-from .tools import note_handle, utc_now
+from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
 
@@ -1112,6 +1112,16 @@ class ReplyGuard(HookProvider):
                            "not in front of you: answer from the ones that did, "
                            "and say you cannot check the rest rather than "
                            "describing what they say.",
+                )
+            spec = NATIVE_TOOLS.get(tool_name)
+            if spec is not None and not spec.read_only:
+                # A write tool's earlier calls may all have failed, so "you have that
+                # context" is false and "answer" invites a claim it did not earn
+                # (2026-10-02: twelve `computer_run` calls, then "the document is made").
+                return self._veto(
+                    "R-7", f"You already called {tool_name} {spent} time(s), which is the "
+                           "limit, and no more will run. Only a call that returned ok did "
+                           "anything: say what was not done, and do not say it was.",
                 )
             return self._veto(
                 "R-7", f"You already called {tool_name} "
