@@ -156,6 +156,14 @@ Columns, computed or checked by code:
 
 ### Lineage decides who may see a row
 
+**Do not enable (operator, 2026-10-03).** Lineage stays built and `[lineage]
+mode` stays `off`. A boundary is drawn by scope, never by a filter inside it:
+the unit is the read boundary (DEC-231), and rooms whose talk must not meet
+belong in different units. A filter inside a unit blurs that scope, and it
+cannot hold anyway: Memory carries no lineage, so the peer card carries the
+same facts across. Kept as the worked example in AGENTS.md «Build the least
+that works».
+
 **Applied at assembly, never at egress** (GLOSSARY, "enforced at assembly,
 not at egress"): when a read tool returns and when a block renders, for the
 room the turn or agenda item is bound to. By the time text exists the

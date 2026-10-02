@@ -2344,6 +2344,14 @@ timeout_seconds = 3600.0
 # (nora.prefill.lineage_withheld) while every block still renders: read it
 # before "on". "on" drops a section that fails. `record_query` applies
 # lineage in every mode.
+#
+# DO NOT ENABLE (operator, 2026-10-03). Kept built, never turned on: it is the
+# example of a guard that blurs a boundary instead of drawing one. The unit is
+# the boundary (DEC-231): if what is said in one room must not reach another,
+# those rooms belong in different units, not behind a filter inside one. It
+# also cannot hold: Memory (Honcho) carries no lineage, so the same fact
+# reaches the other room through the peer card anyway. AGENTS.md «Build the
+# least that works».
 [lineage]
 mode = "off"
 

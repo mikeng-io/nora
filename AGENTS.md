@@ -121,6 +121,10 @@ compare and a live ledger around a loop that had never written a row. Live
 there had been 2 deletes ever, and Honcho keeps the deleted text anyway: it
 has no per-message delete.
 
+- **A boundary is drawn by scope, never by a filter inside it.** The unit is
+  the read boundary (DEC-231): if two rooms must not share what is said, they
+  belong in different units. `[lineage]` is the example kept to learn from:
+  built, marked do-not-enable, and leaky anyway because Memory has no lineage.
 - **Ship the feature, then harden what breaks.** Undo is a config flip and a
   restart, or a database backup, not revert, pause or ledger machinery.
 - **One integrated change from one spec**, measured once by snapshot replay.
