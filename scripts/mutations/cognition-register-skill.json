@@ -1,0 +1,107 @@
+[
+ {
+  "name": "(a) mapping reverted to {}",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "AGENDA_SKILLS: Mapping[str, str] = {\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n}",
+  "new": "AGENDA_SKILLS: Mapping[str, str] = {}",
+  "target": "tests/unit/test_cognition_agenda_skills.py"
+ },
+ {
+  "name": "(a-pg) mapping reverted, Postgres row",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "AGENDA_SKILLS: Mapping[str, str] = {\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n}",
+  "new": "AGENDA_SKILLS: Mapping[str, str] = {}",
+  "target": "tests/infra/test_cognition_session_records_its_skill.py"
+ },
+ {
+  "name": "(b) time mapped",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "\"self\": REGISTER_SKILL,\n}",
+  "new": "\"self\": REGISTER_SKILL, \"time\": REGISTER_SKILL,\n}",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_time_injects_nothing"
+ },
+ {
+  "name": "(c) only message mapped",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "\"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,",
+  "new": "\"message\": REGISTER_SKILL,",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_every_agenda_with_a_mapped_kind_reads_one_system_prompt"
+ },
+ {
+  "name": "(d) probe records {} again",
+  "file": "nora/app/cognition_session.py",
+  "old": "doctrine_sha256=doctrine_sha256, skill_versions=(\n                    {} if self._skill_versions_for is None\n                    else dict(self._skill_versions_for([item.kind]))\n                ),",
+  "new": "doctrine_sha256=doctrine_sha256, skill_versions={},",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_probe_an_eval_arm_drives_records_the_skill_it_injects"
+ },
+ {
+  "name": "(e1) judge premise in the prelude",
+  "file": "nora/dreamer/preludes/cognition-prelude.md",
+  "old": "You do not talk in the rooms from here.",
+  "new": "You do not talk in the rooms from here. Nobody sees this.",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k test_the_session_no_longer_reads_the_judges_premise"
+ },
+ {
+  "name": "(e2) mode word in the skill",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "That is the ordinary answer, not a\n",
+  "new": "That is the ordinary answer in this shadow run, not a\n",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k test_the_assembled_instruction_does_not_tell_the_model_it_is_in_a_shadow_run"
+ },
+ {
+  "name": "(e3) a cap in the skill's prose",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "an item holding only that closes",
+  "new": "an item holding only that (at most 3 notes) closes",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k test_the_prelude_and_the_skill_state_no_number_outside_the_example_body"
+ },
+ {
+  "name": "(e4) a verb name that does not exist",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "closes `no_change`.",
+  "new": "closes `no_change` or `note_retire`.",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_every_name_in_backticks_is_a_close_reason_or_a_fixed_note_token"
+ },
+ {
+  "name": "(f) the shared doctrine edited instead of adding a prelude",
+  "file": "nora/dreamer/doctrine/dreamer.md",
+  "old": "Nobody is waiting for you, nobody sees this, and nothing you produce",
+  "new": "Nobody is waiting for you, and nothing you produce",
+  "target": "tests/unit/test_dreamer_instruction_goldens.py"
+ },
+ {
+  "name": "(f2) prelude selection reverted in the loader",
+  "file": "nora/instructions/dreamer.py",
+  "old": "doctrine = corpus.preludes.get(name, corpus.doctrine)",
+  "new": "doctrine = corpus.doctrine",
+  "target": "tests/unit/test_dreamer_instructions.py"
+ },
+ {
+  "name": "(g) example misattributed",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "(Ben, Cat) [5201, 5204]",
+  "new": "(Ben, Dan) [5201, 5204]",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_example_body_is_accepted_by_the_real_validator"
+ },
+ {
+  "name": "(g2) example weekday wrong",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "2026-11-05 Thu",
+  "new": "2026-11-05 Fri",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_example_body_is_accepted_by_the_real_validator"
+ },
+ {
+  "name": "(h) skill over its bound",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "## How you know it",
+  "new": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n## How you know it",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_skill_stays_within_its_size_bound"
+ },
+ {
+  "name": "startup check removed",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "    skills.text_for(sorted(skills.by_kind))\n",
+  "new": "",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_a_mapped_skill_that_is_not_installed_stops_the_runner_at_startup"
+ }
+]

@@ -64,7 +64,6 @@ from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
-    AgendaSkills,
     CognitionShutdown,
     build_cognition_runner,
     cognition_budget,
@@ -72,6 +71,9 @@ from nora.app.cognition_wiring import (
     read_surface,
     require_session_hook,
     units_with_home_rooms,
+)
+from nora.app.cognition_wiring import (
+    agenda_skills as cognition_agenda_skills,
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
@@ -3665,10 +3667,10 @@ async def build_dependencies(
     # The shadow Cognition session (step 3a-iii): built inside the Dreamer
     # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
     # builds nothing here, no model client and no agent-runner import.
-    #: Skills injected per agenda kind. No skill ships for any kind in this step: the
-    #: table is where each lands (`AgendaSkills`). A `time` floor wakes a session only
-    #: once the table has its kind (M8, DEC-245).
-    agenda_skills = AgendaSkills(by_kind={}, resolve=lambda name: None)
+    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill for
+    #: `message`, `rollup` and `self`). A `time` floor wakes a session only once the
+    #: table has its kind (M8, DEC-245), and it does not: see `AGENDA_SKILLS`.
+    agenda_skills = cognition_agenda_skills(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
     # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
     # no home room keeps recording its would-wakes, it only cannot start a

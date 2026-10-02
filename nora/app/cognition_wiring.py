@@ -218,10 +218,8 @@ class AgendaSkills:
     """Skills injected per agenda kind (30 §4): after the doctrine, in a fixed
     order, so the prefix stays cached and only the skills vary. `by_kind` maps
     an agenda kind to a skill name; `resolve` reads a skill by name (`Skill.
-    instructions`, `.sha256`). A kind with no entry injects nothing, and no
-    skill ships for any kind in step 3a-iii (the replaced adaptors' objectives
-    become the skills as each retires): the mechanism is here so the session
-    row records what was injected, and the table is where each lands."""
+    instructions`, `.sha256`). A kind with no entry injects nothing. The
+    production table is `AGENDA_SKILLS`, built by `agenda_skills`."""
 
     by_kind: Mapping[str, str]
     resolve: Callable[[str], Any]
@@ -246,6 +244,33 @@ class AgendaSkills:
                 raise LookupError(f"agenda skill {name!r} is not installed")
             out[name] = skill.sha256
         return out
+
+
+#: The Register skill (step 4 PR-1): the note and event judgement the replaced
+#: note-candidates pass had (30 §4), in `nora/dreamer/skills/`.
+REGISTER_SKILL = "cognition-register"
+
+#: Agenda kind -> the skill injected for it. ONE skill for every mapped kind, so
+#: every session that has an agenda reads the same system prompt and its prefix
+#: stays cached whichever kinds its agenda holds
+#: (`tests/unit/test_cognition_agenda_skills.py`).
+#:
+#: **`time` is NOT mapped, on purpose.** A mapped `time` kind switches the
+#: 07:00/00:00 floors on for session units (`floors_ready` in the composition,
+#: `WakeEvaluator`, M8, DEC-245), and the floors are the curator's job: the
+#: session has no verb that retires a note, so a floor would wake it to work it
+#: cannot do. It is mapped with the curation skill (cut-over step D).
+#: `social` and `play` have no producer yet.
+AGENDA_SKILLS: Mapping[str, str] = {
+    "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
+}
+
+
+def agenda_skills(instructions: Any) -> AgendaSkills:
+    """The production table over the Dreamer's instruction store: each skill is
+    read through it per session, so an edit on the bind mount is live at the
+    next session and every load is in the corpus's revision history."""
+    return AgendaSkills(by_kind=AGENDA_SKILLS, resolve=instructions.skill)
 
 
 class CognitionShutdown:
@@ -394,9 +419,11 @@ def build_cognition_runner(
         loaded = instructions.for_objective(COGNITION_OBJECTIVE)
         return loaded.text, loaded.sha256
 
-    # Read once here so a missing or malformed objective is a startup failure
-    # with its file named, not the first wake's (`DreamerInstructions` raises).
+    # Read once here so a missing or malformed objective, or a mapped skill that
+    # is not installed, is a startup failure with its name, not the first wake's
+    # (`DreamerInstructions` raises; `AgendaSkills` raises `LookupError`).
     text, sha = doctrine()
+    skills.text_for(sorted(skills.by_kind))
     home_rooms = _by_home_room(homes)
 
     async def pending_reminds(unit: str) -> Any:
@@ -445,8 +472,18 @@ def build_cognition_runner(
 
 
 __all__ = [
-    "COGNITION_ADAPTOR_NAME", "COGNITION_OBJECTIVE", "COGNITION_READ_CATALOGUE",
-    "AgendaSkills", "CognitionShutdown", "ReadSurface",
-    "build_cognition_runner", "cognition_budget", "read_surface",
-    "read_tools_for", "require_session_hook", "units_with_home_rooms",
+    "AGENDA_SKILLS",
+    "COGNITION_ADAPTOR_NAME",
+    "COGNITION_OBJECTIVE",
+    "COGNITION_READ_CATALOGUE",
+    "REGISTER_SKILL",
+    "AgendaSkills",
+    "CognitionShutdown",
+    "ReadSurface",
+    "build_cognition_runner",
+    "cognition_budget",
+    "read_surface",
+    "read_tools_for",
+    "require_session_hook",
+    "units_with_home_rooms",
 ]

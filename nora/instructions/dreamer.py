@@ -38,6 +38,7 @@ with its own evidence.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,7 +55,9 @@ RELOAD_FAILURES_COUNTER = "nora_dreamer_instruction_reload_failures_total"
 
 DOCTRINE_KIND = "dreamer-doctrine"
 OBJECTIVE_KIND = "objective"
-KINDS = (DOCTRINE_KIND, OBJECTIVE_KIND)
+PRELUDE_KIND = "dreamer-prelude"
+SKILL_KIND = "skill"
+KINDS = (DOCTRINE_KIND, OBJECTIVE_KIND, PRELUDE_KIND, SKILL_KIND)
 
 CHANGE_POLICIES = ("operator-only", "agent-may-edit")
 
@@ -68,6 +71,14 @@ REQUIRED = ("name", "kind", "version", "applies_to", "description", "change_poli
 
 _DOCTRINE_SUBDIR = "doctrine"
 _OBJECTIVES_SUBDIR = "objectives"
+# Their own directories, not more files in `doctrine/`: an image older than
+# these kinds scans `doctrine/` and `objectives/` only, and a second file in
+# `doctrine/` is its startup failure ("expected exactly one Dreamer doctrine
+# file"). `nora/dreamer` is bind-mounted and any pull of the deploy checkout
+# ships it ahead of the image, so a new kind in an old directory would stop
+# the old image at its next restart; a new directory is one it never reads.
+_PRELUDES_SUBDIR = "preludes"
+_SKILLS_SUBDIR = "skills"
 
 # The two tags the assembled system prompt is made of. They are DIFFERENT tags
 # rather than one `<section kind="…">` — which is what `nora.doctrine.loader`
@@ -138,13 +149,53 @@ class InstructionSet:
 
 
 @dataclass(frozen=True)
+class DreamerSkill:
+    """A skill the Cognition session injects after its instruction, per agenda
+    kind (design/cognition-loop/30-cognition.md §4, `AgendaSkills`).
+
+    `instructions` is exactly the text injected (the body, its leading and
+    trailing blank lines dropped) and `sha256` is over exactly that, so the
+    value a session row records in `skill_versions` names what the model read;
+    the skill's `name` is the key it is recorded under and the heading it is
+    injected beneath, so the pair names the whole injected part. The file
+    itself is one of the corpus's files, so each load of it is also kept,
+    content-addressed, in `revision_blob` (`nora.app.revisions`)."""
+
+    name: str
+    instructions: str
+    sha256: str
+    version: int
+
+
+@dataclass(frozen=True)
 class _Corpus:
     doctrine: ParsedDocument
     objectives: dict[str, ParsedDocument]
+    #: Objective name -> the prelude it reads INSTEAD of the shared doctrine.
+    preludes: dict[str, ParsedDocument]
+    skills: dict[str, ParsedDocument]
 
 
 class DreamerInstructions:
-    """`nora/dreamer/` — `doctrine/` (exactly one file) and `objectives/`.
+    """`nora/dreamer/` — `doctrine/` (exactly one file), `objectives/`, and
+    `preludes/` and `skills/`, which only the Cognition session reads so far.
+
+    **A prelude replaces the shared doctrine for the objectives it names**
+    (`applies_to`, objective names). The shared doctrine tells every Dreamer
+    «Nobody is waiting for you, nobody sees this… You look; you do not act»,
+    which is true of a judge and false of the Cognition session, whose verbs
+    write the group's notebook (operator decision D2, step 4). Editing the
+    shared file would change every adaptor's instruction and digest at once;
+    a prelude changes the one adaptor that needs it, and every other adaptor's
+    assembled text stays byte-identical
+    (`tests/unit/test_dreamer_instruction_goldens.py`). The digest still covers
+    the pair, the prelude in the doctrine's place.
+
+    **A skill** is a text the Cognition session injects after its instruction,
+    per agenda kind (`DreamerSkill`, `skill`). It lives here, not in
+    `nora/skills/`, so it hot-reloads on the bind mount with the rest of the
+    Dreamer's text and each load of it is recorded with the corpus
+    (`doctrine_revision`, corpus `dreamer`).
 
     Hot-reloads on mtime through `nora.instructions.reload.DirectoryWatcher`, so
     an operator editing an objective on the bind mount sees it on the next tick
@@ -200,15 +251,15 @@ class DreamerInstructions:
         if cached is not None:
             return cached
         objective = self._objective(corpus, name)
+        # The objective's own prelude when it has one, else the shared doctrine:
+        # the half that says what the runtime is, under the same tag either way.
+        doctrine = corpus.preludes.get(name, corpus.doctrine)
         # The joiner is `nora.domain.provenance.instruction_sha256`'s, which is
         # `nora.doctrine.loader._assemble`'s, which is "\n". Assembling the text
         # one way and hashing it another is how a digest stops naming what was
         # sent, so the text below IS the hashed string.
         parts = (
-            render_part(
-                tag=DOCTRINE_TAG, name=corpus.doctrine.name,
-                body=corpus.doctrine.body,
-            ),
+            render_part(tag=DOCTRINE_TAG, name=doctrine.name, body=doctrine.body),
             render_part(
                 tag=OBJECTIVE_TAG, name=objective.name, body=objective.body,
             ),
@@ -217,7 +268,7 @@ class DreamerInstructions:
             text="\n".join(parts),
             sha256=instruction_sha256(*parts),
             versions={
-                corpus.doctrine.name: _version(corpus.doctrine),
+                doctrine.name: _version(doctrine),
                 objective.name: _version(objective),
             },
         )
@@ -256,6 +307,20 @@ class DreamerInstructions:
     def objective_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._current().objectives))
 
+    def skill(self, name: str) -> DreamerSkill | None:
+        """One skill by name, as the corpus serves it now (hot-reloaded), or
+        None when no skill of that name is loaded: `AgendaSkills` turns a None
+        into the refusal that names it."""
+        doc = self._current().skills.get(name)
+        if doc is None:
+            return None
+        instructions = doc.body.strip("\n")
+        return DreamerSkill(
+            name=doc.name, instructions=instructions,
+            sha256=hashlib.sha256(instructions.encode("utf-8")).hexdigest(),
+            version=_version(doc),
+        )
+
     def versions(self) -> dict[str, int]:
         """The doctrine's version and every objective's, as one mapping.
 
@@ -269,6 +334,8 @@ class DreamerInstructions:
         versions = {corpus.doctrine.name: _version(corpus.doctrine)}
         for name in sorted(corpus.objectives):
             versions[name] = _version(corpus.objectives[name])
+        for doc in (*corpus.preludes.values(), *corpus.skills.values()):
+            versions[doc.name] = _version(doc)
         return versions
 
     def _current(self) -> _Corpus:
@@ -311,7 +378,59 @@ class DreamerInstructions:
                     f"{objectives[parsed.name].path.name}, {path.name}"
                 )
             objectives[parsed.name] = parsed
-        return _Corpus(doctrine=doctrine, objectives=objectives)
+        return _Corpus(
+            doctrine=doctrine, objectives=objectives,
+            preludes=self._preludes(objectives),
+            skills=self._named(_SKILLS_SUBDIR, SKILL_KIND),
+        )
+
+    def _named(self, subdir: str, kind: str) -> dict[str, ParsedDocument]:
+        """Every file of one kind in its own directory, by name; an absent
+        directory is none of them."""
+        out: dict[str, ParsedDocument] = {}
+        for path in sorted((self._dir / subdir).glob("*.md")):
+            parsed = self._parse(path, expected_kind=kind)
+            if parsed is None:
+                continue
+            if parsed.name in out:
+                raise InstructionError(
+                    f"duplicate {kind} name {parsed.name!r}: "
+                    f"{out[parsed.name].path.name}, {path.name}"
+                )
+            out[parsed.name] = parsed
+        return out
+
+    def _preludes(
+        self, objectives: dict[str, ParsedDocument],
+    ) -> dict[str, ParsedDocument]:
+        """Objective name -> its prelude, from each prelude's `applies_to`.
+
+        An objective named by two preludes is refused for the reason a second
+        doctrine file is: which one is served, and so the digest, would depend
+        on a filename. A prelude naming no loaded objective is refused too: a
+        typo there would serve the shared doctrine to the objective it meant,
+        silently, which is the very text the prelude exists to replace."""
+        by_objective: dict[str, ParsedDocument] = {}
+        for prelude in self._named(_PRELUDES_SUBDIR, PRELUDE_KIND).values():
+            applies = prelude.meta.get("applies_to")
+            names = [applies] if isinstance(applies, str) else list(applies or ())
+            for name in names:
+                if name not in objectives:
+                    # Lenient mode skipped a broken objective: it is absent, and
+                    # `for_objective` already fails it loudly by name.
+                    if not self._strict:
+                        continue
+                    raise InstructionError(
+                        f"{prelude.path.name}: applies_to names {name!r}, which is not a "
+                        f"loaded objective"
+                    )
+                if name in by_objective:
+                    raise InstructionError(
+                        f"objective {name!r} has two preludes: "
+                        f"{by_objective[name].path.name}, {prelude.path.name}"
+                    )
+                by_objective[name] = prelude
+        return by_objective
 
     def _parse(self, path: Path, *, expected_kind: str) -> ParsedDocument | None:
         try:

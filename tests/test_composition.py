@@ -2057,10 +2057,15 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert all("room" in names for names in agent._param_names.values())
     assert set(agent._param_names) <= runner._read_only_tools
     # The session's instruction is the Dreamer's objective for it, read from
-    # the bind-mounted corpus, doctrine first.
+    # the bind-mounted corpus, its own prelude first (not the shared doctrine,
+    # step 4 PR-1), and the composed runner injects the Register skill for a
+    # `message` agenda and records it; `time` stays unmapped, so no floor.
     text, sha = runner._doctrine()
-    assert text.startswith('<dreamer_doctrine name="dreamer">')
+    assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
     assert '<dreamer_objective name="cognition">' in text and sha
+    assert "# Skill: cognition-register" in runner._skill_text_for(["message"])
+    assert set(runner._skill_versions_for(["message"])) == {"cognition-register"}
+    assert evaluator._floors_ready is False
     # EVERY unit stays in the evaluator (its would-wakes are still recorded);
     # only units with a home room can start a session: `wedding` names none
     # (#637 review, minor 1).

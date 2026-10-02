@@ -933,7 +933,12 @@ class CognitionSessionRunner:
                 unit=unit, mode="shadow", started_at_ms=now_ms, from_stimulus_id=0,
                 through_stimulus_id=0, situation=situation.as_dict(),
                 agenda={"items": [item.as_dict()], "deferred_stimulus_ids": []},
-                doctrine_sha256=doctrine_sha256, skill_versions={},
+                # What the system prompt below injects, as a wake's session
+                # records it: an eval arm's rows name the skill it ran with.
+                doctrine_sha256=doctrine_sha256, skill_versions=(
+                    {} if self._skill_versions_for is None
+                    else dict(self._skill_versions_for([item.kind]))
+                ),
                 model_id=self._model_id, model_route=self._model_route, wake_id=None,
             ),
             recorded_at_ms=now_ms,
