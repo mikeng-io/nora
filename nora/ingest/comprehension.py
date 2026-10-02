@@ -55,7 +55,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
@@ -163,22 +163,12 @@ class MediaComprehension:
         conversation_id: str,
         person: PersonRef | None,
         timestamp: int,
-        withdrawn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """Queue a read for every attachment worth reading. Returns at once.
 
         Called from the custody stage AFTER the bytes are held, so every
         subject here is one whose handle is already a true claim. Nothing is
         awaited: the caller is the listener's own path.
-
-        `withdrawn` answers «has the message these bytes arrived in been deleted
-        or unsent?» (`IngestPipeline._withdrawn_gate`). It is asked by the job
-        itself, just before the vision call and again just before the Honcho
-        feed, because this is scheduled BEFORE the message's row is written and a
-        delete can land at any point after: a photo unsent within seconds, or a
-        clip still being read when its delete arrives. A withdrawn message's
-        bytes are not read and its reading is not fed to memory. `None` asks
-        nothing (an offline composition).
         """
         for subject in subjects:
             if subject.label == "sticker" and not self._stickers_enabled:
@@ -189,13 +179,11 @@ class MediaComprehension:
             self._spawn(self._run(
                 subject=subject, platform=platform,
                 conversation_id=conversation_id, person=person, timestamp=timestamp,
-                withdrawn=withdrawn,
             ))
 
     async def _run(
         self, *, subject: Subject, platform: str, conversation_id: str,
         person: PersonRef | None, timestamp: int,
-        withdrawn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """Total: never raises, always releases the in-flight slot.
 
@@ -220,7 +208,7 @@ class MediaComprehension:
                 await self._read(
                     subject=subject, platform=platform,
                     conversation_id=conversation_id, person=person,
-                    timestamp=timestamp, withdrawn=withdrawn,
+                    timestamp=timestamp,
                 )
         except Exception:
             log.exception("media comprehension failed for %s", subject.blob.handle)
@@ -231,7 +219,6 @@ class MediaComprehension:
     async def _read(
         self, *, subject: Subject, platform: str, conversation_id: str,
         person: PersonRef | None, timestamp: int,
-        withdrawn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """One job, inside the concurrency slot and under its own trace root."""
         try:
@@ -267,7 +254,7 @@ class MediaComprehension:
                 await self._comprehend(
                     subject=subject, platform=platform,
                     conversation_id=conversation_id, person=person,
-                    timestamp=timestamp, withdrawn=withdrawn,
+                    timestamp=timestamp,
                 )
         except Exception:
             log.exception("media comprehension failed for %s", subject.blob.handle)
@@ -276,7 +263,6 @@ class MediaComprehension:
     async def _comprehend(
         self, *, subject: Subject, platform: str, conversation_id: str,
         person: PersonRef | None, timestamp: int,
-        withdrawn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         blob, label = subject.blob, subject.label
         top = blob.media_type.partition("/")[0].lower()
@@ -302,12 +288,6 @@ class MediaComprehension:
             # counting it would make the ok rate say the describer is working
             # when it might not have run for days.
             self._count(platform, label, "nothing_found", "already_read")
-            return
-
-        # BEFORE the model is paid for it: has the message been deleted?
-        verdict = await self._gate(withdrawn)
-        if verdict != "clear":
-            self._count(platform, label, "nothing_found", verdict)
             return
 
         started = time.perf_counter()
@@ -355,7 +335,7 @@ class MediaComprehension:
                 await self._feed(
                     platform=platform, conversation_id=conversation_id,
                     person=person, timestamp=timestamp, blob=blob, label=label,
-                    title="", description="", content=content, withdrawn=withdrawn,
+                    title="", description="", content=content,
                 )
             return
 
@@ -416,7 +396,6 @@ class MediaComprehension:
             platform=platform, conversation_id=conversation_id, person=person,
             timestamp=timestamp, blob=blob, label=label,
             title=result.title, description=result.text, content=content,
-            withdrawn=withdrawn,
             # The caveat rides to memory too, and last. What a read did not see
             # is not a rendering detail — a recalled description of half a clip
             # is as wrong in a peer card as it is in a transcript.
@@ -456,7 +435,6 @@ class MediaComprehension:
         self, *, platform: str, conversation_id: str, person: PersonRef | None,
         timestamp: int, blob: MediaBlob, label: str,
         title: str, description: str, content: str, caveat: str = "",
-        withdrawn: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         """ALL THREE FIELDS to Honcho, under the sender's own peer, SCREENED.
 
@@ -487,14 +465,6 @@ class MediaComprehension:
         """
         if person is None:
             return
-        # AFTER the read, BEFORE the feed: a clip that took minutes to read can be
-        # unsent while it was being read, and Honcho cannot forget what it is fed
-        # (`design/context-assembly/04-every-occasion.md` §7), so the last place to
-        # stop it is here.
-        verdict = await self._gate(withdrawn)
-        if verdict != "clear":
-            self._count(platform, label, "nothing_found", verdict)
-            return
         marker = f"[{label} {blob.handle}]"
         detail = "\n".join(
             sanitize_description(part)
@@ -523,24 +493,6 @@ class MediaComprehension:
             log.exception("comprehension feed failed; memory is never load-bearing")
             ok = False
         self._metrics.inc("honcho_feed_success" if ok else "honcho_feed_failure")
-
-    @staticmethod
-    async def _gate(withdrawn: Callable[[], Awaitable[bool]] | None) -> str:
-        """`clear`, `withdrawn` (the message was deleted), or `check_failed` (the
-        check could not look). A check that raises is asked ONCE more; if it fails
-        again this pass is skipped and counted under its own reason, never as a
-        delete (a database outage must not read as a run of deletes), and not
-        queued: the bytes are not marked read, so the next sighting of them, or a
-        read on demand, runs the job again. Fail closed for THIS pass (a skipped
-        read is cheaper than a leaked one), never permanently."""
-        if withdrawn is None:
-            return "clear"
-        for attempt in (1, 2):
-            try:
-                return "withdrawn" if await withdrawn() else "clear"
-            except Exception:
-                log.exception("withdrawn check raised (attempt %d of 2)", attempt)
-        return "check_failed"
 
     @staticmethod
     def _already_read(existing: MediaObject, label: str) -> bool:

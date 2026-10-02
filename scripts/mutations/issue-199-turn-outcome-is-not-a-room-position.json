@@ -35,66 +35,10 @@
   "target": "tests/unit/test_debrief_render.py -k the_transcript_says_what_the_delivery_mark_means"
  },
  {
-  "name": "#199 A1 the rollup render goes through the same block, mark and legend",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        name=\"stretch\", body=_transcript(rows, display_name=display_name, tz=tz),\n",
-  "new": "        name=\"stretch\", body=\"\\n\".join(row.body for row in rows),\n",
-  "target": "tests/unit/test_debrief_render.py -k the_rollup_render_marks_and_explains_the_same_way"
- },
- {
-  "name": "#199 A4 her delivered rows are citable evidence for a closed verdict",
-  "file": "nora/language/note_curator.py",
-  "old": "            message_ids=frozenset(\n                row.id for row in (*evidence, *own_sends)\n            ),",
-  "new": "            message_ids=frozenset(row.id for row in evidence),",
-  "target": "tests/unit/test_note_curator.py -k a_reply_she_actually_delivered_can_close_a_note"
- },
- {
-  "name": "#199 A4 only a row the record marks SENT is admitted",
-  "file": "nora/language/note_curator.py",
-  "old": "        if row.is_nora and row.delivery_status is DeliveryStatus.SENT",
-  "new": "        if row.is_nora",
-  "target": "tests/unit/test_note_curator.py -k a_message_of_hers_that_never_reached_the_room_is_not_evidence"
- },
- {
-  "name": "#199 A4 the curator is told what her rows are before it reads them",
-  "file": "nora/language/note_curator.py",
-  "old": "    tail = (\n        \"\\n\" + _render_own_sends(own_sends, now=now) if own_sends else \"\"\n    )",
-  "new": "    tail = \"\"",
-  "target": "tests/unit/test_note_curator.py -k a_stretch_of_only_her_rows_is_still_not_the_group_speaking"
- },
- {
-  "name": "#199 A4 an is_nora citation cannot GROUND a discharge (design 39 D7)",
-  "file": "nora/language/note_curator.py",
-  "old": "        if cited_row is not None and cited_row.is_nora:",
-  "new": "        if False:",
-  "target": "tests/unit/test_note_curator.py -k a_note_closed_on_her_own_row_discharges_nothing"
- },
- {
-  "name": "#199 A4 the discharge lookup can SEE her row, so the refusal is a decision and not a miss",
-  "file": "nora/language/note_curator.py",
-  "old": "        ), (*evidence, *own_sends)",
-  "new": "        ), evidence",
-  "target": "tests/unit/test_note_curator.py -k a_note_closed_on_her_own_row_discharges_nothing"
- },
- {
-  "name": "#199 A4 expiry still runs on the human evidence alone (positive control: her row cannot expire a note)",
-  "file": "nora/language/note_curator.py",
-  "old": "            anchor_covered=_covers(\n                evidence, rows=rows, created_at=note.created_at,",
-  "new": "            anchor_covered=_covers(\n                (*evidence, *own_sends), rows=rows, created_at=note.created_at,",
-  "target": "tests/unit/test_note_curator.py -k her_own_row_can_never_expire_a_note"
- },
- {
   "name": "#199 A1 silent and vetoed carry the scope clause too",
   "file": "nora/engagement/debrief_render.py",
   "old": "    \"silent\": \"you chose to say nothing on this turn — no delivery was \"\n              \"attempted for it (R-5)\" + _THIS_TURN_ONLY,",
   "new": "    \"silent\": \"you chose to say nothing — no delivery was attempted (R-5)\",",
   "target": "tests/unit/test_debrief_render.py -k every_gloss_that_sent_nothing_scopes_itself_to_the_turn"
- },
- {
-  "name": "#199 A4 the own-sends block rides on the NON-EMPTY evidence branch too",
-  "file": "nora/language/note_curator.py",
-  "old": "    return head + ContextBlock(\n        name=\"evidence\", order=order, key=key,\n        body=rendered,\n    ).render() + tail\n",
-  "new": "    return head + ContextBlock(\n        name=\"evidence\", order=order, key=key,\n        body=rendered,\n    ).render()\n",
-  "target": "tests/unit/test_note_curator.py -k her_delivered_row_is_shown_beside_the_group_and_not_instead_of_it"
  }
 ]

@@ -1,12 +1,5 @@
 [
   {
-    "name": "unresolved_citations stops checking the note head's own unsupported_at, so an already-marked row still counts as a fresh failure",
-    "file": "nora/app/assess_dq.py",
-    "old": "            NOTE.c.unsupported_at.is_(None),",
-    "new": "            sa.literal(True),",
-    "target": "tests/infra/test_assess_dq.py::test_unresolved_citations_fails_when_the_hide_never_cascaded tests/infra/test_assess_dq.py::test_unresolved_citations_ok_when_every_citation_resolves tests/infra/test_assess_dq.py::test_unresolved_citations_excludes_a_note_the_cascade_already_marked"
-  },
-  {
     "name": "cross_room_duplicate_events always reports ok, even with an overlapping same-venue pair on record",
     "file": "nora/app/assess_dq.py",
     "old": "    if not pairs:",

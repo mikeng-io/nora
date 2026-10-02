@@ -233,17 +233,6 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": _uuid("event", i), "conversation_id": "g1", "title": f"event {i}",
         "created_by": "p", "status": "proposed", "created_at": T0,
     },
-    # 0086_event_citations: an event's edges are replaced per field, a DELETE the
-    # trigger keeps; the table moved here from APPEND.
-    "citation": lambda i: {
-        "id": 500 + i, "citing_store": "event", "citing_key": _uuid("event", i),
-        "cited_store": "message", "cited_id": str(1000 + i), "part": "start",
-    },
-    # 0088_orphan_delete: a platform delete waiting for its message (a DELETE keeps a version).
-    "orphan_delete": lambda i: {
-        "id": 700 + i, "platform": "discord", "conversation_id": "g1", "handle": f"H{i}",
-        "deleter_ids": [], "event_ts": MS0 + i, "recorded_at": MS0 + i,
-    },
     # design/sandbox-runtime §15.2 (0082): one open session per scope.
     "computer_sessions": lambda i: {
         "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
@@ -295,8 +284,6 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_tie": ("replies_ba", lambda i: 1 + i),
     "rollup_response": ("outcome", lambda i: "responded"),
     "events": ("status", lambda i: "confirmed"),
-    "citation": ("part", lambda i: "place"),
-    "orphan_delete": ("event_ts", lambda i: MS0 + 100 + i),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
@@ -371,7 +358,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "at_ms": MS0 + n,
     },
     "cognition_wake": lambda n: {
-        "unit": "u", "mode": "shadow", "reason": "settled", "from_stimulus_id": 0,
+        "unit": "u", "mode": "live", "reason": "settled", "from_stimulus_id": 0,
         "through_stimulus_id": n, "stimulus_count": 1, "eligible_count": 1, "at_ms": MS0 + n,
     },
     "source_health": lambda n: {
@@ -391,39 +378,27 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     # Step 3 (0077_assess_report): the Assess adaptor's one store.
     "assess_report": lambda n: {
         "kind": "nightly_dq", "run_at_ms": MS0 + n,
-        "results": [{"check": "unresolved_citations", "status": "ok"}],
+        "results": [{"check": "cross_room_duplicate_events", "status": "ok"}],
     },
     # Step 3a (0078_cognition_session): the Cognition adaptor's session and
-    # its dry-run write verbs. `session_id` on the other two is left unset
+    # its write verbs. `session_id` on the other tables is left unset
     # (nullable, no FK — see the migration's own FOREIGN KEYS paragraph):
     # this fixture appends each table's row independently, with no ordering
     # guarantee that a session row for a given id already exists.
     "cognition_session": lambda n: {
-        "unit": "u", "mode": "shadow", "started_at_ms": MS0 + n,
+        "unit": "u", "mode": "live", "started_at_ms": MS0 + n,
         "from_stimulus_id": 0, "through_stimulus_id": n,
         "situation": {"unit": "u"}, "agenda": {"items": []},
     },
     "cognition_session_close": lambda n: {
         "item_index": 0, "kind": "message", "reason": "written",
     },
-    "cognition_would_write": lambda n: {
-        "unit": "u", "tier": "standing", "verb": "standing_revise",
-        "platform": "signal", "conversation_id": "g0",
-        "args": {"where_it_stands": f"pos {n}"}, "outcome": "would_commit",
-        "candidate": {"body": f"pos {n}"},
-    },
-    # Step 3a-ii: the pace verbs and the mirrored, held `remind` family.
-    # `session_id` left unset (null, FK-nullable) for the same reason as
-    # `cognition_session_close`/`cognition_would_write` above.
+    # Step 3a-ii: the pace verbs. `session_id` left unset (null, FK-nullable)
+    # for the same reason as `cognition_session_close` above.
     "cognition_self_wake": lambda n: {
         "unit": "u", "verb": "wake_at", "wake_ref": f"w{n}", "transition": "created",
         "subject_rows": [f"event:{n}"], "why": "check the venue again", "at_ms": MS0 + n,
         "outcome": "recorded",
-    },
-    "cognition_remind_mirror": lambda n: {
-        "unit": "u", "verb": "remind", "reminder_ref": f"r{n}",
-        "platform": "signal", "conversation_id": "g0", "intent": "tell",
-        "subject_rows": [f"note:{n}"], "at_ms": MS0 + n, "outcome": "recorded",
     },
     # Step 3a-ii, the session lifecycle (no foreign keys, see schema.py).
     "cognition_wake_outcome": lambda n: {

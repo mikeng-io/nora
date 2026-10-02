@@ -1,38 +1,10 @@
 [
  {
-  "name": "D3 axis 1 admits exactly the grant's acts (startup + per run)",
-  "file": "nora/agent/dreamer.py",
-  "old": "    escaped = declared - ceiling - allowance.acts",
-  "new": "    escaped = declared - ceiling",
-  "target": "tests/unit/test_dreamer_runtime.py -k a_grant_admits_exactly_the_act_verbs_it_names"
- },
- {
-  "name": "D3 axis 1 allowance reaches the wired adaptors at the root",
-  "file": "nora/agent/dreamer.py",
-  "old": "    escaped = declared - ceiling - allowance.acts",
-  "new": "    escaped = declared - ceiling",
-  "target": "tests/test_composition.py -k every_wired_adaptor_stays_inside_the_read_only_ceiling"
- },
- {
   "name": "D2 axis 2 exempts a home-room grant",
   "file": "nora/agent/dreamer.py",
   "old": "    if adaptor.key_kind == \"unit\" and not allowance.home_room:",
   "new": "    if adaptor.key_kind == \"unit\":",
   "target": "tests/unit/test_dreamer_runtime.py -k a_unit_keyed_adaptor_is_refused_a_room_scoped_tool"
- },
- {
-  "name": "D3 build admits the granted act verb past read_only()",
-  "file": "nora/agent/dreamer.py",
-  "old": "        wanted = frozenset(names) & (self.read_only() | acts)",
-  "new": "        wanted = frozenset(names) & self.read_only()",
-  "target": "tests/unit/test_dreamer_runtime.py -k the_tool_source_never_builds_a_tool_outside_the_ceiling"
- },
- {
-  "name": "D3 the proactive grant names remind",
-  "file": "nora/agent/dreamer.py",
-  "old": "    return AdaptorGrant(acts=frozenset({\"remind\"}), home_room=True)",
-  "new": "    return AdaptorGrant(acts=frozenset(), home_room=True)",
-  "target": "tests/contract/test_dream_adaptor_contract.py::test_the_tool_subset_narrows_the_read_only_ceiling[proactive]"
  },
  {
   "name": "D3 the per-run re-check reads the same grant",
@@ -61,41 +33,6 @@
   "old": "            conversation_id=home.conversation_id if home is not None else key,",
   "new": "            conversation_id=key,",
   "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
- },
- {
-  "name": "D3 kind is stamped from code",
-  "file": "nora/agent/tools.py",
-  "old": "                kind=\"proactive\" if proactive else \"reminder\",",
-  "new": "                kind=\"reminder\",",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_provenance_stamps_the_row_in_code"
- },
- {
-  "name": "D5 the owner is the ai_peer, never a person",
-  "file": "nora/agent/tools.py",
-  "old": "        owner = ai_peer if proactive else tagger.person_id  # type: ignore[union-attr]",
-  "new": "        owner = \"miles\" if proactive else tagger.person_id  # type: ignore[union-attr]",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_provenance_stamps_the_row_in_code"
- },
- {
-  "name": "D3 the text is screened before create",
-  "file": "nora/agent/tools.py",
-  "old": "            if rejected:\n                _record_created(metrics, \"screened\")",
-  "new": "            if False:\n                _record_created(metrics, \"screened\")",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_is_screened_before_it_is_written"
- },
- {
-  "name": "D4 a proactive row never repeats",
-  "file": "nora/agent/tools.py",
-  "old": "        if proactive and repeat != \"none\":",
-  "new": "        if False:",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_never_repeats"
- },
- {
-  "name": "D3 no home room is unavailable, not a row bound to nowhere",
-  "file": "nora/agent/tools.py",
-  "old": "        if proactive and not room.platform:",
-  "new": "        if False:",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_without_a_home_room_is_unavailable"
  },
  {
   "name": "D12 silent is DONE",
@@ -203,46 +140,11 @@
   "target": "tests/contract/test_reminder_store_contract.py::test_history_honours_since_and_limit[fake]"
  },
  {
-  "name": "D6 one wake per note, however many decisions name it",
-  "file": "nora/language/proactive.py",
-  "old": "            if decision.note_id is None or decision.note_id in seen:",
-  "new": "            if decision.note_id is None:",
-  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_it_decided_to_raise"
- },
- {
-  "name": "D2 no home room, no pass",
-  "file": "nora/language/proactive.py",
-  "old": "        if not any(room.home for room in rooms):",
-  "new": "        if False:",
-  "target": "tests/unit/test_proactive_adaptor.py -k a_unit_with_no_home_room_renders_nothing"
- },
- {
-  "name": "D10 (revised #136) the slot is hourly; the check decides what renders",
-  "file": "nora/app/composition.py",
-  "old": "                PROACTIVE_ADAPTOR_NAME: AdaptorSchedule(\n                    min_interval_seconds=3600,",
-  "new": "                PROACTIVE_ADAPTOR_NAME: AdaptorSchedule(\n                    min_interval_seconds=86400,",
-  "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
- },
- {
   "name": "D3 the grant reaches the runtime",
   "file": "nora/app/composition.py",
   "old": "            grants=dream_grants,",
   "new": "            grants={},",
   "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
- },
- {
-  "name": "D5/D11 the heartbeat holds the screen",
-  "file": "nora/app/composition.py",
-  "old": "            proactive=proactive_screen,\n            # A gathering whose evidence was withdrawn",
-  "new": "            proactive=None,\n            # A gathering whose evidence was withdrawn",
-  "target": "tests/test_composition.py -k the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent"
- },
- {
-  "name": "D6 a decline is not a raise and charges no strike",
-  "file": "nora/language/proactive.py",
-  "old": "            if decision.action != \"remind\":\n                continue\n",
-  "new": "",
-  "target": "tests/unit/test_proactive_adaptor.py -k commit_records_one_wake_per_note_it_decided_to_raise"
  },
  {
   "name": "audit: an unreachable note is a wiring gap, not a retirement",
@@ -264,47 +166,5 @@
   "old": "    if result.token not in (SENT, SILENT):",
   "new": "    if False:",
   "target": "tests/integration/test_the_rebuilt_suite_runs.py::test_a_proactive_case_never_grades_on_a_wiring_refusal -k proactive_act"
- },
- {
-  "name": "#136 an unchanged unit renders nothing",
-  "file": "nora/language/proactive.py",
-  "old": "        if reason in (\"unchanged\", \"held_quiet\"):\n            self._inc(\"nora_proactive_pass_total\", reason=reason)\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
-  "new": "        if False:\n            self._inc(\"nora_proactive_pass_total\", reason=reason)\n            self._shown[key] = _Shown({}, {})\n            return \"\"",
-  "target": "tests/unit/test_proactive_adaptor.py -k an_unchanged_unit_renders_nothing_the_same_day"
- },
- {
-  "name": "#136 a background revision is not a change",
-  "file": "nora/language/proactive.py",
-  "old": "            if revision.written_at > last_ms and is_tag_path_revision(revision.established_by):",
-  "new": "            if revision.written_at > last_ms:",
-  "target": "tests/unit/test_proactive_adaptor.py -k a_tag_path_revision_in_a_quiet_room_renders_and_a_background_one_does_not"
- },
- {
-  "name": "#136 a room still talking holds the pass",
-  "file": "nora/language/proactive.py",
-  "old": "            if rows and now_ms - rows[-1].ts < self._quiet_ms:\n                return False",
-  "new": "            if False:\n                return False",
-  "target": "tests/unit/test_proactive_adaptor.py::test_a_change_is_held_while_the_home_room_is_still_talking"
- },
- {
-  "name": "#136 the daily floor waits for the hour",
-  "file": "nora/language/proactive.py",
-  "old": "        if local_now.date() > local_last.date() and local_now.hour >= self._daily_hour:",
-  "new": "        if local_now.date() > local_last.date():",
-  "target": "tests/unit/test_proactive_adaptor.py -k the_daily_floor_renders_once_a_day_after_the_hour_with_nothing_changed"
- },
- {
-  "name": "#136 one wake per note per day",
-  "file": "nora/language/proactive.py",
-  "old": "        if not await self._may_wake_today(key, note_id, now_ms=now_ms):\n            return False\n",
-  "new": "",
-  "target": "tests/unit/test_proactive_adaptor.py -k a_note_is_woken_at_most_once_per_day_across_passes"
- },
- {
-  "name": "#136 the slot is hourly and the clock is wired",
-  "file": "nora/app/composition.py",
-  "old": "                    clock_store=dream_schedule_clock,\n                    records=audit,",
-  "new": "                    clock_store=None,\n                    records=audit,",
-  "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
  }
 ]

@@ -140,8 +140,9 @@ the reply, not because a room's position owns them. They became the source of
 not tell a new question from one already tracked, and it could only create, so
 every rewording was a new note that never got revised. It also wrote notes
 about Nora's own turns (#199's class) into the group's notebook. Notes are
-created by people on a tag and by the `note-candidates` pass, which reads the
-index and revises instead of duplicating (#228); this stage compresses the
+created by people on a tag and by the Cognition session (the `note-candidates`
+pass did, until 2026-10-03, DEC-277), which reads the index and revises
+instead of duplicating (#228); this stage compresses the
 room's position and nothing else.
 
 The third, the per-turn grounding verdict, was a second call from 2026-08-29
@@ -778,8 +779,8 @@ async def run(
         # when the problem is Postgres.
         # `standing_revise` (design/cognition-loop/70-migration.md step 3 row
         # 3b) is the ONE write path for room Standing now: this fold and the
-        # rollup fold (`nora.ingest.stages.standing_event`) both call it
-        # rather than each constructing a `Standing` and calling
+        # rollup fold (`nora.ingest.stages.standing_event`, deleted 2026-10-03)
+        # both called it rather than each constructing a `Standing` and calling
         # `store.write` on its own, so the head has one shape and one
         # validator whichever wrote it.
         #

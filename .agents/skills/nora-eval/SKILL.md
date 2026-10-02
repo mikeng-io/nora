@@ -130,7 +130,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    `standing` refuses to start without it. `--reasons` prints every draw's grader
    reason, PASS included; on `tool_selection` (routing, graded on the tools that
    executed) that is the tool list per draw. The `eval-*` targets in `Makefile`
-   wrap common selections, all but `eval-note-candidates` at one draw. If you name another judge id, probe it
+   wrap common selections, at one draw. If you name another judge id, probe it
    with a real call: the gateway's `/v1/models` listing is not the catalogue
    (2026-09-10).
    Check: n is stated before the run, and chosen for the claim (a rate over four

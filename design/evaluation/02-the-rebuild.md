@@ -1,5 +1,8 @@
 # The rebuild — what goes, what survives, and the order
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. Size
 
 | | lines |

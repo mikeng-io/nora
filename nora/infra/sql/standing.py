@@ -57,7 +57,6 @@ from nora.domain.standing import (
     working_set_from_json,
     working_set_to_json,
 )
-from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
 #: A Standing row's sections (`nora.domain.lineage`; `design/cognition-loop/
@@ -116,13 +115,7 @@ def _standing(row: sa.Row[Any]) -> Standing:
             row.lineage, origin=room_key(row.platform, row.conversation_id),
         ),
         exclude_persons=tuple(row.exclude_persons or ()),
-        # Only the HEAD (`standing.unsupported_at`) carries this;
-        # `standing_revision` has no such column, so `getattr` reads `None`
-        # (supported) for every revision-chain row this mapper also serves.
-        unsupported_at=getattr(row, "unsupported_at", None),
-        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b):
-        # both tables carry them, so this is a plain column read, not a
-        # `getattr` fallback like `unsupported_at` above.
+        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b).
         hold_open=row.hold_open,
         i_owe=row.i_owe,
     )
@@ -222,9 +215,10 @@ class SqlStandingStore:
         ordering on it picks the later fold rather than the luckier uuid.
 
         **Where `fold_count` is not enough, stated rather than left to be
-        found.** It is not strictly increasing: a rollup fold carries the
-        prior's value forward unchanged (`standing_event`), rather than
-        incrementing it. (Before 2026-09-24 a rebuild also reset it to 1
+        found.** It is not strictly increasing: a rollup fold (`standing_event`, deleted
+        2026-10-03, DEC-277) carried the
+        prior's value forward unchanged, rather than incrementing it. (Before 2026-09-24 a rebuild
+        also reset it to 1
         — deleted with the ceiling trigger, design/standing-compact/.) So two
         revisions that share BOTH a millisecond and a `fold_count` are still a
         tie. `id DESC` stays on as the final key purely to make the ordering
@@ -266,7 +260,7 @@ class SqlStandingStore:
         2026-09-25): the head carries no writer-provenance column, because the
         property worth recording is who wrote each POSITION the room held,
         which is what the chain behind the head is for. All three callers —
-        `debrief.py`, `standing_event.py`, and the eval sandbox's
+        `debrief.py`, `standing_event.py` (deleted 2026-10-03), and the eval sandbox's
         `standing_fold.py` (which stamps its seeded prior `'fold'` too, since
         it is reproducing a fold that already happened) — stay on the
         default; nothing about this method's shape or its transaction
@@ -357,13 +351,6 @@ class SqlStandingStore:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
             await conn.execute(revision)
-            # The citation edge table (migration `0075_withdrawal`, step
-            # 2c): the one message id the fold already tracks.
-            await record_message_citation(
-                conn, citing_store="standing",
-                citing_key=f"{standing.platform}:{standing.conversation_id}",
-                message_id=standing.last_folded_row_id,
-            )
 
     async def write_if_unchanged(
         self, *, expected: Standing, standing: Standing

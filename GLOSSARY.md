@@ -131,9 +131,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   `design/cognition-loop/20-observe.md` §3), and never in the reply path. It
   reads what the record already holds and writes derived state back; **it
   never speaks to a room directly** — its one bridge out is `remind`, a row
-  the fire path composes and sends. Today that bridge is the proactive
-  adaptor's `remind` (DEC-162 §3); the Cognition adaptor's `remind` takes
-  over from migration step 4. It hosts
+  the fire path composes and sends. Since 2026-10-03 (DEC-277) that bridge is
+  the Cognition session's `remind`; the proactive adaptor is deleted. It hosts
   **adaptors** (`nora/language/`, wired in the composition root under
   `dream_adaptors`; the settled set is Cognition, Character, Lessons and
   Assess, `design/cognition-loop/00-intent.md` §3 — not "units", which now
@@ -143,13 +142,10 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   runtime's original bundle; `design/cognition-loop/` is what its adaptors
   become.
 
-  **The five live adaptors** are `note-candidates` (hourly, per room, reads
-  the new messages and stages notes), `note-curation` (daily, per unit,
-  retires notes that closed or expired — off by default), `note-merge`
-  (hourly, per unit, `[notes] merge_mode`, off by default; folds two open
-  notes that ask the same question, and in `shadow` only records the folds it
-  would make, in `note_merge_decision`), `culture` (below) and `proactive`
-  (below).
+  **The one live adaptor** is `culture` (below). Since 2026-10-03 (DEC-277)
+  the note-candidates, note-curation, note-merge and proactive adaptors are
+  deleted: the Cognition session is the one background writer of notes,
+  events, Standing and Nora's own reminders.
   Two earlier tiers — the knowledge tier (the "fact tier") and the
   language tier — were deprecated 2026-09-07 and their code deleted; a design
   node numbered 20, 21, 23, 24, 25, 28, 31 or 32 in that bundle describes code
@@ -184,12 +180,12 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   the 12th, venue open», with a **title**, a **description**, a **body** (the arrangement as
   it stands), an **anchor** (the date it is about) and a **closing
   condition**. Scoped to a **unit**, not a room. Written by people on
-  the tag path (`note_create`/`note_update`) and by `note-candidates`; read
+  the tag path (`note_create`/`note_update`) and by the Cognition session; read
   everywhere as the `<notes>` index plus `note_read`. A note has a
   `revisit_at` and **strikes** — how many times it was raised with nobody
-  answering — and the curator retires it when the room settles it or its
-  moment passes. A note that duplicates an older one is folded into it by
-  `note-merge` and retired `retired-merged`; anything that looks it up after
+  answering — and the Cognition session retires it (`note_retire`) when the
+  room settles it or its moment passes. A note that duplicates an older one is
+  folded into it by `note_merge` and retired `retired-merged`; anything that looks it up after
   that follows `replaced_by` to the note it went into. **Nothing Nora says can create, revise or close a note**:
   her own rows are excluded from what note-writing reads. (Not "the note
   tier" — `design/cognition-loop/10-tiers.md` names the tier **Register**;
@@ -233,9 +229,8 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   per room, what she currently thinks, distinct from what was said, plus its
   **working set** (below). It is *derived* state, written by the debrief path
   (`nora/engagement/stages/debrief.py`, which has created no notes since
-  DEC-202) after each tag turn, and by the same fold spawned from ingest once
-  `[standing] fold_batch` new messages have piled up
-  (`nora/ingest/stages/standing_event.py`), stored through `StandingStore`,
+  DEC-202) after each tag turn, and by the Cognition session (DEC-277,
+  2026-10-03; the ingest-spawned event/rollup fold is deleted), stored through `StandingStore`,
   and screened for egress before it is written — not before it is read,
   because a screen a cache hit skips is not a screen. Standing is an
   **input** to a later turn, never an output of the current one. Since
@@ -286,23 +281,27 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   item's bound room; the decide/compose split; the per-room `proactive`
   flag; D11's screening (a row whose subject was retired or revised on the
   tag path is cancelled when claimed); silent recorded as done; the pending
-  ceiling; strikes. Described above as it runs today, until migration step 4.
+  ceiling; strikes. **2026-10-03 (DEC-277): the decide pass is deleted and the
+  Cognition session's `remind` writes the rows; the paragraph above describes
+  the retired adaptor. The act turn (`kind="proactive"` fire) stays.**
 
-- **home room** — the one room of a unit the proactive adaptor stands
-  in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
+- **home room** — the one room of a unit the (retired, DEC-277) proactive
+  adaptor stood in (`home_room = true` in `policy.toml`, 39 D2): its roster is what
   `where_is`, `about`, `ask_memory` and `group_members` resolve through, its
   `location` flag applies, and the rows she writes fire into it. A unit
   has no conversation of its own, so a room-scoped read needs one room, and
   that room is a disclosure decision the operator makes — exactly once per
   unit. No home room, no proactive pass.
 
-- **pass** — one tick of the proactive adaptor. It ticks hourly and RENDERS
+- **pass** — one tick of the proactive adaptor (deleted 2026-10-03, DEC-277;
+  the Cognition session and its `remind` verb replaced it, and the text below
+  describes the adaptor). It ticked hourly and RENDERED
   (calls the model) only on the daily floor (07:00 HK, once) or on a change
   since the last rendered pass — a note created, revised by a person, or
   newly due, or a room's Standing rewritten — once the unit's HOME ROOM
   has been quiet for `[dreamer] quiet_seconds`. Every room, until 2026-09-10:
   a row can only fire into the home room, so the others were a proxy.
-  `nora_proactive_pass_total{reason}` says which.
+  `nora_proactive_pass_total{reason}` said which (metric deleted).
 
 - **decision log** — Nora's own reminder rows (`requester = "nora"`) over
   the last days, with outcomes: `sent`, `silent`, `cancelled_note_moved`,
@@ -336,9 +335,9 @@ no entry.
   patterns or clusters over a window — place, rhythm, tie). Code only, a
   pure function of the Record. Never a model's summary, and never Standing's
   fold of folds: `nora/analytics/rollup.py` keeps its own name for the
-  presence part of this layer, and `[standing] rollup_max_folds` /
-  `nora_standing_rollup_folds_total` name a Standing fold, not this layer,
-  until the ingest Standing fold retires (`10-tiers.md` §6).
+  presence part of this layer. (The Standing rollup fold and its
+  `rollup_max_folds` / `nora_standing_rollup_folds_total` were deleted
+  2026-10-03, DEC-277.)
 - **Register** — the unit's affairs: **note** (unchanged, DEC-213), **memo**
   (a settled thing the unit wants kept, that does not close — distinct from
   `remember`, which is about the speaker alone), **event** (a dated thing

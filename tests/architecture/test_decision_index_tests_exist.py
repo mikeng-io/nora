@@ -317,15 +317,6 @@ _KNOWN_UNRESOLVED: dict[tuple[str, str, str], str] = {
         "instance of this whole gap"
     ),
     (
-        "DEC-130", "tests/contract/test_dream_sink_contract.py",
-        "test_an_empty_propose_still_reaches_the_sink",
-    ): (
-        "renamed to `test_an_empty_propose_still_reaches_the_fake` (52069ae0)"
-        ", whose own docstring explicitly disclaims being 'a port-level "
-        "guarantee' — narrower than what DEC-130's row claims; the sibling "
-        "citation on the same row WAS a clean rename and is repointed"
-    ),
-    (
         "R-73", "tests/unit/test_debrief.py",
         "test_an_identifier_never_reaches_the_collector",
     ): (

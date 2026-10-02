@@ -118,7 +118,7 @@ NORA_BLOCKS_EMPTY = "nora.blocks_empty"
 #:
 #: Eval runs force `[obs.tracing]` off, deliberately: a run's spans would land
 #: in the deployment's own collector beside real ones. The cost of that was
-#: measured on 2026-09-22 — a note-candidates case failed with a truncation
+#: measured on 2026-09-22 — a note-candidates case (since deleted, DEC-277) failed with a truncation
 #: and the call that truncated was invisible, so the only way to ask "cut off
 #: at what?" was to change a ceiling and re-run. Reading the numbers HERE
 #: needs no second Langfuse project, no credential, and cannot pollute
@@ -203,18 +203,6 @@ NORA_ERROR_2 = "nora.error_2"
 NORA_CHANGED = "nora.changed"
 NORA_JUDGED = "nora.judged"
 NORA_CHECKS_FAILED = "nora.checks_failed"
-#: `Outcome.absent_note_clash`/`.remind_matched` — computed in `_drive_draw`
-#: (`_absent_note_clash`, `_remind_match`) once the pass has actually run,
-#: from `Outcome.written_reminders` and the anchor's own title -> id
-#: resolution. `MeetsGrader` needs both to grade `none` as "no NEW reminder
-#: about THIS note" (a `rows` entry states `absent: true`) rather than
-#: "wrote nothing at all", and `remind` as "a written row links the right
-#: note AND lands in its `due_between`" rather than "wrote anything at all"
-#: (issue #158 review, both rounds). `None` on either means the case's
-#: `rows` state neither, so `Outcome.meets`'s blanket rule for that
-#: `expect` applies unchanged.
-NORA_ABSENT_NOTE_CLASH = "nora.absent_note_clash"
-NORA_REMIND_MATCHED = "nora.remind_matched"
 #: The character length of every body a dream pass WROTE (a staged candidate
 #: whose status is `created`: a new note or an appended revision), one per
 #: body, in no particular order. Printed on the grader's reason so `--reasons` carries it per draw:
@@ -1248,173 +1236,6 @@ def _check_the_corpus_assertions(
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
 
-def _resolve_note_titles(
-    case: Case, titles: Sequence[str], note_ids_by_title: Mapping[str, tuple[str, ...]],
-) -> tuple[str, ...]:
-    """`titles`, resolved to exactly one note id each — the id `Note.id`
-    names, not a title match. Shared by the `remind` refusal
-    (`_refuse_a_remind_case_already_pending`) and the `none`/`remind`
-    post-drive checks below (`_absent_note_clash`, `_remind_match`), so a
-    title resolves the SAME way wherever a case names one (issue #158
-    review, both rounds).
-
-    REFUSES (raises) rather than silently passing, on every one of the three
-    ways a title match goes quiet:
-
-    - no titles at all — a caller with nothing to resolve should not have
-      called this, and an empty `resolved` would otherwise intersect
-      nothing and never refuse, which is a no-op for a case that forgot to
-      state its note;
-    - a title that resolves to ZERO notes at this anchor — the case names a
-      note that either never existed here or has since been renamed;
-    - a title that resolves to MORE THAN ONE note — `NOTE` has no unique
-      constraint on `(workspace, title)` (`_notebook`'s own docstring), so a
-      title match would silently pick one and could pick the wrong one.
-    """
-    if not titles:
-        raise ValueError(
-            f"case {case.name!r} states no note to resolve — a check that "
-            "cannot name a note cannot be checked against one, and silently "
-            "passing that check is worse than refusing (issue #158 review)."
-        )
-    resolved = []
-    for title in titles:
-        ids = note_ids_by_title.get(title, ())
-        if len(ids) != 1:
-            raise ValueError(
-                f"case {case.name!r} names note {title!r}, which resolves to "
-                f"{len(ids)} notes at this anchor ({list(ids)}), not exactly "
-                "one — a title match cannot tell a renamed or duplicated "
-                "note apart from the one the case means (issue #158 review)."
-            )
-        resolved.append(ids[0])
-    return tuple(resolved)
-
-
-def _refuse_a_remind_case_already_pending(
-    case: Case, *, note_ids_by_title: Mapping[str, tuple[str, ...]],
-    pending_note_ids: frozenset[str],
-) -> None:
-    """A `remind` case must have no reminder already pending on the note it
-    expects a fresh one about, AT ITS OWN ANCHOR INSTANT.
-
-    Whether a reminder is pending is dynamic, DB-held state
-    (`design/evaluation/11-the-sandbox-rebuild.md` §1.3), not anything a
-    corpus declares — so this cannot be a static pytest against the YAML.
-    `pending_note_ids` is `Sandboxed.pending_reminder_note_ids`, read off the
-    room the same way `sandbox_from_snapshot` reads everything else, at the
-    case's own anchor and before any model call — `_drive_draw` calls this
-    right after seeding and before `port.drive`, and it REFUSES the case
-    (raises) rather than letting it run.
-
-    Compares BY NOTE ID (`_resolve_note_titles`), not by title: a title
-    match is silently wrong twice over — a renamed note is missed, and a
-    duplicate title collapses two different notes into one (issue #158
-    review, `nora.subject.sandbox._note_ids_by_title`'s own docstring).
-
-    Measured live, issue #158: a case anchored where its own expected
-    reminder is ALREADY pending does not measure the decision it is named
-    for. The decide turn's own `<decisions>` block shows the pending row, a
-    turn that declines to double-book it ("one reminder per thing") is
-    correct to do so, and a case expecting `remind` there measures the
-    double-booking guard instead of itself.
-    """
-    md = case.metadata or {}
-    if md.get("expect") != "remind":
-        return
-    titles = [str(row["note"]) for row in md.get("rows") or () if row.get("note")]
-    resolved_ids = _resolve_note_titles(case, titles, note_ids_by_title)
-    clash = sorted(set(resolved_ids) & pending_note_ids)
-    if clash:
-        raise ValueError(
-            f"case {case.name!r} expects a fresh `remind` about note id(s) "
-            f"{clash}, but its own anchor instant already has a reminder "
-            "PENDING on that note — the decide turn will correctly decline "
-            "('one reminder per thing'), so this case would measure the "
-            "double-booking guard, not itself. Re-anchor it before the "
-            "pending row was created, or change its expectation to `none` "
-            "(design/evaluation/11-the-sandbox-rebuild.md §1.3, issue #158)."
-        )
-
-
-def _absent_note_clash(
-    case: Case, outcome: Any, note_ids_by_title: Mapping[str, tuple[str, ...]],
-) -> bool | None:
-    """Whether this pass's own writes clash with a `none` case's
-    `rows: [{note: ..., absent: true}]` declaration.
-
-    `None` when the case declares no `absent` row — `Outcome.meets`'s
-    blanket `none` rule (nothing written at all) applies unchanged for
-    every corpus but this one's guard cases.
-
-    A CLASH is either of two shapes (issue #158 review round 2):
-
-    - a NEW reminder linked to the absent-declared note's own id (resolved
-      the same way the refusal resolves it, `_resolve_note_titles`);
-    - a NEW reminder linked to NO note at all. `remind` lets `note` be
-      omitted (`nora/agent/tools.py` ~:8898, ~:8959), so an UNLINKED row can
-      restate the exact matter under test without naming it — a first cut
-      here only ever looked at linked rows (`written_reminders` used to skip
-      unlinked ones entirely, `nora.subject.dreaming`), so a second,
-      unlinked reminder about the same thing passed the guard clean.
-
-    A write linked to a DIFFERENT, resolvable note is NOT a clash — that is
-    the whole reason this exists: a unit can legitimately owe a reminder
-    about something else the same morning.
-    """
-    md = case.metadata or {}
-    titles = [str(r["note"]) for r in md.get("rows") or () if r.get("absent") and r.get("note")]
-    if not titles:
-        return None
-    if any(note_id is None for note_id, _due_ms in outcome.written_reminders):
-        return True
-    absent_ids = set(_resolve_note_titles(case, titles, note_ids_by_title))
-    written_ids = {note_id for note_id, _due_ms in outcome.written_reminders if note_id}
-    return bool(absent_ids & written_ids)
-
-
-def _remind_match(
-    case: Case, outcome: Any, note_ids_by_title: Mapping[str, tuple[str, ...]],
-) -> bool | None:
-    """Whether at least one of this pass's own new reminders satisfies EVERY
-    `rows` entry that states a `due_between`.
-
-    `None` when no row states one — `Outcome.meets`'s blanket `remind` rule
-    (`written > 0`) applies unchanged, so a corpus that never states a
-    per-row window (none does today) is not silently held to a rule it
-    never opted into.
-
-    A row is satisfied by a written reminder that is BOTH linked to THAT
-    row's own note id (resolved the same way the refusal resolves it) AND
-    due inside `due_between`. `written > 0` alone — the pre-existing rule —
-    passes on any row, about any note, at any time; the corpus header
-    (`evals/corpora/proactive_decide.yaml` ~:19-20) has always claimed to
-    grade the note and the window, and this is what actually does it (issue
-    #158 review round 2).
-
-    A `remind` case whose note does not resolve to exactly one id never
-    reaches here: `_refuse_a_remind_case_already_pending` already refused it
-    before any model call.
-    """
-    md = case.metadata or {}
-    windowed = [r for r in md.get("rows") or () if r.get("due_between")]
-    if not windowed:
-        return None
-    for row in windowed:
-        title = str(row.get("note") or "")
-        lo_s, hi_s = row["due_between"]
-        lo_ms = int(datetime.fromisoformat(lo_s).timestamp() * 1000)
-        hi_ms = int(datetime.fromisoformat(hi_s).timestamp() * 1000)
-        wanted_id = _resolve_note_titles(case, [title], note_ids_by_title)[0] if title else None
-        matched = any(
-            note_id == wanted_id and lo_ms <= due_ms <= hi_ms
-            for note_id, due_ms in outcome.written_reminders
-        )
-        if not matched:
-            return False
-    return True
-
-
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
@@ -1560,19 +1381,6 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
             await seed_documents(subject, case.name, md.get("documents") or ())
-            # Issue #158: a `remind` case must have no reminder already
-            # pending on its own expected note at this instant, compared BY
-            # NOTE ID. `seeded.pending_reminder_note_ids`/`.note_ids_by_title`
-            # are read off the same snapshot `sandbox_from_snapshot` just
-            # seeded from — no second query — and this runs BEFORE
-            # `port.drive` below, so a clash (or an unresolvable note) is
-            # refused rather than spending a model call on measuring the
-            # double-booking guard, or nothing at all, instead of the case
-            # itself.
-            _refuse_a_remind_case_already_pending(
-                case, note_ids_by_title=seeded.note_ids_by_title,
-                pending_note_ids=seeded.pending_reminder_note_ids,
-            )
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
@@ -1603,22 +1411,6 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
-            # Issue #158 review round 2: `none`'s `absent: true` rows and
-            # `remind`'s `due_between` rows both need the SAME note-id
-            # resolution the refusal above used, plus what THIS pass wrote —
-            # only known once `port.drive` has actually run. Skipped for an
-            # outcome that already carries an error, matching
-            # `_check_the_corpus_assertions`'s own rule.
-            if outcome.error is None:
-                outcome = dataclasses.replace(
-                    outcome,
-                    absent_note_clash=_absent_note_clash(
-                        case, outcome, seeded.note_ids_by_title,
-                    ),
-                    remind_matched=_remind_match(
-                        case, outcome, seeded.note_ids_by_title,
-                    ),
-                )
 
             judged_why = ""
             # The standing fold (`design/standing-compact/20-verification.md`
@@ -1720,8 +1512,6 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     EnvironmentState(name=NORA_BLOCKS_EMPTY, state=blocks_empty),
                     *(EnvironmentState(name=k, state=v) for k, v in spend.items()),
                     EnvironmentState(name=NORA_WRITTEN, state=outcome.written),
-                    EnvironmentState(name=NORA_ABSENT_NOTE_CLASH, state=outcome.absent_note_clash),
-                    EnvironmentState(name=NORA_REMIND_MATCHED, state=outcome.remind_matched),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=len(outcome.changed)),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=len(outcome.staged)),
                     EnvironmentState(name=NORA_CHANGED, state=outcome.changed),
@@ -1779,7 +1569,8 @@ def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
         person=str(md.get("person") or "miles_novak"),
         mention=bool(md.get("mention", False)),
         # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
-        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs.
+        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs (only
+        # `culture` is left; the default names a deleted adaptor, DEC-277).
         category=str(md.get("category") or ""),
         # `NoraCase.metadata`'s own docstring is "whatever else the corpus
         # recorded, carried verbatim" — `proactive_act` reads its `row` off
@@ -1827,8 +1618,6 @@ def nora_task(spec: Spec):
                     EnvironmentState(name=NORA_CACHED_TOKENS, state=None),
                     EnvironmentState(name=NORA_STOPS, state=None),
                     EnvironmentState(name=NORA_WRITTEN, state=None),
-                    EnvironmentState(name=NORA_ABSENT_NOTE_CLASH, state=None),
-                    EnvironmentState(name=NORA_REMIND_MATCHED, state=None),
                     EnvironmentState(name=NORA_CHANGED_COUNT, state=None),
                     EnvironmentState(name=NORA_STAGED_COUNT, state=None),
                     EnvironmentState(name=NORA_WRITTEN_2, state=None),
@@ -1986,7 +1775,7 @@ class IdempotenceGrader(Evaluator):
     **Scoped to notes/staging, not room speech** (review, 2026-09-19): this
     reads `written`/`changed`/`staged` only. `dreamer()`
     (`evals/rebuilt/entry.py`) never populates `Outcome.said` at all — the
-    decide pass writes notes and reminders, not room messages — so there is
+    (deleted) decide pass wrote notes and reminders, not room messages — so there is
     no `said` signal here to check, and "writes nothing new" means exactly
     the notes/staging surface, not a broader claim about speech.
     """
@@ -2145,8 +1934,6 @@ class MeetsGrader(Evaluator):
             said=said,
             changed=tuple(state_of(data, NORA_CHANGED) or ()),
             written=state_of(data, NORA_WRITTEN) or 0,
-            absent_note_clash=state_of(data, NORA_ABSENT_NOTE_CLASH),
-            remind_matched=state_of(data, NORA_REMIND_MATCHED),
             checks_failed=tuple(state_of(data, NORA_CHECKS_FAILED) or ()),
             judged=state_of(data, NORA_JUDGED) or "",
             position=state_of(data, NORA_POSITION),

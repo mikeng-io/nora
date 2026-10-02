@@ -28,7 +28,7 @@ class InMemoryStandingStore:
     ) -> Standing | None:
         return self._rows.get((platform, conversation_id))
 
-    async def write(self, *, standing: Standing) -> None:
+    async def write(self, *, standing: Standing, source: str = "fold") -> None:
         """Mirrors `standing_body_fits_the_ceiling_check`, and the check is NOT
         redundant with `Standing.__post_init__`.
 

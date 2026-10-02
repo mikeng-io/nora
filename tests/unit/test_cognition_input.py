@@ -45,7 +45,7 @@ async def test_the_clock_line_counts_from_when_the_last_session_ended_not_the_la
     assert "This is your first look at this group." in rig.agent.prompts[0]
     assert "You last looked at this group 2 h ago." in rig.agent.prompts[1]
     assert "just now" not in rig.agent.prompts[1].splitlines()[0]
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert view.last_session is not None and view.last_session.ended_at_ms is not None
     assert view.last_session.ended_at_ms >= first_ended
 
@@ -96,7 +96,7 @@ async def test_a_malformed_rollup_is_skipped_recorded_and_consumed_and_a_readabl
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 1
     assert rig.ends() == ["closed"]
     assert 2 not in {sid for sid, *_ in rig.carried()}          # consumed: no carry, no wedge
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert 2 not in {x.id for x in view.pending}
 
 
@@ -119,7 +119,7 @@ async def test_a_readable_rollup_cut_by_max_items_is_deferred_and_carried_not_sk
     assert session.agenda["skipped_stimulus_ids"] == []
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 0
     assert (2, 1, "carried", False) in rig.carried()             # returned to the next agenda
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert 2 in {x.id for x in view.pending}          # not consumed
 
 
@@ -142,7 +142,7 @@ async def test_a_rollup_the_roster_does_not_know_yet_is_retained_and_returns_onc
     for _ in range(3):
         rig.clock.advance(6 * HOUR)
         assert await rig.tick() == []
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert [(x.id, x.waits) for x in view.pending] == [(1, True)]
     # The roster learns her; the next wake for any reason shows it as an item.
     KNOWN.add("ghost")
@@ -185,7 +185,7 @@ async def test_a_wake_whose_only_rollups_are_unreadable_makes_no_model_call():
     await rig.settle()
     assert rig.agent.calls == 0
     assert rig.ends() == ["closed"] and "unreadable" in rig.detail()
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert view.pending == ()                                    # skipped, not wedged
 
 
@@ -267,7 +267,7 @@ async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left
     await rig.settle()
     await _run(rig, ticks=2, chatty=False)          # the tick that reads five agenda failures
     assert rig.stimuli.retracted == {rolled}        # the rollup it claimed, and nothing else
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert [s.id for s in view.pending] == [message]
 
 

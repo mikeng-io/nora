@@ -11,6 +11,9 @@ edges:
 
 # The Registry
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## The shape, and why it is prefill's shape rather than a new one
 
 `prefill._BLOCKS` already is the thing this bundle wants, for one occasion:

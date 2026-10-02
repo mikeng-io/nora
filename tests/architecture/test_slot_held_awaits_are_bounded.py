@@ -50,7 +50,6 @@ import typing
 from typing import NamedTuple
 
 from nora.agent import reasoning_strip
-from nora.ingest.stages import standing_event
 
 #: Not a store call. `client` is the MODEL, bounded by the `wait_for` around
 #: the fold itself and covered separately in the timeout sum; `slots` is the
@@ -81,18 +80,10 @@ class _Module(NamedTuple):
 #: which is the honest statement this file can make, unlike the repo-wide
 #: claim its first version made and round four falsified.
 #:
-#: `_check` is in `standing_event`'s set because it runs before the slot is
-#: taken but on the same listener path, and its own reads are already bounded —
-#: a regression there is the same shape.
-#:
 #: `flush` is `reasoning_strip`'s whole surface that touches a store, and every
 #: one of its five callers awaits it with the slot held: `invoke.run`,
 #: `FirePath._invoke`, and three exits of `DreamerRuntime._sample`.
 _MODULES: tuple[_Module, ...] = (
-    _Module(
-        "standing_event", standing_event,
-        frozenset({"_event_fold", "_fold_batch", "_check"}), "params",
-    ),
     _Module(
         "reasoning_strip", reasoning_strip, frozenset({"flush"}), "init",
     ),
@@ -338,19 +329,14 @@ def test_the_validator_can_see_the_calls_it_is_checking() -> None:
     rewritten twice: a walk that found nothing would report «no unbounded
     awaits» with total confidence.
 
-    The media join is named specifically because it is the call this file was
-    written for, and because it is the one whose absence would look like a
-    pass."""
+    The registry holds one module since DEC-277 deleted the standing-event
+    stage and the debrief's media join left this path, so the control names
+    the one await that remains: the reasoning-strip row write, whose absence
+    would look like a pass."""
     found = _slot_held_awaits()
 
-    assert len(found) >= 5, f"the walk went thin — it found only {found}"
+    assert len(found) >= 1, f"the walk went thin — it found only {found}"
     names = {name for name, _ in found}
-    assert "media_join.enrich" in names, (
-        "the media join is no longer awaited on the fold path, or the walk "
-        "cannot see it"
-    )
-    assert "record_store.since_including_nora" in names
-    assert "store.read" in names
     assert "store.record_observation" in names, (
         "the reasoning-strip row write is no longer awaited inside `flush`, or "
         "the `init`-derived receiver walk cannot see it — which is exactly the "

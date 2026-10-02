@@ -270,7 +270,8 @@ class ProactiveHeader:
     turn's prompt also carries the note's title, the `<notes>` index, and the
     intent her own earlier pass wrote. A turn that fired on all of that then
     explained the mechanism to the room («the note was still open and the
-    deadline was near») and read a curator-written summary back at the person it
+    deadline was near») and read a curator-written summary (the note curator, deleted 2026-10-03)
+    back at the person it
     was written about. One named forbidden sentence generalises to none; the
     clause now names the note beside the reminder, rules out the note's own
     words, and says what the whole of it is FOR — the reason she is here, never

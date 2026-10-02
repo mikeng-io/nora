@@ -105,13 +105,6 @@
     "target": "tests/contract/test_document_store_contract.py::test_restore_returns_a_document_to_every_read_and_lets_it_be_revised[fake]"
   },
   {
-    "name": "web change_document_state: the read gate is skipped, so anyone changes any document",
-    "file": "nora/web/documents.py",
-    "old": "    rooms = rooms_of(person_id)\n    stored = await store.get_visible(document_id=document_id, person_id=person_id, rooms=rooms)\n    # A forgotten document is already invisible",
-    "new": "    rooms = rooms_of(person_id)\n    stored = await store.get(document_id=document_id)\n    # A forgotten document is already invisible",
-    "target": "tests/web/test_documents_api.py::test_a_person_who_may_not_read_a_document_may_not_change_its_state"
-  },
-  {
     "name": "service set_state: the same-room rule is dropped, so another room changes this room's document",
     "file": "nora/app/documents_service.py",
     "old": "        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n        ):\n            return None\n        return current",

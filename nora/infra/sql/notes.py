@@ -20,8 +20,8 @@ breaks if any of them is reversed:
 
 2. **`append_revision` is a compare-and-swap, expressed as the `UPDATE`'s own
    `WHERE`** — never a read, a comparison in Python, and then a write. Between
-   those two statements is the window the CAS exists to close: the curator
-   merging the note mid-turn, or a parallel turn in the other room of the same
+   those two statements is the window the CAS exists to close: a background
+   merge or retire of the note mid-turn, or a parallel turn in the other room of the same
    unit. `UPDATE note SET head_revision_id = :new WHERE id = :id AND
    unit = :ws AND head_revision_id = :parent` is atomic in Postgres, so a
    `rowcount` of 0 IS the refusal, decided by the database rather than by a
@@ -81,9 +81,9 @@ a claim, not a plan:
   nothing here reads a null result as evidence of absence because of it.
 
 **Entity resolution and merge are gone from this store (2026-09-08).** From
-issue #100 until then, `create`/`propose` resolved `anchor_entity_ids`
+issue #100 until then, `create` resolved `anchor_entity_ids`
 against the shared `fact_entity` registry and wrote `note_entity` rows, and
-`merge_groups`/`merge` were the curator's cross-note read and write over the
+`merge_groups`/`merge` were the (long-deleted) curator's cross-note read and write over the
 resolved anchor. Once the knowledge tier was deleted (issue #115) nothing
 minted an entity: the registry held eight stale rows and no writer, so
 resolution could link a note to nothing new and merge — which refused any
@@ -96,14 +96,12 @@ tables with no reader, per the deletion rule that drops schema separately.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql as pg
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -111,25 +109,16 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.lineage import Lineage, note_revision_lineage, room_key
 from nora.domain.note_body import cited_ids_in, rollup_keys_in
 from nora.domain.notes import (
-    CANDIDATE_CREATED,
-    CANDIDATE_PENDING,
-    CANDIDATE_REFUSED,
     MERGE_FORWARD_HOPS,
     Note,
-    NoteCreateCandidate,
-    NoteCreationProposal,
-    NoteMergeDecision,
     NoteRevision,
-    NoteRevisionProposal,
     NoteSupersedeReason,
     RetiredNoteError,
     StaleNoteHeadError,
-    WakeOutcome,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
-from nora.domain.ports import Proposal
 from nora.domain.reminders import (
     CANCELLED_DUPLICATE_NOTE,
     CANCELLED_NOTE_MOVED,
@@ -137,13 +126,10 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
-from nora.infra.sql.citation import lock_cited_messages, record_citations
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
-    NOTE_CANDIDATE,
-    NOTE_MERGE_DECISION,
     NOTE_REVISION,
     REMINDERS,
 )
@@ -172,7 +158,6 @@ def _row_to_note(r: Row[Any]) -> Note:
         reminder_id=r.reminder_id,
         lineage=Lineage.from_json(r.lineage, origin=r.established_in),
         exclude_persons=tuple(r.exclude_persons or ()),
-        unsupported_at=getattr(r, "unsupported_at", None),
     )
 
 
@@ -257,16 +242,6 @@ async def _head_lineage(
 def _newest(*values: int | None) -> int | None:
     present = [v for v in values if v is not None]
     return max(present) if present else None
-
-
-def _row_to_create_candidate(r: Row[Any]) -> NoteCreateCandidate:
-    return NoteCreateCandidate(
-        id=r.id, unit=r.unit, title=r.title, description=r.description,
-        body=r.body, closing_condition=r.closing_condition,
-        anchor_date=r.anchor_date, anchor_entity_ids=tuple(r.anchor_entity_ids),
-        message_ids=tuple(r.message_ids), status=r.status, attempts=r.attempts,
-        first_seen_at=r.first_seen_at, last_seen_at=r.last_seen_at,
-    )
 
 
 def _row_to_revision(r: Row[Any]) -> NoteRevision:
@@ -406,8 +381,8 @@ def _require_row_changed(result: Any, *, what: str) -> None:
 
 class SqlNoteStore:
     """`__init__(self, engine: AsyncEngine)` and nothing else BY DEFAULT. No
-    config, no clock, no metrics. `now_ms` arrives on `create`/`append_revision`/
-    `record_miss`, not on this constructor, so a contract-suite fixture in
+    config, no clock, no metrics. `now_ms` arrives on `create`/`append_revision`, not on this
+    constructor, so a contract-suite fixture in
     another session can build this class from a bare `AsyncEngine` alone and
     never has to guess what else it needs.
 
@@ -431,9 +406,9 @@ class SqlNoteStore:
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
         # Passed through to the FIRST revision, and `None` from the tag path.
-        # `note_create` has no `Proposal` and no instruction digest; the
-        # debrief, arriving through `DreamSink.propose`, has both. See
-        # `0036_note_revision_provenance` for why the columns are nullable.
+        # `note_create` has no instruction digest; the Cognition session's
+        # writes may. See `0036_note_revision_provenance` for why the columns
+        # are nullable.
         instruction_sha256: str | None = None,
         model: str | None = None,
     ) -> Note:
@@ -467,58 +442,16 @@ class SqlNoteStore:
         return note
 
     @staticmethod
-    def _new_note(
-        *, unit: str, payload: NoteCreationProposal, proposal: Proposal,
-        now_ms: int,
-    ) -> tuple[Note, NoteRevision]:
-        """A `NoteCreationProposal` as the two domain objects it becomes.
-
-        Built BEFORE any insert, like `create` above and for the same reason:
-        `__post_init__`'s refusals raise here rather than surfacing as an
-        `IntegrityError` from inside a batch, which is what makes the two
-        implementations refuse identically.
-        """
-        note_id = str(uuid4())
-        revision_id = str(uuid4())
-        return (
-            Note(
-                id=note_id, unit=unit, title=payload.title,
-                description=payload.description,
-                uncertainty=payload.uncertainty,
-                closing_condition=payload.closing_condition,
-                established_in=payload.established_in, created_at=now_ms,
-                head_revision_id=revision_id, anchor_date=payload.anchor_date,
-                anchor_entity_ids=tuple(payload.anchor_entity_ids),
-                # §5.3 resolution (c): a gate-created note's first wake is a
-                # normal scheduled one when the create path supplied a
-                # `revisit_at` (`nora.language.note_candidates`); `None` for
-                # the tag path's own creates, which do not go through this
-                # proposal type at all.
-                revisit_at=payload.revisit_at,
-            ),
-            NoteRevision(
-                id=revision_id, note_id=note_id, body=payload.body,
-                parent_revision_id=None, written_at=now_ms,
-                established_by=proposal.established_by,
-                instruction_sha256=proposal.instruction_sha256,
-                model=proposal.model,
-            ),
-        )
-
-    @staticmethod
     async def _create_on_conn(
         conn: AsyncConnection, *, note: Note, revision: NoteRevision,
     ) -> None:
         """The two inserts, on a connection the CALLER owns — the `create`
         sibling of `_append_on_conn`, extracted for the same reason: which
-        transaction a write belongs to is the caller's decision, and `propose`
-        needs its whole batch in one.
+        transaction a write belongs to is the caller's decision.
 
         Lineage and `as_of` (migration `0073_lineage`) are computed here from
         the body's citations: the first revision rests on the room the note
         was raised in and on every room it cites."""
-        # The cited messages first (`citation.lock_cited_messages`): one lock order.
-        await lock_cited_messages(conn, cited_ids_in(revision.body))
         lineage, cited_at = await _revision_lineage(
             conn, body=revision.body, origin=note.established_in, first=True,
             unit=note.unit,
@@ -537,9 +470,7 @@ class SqlNoteStore:
             established_in=note.established_in, created_at=note.created_at,
             head_revision_id=note.head_revision_id,
             # `create()`'s own `Note` never sets this (`revisit_at` defaults
-            # `None`); `propose()`'s `_new_note` does, for a gate-created note
-            # (§5.3 resolution (c)). Written unconditionally rather than only
-            # when not-None, so both callers share ONE insert.
+            # `None`). Written unconditionally rather than only when not-None.
             revisit_at=note.revisit_at,
             **derived,
         ))
@@ -551,13 +482,6 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
-        # The citation edge table (migration `0075_withdrawal`, step 2c):
-        # keyed to the NOTE, not the revision — only the head renders, and
-        # the withdrawal cascade marks the head.
-        await record_citations(
-            conn, citing_store="note", citing_key=str(note.id), body=revision.body,
-            now_ms=revision.written_at,
-        )
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
@@ -567,7 +491,7 @@ class SqlNoteStore:
 
         **Uncapped on purpose** (§5.1): there is no `limit`. A note silently
         missing from the index is invisible to her, and invisible is
-        indistinguishable from absent. The pressure valve is the curator
+        indistinguishable from absent. The pressure valve is `note_retire`
         retiring closed notes, not a top-N here.
 
         Ordered oldest-first, and deterministic (`created_at`, then `id` to
@@ -582,13 +506,6 @@ class SqlNoteStore:
             .where(
                 NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
-                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): this IS
-                # the injected index's read, so an unsupported note stops
-                # rendering here — the one place that decides what a tag
-                # sees, per `note_read`'s own resolution through `_resolve`
-                # (`nora.agent.tools`), which only ever sees candidates this
-                # method returned.
-                NOTE.c.unsupported_at.is_(None),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
@@ -736,19 +653,13 @@ class SqlNoteStore:
     ) -> None:
         """The CAS and the insert, on a connection the CALLER owns.
 
-        Extracted so `propose` can run a whole batch in ONE transaction. It is a
-        static method taking `conn` rather than a method opening its own,
-        because "which transaction is this in" must be the caller's decision:
-        `append_revision` is one write and owns its own; `propose` is a batch
-        whose partial application is worse than its failure, and it cannot get
-        that if each write commits independently.
+        A static method taking `conn` rather than a method opening its own,
+        because "which transaction is this in" must be the caller's decision
+        (`merge_into` writes two revisions in one).
         """
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
-        # The cited messages first, BEFORE the note row below is locked
-        # (`citation.lock_cited_messages`): one lock order, message then note.
-        await lock_cited_messages(conn, cited_ids_in(revision.body))
         # LINEAGE (migration `0073_lineage`): this revision rests on the rooms
         # its body cites and, from the tag path, the room it was written in;
         # the note rests on the union. Read under the row lock the CAS below
@@ -824,10 +735,6 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
-        await record_citations(
-            conn, citing_store="note", citing_key=str(note_id), body=revision.body,
-            now_ms=revision.written_at,
-        )
 
     async def search(
         self, *, unit: str, query: str, limit: int,
@@ -861,10 +768,6 @@ class SqlNoteStore:
             .where(
                 NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
-                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): `note_
-                # search` is a tool result, so an unsupported note must not
-                # be a hit either.
-                NOTE.c.unsupported_at.is_(None),
                 NOTE_REVISION.c.body.icontains(query, autoescape=True),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
@@ -917,227 +820,15 @@ class SqlNoteStore:
             )).all()
         return tuple(_row_to_revision(r) for r in rows)
 
-    async def record_wake(
-        self, *, unit: str, note_id: str, next_revisit_at: int,
-        now_ms: int,
-    ) -> WakeOutcome | None:
-        """Record that the revisitor woke on this note. Returns what happened,
-        or `None` if the note is not reachable from `unit`.
-
-        `revisit_at`, `strikes` and `last_wake_revision_id` have existed since
-        `0026` with a CHECK and **no writer anywhere**, so the revisitor's
-        `revisit_at` trigger was structurally unreachable in production: every
-        note that reached it was due by ANCHOR DATE alone, and an undated note
-        was never revisited at all. This is that writer.
-
-        **The comparison IS the decision, so it happens HERE and not in the
-        caller — and that is why there is no CAS.** A compare-and-swap would
-        have the caller assert a head it read earlier, which is exactly the
-        stale judgement this is meant to avoid: between the revisitor's read
-        and its write, the tag path may have revised the note, and that
-        revision is not an obstacle to record — it is the PROGRESS the reset
-        exists to detect. So this reads the head inside the transaction and
-        branches on it. `propose` takes a parent because it WRITES
-        content and must not overwrite; this writes only bookkeeping about a
-        head it just read.
-
-        §9.6's two arms, and the qualifier that makes the breaker real:
-
-        - **THE TAG PATH WROTE SOMETHING SINCE THE LAST WAKE** — `strikes = 0`,
-          `last_wake_revision_id = head`, and `revisit_at` advances. Somebody
-          engaged with the uncertainty, which is progress. It is the SPAN since
-          the watermark, not the author of the current head: a room revision
-          followed by a background one is progress, and asking who wrote the
-          head answered «no» to it.
-        - **anything else** — `strikes += 1` and **`revisit_at` is NOT
-          advanced**, so the note stays due and the count climbs toward the
-          ceiling the caller enforces.
-
-        The qualifier is not decoration. If a background pass's own writes
-        counted as movement, a note the revisitor keeps rewriting would reset
-        its own strike forever — a self-referential reset is not a reset, and
-        the spec says the mechanism "reads correct without the qualifier and
-        loops forever with it missing".
-
-        **Not on `DreamSink`.** That port has two verbs and deliberately no
-        third; this is a store method the curator calls directly — a tier's
-        own bookkeeping verb belongs on its store, not on the port.
-        """
-        if not _is_uuid(note_id):
-            return None
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(
-                sa.select(
-                    NOTE.c.head_revision_id,
-                    NOTE.c.strikes,
-                    NOTE.c.last_wake_revision_id,
-                )
-                .where(
-                    NOTE.c.id == note_id,
-                    NOTE.c.unit == unit,
-                    NOTE.c.retired_at.is_(None),
-                )
-                # The row is write-locked for the rest of the transaction, so
-                # the branch below cannot be decided against a head another
-                # writer moves before the UPDATE lands.
-                .with_for_update()
-            )).one_or_none()
-            if row is None:
-                return None
-
-            # THE SPAN, NOT THE HEAD. This joined `note_revision` on the head
-            # and asked who wrote THAT — so a room revision followed by a
-            # background one (a debrief append) read as no progress
-            # and left the watermark behind, forever. See
-            # `tag_path_progressed_since_wake`.
-            #
-            # A note's revision chain is short by construction (a body is
-            # appended to, not rewritten per turn), so it is walked in code
-            # rather than pushed down as a recursive CTE: one shape both stores
-            # run, which is what the contract suite compares.
-            chain_rows = (await conn.execute(
-                sa.select(
-                    NOTE_REVISION.c.id,
-                    NOTE_REVISION.c.parent_revision_id,
-                    NOTE_REVISION.c.established_by,
-                ).where(NOTE_REVISION.c.note_id == note_id)
-            )).all()
-            progressed = tag_path_progressed_since_wake(
-                head_revision_id=row.head_revision_id,
-                last_wake_revision_id=row.last_wake_revision_id,
-                chain={
-                    r.id: (r.parent_revision_id, r.established_by)
-                    for r in chain_rows
-                },
-            )
-            if progressed:
-                values: dict[str, Any] = {
-                    "strikes": 0,
-                    "last_wake_revision_id": row.head_revision_id,
-                    "revisit_at": next_revisit_at,
-                }
-                strikes = 0
-            else:
-                # `strikes + 1` computed by the DATABASE, not read-then-write:
-                # two ticks racing on one note would otherwise both read N and
-                # both write N+1, losing a strike — and losing strikes is
-                # exactly how a breaker becomes decorative.
-                values = {"strikes": NOTE.c.strikes + 1}
-                strikes = int(row.strikes) + 1
-            await conn.execute(
-                sa.update(NOTE).where(NOTE.c.id == note_id).values(**values)
-            )
-        return WakeOutcome(strikes=strikes, reset=progressed)
-
-    # ---- the curator's selection reads (§9.2) ------------------------------
-    #
-    # Both cost ZERO TOKENS: which notes are expired and which are due are
-    # KEY COMPARISONS against the clock, not judgements, so the model is only
-    # ever asked what a selected body SAYS. `merge_groups` sat here too until
-    # 2026-09-08 — see the module docstring for why it went.
-
-    async def anchored_before(
-        self, *, unit: str, day: int, limit: int,
-    ) -> tuple[tuple[Note, str], ...]:
-        """Standing notes whose anchor date is strictly before `day`, oldest
-        first, with their head bodies.
-
-        **Retirement is TIME-driven, not evidence-driven**, which is why this
-        read exists and why the curator's third fire condition matters more
-        here than it does for language: a note whose anchor has passed needs
-        retiring even if nobody has touched the notebook in a month. Expiry is
-        this tier's decay.
-
-        The body comes back with the note because the model has to read it —
-        an anchor passing makes a note ELIGIBLE for retirement, never retired.
-        «We moved it to the 16th» leaves the question open, now about the 16th,
-        and only the body says so. SQL decides who is asked; the model decides
-        what the body means; code writes.
-
-        `day` is a YYYYMMDD calendar day, matching `anchor_date`'s own shape —
-        not epoch ms. Passing a timestamp here compares an integer in the
-        billions against one in the tens of millions and quietly matches
-        everything.
-        """
-        if limit <= 0:
-            return ()
-        stmt = (
-            self._head_join()
-            .where(
-                NOTE.c.unit == unit,
-                NOTE.c.retired_at.is_(None),
-                NOTE.c.anchor_date.is_not(None),
-                NOTE.c.anchor_date < day,
-            )
-            .order_by(NOTE.c.anchor_date.asc(), NOTE.c.id.asc())
-            .limit(limit)
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return tuple((_row_to_note(r), r.body) for r in rows)
-
-    async def due_for_revisit(
-        self, *, unit: str, now_ms: int, limit: int,
-    ) -> tuple[tuple[Note, str], ...]:
-        """Standing notes whose `revisit_at` has arrived, oldest `revisit_at`
-        first, with their head bodies — the note-curator merge's `due` read
-        (design 34 §4.1/§5.3), now that `record_wake` and the create path
-        (§5.3 resolution (c)) are the writers `revisit_at` never had.
-
-        **Deliberately NOT also "or the anchor has passed"**, unlike 34 §4.1's
-        prose description of the union. `anchored_before` already selects
-        every note whose anchor is behind `day`, unconditionally — restating
-        that condition here would make this read redundant with it rather
-        than complementary, for no gain: the caller unions the two results
-        and de-duplicates by note id. This read's OWN
-        contribution is the notes `anchored_before` cannot see at all — a
-        dateless note (no anchor to pass) and an anchored note whose anchor
-        has not yet arrived but whose early-close check has (34 §5.3's lead
-        window).
-
-        `IS NOT NULL` is load-bearing: a note nothing has ever woken (no
-        create-path `revisit_at`, no prior wake, and no anchor for
-        `anchored_before` to have caught) has `revisit_at IS NULL` and stays
-        out of this read forever — matching `_is_due`'s old arithmetic ("a
-        note with neither trigger is not due"), now expressed in SQL rather
-        than by scanning `standing()` in Python.
-
-        `limit` is a plain `LIMIT`, not an over-fetch: the caller
-        (`nora.language.note_curator`) is the one with a metrics collaborator
-        to count a capped tick against, on `anchored_before`'s own precedent
-        of leaving that bookkeeping to the adaptor rather than the store.
-        """
-        if limit <= 0:
-            return ()
-        stmt = (
-            self._head_join()
-            .where(
-                NOTE.c.unit == unit,
-                NOTE.c.retired_at.is_(None),
-                NOTE.c.revisit_at.is_not(None),
-                NOTE.c.revisit_at <= now_ms,
-            )
-            .order_by(NOTE.c.revisit_at.asc(), NOTE.c.id.asc())
-            .limit(limit)
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return tuple((_row_to_note(r), r.body) for r in rows)
-
     # ---- read-back, for the shared contract suite --------------------------
     #
-    # `DreamSink` has two verbs and DELIBERATELY no third, so there is no read
-    # verb on the port and the contract suite supplies a `read_row` adapter per
-    # implementation instead. These two are what that adapter is built from.
-    # They are NOT a widening of the port: a read-back a test harness needs is
-    # not a verb the runtime may call.
+    # The contract suite's read-back; not a verb the runtime may call.
 
     async def revision_by_id(self, *, revision_id: str) -> NoteRevision | None:
         """One revision by id, or `None`. **Not unit-scoped, and that is
         deliberate rather than an omission** — a revision is reached through the
-        note that owns it, so scoping happens at `note_by_id` below. Scoping
-        here too would mean joining `note` on every call to answer a question
-        the caller then asks again.
+        note that owns it. Scoping here too would mean joining `note` on every
+        call to answer a question the caller then asks again.
         """
         if not _is_uuid(revision_id):
             return None
@@ -1155,180 +846,7 @@ class SqlNoteStore:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row_to_revision(row)
 
-    async def note_by_id(self, *, unit: str, note_id: str) -> Note | None:
-        """One note by id within a unit, **retired or not**.
-
-        `read` above cannot serve this: it goes through `_head_join`, which is
-        the model-facing path, and a caller asking whether a note was retired
-        needs the row precisely BECAUSE it is retired. Unit-scoped like
-        every other read here — a caller must not be able to confirm a note
-        exists in a unit it may not read.
-        """
-        if not _is_uuid(note_id):
-            return None
-        stmt = sa.select(NOTE).where(
-            NOTE.c.id == note_id, NOTE.c.unit == unit,
-        )
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).one_or_none()
-        if row is None:
-            return None
-        return _row_to_note(row)
-
-    # ---- DreamSink (the curator's write boundary) --------------------------
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
-    ) -> Sequence[str]:
-        """`DreamSink.propose`. `key` is the UNIT (§3/DEC-105).
-
-        **ONE TRANSACTION FOR THE WHOLE BATCH, and this is a correction.** The
-        first version looped over `append_revision`, each of which opened its
-        own transaction, so a batch was N independent writes — while this
-        docstring already claimed the opposite as a requirement. Found by cold
-        review (2026-08-27), and the contradiction was between two things I
-        wrote: the store was partial, and a test I added pinned the partial
-        behaviour as intended. **That is a test encoding the defect as the
-        spec** — the second instance of that shape in one day.
-
-        The requirement is real and is why the fix went this way rather than
-        the docstring being softened: a batch is one tick's decision, and a
-        tick whose first half committed while its second half raised leaves
-        the notebook holding a state no single reading produced, with the
-        caller told nothing happened. **A partially applied batch is the one
-        outcome worse than not running**, because it is invisible: no error,
-        no count, and an index that looks ordinary. (The example this
-        paragraph used to cite — the curator's merge, «append the merged
-        body, then retire the originals» — was removed on 2026-09-08; the
-        requirement predates it and outlives it.)
-
-        **Type checks run BEFORE the first write**, for the same reason. A bad
-        payload at index 1 used to land after index 0 had committed, which is
-        the accept-and-discard failure this tier's own axis caught one verb
-        over — the call reports one thing and the store holds another.
-
-        **Heads chain within the batch.** Two proposals naming the same note
-        used to be a guaranteed `StaleNoteHeadError` — the first moved the head,
-        the second named the old one — which made a behaviour this docstring
-        CLAIMED ("two proposals against one note return that id twice")
-        unreachable. It also quietly weakened the shared suite: the note
-        factory had to mint a fresh note per call, so
-        `test_propose_returns_one_id_per_proposal_in_order`'s distinctness
-        assertion held for a reason unrelated to what it asserts. The batch now
-        carries the head each proposal moved and the next against that note
-        CASes against it, which makes the claim true and the assertion
-        real. The compare-and-swap is unweakened
-        — it still refuses anything the batch did not itself write, which is
-        exactly the tag path revising mid-tick.
-
-        **Refuses a foreign payload by `isinstance`, never duck-typing it**
-        (§15.4): `payload` is `object` at the port so the runtime never names an
-        adaptor's value type, and this check is where that opacity is paid for.
-        """
-        # (1) VALIDATE EVERYTHING FIRST. Nothing below writes until every
-        # payload is known to be a shape this store handles.
-        # Built as a typed list rather than checked in place: the loop below
-        # then narrows on a real union instead of on `object`, so the shape it
-        # depends on is proved by the type checker rather than asserted.
-        typed: list[tuple[Proposal, NoteCreationProposal | NoteRevisionProposal]] = []
-        for p in proposals:
-            payload = p.payload
-            if not isinstance(
-                payload, NoteCreationProposal | NoteRevisionProposal
-            ):
-                raise TypeError(
-                    f"SqlNoteStore.propose accepts a NoteRevisionProposal "
-                    f"(revise a note that exists) or a NoteCreationProposal "
-                    f"(start carrying a new one), got "
-                    f"{type(payload).__name__}"
-                )
-            typed.append((p, payload))
-
-        ids: list[str] = []
-        # The head each note reached WITHIN this batch, so a second proposal
-        # against the same note CASes against what the first one wrote rather
-        # than against a head that is already stale by construction.
-        heads: dict[str, str] = {}
-        # What each note's FIRST proposal in this batch claimed to be written
-        # against. Distinct from `heads`, which is what the batch has since
-        # written — see the check below.
-        declared: dict[str, str] = {}
-        async with self._engine.begin() as conn:
-            # EVERY message the whole batch cites, locked ONCE, SORTED, before the first
-            # write (`citation.lock_cited_messages`). A lock taken per write meant the
-            # batch took message locks AFTER it already held an earlier note's row, the
-            # reverse of the delete's order (message, then the notes that cite it), and
-            # deadlocked with it: note A cites m3 and is revised to cite m9, note B is
-            # revised to cite m3, while a delete hides m3 and its cascade updates A. The
-            # per-write calls below find the same rows already locked and cost nothing.
-            await lock_cited_messages(
-                conn, {i for _, payload in typed for i in cited_ids_in(payload.body)},
-            )
-            for p, payload in typed:
-                if isinstance(payload, NoteCreationProposal):
-                    note, first = self._new_note(
-                        unit=key, payload=payload, proposal=p,
-                        now_ms=now_ms,
-                    )
-                    await self._create_on_conn(conn, note=note, revision=first)
-                    heads[note.id] = first.id
-                    ids.append(note.id)
-                    continue
-                # THE DECLARED PARENT IS CHECKED, NOT OVERRIDDEN. Until
-                # 2026-08-27 the tracked head was used as a silent override, so
-                # a second proposal declaring ANY parent — including a bogus
-                # one — landed as long as the batch had already touched that
-                # note. The scenario that makes it real is the likely one: a
-                # curator emitting two proposals both parented on the head it
-                # READ, with different bodies, which is what a model
-                # duplicating its own output produces. Before chaining that was
-                # a StaleNoteHeadError; with a silent override both land, the
-                # second body wins, the first is buried, and the caller is told
-                # both succeeded — a silent overwrite on the one verb whose
-                # docstring is about not half-applying.
-                #
-                # A caller cannot name the intermediate revision (it does not
-                # exist until this batch writes it), so re-declaring the SAME
-                # parent is the only legitimate thing a second proposal can do.
-                # Anything else is a stale read and is refused as one.
-                if payload.note_id in declared:
-                    if payload.parent_revision_id != declared[payload.note_id]:
-                        raise StaleNoteHeadError(
-                            f"note {payload.note_id} was already revised in "
-                            f"this batch against "
-                            f"{declared[payload.note_id]}; this proposal names "
-                            f"{payload.parent_revision_id} — read it again",
-                            observed_head=heads.get(payload.note_id),
-                        )
-                else:
-                    declared[payload.note_id] = payload.parent_revision_id
-                revision = NoteRevision(
-                    id=str(uuid4()), note_id=payload.note_id,
-                    body=payload.body,
-                    parent_revision_id=heads.get(
-                        payload.note_id, payload.parent_revision_id,
-                    ),
-                    written_at=now_ms, established_by=p.established_by,
-                    instruction_sha256=p.instruction_sha256, model=p.model,
-                )
-                if not _is_uuid(revision.note_id) or not _is_uuid(
-                    revision.parent_revision_id or "",
-                ):
-                    raise StaleNoteHeadError(
-                        f"note {revision.note_id!r} is not a note id this "
-                        f"store could look up — read it again",
-                        observed_head=None,
-                    )
-                await self._append_on_conn(
-                    conn, unit=key, revision=revision,
-                )
-                heads[revision.note_id] = revision.id
-                # **THE NOTE's id, not the revision's.** The port's rationale
-                # decides it: `propose` returns ids so `supersede` can NAME what
-                # it produced, and this tier's `supersede` retires a NOTE.
-                # Revision ids would satisfy the sentence and break its purpose.
-                ids.append(revision.note_id)
-        return tuple(ids)
+    # ---- retirement ------------------------------------------------------------
 
     async def supersede(
         self,
@@ -1341,15 +859,15 @@ class SqlNoteStore:
         now_ms: int,
         expected_head: str | None = None,
     ) -> int:
-        """`DreamSink.supersede` — retirement, which is a status change and
+        """Retirement, which is a status change and
         never a delete. Returns rows affected.
 
         **`expected_head` is guard 3 of design 41 §7.6**, and it is not on the
         port. A caller that judged a note on one head passes it, and the
         retirement is then a compare-and-swap like an append: a note whose
-        head moved since — a `note-merge` fold that just appended a
+        head moved since — a `note_merge` fold that just appended a
         duplicate's question to it, or a tag-path revision — answers 0 and
-        stays open. Without it the curator's re-read-then-retire was
+        stays open. Without it a re-read-then-retire was
         check-then-act across two transactions, and a merge landing between
         the two retired the survivor with the question it had just absorbed.
         `None` keeps the old, head-blind behaviour for a caller that judged
@@ -1361,10 +879,10 @@ class SqlNoteStore:
         2026-09-07, whose `fact` row was either standing or
         superseded-with-a-successor by CHECK. A note is not: an anchor date
         passed and the dinner happened, and it is replaced by nothing.
-        Refusing here would force the curator to mint a placeholder id to
+        Refusing here would force the caller to mint a placeholder id to
         satisfy a signature — the "invent a value to satisfy a schema" move
-        this codebase forbids everywhere else, and `DreamSink.supersede`
-        types `replaced_by` as `str | None` so that it never has to.
+        this codebase forbids everywhere else, and `replaced_by` is typed
+        `str | None` so that it never has to.
 
         **What IS refused is a successor with no retirement.** `note`'s
         `note_replacement_implies_retirement_check` is a ONE-DIRECTIONAL
@@ -1376,8 +894,8 @@ class SqlNoteStore:
 
         `because` is stored in `retire_reason` and is validated against
         `NoteSupersedeReason.ALL`. A free-text reason would make the retirement
-        vocabulary unqueryable — «how many notes did the curator retire this
-        week, and why» is the reading that justifies the curator existing, and
+        vocabulary unqueryable — «how many notes were retired this
+        week, and why» is the reading that justifies keeping the reason, and
         it cannot be answered against prose.
 
         A `target` that names no standing note in this unit reports **0
@@ -1458,9 +976,9 @@ class SqlNoteStore:
         on_reminder_outcome: Callable[[str], None] | None = None,
     ) -> NoteRevision:
         """Fold one duplicate into its survivor, in ONE transaction (design 41
-        §7.6 guard 2, §7.7). Not on `DreamSink`: that port's two verbs each own
-        a transaction, and a fold is two writes that must land together —
-        `record_wake`'s precedent for a tier's own verb on its own store.
+        §7.6 guard 2, §7.7). A fold is two writes that must land together —
+        the (deleted) note store's `record_wake` set the precedent for a tier's own verb on its
+        own store.
 
         1. The survivor gets `body` as a new head revision (parent
            `survivor_head`), takes `anchor_date` and `revisit_at`, and has its
@@ -1476,8 +994,8 @@ class SqlNoteStore:
            this method re-checks the row once that happens. Without this step
            both rows go on forwarding to the survivor through
            `nora.app.proactive_screen`'s `successor()` chase and both fire —
-           reachable only under `[notes] merge_mode = "on"`, never `shadow`,
-           because `shadow` never calls this method. A re-pointed row also
+           reachable whenever the Cognition session's `note_merge` calls this method. A re-pointed
+           row also
            gets `revision_id` moved onto THIS fold's own new revision — see
            `_repoint_stmt`'s docstring for the defect that was, when only
            `note_id` moved. Both notes' rows are classified first, by the
@@ -1827,7 +1345,8 @@ class SqlNoteStore:
         no ancestry needed for that half of the check, a scan by time.
         Includes the fold's own new revision when `note_id` is the
         survivor and it has already been inserted: harmless, since its
-        `established_by` is `dream:note-merge:...`, never tag-path."""
+        `established_by` is `dream:note-merge:...` (the deleted pass's) or the
+        Cognition session's, never tag-path."""
         rows = (await conn.execute(
             sa.select(NOTE_REVISION.c.written_at, NOTE_REVISION.c.established_by)
             .where(NOTE_REVISION.c.note_id == note_id)
@@ -1874,233 +1393,7 @@ class SqlNoteStore:
         if on_reminder_outcome is not None:
             on_reminder_outcome(outcome)
 
-    async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
-        """Append one `note_merge_decision` row (design 41 §7.8). Nothing
-        updates a row; a reused id is a primary-key error, never a silent
-        overwrite."""
-        async with self._engine.begin() as conn:
-            await conn.execute(sa.insert(NOTE_MERGE_DECISION).values(
-                id=decision.id, unit=decision.unit, mode=decision.mode,
-                outcome=decision.outcome, survivor_id=decision.survivor_id,
-                duplicate_id=decision.duplicate_id,
-                survivor_title=decision.survivor_title,
-                duplicate_title=decision.duplicate_title,
-                reason=decision.reason,
-                established_by=decision.established_by, ts=decision.ts,
-            ))
-
-    async def record_miss(
-        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
-    ) -> int:
-        """The negative cache (§4.5), `fact_candidate`'s shape and its reason:
-        the SECOND miss on the same ground is evidence rather than a guess. An
-        insert per miss would make one gap look like N unrelated gaps and
-        nothing would ever cross a threshold, so this UPSERTs on
-        `note_candidate_probe_key` — `(unit, probe)` — and returns the new
-        `occurrence_count`.
-
-        Three details that are decisions, not defaults:
-
-        - **`first_seen_at` is never overwritten.** How long a gap has been
-          open is the other half of the evidence; last-seen alone cannot tell a
-          question asked three times this morning from one asked every month
-          since March.
-        - **`observed_in` appends only a conversation it does not already
-          hold.** It answers "in how many DIFFERENT rooms", which is what makes
-          a probe repeated in one room weaker evidence than the same probe in
-          three; appending unconditionally turns one chatty room into a false
-          consensus and grows the array without bound.
-        - **The whole thing is one statement.** A read-then-write would let two
-          concurrent turns in the same unit each see count 1 and each write
-          2, losing an occurrence — the same race the CAS above exists to close,
-          and the reason this uses `ON CONFLICT` rather than a `SELECT`.
-        """
-        insert = pg_insert(NOTE_CANDIDATE).values(
-            id=str(uuid4()), unit=unit, probe=probe,
-            first_seen_at=now_ms, last_seen_at=now_ms, occurrence_count=1,
-            observed_in=[conversation_id],
-        )
-        stmt = insert.on_conflict_do_update(
-            constraint="note_candidate_probe_key",
-            set_={
-                "occurrence_count": NOTE_CANDIDATE.c.occurrence_count + 1,
-                "last_seen_at": now_ms,
-                "observed_in": sa.case(
-                    (
-                        sa.literal(conversation_id) == sa.any_(
-                            NOTE_CANDIDATE.c.observed_in
-                        ),
-                        NOTE_CANDIDATE.c.observed_in,
-                    ),
-                    else_=NOTE_CANDIDATE.c.observed_in.op("||")(
-                        sa.literal(conversation_id)
-                    ),
-                ),
-            },
-        ).returning(NOTE_CANDIDATE.c.occurrence_count)
-        async with self._engine.begin() as conn:
-            count = (await conn.execute(stmt)).scalar_one()
-        return int(count)
-
     # ---- the create path (§4, issue #98) -----------------------------------
-
-    async def record_create_candidate(
-        self,
-        *,
-        unit: str,
-        title: str,
-        description: str,
-        body: str,
-        closing_condition: str,
-        anchor_date: int,
-        anchor_entity_ids: Sequence[str],
-        message_ids: Sequence[int],
-        now_ms: int,
-    ) -> NoteCreateCandidate:
-        """Stage a proposed note (`kind='create'`) for the deterministic gate
-        in `nora.language.note_candidates` to decide over. Never called for a
-        `kind='miss'` row — that is `record_miss`, above, on ITS OWN
-        uniqueness domain.
-
-        **Upserts on THIS TIER'S OWN staging key** —
-        `note_candidate_create_anchor_key`, `(unit, anchor_date,
-        anchor_entity_ids, lower(btrim(title)))` — so a re-observation of the
-        same occasion refreshes the staged proposal rather than duplicating
-        it, while a DIFFERENT arrangement the model wrote about on the same
-        day reaches the gate instead of being handed this row (#235).
-        `anchor_entity_ids` is sorted and de-duplicated HERE, not trusted from
-        the caller, because it is part of that key and an unsorted array would
-        let one occasion, listed in two orders, stage under two different keys;
-        the title is normalised by the INDEX (`lower(btrim(...))`) rather than
-        at write time, so the stored text stays exactly what the model wrote.
-
-        **M10 — "a title is not an identity" — is upheld for the NOTE and
-        reversed here, deliberately.** A note must be findable by one name
-        across revisions, so its identity cannot be its title. A staging row is
-        a one-shot dedupe slot for one sighting, and the title is the only
-        field that separates two arrangements on one day: measured 2026-09-16
-        in unit `ridgeline`, a two-entity candidate was destroyed by a
-        same-day collision, because in a fixed-membership room every
-        arrangement names the same people and the entity list is a constant.
-        `lower()` here diverges from `note_handle`'s `casefold()` on the cases
-        `casefold` folds further (`ß`→`ss`); irrelevant for this corpus, but it
-        is a divergence, not an equivalence.
-
-        **The upsert is guarded by `WHERE status = 'pending'`, and that guard
-        is the whole point.** A candidate the gate has already decided —
-        `created` or `refused` — is a SETTLED row: refreshing its text or its
-        sighting window on a later re-observation would relitigate a decision
-        this tier's whole design keeps out of the model's hands (§4's "the
-        model never writes a note directly"). So a re-sighting after
-        settlement is a no-op here: `RETURNING` yields no row for it (Postgres
-        treats a `DO UPDATE ... WHERE` whose condition is false as `DO
-        NOTHING` for that row), and the settled row is looked up and returned
-        instead — the caller always gets back the real row either way, and can
-        inspect its `status` before deciding whether to run the gate at all.
-        """
-        entities = sorted(set(anchor_entity_ids))
-        ids = list(dict.fromkeys(message_ids))
-        insert = pg_insert(NOTE_CANDIDATE).values(
-            id=str(uuid4()), unit=unit, kind="create",
-            title=title, description=description, body=body,
-            closing_condition=closing_condition, anchor_date=anchor_date,
-            anchor_entity_ids=entities, message_ids=ids,
-            status=CANDIDATE_PENDING, attempts=0,
-            first_seen_at=now_ms, last_seen_at=now_ms,
-        )
-        stmt = insert.on_conflict_do_update(
-            index_elements=[
-                NOTE_CANDIDATE.c.unit, NOTE_CANDIDATE.c.anchor_date,
-                NOTE_CANDIDATE.c.anchor_entity_ids,
-                # A raw expression, not a column: `index_elements` renders it
-                # verbatim into the inferred conflict target, and it must match
-                # `note_candidate_create_anchor_key`'s fourth column TEXTUALLY
-                # or Postgres raises 42P10 rather than silently upserting wide.
-                sa.text("lower(btrim(title))"),
-            ],
-            index_where=sa.text("kind = 'create'"),
-            set_={
-                "title": insert.excluded.title,
-                "description": insert.excluded.description,
-                "body": insert.excluded.body,
-                "closing_condition": insert.excluded.closing_condition,
-                "last_seen_at": now_ms,
-                "attempts": NOTE_CANDIDATE.c.attempts + 1,
-                # APPENDED, not de-duplicated against the existing array — a
-                # repeated id in the attribution list costs nothing and is not
-                # the property this table's uniqueness protects. Contrast
-                # `record_miss`'s `observed_in`, where de-duplication DOES
-                # matter (a count that must not be inflated by one chatty
-                # room) — this attribution list is not that count.
-                "message_ids": NOTE_CANDIDATE.c.message_ids.op("||")(
-                    sa.literal(ids, type_=pg.ARRAY(sa.Integer))
-                ),
-            },
-            where=NOTE_CANDIDATE.c.status == CANDIDATE_PENDING,
-        ).returning(NOTE_CANDIDATE)
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).one_or_none()
-            if row is None:
-                # The guard blocked the update: this occasion's candidate was
-                # already settled. Read it back rather than trusting the
-                # caller's own values, which the settled decision supersedes.
-                #
-                # **The predicate list is the FULL staging key, title
-                # included** (#235). Without the title clause this SELECT is
-                # wider than the index it re-finds a row through, so once two
-                # arrangements legitimately share `(unit, anchor_date,
-                # anchor_entity_ids)` it either hands the caller the other
-                # arrangement's settled row — the #235 bug wearing a different
-                # mask — or raises `MultipleResultsFound` out of a background
-                # tick. The normalisation is `lower(btrim(...))` on BOTH sides
-                # so the comparison is the index's own.
-                row = (await conn.execute(
-                    sa.select(NOTE_CANDIDATE).where(
-                        NOTE_CANDIDATE.c.unit == unit,
-                        NOTE_CANDIDATE.c.kind == "create",
-                        NOTE_CANDIDATE.c.anchor_date == anchor_date,
-                        NOTE_CANDIDATE.c.anchor_entity_ids == entities,
-                        sa.func.lower(sa.func.btrim(NOTE_CANDIDATE.c.title))
-                        == title.strip().lower(),
-                    )
-                )).one()
-        return _row_to_create_candidate(row)
-
-    async def set_create_candidate_status(
-        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
-    ) -> int:
-        """Advance one create-candidate to a TERMINAL status. Returns rows
-        affected — `0` if the row is gone, in another unit, or already
-        terminal.
-
-        **Idempotent by construction, never a re-decision.** The `WHERE
-        status = 'pending'` guard means a second call for a row the gate
-        already settled affects nothing — the same discipline
-        `record_create_candidate`'s own upsert guard enforces, so the two
-        writers can never disagree about whether a row is still open to a
-        decision.
-        """
-        if status not in (CANDIDATE_CREATED, CANDIDATE_REFUSED):
-            raise ValueError(
-                f"SqlNoteStore.set_create_candidate_status got "
-                f"status={status!r}; only a TERMINAL status may be set this "
-                f"way — {(CANDIDATE_CREATED, CANDIDATE_REFUSED)}"
-            )
-        if not _is_uuid(candidate_id):
-            return 0
-        stmt = (
-            sa.update(NOTE_CANDIDATE)
-            .where(
-                NOTE_CANDIDATE.c.id == candidate_id,
-                NOTE_CANDIDATE.c.unit == unit,
-                NOTE_CANDIDATE.c.kind == "create",
-                NOTE_CANDIDATE.c.status == CANDIDATE_PENDING,
-            )
-            .values(status=status, last_seen_at=now_ms)
-        )
-        async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount)
 
     @staticmethod
     def _head_join() -> sa.Select[Any]:

@@ -182,6 +182,17 @@ async def test_a_delete_is_recorded_and_raises_a_stimulus():
     assert [d["message_id"] for d in audit.deletes] == [audit.rows[0]["id"]]
     assert store.stimuli[-1].item == "delete"
     assert store.stimuli[-1].ref == f"message_delete:{audit.deletes[0]['id']}"
+    assert audit.hidden_ids == {audit.rows[0]["id"]}, "a delete of a recorded message hides it"
+
+
+async def test_a_reaction_hides_nothing_and_a_delete_of_nothing_on_record_is_dropped():
+    pipeline, audit, _store, _ = _setup()
+    await pipeline.run(message=_msg("kept", ts=5_000))
+    await pipeline.run(message=_msg("", touch=Touch(
+        kind="reaction", target=EditTarget(sent_ts=5_000), emoji="👍")))
+    await pipeline.run(message=_msg("", touch=Touch(
+        kind="delete", target=EditTarget(sent_ts=424242))))
+    assert audit.hidden_ids == set() and audit.deletes == []
 
 
 async def test_an_unattributed_delete_of_nora_s_message_is_recorded_and_raises_nothing():

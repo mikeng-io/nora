@@ -98,13 +98,6 @@
   "target": "tests/integration/test_rollup_read.py::test_a_message_hidden_after_a_build_stops_counting_at_the_next_one"
  },
  {
-  "name": "standing_read: an unsupported head is returned",
-  "file": "nora/agent/standing_read.py",
-  "old": "    if standing.unsupported_at is not None:\n",
-  "new": "    if False:\n",
-  "target": "tests/infra/test_standing_read.py::test_an_unsupported_head_is_not_returned"
- },
- {
   "name": "standing_read: a section that fails lineage is shown",
   "file": "nora/agent/standing_read.py",
   "old": "    if allowed[HOLD_OPEN] and standing.hold_open is not None:\n",
@@ -180,13 +173,6 @@
   "old": "    \"rollup_read\": \"SQL SELECT of the CURRENT rollup build's rows (`rollup_build` \"\n                   \"status=current) and derived places; counters only. It starts, \"\n                   \"advances and switches no build, and folds nothing. No write.\",\n",
   "new": "",
   "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
- },
- {
-  "name": "note-candidates: rollup_read/standing_read are no longer withheld (M1)",
-  "file": "nora/language/note_candidates.py",
-  "old": "    \"rollup_read\": \"Cognition-only: lineage binds it to a room this pass has no grant for\",\n    \"standing_read\": \"Cognition-only: lineage binds it to a room this pass has no grant for\",\n",
-  "new": "",
-  "target": "tests/test_composition.py::test_only_the_cognition_session_holds_rollup_read_and_standing_read"
  },
  {
   "name": "dreamer: an adaptor may declare the Cognition-only reads (M1, class closure)",

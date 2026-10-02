@@ -1,8 +1,9 @@
 """`<presence>` — the ONE renderer for where she is (design/self-awareness/02).
 
-Called by the tag and fire paths (`nora.agent.prefill`) and by the proactive
-pass (`nora.language.proactive`), which is why it lives here: `nora.language`
-is the layer both can import. No occasion builds its own copy, because two
+Called by the tag and fire paths (`nora.agent.prefill`) and was by the
+proactive pass (`nora.language.proactive`, deleted 2026-10-03), which is why it
+lives here: `nora.language` is the layer both can import. No occasion builds its own copy, because
+two
 sources for «which network am I on» is the drift the context-assembly
 registry exists to prevent.
 
@@ -132,7 +133,7 @@ def render_presence(presence: Presence, *, room_is: str | None = None) -> Contex
 
     `room_is` is the operator's own description of the room she is in
     (`policy.Conversation.description`, issue #161), carried as an attribute
-    by the proactive pass where `<home_room>` used to carry it. Absent renders
+    by the (deleted) proactive pass where `<home_room>` used to carry it. Absent renders
     no attribute.
     """
     lines = [

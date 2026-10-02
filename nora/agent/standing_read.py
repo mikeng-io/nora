@@ -2,12 +2,6 @@
 (design/cognition-loop/50-character-and-standing.md §2, 10-tiers.md §2 rule 7
 and §3): the sections that pass, each one only where its own lineage passes.
 
-**Withdrawal comes first.** A head the cascade marked `unsupported_at` is not
-returned at all (10 §2 rule 7): its words rest on a Record item that was
-withdrawn, and a session that read them could carry a withdrawn person's words
-into a revision. It reads as «no supported position», the same as a room that
-never folded, and the tool says so once, without saying which.
-
 **Lineage is per section** (10 §3): `Where it stands`, `I hold open`, `I owe`
 and `Found, not yet given` each render only where every entry of that
 section's own lineage passes for the calling room; a section that fails is
@@ -33,13 +27,10 @@ __all__ = ["render_standing"]
 _SECTIONS = (BODY, HOLD_OPEN, I_OWE, WORKING_SET)
 
 
-def render_standing(head: StandingHead, target: RenderRoom) -> tuple[dict[str, Any] | None, int]:
-    """`(the shown position, sections withheld)`; `None` when the head is
-    unsupported. A position with nothing shown is `{}` with a count, which the
-    tool answers as «nothing this room may be shown»."""
+def render_standing(head: StandingHead, target: RenderRoom) -> tuple[dict[str, Any], int]:
+    """`(the shown position, sections withheld)`. A position with nothing shown is
+    `{}` with a count, which the tool answers as «nothing this room may be shown»."""
     standing = head.standing
-    if standing.unsupported_at is not None:
-        return None, 0
     allowed = visible_sections(
         standing.lineage, _SECTIONS, target,
         origin=room_key(standing.platform, standing.conversation_id),

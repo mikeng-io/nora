@@ -1,6 +1,6 @@
 """`nora.subject.dreaming.with_roster_senders` — the eval dream path's batch
 carries sender ids the roster resolves, as production's rows do (design 42
-S1a). Without it the sandbox's minted ids resolve nobody, note-candidates'
+S1a). Without it the sandbox's minted ids resolve nobody, a scope-keyed adaptor's
 own roster projection is a no-op in every eval run, and a before/after on
 S1a measures the old input on both arms."""
 
@@ -10,7 +10,7 @@ from dataclasses import replace
 
 from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.persons import Persons
-from nora.subject.dreaming import shown_speakers, with_roster_senders
+from nora.subject.dreaming import with_roster_senders
 
 ROSTER = Persons(
     by_person={
@@ -63,40 +63,6 @@ def test_rows_production_could_not_resolve_either_are_left_alone():
         _row(4, sender_id="+8529004", person_id="p_ada", is_nora=True),
     ]
     assert with_roster_senders(rows, persons=ROSTER, platform="signal") == rows
-
-
-def test_the_speakers_the_instrument_grades_are_the_names_the_model_was_shown():
-    """S0's `body_names`/`body_schema` resolve a row to its shown `from`;
-    after S1a that is the roster name, for a minted sandbox row too."""
-    batch = with_roster_senders(
-        [
-            _row(1, sender_id="+8529000", person_id="p_ada"),
-            _row(2, sender_id="+8529001", person_id=None),
-        ],
-        persons=ROSTER, platform="signal",
-    )
-    assert shown_speakers(batch, persons=ROSTER, platform="signal") == (
-        (1, "Ada Roster"), (2, "profile2"),
-    )
-
-
-def test_body_refusals_are_read_off_production_s_own_counter_by_rule():
-    """Design 42 S2: a refused body is never staged, so the eval reads the
-    refusals off `nora_note_candidate_body_refused_total{rule}`, the counter
-    production scrapes, and a label it does not know is not counted as one."""
-    from types import SimpleNamespace
-
-    from nora.obs.metrics import Metrics
-    from nora.subject.dreaming import _body_refusals
-
-    metrics = Metrics()
-    subject = SimpleNamespace(deps=SimpleNamespace(metrics=metrics))
-    assert _body_refusals(subject) == {}  # type: ignore[arg-type]
-    metrics.inc("nora_note_candidate_body_refused_total", rule="uncited")
-    metrics.inc("nora_note_candidate_body_refused_total", rule="uncited")
-    metrics.inc("nora_note_candidate_body_refused_total", rule="bad_date")
-    metrics.inc("nora_note_candidate_gate_total", action="created")
-    assert _body_refusals(subject) == {"uncited": 2, "bad_date": 1}  # type: ignore[arg-type]
 
 
 def test_batch_after_keeps_only_rows_after_the_watermark_instant():

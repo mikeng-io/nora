@@ -63,7 +63,6 @@ move, before and after, same `--sample`. The make targets are shortcuts:
 |---|---|
 | `make eval-gate` | `relevance_gate` |
 | `make eval-participation` | `participation`, the flip gate (below) |
-| `make eval-note-candidates SAMPLES=N` | `note_candidates` at N draws |
 | `make eval-adversarial-corpora` | the injection, grounding, scope and contradiction corpora, judged |
 
 Routing ("which tool did she reach for") is the `tool_selection` corpus,

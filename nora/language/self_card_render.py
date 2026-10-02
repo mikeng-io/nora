@@ -4,7 +4,7 @@ continuity about what she said and did, not a description of who she is
 
 **The ONE builder for a name two occasions built separately**
 (`design/context-assembly/01-the-registry.md` S3). `nora.agent.prefill` and
-`nora.language.proactive` each constructed `ContextBlock(name="self_card",
+`nora.language.proactive` (deleted 2026-10-03) each constructed `ContextBlock(name="self_card",
 body=render_bullets(conclusions))` by hand from a `tuple[str, ...]` of
 Honcho conclusions — `TagContext.self_card` in one, `Recollection.conclusions`
 in the other — with nothing comparing the two. They were already the same

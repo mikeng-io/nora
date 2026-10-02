@@ -1,5 +1,8 @@
 # 11 — The sandbox rebuild: one Nora, rebuilt from production, run isolated
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 **Status: §1.2's rule and §7.1's three states are BUILT (2026-09-21, see
 §1.3). §2–§6's replay/rebuild machinery is not.**
 

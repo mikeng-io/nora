@@ -14,6 +14,9 @@ version: 1
 
 # The Note Has a Format
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 *Operator direction, 2026-09-25: a note's body follows a defined **schema**, a
 markdown format with fixed sections and written conventions. Not worked
 examples, and not «write in markdown». What the note-candidates pass is SHOWN
@@ -57,7 +60,7 @@ note is for.
 | **Nora writing on the tag path** | `note_update(title, body)` after a `note_read` (`nora/agent/tools.py:10150`) | the whole current state, because «`body` replaces the current contents» (the tool's own docstring) | **restate** semantics, while note-candidates writes the same bodies with **append** semantics: two writers, two meanings of a revision, on one field |
 | **the curator** | `_note_block` renders the body whole, beside `uncertainty`, `closing condition` and the evidence (`nora/language/note_curator.py:1982`) | what was still open, to judge from the evidence whether it has closed | the whole body, whatever its shape; «bodies are rendered whole, the body IS the question» |
 | **note-merge** | `open_note` blocks, the body clipped at `DEFAULT_BODY_EXCERPT_CHARS = 600` (`nora/language/note_merge.py:127`, `:644`) | enough of each note to tell whether two ask the same open question | the FIRST 600 characters, which under append are the OLDEST text; its fold appends the duplicate under `MERGE_MARKER` with `title:`/`uncertainty:`/`closing condition:` lines (`nora/domain/notes.py:960`) |
-| **the proactive pass** | `note_read`, rationed to 3 reads per pass (`nora/dreamer/objectives/proactive.md`, «Before you set any reminder») | «Read the note body to know who that is»: whose plan it is, who has to answer, and by when | whatever the body happens to say, in whatever names the writer used. The pass carries a `people` block that joins «whatever the group calls each other» to roster names (`_people_block`, `nora/language/proactive.py:737`), built because nothing joined the two before it; a body already in roster names needs no join |
+| **the proactive pass** | `note_read`, rationed to 3 reads per pass (`nora/dreamer/objectives/proactive.md` (deleted 2026-10-03, DEC-277), «Before you set any reminder») | «Read the note body to know who that is»: whose plan it is, who has to answer, and by when | whatever the body happens to say, in whatever names the writer used. The pass carries a `people` block that joins «whatever the group calls each other» to roster names (`_people_block`, `nora/language/proactive.py:737`), built because nothing joined the two before it; a body already in roster names needs no join |
 | **note-candidates' own update path** | **never**: the notebook it is shown is `render_notes`, title + description (`nora/language/note_candidates.py:1114`); `_update` reads the head body only to append to it (`:1415`) | the note's current state, to decide whether this batch changes it, and which of two similar notes it is | a title and 200 characters. Per the operator's eval read-back (#513), every update failure on both arms revised a different, similarly titled note |
 | **evals** | the note-candidates corpus graded note existence, anchor and citations; #513 added `body_names`/`body_mentions` on a closed branch | named facts in the body, gradable without a judge | #513's date check needed nine spellings of one day (`"27th", "27 sep", "sep 27", "27/9", "9/27", "27號", "27日", …`) because nothing fixes how a body writes a date |
 

@@ -27,7 +27,6 @@ from nora.domain.blocks import (
 )
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import escape_attr
-from nora.language.proactive import _ROOM_STYLE
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 TS = int(NOW.timestamp() * 1000) - 3_600_000
@@ -91,7 +90,6 @@ def _render(style: RowStyle, **extra) -> str:
 _CULTURE_STYLE = RowStyle(handle="none", time="none")
 
 PARITY = [
-    ("proactive room listing", "- Grant: 去邊食", _ROOM_STYLE, {}),
     ("shadow mirror window", "- Grant: 去邊食", _MIRROR_STYLE, {}),
     ("gate verdict line", "Grant: 去邊食", _VERDICT_STYLE, {}),
 ]
@@ -250,40 +248,6 @@ def test_the_trailing_accessor_is_collapsed_and_escaped_like_the_rest():
         [_row()], style=RowStyle(), speaker=lambda r: "Grant",
         body=lambda r: r.body, trailing=lambda r: "",
     ) == "Grant: 去邊食"
-
-
-def test_the_note_candidate_index_marks_a_reply_through_trailing():
-    """The live caller, so the marker is pinned where it is actually read and
-    not only where it is implemented.
-
-    Kept pointing at `_render_line` through #292's conversion rather than
-    rewritten against the renderer: what has to hold is that THIS pass still
-    shows a reply pointer and its room, whatever grammar carries them."""
-    from nora.language.note_candidates import _render_line
-
-    parent_ts = TS - 600_000
-    row = TranscriptRow(
-        id=7, sender_id="+1", sender_name="Grant", ts=TS, body="去邊食",
-        is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
-        person_name="Grant", quoted_ts=parent_ts,
-    )
-    line = _render_line(row, room="Dinner", tz=UTC)
-    # ATTRIBUTES since #292, not a trailing parenthetical and a suffix wedged
-    # into the speaker field — the room label used to sit INSIDE that field,
-    # before the `: ` that ends it, so a label containing a colon wrote a second
-    # delimiter into the one position the line treated as one.
-    assert 'reply_to="2026-09-12 Sat 10:50 UTC"' in line, line
-    assert 'room="Dinner"' in line, line
-    # No pointer, no marker — never `(reply to ?)`, which is `_parent_of`'s rule.
-    plain = _render_line(
-        TranscriptRow(
-            id=7, sender_id="+1", sender_name="Grant", ts=TS, body="去邊食",
-            is_nora=False, delivery_status=DeliveryStatus.SENT, raw_json=None,
-            person_name="Grant",
-        ), room="Dinner", tz=UTC,
-    )
-    assert "reply_to" not in plain
-    assert plain.endswith("去邊食</m>")
 
 
 def test_markup_false_drops_the_escape_and_nothing_else():

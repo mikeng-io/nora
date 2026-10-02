@@ -120,7 +120,7 @@ def _claim(url: str) -> dict[str, Any]:
                 )).scalar_one()
             now = int(time.time() * 1000)
             view = await SqlStimulusStore(engine).view(
-                unit=UNIT, mode="shadow", now_ms=now, limit=10,
+                unit=UNIT, mode="live", now_ms=now, limit=10,
                 stale_before_ms=now - int(POLICY.session_timeout_seconds * 1000),
             )
             from dataclasses import replace

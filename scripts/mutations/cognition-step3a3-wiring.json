@@ -42,27 +42,6 @@
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k tracked_wake_without_a_guard"
  },
  {
-  "name": "cognition_remind: a cancelled mirrored remind is no longer pending",
-  "file": "nora/domain/cognition_remind.py",
-  "old": "        elif row.verb == \"remind_cancel\":\n            live.pop(ref, None)",
-  "new": "        elif row.verb == \"remind_cancel\":\n            pass",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cancelled_moved_due_or_refused"
- },
- {
-  "name": "cognition_remind: a due mirrored remind is no longer pending",
-  "file": "nora/domain/cognition_remind.py",
-  "old": "    return tuple(p for p, at in live.values() if at > now_ms)",
-  "new": "    return tuple(p for p, at in live.values())",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cancelled_moved_due_or_refused"
- },
- {
-  "name": "cognition_remind: a move changes the time the chain is read at",
-  "file": "nora/domain/cognition_remind.py",
-  "old": "            live[ref] = (live[ref][0], row.at_ms)",
-  "new": "            pass",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k cancelled_moved_due_or_refused"
- },
- {
   "name": "session runner: the objective is read at every session",
   "file": "nora/app/cognition_session.py",
   "old": "        if self._doctrine_source is not None:\n            return self._doctrine_source()",
@@ -96,13 +75,6 @@
   "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for(kinds))",
   "new": "            {}",
   "target": "tests/unit/test_cognition_wiring.py -k skills_injected_for_the_agenda_kinds"
- },
- {
-  "name": "session runner: probe refuses when sessions are off",
-  "file": "nora/app/cognition_session.py",
-  "old": "        if self._session_mode != \"shadow\":\n            raise RuntimeError(\"probe needs",
-  "new": "        if False:\n            raise RuntimeError(\"probe needs",
-  "target": "tests/unit/test_cognition_wiring.py -k probe_refuses"
  },
  {
   "name": "agent runner: the root span keeps the trace in Langfuse",
@@ -154,13 +126,6 @@
   "target": "tests/test_composition.py -k session_mode_shadow_builds_one_runner"
  },
  {
-  "name": "composition: session_mode off builds no runner",
-  "file": "nora/app/composition.py",
-  "old": "        if cfg.cognition.session_mode == \"shadow\" and stimulus_store is not None:",
-  "new": "        if stimulus_store is not None:",
-  "target": "tests/test_composition.py -k session_mode_off_builds_nothing"
- },
- {
   "name": "composition: the runner's hook reaches the evaluator",
   "file": "nora/app/composition.py",
   "old": "            on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,",
@@ -173,13 +138,6 @@
   "old": "        if self.deps.cognition_shutdown is not None:\n            await self.deps.cognition_shutdown()",
   "new": "        if self.deps.cognition_shutdown is not None:\n            pass",
   "target": "tests/unit/test_cognition_wiring.py -k app_stops"
- },
- {
-  "name": "config: a shadow session mode needs the Dreamer",
-  "file": "nora/config.py",
-  "old": "        if self.cognition.session_mode == \"shadow\" and not self.dreamer.enabled:",
-  "new": "        if False:",
-  "target": "tests/test_config.py -k session_mode_shadow_without_the_dreamer"
  },
  {
   "name": "evals: a subject with no session runner is an ERROR",

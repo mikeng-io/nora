@@ -29,12 +29,14 @@ from nora.domain.gatherings import (
     TERMINAL_STATUSES,
     EventCitation,
     EventEvidence,
+    FieldMeta,
     Gathering,
     GatheringStatus,
     GatheringStore,
     RSVPResponse,
     VenueCandidate,
     VenueSuggestions,
+    merge_field_meta,
     still_open_gatherings,
 )
 from nora.domain.gatherings import (
@@ -122,6 +124,22 @@ def _tag_evidence(
     )
 
 
+def _stated(
+    event: Gathering, reasoning: str | None, confidence: str | None,
+    field_meta: tuple[FieldMeta, ...],
+) -> Gathering:
+    """`event` with what a write states of how it was reached: the fields it
+    restates replace theirs (`merge_field_meta`), the rest keep what they
+    carried. Nothing stated (the tag path) leaves the row as it was."""
+    if not field_meta and reasoning is None and confidence is None:
+        return event
+    return replace(
+        event, reasoning=reasoning or event.reasoning,
+        confidence=confidence or event.confidence,
+        field_meta=merge_field_meta(event.field_meta, field_meta),
+    )
+
+
 class GatheringService:
     def __init__(
         self,
@@ -155,8 +173,16 @@ class GatheringService:
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
         unit_id: str = "", message_ids: Sequence[int] = (),
+        status: GatheringStatus = GatheringStatus.PROPOSED,
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
-        """Spec §3.1: the CALLER (the `create_event` tool) is expected to
+        """`status`, `reasoning`, `confidence` and `field_meta` are what a
+        Cognition session states with its write (40 §4: how each field was
+        reached, an abduced one rendered as a question); the tag path leaves
+        them at their defaults.
+
+        Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
@@ -194,10 +220,13 @@ class GatheringService:
             venue_price_level="",
             venue_maps_url=None,
             venue_resolved_at=None,
-            status=GatheringStatus.PROPOSED,
+            status=status,
             reminder_id=None,
             created_at=now,
             unit_id=unit_id,
+            reasoning=reasoning,
+            confidence=confidence,
+            field_meta=field_meta,
         )
         if when is not None:
             event = await self._link_reminder(
@@ -223,6 +252,8 @@ class GatheringService:
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
         base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
@@ -244,6 +275,7 @@ class GatheringService:
             updated = await self._resolve_venue(
                 updated, venue_text, now=self._now(), person_names=person_names,
             )
+        updated = _stated(updated, reasoning, confidence, field_meta)
         # 10-tiers.md §3: "a stale [base_revision_id] is refused `stale_base`,
         # with the current row" — `base_revision_id` (when the caller passes
         # one; internal callers that predate the event verbs do not) is
@@ -263,6 +295,8 @@ class GatheringService:
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
         base_revision_id: UUID | None = None, platform: str | None = None,
         message_ids: Sequence[int] = (),
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
         """The general lifecycle move `event_set_status` backs (40-register.md
         §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
@@ -277,7 +311,7 @@ class GatheringService:
             await self._reminders.cancel(
                 current.reminder_id, conversation_id=current.conversation_id,
             )
-        updated = replace(current, status=status)
+        updated = _stated(replace(current, status=status), reasoning, confidence, field_meta)
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
             evidence=None if platform is None else _tag_evidence(
@@ -348,19 +382,8 @@ class GatheringService:
         )
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
-        """A reader: a withdrawn event (`unsupported_at`, the cascade's mark,
-        `nora.app.withdrawal`) reads as absent, like an id that does not
-        exist."""
-        event = await self._store.get(event_id)
-        return None if event is None or event.unsupported_at is not None else event
-
-    async def held_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]:
-        """Of `reminder_ids`, those a withdrawn event owns: a reminder held
-        until its event's mark is cleared (`nora.app.gathering_screen`), which
-        no listing shows, since its text carries the event's title."""
-        return await self._store.unsupported_reminder_ids(reminder_ids)
+        """A reader: an id that does not exist reads as absent."""
+        return await self._store.get(event_id)
 
     async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike
@@ -380,9 +403,7 @@ class GatheringService:
         tools, applied here to event-level participation instead of
         conversation membership."""
         event = await self._store.get(event_id)
-        if event is None or event.unsupported_at is not None:
-            # A withdrawn event reads as unknown, the portal's 404: nothing
-            # the person sees distinguishes it from an id that never existed.
+        if event is None:
             return None
         if event.created_by == person_id:
             return event
@@ -464,13 +485,6 @@ class GatheringService:
         room" message that would confirm a stranger's event id is real."""
         event = await self._require(event_id)
         if event.conversation_id != conversation_id:
-            raise GatheringNotFoundError(event_id)
-        if event.unsupported_at is not None:
-            # Withdrawn (`nora.app.withdrawal`): the tag path's revise, status,
-            # RSVP and venue reads see it as it sees an unknown id. It cannot
-            # be revised into standing again by a model that was never shown it
-            # (`event_search` and the room's list leave it out); a room that
-            # still wants the gathering proposes it afresh.
             raise GatheringNotFoundError(event_id)
         return event
 

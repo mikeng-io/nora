@@ -13,6 +13,9 @@ version: 1
 
 # The Proactive Adapter — Handoff
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 > **SUPERSEDED 2026-09-09 by [39-proactive-ooda-loop.md](39-proactive-ooda-loop.md).** The seven open questions in §3 are decided there, and §2.2's «R-31 with no asker» turned out to be the wrong question — the guard reads the room, not the asker (39 D2). This sheet stays as the record of what was verifiably true before the decisions; nothing in it is edited.
 
 ## 0. What this document is, and what it is not

@@ -206,7 +206,6 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.cognition_pace import PendingSelfWake
-from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.computer import BytesResult as BytesResult
 from nora.domain.computer import FileResult as FileResult
 from nora.domain.computer import ListResult as ListResult
@@ -228,10 +227,7 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
-    OrphanDelete,
-    OrphanRecord,
     TagContext,
-    Touch,
     TranscriptRow,
     UnattributedRow,
     WeatherObservation,
@@ -912,62 +908,15 @@ class RecordStore(Protocol):
     ) -> int:
         """Record that the `messages` row `message_id` was deleted or unsent
         on its platform; returns the new row's id. This write does NOT hide
-        the row: hiding it and marking what cites it `unsupported` is
-        `DeleteWithdrawer.withdraw`, one transaction of its own, which the
-        touch stage runs beside this write and `nora withdrawal
-        reconcile-deletes` re-runs for a record whose hide never landed."""
+        the row: the touch stage calls `hide_message` right after it."""
         ...
 
-    async def record_orphan_delete(
-        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
-        now_ms: int,
-    ) -> OrphanRecord:
-        """Keep a delete whose target is not on record (yet), in its own transaction;
-        returns the row that holds it. `touch.target` is the key (`handle`, or Signal's
-        `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`, `person_id`).
-        It is applied when the message is recorded (`match_orphan_deletes`) or by the
-        start-up sweep, and purged if it never is. Ids and times only. See `OrphanDelete`.
-
-        BOUNDED, by EVICTION and never by refusal. The same delivery again returns the row
-        it already has and adds (and evicts) nothing. A new one lands unless a concurrent writer
-        deadlocks and the caller's retries are exhausted (`orphan_lost`), and a flood can evict
-        it later: when its scope already holds the cap (a NAMED deleter:
-        `ORPHAN_CAP_PER_DELETER`; an
-        unnamed one, as Discord and Instagram deletes are: per room,
-        `ORPHAN_CAP_UNNAMED_PER_ROOM`; the room: `ORPHAN_CAP_PER_ROOM`; everything:
-        `ORPHAN_CAP_GLOBAL`, all in `nora.domain.delete_authorship`) the OLDEST rows of that
-        scope are evicted first (in the room scope, the oldest of the deleter holding the most
-        rows there), before the insert, and counted in `evicted`. Eviction is a
-        leak-direction loss if the evicted delete's message then arrives: see the constants.
-        Expired rows (`ORPHAN_TTL_MS`) are purged in the same transaction, a bounded few."""
-        ...
-
-    async def is_hidden(self, *, row_id: int) -> bool:
-        """Whether the `messages` row `row_id` is hidden (`hidden_at`): one read by
-        primary key. The pipeline asks it right before it hands an audited message to
-        any downstream stage, the one fail-closed point every race against a delete
-        ends at."""
-        ...
-
-    async def match_orphan_deletes(
-        self, *, message: NormalizedMessage, person_id: str | None,
-        edit_timestamps: Sequence[int] = (),
-    ) -> list[OrphanDelete]:
-        """The held deletes that name `message` (a message just recorded, or one a
-        job asks about), by the one rule `nora.domain.delete_authorship.
-        orphan_names_message`: the same platform and room, a non-empty `handle` equal to
-        its platform id or `sent_ts` equal to its timestamp, and, on a platform where
-        only the author can delete, a deleter who IS its author. A non-author's is never
-        returned. It removes nothing: the caller applies what it returns and then
-        `discard_orphan_delete`s each, so a crash in between leaves the row for the
-        start-up sweep and nothing is lost. `edit_timestamps` are the timestamps of the
-        message's edits: a Signal delete may name an edit by its own (the edit path
-        asks about the original and the edit that just landed)."""
-        ...
-
-    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
-        """Remove one held delete once it has been applied. True when this call
-        removed it (nobody had)."""
+    async def hide_message(self, *, message_id: int, now_ms: int) -> bool:
+        """Hide the `messages` row `message_id` (`hidden_at`): a platform delete or
+        unsend of it. Every replay and render reads through `transcript_select`, which
+        excludes a hidden row. True when THIS call hid it, False when it already was
+        (the first timestamp is kept) or the row does not exist. Nothing derived from
+        the message is touched, and Honcho keeps what it was already fed."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
@@ -985,38 +934,6 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
-
-
-#: How one delete of a stored message ended (`nora_delete_withdrawals_total`'s
-#: `outcome` label). `not_stored` is a delete whose target is not on record;
-#: `cascade_failed` is a hide that was ROLLED BACK because the cascade raised
-#: (the message is still visible until `nora withdrawal reconcile-deletes`).
-DeleteOutcome = Literal["hidden", "already_hidden", "not_stored", "cascade_failed"]
-
-
-@dataclass(frozen=True)
-class DeleteWithdrawal:
-    """What `DeleteWithdrawer.withdraw` did. `marked` is how many derived rows
-    THIS call newly marked `unsupported` (never rows already unsupported)."""
-
-    outcome: DeleteOutcome
-    marked: int = 0
-
-
-@runtime_checkable
-class DeleteWithdrawer(Protocol):
-    """Withdraw one message a platform deleted or unsent: hide the `messages`
-    row (`hidden_at`) and run the withdrawal cascade over it, in ONE
-    transaction (`nora.app.withdrawal`'s docstring on why one), idempotently.
-
-    Implemented by `nora.app.delete_withdrawal.SqlDeleteWithdrawer`; it lives
-    above `nora.ingest` because the cascade does, so the touch stage is handed
-    it rather than importing it. Never raises: a failure is the
-    `cascade_failed` outcome, counted by the caller. Never writes Honcho, which
-    has no per-message delete (`design/context-assembly/04-every-occasion.md`
-    §7)."""
-
-    async def withdraw(self, *, message_id: int, now_ms: int) -> DeleteWithdrawal: ...
 
 
 @runtime_checkable
@@ -1159,14 +1076,6 @@ class NewWakeOutcome:
     #: FAILURE_CAUSES`, `classify_failure`); ignored for `closed`/`cancelled`.
     #: Defaults to `infra`, the side that never strikes a stimulus.
     cause: str = "infra"
-    #: What the session's model loop spent, as the runner could read it: None is
-    #: unread, never a zero (a session that failed before a model call, an
-    #: outcome a restart wrote, a provider that reported no usage).
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    #: The session's root trace, so a spend row can be opened in Langfuse.
-    trace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1213,59 +1122,15 @@ class NewCognitionSessionClose:
     strike: int = 0
 
 
-@dataclass(frozen=True)
-class NoteHead:
-    """A note's head as the live store's compare-and-swap would see it: the
-    revision id a revision must be written against, and whether the note is
-    retired (an append requires an open one). Read through the real read path
-    (`SqlNoteStore.note_by_id`) by the Cognition session's dry-run
-    `note_update`, so the same refusals the live store makes are made without a
-    write; `None` in its place is a note absent from the unit."""
-
-    head_revision_id: str
-    retired: bool = False
-
-
-@dataclass(frozen=True)
-class NewCognitionWouldWrite:
-    """A `nora.domain.cognition_write.WouldWrite`, addressed to a session
-    and a unit — the port's own copy of the same fields rather than an
-    import of the domain dataclass, matching `NewStimulus`/`Stimulus` next
-    door: the domain type is what code BUILDS, the port type is what a store
-    PERSISTS, and they are allowed to diverge without either changing the
-    other's shape."""
-
-    session_id: int | None
-    unit: str
-    tier: str
-    verb: str
-    platform: str
-    conversation_id: str
-    args: dict[str, object]
-    outcome: str
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-    candidate: dict[str, object] | None = None
-    base_revision_id: str | None = None
-
-
 @runtime_checkable
-class CognitionDryRunStore(Protocol):
-    """`cognition_session`, `cognition_session_close` and
-    `cognition_would_write` (design/cognition-loop/70-migration.md step 3a).
-    All three append-only (10-tiers.md §8): a session is one row written at
-    its start, never revised; a close and a would-write are each their own
-    row. Implementations: `nora.infra.sql.cognition_dry_run.
-    SqlCognitionDryRunStore`, `nora.testing.cognition_dry_run_store.
-    InMemoryCognitionDryRunStore`, bound by
-    `tests/contract/test_cognition_dry_run_store_contract.py`.
-
-    **Never called outside `[cognition] session_mode = "shadow"`.** This
-    port exists so shadow has somewhere to write instead of a live tier
-    store — see `nora.agent.cognition_dry_run` for the wrappers that call
-    it and `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`
-    for what a module reachable from shadow may import.
-    """
+class CognitionStore(Protocol):
+    """A Cognition session's own bookkeeping: `cognition_session`,
+    `cognition_session_close` and `cognition_self_wake`, each append-only
+    (10-tiers.md §8). The session's writes to the tiers go to the tiers'
+    own stores (notes, events, Standing, reminders), never here.
+    Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
+    `nora.testing.cognition_store.InMemoryCognitionStore`, bound by
+    `tests/contract/test_cognition_store_contract.py`."""
 
     async def record_session(
         self, *, session: NewCognitionSession, recorded_at_ms: int,
@@ -1279,25 +1144,11 @@ class CognitionDryRunStore(Protocol):
         """Append one agenda item's close row and return its id."""
         ...
 
-    async def record_would_write(
-        self, *, write: NewCognitionWouldWrite, recorded_at_ms: int,
-    ) -> int:
-        """Append one would-write row and return its id."""
-        ...
-
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
     ) -> int:
         """Append one pace-verb transition (`wake_at`/`wake_move`/
         `wake_cancel`, step 3a-ii) and return its id."""
-        ...
-
-    async def record_remind_mirror(
-        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
-    ) -> int:
-        """Append one mirrored `remind`/`remind_move`/`remind_cancel` call
-        (step 3a-ii, 30-cognition.md §2: "every reminder cognition writes is
-        mirrored to a review channel and held") and return its id."""
         ...
 
     async def pending_self_wakes(
@@ -1314,17 +1165,6 @@ class CognitionDryRunStore(Protocol):
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
         """`created` (recorded, not refused) `wake_at` rows for the unit at or
         after `since_ms` (the per-day cap's count; moves do not count)."""
-        ...
-
-    async def pending_mirrored_reminds(
-        self, *, unit: str, now_ms: int,
-    ) -> Sequence[PendingMirroredRemind]:
-        """The unit's mirrored reminds still PENDING at `now_ms`: per
-        `reminder_ref`, the latest recorded link decides; cancelled and due
-        (its time is at or before `now_ms`; nothing fires in shadow) are not
-        pending (`nora.domain.cognition_remind.fold_pending_reminds`). BOUNDED:
-        only refs with a recorded `remind` or `remind_move` due at or after
-        `now_ms` are read."""
         ...
 
 
@@ -1352,29 +1192,6 @@ class NewCognitionPace:
     refusal_detail: str | None = None
     stimulus_id: int | None = None
     supersedes: str | None = None
-
-
-@dataclass(frozen=True)
-class NewCognitionRemindMirror:
-    """One `remind`/`remind_move`/`remind_cancel` call, mirrored and held
-    (never sent, never fired) — design/cognition-loop/30-cognition.md §2 and
-    the migration's "shadow before cut-over" rule."""
-
-    session_id: int | None
-    unit: str
-    verb: str
-    reminder_ref: str | None
-    platform: str
-    conversation_id: str
-    intent: str | None
-    subject_rows: tuple[str, ...]
-    at_ms: int | None
-    why: str | None
-    outcome: str
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-
-    async def aclose(self) -> None: ...
 
 
 #: How a source's health row came about: a `poll` it made, or a `transition`
@@ -1408,7 +1225,7 @@ class MemoryStore(Protocol):
     workspace's HONCHO workspace and its own named scope inside it. A caller
     never names a Honcho workspace itself: a `workspace_id` parameter used to
     be here, and a unit name passed through it addressed a Honcho workspace
-    that did not exist (`NoteCurator._discharge`, 2026-09-19). On the peer
+    that did not exist (the since-deleted `NoteCurator._discharge`, 2026-09-19). On the peer
     verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
     the key ROUTES only; it never narrows a read to one session. `peer_card`
     and `representation` also take `workspace` — a NORA workspace name — for
@@ -2526,9 +2343,9 @@ class Proposal:
 #: module both sides can read. `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in
 #: `nora.domain.standing` is the same arrangement for the same reason.
 #:
-#: **15s is sized against the CURATOR's degraded worst case, not against one
-#: healthy call.** The number multiplies SITES, and a site inside a per-note
-#: loop runs once per note: `NoteCuratorAdaptor.inputs` renders up to
+#: **15s was sized against the (deleted, DEC-277) CURATOR's degraded worst
+#: case, not against one healthy call.** The number multiplies SITES, and a site inside a per-note
+#: loop runs once per note: `NoteCuratorAdaptor.inputs` rendered up to
 #: `max_expired_per_tick` + `max_revisits_per_tick` notes (20 + 10 on the
 #: shipped config) and each one costs a `record.recent` plus a
 #: `MediaJoin.enrich` that carries its OWN 3s bound (`[media]
@@ -2542,9 +2359,10 @@ DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 
 #: The ceiling every `DreamAdaptor.store_calls_per_tick` may declare (issue
-#: #191). Today's four are 5 (`CultureAdaptor`), 10 (`NoteCuratorAdaptor`), 12
-#: (`NoteCandidateAdaptor`) and 17 (`ProactiveAdaptor`) — this is headroom over
-#: the widest of those, not a measurement of any one of them.
+#: #191). Today's one is 5 (`CultureAdaptor`); the four it was sized against were 5, 10
+#: (`NoteCuratorAdaptor`), 12 (`NoteCandidateAdaptor`) and 17
+#: (`ProactiveAdaptor`), the last three deleted 2026-10-03 (DEC-277) — this is
+#: headroom over the widest of those, not a measurement of any one of them.
 #:
 #: **It exists so `[dreamer] max_unit_hold_seconds`'s startup gate
 #: (`nora.config`) can PROVE its number against `2 x
@@ -2660,8 +2478,8 @@ class DreamAdaptor(Protocol):
     uses_watermark: bool
     """False for an adaptor that does not consume a message batch at all, and
     which therefore gets no watermark, lag or quiet condition and must carry
-    its own fire condition. `nora.language.note_curator.NoteCuratorAdaptor` is
-    the shipped one: it reads LIVE STATE — which anchors have passed, which
+    its own fire condition. the (deleted, DEC-277) `NoteCuratorAdaptor` was
+    the shipped one: it read LIVE STATE — which anchors have passed, which
     notes are due — and none of those questions has a "since when"."""
 
     objective: str
@@ -2707,9 +2525,9 @@ class DreamAdaptor(Protocol):
     **SITES, not dynamic calls, and the difference is where the arithmetic
     bites.** A site inside a per-item loop runs once per item, so the real
     fan-out is the site count times the adaptor's own per-tick cap:
-    `NoteCandidateAdaptor.commit` can reach 64 items (`MAX_ITEMS`) x 6 sites,
-    and `NoteCuratorAdaptor.inputs` renders up to 30 notes x 2 evidence
-    calls. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` above is therefore sized
+    the (deleted) `NoteCandidateAdaptor.commit` could reach 64 items
+    (`MAX_ITEMS`) x 6 sites, and `NoteCuratorAdaptor.inputs` rendered up to 30
+    notes x 2 evidence calls. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` above is therefore sized
     against the widest of those degraded cases and NOT against one healthy
     call — an earlier draft of this paragraph divided a per-PHASE bound by a
     per-CALL latency, claimed three orders of magnitude of headroom, and was
@@ -2773,8 +2591,8 @@ class DreamAdaptor(Protocol):
 
         **`commit(key, ())` is a legal and meaningful call**, not a call to
         skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
-        and it is where time-driven decay lives. Verified against the shipped
-        curator: `NoteCuratorAdaptor.commit` with zero proposals still records
+        and it is where time-driven decay lives. Verified against the (since-deleted)
+        curator: `NoteCuratorAdaptor.commit` with zero proposals still recorded
         a WAKE for every note the run selected, advancing `revisit_at` and
         charging a strike to a note nobody answered. None of the adaptor's
         other fields has a slot for that. The runtime NOT calling `commit` is
@@ -2790,101 +2608,6 @@ class DreamAdaptor(Protocol):
         that duplicates a standing note without adding anything — so a legal
         commit of three proposals can write one row. The count is what
         `nora_dream_written_total` reports."""
-        ...
-
-
-@runtime_checkable
-class DreamSink(Protocol):
-    """Where a Dreamer adaptor's validated result is written.
-
-    Two verbs, and deliberately no third. **There is no delete — not on this
-    port, and not on any implementation of it.** That is the enforcement, not a
-    convention: «invalidate, never delete» written as a type cannot be forgotten
-    by either side, whereas the same rule written in a docstring is remembered
-    until the night someone is tired. A single opaque `write(result)` is also
-    rejected — it cannot express supersede at all, so the distinction between
-    "this is new" and "this replaces that" would be lost at the boundary.
-
-    **The key is the adaptor's own.** Every existing adaptor's unit of work is a
-    `scope_id`; the fact adaptor's is a unit (`Conversation.unit`,
-    DEC-105). The port takes `key: str` and does not care which, because
-    `_dream_once`'s shared per-scope watermark cannot host a unit-keyed
-    adaptor unchanged and the port must not bake in the assumption that it can.
-
-    **An empty `propose` is R-27's three states expressed in the port:**
-
-    - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
-      «I looked and there was nothing». It is a LEGAL call and the sink may act
-      on it, because decay is TIME-driven rather than evidence-driven: the
-      shipped curator's own `commit` with zero proposals still records a wake
-      for every note the run selected. None of the five adaptor fields has a
-      slot for that, so this is where it lives.
-    - not calling `propose` at all — the adaptor could not check. `unavailable`,
-      «I could not check». An ERROR is never a PASS.
-
-    Collapsing those two, or treating an empty tuple as "nothing to do, skip the
-    call", silently drops decay and turns a wiring gap into a false negative.
-    """
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
-    ) -> Sequence[str]:
-        """Write `proposals` under `key`; return the id of each row written, in
-        order.
-
-        Ids, not a count: `supersede` has to be able to NAME what a previous
-        `propose` produced, and a count cannot. An empty return is correct for
-        an empty `proposals`.
-
-        `now_ms` is on the verb rather than on `Proposal` because one tick
-        writes many proposals at a single instant — putting the clock on each
-        proposal invites a batch whose rows disagree about when the batch
-        happened.
-        """
-        ...
-
-    async def supersede(
-        self,
-        *,
-        key: str,
-        target: str,
-        replaced_by: str | None,
-        because: str,
-        source: str | None,
-        now_ms: int,
-    ) -> int:
-        """Retire `target`, naming WHAT replaced it and WHY. Returns rows
-        affected.
-
-        **`replaced_by` is the successor IN THIS TIER, and it is nullable at the
-        port on purpose.** Two tiers derived the need for it from different
-        specs — the fact tier, whose supersessions always have a successor
-        because a contradicted fact is replaced by the corrected one, and the
-        note tier, whose `retire` case has none (an anchor date passed; a dinner
-        that happened is not replaced by anything). A non-nullable field would
-        force the second tier to mint a placeholder id to satisfy the signature,
-        which is the "invent a value to satisfy a schema" move this codebase
-        forbids everywhere else.
-
-        So: **permissive at the port, strict at each implementation.** A sink
-        whose rows require a successor refuses the null itself — the fact
-        store's `(superseded_by is null) = (superseded_at is null)` biconditional
-        is a FACT-TIER rule enforced in its own CHECK, not a universal one. A
-        port that hard-codes one tier's cardinality is the same mistake as a
-        `payload` typed to one tier's value: the port stays general, and the sink
-        is where the type AND the cardinality are known again.
-
-        **`source` is a WARRANT** — a URL or equivalent pointer to evidence —
-        and never the id of a row in the tier. That separation is why
-        `replaced_by` exists rather than being smuggled through `source`: the
-        same field meaning "a citation" to one tier and "the surviving row" to
-        another is a collision where whoever writes first fixes it wrong for the
-        other.
-
-        `because` is required and stays narrow enough to be a constrained enum
-        on the implementing side (`stale|wrong|merged` in the fact tier) — which
-        it could not be if it had to carry a successor id as free text.
-        """
         ...
 
 
@@ -3286,7 +3009,7 @@ class StandingStore(Protocol):
         """This conversation's current position, or `None` if it has none."""
         ...
 
-    async def write(self, *, standing: Standing) -> None:
+    async def write(self, *, standing: Standing, source: str = "fold") -> None:
         """Revise the row in place, keyed `(platform, conversation_id)`.
 
         An upsert rather than an insert-or-update pair: two tags for one

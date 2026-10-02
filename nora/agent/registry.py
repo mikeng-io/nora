@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Awaitable, Callable, Container, Iterable, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
@@ -40,7 +40,7 @@ from ..domain.computer_exports import ComputerExportStore
 from ..domain.computer_leases import ComputerLeases
 from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
-from ..domain.models import PersonRef, TranscriptRow
+from ..domain.models import TranscriptRow
 from ..domain.ports import (
     ArtifactIngest,
     BlobStore,
@@ -88,7 +88,6 @@ from .tools import (
     EventsCollaborator,
     ImageGenerator,
     NoteCollaborator,
-    OriginRoom,
     RecordQuerySource,
     RollupReadSource,
     RoomDirectory,
@@ -962,8 +961,6 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
-        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
-        origin_rooms: Mapping[str, OriginRoom] | None = None,
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
@@ -1015,17 +1012,7 @@ class ToolRegistry:
         `dream_adaptor` is the second per-turn PROVENANCE beside `fire_turn`
         (design/dreamer-agent-loop/39 D3): the Dreamer adaptor's NAME when
         `nora.agent.dreamer.RegistryToolSource` built this set, `""` for
-        every tag and every fire turn. `remind` reads it to stamp a proactive
-        row in code rather than from a tagger it does not have.
-
-        `online_scope` is per-CALL for the same reason `supplied_unit`
-        is, from that same caller: `RegistryToolSource` supplies it only for
-        a home-room decide turn, resolving `online_now`'s input domain to the
-        home roster unioned with the note's established-in subjects
-        (design/online-status/03). It must not become a registry field — it
-        is bound to exactly one decide turn, never to background loops, and
-        every tag-path caller leaves it None so the domain is the invoking
-        room's own roster."""
+        every tag and every fire turn."""
         return build_tool_specs(
             store=store, conversation_id=conversation_id, conversation_type=conversation_type,
             persons=persons, honcho=honcho, deliverer=deliverer, metrics=metrics,
@@ -1077,12 +1064,10 @@ class ToolRegistry:
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,
-            online_scope=online_scope,
             image_generator=self._image_generator,
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
             documents=self._documents,
-            origin_rooms=origin_rooms,
             shelf=shelf,
             on_rows=on_rows,
         )
@@ -1107,8 +1092,6 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
-        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
-        origin_rooms: Mapping[str, OriginRoom] | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> list[Any]:
         """`surface(...).tools`, for a caller that wants only the list.
@@ -1126,7 +1109,6 @@ class ToolRegistry:
             transcript=transcript, fire_turn=fire_turn, allowed_mcp=allowed_mcp,
             location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
-            online_scope=online_scope, origin_rooms=origin_rooms,
             on_rows=on_rows,
         ).tools
 
@@ -1150,8 +1132,6 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
-        online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
-        origin_rooms: Mapping[str, OriginRoom] | None = None,
         grant: frozenset[str] | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         defer: bool = False,
@@ -1199,7 +1179,6 @@ class ToolRegistry:
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
-            online_scope=online_scope, origin_rooms=origin_rooms,
             shelf=shelf, on_rows=on_rows,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)

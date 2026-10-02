@@ -59,11 +59,13 @@ decision, not this file's.
 
 **Where the build is behind that table.** Measured, not assumed:
 
-- **Sensing is ahead of deciding.** The proactive pass renders once a day,
-  and otherwise only when a note is created, revised by a person or reaches
-  its `revisit_at`, or a room's Standing is rewritten
-  (`nora/language/proactive.py::_changed_since`). A change in where people
-  are, or in what they post, never wakes it.
+- **Sensing is ahead of deciding.** *(2026-10-03, DEC-277: the proactive
+  DECIDE pass is deleted; the Cognition session wakes on stimuli and the daily
+  agenda floors instead. This bullet records the build before the cut-over.)*
+  The proactive pass rendered once a day, and otherwise only when a note was
+  created, revised by a person or reached its `revisit_at`, or a room's
+  Standing was rewritten. A change in where people are, or in what they post,
+  never woke it.
 - **A tag turn carries one person's places.** It renders the caller's peer
   card; everyone else's places sit behind `where_is` and `where_been`, which
   she seldom calls unasked. Rendering every member's usual places into the
@@ -80,7 +82,7 @@ decision, not this file's.
 
 **Where she is going.** The sequence is `design/group-situation/00-intent.md`
 §0 and is not restated here: place identity, then a time-anchored forecast,
-then a proactive pass that also wakes on the time anchors of what is
+then a proactive pass (now the Cognition session, DEC-277) that also wakes on the time anchors of what is
 planned and on changes in the world. More sensors are not on it. She already sees more than she uses; the
 hard part is attention — when something she knows is worth interrupting a
 room for — and what she may do with what she knows is §8's «What she may do
@@ -90,10 +92,13 @@ with what she knows».
 three shipped-off paths that speak uncalled — the heartbeat's reminders, the
 participation occasion (design/dreamer-agent-loop/35) and the proactive
 adaptor (design/dreamer-agent-loop/39, DEC-162) — are granted per room in
-`policy.toml` and per section in `config.toml`, and the Dreamer runs three
+`policy.toml` and per section in `config.toml`, and the Dreamer then ran three
 adaptors (`note-candidates`, `note-curation`, `proactive`) over the note tier
-and Standing. **Updated 2026-09-25:** five adaptors now — `note-merge`
-(DEC-202) and `culture` (DEC-207) joined them; a fourth platform, Instagram,
+and Standing. **Updated 2026-09-25:** five adaptors then — `note-merge`
+(DEC-202) and `culture` (DEC-207) joined them. **Updated 2026-10-03
+(DEC-277):** those four note/proactive adaptors are deleted; the Cognition
+session writes notes, events, Standing and Nora's reminders, and `culture` is
+the one adaptor left; a fourth platform, Instagram,
 has a room adapter and a public summons (DEC-212, a third sender that reaches
 no room); and the doctrine moved into scope folders (`core/`, `rooms/`,
 `public/`, `instruments/`). The paragraph that follows is the Phase 4 status this file was
@@ -174,15 +179,12 @@ Signal / Discord / WhatsApp / Instagram room
 ④ THE DREAMER (background, never speaks — `nora/app/runtime.py::dream_loop`)
    per adaptor, on its own schedule: a deterministic `inputs()` read, and a
    bounded research loop ONLY when that read rendered something.
-   note-candidates (hourly, per room) → stages notes from new messages
-   note-curation   (daily, per unit, off by default) → retires notes
-   note-merge      (hourly, per unit, [notes] merge_mode, off by default)
-                    → folds a duplicate note into the oldest of its group;
-                      in shadow, only records the fold it would make
    culture         (daily, per room, [culture] enabled) → appends ONE short
                     account of what the room has become to its chain (DEC-207)
-   proactive       (hourly tick, renders on change or a daily floor) → may
-                    write ONE kind of row: a `kind="proactive"` reminder for ③
+   Notes, events, Standing and Nora's own reminders are no longer adaptors
+   (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
+   enabled`), with the verbs `note_retire` and `note_merge` and a
+   `kind="proactive"` reminder for ③ through `remind`.
 
 ⑤ THE PUBLIC SUMMONS (`nora/app/summons.py`, [social.instagram.summons], off
    and dry-run by default) — somebody in identity.toml tags her under a public
@@ -269,7 +271,7 @@ Enforced today by five import-linter contracts (`pyproject.toml`
 | `infra/` | `sql/` — `schema.py` (the `MetaData`/`Table` source of truth), `engine.py` (`create_sql_engine`, WAL/`busy_timeout`/`foreign_keys` on a connect hook), `audit.py` (`SqlRecordStore`), `migrations_runner.py` (programmatic Alembic: `run_migrations`, `current_revision`, `head_revision`, `stamp_head`, `alembic_config`), `migrations/` (Alembic env + `versions/0001_baseline.py` … `versions/0004_media_json.py`), `reminders.py` (`SqlReminderStore` — the reminders table, whose `claim`/`cancel`/`sweep_firing` each carry a STATE predicate in the WHERE clause so taking a row is a compare-and-set rather than a read-then-write, R-37), `compute_jobs.py` (`SqlComputeJobStore` — the compute-job outbox, whose `claim` and both sweeps carry the same STATE predicate in the WHERE clause for R-37's reason), `announcements.py` (`SqlAnnouncementLog` — the version-announcement ledger, whose `claim` is `INSERT … ON CONFLICT DO NOTHING` so the PRIMARY KEY is the at-most-once mechanism, R-42/DEC-97); `version.py` (`VersionManifest` — the baked build stamp `nora/version.json`, read once per process and answering R-27's three states, where an absent or malformed file is `unavailable` and never `nothing_found`; generated at build time by `scripts/gen_version_manifest.py` and gitignored, so a source checkout reads `unavailable` by design); `blobs/` — `filesystem.py::FilesystemBlobStore`, the `BlobStore` port over `data/media/<first2>/<rest>` (its docstring holds the RustFS decision; do not re-litigate without evidence); `honcho/` — `client.py::HonchoClient`, best-effort semantic store; a separate package from `sql/` because the two ports' error contracts are opposite — see `infra/__init__.py`'s docstring; `social/` — the social read seam (DEC-151, DEC-201; `x_read`, `x_search`, `instagram_read`, `instagram_search`): `bridge_client.py::OpenCliBridgeClient` (the container's `SocialProvider`, POSTing to the host bridge, never raises) and `bridge_server.py::SocialBridge` (the host-side half, `python -m nora.infra.social`, owning the read-only `(site, command)` allowlist that makes OpenCLI's write verbs unreachable). | `sqlalchemy`, `alembic`, `aiohttp`, `nora.domain.models`, `nora.domain.ports` (`honcho/client.py` — `MemoryHealth`, the typed return of `HonchoClient.health()`). May **NOT** import `nora.obs` — `nora.infra` sits below `nora.obs` in the layers contract (contract 2), which is why `SqlRecordStore` takes `metrics` by injection rather than importing `nora.obs.metrics`; see `infra/__init__.py` and `audit.py`'s `__init__` docstring. Forbidden from importing `nora.config` (contract 3). |
 | `doctrine/` | `loader.py` — `DoctrineStore`, the only module that may read a `.md` doctrine file (enforced by `test_boundaries.py::test_doctrine_read_boundary`), and the `kind` gates DEC-29 added: a file with no `kind`, an `identity`/`conduct` file naming a tool, a file claiming the DERIVED `situation` kind or an unknown kind (`capability` included, deleted by DEC-150), an incoherent `authority_above`/`authority_below` pair, an empty `not_here` or an unknown `change_policy` all refuse to load. Files live in four scope folders — `core/`, `rooms/`, `public/` (the summons audience only), `instruments/` — and an audience never loads a folder it is not written for. | stdlib, YAML, `nora.obs.metrics` (reload-failure counter), `nora.domain.prompt` (attribute escaping). Forbidden from importing `nora.config`. |
 | `dreamer/` | **Text, not code — there is no `__init__.py` here and there must not be.** The Dreamer's model-facing instructions as versioned artifacts: `doctrine/dreamer.md` (exactly one file — who the Dreamer is on every run: a read-only research agent, what counts as evidence, that a source which does not mention something has not said it is false, when to stop, and that «I could not check» is a result to report) and `objectives/*.md` (one per adaptor — what that one job is trying to find out). Read by `nora.instructions.dreamer.DreamerInstructions`, which assembles doctrine + one objective and hashes the pair into the `instruction_sha256` every row that adaptor writes carries. Bind-mounted read-only into the container beside `nora/doctrine`, so an operator edit is live on the next tick with no rebuild — and, exactly like the doctrine, an edit on `master` IS a deploy. The doctrine loader's gates (kind boundaries, authority graph, RFC 2119 register) do NOT run on these files. | none — it is a directory of Markdown. |
-| `language/` | The Dreamer's extraction side. **The lexeme/exchange/portrait half (the language tier) and the fact half (the knowledge tier) were DEPRECATED and DELETED on 2026-09-07 — see issue #115 and `design/dreamer-agent-loop/20-knowledge-tier.md` §0; their database tables are not dropped.** What remains is the NOTE tier and Standing's rendering: `note_candidates.py` (the note extraction adaptor; its create gate resolves the standing-note TITLE the model names — it matched on the anchor date from 2026-09-08 until 2026-09-13, when two firings in production conflated two unrelated occasions twice, #228), `note_curator.py` (retire, R-74/R-75 — its merge half and the `note_entity_adaptor.py` entity-resolution pass were deleted 2026-09-08, since nothing minted an entity once the knowledge tier was gone), `proactive.py` (the proactive adaptor — Nora's other half, design/dreamer-agent-loop/39, DEC-162: unit-keyed, standing in a policy-named home room, every read verb and exactly one act verb, `remind`, whose sink writes only `record_wake`), `note_render.py` and `standing_render.py` (the prefill blocks). Nothing here touches `nora.infra` or a database itself — the adaptors return domain candidates and a store writes them. | stdlib plus `nora.domain.models`, `nora.obs.metrics` (candidate-drop counter). Forbidden from importing `nora.config` (contract 3) and `strands` (contract in `tests/test_boundaries.py`) — the one model call is expressed through an injected structural client, never `nora.agent.factory`'s Strands plumbing. |
+| `language/` | The Dreamer's extraction side. **The lexeme/exchange/portrait half (the language tier) and the fact half (the knowledge tier) were DEPRECATED and DELETED on 2026-09-07 — see issue #115 and `design/dreamer-agent-loop/20-knowledge-tier.md` §0; their database tables are not dropped.** What remains is the NOTE tier and Standing's rendering. *(2026-10-03, DEC-277: `note_candidates.py`, `note_curator.py`, `note_merge.py` and `proactive.py` are deleted; the Cognition session replaced them. The sentence that follows describes the build before that.)* It was: `note_candidates.py` (the note extraction adaptor; its create gate resolves the standing-note TITLE the model names — it matched on the anchor date from 2026-09-08 until 2026-09-13, when two firings in production conflated two unrelated occasions twice, #228), `note_curator.py` (retire, R-74/R-75 — its merge half and the `note_entity_adaptor.py` entity-resolution pass were deleted 2026-09-08, since nothing minted an entity once the knowledge tier was gone), `proactive.py` (the proactive adaptor — Nora's other half, design/dreamer-agent-loop/39, DEC-162: unit-keyed, standing in a policy-named home room, every read verb and exactly one act verb, `remind`, whose sink writes only `record_wake`), `note_render.py` and `standing_render.py` (the prefill blocks). Nothing here touches `nora.infra` or a database itself — the adaptors return domain candidates and a store writes them. | stdlib plus `nora.domain.models`, `nora.obs.metrics` (candidate-drop counter). Forbidden from importing `nora.config` (contract 3) and `strands` (contract in `tests/test_boundaries.py`) — the one model call is expressed through an injected structural client, never `nora.agent.factory`'s Strands plumbing. |
 | `skills/` | The on-demand skill layer (design/12 §1, DEC-48) — NOT doctrine: a skill's body must not sit in the prompt on every turn, only its name and when-to-load line do (progressive disclosure), and it activates on demand. `loader.py::SkillStore` reads the AgentSkills.io SKILL.md shape (`name` + `description` frontmatter) from one operator-configured directory; `resolve(name)` is a pure name lookup that can never turn message content into a loaded skill (R-29 — a skill source is operator config only). Three skills ship, one subdirectory each: wayfinding judgement and her image spec (DEC-193). A self-account (2026-09-13, issue #227) moved into `nora/doctrine/core/identity.md` on 2026-09-17, and personalization into `nora/doctrine/rooms/conduct.md` on 2026-09-24 (ADR 0016), because both are needed on turns that would not load them. Activation went live with DEC-50: `nora.agent.factory` builds one `AgentSkills` plugin per tag over this directory and `nora.agent.tools.NATIVE_TOOLS` carries the `skills` budget R-7 needs to admit the call. This module's own `SkillStore` is the framework-free reader the portal's `/app/v1/skills` endpoint and the loader tests use; the live prompt path goes through the vended plugin at these same files. | stdlib, YAML. Forbidden from importing `nora.config` (contract 3) and `strands` — framework-free, which is what let the same files load unchanged under the vended `AgentSkills` plugin when DEC-50 wired activation. **Deploy note: this directory is `COPY`d into the image, NOT bind-mounted the way `nora/doctrine` is — a skill edit needs an image rebuild, and a doctrine-style edit on the host deploys nothing.** |
 | `instructions/` | The parse/hash/reload core shared by every instruction corpus: `frontmatter.py::parse_document` (frontmatter split, YAML load, required-key and name-charset checks, `sha256` over the BODY only — the frontmatter carries versions and descriptions that never reach a model) and `reload.py::DirectoryWatcher` (mtime+size fingerprint, generic over what a scan produces, keeping the last good value when a live edit breaks and counting the failure on the CALLER's own counter — but raising on the FIRST scan, because a process that starts with no instructions and says nothing about it is `unavailable` reported as `nothing_found`). Extracted out of `nora.doctrine.loader` rather than forked: `_FRONTMATTER_RE` was already duplicated in `nora.skills.loader`, and the reload machine was unshared, so a copy would have been its first second implementation. The doctrine's gates, its `<section>` rendering and its audience filter did NOT move. `frontmatter.py` is the package's only `.md` reader — allowlisted in `test_boundaries.py::test_doctrine_read_boundary` for that reason. | stdlib, YAML, `nora.obs.metrics`. Forbidden from importing `nora.config` — the directory arrives as a `Path` from the composition root. |
 | `obs/` | `logging.py` (`setup_logging`), `tracing.py` (`setup_tracing`, OTel), `metrics.py` (`Metrics` — the recording machinery; the `METRICS` module-level singleton was deleted in phase 6, see DEC-13), `metric_specs.py` (every declared metric name, label set and help text — append-only, enumerated by `tests/test_metrics_export.py`), `health.py` (`build_health_app` — `GET /health`, `GET /metrics`; takes `store`/`honcho` as injected dependencies, not a module import — the `/health` endpoint calls `store.stats()` and `honcho.health()`). | `aiohttp`, `opentelemetry`. Forbidden from importing `nora.config` — `logging.py::setup_logging`/`tracing.py::setup_tracing` take explicit scalar parameters instead of a duck-typed `cfg` sub-config; `health.py::build_health_app` was never an offender, it already took individually-extracted fields. |
@@ -394,10 +396,10 @@ not ask" never collapses into "there is nothing".
 **Two more layers arrived after that table was written, and neither is
 memory in its sense.** The **note tier** (`design/dreamer-agent-loop/27`, `33`;
 tables `note`/`note_revision`/`note_candidate`) holds the group's OPEN
-QUESTIONS per unit — written by people on a tag and by the
-`note-candidates` adaptor, retired by the curator, folded together by
-`note-merge` when two ask the same question (design 41 §7; `[notes]
-merge_mode`, off by default, `shadow` first), and never by anything Nora
+QUESTIONS per unit — written by people on a tag and by the Cognition
+session, which also retires them (`note_retire`) and folds two that ask the
+same question (`note_merge`) since DEC-277, 2026-10-03; the note-candidates,
+curator and note-merge passes are gone — and never by anything Nora
 herself says (her rows are excluded from what the tier reads: the one
 structural brake on her talking to herself, 39 §1). **Standing** (`design/
 dreamer-agent-loop/26`; table `standing`) is her own one-paragraph position
@@ -406,9 +408,11 @@ fold_batch` new messages have piled up — by ONE model call, rewritten in place
 and injected as `<standing>` — a stance, not a record. Since 2026-09-24 it is
 also where she keeps what she found on a turn and has not yet given the room
 — the compact of her work in that room (design/standing-compact/). The
-**proactive adaptor** (`39`) reads
+**proactive adaptor** (`39`) read
 both, plus its own decision log (her `kind="proactive"` reminder rows) and
 `<self_card>`, standing in a `home_room` `policy.toml` names per unit.
+*(2026-10-03, DEC-277: the adaptor and the event-driven/rollup Standing fold
+are deleted; the Cognition session writes Standing and `remind` rows.)*
 A third, the **culture tier** (`design/culture-tier/`; tables `culture`/
 `culture_revision`), is her account of what each room has BECOME — how they
 talk, how things get decided — appended once a day by the `culture` adaptor
@@ -465,7 +469,7 @@ without re-deciding it.
 | **Observe** | She records only rooms `policy.toml` lists; it is deny-by-default, and she refuses to start on an allowlist that permits nothing. A Discord guild is never allowlisted, only its channels. In a listed room every sender is recorded — `persons` gates who may call her, not who is recorded — and only mapped senders are fed to Honcho. | `nora/policy.py`, `nora/ingest/stages/` |
 | **Remember** | The record (Postgres) is verbatim and kept apart from interpretation (Honcho). Derived state — Standing, notes, culture — is written by named passes. A revision written by a background pass carries the instruction digest and model that wrote it (a note revised on a tag carries only who asked); a Standing revision carries only whether a fold or the operator wrote it. Standing and every Dreamer write are screened for egress before they are stored. Her own words are kept out of the evidence a note is created from; the curator may cite a reply she delivered to close one. | ADR 0001, DEC-199, DEC-202, DEC-204, DEC-207 |
 | **Infer** | Background passes never speak. Their one act is a proactive reminder row, and the fire path re-checks the room's grants when it comes due — against the policy loaded at startup, so revoking a grant in `policy.toml` takes a restart. | R-1, DEC-162 |
-| **Act** | Speaking unasked is its own per-room grant (`relevance_gate` for participation, `home_room` and `proactive` for the proactive pass), separate from being allowed to answer a tag. Every send into a room goes through one `Deliverer`; the public summons passes its text through a staging `Deliverer` and publishes it only through the instagram-bridge's guarded comment write. A turn that may decline records `silent` as a success. A message crosses rooms only within one unit, at the request of someone allowed in both, under that person's name. | R-1b (amended by DEC-212), R-49 |
+| **Act** | Speaking unasked is its own per-room grant (`relevance_gate` for participation, `home_room` and `proactive` for her own reminders), separate from being allowed to answer a tag. Every send into a room goes through one `Deliverer`; the public summons passes its text through a staging `Deliverer` and publishes it only through the instagram-bridge's guarded comment write. A turn that may decline records `silent` as a success. A message crosses rooms only within one unit, at the request of someone allowed in both, under that person's name. | R-1b (amended by DEC-212), R-49 |
 | **Disclose** | Room-scoped tools resolve names only inside the room. The circle is who may be asked about; the room is only who may be told. A live position is disclosed only into a room that is a subset of the person's Life360 circle, unless the operator grants the room `location`. Identifiers never leave in a reply; a person's name or position never leaves in a routing call. A story is read only for a Tier 0 person. A summons loads no room doctrine and no memory. | R-21, R-47, R-31/DEC-79, R-18, R-28, R-98, DEC-212 |
 
 **Amended by `design/cognition-loop` step 0 (DEC-230, `design/09-decision-index.md`).**
@@ -576,8 +580,9 @@ the language tier were **deprecated 2026-09-07** and their code deleted (issue
 were **deprecated 2026-09-08** — with the create gate's anchor-date match, which
 had taken duplicate-handling over from merge, deleted in turn on **2026-09-13**
 (#228), so nothing merged a duplicate in that tier at all (#236) — *until
-2026-09-25, when a separate `note-merge` pass was built (DEC-202, design 41 §7;
-`[notes] merge_mode`, off by default, `shadow` first)*. Their database
+2026-09-25, when a separate `note-merge` pass was built (DEC-202, design 41 §7),
+which DEC-277 (2026-10-03) deleted again in favour of the Cognition session's
+`note_merge` verb*. Their database
 tables are deliberately not dropped. Design documents describing them carry
 `DEPRECATED` banners, and their decision-index rows are marked rather than
 renumbered.

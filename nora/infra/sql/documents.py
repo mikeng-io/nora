@@ -29,7 +29,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
-    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -259,18 +258,10 @@ class SqlDocumentStore:
         document_id: UUID,
         state: DocumentState,
         set_by: str,
-        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         async with self._engine.begin() as conn:
             if (await conn.execute(_lock(document_id))).first() is None:
                 return False
-            if only_if_state is not None:
-                # Read UNDER the lock: a change another writer committed while this one
-                # waited for it is seen here, so a caller deciding from a snapshot never
-                # overwrites it.
-                current = (await conn.execute(_latest_state(document_id))).scalar_one_or_none()
-                if (current or "active") not in only_if_state:
-                    return False
             await conn.execute(
                 sa.insert(DOCUMENT_STATE).values(
                     document_id=document_id, state=state, set_by=set_by
@@ -281,29 +272,6 @@ class SqlDocumentStore:
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         async with self._engine.connect() as conn:
             return await self._one(conn, document_id)
-
-    async def list_created_by(
-        self,
-        *,
-        person_id: str,
-        states: tuple[DocumentState, ...] = ("active", "archived"),
-        limit: int,
-        offset: int = 0,
-    ) -> tuple[DocumentSummary, ...]:
-        limit = min(max(limit, 0), _MAX_LIMIT)
-        offset = min(max(offset, 0), _MAX_OFFSET)
-        if limit == 0 or not states:
-            return ()
-        stmt = (
-            _current()
-            .where(_D.created_by == person_id, _state().in_(states))
-            .order_by(_D.id)
-            .limit(limit)
-            .offset(offset)
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return tuple(_summary(r, r.created_at) for r in rows)
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:
         stmt = (
@@ -392,7 +360,6 @@ class SqlDocumentStore:
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
-        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
@@ -401,10 +368,6 @@ class SqlDocumentStore:
         in_room = sa.and_(
             _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
         )
-        if hide_forgotten:
-            in_room = sa.and_(
-                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)
-            )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
         top = (

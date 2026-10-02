@@ -13,7 +13,6 @@ from typing import Any
 
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Quote
 from nora.domain.ports import EngageDecision, MemoryHealth
-from nora.ingest import pipeline as pipeline_module
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import CompositePolicy, MentionPolicy, TriggerTextPolicy
 from nora.obs.metrics import Metrics
@@ -562,21 +561,6 @@ async def test_an_edit_is_never_a_relevance_gate_candidate():
     )
     assert result.decision is not None
     assert not result.decision.engage and not result.decision.relevance_gate
-
-
-async def test_an_edit_does_not_count_toward_the_standing_fold(monkeypatch):
-    """The event-driven fold counts new messages; an edit is not one."""
-    calls: list = []
-
-    async def _record(**kwargs):
-        calls.append(kwargs["message"].body)
-
-    monkeypatch.setattr(pipeline_module.standing_event_stage, "run", _record)
-    store = FakeRecordStore()
-    pipe = _pipeline(store, standing_event_wiring=object())
-    await pipe.run(message=_msg("dinner at 7"))
-    await pipe.run(message=_edit("dinner at 8"))
-    assert calls == ["dinner at 7"]
 
 
 async def test_an_edited_caption_keeps_the_attachment_handle_without_refetching():

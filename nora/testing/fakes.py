@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections
 import fnmatch
 import hashlib
 import json
@@ -42,16 +41,7 @@ from nora.domain.computer_sessions import (
     ensure_utc_event,
     normalise_session,
 )
-from nora.domain.delete_authorship import (
-    ORPHAN_CAP_GLOBAL,
-    ORPHAN_CAP_PER_DELETER,
-    ORPHAN_CAP_PER_ROOM,
-    ORPHAN_CAP_UNNAMED_PER_ROOM,
-    ORPHAN_TTL_MS,
-    orphan_names_message,
-)
 from nora.domain.documents import (
-    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -80,10 +70,7 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
-    OrphanDelete,
-    OrphanRecord,
     RowEdit,
-    Touch,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
@@ -92,7 +79,6 @@ from nora.domain.models import (
 from nora.domain.ports import (
     AdapterHealth,
     ArtifactRegistration,
-    DeleteWithdrawal,
     JobResult,
     JobStatus,
     LinkPreview,
@@ -183,9 +169,7 @@ class FakeRecordStore:
         # columns `SqlRecordStore.append_reaction`/`append_delete` write.
         self.reactions: list[dict[str, Any]] = []
         self.deletes: list[dict[str, Any]] = []
-        # `orphan_delete`, as `OrphanDelete`s (deletes waiting for their message).
-        self.orphans: list[OrphanDelete] = []
-        # Row ids a test hid (`FakeRecordStore` has no withdrawal of its own).
+        # Row ids `hide_message` hid.
         self.hidden_ids: set[int] = set()
         self.fail_on_nora = False
         self.fail_on_recent = False
@@ -295,6 +279,7 @@ class FakeRecordStore:
             ),
             edited_ts=latest["ts"] if latest else None,
             media_json=r["media_json"],
+            hidden=r["id"] in self.hidden_ids,
             edit_timestamps=frozenset(
                 e["ts"] for e in self.edits if e["message_id"] == r["id"]
             ),
@@ -349,79 +334,13 @@ class FakeRecordStore:
         })
         return len(self.deletes)
 
-    async def record_orphan_delete(
-        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
-        now_ms: int,
-    ) -> OrphanRecord:
-        """Mirrors `SqlRecordStore.record_orphan_delete`: the unique delivery key, eviction
-        of the oldest rows of a scope at its cap (the heaviest contributor's in the room),
-        and the opportunistic purge."""
-        self.orphans = [o for o in self.orphans if o.recorded_at >= now_ms - ORPHAN_TTL_MS]
-        ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
-        key = (message.platform, message.conversation_id, touch.target.message_id,
-               touch.target.sent_ts, message.sender_id)
-        for o in self.orphans:
-            if (o.platform, o.conversation_id, o.handle, o.sent_ts, o.deleter_id) == key:
-                return OrphanRecord(id=o.id)
-
-        def room(o: OrphanDelete) -> bool:
-            return o.platform == message.platform and o.conversation_id == message.conversation_id
-
-        evicted = 0
-
-        def evict(scope: Any, cap: int, heaviest_first: bool = False) -> None:
-            nonlocal evicted
-            held = [o for o in self.orphans if scope(o)]
-            for _ in range(max(0, len(held) - cap + 1)):
-                pool = held
-                if heaviest_first:
-                    counts = collections.Counter(o.deleter_id for o in held)
-                    top = min(counts, key=lambda d: (-counts[d], d))
-                    pool = [o for o in held if o.deleter_id == top]
-                victim = min(pool, key=lambda o: (o.recorded_at, o.id))
-                held.remove(victim)
-                self.orphans = [o for o in self.orphans if o.id != victim.id]
-                evicted += 1
-
-        if message.sender_id:
-            evict(lambda o: o.platform == message.platform and o.deleter_id == message.sender_id,
-                  ORPHAN_CAP_PER_DELETER)
-        else:
-            evict(lambda o: room(o) and o.deleter_id == "", ORPHAN_CAP_UNNAMED_PER_ROOM)
-        evict(room, ORPHAN_CAP_PER_ROOM, heaviest_first=True)
-        evict(lambda o: True, ORPHAN_CAP_GLOBAL)
-        self.orphans.append(OrphanDelete(
-            id=(max((o.id for o in self.orphans), default=0) + 1),
-            platform=message.platform, conversation_id=message.conversation_id,
-            handle=touch.target.message_id, sent_ts=touch.target.sent_ts,
-            deleter_id=message.sender_id, deleter_ids=ids, deleter_person_id=person_id,
-            event_ts=message.timestamp, recorded_at=now_ms,
-        ))
-        return OrphanRecord(id=self.orphans[-1].id, evicted=evicted)
-
-    async def is_hidden(self, *, row_id: int) -> bool:
-        """Mirrors `SqlRecordStore.is_hidden`: a row is hidden when `hide` marked it."""
-        return row_id in self.hidden_ids
-
-    async def match_orphan_deletes(
-        self, *, message: NormalizedMessage, person_id: str | None,
-        edit_timestamps: Sequence[int] = (),
-    ) -> list[OrphanDelete]:
-        """Mirrors `SqlRecordStore.match_orphan_deletes`: the same one rule."""
-        return [
-            o for o in self.orphans
-            if orphan_names_message(
-                o, platform=message.platform, conversation_id=message.conversation_id,
-                handle=message.message_id, timestamps=(message.timestamp, *edit_timestamps),
-                sender_id=message.sender_id, person_id=person_id,
-            )
-        ]
-
-    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
-        """Mirrors `SqlRecordStore.discard_orphan_delete`."""
-        before = len(self.orphans)
-        self.orphans = [o for o in self.orphans if o.id != orphan_id]
-        return len(self.orphans) < before
+    async def hide_message(self, *, message_id: int, now_ms: int) -> bool:
+        """Mirrors `SqlRecordStore.hide_message`: True when this call hid a stored
+        row, False when it was already hidden or no such row is held."""
+        if message_id in self.hidden_ids or not any(r["id"] == message_id for r in self.rows):
+            return False
+        self.hidden_ids.add(message_id)
+        return True
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         if self.fail_on_recent:
@@ -598,35 +517,6 @@ class FakeRecordStore:
 
     async def aclose(self) -> None:
         self.closed = True
-
-
-class FakeDeleteWithdrawer:
-    """In-memory `DeleteWithdrawer`, mirroring `SqlDeleteWithdrawer`'s outcome
-    rules (`tests/contract/test_delete_withdrawer_contract.py` pins both): the
-    first withdrawal of a stored message is `hidden`, any later one
-    `already_hidden`, and a message the store does not hold is `not_stored`.
-
-    `records` is the `FakeRecordStore` the messages live in; without one every
-    id counts as stored. It hides nothing in that store (`FakeRecordStore` has no
-    hide); `hidden` maps a message id to the time it was withdrawn."""
-
-    def __init__(self, records: FakeRecordStore | None = None) -> None:
-        self._records = records
-        self.hidden: dict[int, int] = {}
-        self.calls: list[int] = []
-
-    async def withdraw(self, *, message_id: int, now_ms: int) -> DeleteWithdrawal:
-        self.calls.append(message_id)
-        if self._records is not None and not any(
-            r["id"] == message_id for r in self._records.rows
-        ):
-            return DeleteWithdrawal(outcome="not_stored")
-        if message_id in self.hidden:
-            return DeleteWithdrawal(outcome="already_hidden")
-        self.hidden[message_id] = now_ms
-        if self._records is not None:
-            self._records.hidden_ids.add(message_id)
-        return DeleteWithdrawal(outcome="hidden")
 
 
 class FakeMemoryStore:
@@ -2522,31 +2412,14 @@ class FakeDocumentStore:
 
     async def set_state(
         self, *, document_id: UUID, state: DocumentState, set_by: str,
-        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         if document_id not in self._rooms:
-            return False
-        if only_if_state is not None and self._state(document_id) not in only_if_state:
             return False
         self._states.setdefault(document_id, []).append((state, set_by))
         return True
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         return self._stored(document_id)
-
-    async def list_created_by(
-        self, *, person_id: str, states: tuple[DocumentState, ...] = ("active", "archived"),
-        limit: int, offset: int = 0,
-    ) -> tuple[DocumentSummary, ...]:
-        mine = sorted(
-            (d.summary for doc_id in self._rooms
-             if (d := self._stored(doc_id)) is not None
-             and d.summary.created_by == person_id and d.summary.state in states),
-            key=lambda s: str(s.id),
-        )
-        limit = min(max(limit, 0), 1_000)
-        offset = min(max(offset, 0), 2**31 - 1)
-        return tuple(mine[offset : offset + limit]) if limit > 0 else ()
 
     def set_by_of(self, document_id: UUID) -> list[str]:
         """Who made each change of state, oldest first: what a test reads to show a
@@ -2597,7 +2470,7 @@ class FakeDocumentStore:
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int,
-        states: tuple[DocumentState, ...] = ("active",), hide_forgotten: bool = False,
+        states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         seen = [
             d.summary for doc_id in self._rooms
@@ -2605,7 +2478,6 @@ class FakeDocumentStore:
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states
-            and not (hide_forgotten and d.summary.state_by.startswith(FORGET_SET_BY_PREFIX))
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)

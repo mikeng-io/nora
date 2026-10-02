@@ -11,10 +11,10 @@ import pytest
 
 from nora.agent.cognition_pace import (
     PartialPaceWriteError,
-    dry_run_wake_at,
-    dry_run_wake_cancel,
-    dry_run_wake_fire,
-    dry_run_wake_move,
+    wake_at,
+    wake_cancel,
+    wake_fire,
+    wake_move,
 )
 from nora.domain.cognition_pace import (
     PaceRow,
@@ -24,7 +24,7 @@ from nora.domain.cognition_pace import (
     check_wake_move,
     fold_self_wakes,
 )
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -121,17 +121,17 @@ def test_wake_cancel_admits_its_own_pending_self_wake():
 # --------------------------------------------------------------------------
 
 @pytest.fixture
-def ledger() -> InMemoryCognitionDryRunStore:
-    return InMemoryCognitionDryRunStore()
+def ledger() -> InMemoryCognitionStore:
+    return InMemoryCognitionStore()
 
 
 @pytest.fixture
-def stimuli(ledger: InMemoryCognitionDryRunStore) -> InMemoryStimulusStore:
+def stimuli(ledger: InMemoryCognitionStore) -> InMemoryStimulusStore:
     return InMemoryStimulusStore(ledger=ledger)
 
 
-async def test_dry_run_wake_at_records_recorded_and_appends_a_self_stimulus(ledger, stimuli):
-    await dry_run_wake_at(
+async def test_wake_at_records_recorded_and_appends_a_self_stimulus(ledger, stimuli):
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 3_600_000, why="check the venue", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
@@ -141,12 +141,12 @@ async def test_dry_run_wake_at_records_recorded_and_appends_a_self_stimulus(ledg
     assert pace.outcome == "recorded"
     assert pace.wake_ref == "w1"
     assert pace.stimulus_id is not None
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 3_600_000, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 3_600_000, limit=10)
     assert any(s.kind == "self" and s.item == "w1" for s in view.pending)
 
 
-async def test_dry_run_wake_at_refused_appends_no_stimulus(ledger, stimuli):
-    await dry_run_wake_at(
+async def test_wake_at_refused_appends_no_stimulus(ledger, stimuli):
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=(),
         at_ms=NOW + 3_600_000, why="", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
@@ -154,26 +154,26 @@ async def test_dry_run_wake_at_refused_appends_no_stimulus(ledger, stimuli):
     _, pace, _ = ledger.paces[0]
     assert pace.outcome == "refused"
     assert pace.stimulus_id is None
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 3_600_000, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 3_600_000, limit=10)
     assert view.pending == ()
 
 
-async def test_dry_run_wake_cancel_appends_no_new_stimulus(ledger, stimuli):
+async def test_wake_cancel_appends_no_new_stimulus(ledger, stimuli):
     pending = (PendingSelfWake(wake_ref="w1", subject_rows=("e:1",), created_by_session_id=1),)
-    await dry_run_wake_cancel(
+    await wake_cancel(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", wake_ref="w1", why="done",
         now_ms=NOW, pending=pending, created_by_session_id=1,
     )
     _, pace, _ = ledger.paces[0]
     assert pace.outcome == "recorded"
     assert pace.transition == "cancelled"
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW, limit=10)
     assert view.pending == ()
 
 
-async def test_dry_run_wake_move_records_and_reappends_a_self_stimulus(ledger, stimuli):
+async def test_wake_move_records_and_reappends_a_self_stimulus(ledger, stimuli):
     pending = (PendingSelfWake(wake_ref="w1", subject_rows=("e:1",), created_by_session_id=1),)
-    await dry_run_wake_move(
+    await wake_move(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", wake_ref="w1",
         at_ms=NOW + 7_200_000, why="pushed back", now_ms=NOW, cooldown_seconds=COOLDOWN,
         pending=pending, created_by_session_id=1,
@@ -250,7 +250,7 @@ def test_wake_at_refuses_past_the_per_day_cap_and_admits_below_it():
 
 
 async def test_wake_cancel_retracts_the_standing_stimulus_so_nothing_wakes(ledger, stimuli):
-    await dry_run_wake_at(
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 3_600_000, why="w", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
@@ -258,15 +258,15 @@ async def test_wake_cancel_retracts_the_standing_stimulus_so_nothing_wakes(ledge
     (pending,) = await ledger.pending_self_wakes(unit="u", since_ms=0)
     assert pending.stimulus_id == 1
     later = NOW + 4_000_000
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=later, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=later, limit=10)
     assert [s.id for s in view.pending] == [1]
 
-    answer = await dry_run_wake_cancel(
+    answer = await wake_cancel(
         ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1", why="done",
         now_ms=NOW, pending=(pending,), created_by_session_id=None,
     )
     assert not answer.refused
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=later, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=later, limit=10)
     assert view.pending == ()
     assert await ledger.pending_self_wakes(unit="u", since_ms=0) == ()
 
@@ -274,39 +274,39 @@ async def test_wake_cancel_retracts_the_standing_stimulus_so_nothing_wakes(ledge
 async def test_wake_move_retracts_the_old_stimulus_and_supersede_retracts_the_displaced(
     ledger, stimuli,
 ):
-    await dry_run_wake_at(
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 3_600_000, why="w", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
     )
     pending = await ledger.pending_self_wakes(unit="u", since_ms=0)
-    await dry_run_wake_move(
+    await wake_move(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", wake_ref="w1",
         at_ms=NOW + 7_200_000, why="later", now_ms=NOW, cooldown_seconds=COOLDOWN,
         pending=pending, created_by_session_id=None,
     )
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 9_000_000, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 9_000_000, limit=10)
     assert [(s.id, s.due_ms) for s in view.pending] == [(2, NOW + 7_200_000)]
 
     pending = await ledger.pending_self_wakes(unit="u", since_ms=0)
-    await dry_run_wake_at(
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 5_000_000, why="again", now_ms=NOW, wake_ref="w2",
         cooldown_seconds=COOLDOWN, pending=pending,
     )
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 9_000_000, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 9_000_000, limit=10)
     assert [s.item for s in view.pending] == ["w2"]
     assert [p.wake_ref for p in await ledger.pending_self_wakes(unit="u", since_ms=0)] == ["w2"]
 
 
 async def test_the_fired_transition_frees_the_pending_slot(ledger, stimuli):
-    await dry_run_wake_at(
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 3_600_000, why="w", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
     )
     assert len(await ledger.pending_self_wakes(unit="u", since_ms=0)) == 1
-    await dry_run_wake_fire(ledger=ledger, session_id=2, unit="u", wake_ref="w1", now_ms=NOW)
+    await wake_fire(ledger=ledger, session_id=2, unit="u", wake_ref="w1", now_ms=NOW)
     assert await ledger.pending_self_wakes(unit="u", since_ms=0) == ()
     (_, fired, _) = ledger.paces[-1]
     assert (fired.verb, fired.transition, fired.outcome) == ("wake_fire", "fired", "recorded")
@@ -317,8 +317,8 @@ async def test_the_fired_transition_frees_the_pending_slot(ledger, stimuli):
 # leaves one firing that was called off (minor 3, minor 4)
 # --------------------------------------------------------------------------
 
-async def _set_w1(ledger: InMemoryCognitionDryRunStore, stimuli: InMemoryStimulusStore) -> Any:
-    await dry_run_wake_at(
+async def _set_w1(ledger: InMemoryCognitionStore, stimuli: InMemoryStimulusStore) -> Any:
+    await wake_at(
         ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
         at_ms=NOW + 3_600_000, why="w", now_ms=NOW, wake_ref="w1",
         cooldown_seconds=COOLDOWN, pending=(),
@@ -327,7 +327,7 @@ async def _set_w1(ledger: InMemoryCognitionDryRunStore, stimuli: InMemoryStimulu
 
 
 async def _due(stimuli: InMemoryStimulusStore) -> list[tuple[str, int | None]]:
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 9_000_000, limit=10)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 9_000_000, limit=10)
     return [(s.item, s.due_ms) for s in view.pending]
 
 
@@ -337,7 +337,7 @@ async def test_a_move_whose_append_fails_leaves_the_old_time_live(ledger, stimul
     pending = await _set_w1(ledger, stimuli)
     stimuli.fail_on.add("append")
     with pytest.raises(RuntimeError):
-        await dry_run_wake_move(
+        await wake_move(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             at_ms=NOW + 7_200_000, why="later", now_ms=NOW, cooldown_seconds=COOLDOWN,
             pending=pending, created_by_session_id=None,
@@ -352,7 +352,7 @@ async def test_a_move_whose_retract_fails_takes_the_new_time_back(ledger, stimul
     pending = await _set_w1(ledger, stimuli)
     stimuli.fail_on.add("retract_self")
     with pytest.raises(RuntimeError):
-        await dry_run_wake_move(
+        await wake_move(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             at_ms=NOW + 7_200_000, why="later", now_ms=NOW, cooldown_seconds=COOLDOWN,
             pending=pending, created_by_session_id=None,
@@ -364,7 +364,7 @@ async def test_a_move_whose_record_fails_still_fires_once_at_the_new_time(ledger
     pending = await _set_w1(ledger, stimuli)
     ledger.fail_on.add("record_pace")
     with pytest.raises(PartialPaceWriteError) as caught:
-        await dry_run_wake_move(
+        await wake_move(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             at_ms=NOW + 7_200_000, why="later", now_ms=NOW, cooldown_seconds=COOLDOWN,
             pending=pending, created_by_session_id=None,
@@ -379,7 +379,7 @@ async def test_a_wake_at_whose_record_fails_leaves_no_orphan_stimulus(ledger, st
     knew of."""
     ledger.fail_on.add("record_pace")
     with pytest.raises(RuntimeError):
-        await dry_run_wake_at(
+        await wake_at(
             ledger=ledger, stimuli=stimuli, session_id=1, unit="u", subject_rows=("event:1",),
             at_ms=NOW + 3_600_000, why="w", now_ms=NOW, wake_ref="w1",
             cooldown_seconds=COOLDOWN, pending=(),
@@ -392,7 +392,7 @@ async def test_a_superseding_wake_at_whose_record_fails_keeps_the_displaced_one(
     pending = await _set_w1(ledger, stimuli)
     ledger.fail_on.add("record_pace")
     with pytest.raises(RuntimeError):
-        await dry_run_wake_at(
+        await wake_at(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", subject_rows=("event:1",),
             at_ms=NOW + 5_000_000, why="again", now_ms=NOW, wake_ref="w2",
             cooldown_seconds=COOLDOWN, pending=pending,
@@ -406,7 +406,7 @@ async def test_a_cancel_whose_record_fails_still_never_fires_and_reads_not_pendi
     pending = await _set_w1(ledger, stimuli)
     ledger.fail_on.add("record_pace")
     with pytest.raises(PartialPaceWriteError) as caught:
-        await dry_run_wake_cancel(
+        await wake_cancel(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             why="done", now_ms=NOW, pending=pending, created_by_session_id=None,
         )

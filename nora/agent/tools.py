@@ -171,12 +171,9 @@ from ..domain.notes import (
     TAG_PATH_PREFIX,
     Note,
     NoteRevision,
-    NoteSupersedeReason,
     StaleNoteHeadError,
     has_duplicate_open_title,
     note_handle,
-    proactive_row_forwarded_is_moved,
-    tag_path_progressed_since_wake,
 )
 from ..domain.ports import (
     ArtifactIngest,
@@ -203,9 +200,7 @@ from ..domain.prompt import stamp
 from ..domain.quote_window import first_by_ts
 from ..domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery
 from ..domain.reminders import (
-    PROACTIVE_KIND,
     UNIT_SECONDS,
-    DuplicateProactiveNoteError,
     Recurrence,
     RecurrenceRule,
     Reminder,
@@ -240,7 +235,6 @@ from ..infra.vision.preprocess import (
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
-from .dream_screen import screen as _dream_screen
 from .egress import scan_reply
 from .lineage import LineagePolicy, entry_permits
 
@@ -1446,7 +1440,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # exactly as `remind` is.
     #
     # `cacheable=False` on all four, by default and on purpose: a note is
-    # unit-scoped state that the curator and a parallel turn in another
+    # unit-scoped state that the Cognition session and a parallel turn in another
     # room may both move, so a replayed answer would be a body that is no
     # longer the head — the "true-in-the-past returned as current" error the
     # whole tier is written to avoid.
@@ -2040,7 +2034,7 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
 # invent on every call, so each one buys a way to get the call wrong). A
-# unit holds tens of notes and the curator's retirement pass is what keeps
+# unit holds tens of notes and the Cognition session's `note_retire` is what keeps
 # it that way, so a query matching more than five bodies is a query too vague
 # to act on — the answer to that is a better query, not a longer list. Each hit
 # carries a whole head body, and a tool result is re-sent on every subsequent
@@ -2260,13 +2254,6 @@ def _stored_reading(obj) -> str:
     return "\n".join(parts)
 
 
-#: The outcome the fire-time screen writes on a proactive row whose note the
-#: tag path has moved (`nora.app.proactive_screen.CANCELLED_NOTE_MOVED`,
-#: which this layer may not import). `remind` writes the same one when it
-#: resolves such a row early (issue #158); a test holds the two equal.
-_CANCELLED_NOTE_MOVED = "cancelled_note_moved"
-
-
 def _record_created(metrics, status: str, **detail: object) -> None:
     """`remind`'s two counters, incremented together.
 
@@ -2286,38 +2273,6 @@ def _record_created(metrics, status: str, **detail: object) -> None:
         _record(metrics, "remind", "unavailable", **detail)
     else:
         _record(metrics, "remind", "refused", reason=status, **detail)
-
-
-@dataclass(frozen=True)
-class OriginRoom:
-    """One policy room, keyed by its conversation ids, for a note-linked
-    proactive row's DESTINATION (design/dreamer-agent-loop/40, issue #248).
-
-    A unit-keyed adaptor is handed its home room at `build` time, and
-    under Dreamer provenance `remind` stamps every row into it. A note can
-    be born in ANY room of the unit — Zone 42 on Discord, say, while
-    the home room is the Signal group — so a note-linked row's destination
-    is the room the note carries (`Note.established_in`), read through this
-    map, not the home room. Same policy-independence seam as `home_rooms`:
-    `RegistryToolSource` receives a prebuilt `Mapping[str, OriginRoom]` from
-    the composition root and never reads `nora.policy` itself
-    (`nora/agent/dreamer.py` docstring).
-
-    `proactive` mirrors `Conversation.proactive` at build time so the decide
-    turn can refuse BEFORE a row that could never fire is written; the
-    fire-time `ProactiveScreen` re-checks the row's own room regardless
-    (`proactive_screen.py`).
-    """
-
-    platform: str
-    conversation_id: str
-    conversation_type: str = "group"
-    proactive: bool = False
-    # The unit this room belongs to, from policy.toml at load time. Kept
-    # so a row can be refused when the note's origin room drifted into a
-    # DIFFERENT social unit since the note was born — cross-unit speech
-    # is the one thing the unit boundary exists to prevent.
-    unit: str = ""
 
 
 def _parse_when(raw: str) -> datetime | None:
@@ -4176,10 +4131,6 @@ class EventsCollaborator(Protocol):
         self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Gathering]: ...
 
-    async def held_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]: ...
-
     async def search_events(
         self, *, unit_id: str, conversation_id: str, place: str | None = None,
         person: str | None = None, start: datetime | None = None,
@@ -4205,7 +4156,7 @@ class NoteCollaborator(Protocol):
     `tests/contract/test_note_store_contract.py`, which is what actually holds
     them to one behaviour. This declares the verbs the tool layer calls
     and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`, `record_miss`,
+    `create`, `append_revision`,
     `merged_successor_by_title` (a merged note's title forwards, design 41
     §7.5), and `revision_chain`/`successor` (`remind`'s one-open-row check,
     issue #158).
@@ -4238,10 +4189,6 @@ class NoteCollaborator(Protocol):
         evidence_room: str | None = None,
     ) -> NoteRevision: ...
 
-    async def record_miss(
-        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
-    ) -> int: ...
-
     async def merged_successor_by_title(
         self, *, unit: str, title: str,
     ) -> Note | None: ...
@@ -4259,7 +4206,8 @@ class NoteCollaborator(Protocol):
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
 #: below. `note_handle` moved to `nora.domain.notes` on 2026-09-13 (#228) when
-#: `nora.language.note_candidates` became its fourth reader: `nora.language`
+#: `nora.language.note_candidates` (deleted 2026-10-03, DEC-277) became its fourth reader:
+#: `nora.language`
 #: sits below `nora.agent` in the layered import contract, so the choice was
 #: move it down or keep a second copy, and the whole argument for one spelling
 #: is in that function's own docstring. It also stays importable FROM here
@@ -4467,22 +4415,12 @@ def build_tool_specs(
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
     presence: DiscordPresenceSource | None = None,
-    online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
     image_generator: ImageGenerator | None = None,
     image_refs_allowed: bool = False,
     media_store: MediaObjectStore | None = None,
     # `document_publish`/`document_read` (design/artifact §26). `None` answers
     # `unavailable`; the registry withholds both tools before that matters.
     documents: DocumentPublisher | None = None,
-    # Proactive destination map (design/dreamer-agent-loop/40, #248): policy
-    # conversation ids -> OriginRoom, built by the composition root exactly
-    # like `home_rooms` and handed through the same seam
-    # (`RegistryToolSource` -> `build_tool_specs`). `remind` under `dream_adaptor`
-    # provenance reads a linked note's `established_in` through it to stamp a
-    # row into the room the note was born in instead of the home room. `None`
-    # (every tag-path caller, and a unit with no proactive wiring) keeps
-    # the home-room behaviour — the honest, unchanged default.
-    origin_rooms: Mapping[str, OriginRoom] | None = None,
     shelf: ToolShelf | None = None,
     # WHAT A DREAMER PASS LOADED (design/dreamer-agent-loop/43 §3). Called
     # with the rows `load_transcript` and `room_read` return, so the pass's
@@ -4614,16 +4552,6 @@ def build_tool_specs(
     (R-5), never `nothing_found`, and never crashes; the `online` arm
     answers from whichever half IS wired and says so
     (`steam_wired`/`discord_wired`/`voice_wired`).
-
-    `online_scope` is the proactive decide turn's input-domain override
-    (design/online-status/03): a per-CALL resolver for "who this call may
-    answer about", supplied by `RegistryToolSource` only for a home-room
-    decide turn — the home roster unioned with the note's established-in
-    subjects — where a tag turn leaves it `None` and the domain is the
-    invoking room's own roster. When supplied it WINS and `room.scope()` is
-    never queried; when it raises, the call answers `unavailable`, never a
-    narrowed guess. It must never become a registry field — it is bound to
-    exactly one decide turn, the way `supplied_unit` below is.
 
     `supplied_unit` is the Dreamer's half of the key-path fix (32 §3.4,
     and `08-state.md` §10's named trap): a UNIT-keyed adaptor's key IS
@@ -5253,7 +5181,7 @@ def build_tool_specs(
         """The hits in `load_transcript`'s one shape (`_transcript_messages`),
         each named with its room, its reactions and whether it was deleted.
         A deleted message keeps its place and loses its words: its author
-        took them back (the withdrawal cascade that hides it is step 2c).
+        took them back (`RecordStore.hide_message` hides it).
 
         Each row carries its number `n` ONLY for the Cognition session, the
         citation handle a note's line rests on (DEC-250, #663 review major 2);
@@ -7888,35 +7816,21 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "couldn't check, and never guess who is online, playing, "
                         "or in voice.",
             }
-        # The input domain (03-guards): the decide turn's supplied union WINS
-        # when present — and `room.scope()` is then never queried — otherwise
-        # the invoking room's own roster. A scope the tool cannot obtain is
-        # `unavailable`, never a narrowed guess; a DEGRADED room (narrowed to
-        # the tagger alone) is the same — answering from it would report one
-        # person as the room (the where_been discipline: an ERROR, never a
-        # policy answer).
-        if online_scope is not None:
-            try:
-                refs = _dedupe(tuple(await online_scope()))
-            except Exception:
-                log.exception("online_now scope resolver failed")
-                _record(metrics, "online_now", "unavailable", reason="scope")
-                return {
-                    "status": "unavailable",
-                    "note": "I couldn't work out who I may check just now. Say "
-                            "you couldn't check, and do not guess.",
-                }
-        else:
-            view = await room.scope()
-            if not view.available or view.degraded:
-                _record(metrics, "online_now", "unavailable", reason="room")
-                return {
-                    "status": "unavailable",
-                    "note": "I can't confirm who is in this conversation right "
-                            "now, so I can't say who is online. Say you "
-                            "couldn't check, and do not guess.",
-                }
-            refs = _dedupe(view.people)
+        # The input domain (03-guards): the invoking room's own roster. A scope
+        # the tool cannot obtain is `unavailable`, never a narrowed guess; a
+        # DEGRADED room (narrowed to the tagger alone) is the same: answering
+        # from it would report one person as the room (the where_been
+        # discipline: an ERROR, never a policy answer).
+        view = await room.scope()
+        if not view.available or view.degraded:
+            _record(metrics, "online_now", "unavailable", reason="room")
+            return {
+                "status": "unavailable",
+                "note": "I can't confirm who is in this conversation right "
+                        "now, so I can't say who is online. Say you "
+                        "couldn't check, and do not guess.",
+            }
+        refs = _dedupe(view.people)
         # `names` bounds the question to the people actually on topic
         # (DEC-24-shaped: it narrows the domain, it never widens it). A name
         # matching several in-domain people admits ALL of them — the answer
@@ -11274,59 +11188,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't hold anything for later because reminders aren't "
                         "set up here. Say so plainly rather than promising.",
             }
-        # THE DREAMER'S OWN PROVENANCE (design/dreamer-agent-loop/39 D3/D5,
-        # DEC-162). Under it there is no tagger and there must not be one:
-        # the row is OWNED by Nora's reserved `ai_peer` id — never a person,
-        # because `identity.toml` is the book of the people she identifies
-        # and she is not one of them — and its DESTINATION is the home room
-        # `RegistryToolSource` bound this closure to. Both are stamped here,
-        # in code, exactly as `gathering` stamps its kind and payload
-        # (`nora/app/gatherings.py`). Everything below that reads `tagger`
-        # branches on `proactive` for the same reason.
-        proactive = bool(dream_adaptor)
-        if proactive and not room.platform:
-            # Built with no home room: nothing to write INTO. The tool
-            # source already withholds the verb in that case; this is the
-            # data-level refusal behind the name-level one.
-            _record_created(metrics, "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "There is no room for this unit to hold a "
-                        "reminder in. Decline rather than promise.",
-            }
         # §12: only a MAPPED person may own a row. `requester_person_id` is what
         # the fire-time policy re-check runs against (§5.1), so there is nothing
         # to write for a sender identity.toml does not know — and inventing an
         # owner would put a reminder into a room under nobody's name.
         tagger = room.tagger
-        if tagger is None and not proactive:
+        if tagger is None:
             _record_created(metrics, "unmapped")
             return {
                 "status": "refused",
                 "note": "I don't know who you are well enough to hold something for "
                         "you. Say you can't set it, and do not guess.",
             }
-        # D5 by PREDICATE, not by construction: under Dreamer provenance the
-        # owner is the ai_peer whatever the room carries, so a Room that one
-        # day arrived with a tagger could not write a person-owned row into
-        # the home room. `tagger` is non-None on the other branch (refused
-        # above otherwise).
-        # The ignore is read: `mypy nora/app` follows this import, and the
-        # refusal above is what makes `tagger` non-None on this branch.
-        owner = ai_peer if proactive else tagger.person_id  # type: ignore[union-attr]
-        if proactive and repeat != "none":
-            # A proactive decision is ONE moment (39 D4): tomorrow's decide
-            # turn reads the world again and decides again. A repeating row
-            # would let one morning's judgement re-fire for weeks past the
-            # loop that is supposed to re-judge it. Not a cap the design
-            # names — a gap it did not close, closed on the fail-closed side.
-            _record_created(metrics, "bad_repeat")
-            return {
-                "status": "refused",
-                "note": "A proactive reminder is a single moment; there is no "
-                        "repeat here. Decide again next time if it still "
-                        "matters.",
-            }
+        owner = tagger.person_id
         due_at = _parse_when(when)
         if due_at is None:
             _record_created(metrics, "unparseable")
@@ -11414,138 +11288,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note_id": linked.id,
                 "revision_id": linked.head_revision_id,
                 "note_title": linked.title,
-                # The room this note was born in (design/dreamer-agent-loop/40,
-                # issue #248). It is a routing key, never a filter
-                # (`nora/domain/notes.py`), and it is what a note-linked
-                # proactive row's destination is resolved from below — the
-                # payload already carried the id and the head revision, and
-                # this is the third field that resolution needs. Tagged rows
-                # ignore it (only the Dreamer branch reads it).
-                "established_in": linked.established_in,
             }
-        if proactive:
-            # THE SINK (39 D3): «if the model writes directly there is no
-            # sink left to screen at» — this is where the Dreamer's one
-            # write is screened, with the runtime's own screen, before it
-            # can land. An identifier or a coordinate in the intent refuses
-            # the row; `nora_dream_screened_total{adaptor}` counts it.
-            _kept, rejected = _dream_screen(
-                adaptor=dream_adaptor, items=({"text": text},), metrics=metrics,
-            )
-            if rejected:
-                _record_created(metrics, "screened")
-                return {
-                    "status": "refused",
-                    "note": "That text carries an identifier or a position and "
-                            "cannot be held. Say what you mean without it.",
-                }
-            payload = {**(payload or {}), "intent": text}
-        # DESTINATION BY ORIGIN (design/dreamer-agent-loop/40, issue #248).
-        # Under Dreamer provenance a note-linked row's destination is the room
-        # the note was born in — the note's own routing key
-        # (`Note.established_in`) — NOT the home room. The live failure was
-        # exactly two facts conflated: where the note was born (Zone 42
-        # Discord) and where Nora stands (Signal Friends, the home room).
-        # Fail closed on every way the origin cannot be reached, and NEVER
-        # fall back to the home room — a fallback is the bug. Unlinked rows
-        # keep the home-room destination (there is no origin to route by).
-        origin: OriginRoom | None = None
-        if proactive and payload is not None and payload.get("established_in"):
-            origin = (
-                None if origin_rooms is None
-                else origin_rooms.get(payload["established_in"])
-            )
-            if origin is None:
-                _record_created(metrics, "refused_origin_unresolvable")
-                return {
-                    "status": "refused",
-                    "note": (
-                        "That note was born in a room I can't resolve, so a "
-                        "proactive message about it would have nowhere to go. "
-                        "Leave it rather than promise."
-                    ),
-                }
-            if origin.unit != (supplied_unit or _unit()):
-                _record_created(metrics, "refused_origin_wrong_unit")
-                return {
-                    "status": "refused",
-                    "note": (
-                        "That note's room drifted outside this unit, and I "
-                        "won't speak across the boundary. Leave it."
-                    ),
-                }
-            if not origin.proactive:
-                _record_created(metrics, "refused_origin_not_proactive")
-                return {
-                    "status": "refused",
-                    "note": (
-                        "That note was born in a room I'm not trusted to speak "
-                        "into unprompted. Leave it rather than raise it where "
-                        "the person who asked won't see it."
-                    ),
-                }
-        # ONE OPEN PROACTIVE ROW PER NOTE (issue #158). Production booked the
-        # same note twice — decided 23:01 and again 01:01 for one 10:00, and
-        # 07:02 and again 18:04 for one 17:00 — each second row written while
-        # the first still waited. The doctrine says «one reminder per thing»
-        # and the model read its own pending row in the decisions block and
-        # wrote another anyway; the only per-note check below it was the wake
-        # clock, which charges a strike once per Hong Kong day and never saw
-        # the row. So the write refuses, here with a reason she can read and
-        # in the store (`uq_reminders_proactive_open_note`) for the race.
-        # A row that has gone off holds nothing: a re-raise after silence is
-        # the strikes brake's (39 D6), and a new occasion is a new decision.
-        stale: list[Reminder] = []
-        if proactive and linked is not None:
-            book = _notebook()
-            try:
-                held, stale = await _open_rows_on(
-                    book, linked, owner=owner,
-                ) if book is not None else (None, [])
-            except Exception:
-                log.exception("remind: the one-open-row check failed")
-                _record_created(metrics, "unavailable")
-                return {
-                    "status": "unavailable",
-                    "note": "I couldn't check whether this is already waiting, "
-                            "so I haven't set it. Leave it for the next pass.",
-                }
-            if held is not None:
-                _record_created(metrics, "duplicate_note")
-                # Both of the waiting row's moments, so she can see it is
-                # her own earlier decision rather than a failure to retry.
-                return {
-                    "status": "refused",
-                    "note": (
-                        "You already have a reminder waiting about this note: "
-                        f"decided {held.created_at.astimezone(_HKT):%-d %b %H:%M}, "
-                        f"for {held.due_at.astimezone(_HKT):%-d %b %H:%M}. One "
-                        "per thing: leave it. If it still matters after that "
-                        "moment, decide again then."
-                    ),
-                }
         try:
-            # A waiting row whose premise the tag path has since moved is
-            # resolved NOW, the way the fire-time screen would resolve it at
-            # its moment (39 D11): it would never be said, and left open it
-            # would hold the note against the decision that replaces it.
-            for dead in stale:
-                if await reminders.cancel(
-                    dead.id, conversation_id=dead.conversation_id,
-                ):
-                    await reminders.mark(
-                        dead.id, ReminderState.CANCELLED, fired_at=now,
-                        outcome=_CANCELLED_NOTE_MOVED,
-                    )
             pending = await reminders.count_pending(owner)
             if pending >= caps.max_pending_per_requester:
                 _record_created(metrics, "too_many")
                 return {
                     "status": "refused",
                     "note": (
-                        f"You already have {pending} of your own waiting, which is "
-                        "the ceiling. Let some fire before deciding more."
-                        if proactive else
                         f"They already have {pending} waiting, which is my limit. "
                         "Say so: list_reminders shows what is there, and one can "
                         "be cancelled to make room."
@@ -11568,21 +11318,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 # The DESTINATION, from the closure and never from the model
                 # (§7.2, DEC-24): a reminder fires into the conversation it was
                 # set in. A `target` parameter here would be an unprompted-speech
-                # lever into a room the requester may not even be in. Under
-                # Dreamer provenance «the conversation it was set in» is the
-                # home room the tool source bound (39 D2) — EXCEPT for a
-                # note-linked proactive row, whose destination is the room the
-                # note was born in (design/dreamer-agent-loop/40, #248), which
-                # `origin` above resolved and validated.
-                platform=origin.platform if origin is not None else room.platform,
-                conversation_id=(
-                    origin.conversation_id
-                    if origin is not None else bound_conversation_id
-                ),
-                conversation_type=(
-                    origin.conversation_type
-                    if origin is not None else conversation_type
-                ),
+                # lever into a room the requester may not even be in.
+                platform=room.platform,
+                conversation_id=bound_conversation_id,
+                conversation_type=conversation_type,
                 text=text,
                 created_at=now,
                 due_at=due_at,
@@ -11590,25 +11329,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 fired_at=None,
                 outcome=None,
                 series=series,
-                # `kind` from CODE, never from the model — `gathering`'s
-                # precedent. A proactive row fires through its own occasion
-                # factory (`nora.app.fire.proactive_occasion`), owed to
-                # nobody and free to stay silent (39 D4/D12).
-                kind="proactive" if proactive else "reminder",
+                # `kind` from CODE, never from the model: `gathering`'s precedent.
+                kind="reminder",
                 payload=payload,
             )
             await reminders.create(row)
-        except DuplicateProactiveNoteError:
-            # The store's half of the rule: another decision about this note
-            # landed between the check above and this write (two `remind`
-            # calls in one model step run concurrently), or its row is firing
-            # right now. Same answer as the check's.
-            _record_created(metrics, "duplicate_note")
-            return {
-                "status": "refused",
-                "note": "A reminder about this note is already waiting or "
-                        "going off now. One per thing: leave it.",
-            }
         except Exception:
             log.exception("remind failed")
             _record_created(metrics, "unavailable")
@@ -11686,26 +11411,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I couldn't check what's waiting. Say so: an empty list and "
                         "a failed look are different answers.",
             }
-        # A reminder HELD by the withdrawal cascade (its event's evidence is
-        # gone, `nora.app.gathering_screen`) is not listed: its text carries
-        # the event's title, and the listing is a read path like any other
-        # that must not show what the cascade took out. FAIL-CLOSED: if the
-        # event side cannot be read the listing is unavailable, never the full
-        # list that might show a withdrawn title.
-        if events is not None and any(r.kind == "gathering" for r in rows):
-            try:
-                held = await events.held_reminder_ids(
-                    [r.id for r in rows if r.kind == "gathering"],
-                )
-            except Exception:
-                log.exception("list_reminders could not check held gatherings")
-                _record(metrics, "list_reminders", "unavailable")
-                return {
-                    "status": "unavailable",
-                    "note": "I couldn't check what's waiting. Say so: an empty list and "
-                            "a failed look are different answers.",
-                }
-            rows = [r for r in rows if r.id not in held]
         _record(metrics, "list_reminders", "ok", count=len(rows))
         listed = [
             {
@@ -12407,85 +12112,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         survivor = await book.merged_successor_by_title(unit=unit, title=title)
         return [survivor] if survivor is not None else []
 
-    async def _open_rows_on(
-        book: NoteCollaborator, note: Note, *, owner: str,
-    ) -> tuple[Reminder | None, list[Reminder]]:
-        """Nora's waiting proactive rows about `note`: the one that HOLDS it
-        (or None), and the ones whose premise is gone (issue #158).
-
-        «About» is what the fire-time screen would fire the row for
-        (`nora/app/proactive_screen.py`): a row linked to this note, or to a
-        note retired `retired-merged` whose survivor is this one — that row
-        FOLLOWS the survivor at fire (design 41 §7.5), so it is already this
-        note's reminder under another id. A row HOLDS the note unless the tag
-        path has written to the note since the row was linked, which is
-        exactly when the screen would cancel it `cancelled_note_moved` (39
-        D11); those come back as stale, for the caller to resolve now.
-
-        Reads raise, and the caller refuses on a raise: a check that could not
-        run is not a check that passed.
-        """
-        unit = _unit() or ""
-        if reminders is None:     # pragma: no cover — `remind` refused already
-            return None, []
-        chain: dict[str, tuple[str | None, str]] | None = None
-        revisions: tuple[NoteRevision, ...] = ()
-
-        async def _chain() -> dict[str, tuple[str | None, str]]:
-            nonlocal chain, revisions
-            if chain is None:
-                revisions = await book.revision_chain(unit=unit, note_id=note.id)
-                chain = {
-                    r.id: (r.parent_revision_id, r.established_by)
-                    for r in revisions
-                }
-            return chain
-
-        held: Reminder | None = None
-        stale: list[Reminder] = []
-        for row in await reminders.pending_of(owner):
-            if row.kind != PROACTIVE_KIND:
-                continue
-            about = (row.payload or {}).get("note_id")
-            if not about:
-                continue
-            if about == note.id:
-                dead = tag_path_progressed_since_wake(
-                    head_revision_id=note.head_revision_id,
-                    last_wake_revision_id=(row.payload or {}).get("revision_id") or None,
-                    chain=await _chain(),
-                )
-            else:
-                current = await book.read(unit=unit, note_id=about)
-                if current is None or current[0].retired_at is None:
-                    continue
-                if current[0].retire_reason != NoteSupersedeReason.RETIRED_MERGED:
-                    continue
-                survivor = await book.successor(unit=unit, note_id=about)
-                if survivor is None or survivor.id != note.id:
-                    continue
-                # A forwarded row: the SAME two-step check the fire-time
-                # screen and `merge_into` use (the duplicate's own chain,
-                # then the survivor's by time), so the three cannot drift
-                # (#520 round-3 review: this copy read only the second step).
-                await _chain()
-                dup_chain = await book.revision_chain(unit=unit, note_id=about)
-                dead = proactive_row_forwarded_is_moved(
-                    duplicate_head=current[0].head_revision_id,
-                    duplicate_chain={
-                        r.id: (r.parent_revision_id, r.established_by)
-                        for r in dup_chain
-                    },
-                    revision_id=(row.payload or {}).get("revision_id") or None,
-                    created_at_ms=int(row.created_at.timestamp() * 1000),
-                    survivor_chain=((r.written_at, r.established_by) for r in revisions),
-                )
-            if dead:
-                stale.append(row)
-            elif held is None:
-                held = row
-        return held, stale
-
     def _ambiguous(candidates: list[Note]) -> dict:
         _record(metrics, "note_read", "refused", reason="ambiguous")
         return {
@@ -12530,8 +12156,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record(metrics, "note_read", "unavailable")
             return dict(notes_off)
         if found is None:
-            # The note was standing a moment ago and is not readable now — the
-            # curator retired it out from under this call, or the unit
+            # The note was standing a moment ago and is not readable now — a
+            # note_retire (or note_merge) took it out from under this call, or the unit
             # moved. «I could not read it», never «there is no such note»: the
             # index she is looking at still says there is.
             _record(metrics, "note_read", "unavailable", reason="vanished")
@@ -12587,35 +12213,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record(metrics, "note_search", "unavailable")
             return dict(notes_off)
         if not hits:
-            # THE NEGATIVE CACHE (§4.5), and the whole reason a miss is worth
-            # writing down: one room asking after something no note covers is
-            # noise; the third time is the signal the curator reads to decide
-            # a note should exist. Best-effort — a miss cache that cannot be
-            # written must not turn a real `nothing_found` into a failure.
-            #
-            # NOT UNDER A SHADOW COGNITION SESSION (#637 review, blocker): the
-            # session's ceiling is «may look, may not write», and this upsert
-            # is a write to `note_candidate`, the live table the note curator
-            # reads to decide a note should exist, plus the counter that
-            # counts it. A session whose every probe fed the live curator
-            # would make «shadow» a claim about the session's VERBS and not
-            # about its reads. It reads the answer and records nothing.
-            if dream_adaptor != COGNITION_ADAPTOR:
-                try:
-                    await book.record_miss(
-                        unit=_unit() or "", probe=probe,
-                        conversation_id=bound_conversation_id, now_ms=_now_ms(),
-                    )
-                except Exception:
-                    log.exception("note_search could not record the miss")
-                else:
-                    # INSIDE the `else`, so this counts a miss that was actually
-                    # WRITTEN. Counting before the call would make the metric agree
-                    # with itself while the cache stayed empty — and a candidate
-                    # series that cannot be reconciled against `note_candidate`'s
-                    # row count is the same self-attesting instrument this whole
-                    # block exists to stop shipping.
-                    metrics.inc("nora_note_candidates_total", trigger="miss")
             _record(metrics, "note_search", "nothing_found")
             return {
                 "status": "nothing_found",
@@ -12797,7 +12394,7 @@ Args:
         positions mapped to the row ids her transcript showed (G4), then
         parsed against those rows, the roster and the ids the note already
         cites. The normalised body, or the refusal she reads, naming the
-        rule so she can correct the call (27 §5.3). Unlike note-candidates
+        rule so she can correct the call (27 §5.3). Unlike the deleted note-candidates pass
         there is no carry-forward check: `note_update` replaces freely, with
         a person in the turn, which is where a conflated line comes out."""
         rows = [r.id for r in bound_window]
@@ -12871,7 +12468,7 @@ Args:
             return dict(notes_off)
         # WHO WROTE IT. `established_by` is not decoration: §9.6's strike reset
         # fires only on a tag-path revision, and a revision written under
-        # nobody's name makes the curator's loop breaker reset itself forever.
+        # nobody's name makes the strike-reset loop breaker reset itself forever.
         # Same refusal `remind` makes, for the same class of reason.
         tagger = room.tagger
         if tagger is None:
@@ -12890,7 +12487,8 @@ Args:
         # AN OPEN TITLE IS REFUSED (design 41 §7.2). Nothing in the schema
         # stops a second open note with the same title, and one is an
         # amplifier on both write paths: a later `updates` naming it matches
-        # two notes, and note-candidates used to create a third. The room's
+        # two notes, and the (deleted, DEC-277) note-candidates pass used to create a third. The
+        # room's
         # question already has a note; the model's job is to update it.
         try:
             open_titles = [n.title for n in await book.standing(unit=_unit() or "")]
@@ -12983,7 +12581,7 @@ Args:
             # model-facing argument can carry; this keys on the resolved note
             # ID. They differ in exactly one case, and it is the one that
             # matters: the title resolved to a DIFFERENT note between the read
-            # and the write (the curator retired one and another now answers to
+            # and the write (a note_retire left one and another now answers to
             # the name). The guard would wave that through on a title it has
             # seen; there is no head recorded for the note it actually reached,
             # so this refuses.
@@ -15108,7 +14706,6 @@ def build_tools(
     online_source: SteamPresenceProvider | None = None,
     voice_source: VoicePresenceSource | None = None,
     presence: DiscordPresenceSource | None = None,
-    online_scope: Callable[[], Awaitable[tuple[PersonRef, ...]]] | None = None,
     rooms: RoomDirectory | None = None,
     clock: Callable[[], datetime] | None = None,
     on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
@@ -15150,7 +14747,6 @@ def build_tools(
         media_store=media_store, documents=documents,
         online_source=online_source, voice_source=voice_source,
         presence=presence,
-        online_scope=online_scope,
         on_rows=on_rows,
         # FORWARDED, and three of these were not. `build_tools` declares every
         # parameter `build_tool_specs` does and hands them on by name, so one

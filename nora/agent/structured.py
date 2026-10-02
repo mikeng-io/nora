@@ -223,7 +223,7 @@ async def ask_text(
 
     `agent_name` means what it means in `ask_structured`: the span the call
     traces under, so the debrief's fold/consolidate calls are distinguishable
-    from the event fold's in Langfuse instead of all reading
+    from the (deleted, DEC-277) event fold's in Langfuse instead of all reading
     `invoke_agent Strands Agents`.
 
     `trace_attributes` rides `Agent`'s own `trace_attributes` kwarg, which the

@@ -1,5 +1,8 @@
 # 02 — `<presence>`: where she is, every turn
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 Realizes the **Where** layer of `01-three-layers.md` for the facts needed on
 every turn. Replaces `_where_line` in `nora/agent/prefill.py` rather than
 sitting beside it: two sources for "which network am I on" is the drift the
@@ -93,7 +96,7 @@ Roughly 80–100 tokens. The last line is the D1 = B wording.
   same prefill, so the block rides every fire turn rather than only the
   participation one. The proactive loop decides *where* to raise something, and it
   cannot choose a room it does not know exists. The proactive prompt has
-  its own `_BLOCKS` table (`nora/language/proactive.py`), and it already
+  its own `_BLOCKS` table (`nora/language/proactive.py` (deleted 2026-10-03, DEC-277)), and it already
   carries part of this: `home_room` (platform, label, the operator's
   description) and `rooms` (standing lines per room). So D2 is a second row
   calling the same builder, and `<presence>` **replaces `home_room`**,

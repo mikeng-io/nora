@@ -12,6 +12,9 @@ edges:
 
 # 15 · Map
 
+> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+
+
 ## 1. Every store, by layer
 
 The layers are [05](05-data-model.md) §1's (DEC-249); "Live" is part of what a View assembles per turn, and Memory and the operator-only rows sit outside the flow.
@@ -59,7 +62,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | block | layer · tier | subject | pushed into | size |
 |---|---|---|---|---|
 | doctrine (system prompt) | Authored | Nora | every turn | — |
-| `<room>` | Authored | a room | proactive only today (`this_room_is` on `<presence>`, `nora/language/proactive.py`); tag and fire turns do not get it (`prefill.py` calls `render_presence` without `room_is`); note-candidates and culture get `description_for`. Cognition gets it for every bound room | one line |
+| `<room>` | Authored | a room | proactive only today (`this_room_is` on `<presence>`, `nora/language/proactive.py` (deleted 2026-10-03, DEC-277)); tag and fire turns do not get it (`prefill.py` calls `render_presence` without `room_is`); note-candidates and culture get `description_for`. Cognition gets it for every bound room | one line |
 | `room_members` | Authored (identity.toml, through the room's `persons` in policy.toml) | a room | tag, fire; not the relevance gate or the public summons | one line per listed person |
 | `tool_catalogue`, `presence` (her platform status, not presence fixes), now | Live | — | tag, fire | — |
 | `group_transcript` | Record | a room | tag, fire | window |

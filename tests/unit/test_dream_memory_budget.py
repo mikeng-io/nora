@@ -1,7 +1,8 @@
 """R-91 / issue #160: ONE memory ration for the whole Dreamer pass.
 
 The per-tool budgets bound each verb on its own, which is exactly what a pass
-spends by asking four different verbs the same question. The live decide turn
+spends by asking four different verbs the same question. The live decide turn (deleted
+2026-10-03, DEC-277)
 this file exists for (Langfuse `340373cd`, 2026-09-10 18:03 HKT) held two notes
 whose two handles its own `<people>` block already carried and still made six
 held-state reads — `note_read` three times, then `about`, then
@@ -37,14 +38,18 @@ from nora.agent.dream_guard import (
 from nora.agent.dreamer import (
     MEMORY_TOOLS,
     AdaptorBudget,
+    AdaptorGrant,
     DreamerRuntime,
-    proactive_grant,
 )
 from nora.agent.ports import ToolSpec, adapt
-from nora.language.proactive import PROACTIVE_TOOLS
 from nora.obs.metrics import Metrics
 from tests.unit.test_dreamer_runtime import _Adaptor as _RuntimeAdaptor
 from tests.unit.test_dreamer_runtime import _Sink
+
+
+def _REMIND_GRANT() -> AdaptorGrant:
+    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
+    return AdaptorGrant(home_room=True)
 
 #: Two reads per pass — the shipped default, and `d11`'s grading budget.
 BUDGET = AdaptorBudget(
@@ -225,7 +230,7 @@ def _runtime(model: Model, tools: _Tools, *, budget: AdaptorBudget = BUDGET) -> 
         # may hold no room-scoped verb, which is three of the four this file
         # counts — so the ceiling would be measured on a tool set the decide
         # turn does not have.
-        grants={"proactive": proactive_grant()},
+        grants={"proactive": _REMIND_GRANT()},
         store_timeout_seconds=10.0,
     ), metrics
 
@@ -714,11 +719,7 @@ def test_the_configured_memory_ceiling_reaches_the_runtime():
 
 
 def test_the_shipped_default_is_the_number_d11_grades_at():
-    """Two is `evals/corpora/proactive_decide.yaml`'s `d11` budget, and the
-    default has to BE that number rather than merely be near it: the suite is
-    the only instrument that can say whether the ceiling costs recall, and it
-    can only say so if the deployment and the grader agree on what a pass is
-    allowed."""
+    """Two memory reads per pass, the shipped default (#206)."""
     from nora.config import DreamBudgetConfig
 
     assert DreamBudgetConfig().max_memory_calls == 2
@@ -732,44 +733,11 @@ def test_the_shipped_default_is_the_number_d11_grades_at():
 # ---------------------------------------------------------------------------
 
 
-def test_every_counted_verb_is_one_the_decide_turn_actually_holds():
-    """`MEMORY_TOOLS` is spelled in `nora.agent` because the layer contract
-    forbids importing `nora.language` there, and a hand-copied set is a set
-    that drifts. This is the pin: a verb the ceiling counts that the pass
-    cannot call would make the ceiling smaller than it reads, silently.
-    """
-    assert MEMORY_TOOLS <= PROACTIVE_TOOLS
+def test_the_memory_verbs_are_these_four():
+    """The verbs the memory ceiling counts."""
     assert set(MEMORY_TOOLS) == {
         "about", "ask_memory", "search_memory_workspace", "lookup_person",
     }
-
-
-def test_the_grader_counts_every_verb_the_ceiling_does():
-    """The cost instrument and the ceiling must bound the SAME set.
-
-    `_MEMORY_VERB_SERIES` is what `evals/proactive.py` grades `max_memory_calls`
-    on, and it is also what FAILS a `remind` case that made no memory read at
-    all. It was missing `lookup_person` — which is not a gap but a live false
-    FAIL: `d11` is the case that can only be decided by resolving a handle, so a
-    pass that spent its ration on the verb granted for exactly that (issue #145)
-    reported zero reads and failed for doing the right thing.
-
-    Read off the two mappings rather than asserted as a list, so a verb added to
-    one and not the other reddens here rather than in a live suite run someone
-    has to interpret.
-    """
-    from tests.offline_eval_support import _MEMORY_VERB_SERIES
-
-    graded: set[str] = set()
-    for verbs in _MEMORY_VERB_SERIES.values():
-        graded |= set(verbs)
-
-    assert graded == set(MEMORY_TOOLS), (
-        "the eval grader and the pass ceiling disagree about what a memory "
-        "read is; the grader would measure a different pass from the one that "
-        f"ran (grader-only: {graded - set(MEMORY_TOOLS)}, "
-        f"ceiling-only: {set(MEMORY_TOOLS) - graded})"
-    )
 
 
 def test_note_read_is_not_a_memory_verb():
@@ -778,7 +746,6 @@ def test_note_read_is_not_a_memory_verb():
     already INDEXED, which is the depth the index deliberately withholds.
     """
     assert "note_read" not in MEMORY_TOOLS
-    assert "note_read" in PROACTIVE_TOOLS
 
 
 # ---------------------------------------------------------------------------

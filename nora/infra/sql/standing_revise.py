@@ -1,7 +1,8 @@
 """`standing_revise` — the async half of the write verb; the pure checks are
 `nora.domain.standing_revise` (its module docstring carries the full
 argument). Both `nora.engagement.stages.debrief` (the tag path's fold) and
-`nora.ingest.stages.standing_event` (the rollup fold) call THIS function
+`nora.ingest.stages.standing_event` (the rollup fold, deleted 2026-10-03,
+DEC-277) called THIS function
 instead of constructing a `Standing` and calling `SqlStandingStore.write`
 themselves — from `design/cognition-loop/70-migration.md` step 3 row 3b, "the
 debrief and the ingest fold both write through it from here, so the head has
@@ -78,6 +79,7 @@ async def standing_revise(
     base_revision_id: str | None = None,
     prior_revision_id: str | None = None,
     now_ms: int | None = None,
+    source: str = "fold",
 ) -> Revision:
     """Validate, then write, one room Standing revision.
 
@@ -102,9 +104,9 @@ async def standing_revise(
     (a position resting only on Nora's own prior rows, the echo rule's
     narrowest case). A future caller that needs either passes it explicitly.
 
-    `increments_fold_count` is the ONE behavioural difference the two
-    callers keep (D3, `nora.ingest.stages.standing_event`'s own module
-    docstring): the tag path's fold counts; the rollup fold does not. It is a
+    `increments_fold_count` was the ONE behavioural difference the two
+    callers kept (D3; the rollup fold, `standing_event`, is deleted): the tag
+    path's fold counts; the rollup fold did not. It is a
     parameter, not two code paths, because everything else here — the
     checks and the write — is identical for both.
 
@@ -180,5 +182,5 @@ async def standing_revise(
     # `tests/contract/test_standing_store_contract.py`, has no `source`
     # kwarg at all). Calling through the protocol type, not the concrete SQL
     # class, is what keeps this verb usable against either.
-    await store.write(standing=revised)
+    await store.write(standing=revised, source=source)
     return Revision(committed=True, standing=revised, refusal=None)

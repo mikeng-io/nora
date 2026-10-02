@@ -14,13 +14,6 @@
   "target": "tests/unit/test_debrief_render.py -k the_rollup_prior_carries_when_it_was_written_against_now_ms"
  },
  {
-  "name": "standing-compact §2: the rollup's prior age reaches the event fold's prompt",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        attrs=((\"written\", age(\n            prior.updated_at, datetime.fromtimestamp(now_ms / 1000, tz=UTC),\n        )),),\n        body=escape(prior.body.strip()),\n    ))",
-  "new": "    return _stamp(ContextBlock(\n        name=\"standing_prior\",\n        body=escape(prior.body.strip()),\n    ))",
-  "target": "tests/unit/test_standing_event.py -k the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age"
- },
- {
   "name": "standing-compact §2: the tag path's age is against the TURN, not the wall clock",
   "file": "nora/engagement/debrief_render.py",
   "old": "    prior_block = _standing_prior(prior, now_ms=trace.created_at)",
@@ -112,13 +105,6 @@
   "target": "tests/unit/test_debrief_render.py -k no_prior_renders_no_age_and_a_prior_renders_no_first_fold_sentence"
  },
  {
-  "name": "standing-compact §1: the rollup is shown its prior past the old ceiling",
-  "file": "nora/ingest/stages/standing_event.py",
-  "old": "        prior=prior, rows=rows, display_name=wiring.display_name, tz=wiring.tz,",
-  "new": "        prior=None if prior is not None and prior.fold_count >= 20 else prior,\n        rows=rows, display_name=wiring.display_name, tz=wiring.tz,",
-  "target": "tests/unit/test_standing_event.py -k the_rollup_shows_a_prior_past_the_old_ceiling_with_its_age"
- },
- {
   "name": "standing-compact §1: one model call per tag fold",
   "file": "nora/engagement/stages/debrief.py",
   "old": "            first = _check(reply, trace.tag_id)",
@@ -131,13 +117,6 @@
   "old": "            first = _check(reply, trace.tag_id)",
   "new": "            first = _check(reply, trace.tag_id)\n            await _complete(\n                client, call=\"verdict\", tag_id=trace.tag_id,\n                conversation_id=trace.conversation_id,\n                prompt=(\"VERDICT-TEXT\", rendered),\n            )",
   "target": "tests/unit/test_debrief.py -k a_tag_fold_makes_two_calls_only_on_a_consolidate_retry"
- },
- {
-  "name": "standing-compact §1: one model call per rollup fold",
-  "file": "nora/ingest/stages/standing_event.py",
-  "old": "        body, working_set_raw, refusal = await asyncio.wait_for(\n            _standing(), timeout=wiring.timeout_seconds,\n        )",
-  "new": "        (body, working_set_raw, refusal), _verdict = await asyncio.wait_for(\n            asyncio.gather(_standing(), _debrief_complete(\n                wiring.client, call=\"verdict\", tag_id=\"\",\n                conversation_id=conversation_id, prompt=(\"VERDICT-TEXT\", rendered),\n            )),\n            timeout=wiring.timeout_seconds,\n        )",
-  "target": "tests/unit/test_standing_event.py -k a_rollup_fold_makes_exactly_one_model_call"
  },
  {
   "name": "standing-compact §1: fold_count is never reset",
@@ -159,27 +138,6 @@
   "old": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%Y-%m-%d %H:%M\")",
   "new": "    return datetime.fromtimestamp(ts_ms / 1000, tz=tz).strftime(\"%H:%M\")",
   "target": "tests/unit/test_debrief_render.py -k test_every_row_carries_its_date_on_the_tag_and_the_rollup_render"
- },
- {
-  "name": "standing-compact §5: the rollup's <conversation> carries at",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "        name=\"conversation\", attrs=((\"at\", at),),",
-  "new": "        name=\"conversation\",",
-  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
- },
- {
-  "name": "standing-compact §5: the rollup's at is the fold's own now_ms, not the last row's time",
-  "file": "nora/engagement/debrief_render.py",
-  "old": "    at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(",
-  "new": "    at = datetime.fromtimestamp(\n        (rows[-1].ts if rows else now_ms) / 1000, tz=tz).strftime(",
-  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
- },
- {
-  "name": "standing-compact §5: the conversation block type declares at",
-  "file": "nora/domain/block_types.py",
-  "old": "       \"is; this block is only the boundary around it.\",\n       at=\"when you are folding it: now, for everything inside\"),",
-  "new": "       \"is; this block is only the boundary around it.\"),",
-  "target": "tests/unit/test_debrief_render.py -k test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it"
  },
  {
   "name": "standing-compact §5: a thinking clip is counted on its own label",
@@ -271,13 +229,6 @@
   "old": "            updated_at=now_ms if now_ms is not None else int(time.time() * 1000),",
   "new": "            updated_at=prior.updated_at if prior is not None else (now_ms if now_ms is not None else int(time.time() * 1000)),",
   "target": "tests/unit/test_debrief.py -k test_the_priors_age_is_measured_from_the_last_write_on_the_tag_path"
- },
- {
-  "name": "standing-compact M7: the rollup fold rewrites updated_at",
-  "file": "nora/infra/sql/standing_revise.py",
-  "old": "            updated_at=now_ms if now_ms is not None else int(time.time() * 1000),",
-  "new": "            updated_at=prior.updated_at if prior is not None else (now_ms if now_ms is not None else int(time.time() * 1000)),",
-  "target": "tests/unit/test_standing_event.py -k test_the_rollups_prior_age_is_measured_from_the_last_write"
  },
  {
   "name": "standing-compact M5: an empty batch carries the prior's watermark forward",

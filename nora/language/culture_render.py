@@ -33,14 +33,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from datetime import datetime
+from typing import Protocol
 
 from ..domain.blocks import ContextBlock
-from ..domain.culture import CultureRevision
+from ..domain.culture import CultureRevision, character_key
+from ..domain.models import PersonRef
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
-from ..domain.withdrawal import render_supported
 from ..obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -74,26 +75,12 @@ async def read_culture(
     `tests/architecture/test_dream_store_calls_are_declared.py` can count it.
     The key is a `primary_id` (DEC-181).
 
-    `None` collapses five states the prompt cannot tell apart: no reader (the
-    `[culture] enabled = false` default), no key, no account yet, a failed
-    read, and an account the withdrawal cascade marked `unsupported_at`. Only
+    `None` collapses four states the prompt cannot tell apart: no reader (the
+    `[culture] enabled = false` default), no key, no account yet, and a failed
+    read. Only
     the failed read is counted, under `nora_errors_total{stage}`: a head that
     exists and could not be fetched, reported as «there is none», is
     `unavailable` substituted for `nothing_found` (R-27).
-
-    **WITHDRAWAL IS APPLIED HERE, for every occasion at once**
-    (design/cognition-loop/10-tiers.md §2 rule 7, `nora.domain.withdrawal`).
-    This is every prompt's way to a culture head, so a head whose source was
-    withdrawn stops rendering in the tag turn, the fire turn, proactive,
-    note-candidates, the curator and the event fold alike, and a new occasion
-    that reads through here cannot forget it: the rule used to be two copies at
-    the tag and fire call sites, and the Dreamer prompts had none, so a
-    retracted message or a forgotten person's account could be read by a model
-    that goes on to write a note or a fold. A fold's OWN prior (the culture
-    fold's `previous_account`) is read from the store directly, not through
-    here, on purpose: the fold has to see what it wrote to supersede it, and
-    `tests/architecture/test_withdrawal_reaches_every_prompt.py` pins that
-    exemption by name.
 
     BOUNDED, because a hung Postgres connection with no `command_timeout`
     otherwise holds the caller's slot — the defect fixed in `debrief.run` and
@@ -108,7 +95,7 @@ async def read_culture(
         if metrics is not None:
             metrics.inc("nora_errors_total", stage=stage, platform=platform)
         return None
-    return render_supported(found)
+    return found
 
 
 def render_culture(
@@ -126,7 +113,7 @@ def render_culture(
     block that appeared blank would be read as «this room has no character».
 
     `room` names WHICH room the account is of, and is passed only by an
-    occasion that reads more than one room in one prompt (proactive, the note
+    occasion that reads more than one room in one prompt (the since-deleted proactive pass and note
     curator): there, an unlabelled account is an account of nowhere. An
     occasion inside one room omits it, and its block is byte-identical to the
     participation turn's from before the tier was widened.
@@ -141,3 +128,60 @@ def render_culture(
         name="culture", attrs=attrs,
         body=escape(culture.body),
     )
+
+
+class _HeadReader(Protocol):
+    def head(self, *, key: str) -> Awaitable[CultureRevision | None]: ...
+
+
+async def read_character(
+    reader: _HeadReader | None,
+    *,
+    scope: str,
+    members: Sequence[PersonRef],
+    stage: str,
+    platform: str,
+    metrics: Metrics | None,
+    timeout_seconds: float = DEFAULT_CULTURE_READ_TIMEOUT_SECONDS,
+) -> tuple[tuple[str, CultureRevision], ...]:
+    """`(name, account)` for each listed person who has one, in roster order.
+
+    The Character tier's read (DEC-278): one `read_culture` per person, so each
+    keeps its bound, its count and the withdrawal rule, and a person whose read
+    failed or who has no account yet is simply absent. `scope` is the room's
+    `primary_id`, the key the fold wrote under.
+    """
+    if reader is None or not members:
+        return ()
+    found = await asyncio.gather(*(
+        read_culture(
+            reader.head(key=character_key(scope, ref.person_id)),
+            stage=stage, platform=platform, metrics=metrics,
+            timeout_seconds=timeout_seconds,
+        )
+        for ref in members
+    ))
+    return tuple((ref.name, rev) for ref, rev in zip(members, found, strict=True) if rev)
+
+
+def render_character(
+    accounts: Sequence[tuple[str, CultureRevision]], *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """The `<character>` block: one `<person_account>` per person who has one.
+
+    `None` when nobody has an account yet, for `render_culture`'s reason: an
+    empty block would say she looked and found them featureless. Each account
+    carries its own `written` age, because nothing here retires and a head may
+    be weeks old and still right.
+    """
+    clock = now or datetime.now().astimezone()
+    rows = "\n".join(
+        ContextBlock(
+            name="person_account",
+            attrs=(("name", name), ("written", _age(rev.written_at, clock))),
+            body=escape(rev.body),
+        ).render()
+        for name, rev in accounts
+        if rev.body.strip()
+    )
+    return ContextBlock(name="character", body=rows) if rows else None

@@ -82,23 +82,20 @@ from nora.obs.metrics import Metrics
 
 #: What this renderer carries, declared as data
 #: (`design/context-assembly/01-the-registry.md`) instead of left as the
-#: f-strings and `"\n".join`s that wrote `render_debrief_input`,
-#: `render_rollup_input` and `render_debrief_turn`.
+#: f-strings and `"\n".join`s that wrote `render_debrief_input` and
+#: `render_debrief_turn`.
 #:
-#: **Two folds share one table, and a table cannot say «nested».** The tag
-#: fold's input is `culture`, `standing_prior`, `standing_working_set_prior`,
-#: then ONE `turn`; the event fold's (the rollup's) is the same three and then
-#: ONE `conversation` instead, which is why `turn` and `conversation` share an
-#: `order`: an input never carries both. Those are the blocks `assemble()` walks
+#: **A table cannot say «nested».** The fold's input is `culture`,
+#: `standing_prior`, `standing_working_set_prior`, then ONE `turn`. Those are
+#: the blocks `assemble()` walks
 #: at the top, joined by a blank line, so their `order` IS the order the model
 #: reads (the numbers are the order the f-strings wrote them, step 2b of
 #: `design/context-assembly/04-every-occasion.md`; the goldens in
 #: `tests/unit/test_step2b_assembly_goldens.py` pin it byte for byte).
 #:
 #: The rest are text INSIDE one of those, never in the list `assemble` sorts
-#: at the top: `what_happened`, `transcript` and `steps` are `turn`'s body, and
-#: `stretch` is `conversation`'s, each walked by a second `assemble` (one
-#: newline apart; the stretch is alone). Their `order` records the sequence a
+#: at the top: `what_happened`, `transcript` and `steps` are `turn`'s body,
+#: walked by a second `assemble` (one newline apart). Their `order` records the sequence a
 #: reader meets them reading INTO the block.
 #:
 #: **`key="turn"` throughout, and `when_empty="render"` on every block.** The
@@ -112,11 +109,9 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("standing_prior", 20, "turn"),
     ("standing_working_set_prior", 30, "turn"),
     ("turn", 40, "turn"),
-    ("conversation", 40, "turn"),
     ("what_happened", 50, "turn"),
     ("transcript", 60, "turn"),
     ("steps", 70, "turn"),
-    ("stretch", 60, "turn"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -302,21 +297,9 @@ def _speaker(row: TranscriptRow, display_name: str) -> str:
 def _transcript(
     rows: Sequence[TranscriptRow], *, display_name: str, tz: tzinfo | None
 ) -> str:
-    """The turn's or the stretch's messages — ONE function behind both blocks
-    (`<transcript>` in `render_debrief_turn`, `<stretch>` in
-    `render_rollup_input`), so the delivery mark can never ship apart from the
-    sentence explaining it (the block's own `fields=`).
-
-    **The two blocks are two TYPES because ONE description was false in two of
-    five callers** (audit, 2026-09-17). `<transcript>` says «the messages of
-    THIS TURN», which is right for the fold's turn render and wrong for the
-    rollup render, which has no turn: the event fold runs after an untagged
-    stretch. `delivery`'s clause reconciles the mark against «a turn's
-    outcome», and 362 characters of that landed in an 890-character rollup
-    document that has no turn and no outcome. So `<stretch>` is its own type:
-    same rows, same renderer, same mark, a description that is true of what it
-    wraps. This is the `<batch>`/`<now>` split a third time, found by reading
-    the RENDER rather than the registry.
+    """The turn's messages for the `<transcript>` block, so the delivery mark
+    can never ship apart from the sentence explaining it (the block's own
+    `fields=`).
 
     **There is no legend block.** It was a SIBLING of the transcript whose whole
     body was prose describing the transcript's fields (everything between the
@@ -445,18 +428,6 @@ def _standing_working_set_prior(
         body=lambda item: item.what,
     )
     return _stamp(ContextBlock(name="standing_working_set_prior", body=body))
-
-
-def _conversation(inner: Sequence[ContextBlock], *, at: str) -> ContextBlock:
-    """The event-path fold's envelope around its `<stretch>`, walked by
-    `assemble` like the `<turn>`'s three, so the one nested row is walked too.
-
-    `at` is when this fold runs. The rollup has no `<turn at=…>`, so without it
-    the fold is told to write dates and shown no «now» to write them from."""
-    return _stamp(ContextBlock(
-        name="conversation", attrs=(("at", at),),
-        body=assemble(inner, sep="\n"),
-    ))
 
 
 def _clip(
@@ -692,11 +663,8 @@ def _fold_rows(
     (`since_rows`, read via `RecordStore.since_including_nora`) PLUS the
     turn's own rows (`trace.transcript`), deduped by id and ascending.
 
-    The event check fires BEFORE the tag reply (design/standing-watermark/10),
-    so an event fold may have already advanced the watermark past the turn's
-    rows before this fold runs — `since_rows` would then start AFTER the turn,
-    and the fold would review a turn it cannot see. The turn's own rows are
-    therefore always included, even when the batch already covers them (D8).
+    The turn's own rows are always included, even when the batch already
+    covers them (D8): a fold must never review a turn it cannot see.
     """
     by_id = {row.id: row for row in since_rows}
     by_id.update({row.id: row for row in trace.transcript})
@@ -841,53 +809,6 @@ def _culture_blocks(
     return [] if block is None else [_stamp(block)]
 
 
-def render_rollup_input(
-    *,
-    prior: Standing | None,
-    rows: Sequence[TranscriptRow],
-    display_name: str,
-    now_ms: int,
-    tz: tzinfo | None = None,
-    culture: CultureRevision | None = None,
-) -> str:
-    """What the EVENT-path fold (the rollup) sees: the prior plus the batch of
-    rows since the last fold's watermark (design/standing-watermark/30).
-
-    No `<turn>` block — there IS no turn: the event fold runs after an
-    untagged stretch, so the transcript IS the batch and there is no outcome,
-    reasoning or tag to label it with. The prior block carries the same
-    always-present contract `render_debrief_input` uses — a rollup fold that
-    cannot see the prior position cannot correct it.
-
-    `<standing_working_set_prior>` rides beside it, `render_debrief_input`'s
-    own reason: the shared `standing-debrief` objective (`OBJECTIVE` in
-    `nora.engagement.stages.debrief`, read by both this fold and the tag
-    fold) tells the model «you are shown your current working set» on every
-    call, so a call that omitted the block would make that sentence false.
-    The rollup fold's own write path never reads a NEW item out of what the
-    model returns here — it has no `<steps>` to source one from — but it
-    still needs to SEE the prior to correctly carry it forward unchanged
-    rather than silently dropping it.
-    """
-    prior_block = _standing_prior(prior, now_ms=now_ms)
-    working_set_prior_block = _standing_working_set_prior(
-        prior.working_set if prior is not None else (), now_ms=now_ms,
-    )
-    at = datetime.fromtimestamp(now_ms / 1000, tz=tz).strftime(
-        "%Y-%m-%d %H:%M %Z").strip()
-    block = _stamp(ContextBlock(
-        name="stretch", body=_transcript(rows, display_name=display_name, tz=tz),
-    ))
-    return assemble(
-        [
-            *_culture_blocks(culture, now_ms=now_ms),
-            prior_block, working_set_prior_block,
-            _conversation([block], at=at),
-        ],
-        sep=_SEP,
-    )
-
-
 # ---------------------------------------------------------------------------
 # The text the fold SENDS around the rendered input
 # ---------------------------------------------------------------------------
@@ -898,16 +819,15 @@ def render_rollup_input(
 # this module is the one place that says what the model reads. Two kinds of
 # text, kept apart on purpose.
 #
-# * CONTEXT is the rendered input above (`render_debrief_input`,
-#   `render_rollup_input`), built from blocks, and it is the USER message.
+# * CONTEXT is the rendered input above (`render_debrief_input`), built from
+#   blocks, and it is the USER message.
 # * AUTHORED TEXT is the objective the operator wrote and the length rules this
 #   module words, and it is the SYSTEM message: `system_prompt` below. None of
 #   it is a block, because none of it is context: it tells the model what to
 #   do, and a block's job is to say what something IS.
 #
-# Both folds (the tag fold in `stages.debrief`, the event fold in
-# `nora.ingest.stages.standing_event`) call these, so the two cannot word the
-# length rules differently.
+# The fold in `stages.debrief` and its retry call these, so the two cannot word
+# the length rules differently.
 
 
 def _working_set_rule(*, working_set_max_items: int, working_set_max_chars: int) -> str:

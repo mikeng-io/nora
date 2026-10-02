@@ -147,9 +147,6 @@ class App:
         # /app/v1/status's uptime never disagree about when this process
         # started.
         started_at = time.time()
-        # Before anything that can take time: the series that says «this process
-        # started» is what `NoraRestartLoop` counts changes of.
-        deps.metrics.gauge("nora_process_start_time_seconds", started_at)
         health_app = build_health_app(
             adapter=deps.adapter, adapters=deps.registry.adapters,
             store=deps.audit, honcho=deps.memory,
@@ -217,11 +214,6 @@ class App:
         # Nothing awaits it — a slow or failing backfill must not delay the
         # adapters coming up.
         deps.background.spawn(self._adopt_pending())
-        # The sweep for what a delete left visible: a withdrawal that failed and
-        # outlived its retries, or that no process was alive to retry. The delete's
-        # record is committed first (`touch.run`), so this finds it. Spawned like
-        # adoption, for the same reason (it writes, and must not delay the adapters).
-        deps.background.spawn(self._reconcile_deletes())
         # Conditional, unlike its neighbours: `store.prune_enabled = false` means
         # the record is kept in full, and the sweep is not merely widened but
         # never started — `prune_all` scans the whole `messages` table per tick,
@@ -314,10 +306,10 @@ class App:
             )
         else:
             log.info("dream loop disabled (dreamer.enabled = false)")
-        # The cognition loop's wake evaluator, in SHADOW (design/cognition-loop/
-        # 20 §3, migration step 1): it records would-wakes and fires nothing;
-        # the Dreamer's clock above keeps running everything. `None` under
-        # `[cognition] mode = "off"`, the shipped default.
+        # The cognition loop's wake evaluator (design/cognition-loop/20 §3): it
+        # records wakes and hands each to the Cognition session, the one
+        # background writer (the Dreamer's note passes are deleted, DEC-277).
+        # `None` under `[cognition] enabled = false`.
         if deps.wake_evaluator is not None:
             # BEFORE the loop starts, and awaited, for the reason the watermarks
             # above are: whatever a previous process left open is released before
@@ -332,7 +324,7 @@ class App:
                 tick_seconds=deps.wake_tick_seconds,
             ))
         else:
-            log.info("cognition wake evaluator disabled (cognition.mode = off)")
+            log.info("cognition loop disabled ([cognition] enabled = false)")
         # The computer session sweeper (design/sandbox-runtime §15.2):
         # composition builds it only while `[computer] enabled`.
         if deps.computer_sweeper is not None:
@@ -398,43 +390,6 @@ class App:
             metrics=deps.metrics, media_join=deps.media_join,
             start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
         )
-
-    async def _reconcile_deletes(self) -> None:
-        """Run the delete reconcile once at start. Never raises (a failing sweep is
-        logged and counted, like adoption): the next start tries again."""
-        reconcile = self.deps.reconcile_deletes
-        if reconcile is None:
-            return
-        try:
-            report = await reconcile()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("start-up delete reconcile failed")
-            self.deps.metrics.inc("nora_errors_total", stage="delete_reconcile")
-            return
-        # Counts only. A line even when it found nothing: «nothing to do» and
-        # «never ran» must not read the same.
-        log.info(
-            "delete reconcile: %d visible, %d hidden, %d already hidden, %d no "
-            "longer on record, %d refused (not the author), %d failed, %d derived "
-            "row(s) withdrawn, %d healed, %d held deletes applied, %d expired",
-            report.visible, report.hidden, report.already_hidden, report.not_stored,
-            report.refused, report.failed, report.total_marked, report.total_healed,
-            report.orphans_applied, report.orphans_expired,
-        )
-        # `refused` is LOGGED above and not counted here: the same old records are read
-        # again at every start, so a counter would grow by the same number on each
-        # restart. The metric counts live refusals only (`touch.run`).
-        for outcome, count in (
-            ("reconciled", report.hidden), ("cascade_failed", report.failed),
-            ("applied_from_orphan", report.orphans_applied),
-            ("orphan_expired", report.orphans_expired),
-        ):
-            if count:
-                self.deps.metrics.inc(
-                    "nora_delete_withdrawals_total", count, platform="all", outcome=outcome,
-                )
 
     async def _update_last_event_age(self) -> None:
         """Publish adapter liveness: the pinned Signal series, and one series

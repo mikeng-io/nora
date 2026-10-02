@@ -3,8 +3,8 @@ S2 corpus (migration steps 3a-ii and 3a-iii). COLLECTION only: this test loads
 and censuses the corpus (`evals.scenarios.load_corpus`/`census`) the way
 `python -m evals` does before any run — it makes no model call and drives no
 case. Running it for real goes through `evals.rebuilt.entry._cognition_probe`
-on the session runner the subject builds under `[cognition] session_mode =
-"shadow"` (`tests/unit/test_cognition_wiring.py` pins that seam).
+on the session runner the subject builds under `[cognition] enabled =
+true` (`tests/unit/test_cognition_wiring.py` pins that seam).
 """
 
 from __future__ import annotations

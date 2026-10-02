@@ -17,8 +17,8 @@ messages", "a rollup row changed for <ref>"), computed from the stimuli, and
 raises no judgement. Code orders items by a deterministic **surprise**
 score (30 §1, 80-prior-art §4: a strong cue, a rollup/self/time kind, and
 volume, in that order of weight — every weight here is a STARTING guess,
-like every other number in this migration, sized once a shadow week of
-sessions exists) and hands at most `max_items` (starting at 12); the rest
+like every other number in this migration, to be sized from live
+sessions) and hands at most `max_items` (starting at 12); the rest
 wait for the next session, unconsumed (`build_agenda` returns them
 separately so the caller's watermark advance can exclude what it never
 saw — see `Agenda.deferred`).
@@ -192,6 +192,10 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
     if kind == "rollup":
         return f"a rollup row changed: {item}"
     if kind == "time":
+        if item == "floor":
+            return ("the daily look at the notebook: the note index marks the notes "
+                    "whose day has passed, whose revisit has come, or that may be "
+                    "duplicates")
         return f"a time stimulus is due: {item}"
     if kind == "self":
         return f"a self-wake is due: {item}"
@@ -200,7 +204,7 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
 
 def _surprise(kind: str, cues: tuple[str, ...], count: int) -> float:
     """A deterministic, STARTING score (80-prior-art §4); every weight is a
-    guess this migration ships and a shadow week sizes, exactly like every
+    guess this migration ships, to be sized from live sessions, like every
     other number in `20-observe.md` §3's wake table. Higher wins."""
     score = 0.0
     if cues:

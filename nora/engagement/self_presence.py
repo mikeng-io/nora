@@ -1,12 +1,12 @@
 """`PresenceReader` — where she is, read from the systems that know it
 (design/self-awareness/02).
 
-ONE implementation, three callers: the tag path's assembler
-(`TranscriptInjection`), the fire path (`FirePath.build_context`, which
-serves participation, reminders and the proactive act turn), and the
-proactive decide pass, which reaches it through a callable the composition
-root hands it. None of them builds its own idea of which rooms exist.
-A fourth reads it through `rooms()`: the room tools `room_list` and
+ONE implementation, two callers: the tag path's assembler
+(`TranscriptInjection`) and the fire path (`FirePath.build_context`, which
+serves participation, reminders and the proactive act turn). (The proactive
+decide pass was a third, deleted 2026-10-03, DEC-277.) None of them
+builds its own idea of which rooms exist.
+A further reader reads it through `rooms()`: the room tools `room_list` and
 `room_read` (design/self-awareness/07), which need the same rooms plus a
 member count and each room's store key.
 

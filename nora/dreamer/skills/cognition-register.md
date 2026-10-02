@@ -1,32 +1,24 @@
 ---
 name: cognition-register
 kind: skill
-version: 1
+version: 2
 applies_to: [cognition_session]
 description: >-
-  The note and event judgement the Cognition session writes the Register with,
-  injected after its instruction for the agenda kinds `message`, `rollup` and
-  `self` (`nora.app.cognition_wiring.AGENDA_SKILLS`; design/cognition-loop/
-  30-cognition.md §4: the replaced adaptors' objectives become Cognition's
-  skills). Distilled from note-candidates.md (what belongs in the notebook, an
-  update restates the whole entry and keeps every line's ids, the anchor date,
-  the closing condition, an owner who wrote nothing), note-merge.md (the
-  duplicate rule with its counterweight: folding two questions into one is the
-  worse error, and sharing people, day or place does not make them one) and
-  40-register.md §1, §3-§4 (note or event; told, deduced, abduced; an abduced
-  value goes out as a question). What the validator does NOT enforce (a day
-  word in a line, the ids an update keeps, an owner who wrote nothing) is
-  worded as a request, never as a refusal; what it does enforce (a body with
-  Decided and Open both empty is refused) is stated as one. Written
-  from the input side: the agenda block already teaches the line grammar, the
-  note index and events blocks say they exist so nothing is written twice, the
-  verbs say what they take, and the objective says how an item closes; none of
-  that is repeated. The body below the heading is shown as one example rather
-  than described, and it is held to the real validator
-  (tests/unit/test_cognition_agenda_skills.py). No numbers, no caps, no tool
-  that does not exist. Not yet measured on the live catalogue:
-  `tool_selection_cognition` before and after says only that routing did not
-  regress, never whether the notes are good.
+  The note, event and reminder judgement the Cognition session writes with,
+  injected after its instruction for every agenda kind it maps
+  (`nora.app.cognition_wiring.AGENDA_SKILLS`; 30-cognition.md §4). Distilled
+  from the retired passes' objectives: note-candidates.md (what belongs in the
+  notebook, an update restates the whole entry and keeps every line's ids, the
+  anchor date, the closing condition, an owner who wrote nothing), note-merge.md
+  (the duplicate rule with its counterweight), note-curation.md (a changed plan is
+  not a closed one; silence is no answer; retire on a message you can point to, or
+  on a day passed with nothing open) and proactive.md (what earns a reminder, when,
+  and that most looks raise nothing), plus 40-register.md §1, §3-§4 (note or
+  event; told, deduced, abduced). What the validator does NOT enforce is worded as
+  a request; what it does enforce is stated as one. The body below the heading is
+  shown as one example, held to the real validator
+  (tests/unit/test_cognition_agenda_skills.py). No numbers, no caps. Version 2
+  (2026-10-03, the cut-over) adds retiring, merging and reminders.
 change_policy: operator-only
 ---
 
@@ -126,3 +118,30 @@ as a question, and a «yes» to your own guess leaves it abduced.
 
 A note line carries no mode because it is only ever what was said. What you worked out goes on
 an event as deduced or abduced, or nowhere: never into a note as if someone had said it.
+
+## Retiring and merging
+
+A note is done when what would close it has happened and a message says so: retire it as
+`settled`, after writing the answer into it if it is worth keeping. A note whose day has
+gone by is done only when nothing about it is still open: retire it as `anchor_passed`. A
+plan that moved («we moved it to the 16th») is not a plan that closed: revise it. Silence is
+not an answer either way; a note nobody has spoken to is doing its job. When you cannot
+tell, leave it open: a note kept a little long costs a line, a note retired early throws
+away the group's only record of a thing still being decided.
+
+Merge two notes only when whatever settles one settles the other. The survivor's body takes
+the duplicate's open lines with the ids they already cite; the duplicate is retired pointing
+at it. Sharing people, a day or a place is not enough, as above.
+
+## What earns a reminder
+
+A reminder is worth setting for a note whose moment is near and which still has a corner
+nobody has closed, where a word at the right hour helps the people who have to act: where to
+meet, two hours before dinner; a booking someone owes, the evening before its deadline. The
+hour is the judgement: a thing three weeks out has no right moment today.
+
+Not worth it: anything settled; anything you raised that nobody answered, or that somebody
+did answer; anything that would only restate the note. Before you set one, read the note and
+ask memory about the people it names (`about`), so the moment you choose fits how they
+usually settle things. One reminder per thing, few a day, on most looks none: a friend who
+speaks every day is muted.

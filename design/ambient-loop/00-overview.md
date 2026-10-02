@@ -15,6 +15,9 @@ version: 4
 
 # The Ambient Loop Is Nora's Second Backbone
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 0. What this node decides
 
 **Nora has two backbones.** The **tag path** is how she answers when somebody

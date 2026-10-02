@@ -48,6 +48,18 @@ so it was asked for a join and handed one table: §7.1's tautology, which passes
 every gate the runtime owns because a restated input leaves a row and a row is
 what success looks like ([17-failure-classes §11]).
 
+**It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
+the same daily clock, the same fold asks Nora's memory «what is the character of
+X?» for each person the room lists (`memory.chat`, the dialectic verb
+`ask_memory` calls), hands those answers to the model beside the room's own
+account, and stores one short account per person under `character_key` in this
+same store and chain. **That supersedes DEC-182's narrowing, for this use
+only:** Honcho's `chat` is not scoped to a room, which is what closed #237, and
+the operator accepted that here, because a unit is one circle of friends. The
+cache shape (ask once, store the answer verbatim) is still not what this is:
+the model combines memory's view with the room's culture and the fold is the
+author. Rendered as `<character>` by `nora.language.culture_render`.
+
 **Nothing here retires (DEC-183)** and **`body` is prose with no section schema
 (DEC-184)** — both are stated where they bite, in `nora.domain.culture`.
 
@@ -59,6 +71,7 @@ one thing it does not contribute.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
@@ -72,14 +85,18 @@ from nora.domain.blocks import (
     restamp,
     speaker_name,
 )
-from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
+from nora.domain.culture import (
+    BODY_MAX_CHARS,
+    CultureProposal,
+    CultureRevision,
+    character_key,
+)
 from nora.domain.errors import NoraError
-from nora.domain.models import TranscriptRow
+from nora.domain.models import PersonRef, TranscriptRow
 from nora.domain.notes import Note
-from nora.domain.ports import Proposal
+from nora.domain.ports import MemoryStore, Proposal
 from nora.domain.prompt import escape
 from nora.domain.standing import Standing
-from nora.domain.withdrawal import render_supported
 from nora.language.note_render import render_notes
 from nora.language.standing_render import render_standing
 from nora.obs.metrics import Metrics
@@ -164,10 +181,11 @@ CULTURE_ADAPTOR_NAME = "culture"
 #: added without this number moving.
 #:
 #: 3 -> 5 on 2026-09-17, when `standing` and the notes joined the inputs.
-STORE_CALLS_PER_TICK = 5
+#: 5 -> 6 for the Character tier: ONE site, `memory.chat`, fanned out per person.
+STORE_CALLS_PER_TICK = 6
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
-#: hand-copied into the metric's help text — `note_candidates`' own precedent,
+#: hand-copied into the metric's help text — the deleted `note_candidates`' own precedent,
 #: enforced at RUNTIME because `Metrics.inc` takes `**labels: object` and mypy
 #: cannot check a string passed through an `object` parameter.
 #:
@@ -218,7 +236,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. `lookup_person` is
-    # here for the reason it was granted to the proactive pass (issue #145): a
+    # here for the reason it was granted to the (deleted) proactive pass (issue #145): a
     # room's own nicknames («@熱咖啡☕少奶多糖») resolve against an index and
     # not against more occurrences of the same handle.
     "about", "lookup_person", "group_members",
@@ -280,8 +298,8 @@ class _StandingReader(Protocol):
 
 
 class _NoteStore(Protocol):
-    """The note tier's index — what the room has OPEN. `NoteCandidateAdaptor`
-    reads exactly this, keyed exactly this way (DEC-105: notes are a UNIT
+    """The note tier's index — what the room has OPEN. the deleted `NoteCandidateAdaptor`
+    read exactly this, keyed exactly this way (DEC-105: notes are a UNIT
     store, so a scope key must be translated).
 
     Note the vocabulary trap this bundle has fallen into before
@@ -333,11 +351,9 @@ def _batch_day(batch: Sequence[TranscriptRow], *, tz: _dt.tzinfo) -> int | None:
     """`yyyymmdd` for the newest row of a batch, in the ROOM's zone — what the
     note index renders its distances against.
 
-    Deliberately a second, four-line copy of `nora.language.note_candidates`'
-    own `_batch_day` rather than an import of a private name from a sibling
-    module or a move of it: that file is being reworked under issue #292 and
-    this change does not reach into it. Collapse the two when a shared home for
-    the batch-rendering helpers exists.
+    Written as its own four-line helper (it was a copy of the deleted
+    `nora.language.note_candidates`' `_batch_day`, DEC-277), rather than an import
+    of a private name from a sibling module.
     """
     if not batch:
         return None
@@ -394,8 +410,8 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
 #: alone. `inputs` also renders `standing` (via
 #: `nora.language.standing_render.render_standing`) and `notes` (via
 #: `nora.language.note_render.render_notes`) when their inputs resolve, both
-#: shared with other occasions. The same gap found in `proactive`
-#: (`loop_decisions`) and `note_candidates` (`notes`) — a survey of literal
+#: shared with other occasions. The same gap was found in `proactive`
+#: (`loop_decisions`) and `note_candidates` (`notes`), both since deleted — a survey of literal
 #: `ContextBlock(name=...)` calls misses a block built by a call to a shared
 #: function.
 #:
@@ -410,6 +426,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_account", 20, "turn"),
     ("standing", 30, "turn"),
     ("notes", 40, "turn"),
+    ("people_views", 45, "turn"),
+    ("person_view", 46, "turn"),
     ("room_messages", 50, "turn"),
 )
 
@@ -427,7 +445,8 @@ class CultureAdaptor:
     name = CULTURE_ADAPTOR_NAME
     key_kind = "scope"
     #: **`True`, and an earlier draft had it `False`**, borrowed from the note
-    #: curator. The curator needs a watermark-free clock because AN ANCHOR DATE
+    #: curator (deleted 2026-10-03). The curator needed a watermark-free clock because AN ANCHOR
+    #: DATE
     #: PASSING IS ITSELF THE EVENT — retirement is time-driven whether or not
     #: anyone speaks. Culture has no equivalent clock event, so the precedent
     #: does not transfer, and DEC-183 ("a quiet room's culture is accurate, not
@@ -455,7 +474,7 @@ class CultureAdaptor:
         # every one of these is the same `.get` over the allowlist that the
         # composition root builds off `conv.primary_id` in one place, so they
         # cannot disagree about which room a key names —
-        # `NoteCandidateAdaptor`'s own arrangement (issue #161).
+        # the deleted `NoteCandidateAdaptor`'s arrangement (issue #161).
         #
         # REQUIRED rather than defaulted, for that adaptor's stated reason: a
         # wiring gap here renders a plausible, WRONG prompt and nothing counts
@@ -480,13 +499,13 @@ class CultureAdaptor:
         notes: _NoteStore | None = None,
         metrics: Metrics | None = None,
         # The ROOM's zone, for the note index's distances — the same
-        # `[reminders] timezone` the curator and the note-candidate pass read
+        # `[reminders] timezone` the (deleted) curator and note-candidate pass read
         # «today» from, for their reason: «this Saturday» is a question about
         # the room's calendar, not the process's. UTC by default so a bare
         # construction still renders a true day.
         timezone: _dt.tzinfo = _dt.UTC,
         # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200), the same
-        # pair `NoteCandidateAdaptor` takes and for the same reason: this
+        # pair the deleted `NoteCandidateAdaptor` took and for the same reason: this
         # fold builds its own `<room_messages>` block from the raw batch
         # (`_render_batch`) and never called `Persons.name_transcript`, so a
         # mapped sender's line was attributed to their self-set, spoofable
@@ -499,7 +518,28 @@ class CultureAdaptor:
         resolve_names: (
             Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
         ) = None,
+        # THE CHARACTER TIER (DEC-278): the room's listed persons, Nora's
+        # memory (the existing Honcho port, never a new client), her observer
+        # peer id, and R-18's screen on what memory answers. `memory=None` is
+        # the pre-Character fold, byte for byte: no people block, no person
+        # accounts. The screen is INJECTED (`language` may not import
+        # `agent`), and required with `memory` rather than defaulted, because
+        # a missing screen would pass an identifier into a prompt silently.
+        members_for: Callable[[str], Sequence[PersonRef] | None] | None = None,
+        memory: MemoryStore | None = None,
+        ai_peer: str = "",
+        screen: Callable[[str], object] | None = None,
     ) -> None:
+        if memory is not None and (screen is None or members_for is None or not ai_peer):
+            raise ValueError(
+                "CultureAdaptor: memory needs members_for, ai_peer and screen "
+                "(R-18) together; a Character fold missing any of them would "
+                "ask about nobody or pass an identifier into a prompt"
+            )
+        self._members_for = members_for
+        self._memory = memory
+        self._ai_peer = ai_peer
+        self._screen = screen
         self._culture = culture
         self._standing = standing
         self._notes = notes
@@ -562,8 +602,8 @@ class CultureAdaptor:
         `_standing_lines`) is right for a pass that must still decide
         something; here it would let a silent store fault produce accounts that
         GUESS at her standing forever, which is the §1.2 defect re-created as a
-        supported degraded mode. `notes.standing` is unguarded in
-        `NoteCandidateAdaptor` for the same reason.
+        supported degraded mode. `notes.standing` was unguarded in
+        the deleted `NoteCandidateAdaptor` for the same reason.
 
         `batch` empty renders `""`. `DreamAdaptor` has no `should_fire` verb;
         the runtime's fire condition IS "did `inputs` render anything", so a
@@ -571,8 +611,8 @@ class CultureAdaptor:
         """
         if not batch:
             return ""
-        # RESOLVE NAMES (issue #200), the same projection `NoteCandidateAdaptor`
-        # applies before its own batch renders. Every row this fold gets from
+        # RESOLVE NAMES (issue #200), the same projection the deleted `NoteCandidateAdaptor`
+        # applied before its own batch renders. Every row this fold gets from
         # `record.since` carries `person_name=None` — nothing on this path
         # ever called `Persons.name_transcript` — so without this a mapped
         # sender's line in `<room_messages>` was attributed to their
@@ -608,11 +648,7 @@ class CultureAdaptor:
                             adaptor=self.name,
                         )
         parts: list[ContextBlock] = [self._room_block(key)]
-        # RAW, on purpose, and the ONE read here that is: the fold's own prior
-        # account is shown even when the cascade marked it `unsupported_at`, so
-        # that the fold can see what it wrote and supersede it
-        # (`nora.domain.withdrawal`; pinned by name in
-        # `tests/architecture/test_withdrawal_reaches_every_prompt.py`).
+        # The fold's own prior account, so it can see what it wrote and supersede it.
         previous = await self._culture.head(key=key)
         if previous is not None:
             account_order, account_key = _ROW["previous_account"]
@@ -633,18 +669,14 @@ class CultureAdaptor:
         standing_key = self._standing_key_for(key)
         if self._standing is not None and standing_key is not None:
             platform, conversation_id = standing_key
-            # WITHDRAWAL (`nora.domain.withdrawal`): a position the cascade
-            # marked `unsupported_at` is a room with no position, so the block
-            # is absent. Unlike the account above, this is not the fold's own
-            # prior: it is the debrief's, read as input.
-            block = render_standing(render_supported(await self._standing.read(
+            block = render_standing(await self._standing.read(
                 platform=platform, conversation_id=conversation_id,
-            )))
+            ))
             if block is not None:
                 # RESTAMPED: `render_standing` is shared with the tag path
                 # and builds an unstamped block.
                 parts.append(restamp(block, _ROW))
-        # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
+        # WHAT THE ROOM HAS OPEN. the deleted `NoteCandidateAdaptor.inputs`' read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
         unit = self._unit_for(key)
@@ -694,14 +726,20 @@ class CultureAdaptor:
                 "(unit=%r standing_key=%r); folding without those inputs",
                 key, unit, standing_key,
             )
-        # WRAPPED, for the reason the note-candidates batch is (#292 audit):
+        # HONCHO'S VIEW OF EACH LISTED PERSON, asked once here (comprehend
+        # once) so the model computes on a fixed answer instead of deciding
+        # whether to ask. Absent when no person answered.
+        people = await self._people_views(key, unit)
+        if people is not None:
+            parts.append(people)
+        # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained
         # batch let a member's message write free text at prompt top level,
         # beside `<previous_account>` and the note index rather than inside
         # anything.
         parts.append(
             # `room_messages`, NOT `batch`. They looked like one block and are
-            # two: note-candidates' `<batch>` renders `n` as the stored row id
+            # two: the deleted note-candidates' `<batch>` rendered `n` as the stored row id
             # so the pass can cite it in `message_ids`; this one renders a 1..N
             # position and suppresses ids by construction, because an account
             # that can cite rows becomes the chronicle this tier exists not to
@@ -715,15 +753,71 @@ class CultureAdaptor:
         )
         return assemble(parts, sep="\n\n")
 
+    def _roster(self, key: str) -> tuple[PersonRef, ...]:
+        """This room's listed persons, or `()` when Character is not wired."""
+        if self._memory is None or self._members_for is None:
+            return ()
+        return tuple(self._members_for(key) or ())
+
+    async def _people_views(self, key: str, unit: str | None) -> ContextBlock | None:
+        """`<people_views>`: what Nora's memory says each listed person is
+        like, one `<person>` per answer (the Character tier, DEC-278).
+
+        **The operator's design, and nothing more:** ask the memory system
+        «what is the character of X?», combine the answer with the room's
+        culture, write it down. `chat` is the dialectic verb `ask_memory`
+        already calls, with Nora as observer and the person observed. It
+        blends across the unit, which DEC-182's narrowing refused for the
+        cache shape; the operator ruled 2026-10-03 that a unit is one circle,
+        so that is accepted here (DEC-278).
+
+        **FAIL-SOFT PER PERSON, and the gap is stated:** `chat` returns `None`
+        for unreachable and for nothing-to-say alike, so a person with no
+        answer gets no account this fold rather than a guessed one; the room's
+        own fold is unaffected. An answer carrying an identifier is withheld
+        whole (R-18), as `ask_memory` does.
+        """
+        roster = self._roster(key)
+        if not roster or self._memory is None or self._screen is None or unit is None:
+            return None
+        screen = self._screen
+        # ponytail: one dialectic call per listed person, no cap; rooms here
+        # are a handful of friends. Add a cap key to `[culture]` if one grows.
+        answers = await asyncio.gather(
+            *(
+                self._memory.chat(
+                    peer_id=self._ai_peer, target=ref.honcho_peer_id,
+                    query=f"What is the character of {ref.name}?", unit=unit,
+                )
+                for ref in roster
+            ),
+            return_exceptions=True,
+        )
+        rows: list[str] = []
+        for ref, answer in zip(roster, answers, strict=True):
+            if isinstance(answer, BaseException) or not answer or not answer.strip():
+                log.warning("character: no view of %s for scope=%s", ref.person_id, key)
+                continue
+            if screen(answer) is not None:
+                log.warning("character: view of %s withheld (R-18)", ref.person_id)
+                continue
+            rows.append(ContextBlock(
+                name="person_view", attrs=(("name", ref.name),), body=escape(answer.strip()),
+            ).render())
+        if not rows:
+            return None
+        order, bkey = _ROW["people_views"]
+        return ContextBlock(
+            name="people_views", order=order, key=bkey, body="\n".join(rows),
+        )
+
     def _room_block(self, key: str) -> ContextBlock:
         """What this room is CALLED and what the operator says it IS.
 
-        **INLINE, and to be collapsed.** `nora.language.note_candidates` holds
-        `_room_block` / `ROOM_BLOCK_NOTE` / `UNNAMED_ROOM`, and issue #292 is
-        moving them to a shared home. This is deliberately not a second copy of
-        that helper and not a move of it: it renders the same two policy fields
-        with this tier's own note, and it collapses into the shared helper the
-        day that lands.
+        **INLINE.** The deleted `nora.language.note_candidates` held
+        `_room_block` / `ROOM_BLOCK_NOTE` / `UNNAMED_ROOM` (issue #292 was moving
+        them to a shared home). This renders the same two policy fields
+        with this tier's own note.
 
         The note's second half is the not-an-instruction clause every injected
         block carries, and it is load-bearing rather than ceremonial: the
@@ -809,33 +903,48 @@ class CultureAdaptor:
         back into chronicle, and refusing 13%-over prose was never the thing
         that would have.
         """
-        if not items:
-            self._inc("empty")
-            return ()
-        if len(items) > 1:
+        # A person's item carries a `person` NAME from the roster the prompt
+        # showed; the id is resolved HERE, so a model never supplies one. An
+        # unknown name, a repeat and a malformed item are dropped.
+        by_name = {ref.name: ref.person_id for ref in self._roster(key)}
+        room_items = [i for i in items if "person" not in i]
+        if len(room_items) > 1:
             log.warning(
                 "culture: %d accounts proposed for scope=%s; a room has one, "
-                "so the whole reply is discarded", len(items), key,
+                "so the whole reply is discarded", len(room_items), key,
             )
             self._inc("too_many")
             return ()
-        parsed = _parse(items[0])
-        if parsed is None:
+        out: list[CultureProposal] = []
+        seen: set[str] = set()
+        for item in items:
+            parsed = _parse(item)
+            if parsed is None:
+                continue
+            if "person" in item:
+                person_id = by_name.get(str(item["person"]))
+                if person_id is None or person_id in seen:
+                    log.warning("character: dropped an account for %r in scope=%s",
+                                item["person"], key)
+                    continue
+                seen.add(person_id)
+                parsed = CultureProposal(body=parsed.body, person_id=person_id)
+            if len(parsed.body) > BODY_MAX_CHARS:
+                log.warning(
+                    "culture: account for scope=%s is %d chars, past the %d cap — "
+                    "almost certainly drifted back into chronicle; HOLDING the "
+                    "watermark, this batch is folded again rather than spent",
+                    key, len(parsed.body), BODY_MAX_CHARS,
+                )
+                self._inc("oversize")
+                raise AccountNotRecordableError(
+                    f"culture account for scope={key} is {len(parsed.body)} chars, "
+                    f"past the {BODY_MAX_CHARS} cap"
+                )
+            out.append(parsed)
+        if not out:
             self._inc("empty")
-            return ()
-        if len(parsed.body) > BODY_MAX_CHARS:
-            log.warning(
-                "culture: account for scope=%s is %d chars, past the %d cap — "
-                "almost certainly drifted back into chronicle; HOLDING the "
-                "watermark, this batch is folded again rather than spent",
-                key, len(parsed.body), BODY_MAX_CHARS,
-            )
-            self._inc("oversize")
-            raise AccountNotRecordableError(
-                f"culture account for scope={key} is {len(parsed.body)} chars, "
-                f"past the {BODY_MAX_CHARS} cap"
-            )
-        return (parsed,)
+        return tuple(out)
 
     # -- commit ---------------------------------------------------------
 
@@ -877,12 +986,17 @@ class CultureAdaptor:
                     f"CultureAdaptor.commit only accepts a CultureProposal "
                     f"payload, got {type(payload).__name__}"
                 )
-            previous = await self._culture.head(key=key)
+            # A person's account is one more key in the same store and chain.
+            store_key = (
+                character_key(key, payload.person_id)
+                if payload.person_id is not None else key
+            )
+            previous = await self._culture.head(key=store_key)
             if previous is not None and previous.body == payload.body:
                 self._inc("unchanged")
                 continue
             await self._culture.append(
-                key=key,
+                key=store_key,
                 body=payload.body,
                 written_at=now_ms,
                 established_by=proposal.established_by,

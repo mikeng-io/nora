@@ -82,7 +82,7 @@ Screen = Callable[[str], str | None]
 #: are not all in packages it reaches, so a static-only guard would be a claim
 #: (issue #61).
 JoinPath = Literal[
-    "tag", "fire", "debrief", "standing_event", "dreamer", "note_curator",
+    "tag", "fire", "debrief", "dreamer",
     "adoption", "load_transcript", "relevance_gate",
     # The eval seam's two readers (`nora.subject`): its dream pass, and the
     # window a judge grades a reply against (#458). `dreamer_eval` was passed
@@ -294,7 +294,7 @@ class MediaJoin:
     async def _lookup(self, shas: tuple[str, ...]) -> MediaLookup:
         """One query, BOUNDED. `enrich` catches exceptions; it cannot catch a
         hang, and only the two slot-held callers wrapped it — the tag path, the
-        fire path, the Dreamer, the note curator, adoption and
+        fire path, the Dreamer, adoption and
         `load_transcript` all awaited it bare. `nora/infra/sql/engine.py` sets
         no `command_timeout`, so a Postgres that is slow-but-alive (a pool
         saturated by a burst of comprehension jobs, say) held every tag reply

@@ -17,7 +17,7 @@ what a parser reads and a substring does not.
 
 **Not a single rooted document, so every builder's output is wrapped.** A prompt
 is a SEQUENCE of sibling blocks with prose between some of them (`assemble`
-concatenates; the curator prepends lines; `prefill` writes a clock line). That
+concatenates; an adaptor prepends lines; `prefill` writes a clock line). That
 is well-formed XML *content*, not a well-formed XML *document*, so `_outline`
 wraps it in one synthetic root before parsing. A `ParseError` after that wrap is
 a real malformation of the builder's own bytes.
@@ -35,15 +35,14 @@ member-authored and carries `untrusted="true"`; class 2 is Nora's own framing
 and carries no marker at all. `test_one_block_injector`'s census asserts that
 distinction exists in the SOURCE of nine modules. These outlines assert which
 side each element actually lands on in the bytes a model receives — including
-the three containers that carry no marker while wrapping one that does
-(`<turn>`, `<conversation>`, `<description>`), which is a shape no source-level census
-can tell apart from a forgotten marker.
+the container that carries no marker while wrapping one that does
+(`<turn>`), which is a shape no source-level census can tell apart from a
+forgotten marker.
 """
 
 from __future__ import annotations
 
 import tempfile
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -68,23 +67,15 @@ from nora.domain.tag_trace import TagTrace
 from nora.engagement.debrief_render import (
     render_debrief_input,
     render_debrief_turn,
-    render_rollup_input,
 )
 from nora.infra.transit.arrivals import Answer, Departure, Direction, describe
 from nora.ingest.relevance_gate import render_context
 from nora.language.culture import CultureAdaptor
-from nora.language.note_candidates import NoteCandidateAdaptor
-from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.skills.loader import SkillStore
 from nora.testing import (
     InMemoryCultureStore,
-    InMemoryNoteStore,
-    InMemoryStandingStore,
 )
-from nora.testing.fakes import FakeRecordStore
-from nora.testing.reminders import FakeReminderStore
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 NOW = datetime(2026, 9, 8, 23, 0, tzinfo=UTC)
@@ -216,107 +207,6 @@ def standing() -> Standing:
     )
 
 
-async def proactive(body: str = "去邊食", *, name: str = "Grant") -> str:
-    """The decide pass, with a description open and a room position written.
-
-    `name` and `body` reach this prompt through the note's own fields rather
-    than a transcript: `inputs` ignores its batch, so what a member typed
-    arrives here only after the candidate pass wrote it into a note.
-    """
-    notes = InMemoryNoteStore()
-    await notes.create(
-        unit=WS, title=name, description=body, uncertainty="where",
-        closing_condition="a place is picked", established_in="sig-1",
-        body="Cyberport Saturday", established_by="tag:miles",
-        now_ms=NOW_MS - 86_400_000, anchor_date=20260912,
-    )
-    positions = InMemoryStandingStore()
-    await positions.write(standing=Standing(
-        platform="signal", conversation_id="sig-1",
-        body="Dinner Saturday is agreed; where is still open.",
-        fold_count=3, updated_at=NOW_MS - 7_200_000,
-    ))
-    adaptor = ProactiveAdaptor(
-        decisions=None, notes=notes, standing=positions,
-        reminders=FakeReminderStore(), memory=None,
-        rooms_of=lambda key: (
-            UnitRoom(platform="signal", conversation_id="sig-1",
-                          label="Friends", home=True),
-            UnitRoom(platform="discord", conversation_id="1/2",
-                          label="Zone 42"),
-        ) if key == WS else (),
-        people_of=None, roster_index_conclusions=0, roster_index_members=12,
-        read_timeout_seconds=5.0, ai_peer="nora", clock=lambda: NOW,
-        timezone=HKT, metrics=None, clock_store=None, records=None,
-        quiet_seconds=1800.0,
-    )
-    return await adaptor.inputs(key=WS, batch=())
-
-
-def _record(body: str, name: str) -> FakeRecordStore:
-    store = FakeRecordStore()
-    for rid, (sender, text, mine) in enumerate(
-        ((None, "969P from Tin Shui Chi", True), (name, body, False)), start=7,
-    ):
-        store.rows.append({
-            "id": rid, "platform": "signal", "conversation_id": "conv-1",
-            "sender_id": "nora" if mine else "+852111",
-            "sender_name": sender, "person_id": None if mine else "miles",
-            "ts": NOW_MS + rid, "body": text, "is_nora": mine,
-            "delivery_status": DeliveryStatus.SENT, "raw_json": None,
-            "quoted_ts": None, "media_json": "[]",
-        })
-    return store
-
-
-async def curator(body: str = "去邊食", *, name: str = "Grant") -> str:
-    """One description due for revisit, with evidence AND one of her own sends.
-
-    Both halves matter: `<evidence>` and `<own_sends>` are the pair whose
-    markers differ, and a fixture with only one of them cannot see a swap.
-    """
-    notes = InMemoryNoteStore()
-    note = await notes.create(
-        unit=WS, title="Route", description="one line",
-        uncertainty="undecided", closing_condition="somebody decides",
-        established_in="conv-1", body="as it stands", established_by="tag:miles",
-        now_ms=NOW_MS, anchor_date=20260101, anchor_entity_ids=("grant",),
-    )
-    notes.notes[note.id] = replace(note, revisit_at=NOW_MS - 1)
-    adaptor = NoteCuratorAdaptor(
-        notes=notes, record=_record(body, name), today=lambda: 20261001,
-        max_expired_per_tick=10, max_revisits_per_tick=10,
-        evidence_messages_per_note=40, metrics=Metrics(),
-        clock=lambda: NOW_MS, discharge_enabled=False, events=None,
-        conclusions=None, ai_peer="nora",
-    )
-    return await adaptor.inputs(key=WS, batch=())
-
-
-async def candidates(body: str = "去邊食", *, name: str = "Ada") -> str:
-    notes = InMemoryNoteStore()
-    await notes.create(
-        unit=WS, title="Wedding venue", description="Venue undecided",
-        uncertainty="which venue", closing_condition="a venue is booked",
-        established_in="conv-0", body="two on the shortlist",
-        established_by="tag:miles", now_ms=NOW_MS, anchor_date=20260919,
-    )
-    adaptor = NoteCandidateAdaptor(
-        notes=notes, candidates=notes, unit_for=lambda _: WS,
-        label_for=lambda _: "Zone 42",
-        description_for=lambda _: "a games room; 2200 is when people log on",
-        metrics=Metrics(),
-    )
-    return await adaptor.inputs(
-        key="discord:g1/c1",
-        batch=(TranscriptRow(
-            id=41, sender_id="p1", sender_name=name, ts=1_788_804_803_000,
-            body=body, is_nora=False, delivery_status=DeliveryStatus.SENT,
-            raw_json=None,
-        ),),
-    )
-
-
 async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
     # The four policy accessors are REQUIRED since master gave the culture fold
     # its own `<room>` block: without them the adaptor cannot name the room it
@@ -425,14 +315,8 @@ BUILDERS = {
     "debrief.fold": lambda body="去邊食", *, name="Grant": render_debrief_input(
         trace=trace(body, name=name), prior=standing(), display_name="Nora",
         metrics=Metrics(), tz=UTC),
-    "debrief.rollup": lambda body="去邊食", *, name="Grant": render_rollup_input(
-        prior=standing(), rows=(row(body, name=name),), display_name="Nora",
-        tz=UTC, now_ms=NOW_MS),
     "relevance_gate": lambda body="去邊食", *, name="Grant": render_context(
         (row(body, name=name),), (standing().body, TS), now=NOW),
-    "proactive": proactive,
-    "note_curator": curator,
-    "note_candidates": candidates,
     "culture": culture,
     "skills": skills,
     "arrivals": arrivals,
@@ -440,7 +324,7 @@ BUILDERS = {
 
 
 async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> str:
-    """One builder's bytes. `await`s the five adaptors and calls the eight pure
+    """One builder's bytes. `await`s the one adaptor and calls the eight pure
     functions, so a caller never has to know which is which."""
     result = BUILDERS[name](body, name=who)
     return await result if hasattr(result, "__await__") else result
@@ -457,9 +341,9 @@ async def render(name: str, body: str = "去邊食", *, who: str = "Grant") -> s
 #: elements exist, what contains what, where the marker is, and that a framing
 #: clause is present.
 #:
-#: Three entries carry an element with NO marker wrapping one that has it —
-#: `<turn>`, `<conversation>` and the curator's `<description>`. That is deliberate in
-#: all three and each description says so («The messages inside carry their own
+#: Two entries carry an element with NO marker wrapping one that has it —
+#: `<turn>` (`debrief.fold` and `debrief.turn`). That is deliberate and the
+#: description says so («The messages inside carry their own
 #: marker»). It is also the shape no source-level census can distinguish from a
 #: marker somebody forgot, which is why it is written down here.
 SHAPES = {
@@ -479,12 +363,6 @@ SHAPES = {
     <m at delivery from>
   <steps description fields>
     <step role>""",
-    "debrief.rollup": """
-<standing_prior description fields written>
-<standing_working_set_prior description fields>
-<conversation at description fields>
-  <stretch description fields>
-    <m at from>""",
     "debrief.turn": """
 <turn at description fields outcome>
   <what_happened description>
@@ -493,19 +371,6 @@ SHAPES = {
     <m at delivery from>
   <steps description fields>
     <step role>""",
-    "note_candidates": """
-<room description fields label>
-<batch description fields>
-  <m at from n room>
-<today description>
-<candidate_open_note anchor anchor_is description fields form revised room title written>""",
-    "note_curator": """
-<today description>
-<note anchor anchor_is description fields id title>
-  <evidence description fields>
-    <m age from n>
-  <own_sends description fields>
-    <m age from n>""",
     "prefill.header": """
 <context_header description>""",
     "prefill.tag_message": """
@@ -521,13 +386,6 @@ SHAPES = {
   <person description fields name>
 <group_transcript description fields window>
   <m age from n>""",
-    "proactive": """
-<now description>
-<presence description>
-<notes description fields>
-  <note about n room title unprompted>
-<rooms description>
-<decisions days description fields>""",
     "relevance_gate": """
 <group_transcript description fields>
   <m age from n>
@@ -597,7 +455,7 @@ async def test_every_row_element_sits_inside_a_framed_block(name: str):
     about what it is, by design: it is a field-bearing record, and what it is
     is its container's `description=`. That only holds while it HAS a
     container. A renderer whose block wrapper was dropped — which is exactly
-    what the curator's `<note>` elements were on master before #292, «shipped
+    what a renderer's `<note>` elements were on master before #292, «shipped
     with no container at all» — leaves rows sitting at the top level of a
     prompt with nothing saying what they are.
     """

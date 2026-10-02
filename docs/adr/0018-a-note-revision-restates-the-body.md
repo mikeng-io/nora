@@ -1,5 +1,7 @@
 # 0018 · A note revision restates the body
 
+> 2026-10-03 (DEC-277): the note-candidates, curator, note-merge and proactive DECIDE passes named below are deleted; the Cognition session does this now.
+
 - **Status:** accepted (2026-09-26; the operator shipped it as #583)
 - **Date:** 2026-09-26
 - **Reverses, in part:** the append rule the note tier's update arm has

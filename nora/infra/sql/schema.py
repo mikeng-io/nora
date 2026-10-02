@@ -209,12 +209,12 @@ MESSAGES = sa.Table(
     # per platform, in ingest.
     sa.Column("mentions_json", sa.Text),
     # WITHDRAWAL (design/cognition-loop/10-tiers.md §8-9, migration
-    # `0075_withdrawal`, step 2c): epoch ms, set by `nora person forget <id>`
-    # for every message the person authored, cleared by `nora person
-    # unforget <id>`. `messages` is already in `HISTORY_TABLES`
+    # `0075_withdrawal`, step 2c): epoch ms, set when a platform delete or
+    # unsend hides the message (`RecordStore.hide_message`; `nora person
+    # forget`, which also set it, was removed 2026-10-03). `messages` is already in `HISTORY_TABLES`
     # (`0068_system_time_history`), so this UPDATE is captured as a new
     # version like any other write to this table — hiding is a transition,
-    # never a delete, and a snapshot before the forget restores the row.
+    # never a delete, and a snapshot before the hide restores the row.
     sa.Column("hidden_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
 )
@@ -270,7 +270,7 @@ IDX_MESSAGE_EDIT_MESSAGE_TS = sa.Index(
 # touch — never `messages` rows, for `message_edit`'s reason: every reader of
 # `messages` would count them as utterances. Both are append-only: a reaction
 # taken back is its own row (`removed = 1`), and a delete leaves the message it
-# deletes untouched (hiding it is the withdrawal cascade, step 2c). CASCADE for
+# deletes untouched (hiding it is `RecordStore.hide_message`). CASCADE for
 # `message_edit`'s reason: `prune_all` deletes messages.
 #
 # `sender_id` is who the platform says acted, `''` where it names nobody (an
@@ -1775,7 +1775,6 @@ EVENTS = sa.Table(
     sa.Column(
         "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
     ),
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.Column(
         # No FK, deliberately, `note.head_revision_id`'s precedent exactly:
         # `create` mints and inserts `events` and `event_revision` in one
@@ -2523,10 +2522,6 @@ NOTE = sa.Table(
     # The union of its revisions' lineage (`0073_lineage`): the index line
     # this row renders rests on everything its body has ever cited.
     *_derived("note", per_row=True),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by
-    # the cascade (`nora.app.withdrawal`) when this note's citation chain
-    # reaches a withdrawn Record item. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
 )
 
 NOTE_REVISION = sa.Table(
@@ -2599,7 +2594,8 @@ NOTE_CANDIDATE = sa.Table(
     # (design/dreamer-agent-loop/33 §4, issue #98). `miss` is the negative
     # cache below, unchanged; `create` is a full note proposal the
     # `note-candidates` adaptor staged for the deterministic gate to decide
-    # create/update/refuse over (`nora.language.note_candidates`). Existing
+    # create/update/refuse over (`nora.language.note_candidates`; both deleted
+    # 2026-10-03, DEC-277 — the table is kept as data, nothing writes it). Existing
     # rows are all `miss`, via the column default — nothing to backfill.
     sa.Column("kind", sa.Text, nullable=False, server_default=sa.text("'miss'")),
     # The miss cache, `fact_candidate`'s shape and for its reason: the SECOND
@@ -2689,8 +2685,8 @@ NOTE_CANDIDATE = sa.Table(
 #: `(unit, anchor_date, anchor_entity_ids, lower(btrim(title)))` (#235).
 #: This is the STAGING key, not the create gate's match key, and the two have
 #: been fully independent since 2026-09-13 (#228): the gate
-#: (`nora.language.note_candidates`) resolves the title the MODEL names for an
-#: update and never reads this key at all, while this key decides only whether
+#: (`nora.language.note_candidates`, deleted 2026-10-03) resolved the title the
+#: MODEL named for an update and never read this key at all, while this key decides only whether
 #: a sighting is a re-observation of one already staged.
 #:
 #: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
@@ -2699,7 +2695,7 @@ NOTE_CANDIDATE = sa.Table(
 #: (This said `note`'s own uniqueness «is still the title alone per unit»; NO
 #: such index exists — corrected 2026-09-24 in DEC-189's row, design 41 §7.0.
 #: Two open notes may share a title until design 41 §7.2 (3) adds the unique
-#: open-title index; `note-merge` is what folds the duplicates meanwhile.) A
+#: open-title index; `note_merge` is what folds the duplicates meanwhile.) A
 #: staging
 #: row is not an identity: it is a one-shot dedupe slot for one sighting, and
 #: the title is the only field that separates two arrangements the model wrote
@@ -2946,10 +2942,6 @@ STANDING = sa.Table(
     ),
     # Sections `body` and `working_set` (`0073_lineage`).
     *_derived("standing", per_row=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
-    # cascade (`nora.app.withdrawal`) when this room's position cites a
-    # withdrawn Record item. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     # THE SECTIONED SCHEMA (migration `0076_standing_sections`, step 3 row
     # 3b): `I hold open` and `I owe` (`design/cognition-loop/12-schemas.md`
     # §5), beside `body` (`Where it stands`) and `working_set` (`Found, not
@@ -3053,8 +3045,8 @@ STANDING_REVISION = sa.Table(
         name="standing_revision_fold_count_is_not_negative_check",
     ),
     sa.CheckConstraint(
-        "source IN ('fold', 'operator')",
-        name="standing_revision_source_is_fold_or_operator_check",
+        "source IN ('fold', 'operator', 'cognition')",
+        name="standing_revision_source_check",
     ),
     sa.CheckConstraint(
         f"jsonb_array_length(working_set) <= {WORKING_SET_CEILING_ITEMS} "
@@ -3207,7 +3199,7 @@ DECISION_LOG = sa.Table(
         name="decision_log_verdict_is_known_check",
     ),
     # The prompt budget, as DDL. `reason` rides into the participation turn's
-    # prompt and the proactive decide turn's, 20 rows at a time, so an
+    # prompt (and rode into the deleted proactive decide turn's), 20 rows at a time, so an
     # unbounded one is a per-turn token cost paid forever; capped in BOTH
     # places like every other injected text in this schema. (NOT the Relevance
     # Gate's prompt — an earlier draft of this comment said so and the gate was
@@ -3239,10 +3231,10 @@ IDX_DECISION_LOG_UNIT_TS = sa.Index(
 )
 
 
-#: What the `note-merge` pass considered folding, one row per (survivor,
-#: duplicate) pair (design 41 §7.8, DEC-202). In `shadow` it is the pass's
-#: whole output — the rows the operator labels before `on`; in `on` it is the
-#: audit of each fold and each refusal.
+#: What the (deleted 2026-10-03, DEC-277) `note-merge` pass considered folding,
+#: one row per (survivor, duplicate) pair (design 41 §7.8, DEC-202). In `shadow`
+#: it was the pass's whole output; in `on` the audit of each fold and each
+#: refusal. Kept as data; nothing writes it now.
 #:
 #: **Its own table, not `decision_log`**, which the design's wording pointed
 #: at: that table's rows render into the ambient deciders' prompts, its
@@ -3251,7 +3243,7 @@ IDX_DECISION_LOG_UNIT_TS = sa.Index(
 #: reason and no prompt ever reads it. `nora.domain.notes.NoteMergeDecision`
 #: says the same beside the type.
 #:
-#: Append-only: `SqlNoteStore.record_merge_decision` inserts and nothing
+#: Append-only: `SqlNoteStore.record_merge_decision` (deleted) inserted and nothing
 #: updates. Both note ids are foreign keys because a note is never deleted.
 NOTE_MERGE_DECISION = sa.Table(
     "note_merge_decision",
@@ -3333,10 +3325,6 @@ CULTURE = sa.Table(
                             name="culture_head_revision_id_fkey"),
               nullable=False),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
-    # cascade (`nora.app.withdrawal`) when this account cites a withdrawn
-    # Record item. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("length(btrim(key)) > 0", name="culture_has_a_key_check"),
 )
 
@@ -3424,53 +3412,6 @@ IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
     "idx_culture_revision_key_written",
     CULTURE_REVISION.c.culture_key, sa.text("written_at DESC"), sa.text("id DESC"),
 )
-
-#: The citation edge table (migration `0075_withdrawal`, step 2c;
-#: design/cognition-loop/10-tiers.md §2 rule 7, §5): what a `note`,
-#: `standing` or `culture` head cites — today always a `messages.id` — so the
-#: withdrawal cascade (`nora.app.withdrawal`) can walk it rather than parse a
-#: body. See the migration's docstring for the full rationale and the three
-#: write sites that keep it current.
-CITATION = sa.Table(
-    "citation",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("citing_store", sa.Text, nullable=False),
-    sa.Column("citing_key", sa.Text, nullable=False),
-    sa.Column("cited_store", sa.Text, nullable=False, server_default="message"),
-    sa.Column("cited_id", sa.Text, nullable=False),
-    # The field or section the edge supports (migration `0086_event_citations`):
-    # `NULL` for a whole-row edge (every note, Standing and culture edge), a
-    # field name (`what`, `start`, `end`, `place`, `people`, `status`) for an
-    # event's.
-    sa.Column("part", sa.Text, nullable=True),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "citing_store in ('note', 'standing', 'culture', 'event')",
-        name="citation_citing_store_is_known_check",
-    ),
-    sa.CheckConstraint(
-        "cited_store in ('message', 'rollup')", name="citation_cited_store_is_known_check",
-    ),
-    sa.CheckConstraint(
-        "part is null or length(btrim(part)) > 0", name="citation_part_is_not_blank_check",
-    ),
-    sa.CheckConstraint(
-        "length(btrim(citing_key)) > 0", name="citation_has_a_citing_key_check",
-    ),
-    sa.CheckConstraint(
-        "length(btrim(cited_id)) > 0", name="citation_has_a_cited_id_check",
-    ),
-    sa.UniqueConstraint(
-        "citing_store", "citing_key", "cited_store", "cited_id", "part",
-        name="citation_edge_unique", postgresql_nulls_not_distinct=True,
-    ),
-)
-
-IDX_CITATION_CITED = sa.Index(
-    "idx_citation_cited", CITATION.c.cited_store, CITATION.c.cited_id,
-)
-
 
 # `participation_window_state` — where the participation trigger's per-room
 # watermarks live between processes (`nora.app.participation`). Two columns,
@@ -3755,9 +3696,9 @@ IDX_STIMULUS_UNIT_SELF_ITEM = sa.Index(
     postgresql_where=STIMULUS.c.kind == "self",
 )
 
-# `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW
-# would-wake (`mode = 'shadow'`): what the evaluator would have started, why,
-# and the stimulus range it would have consumed. Append-only; a unit's newest
+# `cognition_wake`: every wake, one row each: what the evaluator started, why,
+# and the stimulus range it consumed. `mode` is `'live'` (0091 relabelled the
+# shadow week's rows so the watermark carried over). Append-only; a unit's newest
 # row in a mode IS its watermark in that mode (`through_stimulus_id`, `at_ms`),
 # so the watermark survives a restart with no row ever rewritten.
 COGNITION_WAKE = sa.Table(
@@ -3783,7 +3724,7 @@ COGNITION_WAKE = sa.Table(
     # (read as failed) with none past `[cognition] session_timeout_seconds`.
     # 0 (every step-1 row): a plain watermark, as before.
     sa.Column("tracked", sa.Integer, nullable=False, server_default=sa.text("0")),
-    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_wake_mode"),
+    sa.CheckConstraint("mode IN ('live')", name="ck_cognition_wake_mode"),
     sa.CheckConstraint(
         "reason IN ('settled', 'strong_cue', 'rollup', 'batch', 'max_age', "
         "'time', 'self')",
@@ -3803,13 +3744,10 @@ IDX_COGNITION_WAKE_UNIT_MODE_ID = sa.Index(
 # Append-only. `scope` is the circle for a poll, "" for an adapter; `outcome`
 # is the poll's read status (`ok`, `challenge`, `empty_circle`, ...) or the
 # adapter's new state (`up`, `stale`, `degraded`, `down`, `unknown`).
-# `cognition_session` / `cognition_session_close` / `cognition_would_write`:
-# migration step 3a (design/cognition-loop/70-migration.md §2 row 3a). Every
-# row is written once and never updated — a session is replayable from its
-# own `situation`/`agenda` JSON (30-cognition.md §1) plus the stores as of
-# its start, so nothing here is a cache to keep current. `mode` is only ever
-# `'shadow'` at this step: a `live` value arrives with cut-over (step 4),
-# the same shape `cognition_wake`'s own `ck_cognition_wake_mode` takes today.
+# `cognition_session` / `cognition_session_close`: every row is written once
+# and never updated — a session is replayable from its own `situation`/`agenda`
+# JSON (30-cognition.md §1) plus the stores as of its start, so nothing here is
+# a cache to keep current. `mode` is `'live'` (0091).
 COGNITION_SESSION = sa.Table(
     "cognition_session",
     METADATA,
@@ -3835,7 +3773,7 @@ COGNITION_SESSION = sa.Table(
     sa.Column("model_id", sa.Text),
     sa.Column("model_route", sa.Text),
     _recorded_at(),
-    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_session_mode"),
+    sa.CheckConstraint("mode IN ('live')", name="ck_cognition_session_mode"),
 )
 
 IDX_COGNITION_SESSION_UNIT_ID = sa.Index(
@@ -3848,8 +3786,8 @@ COGNITION_SESSION_CLOSE = sa.Table(
     "cognition_session_close",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    # Nullable, no foreign key — the same choice `cognition_would_write.
-    # session_id` makes next door: a close row constructed directly (a
+    # Nullable, no foreign key — the same choice the dropped `cognition_would_write.
+    # session_id` made next door: a close row constructed directly (a
     # test, or a future caller with no session row of its own) still has
     # somewhere to land, and this table's own snapshot-restore fixture
     # (tests/integration/test_snapshot_holds_what_was_held.py) appends each
@@ -3871,48 +3809,6 @@ COGNITION_SESSION_CLOSE = sa.Table(
 
 IDX_COGNITION_SESSION_CLOSE_SESSION = sa.Index(
     "idx_cognition_session_close_session", COGNITION_SESSION_CLOSE.c.session_id,
-)
-
-# One row per write-verb call in shadow (`nora.domain.cognition_write.
-# WouldWrite`, as recorded): what it would have done, never what it did.
-COGNITION_WOULD_WRITE = sa.Table(
-    "cognition_would_write",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column(
-        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=True,
-    ),
-    sa.Column("unit", sa.Text, nullable=False),
-    sa.Column("tier", sa.Text, nullable=False),
-    sa.Column("verb", sa.Text, nullable=False),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("args", pg.JSONB, nullable=False),
-    sa.Column("outcome", sa.Text, nullable=False),
-    sa.Column("refusal_reason", sa.Text),
-    sa.Column("refusal_detail", sa.Text),
-    sa.Column("candidate", pg.JSONB),
-    sa.Column("base_revision_id", sa.Text),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "tier IN ('note', 'event', 'standing')", name="ck_cognition_would_write_tier",
-    ),
-    sa.CheckConstraint(
-        "outcome IN ('would_commit', 'refused')", name="ck_cognition_would_write_outcome",
-    ),
-    sa.CheckConstraint(
-        "(outcome = 'would_commit' AND candidate IS NOT NULL) "
-        "OR (outcome = 'refused' AND refusal_reason IS NOT NULL)",
-        name="ck_cognition_would_write_outcome_shape",
-    ),
-)
-
-IDX_COGNITION_WOULD_WRITE_SESSION = sa.Index(
-    "idx_cognition_would_write_session", COGNITION_WOULD_WRITE.c.session_id,
-)
-IDX_COGNITION_WOULD_WRITE_UNIT_RECORDED = sa.Index(
-    "idx_cognition_would_write_unit_recorded",
-    COGNITION_WOULD_WRITE.c.unit, COGNITION_WOULD_WRITE.c.recorded_at,
 )
 
 # Migration step 3a-ii (70-migration.md §2 row 3a-ii): one row per
@@ -3973,49 +3869,6 @@ IDX_COGNITION_SELF_WAKE_UNIT_RECORDED = sa.Index(
     COGNITION_SELF_WAKE.c.unit, COGNITION_SELF_WAKE.c.recorded_at,
 )
 
-# Migration step 3a-ii: `remind`/`remind_move`/`remind_cancel`, mirrored and
-# held (30-cognition.md §2: "every reminder cognition writes is mirrored to
-# a review channel and held"). Never fired, never sent — see
-# `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`.
-COGNITION_REMIND_MIRROR = sa.Table(
-    "cognition_remind_mirror",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column(
-        "session_id", sa.BigInteger,
-        sa.ForeignKey("cognition_session.id"), nullable=True,
-    ),
-    sa.Column("unit", sa.Text, nullable=False),
-    sa.Column("verb", sa.Text, nullable=False),
-    sa.Column("reminder_ref", sa.Text, nullable=True),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("intent", sa.Text),
-    sa.Column("subject_rows", pg.JSONB, nullable=False),
-    sa.Column("at_ms", sa.BigInteger),
-    sa.Column("why", sa.Text),
-    sa.Column("outcome", sa.Text, nullable=False),
-    sa.Column("refusal_reason", sa.Text),
-    sa.Column("refusal_detail", sa.Text),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "verb IN ('remind', 'remind_move', 'remind_cancel')",
-        name="ck_cognition_remind_mirror_verb",
-    ),
-    sa.CheckConstraint(
-        "outcome IN ('recorded', 'refused')", name="ck_cognition_remind_mirror_outcome",
-    ),
-    sa.CheckConstraint(
-        "(outcome = 'recorded') OR (refusal_reason IS NOT NULL)",
-        name="ck_cognition_remind_mirror_outcome_shape",
-    ),
-)
-
-IDX_COGNITION_REMIND_MIRROR_UNIT_REF = sa.Index(
-    "idx_cognition_remind_mirror_unit_ref",
-    COGNITION_REMIND_MIRROR.c.unit, COGNITION_REMIND_MIRROR.c.reminder_ref,
-)
-
 # Migration step 3a-ii (0079), the session LIFECYCLE and what a session hands
 # the next one. All append-only; none carries a foreign key, for `wake_id`'s
 # reason on `cognition_session` (the contract suites TRUNCATE the parents
@@ -4043,16 +3896,6 @@ COGNITION_WAKE_OUTCOME = sa.Table(
     # WHY a `failed`/`timeout` wake failed (migration 0080, DEC-244): `infra`
     # backs the unit off and never strikes a stimulus; only `agenda` strikes.
     sa.Column("cause", sa.Text, nullable=False, server_default=sa.text("'infra'")),
-    # What the session's model loop spent, and its root trace (migration 0090):
-    # the durable half of the token counter, which a restart resets. Written
-    # with the outcome, the one row a session leaves at its end (the session
-    # row is written BEFORE the loop and is append-only). NULL is unread, never
-    # zero: a wake that ended before a model call, one a restart ended, or a
-    # provider that reported no usage.
-    sa.Column("input_tokens", sa.BigInteger),
-    sa.Column("output_tokens", sa.BigInteger),
-    sa.Column("cache_read_tokens", sa.BigInteger),
-    sa.Column("trace_id", sa.Text),
     _recorded_at(),
     sa.CheckConstraint(
         "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",
@@ -4623,54 +4466,4 @@ DOCUMENT_STATE = sa.Table(
 )
 IDX_DOCUMENT_STATE_LATEST = sa.Index(
     "idx_document_state_latest", DOCUMENT_STATE.c.document_id, DOCUMENT_STATE.c.id,
-)
-
-# `orphan_delete` (migration `0088_orphan_delete`): a platform delete whose target was not
-# on record when it arrived, kept until the message lands (applied: hide plus cascade) or
-# it is purged. Keyed by what `RecordStore.find_edited` matches on: the platform handle
-# (`handle`, '' when the platform names the target by timestamp) or Signal's sent-timestamp
-# (`sent_ts`), in one conversation of one platform. The deleter is every id form the
-# platform gave (`deleter_ids`), the one the parser picked (`deleter_id`) and the person it
-# resolved to: the authorship check a delete on Signal or WhatsApp needs is made when the
-# message arrives (`nora.domain.delete_authorship`). Ids and times only. In place (a row is
-# deleted when applied or purged), so a `HISTORY_TABLES` table (the trigger keeps a
-# `delete` version, as `citation` does).
-ORPHAN_DELETE = sa.Table(
-    "orphan_delete",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("handle", sa.Text, nullable=False, server_default=sa.text("''")),
-    sa.Column("sent_ts", sa.BigInteger),
-    sa.Column("deleter_id", sa.Text, nullable=False, server_default=sa.text("''")),
-    sa.Column(
-        "deleter_ids", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
-    ),
-    sa.Column("deleter_person_id", sa.Text),
-    sa.Column("event_ts", sa.BigInteger, nullable=False),
-    sa.Column("recorded_at", sa.BigInteger, nullable=False),
-    sa.CheckConstraint(
-        "handle <> '' OR sent_ts IS NOT NULL", name="ck_orphan_delete_names_a_target",
-    ),
-)
-IDX_ORPHAN_DELETE_HANDLE = sa.Index(
-    "idx_orphan_delete_handle", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.handle, postgresql_where=sa.text("handle <> ''"),
-)
-IDX_ORPHAN_DELETE_SENT_TS = sa.Index(
-    "idx_orphan_delete_sent_ts", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.sent_ts, postgresql_where=sa.text("sent_ts IS NOT NULL"),
-)
-IDX_ORPHAN_DELETE_DELETER = sa.Index(
-    "idx_orphan_delete_deleter", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.deleter_id,
-)
-IDX_ORPHAN_DELETE_RECORDED = sa.Index(
-    "idx_orphan_delete_recorded", ORPHAN_DELETE.c.recorded_at,
-)
-# One row per delivery (the key the store's ON CONFLICT DO NOTHING relies on).
-UQ_ORPHAN_DELETE_DELIVERY = sa.Index(
-    "uq_orphan_delete_delivery", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.handle, sa.func.coalesce(ORPHAN_DELETE.c.sent_ts, -1),
-    ORPHAN_DELETE.c.deleter_id, unique=True,
 )

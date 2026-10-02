@@ -84,7 +84,7 @@ def _msg(ref: str, *, unit: str = UNIT, cues: tuple[str, ...] = (), waits: bool 
 
 def _wake(through: int, at: int, *, cut: bool = False) -> NewWake:
     return NewWake(
-        unit=UNIT, mode="shadow", reason="settled", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=cut, at_ms=at, detail={"k": "v"},
     )
@@ -93,7 +93,7 @@ def _wake(through: int, at: int, *, cut: bool = False) -> NewWake:
 async def test_an_appended_stimulus_is_pending_with_its_fields(store):
     sid = await store.append(stimulus=_msg("messages:1", cues=("datetime", "keep"), waits=True),
                              recorded_at_ms=NOW)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=100)
     assert [s.id for s in view.pending] == [sid]
     got = view.pending[0]
     assert (got.kind, got.item, got.ref, got.cues, got.waits, got.person_id) == (
@@ -108,13 +108,13 @@ async def test_ids_increase_and_pending_is_ascending(store):
     ids = [await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW + i)
            for i in range(3)]
     assert ids == sorted(ids) and len(set(ids)) == 3
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 10, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert [s.id for s in view.pending] == ids
 
 
 async def test_pending_is_scoped_to_the_unit(store):
     await store.append(stimulus=_msg("messages:1", unit="other"), recorded_at_ms=NOW)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=100)
     assert view.pending == () and view.last_activity_ms is None
 
 
@@ -122,7 +122,7 @@ async def test_a_wake_is_the_watermark_and_consumes_through_its_id(store):
     a = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     b = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 1)
     await store.record_wake(wake=_wake(a, NOW + 5), recorded_at_ms=NOW + 5)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 10, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert [s.id for s in view.pending] == [b]
     assert view.last_wake is not None
     assert (view.last_wake.through_stimulus_id, view.last_wake.at_ms) == (a, NOW + 5)
@@ -134,7 +134,7 @@ async def test_the_newest_wake_is_the_watermark(store):
     b = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW + 1)
     await store.record_wake(wake=_wake(a, NOW + 5), recorded_at_ms=NOW + 5)
     await store.record_wake(wake=_wake(b, NOW + 9, cut=True), recorded_at_ms=NOW + 9)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 10, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert view.pending == ()
     assert view.last_wake is not None and view.last_wake.cut_cooldown is True
 
@@ -149,12 +149,12 @@ async def test_a_stimulus_due_later_stays_pending_across_an_earlier_wake(store):
         recorded_at_ms=NOW,
     )
     now_msg = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW + 1)
-    early = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 10, limit=100)
+    early = await store.view(unit=UNIT, mode="live", now_ms=NOW + 10, limit=100)
     assert [s.id for s in early.pending] == [now_msg]          # not yet due
     await store.record_wake(wake=_wake(now_msg, NOW + 10), recorded_at_ms=NOW + 10)
-    before_due = await store.view(unit=UNIT, mode="shadow", now_ms=due - 1, limit=100)
+    before_due = await store.view(unit=UNIT, mode="live", now_ms=due - 1, limit=100)
     assert before_due.pending == ()
-    at_due = await store.view(unit=UNIT, mode="shadow", now_ms=due, limit=100)
+    at_due = await store.view(unit=UNIT, mode="live", now_ms=due, limit=100)
     assert [s.id for s in at_due.pending] == [later]
 
 
@@ -168,7 +168,7 @@ async def test_a_time_stimulus_is_written_once_per_ref(store):
                          ref="floor:07:00@2026-09-28", at_ms=NOW, due_ms=NOW),
         recorded_at_ms=NOW)
     assert first is not None and again is None and other_unit is not None
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 60_000, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 60_000, limit=100)
     assert [s.id for s in view.pending] == [first]
 
 
@@ -199,7 +199,7 @@ async def test_message_refs_are_not_deduplicated(store):
 async def test_the_limit_bounds_the_pending_read(store):
     for i in range(5):
         await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW, limit=2)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW, limit=2)
     assert len(view.pending) == 2
 
 
@@ -210,7 +210,7 @@ async def test_last_activity_counts_message_stimuli_only(store):
                          at_ms=NOW + 50, due_ms=NOW + 50),
         recorded_at_ms=NOW + 50,
     )
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 100, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 100, limit=100)
     assert view.last_activity_ms == NOW
 
 
@@ -229,16 +229,16 @@ async def test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli(stor
     for i in (2, 3, 4):
         await store.append(stimulus=_msg(f"messages:{i}"), recorded_at_ms=NOW + i)
     for at in (NOW + 10, due + 10):
-        view = await store.view(unit=UNIT, mode="shadow", now_ms=at, limit=100)
+        view = await store.view(unit=UNIT, mode="live", now_ms=at, limit=100)
         verdict = decide(view, policy, at)
         assert verdict.reason is not None
         await store.record_wake(wake=NewWake(
-            unit=UNIT, mode="shadow", reason=verdict.reason, from_stimulus_id=0,
+            unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=at,
         ), recorded_at_ms=at)
-    after = await store.view(unit=UNIT, mode="shadow", now_ms=due + 10**6, limit=100)
+    after = await store.view(unit=UNIT, mode="live", now_ms=due + 10**6, limit=100)
     assert after.pending == ()
     assert after.last_wake is not None and after.last_wake.through_stimulus_id >= 4
 
@@ -251,7 +251,7 @@ async def test_a_stimulus_recorded_after_the_wakes_time_bound_stays_pending_unde
     late = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW + 100)
     early = await store.append(stimulus=_msg("messages:2"), recorded_at_ms=NOW)
     await store.record_wake(wake=_wake(early, NOW + 50), recorded_at_ms=NOW + 50)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 200, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 200, limit=100)
     assert [s.id for s in view.pending] == [late]
 
 
@@ -275,13 +275,13 @@ async def test_a_wake_that_names_unclaimed_stimuli_leaves_exactly_those_pending(
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     m3 = await store.append(stimulus=_msg("messages:3"), recorded_at_ms=NOW)
     wake = NewWake(
-        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW + 10,
         unclaimed_ids=(m1,),
     )
     await store.record_wake(wake=wake, recorded_at_ms=NOW + 10)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 20, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 20, limit=100)
     # the rollup is consumed; the message BELOW its id stays pending, and so
     # does the one above it (an ordinary id past the watermark)
     assert [s.id for s in view.pending] == [m1, m3]
@@ -293,12 +293,12 @@ async def test_an_unclaimed_stimulus_is_taken_by_the_next_wake_and_only_once(sto
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
         cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
     ), recorded_at_ms=NOW + 10)
     await store.record_wake(wake=_wake(r2, NOW + 20), recorded_at_ms=NOW + 20)  # claims all
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.pending == ()
     assert view.watermark.unclaimed == frozenset()
 
@@ -307,12 +307,12 @@ async def test_a_retracted_unclaimed_stimulus_is_not_pending(store):
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
         cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=(m1,),
     ), recorded_at_ms=NOW + 10)
     await store.retract(unit=UNIT, stimulus_id=m1, reason="failed", recorded_at_ms=NOW + 11)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.pending == ()
 
 
@@ -353,13 +353,13 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
         made.append(sid)
 
     async def tick() -> bool:
-        view = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000)
+        view = await store.view(unit=UNIT, mode="live", now_ms=t, limit=1000)
         verdict = decide(view, policy, t)
         if verdict.reason is None:
             return False
         assert verdict.claimed_ids <= {s.id for s in view.pending}
         await store.record_wake(wake=NewWake(
-            unit=UNIT, mode="shadow", reason=verdict.reason, from_stimulus_id=0,
+            unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
@@ -376,7 +376,7 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
     for _ in range(60):                      # let everything become due and settle
         t += 3_000_000
         await tick()
-    final = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000)
+    final = await store.view(unit=UNIT, mode="live", now_ms=t, limit=1000)
     assert final.pending == ()
     assert sorted(claimed) == sorted(made)   # every stimulus, exactly once
 
@@ -431,7 +431,7 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
         made.append(sid)
 
     async def tick() -> None:
-        view = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=limit,
+        view = await store.view(unit=UNIT, mode="live", now_ms=t, limit=limit,
                                 stale_before_ms=t - 1)
         assert len(view.pending) <= limit                      # bounded, in both stores
         verdict = decide(view, policy, t)
@@ -439,7 +439,7 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
             return
         assert verdict.claimed_ids <= {s.id for s in view.pending}
         wid = await store.record_wake(wake=NewWake(
-            unit=UNIT, mode="shadow", reason=verdict.reason, from_stimulus_id=0,
+            unit=UNIT, mode="live", reason=verdict.reason, from_stimulus_id=0,
             through_stimulus_id=verdict.through_stimulus_id,
             stimulus_count=verdict.stimulus_count, eligible_count=verdict.eligible_count,
             oldest_pending_ms=verdict.oldest_pending_ms, cut_cooldown=False, at_ms=t,
@@ -478,7 +478,7 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
     for _ in range(300):
         t += 3_000_000
         await tick()
-    final = await store.view(unit=UNIT, mode="shadow", now_ms=t, limit=1000, stale_before_ms=t)
+    final = await store.view(unit=UNIT, mode="live", now_ms=t, limit=1000, stale_before_ms=t)
     lost = sorted(set(made) - set(closed_claims) - {s.id for s in final.pending})
     twice = sorted({x for x in closed_claims if closed_claims.count(x) > 1} - carried_ever)
     assert (lost, twice) == ([], [])
@@ -499,7 +499,7 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
            for i in range(1, 6)]
     r6 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|6"), recorded_at_ms=NOW)
     wid = await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r6, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
         cut_cooldown=False, at_ms=NOW + 10, unclaimed_ids=tuple(ids), tracked=True,
     ), recorded_at_ms=NOW + 10, guard=WakeGuard(last_wake_id=None, last_outcome=None))
@@ -508,7 +508,7 @@ async def test_a_truncated_pending_read_is_the_same_bounded_oldest_first_list_in
         carries=[NewCarry(unit=UNIT, stimulus_id=r6, strike=1, state="carried")],
         recorded_at_ms=NOW + 11,
     )
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=limit)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=limit)
     assert [s.id for s in view.pending] == [*ids, r6][:limit]
 
 
@@ -519,11 +519,11 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
     m1 = await store.append(stimulus=_msg("messages:1"), recorded_at_ms=NOW)
     r2 = await store.append(stimulus=_kind("rollup", "colocation|p1,p2|1"), recorded_at_ms=NOW)
     await store.record_wake(wake=NewWake(
-        unit=UNIT, mode="shadow", reason="rollup", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="rollup", from_stimulus_id=0,
         through_stimulus_id=r2, stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW,
         cut_cooldown=False, at_ms=NOW + 10, detail={"k": "v"}, unclaimed_ids=(m1,),
     ), recorded_at_ms=NOW + 10)
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.watermark.unclaimed == frozenset({m1})
     assert [s.id for s in view.pending] == [m1]
     if not hasattr(store, "_engine"):
@@ -543,7 +543,7 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
             "SELECT jsonb_typeof(detail) AS d FROM cognition_wake ORDER BY id DESC LIMIT 1"
         ))).one()
         assert old.d == "string"
-    view = await store.view(unit=UNIT, mode="shadow", now_ms=NOW + 30, limit=100)
+    view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.watermark.unclaimed == frozenset({m1})
     assert view.last_wake is not None and view.last_wake.detail == {"k": "v"}
 

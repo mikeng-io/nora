@@ -24,7 +24,6 @@ from tests.unit.test_cognition_session_lifecycle import (
     ScriptedAgent,
     _rig,
     close_written,
-    iso,
 )
 
 
@@ -63,7 +62,7 @@ async def test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothi
     assert reason in rig.detail()
     assert rig.ledger.closes == []          # nothing closed, so nothing struck
     assert rig.carried() == []              # no carry row of any state
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1, 2, 3]
     assert dict(view.carry) == {}
     assert view.mark is not None and view.mark.through_stimulus_id == 0
@@ -77,7 +76,7 @@ async def test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it(reason)
     rig = _rig(agent=ScriptedAgent(script=[_stops_at(reason)]))
     await rig.say()
     await _wake(rig)
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.failures == 1
 
     # Inside the first backoff (the cooldown, 300 s) nothing wakes.
@@ -90,7 +89,7 @@ async def test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it(reason)
     # streak is 2 and the wait doubles (600 s), so 400 s after is still inside.
     await _wake(rig, advance=250)
     assert rig.agent.calls == 2
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.failures == 2
     rig.clock.advance(400)
     await rig.say(cues=("datetime",))
@@ -108,7 +107,7 @@ async def test_a_session_that_ends_normally_still_closes_and_resets_the_streak()
     await _wake(rig, advance=400)
     assert rig.ends() == ["failed", "closed"]
     assert rig.metrics.get("nora_cognition_session_limit_total", limit="limit_turns") == 1
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert list(view.pending) == []
     assert view.failures == 0
 
@@ -123,50 +122,3 @@ async def test_an_unclosed_item_of_a_normal_end_is_still_struck_as_before():
     assert [(c.reason, c.strike) for _, c, _ in rig.ledger.closes] == [("waiting", 1)]
 
 
-async def test_a_rerun_after_a_limit_stop_duplicates_neither_a_self_wake_nor_a_reminder():
-    """What the stopped session ALREADY wrote stays as recorded (the wake and the
-    reminder rows, the self stimulus). The next session reads them back as
-    pending: its `wake_at` on the same subject row SUPERSEDES the earlier
-    self-wake (one live, the old one retracted), and its identical `remind` is
-    refused `duplicate_pending`, so neither is duplicated."""
-    holder: list[Rig] = []
-    answers: list[dict[str, Any]] = []
-
-    async def write_then_stop(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-        rig = holder[0]
-        answers.append(await by["wake_at"](
-            subject_rows=["event:1"], at=iso(rig.clock.ms + 3_600_000), why="venue",
-        ))
-        answers.append(await by["remind"](
-            room="signal:room-a", intent="tell",
-            subject_rows=["event:1"], at=iso(rig.clock.ms + 7_200_000),
-        ))
-        return CognitionRunResult(stop_reason="limit_turns")
-
-    rig = _rig(
-        agent=ScriptedAgent(script=[write_then_stop]), real_pending_reminds=True,
-    )
-    holder.append(rig)
-    await rig.say()
-    await _wake(rig)
-    assert [a["status"] for a in answers] == ["ok", "ok"]
-    assert rig.ends() == ["failed"]
-    # the writes stay: one self-wake pending, one mirrored reminder pending
-    assert len(await rig.ledger.pending_self_wakes(unit="u1", since_ms=0)) == 1
-    assert len(await rig.ledger.pending_mirrored_reminds(unit="u1", now_ms=rig.clock.ms)) == 1
-
-    await _wake(rig, advance=400)
-    assert rig.agent.calls == 2
-    assert [a["status"] for a in answers[2:]] == ["ok", "refused"]
-    assert answers[3]["reason"] == "duplicate_pending"
-    pending = await rig.ledger.pending_self_wakes(unit="u1", since_ms=0)
-    assert len(pending) == 1                     # the replacement, not a second
-    assert pending[0].wake_ref == answers[2]["wake_id"]
-    assert len(await rig.ledger.pending_mirrored_reminds(unit="u1", now_ms=rig.clock.ms)) == 1
-    # the earlier self stimulus is retracted: only one can ever fire
-    live = [
-        s for s in rig.stimuli.stimuli
-        if s.kind == "self" and s.id not in rig.stimuli.retracted
-    ]
-    assert len(live) == 1

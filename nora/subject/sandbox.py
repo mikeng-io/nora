@@ -117,7 +117,7 @@ import contextlib
 import re
 import uuid
 from collections.abc import AsyncGenerator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -737,52 +737,6 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
     )
 
 
-def _pending_reminder_note_ids(reminders: Sequence[Reminder]) -> frozenset[str]:
-    """The note IDS NORA's own outstanding reminders name, off
-    `Snapshot.reminders` — everything there was pending at the instant
-    (`_reminder_seed`'s own docstring), so no `state`/`due_at` check is
-    needed here, only whose request it was and which note it names.
-
-    BY ID, not by title (issue #158 review): a title match is silently wrong
-    twice over — a renamed note is missed, and a unit with two notes sharing
-    a title (`NOTE` has no unique constraint on `(workspace, title)`, per
-    `_notebook`'s own docstring) collapses them. `payload["note_id"]`
-    (`nora/agent/tools.py:8923`, written beside `note_title` on every
-    `remind` call) is the same id `Note.id` names, so this is comparable
-    against `_note_ids_by_title`'s resolution of a case's own stated title.
-
-    Pure and DB-free: `sandbox_from_snapshot` calls it on a `Snapshot`
-    already read, and a fixture can call it directly
-    (`tests/unit/test_subject_sandbox_translation.py`).
-    """
-    ids: set[str] = set()
-    for reminder in reminders:
-        if reminder.requester_person_id != "nora":
-            continue
-        note_id = (reminder.payload or {}).get("note_id")
-        if note_id:
-            ids.add(str(note_id))
-    return frozenset(ids)
-
-
-def _note_ids_by_title(
-    notes: Sequence[tuple[Note, NoteRevision]],
-) -> dict[str, tuple[str, ...]]:
-    """`note title -> every note id that carries it`, at this instant.
-
-    A `dict[str, tuple[str, ...]]` rather than `dict[str, str]` ON PURPOSE:
-    `_notebook`'s own docstring is that `NOTE` has no unique constraint on
-    `(workspace, title)`, so a title can resolve to zero, one, or several
-    ids. `evals.backbone._refuse_a_remind_case_already_pending` refuses
-    (ERRORs) a `remind` case whose stated note title does not resolve to
-    EXACTLY one id here, rather than guessing which one it meant.
-    """
-    by_title: dict[str, list[str]] = {}
-    for note, _revision in notes:
-        by_title.setdefault(note.title, []).append(note.id)
-    return {title: tuple(ids) for title, ids in by_title.items()}
-
-
 def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
     """One outstanding reminder as the seed that reproduces it.
 
@@ -821,11 +775,9 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
     (issue #158, review).** A reminder seeded alongside keeps this SAME id in
     its payload's `note_id` (`_reminder_seed` copies `payload` verbatim), and
-    `_note_ids_by_title` resolves a case's stated title against notes read
-    from this SAME source snapshot — so every id `evals.backbone` compares
-    against a written reminder's `note_id` is a SOURCE id. Letting `know()`
-    assign the sandbox note a fresh one (`NoteSeed.id`'s own docstring) would
-    leave nothing in the sandbox agreeing on what a note's id even was.
+    letting `know()` assign the sandbox note a fresh one (`NoteSeed.id`'s own
+    docstring) would leave nothing in the sandbox agreeing on what a note's id
+    even was.
     """
     if note.anchor_date is None:
         raise ValueError(
@@ -861,24 +813,6 @@ class Sandboxed:
     #: #458, and a judge told to fail any unlinked attribution was handed a
     #: source that linked nobody to anything.
     transcript: tuple[str, ...]
-    #: The note IDS NORA already has a reminder OUTSTANDING for, at this
-    #: instant — read off `Snapshot.reminders` (`_reminder_seed`'s own
-    #: docstring: everything there was pending at `before_ms`), before it is
-    #: seeded into anything. BY ID rather than title (issue #158 review: a
-    #: title match is missed by a rename and collapsed by a duplicate title).
-    #: `evals.backbone` refuses a `remind` case whose own expected note
-    #: resolves to an id in here: the decide turn's `<decisions>` would show
-    #: the row pending, and a correct decline ("one reminder per thing")
-    #: would measure the double-booking guard rather than the case itself.
-    #: Defaulted so a fake `Sandboxed` built before this field existed still
-    #: constructs.
-    pending_reminder_note_ids: frozenset[str] = frozenset()
-    #: `note title -> every note id sharing it`, at this instant
-    #: (`_note_ids_by_title`) — what `evals.backbone` resolves a `remind`
-    #: case's stated title against, refusing (ERROR) rather than guessing
-    #: when the title names zero or several notes. Defaulted for the same
-    #: reason as `pending_reminder_note_ids`.
-    note_ids_by_title: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 #: Where one `<m>` element ends and the next begins in `render_transcript`'s
@@ -1019,8 +953,6 @@ async def sandbox_from_snapshot(
             display_name=subject.cfg.doctrine.display_name,
             now=subject.deps.clock(),
         ),
-        pending_reminder_note_ids=_pending_reminder_note_ids(shot.reminders),
-        note_ids_by_title=_note_ids_by_title(shot.notes),
     )
 
 

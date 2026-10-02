@@ -1,13 +1,10 @@
-"""Event citations: the `citation` edge table admits events and Rollup keys with
-a `part`, the store writes the edges and the lineage, and the withdrawal cascade
-reaches an event and every reader of one honours it (fix PR D, migration
-`0086_event_citations`; design/cognition-loop/10-tiers.md §2 rule 7 and §3,
-40-register.md §4; the review of 2026-09-30 M2, m6 and of #662 M8, m4).
+"""Event citations: the store computes the lineage of an event from what it cites
+(fix PR D; design/cognition-loop/10-tiers.md §3, 40-register.md §4; the review of
+2026-09-30 M2, m6 and of #662 M8, m4). The edge table and the withdrawal cascade
+are gone (2026-10-03).
 
 Real Postgres, one migrated database truncated between tests
-(`test_withdrawal.py`'s pattern). Every cascade test proves the NEGATIVE too: the
-marked event must stop reaching the reader that used to reach it, not merely gain
-a flag. Names are invented and no message is quoted.
+(`test_withdrawal.py`'s pattern). Names are invented and no message is quoted.
 
 What each test catches if its fix is reverted is named in
 `scripts/mutations/cognition-d.json`.
@@ -18,40 +15,27 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import psycopg
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
 
-from nora.app.gathering_screen import EXPIRED_WHILE_HELD, GatheringScreen
 from nora.app.gatherings import GatheringService
-from nora.app.person_forget import clear_unsupported, forget_person, unforget_person
-from nora.app.withdrawal import withdraw_message
 from nora.domain.gatherings import (
-    HELD_READ_ERROR,
-    HELD_UNSUPPORTED,
-    HOLD_GRACE,
     EventCitation,
     EventEvidence,
     FieldMeta,
     Gathering,
-    GatheringNotFoundError,
     GatheringStatus,
-    RSVPResponse,
 )
 from nora.domain.lineage import Lineage, message
 from nora.domain.models import NormalizedMessage
-from nora.domain.reminders import Reminder, ReminderState
 from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import (
-    CITATION,
-    EVENTS,
     PRESENCE_STAYS,
     ROLLUP_BUILD,
     ROLLUP_COLOCATION,
@@ -97,16 +81,12 @@ async def engine(_db: str) -> AsyncIterator[Any]:
         async with eng.begin() as conn:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
-                "citation", "event_revision", "event_rsvps", "events", "messages",
+                "event_revision", "event_rsvps", "events", "messages",
                 "presence_stays", "rollup_colocation", "rollup_build", "reminders",
                 "note_revision", "note", "row_history",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
-
-
-def _docs(engine: Any) -> SqlDocumentStore:
-    return SqlDocumentStore(engine)
 
 
 async def _message(engine: Any, *, conversation_id: str, ts: int = 1000,
@@ -136,73 +116,9 @@ def _msg(part: str, mid: int) -> EventCitation:
     return EventCitation(part=part, store="message", ref=str(mid))
 
 
-async def _edges(engine: Any, event_id: UUID) -> list[tuple[str, str, str | None]]:
-    async with engine.connect() as conn:
-        rows = (await conn.execute(
-            sa.select(CITATION.c.cited_store, CITATION.c.cited_id, CITATION.c.part)
-            .where(CITATION.c.citing_store == "event", CITATION.c.citing_key == str(event_id))
-            .order_by(CITATION.c.part, CITATION.c.cited_id)
-        )).all()
-    return [(r.cited_store, r.cited_id, r.part) for r in rows]
-
-
 # ---------------------------------------------------------------------------
 # the edge table
 # ---------------------------------------------------------------------------
-
-async def test_a_create_leaves_one_edge_per_part_and_a_recite_adds_none(engine):
-    store = SqlGatheringStore(engine)
-    mid = await _message(engine, conversation_id="ga")
-    event = await store.create(_event(), evidence=EventEvidence(
-        parts=frozenset({"what", "place"}),
-        citations=(_msg("what", mid), _msg("place", mid)),
-    ))
-    assert await _edges(engine, event.id) == [
-        ("message", str(mid), "place"), ("message", str(mid), "what"),
-    ]
-    # The same row for the same part on the next revision is not a new edge.
-    await store.update(event, evidence=EventEvidence(
-        parts=frozenset({"place"}), citations=(_msg("place", mid),),
-    ))
-    assert len(await _edges(engine, event.id)) == 2
-
-
-async def test_a_rollup_key_is_an_edge_of_the_rollup_store(engine):
-    store = SqlGatheringStore(engine)
-    key = "colocation|u|p_ada,p_ben|2026-10-02T19:00:00+08:00/2026-10-02T21:00:00+08:00"
-    event = await store.create(_event(), evidence=EventEvidence(
-        parts=frozenset({"people"}),
-        citations=(EventCitation(part="people", store="rollup", ref=key),),
-    ))
-    assert await _edges(engine, event.id) == [("rollup", key, "people")]
-
-
-async def test_the_edge_table_refuses_an_unknown_store_and_a_blank_part(engine):
-    async with engine.begin() as conn:
-        with pytest.raises(IntegrityError):
-            await conn.execute(sa.insert(CITATION).values(
-                citing_store="memo", citing_key="k", cited_store="message", cited_id="1",
-            ))
-    async with engine.begin() as conn:
-        with pytest.raises(IntegrityError):
-            await conn.execute(sa.insert(CITATION).values(
-                citing_store="event", citing_key="k", cited_store="message", cited_id="1",
-                part="  ",
-            ))
-
-
-async def test_a_whole_row_edge_is_still_one_edge_and_a_part_makes_it_another(engine):
-    """NULL parts collapse (two notes citing one message twice is one edge),
-    and the SAME message cited for two parts is two."""
-    async with engine.begin() as conn:
-        for _ in range(2):
-            await conn.execute(sa.text(
-                "INSERT INTO citation (citing_store, citing_key, cited_store, cited_id) "
-                "VALUES ('note', 'n1', 'message', '7') ON CONFLICT DO NOTHING"
-            ))
-    async with engine.connect() as conn:
-        assert (await conn.execute(sa.select(sa.func.count()).select_from(CITATION))).scalar() == 1
-
 
 # ---------------------------------------------------------------------------
 # lineage, per field, from the citations (m6)
@@ -262,7 +178,6 @@ async def test_a_tag_turn_s_event_rests_on_the_room_it_was_said_in(engine):
     ))
     assert event.lineage.section("what") == (message(ROOM_A),)
     assert event.lineage.section("status") == (message(ROOM_A),)
-    assert await _edges(engine, event.id) == []
 
 
 async def test_a_write_with_no_evidence_leaves_lineage_as_the_row_carries_it(engine):
@@ -346,140 +261,8 @@ async def test_per_field_reasoning_round_trips_through_the_head_and_the_revision
 
 
 # ---------------------------------------------------------------------------
-# the withdrawal cascade, and every reader of an event
+# the service paths
 # ---------------------------------------------------------------------------
-
-async def _cited_event(engine: Any, *, conversation_id: str = "ga", **over: Any) -> tuple[
-    SqlGatheringStore, Gathering, int,
-]:
-    store = SqlGatheringStore(engine)
-    mid = await _message(engine, conversation_id=conversation_id)
-    event = await store.create(_event(conversation_id, **over), evidence=EventEvidence(
-        parts=frozenset({"what"}), citations=(_msg("what", mid),),
-    ))
-    return store, event, mid
-
-
-async def _withdraw(engine: Any, mid: int) -> Any:
-    async with engine.begin() as conn:
-        return await withdraw_message(conn, message_id=mid, now_ms=42)
-
-
-async def test_withdrawing_a_cited_message_marks_the_event_and_only_once(engine):
-    store, event, mid = await _cited_event(engine)
-    other = await store.create(_event())          # cites nothing: never marked
-    first = await _withdraw(engine, mid)
-    assert first.marked == {"event": [str(event.id)]}
-    second = await _withdraw(engine, mid)
-    assert second.total_marked == 0
-    got = await store.get(event.id)
-    assert got is not None and got.unsupported_at == 42
-    kept = await store.get(other.id)
-    assert kept is not None and kept.unsupported_at is None
-
-
-async def test_a_later_revision_cannot_undo_the_mark(engine):
-    """An update built from a row read BEFORE the cascade must not write the
-    mark back to NULL."""
-    store, event, mid = await _cited_event(engine)
-    await _withdraw(engine, mid)
-    await store.update(event)                     # the stale, unmarked copy
-    got = await store.get(event.id)
-    assert got is not None and got.unsupported_at == 42
-
-
-async def test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it(engine):
-    store, event, _mid = await _cited_event(engine)
-    report = await forget_person(engine,
-        documents=_docs(engine), person_id="ada", apply=True, now_ms=77
-    )
-    assert report.cascade is not None and report.cascade.marked["event"] == [str(event.id)]
-    await unforget_person(engine, person_id="ada", apply=True)
-    lifted = await clear_unsupported(engine, apply=True)
-    assert lifted.cleared["event"] == [str(event.id)]
-    got = await store.get(event.id)
-    assert got is not None and got.unsupported_at is None
-
-
-async def test_the_stores_readers_leave_a_withdrawn_event_out(engine):
-    store, event, mid = await _cited_event(engine, created_by="p_ada")
-    standing = await store.create(_event(title="standing one"))
-    await _withdraw(engine, mid)
-    assert [e.title for e in await store.list_for_conversation(conversation_id="ga")] == [
-        "standing one",
-    ]
-    everything = await store.list_for_conversation(
-        conversation_id="ga", include_unsupported=True,
-    )
-    assert {e.id for e in everything} == {event.id, standing.id}
-    assert [e.id for e in await store.list_for_person(person_id="p_ada")] == [standing.id]
-    assert [e.id for e in await store.search(unit_id="u")] == [standing.id]
-    # `get` is the writer's read and returns the real row, marked.
-    got = await store.get(event.id)
-    assert got is not None and got.unsupported_at == 42
-
-
-async def test_the_service_reads_a_withdrawn_event_as_an_unknown_id(engine):
-    store, event, mid = await _cited_event(engine, created_by="p_ada")
-    service = GatheringService(
-        store=store, reminders=None, reminder_caps=None,  # type: ignore[arg-type]
-        route_source=None, honcho=None, ai_peer="nora",
-    )
-    await _withdraw(engine, mid)
-    assert await service.get_event(event_id=event.id) is None
-    assert await service.get_event_for_person(event_id=event.id, person_id="p_ada") is None
-    assert await service.list_events_for_person(person_id="p_ada") == []
-    assert await service.list_events(conversation_id="ga") == []
-    assert await service.search_events(unit_id="u", conversation_id="ga") == []
-    with pytest.raises(GatheringNotFoundError):
-        await service.update_event(
-            event_id=event.id, conversation_id="ga", platform="signal", venue_text="x",
-        )
-    with pytest.raises(GatheringNotFoundError):
-        await service.rsvp(
-            event_id=event.id, conversation_id="ga", person_id="p_ben",
-            response=RSVPResponse.YES,
-        )
-
-
-def _gathering_reminder(reminder_id: UUID, *, due: datetime = T0) -> Reminder:
-    return Reminder(
-        id=reminder_id, requester_person_id="p_ada", platform="signal", conversation_id="ga",
-        conversation_type="group", text="Event: dinner", created_at=T0, due_at=due,
-        state=ReminderState.PENDING, fired_at=None, outcome=None, series=None,
-        kind="gathering", payload={"title": "dinner"},
-    )
-
-
-async def test_the_fire_screen_holds_the_reminder_of_a_withdrawn_event(engine):
-    """Held, not cancelled (10 §2 rule 7: withdrawal is reversible), against the
-    real row: released when the mark is cleared, expired only past the grace."""
-    reminder_id = uuid4()
-    store, event, mid = await _cited_event(engine, reminder_id=reminder_id)
-    row = _gathering_reminder(reminder_id)
-    screen = GatheringScreen(events=store)
-    assert await screen.refusal(row, now=T0) is None                   # it stands: fires
-    await _withdraw(engine, mid)
-    assert await screen.refusal(row, now=T0) == (None, HELD_UNSUPPORTED)
-    assert await store.unsupported_reminder_ids([reminder_id, uuid4()]) == {reminder_id}
-    assert await screen.refusal(row, now=T0 + HOLD_GRACE) == (
-        ReminderState.CANCELLED, EXPIRED_WHILE_HELD,
-    )
-    async with engine.begin() as conn:                                  # the operator lever
-        await conn.execute(sa.update(EVENTS).where(EVENTS.c.id == event.id)
-                           .values(unsupported_at=None))
-    assert await screen.refusal(row, now=T0) is None
-
-
-async def test_the_fire_screen_holds_and_does_not_fail_when_the_event_cannot_be_read():
-    class Broken:
-        async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
-            raise RuntimeError("down")
-
-    assert await GatheringScreen(events=Broken()).refusal(
-        _gathering_reminder(uuid4()), now=T0 + timedelta(days=3),
-    ) == (None, HELD_READ_ERROR)
-
 
 def _service(store: SqlGatheringStore) -> GatheringService:
     return GatheringService(
@@ -490,8 +273,7 @@ def _service(store: SqlGatheringStore) -> GatheringService:
 
 async def test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room(engine):
     """The tag path cites what `Room.trigger_message_ids` names (code's own
-    knowledge): one edge per stated field, the lineage `message:<room>` exactly
-    as before the edges existed (the message was said in this room)."""
+    knowledge): the lineage is `message:<room>` (the message was said in this room)."""
     mid = await _message(engine, conversation_id="ga")
     service = _service(SqlGatheringStore(engine))
     event = await service.create_event(
@@ -501,40 +283,11 @@ async def test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_
     assert event.lineage.section("what") == (message(ROOM_A),)
     assert event.lineage.section("status") == (message(ROOM_A),)
     assert event.lineage.section("start") == ()            # it stated no time
-    assert await _edges(engine, event.id) == [
-        ("message", str(mid), "status"), ("message", str(mid), "what"),
-    ]
     moved = await service.update_event(
         event_id=event.id, conversation_id="ga", platform="signal", venue_text="place one",
         message_ids=(mid,),
     )
     assert moved.lineage.section("place") == (message(ROOM_A),)
-    assert ("message", str(mid), "place") in await _edges(engine, event.id)
-
-
-async def test_forgetting_the_author_of_the_message_that_raised_a_tag_turn_marks_its_event(engine):
-    """The cascade reaches a tag-written event only through the edge the tag
-    path now leaves (before, it left none and the forgotten person's gathering
-    went on being announced)."""
-    mid = await _message(engine, conversation_id="ga", person="ada")
-    other = await _message(engine, conversation_id="ga", ts=2000, person="ben")
-    store = SqlGatheringStore(engine)
-    service = _service(store)
-    mine = await service.create_event(
-        conversation_id="ga", requester_person_id="p_ada", title="dinner",
-        platform="signal", unit_id="u", message_ids=(mid,),
-    )
-    theirs = await service.create_event(
-        conversation_id="ga", requester_person_id="p_ben", title="lunch",
-        platform="signal", unit_id="u", message_ids=(other,),
-    )
-    report = await forget_person(engine,
-        documents=_docs(engine), person_id="ada", apply=True, now_ms=77
-    )
-    assert report.cascade is not None and report.cascade.marked["event"] == [str(mine.id)]
-    got = await store.get(theirs.id)
-    assert got is not None and got.unsupported_at is None
-    assert await service.get_event(event_id=mine.id) is None
 
 
 async def test_the_tag_path_s_new_citation_changes_no_lineage_so_no_lineage_mode_reads_a_difference(
@@ -562,69 +315,10 @@ async def test_the_tag_path_s_new_citation_changes_no_lineage_so_no_lineage_mode
     assert cited.lineage.section("place") == (message(ROOM_A),)
 
 
-async def test_a_restated_field_replaces_its_edges_and_the_old_citation_no_longer_withdraws(engine):
-    """The edges follow what the event CURRENTLY rests on: create cites A for the
-    time, a revision restates it on B, and withdrawing A marks nothing."""
-    store = SqlGatheringStore(engine)
-    a = await _message(engine, conversation_id="ga", ts=1000, person="ada")
-    b = await _message(engine, conversation_id="ga", ts=2000, person="ben")
-    c = await _message(engine, conversation_id="ga", ts=3000, person="cy")
-    event = await store.create(_event(), evidence=EventEvidence(
-        parts=frozenset({"what", "start"}), citations=(_msg("what", c), _msg("start", a)),
-    ))
-    await store.update(event, evidence=EventEvidence(
-        parts=frozenset({"start"}), citations=(_msg("start", b),),
-    ))
-    assert await _edges(engine, event.id) == [
-        ("message", str(b), "start"), ("message", str(c), "what"),
-    ]
-    assert (await _withdraw(engine, a)).total_marked == 0
-    got = await store.get(event.id)
-    assert got is not None and got.unsupported_at is None
-    # What it does rest on still reaches it: the restated field's new citation,
-    # and the field the revision left alone.
-    assert (await _withdraw(engine, b)).marked == {"event": [str(event.id)]}
-
-
-async def test_a_field_left_alone_keeps_its_edges_and_one_restated_bare_loses_them(engine):
-    store = SqlGatheringStore(engine)
-    a = await _message(engine, conversation_id="ga", ts=1000)
-    b = await _message(engine, conversation_id="ga", ts=2000)
-    event = await store.create(_event(), evidence=EventEvidence(
-        parts=frozenset({"what", "status"}), citations=(_msg("what", a), _msg("status", b)),
-    ))
-    # A lapse: the status restated on the clock, no row to cite.
-    await store.update(event, evidence=EventEvidence(parts=frozenset({"status"})))
-    assert await _edges(engine, event.id) == [("message", str(a), "what")]
-    assert (await _withdraw(engine, b)).total_marked == 0
-
-
-async def test_a_replaced_edge_is_kept_in_the_history_not_lost(engine):
-    """`citation` keeps `row_history` (0086): the edge a revision replaced is a
-    `delete` version, so what an earlier revision rested on is re-derivable."""
-    store = SqlGatheringStore(engine)
-    a = await _message(engine, conversation_id="ga")
-    b = await _message(engine, conversation_id="ga", ts=2000)
-    event = await store.create(_event(), evidence=EventEvidence(
-        parts=frozenset({"start"}), citations=(_msg("start", a),),
-    ))
-    await store.update(event, evidence=EventEvidence(
-        parts=frozenset({"start"}), citations=(_msg("start", b),),
-    ))
-    async with engine.connect() as conn:
-        rows = (await conn.execute(sa.text(
-            "SELECT op, image->>'cited_id' AS cited FROM row_history "
-            "WHERE table_name = 'citation' ORDER BY recorded_at, id"
-        ))).all()
-    assert [(r.op, r.cited) for r in rows] == [
-        ("insert", str(a)), ("delete", str(a)), ("insert", str(b)),
-    ]
-
-
-async def test_a_note_citing_a_rollup_row_records_the_edge_and_takes_the_rows_lineage(engine):
-    """#663: a note resting on a presence row was lineaged by its messages alone
-    and recorded no edge. Now it records `cited_store = 'rollup'` and brings the
-    row's own entries; a key that resolves to nothing is unresolved, not widened."""
+async def test_a_note_citing_a_rollup_row_takes_the_rows_lineage(engine):
+    """#663: a note resting on a presence row was lineaged by its messages alone.
+    Now it brings the row's own entries; a key that resolves to nothing is
+    unresolved, not widened."""
     from nora.infra.sql.notes import SqlNoteStore
 
     build = await _seed_rollup(engine)
@@ -652,12 +346,8 @@ async def test_a_note_citing_a_rollup_row_records_the_edge_and_takes_the_rows_li
         anchor_date=20261002,
     )
     async with engine.connect() as conn:
-        edges = sorted((r.cited_store, r.cited_id) for r in (await conn.execute(
-            sa.select(CITATION).where(CITATION.c.citing_store == "note")
-        )).all())
         head = (await conn.execute(sa.text(
             "SELECT lineage FROM note WHERE id = :i"), {"i": note.id})).scalar_one()
-    assert edges == [("message", str(mid)), ("rollup", stay)]
     section = Lineage.from_json(head).section("row")
     assert any(e.kind == "presence" and e.subject == "p_ada" for e in section)
     assert message(ROOM_A) in section
@@ -675,9 +365,3 @@ async def test_a_note_citing_a_rollup_row_records_the_edge_and_takes_the_rows_li
     assert "unresolved" in flat and "presence" not in flat
 
 
-async def test_an_unsupported_event_is_the_marked_column_and_nothing_else(engine):
-    _store, event, mid = await _cited_event(engine)
-    await _withdraw(engine, mid)
-    async with engine.connect() as conn:
-        row = (await conn.execute(sa.select(EVENTS).where(EVENTS.c.id == event.id))).one()
-    assert row.unsupported_at == 42 and row.title == "dinner"

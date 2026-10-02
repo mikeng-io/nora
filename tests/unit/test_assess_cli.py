@@ -38,7 +38,7 @@ async def _run(monkeypatch, results: tuple[DqCheckResult, ...]) -> int:
 
 async def test_exit_code_is_zero_when_every_check_is_ok_or_not_applicable(monkeypatch):
     rc = await _run(monkeypatch, (
-        DqCheckResult(check="unresolved_citations", status="ok"),
+        DqCheckResult(check="cross_room_duplicate_events", status="ok"),
         DqCheckResult(check="sections_past_age_horizon", status="not_applicable"),
     ))
     assert rc == 0
@@ -46,7 +46,7 @@ async def test_exit_code_is_zero_when_every_check_is_ok_or_not_applicable(monkey
 
 async def test_exit_code_is_nonzero_on_a_fail(monkeypatch):
     rc = await _run(monkeypatch, (
-        DqCheckResult(check="unresolved_citations", status="ok"),
+        DqCheckResult(check="cross_room_duplicate_events", status="ok"),
         DqCheckResult(check="empty_lineage_rows", status="fail", failing=1, sample=("a",)),
     ))
     assert rc != 0
@@ -58,7 +58,7 @@ async def test_exit_code_is_nonzero_on_an_error_with_no_fail(monkeypatch):
     an operator scripting on this exit code must not see an errored check as
     a quiet, all-clear night."""
     rc = await _run(monkeypatch, (
-        DqCheckResult(check="unresolved_citations", status="ok"),
+        DqCheckResult(check="cross_room_duplicate_events", status="ok"),
         DqCheckResult(
             check="happened_place_mismatch", status="error",
             detail="RuntimeError: boom",

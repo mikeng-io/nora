@@ -235,7 +235,8 @@ class EngagementPipeline:
         # somebody addressed her — so it READS nothing here and only WRITES.
         # What it writes is what the other two could not see: 2026-09-10's
         # incident is a tag turn one second behind a participation answer,
-        # re-deriving it from scratch, and then a proactive pass raising the
+        # re-deriving it from scratch, and then a proactive pass (deleted 2026-10-03, DEC-277)
+        # raising the
         # same question in another room 80 minutes later. `None` is the dormant
         # default; an unwired composition behaves exactly as before.
         self._decisions = decisions

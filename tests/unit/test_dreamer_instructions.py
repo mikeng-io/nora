@@ -607,30 +607,11 @@ NATIVELY_AUTHORED = {
     "standing-debrief",
     # `standing-verdict` (issue #78 Phase 2's judge) was deleted 2026-09-24
     # with the grounding verdict (design/standing-compact/).
-    # Written for the curator, never lifted: the note tier had no
-    # background pass before it, so there is no prior prompt to have
-    # moved and no fixture that could pin one. Version 2 (issue #99) folds in
-    # the former `note-revisit` objective — merged into the same file rather
-    # than lifted from anywhere, so it stays here under the one name.
-    "note-curation",
-    # The note tier's CREATE PATH (issue #98). Same reason as
-    # `note-curation`: a new adaptor has no prior prompt to have moved and no
-    # fixture that could pin one.
-    "note-candidates",
-    # The proactive adaptor's decide turn (design/dreamer-agent-loop/39,
-    # DEC-162). Written for it; version 1 is the starting text the two
-    # proactive eval suites tune (39 §5), and nothing was lifted.
-    "proactive",
     # The culture tier's only pass (design/culture-tier, DEC-182). Written for
     # it; there was no prior prompt, and the earlier plan to route this through
     # the memory system's dialectic endpoint never shipped a prompt at all —
     # it was falsified and closed unmerged (#237) before one existed.
     "culture",
-    # The note tier's duplicate back-stop (design/dreamer-agent-loop/41 §7,
-    # DEC-202). Written for it; there was no prior prompt — the curator's
-    # merge half (removed 2026-09-08) was keyed in code and never asked the
-    # model this question.
-    "note-merge",
     # The Cognition session's instruction (design/cognition-loop/30-cognition.md,
     # DEC-244). Written for it from 30 §1-§3; there was no prior prompt, and it
     # lists no tool and no limit.

@@ -27,13 +27,11 @@ from __future__ import annotations
 
 import itertools
 import uuid
-from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 from nora.agent import tools as tools_module
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import OriginRoom
 from nora.domain.models import ConversationTarget, PersonRef
 from nora.domain.reminders import (
     Recurrence,
@@ -108,10 +106,8 @@ def _tools(
     presence_source=None,
     presence_circles=(),
     location_trusted: bool = False,
-    dream_adaptor: str = "",
     notes=None,
     room: Room | None = None,
-    origin_rooms: Mapping[str, OriginRoom] | None = None,
     events=None,
 ) -> dict:
     """Every native tool, closed over one turn — keyed by name.
@@ -136,7 +132,6 @@ def _tools(
         honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=metrics or Metrics(), room=room if room is not None else _room(tagger=tagger),
         fire_turn=fire_turn, location_trusted=location_trusted,
-        dream_adaptor=dream_adaptor, origin_rooms=origin_rooms,
     )
     return {spec.name: spec.call for spec in specs}
 
@@ -338,7 +333,7 @@ async def test_every_non_ok_status_carries_a_note():
     what to fix or say is the result's `note`. Every non-ok code path this
     file's fakes can reach is driven here, so a path that loses its note goes
     red. (`ok` carries no reporting note: its `note` key is the linked note's
-    title, pinned by `test_a_dreamer_provenance_stamps_the_row_in_code`.)"""
+    title, pinned by `test_the_note_link_resolves_a_title_and_refuses_an_unknown_one`.)"""
     later = (T0 + timedelta(days=60)).isoformat()
     full = FakeReminderStore()
     await full.create(_row())
@@ -346,10 +341,6 @@ async def test_every_non_ok_status_carries_a_note():
         "refused/fire_turn": (_tools(reminders=FakeReminderStore(), fire_turn=True), {}),
         "unavailable/no_store": (_tools(reminders=None), {}),
         "refused/unmapped": (_tools(reminders=FakeReminderStore(), tagger=None), {}),
-        "refused/proactive_repeat": (
-            _tools(reminders=FakeReminderStore(), tagger=None, dream_adaptor="proactive"),
-            {"repeat": "daily", "times": 3},
-        ),
         "refused/unparseable": (_tools(reminders=FakeReminderStore()), {"when": "等陣"}),
         "refused/past": (
             _tools(reminders=FakeReminderStore()),
@@ -449,63 +440,6 @@ async def test_list_reminders_is_scoped_to_this_conversation():
     assert result["status"] == "ok"
     assert [r["id"] for r in result["reminders"]] == [str(mine.id)]
     assert [r["text"] for r in result["reminders"]] == ["洗衫"]
-
-
-async def test_list_reminders_leaves_out_the_reminder_a_withdrawn_event_owns():
-    """The cascade's hold (`nora.app.gathering_screen`): a reminder whose event
-    lost its evidence carries the event's title in its text, so it is not shown,
-    and it is shown again once the mark is cleared."""
-    from dataclasses import replace
-
-    from nora.app.gatherings import GatheringService
-    from nora.domain.gatherings import Gathering, GatheringStatus
-    from nora.domain.reminders import ReminderCaps
-    from nora.testing.gatherings import FakeGatheringStore
-
-    store = FakeReminderStore()
-    plain = _row(text="洗衫")
-    held = replace(_row(text="Event: secret dinner"), kind="gathering")
-    standing = replace(_row(text="Event: standing dinner"), kind="gathering")
-    for row in (plain, held, standing):
-        await store.create(row)
-    event_store = FakeGatheringStore()
-    made = {}
-    for name, row in (("secret dinner", held), ("standing dinner", standing)):
-        made[name] = await event_store.create(Gathering(
-            id=uuid.uuid4(), conversation_id=CONVERSATION, title=name, created_by="miles",
-            when=None, venue_text=None, venue_place_id=None, venue_name=None,
-            venue_address=None, venue_rating=None, venue_price_level="",
-            venue_maps_url=None, venue_resolved_at=None, status=GatheringStatus.PROPOSED,
-            reminder_id=row.id, created_at=T0, unit_id="u",
-        ))
-    events = GatheringService(
-        store=event_store, reminders=store, reminder_caps=ReminderCaps(),
-        route_source=None, honcho=None, ai_peer="nora",
-    )
-    tools = _tools(reminders=store, events=events)
-
-    shown = {r["text"] for r in (await tools["list_reminders"]())["reminders"]}
-    assert shown == {"洗衫", "Event: secret dinner", "Event: standing dinner"}
-    event_store.mark_unsupported(made["secret dinner"].id, 5)
-    result = await tools["list_reminders"]()
-    assert result["status"] == "ok"
-    assert {r["text"] for r in result["reminders"]} == {"洗衫", "Event: standing dinner"}
-    event_store.clear_unsupported(made["secret dinner"].id)
-    assert len((await tools["list_reminders"]())["reminders"]) == 3
-
-
-async def test_list_reminders_is_unavailable_not_complete_when_the_event_side_cannot_be_read():
-    from dataclasses import replace
-
-    store = FakeReminderStore()
-    await store.create(replace(_row(text="Event: dinner"), kind="gathering"))
-
-    class Broken:
-        async def held_reminder_ids(self, reminder_ids):
-            raise RuntimeError("down")
-
-    tools = _tools(reminders=store, events=Broken())
-    assert (await tools["list_reminders"]())["status"] == "unavailable"
 
 
 async def test_list_reminders_names_who_set_each_one():
@@ -1380,111 +1314,6 @@ async def _seeded_notes():
     return store, note
 
 
-async def test_a_dreamer_provenance_stamps_the_row_in_code():
-    """39 D3: under `dream_adaptor` the model cannot set what it never sees.
-    The row's kind, owner, destination and payload all come from the closure
-    — `gathering`'s precedent — and the owner is the reserved ai_peer, not a
-    person (39 D5). The tagger is None and that is NOT a refusal here."""
-    store = FakeReminderStore()
-    notes, note = await _seeded_notes()
-    metrics = Metrics()
-    tools = _tools(
-        reminders=store, metrics=metrics, tagger=None, notes=notes,
-        dream_adaptor="proactive",
-        origin_rooms={
-            CONVERSATION: OriginRoom(
-                platform="signal", conversation_id=CONVERSATION,
-                conversation_type="group", proactive=True, unit=UNIT,
-            ),
-        },
-    )
-
-    result = await tools["remind"](
-        when=SOON, text="ask where everyone is coming from before dinner",
-        note="AI Hackathon dinner plan",
-    )
-
-    assert result["status"] == "ok", result
-    assert result["note_title"] == "AI Hackathon dinner plan"
-    (row,) = await store.pending_for(CONVERSATION)
-    assert row.kind == "proactive"
-    assert row.requester_person_id == "nora"
-    assert row.platform == "signal" and row.conversation_id == CONVERSATION
-    assert row.payload == {
-        "note_id": note.id, "revision_id": note.head_revision_id,
-        "note_title": "AI Hackathon dinner plan",
-        "established_in": CONVERSATION,
-        "intent": "ask where everyone is coming from before dinner",
-    }
-    assert await store.count_pending("nora") == 1
-    assert await store.count_pending("miles") == 0
-    assert metrics.get("nora_reminders_created_total", status="created") == 1
-
-
-async def test_a_dreamer_row_is_screened_before_it_is_written():
-    """The sink (39 D3): «if the model writes directly there is no sink left
-    to screen at» — so the text passes the Dreamer's own identifier screen
-    before `create`, and a phone number in the intent refuses the row with
-    the store untouched."""
-    store = FakeReminderStore()
-    metrics = Metrics()
-    tools = _tools(reminders=store, metrics=metrics, tagger=None, dream_adaptor="proactive")
-
-    result = await tools["remind"](when=SOON, text="call +85212345678 about dinner")
-
-    assert result["status"] == "refused"
-    assert await store.count_pending("nora") == 0
-    assert metrics.get("nora_reminders_created_total", status="screened") == 1
-    assert metrics.get("nora_dream_screened_total", adaptor="proactive", reason="identifier") == 1
-
-
-async def test_a_dreamer_row_never_repeats():
-    """A proactive decision is one moment (39 D4): tomorrow's decide turn
-    judges again. A repeat would let one morning re-fire for weeks past the
-    loop meant to re-judge it — refused, store untouched."""
-    store = FakeReminderStore()
-    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive")
-
-    result = await tools["remind"](when=SOON, text="nudge", repeat="daily", times=3)
-
-    assert result["status"] == "refused"
-    assert await store.count_pending("nora") == 0
-
-
-async def test_a_dreamer_row_without_a_home_room_is_unavailable():
-    """The data-level refusal behind the tool source's name-level one: built
-    with no room to write into (the synthetic empty room), `remind` under
-    Dreamer provenance answers `unavailable`, never a row bound to nowhere."""
-    store = FakeReminderStore()
-    empty = Room(
-        platform="", conversation_id=UNIT, roster_source=None,
-        persons=_FakePersons(MILES), tagger=None,
-    )
-    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive", room=empty)
-
-    result = await tools["remind"](when=SOON, text="nudge")
-
-    assert result["status"] == "unavailable"
-    assert await store.count_pending("nora") == 0
-
-
-async def test_a_dreamer_row_shares_the_per_requester_cap_as_a_global_ceiling():
-    """39 D5: `max_pending_per_requester`, counted against the ai_peer id,
-    is the ceiling on unfired proactive rows across the deployment."""
-    store = FakeReminderStore()
-    tools = _tools(
-        reminders=store, tagger=None, dream_adaptor="proactive",
-        caps=ReminderCaps(max_pending_per_requester=1),
-    )
-
-    first = await tools["remind"](when=SOON, text="one")
-    second = await tools["remind"](when=SOON, text="two")
-
-    assert first["status"] == "ok"
-    assert second["status"] == "refused"
-    assert await store.count_pending("nora") == 1
-
-
 async def test_the_note_link_resolves_a_title_and_refuses_an_unknown_one():
     """`note` is a TITLE, resolved in code to the id and head revision the
     heartbeat's screen compares against (39 D3/D11) — no id ever enters the
@@ -1505,17 +1334,17 @@ async def test_the_note_link_resolves_a_title_and_refuses_an_unknown_one():
     assert row.payload == {
         "note_id": note.id, "revision_id": note.head_revision_id,
         "note_title": "AI Hackathon dinner plan",
-        "established_in": "conv-1",
     }
 
 
 async def test_list_reminders_names_a_row_nora_set_herself():
-    """The owner of a proactive row is the ai_peer id, which `persons` cannot
-    name — and «someone I can no longer name» would be the one wrong answer
-    for the one person here she CAN name."""
+    """The owner of a row she set herself is the ai_peer id, which `persons`
+    cannot name — and «someone I can no longer name» would be the one wrong
+    answer for the one person here she CAN name."""
     store = FakeReminderStore()
-    tools = _tools(reminders=store, tagger=None, dream_adaptor="proactive")
-    await tools["remind"](when=SOON, text="nudge about dinner")
+    await store.create(_row(
+        requester_person_id="nora", text="nudge about dinner",
+    ))
 
     listing = await _tools(reminders=store)["list_reminders"]()
 

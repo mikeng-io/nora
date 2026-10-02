@@ -44,9 +44,8 @@ import contextlib
 import json
 import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -56,11 +55,6 @@ from nora.app import config_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
-from nora.app.cognition_compare import CompareWindow
-from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
-from nora.app.cognition_health import run_health as cognition_run_health
-from nora.app.cognition_wiring import floors_ready
-from nora.app.delete_withdrawal import reconcile_deletes, render_reconcile
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -78,30 +72,10 @@ from nora.app.memory_routing import MemoryRoutingError, build_workspace_router
 from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
-from nora.app.person_forget import (
-    clear_unsupported,
-    forget_person,
-    render_clear_unsupported,
-    render_forget,
-    render_unforget,
-    unforget_person,
-)
 from nora.config import Config, ConfigError, load
-from nora.domain.cognition_health import exit_code as health_exit_code
-from nora.domain.cognition_health import judge as health_judge
-from nora.domain.cognition_health import render_text as health_render_text
-from nora.domain.cognition_health import report_json as health_report_json
-from nora.domain.cognition_shadow_compare import (
-    DEFAULT_TOLERANCE_MINUTES,
-    RoomDirectory,
-    room_id,
-)
-from nora.domain.cognition_shadow_compare import render_text as shadow_render_text
-from nora.domain.cognition_shadow_compare import report_json as shadow_report_json
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
-from nora.domain.stimuli import inert_kinds_for
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
@@ -110,7 +84,6 @@ from nora.infra.sql import (
     create_sql_engine,
     snapshot_at,
 )
-from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
@@ -356,65 +329,6 @@ def add_subcommands(
     )
     backfill_units.set_defaults(func=cmd_events_backfill_units)
 
-    # `person forget/unforget` (design/cognition-loop/70-migration.md §2 row
-    # 2c, §9; migration `0075_withdrawal`, DEC-238): the FOURTH command here
-    # that WRITES, a WRITABLE engine like `events backfill-units`. Soft: hides
-    # a person's messages and cascades `unsupported`; `unforget` reverses the
-    # hide only (`nora.app.person_forget`'s module docstring on why the
-    # cascade is not reversed by it). Dry run by default.
-    person = subparsers.add_parser(
-        "person", parents=[parent],
-        help="soft forget/unforget for one person (operator only, writes)",
-    )
-    person_sub = person.add_subparsers(dest="person_command", required=True)
-    forget = person_sub.add_parser(
-        "forget", parents=[parent],
-        help="hide a person's messages, soft-delete the documents they created, and "
-             "mark whatever cites them unsupported (a dry run unless --apply)",
-    )
-    forget.add_argument("person_id", help="the identity.toml person id")
-    forget.add_argument(
-        "--apply", action="store_true", help="write; without it nothing is changed",
-    )
-    forget.set_defaults(func=cmd_person_forget)
-    unforget = person_sub.add_parser(
-        "unforget", parents=[parent],
-        help="un-hide a person's messages (a dry run unless --apply)",
-    )
-    unforget.add_argument("person_id", help="the identity.toml person id")
-    unforget.add_argument(
-        "--apply", action="store_true", help="write; without it nothing is changed",
-    )
-    unforget.add_argument(
-        "--clear-unsupported", action="store_true",
-        help="also clear unsupported_at on note/standing/culture rows whose "
-             "citations are ALL visible again (the operator lever for an "
-             "accidentally cascaded row; a dry run unless --apply)",
-    )
-    unforget.set_defaults(func=cmd_person_unforget)
-
-    # `withdrawal reconcile-deletes`: the FIFTH command here that WRITES, a
-    # WRITABLE engine like `person forget`. Hides every message that has a
-    # `message_delete` record and is still visible, and runs the cascade over it
-    # (`nora.app.delete_withdrawal`): the deletes recorded before a delete
-    # withdrew its message, a hide that was rolled back, a message `person
-    # unforget` un-hid. Dry run by default, with exactly the counts `--apply`
-    # would write; it prints numbers only.
-    withdrawal = subparsers.add_parser(
-        "withdrawal", parents=[parent],
-        help="withdraw what a platform delete left visible (operator only, writes)",
-    )
-    withdrawal_sub = withdrawal.add_subparsers(dest="withdrawal_command", required=True)
-    reconcile = withdrawal_sub.add_parser(
-        "reconcile-deletes", parents=[parent],
-        help="hide every deleted message that is still visible and mark what cites "
-             "it unsupported (a dry run unless --apply)",
-    )
-    reconcile.add_argument(
-        "--apply", action="store_true", help="write; without it nothing is changed",
-    )
-    reconcile.set_defaults(func=cmd_withdrawal_reconcile_deletes)
-
     # `assess run-nightly` (design/cognition-loop/30-cognition.md §6,
     # 70-migration.md §2 row 3, DEC-240): the Assess adaptor's deterministic
     # data-quality checks. WRITABLE engine like `events backfill-units`,
@@ -435,61 +349,6 @@ def add_subcommands(
         help="print the report without writing it",
     )
     run_nightly.set_defaults(func=cmd_assess_run_nightly)
-
-    # `cognition compare` (design/cognition-loop/30-cognition.md §2;
-    # migration step 3a-ii): matched / cognition-only / proactive-only,
-    # over a window — read-only, off the live path (`nora.app.
-    # cognition_compare`'s own docstring).
-    cognition = subparsers.add_parser(
-        "cognition", parents=[parent], help="the Cognition adaptor, shadow (operator only)",
-    )
-    cognition_sub = cognition.add_subparsers(dest="cognition_command", required=True)
-    compare = cognition_sub.add_parser(
-        "compare", parents=[parent],
-        help="the shadow session's would-writes vs every live clocked writer, "
-             "per tier and per writer, over a window",
-    )
-    compare.add_argument(
-        "--since", required=True,
-        help="ISO 8601, timezone-aware (e.g. 2026-09-29T00:00:00+08:00)",
-    )
-    compare.add_argument(
-        "--until", default=None,
-        help="ISO 8601, timezone-aware; defaults to now",
-    )
-    compare.add_argument(
-        "--unit", default=None, help="only this unit's rooms and rows (a policy.toml unit)",
-    )
-    compare.add_argument(
-        "--tolerance-minutes", type=int, default=DEFAULT_TOLERANCE_MINUTES,
-        help="a clocked write and a would-write match only within this many minutes "
-             "(default 65: the hourly writers' cadence plus one scheduler tick; widen it "
-             "to 1445 to read the daily writers); also how long after a clocked-only row "
-             "a close may come and still explain it",
-    )
-    compare.add_argument(
-        "--json", action="store_true", help="the machine-readable report, one JSON object",
-    )
-    compare.set_defaults(func=cmd_cognition_compare)
-    health = cognition_sub.add_parser(
-        "health", parents=[parent],
-        help="is the cognition loop healthy now: sessions, pending stimuli, failures, "
-             "tokens and refusals from durable rows; exits 0 PASS, 1 FAIL, 2 ERROR",
-    )
-    health.add_argument(
-        "--since", default=None,
-        help="ISO 8601, timezone-aware; defaults to 24 hours before --until",
-    )
-    health.add_argument(
-        "--until", default=None, help="ISO 8601, timezone-aware; defaults to now",
-    )
-    health.add_argument(
-        "--unit", default=None, help="only this unit (a policy.toml unit)",
-    )
-    health.add_argument(
-        "--json", action="store_true", help="the machine-readable report, one JSON object",
-    )
-    health.set_defaults(func=cmd_cognition_health)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -872,64 +731,6 @@ async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
     return 1 if result.failed else 0
 
 
-async def cmd_person_forget(args: argparse.Namespace) -> int:
-    """`nora person forget <id> [--apply]` (design/cognition-loop/
-    70-migration.md §2 row 2c, §9, DEC-238). Opens a WRITABLE engine, same
-    reason `cmd_events_backfill_units` does. See `nora.app.person_forget`."""
-    cfg = _config(args)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        result = await forget_person(
-            engine, documents=SqlDocumentStore(engine), person_id=args.person_id,
-            apply=bool(args.apply),
-            now_ms=int(datetime.now(UTC).timestamp() * 1000),
-        )
-    finally:
-        await engine.dispose()
-    for line in render_forget(result):
-        print(line)
-    return 1 if result.failure else 0
-
-
-async def cmd_person_unforget(args: argparse.Namespace) -> int:
-    """`nora person unforget <id> [--apply]` — reverses the hide only, never
-    a cascade mark (`nora.app.person_forget`'s docstring). Same writable
-    engine as `forget`."""
-    cfg = _config(args)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        result = await unforget_person(
-            engine, person_id=args.person_id, apply=bool(args.apply),
-        )
-        for line in render_unforget(result):
-            print(line)
-        if args.clear_unsupported:
-            clear_result = await clear_unsupported(engine, apply=bool(args.apply))
-            for line in render_clear_unsupported(clear_result):
-                print(line)
-    finally:
-        await engine.dispose()
-    return 0
-
-
-async def cmd_withdrawal_reconcile_deletes(args: argparse.Namespace) -> int:
-    """`nora withdrawal reconcile-deletes [--apply]`. Opens a WRITABLE engine,
-    same reason `cmd_person_forget` does. Exit 1 when any message failed (it
-    stays visible and a re-run retries it). See `nora.app.delete_withdrawal`."""
-    cfg = _config(args)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        result = await reconcile_deletes(
-            engine, apply=bool(args.apply),
-            now_ms=int(datetime.now(UTC).timestamp() * 1000),
-        )
-    finally:
-        await engine.dispose()
-    for line in render_reconcile(result):
-        print(line)
-    return 1 if result.failed else 0
-
-
 async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
     """`nora assess run-nightly [--no-record]` (design/cognition-loop/
     30-cognition.md §6, DEC-240). Refused with a clear message, not a stack
@@ -956,121 +757,6 @@ async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:
     return 1 if outcome.report.failing_checks or outcome.report.errored_checks else 0
 
 
-async def cmd_cognition_compare(args: argparse.Namespace) -> int:
-    """`nora cognition compare --since <ISO> [--until <ISO>] [--unit U]
-    [--tolerance-minutes N] [--json]` (migration step 3a, review B1/D5): the
-    shadow session's would-writes against every live clocked writer, per tier
-    and per writer, plus the proactive pass. Read-only: it never fires a
-    reminder and never writes a row. A difference between the arms is the
-    finding, so it is not a failure; exit 1 only when a tier could not be read
-    (ERROR, never zero). It prints counts and does not decide the gate."""
-    cfg = _config(args)
-    since = _cutover(args.since, "--since")
-    until = _cutover(args.until, "--until") if args.until else datetime.now(UTC)
-    if until <= since:
-        raise CliError("--until must be after --since")
-    if args.tolerance_minutes < 0:
-        raise CliError("--tolerance-minutes must not be negative")
-    window = CompareWindow(
-        since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
-    )
-    directory = _room_directory(cfg, args.unit)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        report = await cognition_run_shadow_compare(
-            engine, window, tolerance_ms=args.tolerance_minutes * 60_000,
-            unit=args.unit, directory=directory, tz=ZoneInfo(cfg.cognition.timezone),
-        )
-    finally:
-        await engine.dispose()
-    if args.json:
-        print(json.dumps(shadow_report_json(report, directory), indent=2, sort_keys=True))
-    else:
-        for line in shadow_render_text(report, directory):
-            print(line)
-    return 1 if report.any_error else 0
-
-
-def _room_directory(cfg: Config, unit: str | None) -> RoomDirectory:
-    """Labels and unit membership from policy.toml. Labels are cosmetic, but
-    `--unit` filters by them, so an unreadable policy or an unknown unit is a
-    refusal there rather than an empty filter that reads as zero."""
-    try:
-        policy = _policy(cfg)
-    except CliError:
-        if unit is not None:
-            raise
-        return RoomDirectory(labels={}, unit_rooms={})
-    labels: dict[str, str] = {}
-    unit_rooms: dict[str, set[str]] = {}
-    for conv in policy.conversations:
-        for cid in conv.ids:
-            bare = room_id(cid)
-            if conv.label:
-                labels[bare] = conv.label
-            unit_rooms.setdefault(conv.unit, set()).add(bare)
-    if unit is not None and unit not in unit_rooms:
-        raise CliError(f"--unit {unit!r} names no room in policy.toml")
-    return RoomDirectory(
-        labels=labels, unit_rooms={u: frozenset(r) for u, r in unit_rooms.items()},
-    )
-
-
-async def cmd_cognition_health(args: argparse.Namespace) -> int:
-    """`nora cognition health [--since ISO] [--until ISO] [--unit U] [--json]`: is
-    the cognition loop healthy now, from durable rows (the Cognition cut-over's
-    flip-day instrument; a Prometheus series is reset by every restart). READ-ONLY,
-    counts and rule names only.
-
-    Exit 0 PASS, 1 FAIL, 2 ERROR, so a check script can `&&` it. **1 means one
-    thing: a measured threshold was breached.** Anything that stopped the command
-    from reaching a verdict (an unreadable config, a bad `--since`, a database that
-    cannot be reached, any exception) is 2: unknown is not healthy, and a broken
-    invocation must never read as «the loop is failing». `execute` turns a
-    `CliError` into 1 for every other command; this one answers for itself."""
-    try:
-        return await _cognition_health(args)
-    except CliError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-    except Exception as exc:  # noqa: BLE001 - unknown is not healthy, whatever raised
-        # The class name only: a message can quote a row or a connection string.
-        print(
-            f"error: the health check could not run ({type(exc).__name__}); "
-            "no verdict: unknown is not healthy",
-            file=sys.stderr,
-        )
-    return health_exit_code("ERROR")
-
-
-async def _cognition_health(args: argparse.Namespace) -> int:
-    cfg = _config(args)
-    now = datetime.now(UTC)
-    until = _cutover(args.until, "--until") if args.until else now
-    since = _cutover(args.since, "--since") if args.since else until - timedelta(hours=24)
-    if until <= since:
-        raise CliError("--until must be later than --since")
-    tz = ZoneInfo(cfg.cognition.timezone)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        report = await cognition_run_health(
-            engine, since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
-            now_ms=int(now.timestamp() * 1000), unit=args.unit, tz=tz,
-            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-            # The rule is the evaluator's (`inert_kinds_for`) over the composition root's
-            # own table (`floors_ready()`). `tracked=True` always: this judges SESSIONS and
-            # cannot know which units have a home room, so a stalled `time` stimulus on a
-            # unit that cannot start a session is seen by the age gauge and ignored here.
-            inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),
-        )
-    finally:
-        await engine.dispose()
-    iso = {"since": since.astimezone(tz).isoformat(), "until": until.astimezone(tz).isoformat()}
-    if args.json:
-        print(json.dumps(health_report_json(report, iso=iso), indent=2, sort_keys=True))
-    else:
-        for line in health_render_text(report, iso=iso):
-            print(line)
-    return health_exit_code(health_judge(report)[0])
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

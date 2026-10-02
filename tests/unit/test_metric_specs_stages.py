@@ -37,19 +37,17 @@ from nora.app.fire import (
     STAGE_FIRE_PEOPLE,
     STAGE_FIRE_SELF_CARD,
 )
-from nora.language.proactive import STAGE_PROACTIVE_ROSTER_INDEX
 from nora.obs.metric_specs import _COUNTERS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: The four issue-#210 stages, as the code spells them. Imported from the
+#: The issue-#210 stages, as the code spells them. Imported from the
 #: modules rather than retyped: a vocabulary hand-copied into its own test
 #: measures the copy (`evals/harness.py`'s `TRIGGER_TEXT` war-story).
 _STAGES = (
     STAGE_FIRE_SELF_CARD,
     STAGE_FIRE_PEOPLE,
     STAGE_FIRE_MEMORY,
-    STAGE_PROACTIVE_ROSTER_INDEX,
 )
 
 

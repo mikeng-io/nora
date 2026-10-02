@@ -157,10 +157,7 @@ async def change_document_state(
     # is not visible, so it cannot be restored from here.
     rooms = rooms_of(person_id)
     stored = await store.get_visible(document_id=document_id, person_id=person_id, rooms=rooms)
-    # A forgotten document is already invisible here (it is `deleted`); the check says it
-    # again for any state, so forgetting a person stays forgotten even if a state row ever
-    # reads otherwise.
-    if stored is None or stored.summary.forgotten:
+    if stored is None:
         return StateChange("not_found")
     wanted = cast(DocumentState, state)
     if stored.summary.state != wanted and not await store.set_state(

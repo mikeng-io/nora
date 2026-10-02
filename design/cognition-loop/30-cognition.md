@@ -12,6 +12,9 @@ edges:
 
 # 30 · Cognition
 
+> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+
+
 The **Cognition adaptor**, the fast one of the four adaptors the Dreamer
 hosts ([00](00-intent.md) §3): one Strands agent session per unit per wake
 ([20](20-observe.md) §3). It orients, decides and acts in one context, so no

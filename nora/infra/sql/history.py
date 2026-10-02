@@ -122,19 +122,6 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # Step 2b (0074_event_revision): the head is still the compare-and-swap
     # cache 10-tiers.md §8 allows over `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
-    # 0086_event_citations: the citation edge table. An event's edges are
-    # REPLACED per field when a revision restates it (`nora.infra.sql.
-    # event_evidence.record_event_citations`: the value a revision states rests
-    # on the evidence THAT revision cites, so the cascade must follow current
-    # edges only), which is a DELETE; the trigger keeps the removed edge as a
-    # `delete` version, so what a past revision rested on stays re-derivable.
-    # Before 0086 it was APPEND_ONLY, an edge written once and never changed;
-    # the note, Standing and culture edges still are, in practice.
-    "citation": ("id",),
-    # 0088_orphan_delete: a platform delete waiting for its message. A row is deleted
-    # when the delete is applied or purged, so the trigger keeps what was waiting at T
-    # (ids and times only, no text).
-    "orphan_delete": ("id",),
     # design/sandbox-runtime §15.2 (0082_computer_sessions): a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),
@@ -183,18 +170,13 @@ APPEND_ONLY: dict[str, str] = {
     # per run, never rewritten — the next run is the next row
     # (`nora.domain.assess.AssessReport`).
     "assess_report": "recorded_at",
-    # Step 3a (0078_cognition_session): the Cognition adaptor's session and
-    # its dry-run write verbs. All three written once, never revised — a
-    # session is a replay input, a close and a would-write are each their
-    # own row.
+    # The Cognition session and its closes (0078): written once, never revised —
+    # a session is a replay input, a close is its own row.
     "cognition_session": "recorded_at",
     "cognition_session_close": "recorded_at",
-    "cognition_would_write": "recorded_at",
-    # Step 3a-ii (70-migration.md §2 row 3a-ii): the pace verbs
-    # (`wake_at`/`wake_move`/`wake_cancel`) and the mirrored, held `remind`
-    # family. Each transition is its own row, never revised.
+    # The pace verbs (`wake_at`/`wake_move`/`wake_cancel`): each transition is
+    # its own row, never revised.
     "cognition_self_wake": "recorded_at",
-    "cognition_remind_mirror": "recorded_at",
     # Step 3a-ii, the wake lifecycle: how a tracked wake ended (only `closed`
     # advances the watermark), what it returned to the next agenda, and the
     # `self` stimuli taken back.

@@ -8,6 +8,9 @@ timestamp: '2026-09-26'
 
 # 43 · The note dreamers are research loops
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. The decision
 
 **A Dreamer is not a synthesizer.** Until now each note pass was a
@@ -45,7 +48,7 @@ granted every read verb the runtime admits for its key kind, DERIVED from the
 registry so a new read tool is picked up without an edit, and a verb is
 withheld only when the runtime refuses it or it has a real cost or side
 effect, each named with its reason in code (`WITHHELD_TOOLS`,
-`nora/language/note_candidates.py`). Step 1 withholds `media_fetch` (every
+`nora/language/note_candidates.py` (deleted 2026-10-03, DEC-277)). Step 1 withholds `media_fetch` (every
 call is a vision-model call) and the six social reads, `instagram_*`,
 `linkedin_*` and `x_*` (they spend the social bridge's logged-in session, and
 unprompted lookup in a Dreamer pass is an open operator decision,

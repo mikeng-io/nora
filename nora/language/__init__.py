@@ -5,8 +5,9 @@
 "language and lexicon tools" and held the room-language tier — the lexeme
 scorer, the observer that made the one LLM call, the consolidator that
 persisted it. That tier is deleted. What is left never had anything to do with
-language: `note_candidates`/`note_curator` are the note tier's two Dreamer
-adaptors, `note_render` renders `<notes>`, and
+language: the note tier's two Dreamer adaptors (`note_candidates`/`note_curator`,
+with `note_merge` and `proactive`) are deleted (2026-10-03, DEC-277),
+`note_render` renders `<notes>`, and
 `standing_render` renders `<standing>` for a tag-path stage, and
 `cognition_render` builds the Cognition session's prompt (it lives here, not in
 `nora.domain`, because it uses the renderers above).

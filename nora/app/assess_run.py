@@ -15,8 +15,8 @@ metric answers "is this check red tonight", the report's `failing` count
 answers "how red" — and fail and error are counted on two distinct series,
 never one, because a check that never reached a verdict is not the same fact
 as a check that reached one and found a violation). `--no-record` prints
-without writing, the same dry-run shape `nora.app.events_backfill` and
-`nora.app.person_forget` use for a command that touches state.
+without writing, the same dry-run shape `nora.app.events_backfill` uses for a
+command that touches state.
 
 REFUSED: the whole run, when `[assess] mode` is `"off"` — the flag this
 module's docstring promises (`nora.config.AssessConfig`). Not scoped

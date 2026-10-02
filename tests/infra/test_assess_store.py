@@ -60,7 +60,7 @@ async def test_record_then_recent_round_trips(engine):
     report = AssessReport(
         kind="nightly_dq", run_at_ms=1_000_000,
         results=(
-            DqCheckResult(check="unresolved_citations", status="ok"),
+            DqCheckResult(check="cross_room_duplicate_events", status="ok"),
             DqCheckResult(
                 check="empty_lineage_rows", status="fail", failing=2,
                 sample=("a", "b"), detail="expected before step 3",

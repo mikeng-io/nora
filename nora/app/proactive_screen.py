@@ -6,7 +6,8 @@ WHAT IT ANSWERS
 Whether a due proactive row may reach a fire turn at all, and — when it may
 not — what the row should say about why. Two questions, both asked at FIRE
 time and neither at create time, for `nora.app.heartbeat`'s own reason: the
-row was written hours ago by a decide turn reading the world as it was then.
+row was written hours ago (by the Cognition session's `remind`, formerly the decide turn) reading
+the world as it was then.
 
 1. **The room's grant.** `is_allowed` is (room, person), and a proactive
    row's owner is Nora's reserved `ai_peer` id — nobody in `identity.toml`,

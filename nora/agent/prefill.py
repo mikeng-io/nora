@@ -29,7 +29,7 @@ from ..domain.prompt import escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.computer_render import render_computer
-from ..language.culture_render import render_culture
+from ..language.culture_render import render_character, render_culture
 from ..language.documents_render import render_documents
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
@@ -58,8 +58,8 @@ __all__ = ["TAG_HEADER", "build_prefill", "build_tag_message", "escape", "render
 # and says all four, generated each turn. It is a row in `_BLOCKS` below and
 # goes through `assemble` like every other block, where `_where_line` was a
 # bare string concatenated in front of it. The name table it read moved to
-# `nora.domain.self_presence.PLATFORM_NAMES`, because the proactive pass
-# renders the same block and may not import this module.
+# `nora.domain.self_presence.PLATFORM_NAMES`, because the (since-deleted,
+# DEC-277) proactive pass rendered the same block and could not import this module.
 
 
 def _message(role: str, text: str) -> dict:
@@ -154,6 +154,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # that varied per turn would end the cached prefix's hit rate for
     # everything after it.
     ("culture", 55, "room"),
+    # CHARACTER (DEC-278): one account per listed person, beside the room's
+    # own. `room`, like `culture`: it varies by room (its members), and the
+    # row is unconditional while the block renders only where
+    # `TagContext.character` is filled.
+    ("character", 56, "room"),
     # design/sandbox-runtime §15.3: what is on her computer for this room,
     # read fresh at turn start. `turn`: its ages move every turn. Before
     # `standing` because it is the state of the machine, and `standing` +
@@ -798,8 +803,8 @@ def _notes_block(
     Its siblings take `max_entries` or render a fixed single row; this renders
     every standing note there is, because a note missing from the index is
     invisible to her and invisible is indistinguishable from absent. The
-    budget is held in `nora.domain.notes`' per-entry caps and by the curator
-    retiring closed notes — see `render_notes`'s own docstring.
+    budget is held in `nora.domain.notes`' per-entry caps and by closed notes being retired (the
+    Cognition session's `note_retire`) — see `render_notes`'s own docstring.
     """
     # WITH TODAY (2026-09-10). The block's own hedge says a listed note
     # «may already have settled» and gave her no way to tell which; the
@@ -830,8 +835,8 @@ def _presence_block(ctx: TagContext) -> ContextBlock:
     exactly what `_where_line` said, so no harness regresses to the 2026-08-14
     bug of a turn with no idea where it is.
 
-    Rendered by `render_presence`, the one builder the proactive pass calls
-    too. Nothing here composes a line of its own.
+    Rendered by `render_presence`, the one builder every presence reader calls.
+    Nothing here composes a line of its own.
     """
     presence = ctx.presence or Presence.minimal(
         ctx.message.platform, direct=ctx.message.conversation_type == "dm",
@@ -946,7 +951,7 @@ def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
     five neighbours and follows their convention.
 
     **Named `loop_decisions`, not `decisions`**, because
-    `nora.language.proactive` already renders a `<decisions>` block for her
+    the (deleted, DEC-277) `nora.language.proactive` rendered a `<decisions>` block for her
     REMINDER rows. Two blocks under one name in one prompt is an input the
     model cannot disambiguate, and the fix for that is never the instruction.
 
@@ -1001,7 +1006,7 @@ def build_prefill(
     # Un-rooted deliberately: `build_prefill` is called from both the tag path
     # (under `engagement`'s root) and the fire path (under its own
     # `occasion.kind` root, `nora.app.fire`) and from a few offline callers
-    # with no root open at all (`note_candidates`, `announce`) — `span` with no
+    # with no root open at all (`announce`) — `span` with no
     # declared `nora.trace_kind` nests under whichever root is current and, for
     # the callers with none, is exported as a root of its own (R-76's
     # fail-open default), never silently dropped.
@@ -1036,6 +1041,7 @@ def build_prefill(
             _restamp(_notes_block(ctx, now=clock, view=view)),
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
+            _restamp(render_character(ctx.character, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(_standing_block(ctx, view)),

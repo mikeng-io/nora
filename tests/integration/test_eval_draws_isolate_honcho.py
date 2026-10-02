@@ -275,7 +275,7 @@ async def test_no_memory_call_of_a_composed_subject_escapes_the_draws_workspace(
 
     The composition root builds ONE `HonchoClient`, from
     `cfg.memory.workspace_id` with a router of no overrides, and no caller
-    passes `workspace_id=` to a verb (`note_curator` refuses to, by comment).
+    passes `workspace_id=` to a verb (the deleted `note_curator` refused to, by comment).
     So the workspace on the config IS every read and write, and this is the
     reading that would move if a second client or an explicit workspace ever
     appeared."""

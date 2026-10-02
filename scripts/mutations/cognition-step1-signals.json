@@ -107,8 +107,8 @@
   {
     "name": "Signal delete of someone else's message is recorded",
     "file": "nora/ingest/stages/touch.py",
-    "old": "        and not deleter_is_author(",
-    "new": "        and False and not deleter_is_author(",
+    "old": "        and not _same_author(message.sender_id, person_id, target)",
+    "new": "        and False",
     "target": "tests/unit/test_ingest_stimuli.py::test_a_signal_delete_of_someone_else_s_message_is_refused"
   },
   {

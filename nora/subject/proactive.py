@@ -55,7 +55,8 @@ async def owe(
     decided_hours_ago: float = 6.0,
     note_moved: bool = False,
 ) -> Reminder:
-    """Write the row Nora's own decide turn would have written.
+    """Write the row the Cognition session's `remind` writes (the decide turn
+    did, before 2026-10-03).
 
     `note_title` must name a note the case SEEDED: the payload carries the note
     id and the revision the decision was made against, and the screen reads

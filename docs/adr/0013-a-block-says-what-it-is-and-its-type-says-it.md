@@ -1,5 +1,7 @@
 # 0013 — A block says what it is, and its TYPE is what says it
 
+> 2026-10-03 (DEC-277): the note-candidates, curator, note-merge and proactive DECIDE passes named below are deleted; the Cognition session does this now.
+
 - **Status:** accepted
 - **Date:** 2026-09-17
 - **Supersedes, in part:** [0012](0012-one-renderer-for-every-context-block.md)

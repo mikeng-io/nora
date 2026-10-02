@@ -13,12 +13,12 @@ R-27 exists to forbid, and a bound is a quiet way to commit it.
 
 The distribution of this repo's HONEST bounds is what says this is one defect
 and not seventeen. Every bound counted correctly here is one where the cap was
-applied in the CALLER, while the total was still in scope: `NoteCuratorAdaptor`
-(`nora.language.note_curator`) asks `SqlNoteStore.due_for_revisit` for
-`over_fetch(max_revisits_per_tick)` rows and counts
+applied in the CALLER, while the total was still in scope: the (deleted
+2026-10-03, DEC-277) `NoteCuratorAdaptor` asked `SqlNoteStore.due_for_revisit`
+for `over_fetch(max_revisits_per_tick)` rows and counted
 `nora_note_curator_deferred_total` when more came back than it judged —
 `SqlNoteStore` itself takes no metrics collaborator (its own constructor's
-stated affordance), so this is a caller applying the SAME over-fetch-by-one
+stated affordance), so that was a caller applying the SAME over-fetch-by-one
 probe this module hands to `audit.recent`, one layer up. Nobody in this repo
 has ever failed to count a bound they could see. They fail exactly when the
 bound is one layer down, in SQL.
@@ -42,7 +42,7 @@ the caller already holds the unbounded set, and over-fetching by one is the
 only probe that is cheap and correct everywhere. A series carrying "1" from one
 site and "30" from another would be lying about its own unit. Sites that can
 cheaply know the depth keep their own magnitude counters unchanged — this does
-not replace `nora_note_curator_deferred_total`.
+not replace magnitude counters (the deleted `nora_note_curator_deferred_total` was one).
 
 WHAT THIS CLOSES, AND WHAT IT DOES NOT
 --------------------------------------

@@ -271,7 +271,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
-        "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
+        "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "apply",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
@@ -293,7 +293,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "announcements.py", "assess.py", "audit.py", "cognition_dry_run.py",
+        "announcements.py", "assess.py", "audit.py", "cognition_store.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",
         "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",

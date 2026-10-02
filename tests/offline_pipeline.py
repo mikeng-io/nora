@@ -84,7 +84,6 @@ def build_offline_pipeline(
     tool_registry: ToolRegistry | None = None,
     tag_trace_store: Any = None,
     debrief_wiring: Any = None,
-    standing_event_wiring: Any = None,
     # The assembler's remaining collaborators (`nora.app.assembler.
     # build_assembler`), all optional and `None` by default so every existing
     # caller keeps working unchanged.
@@ -187,7 +186,6 @@ def build_offline_pipeline(
     ingest = IngestPipeline(
         audit=audit, memory=memory, persons=persons,
         policy=policy, allowlist=permissive_policy(), metrics=metrics, spawn=_spawn,
-        standing_event_wiring=standing_event_wiring,
     )
 
     tier = cfg.llm

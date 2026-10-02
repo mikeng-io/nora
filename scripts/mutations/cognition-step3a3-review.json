@@ -1,12 +1,5 @@
 [
  {
-  "name": "blocker: note_search records its miss under a cognition session",
-  "file": "nora/agent/tools.py",
-  "old": "            if dream_adaptor != COGNITION_ADAPTOR:\n",
-  "new": "            if True:\n",
-  "target": "tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_every_read_tool_the_session_holds_writes_nothing_live tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_the_positive_control_the_same_miss_under_another_adaptor_does_write tests/infra/test_a_cognition_sessions_read_tools_write_nothing.py::test_a_cognition_miss_records_nothing_and_still_answers_nothing_found"
- },
- {
   "name": "blocker: the audit table must name every catalogue tool",
   "file": "nora/app/cognition_wiring.py",
   "old": "    \"search_memory\": \"Honcho session `search` read; counters only.\",\n",
@@ -229,20 +222,6 @@
   "old": "    if session_units is not None and not session_units:",
   "new": "    if False:",
   "target": "tests/unit/test_cognition_wiring.py::test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session tests/test_composition.py::test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot"
- },
- {
-  "name": "minor 2: a remind due exactly now is pending",
-  "file": "nora/domain/cognition_remind.py",
-  "old": "    return tuple(p for p, at in live.values() if at > now_ms)",
-  "new": "    return tuple(p for p, at in live.values() if at >= now_ms)",
-  "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_remind_due_exactly_now_is_due_not_pending[memory] tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_remind_due_exactly_now_is_due_not_pending[sql]"
- },
- {
-  "name": "minor 4: shadow loads without an explicit cognition budget",
-  "file": "nora/config.py",
-  "old": "        if self.cognition.session_mode == \"shadow\" and \"cognition\" not in self.dreamer.budgets:",
-  "new": "        if False:",
-  "target": "tests/test_config.py::test_session_mode_shadow_refuses_to_load_without_an_explicit_cognition_budget"
  },
  {
   "name": "minor 3: the objective omits the `written` close reason",

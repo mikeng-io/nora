@@ -6,7 +6,7 @@ wake write, and the self-wake state the ledger folds (reviews of #627,
 DEC-242). Every implementation runs every test.
 
 Two implementations of each store: SQL over real Postgres
-(`SqlStimulusStore` + `SqlCognitionDryRunStore`), and the in-memory doubles,
+(`SqlStimulusStore` + `SqlCognitionStore`), and the in-memory doubles,
 which the wake evaluator's unit tests run on, so the double must decide the
 watermark by exactly the rule the SQL does.
 
@@ -31,15 +31,14 @@ import sqlalchemy as sa
 from nora.domain.ports import (
     NewCarry,
     NewCognitionPace,
-    NewCognitionRemindMirror,
     NewWakeOutcome,
 )
 from nora.domain.stimuli import NewStimulus, NewWake, WakeGuard
-from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
+from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.stimuli import SqlStimulusStore
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_790_000_000_000
@@ -47,7 +46,7 @@ UNIT = "nora"
 ALL_TABLES = (
     "stimulus, cognition_wake, cognition_carry, stimulus_retraction, "
     "cognition_wake_outcome, cognition_session_close, cognition_self_wake, "
-    "cognition_remind_mirror, cognition_would_write, cognition_session"
+    "cognition_session"
 )
 
 
@@ -75,12 +74,12 @@ def _lifecycle_db(pg_admin: Any) -> Iterator[str]:
 @pytest.fixture(params=["memory", "sql"])
 async def stores(request: Any) -> AsyncIterator[tuple[Any, Any]]:
     if request.param == "memory":
-        ledger = InMemoryCognitionDryRunStore()
+        ledger = InMemoryCognitionStore()
         yield InMemoryStimulusStore(ledger=ledger), ledger
         return
     engine = create_sql_engine(request.getfixturevalue("_lifecycle_db"))
     try:
-        yield SqlStimulusStore(engine), SqlCognitionDryRunStore(engine)
+        yield SqlStimulusStore(engine), SqlCognitionStore(engine)
     finally:
         async with engine.begin() as conn:
             await conn.execute(sa.text(f"truncate {ALL_TABLES} restart identity"))
@@ -100,7 +99,7 @@ async def _msgs(stimuli: Any, n: int) -> list[int]:
 async def _guard_now(stimuli: Any) -> WakeGuard:
     """What a tick that just read the unit holds: its newest wake and that
     wake's outcome. A tracked wake is refused without a guard."""
-    view = await stimuli.view(unit=UNIT, mode="shadow", now_ms=NOW + 10_000, limit=1)
+    view = await stimuli.view(unit=UNIT, mode="live", now_ms=NOW + 10_000, limit=1)
     last = view.last_wake
     return WakeGuard(
         last_wake_id=None if last is None else last.id,
@@ -114,7 +113,7 @@ async def _wake(
     if tracked and guard is None:
         guard = await _guard_now(stimuli)
     return await stimuli.record_wake(wake=NewWake(
-        unit=UNIT, mode="shadow", reason="settled", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=at, tracked=tracked,
     ), recorded_at_ms=at, guard=guard)
@@ -137,7 +136,7 @@ def _carry(sid: int, strike: int = 1, state: str = "carried", waits: bool = Fals
 
 
 async def _view(stimuli: Any, **kw: Any) -> Any:
-    return await stimuli.view(unit=UNIT, mode="shadow", now_ms=NOW + 10_000, limit=100, **kw)
+    return await stimuli.view(unit=UNIT, mode="live", now_ms=NOW + 10_000, limit=100, **kw)
 
 
 async def _self(stimuli: Any, ref: str, *, due: int = NOW + 100) -> int:
@@ -258,7 +257,7 @@ async def _open_wake_id(stimuli: Any) -> int:
 
 
 async def test_an_untracked_wake_is_a_watermark_with_or_without_a_clock(stores):
-    """No hook (`session_mode = "off"`): the step-1 behaviour, unchanged, and
+    """No hook (`[cognition] enabled = false`): the step-1 behaviour, unchanged, and
     an untracked wake never expires even when the reader tracks sessions."""
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
@@ -595,7 +594,7 @@ async def test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is
     stimuli, _ledger = stores
     await _msgs(stimuli, 2)
     new = NewWake(
-        unit=UNIT, mode="shadow", reason="settled", from_stimulus_id=0,
+        unit=UNIT, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=2, stimulus_count=2, eligible_count=2,
         oldest_pending_ms=NOW, cut_cooldown=False, at_ms=NOW, tracked=True,
     )
@@ -615,7 +614,7 @@ async def test_a_tracked_wake_without_a_guard_is_refused_and_an_untracked_one_is
 async def sql_stores(request: Any) -> AsyncIterator[tuple[Any, Any, Any]]:
     engine = create_sql_engine(request.getfixturevalue("_lifecycle_db"))
     try:
-        yield SqlStimulusStore(engine), SqlCognitionDryRunStore(engine), engine
+        yield SqlStimulusStore(engine), SqlCognitionStore(engine), engine
     finally:
         async with engine.begin() as conn:
             await conn.execute(sa.text(f"truncate {ALL_TABLES} restart identity"))
@@ -680,70 +679,6 @@ async def test_a_guarded_wake_and_a_close_never_both_take_the_same_stimuli(sql_s
 
 
 # ---- the mirrored reminds a session reads to dedupe and to move (step 3a-iii) --
-
-def _mirror(**kw: Any) -> NewCognitionRemindMirror:
-    base: dict[str, Any] = {
-        "session_id": None, "unit": UNIT, "verb": "remind", "reminder_ref": "r1",
-        "platform": "signal", "conversation_id": "g1", "intent": "tell",
-        "subject_rows": ("note:1",), "at_ms": NOW + 1000, "why": None,
-        "outcome": "recorded",
-    }
-    base.update(kw)
-    return NewCognitionRemindMirror(**base)
-
-
-async def test_a_pending_mirrored_remind_is_read_back_by_the_next_session(stores):
-    """Without this read a session's `remind_move`/`remind_cancel` answer
-    `not_found` for every reminder and the dedupe rule never fires: the
-    session's pending list is what it was handed, and it was handed none."""
-    _stimuli, ledger = stores
-    await ledger.record_remind_mirror(mirror=_mirror(), recorded_at_ms=NOW)
-    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 10)
-    assert [(p.reminder_ref, p.platform, p.conversation_id, p.subject_rows)
-            for p in pending] == [("r1", "signal", "g1", ("note:1",))]
-    assert await ledger.pending_mirrored_reminds(unit="other", now_ms=NOW + 10) == ()
-
-
-async def test_a_cancelled_moved_due_or_refused_remind_is_read_at_its_latest_state(stores):
-    _stimuli, ledger = stores
-    for m in (
-        _mirror(reminder_ref="cancelled", subject_rows=("note:1",)),
-        _mirror(verb="remind_cancel", reminder_ref="cancelled", subject_rows=(),
-                intent=None, at_ms=None, why="no longer needed"),
-        _mirror(reminder_ref="moved", subject_rows=("note:2",), at_ms=NOW + 50),
-        _mirror(verb="remind_move", reminder_ref="moved", subject_rows=(), intent=None,
-                at_ms=NOW + 5000, why="dinner moved"),
-        _mirror(reminder_ref="due", subject_rows=("note:3",), at_ms=NOW + 50),
-        # Set for later, then moved to a time that has passed: due, so no longer
-        # pending, though its FIRST link was still in the future.
-        _mirror(reminder_ref="moved_earlier", subject_rows=("note:5",), at_ms=NOW + 5000),
-        _mirror(verb="remind_move", reminder_ref="moved_earlier", subject_rows=(), intent=None,
-                at_ms=NOW + 50, why="dinner moved earlier"),
-        _mirror(reminder_ref=None, subject_rows=("note:4",), outcome="refused",
-                refusal_reason="duplicate_pending", at_ms=None),
-        _mirror(verb="remind_move", reminder_ref="moved", subject_rows=(), intent=None,
-                outcome="refused", refusal_reason="not_own", at_ms=None),
-    ):
-        await ledger.record_remind_mirror(mirror=m, recorded_at_ms=NOW)
-    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
-    assert [p.reminder_ref for p in pending] == ["moved"]
-
-
-async def test_a_remind_due_exactly_now_is_due_not_pending(stores):
-    """`fold_pending_reminds`' docstring says a due remind is no longer pending
-    (nothing fires in shadow, so its time having come is what would have been
-    sent) and the fire path treats `at <= now` as due: at the boundary instant
-    it is due. It read `at >= now`, one millisecond of a dedupe rule refusing a
-    second reminder on the same rows (#637 review, minor)."""
-    _stimuli, ledger = stores
-    for ref, at in (("edge", NOW + 100), ("after", NOW + 101), ("before", NOW + 99)):
-        await ledger.record_remind_mirror(
-            mirror=_mirror(reminder_ref=ref, subject_rows=(f"note:{ref}",), at_ms=at),
-            recorded_at_ms=NOW,
-        )
-    pending = await ledger.pending_mirrored_reminds(unit=UNIT, now_ms=NOW + 100)
-    assert [p.reminder_ref for p in pending] == ["after"]
-
 
 # ---- m2 (DEC-245): a wake that did not FAIL has no failure cause -------------
 

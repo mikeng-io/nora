@@ -81,7 +81,7 @@ async def _say(store: InMemoryStimulusStore, clock: Clock, n: int = 1) -> list[i
 
 async def _view(store: InMemoryStimulusStore, clock: Clock) -> UnitView:
     view = await store.view(
-        unit="u1", mode="shadow", now_ms=clock.ms, limit=100,
+        unit="u1", mode="live", now_ms=clock.ms, limit=100,
         stale_before_ms=clock.ms - int(POLICY.session_timeout_seconds * 1000),
     )
     return replace(view, tracked=True)      # what the evaluator's own read sets
@@ -215,7 +215,7 @@ async def test_reclaiming_twice_releases_once():
 
 async def test_a_store_that_fails_costs_the_release_not_the_boot():
     """The wake stays open and expires on its own clock, exactly as before; the
-    process starts, and the failure is counted where `NoraErrorsRising` reads it."""
+    process starts, and the failure is counted on `nora_errors_total`."""
     store, clock, metrics = InMemoryStimulusStore(), Clock(T), Metrics()
     await _say(store, clock)
     clock.advance(1)

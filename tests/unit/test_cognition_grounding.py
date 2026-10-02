@@ -42,8 +42,8 @@ from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.language.cognition_render import RenderBudget, render_agenda
 from nora.persons import Persons
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.unit.cognition_view import blocks, events, ids, items, named, rows, words
 
@@ -293,18 +293,17 @@ async def _none(*a: Any, **k: Any) -> Any:
 
 def _runner(
     agent: _Agent, grounder: Any, **kw: Any,
-) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionDryRunStore]:
-    ledger = InMemoryCognitionDryRunStore()
+) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionStore]:
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     stimuli.seed_wake("u", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
+        store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=lambda unit, rooms: [],
         read_only_tools=frozenset(),                # NO record_query, no read tool at all
         skill_text_for=lambda kinds: "", grounder=grounder,
         doctrine_text="D", doctrine_sha256="sha",
         open_note_titles=_none, open_events=_none, prior_standing=_none,
-        pending_self_wakes=_none, pending_mirrored_reminds=_none, session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
         max_items=kw.pop("max_items", 12), max_strikes=3, clock=lambda: NOW / 1000, tz=HK,
@@ -539,13 +538,13 @@ async def test_the_register_lines_are_built_from_the_units_rows():
     assert [n.id for n in g.notes] == ["n1"]
 
 
-# ---- every pushed index line honours withdrawal and lineage (#637 second review) -----------------
+# ---- every pushed index line honours lineage (#637 second review) -----------------
 
-def _note(nid: str, *, established_in: str = "room-a", unsupported_at: int | None = None,
+def _note(nid: str, *, established_in: str = "room-a",
           lineage: Lineage | None = None, exclude: tuple[str, ...] = ()) -> Note:
     return Note(id=nid, unit="u", title=f"title {nid}", description="d", uncertainty="u",
                 closing_condition="c", established_in=established_in, created_at=1,
-                head_revision_id="r1", anchor_date=20260930, unsupported_at=unsupported_at,
+                head_revision_id="r1", anchor_date=20260930,
                 lineage=lineage if lineage is not None else Lineage(),
                 exclude_persons=exclude)
 
@@ -590,31 +589,6 @@ _TWO_ROOMS = [_stim(1, A, ago=3, mid=1), _stim(2, B, ago=2, mid=2)]
 _OWN = Lineage.of({ROW: [LineageEntry("message", None, "room-a")]})
 
 
-async def test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed():
-    g = await _pushed(
-        [_note("live", lineage=_OWN), _note("withdrawn", lineage=_OWN, unsupported_at=5)],
-        [], mode="off", rooms=_ONE_ROOM,
-    )
-    assert [n.id for n in g.notes] == ["live"]
-    # ... in every lineage mode: withdrawal is not a lineage question
-    on = await _pushed([_note("withdrawn", lineage=_OWN, unsupported_at=5)], [], mode="on",
-                       rooms=_ONE_ROOM)
-    assert on.notes == ()
-
-
-async def test_an_event_the_withdrawal_cascade_marked_unsupported_is_not_shown():
-    """Withdrawal is not a lineage question: in every mode, including `off`, the
-    grounding drops a withdrawn event as it drops a withdrawn note, even when the
-    caller's own read let it through (the seam's guard, fix PR D)."""
-    import dataclasses
-
-    live = _event("live", origin="room-a")
-    gone = dataclasses.replace(_event("gone", origin="room-a"), unsupported_at=5)
-    for mode in ("off", "shadow", "on"):
-        g = await _pushed([], [live, gone], mode=mode, rooms=_ONE_ROOM)
-        assert [e.title for e in g.events] == ["event live"], mode
-
-
 async def test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_read():
     """A note resting on room A's words is shown in a session over room A, and
     is NOT shown when the same session also reads room B (no live roster to
@@ -644,10 +618,6 @@ async def test_lineage_shadow_reports_and_removes_nothing_only_on_removes(caplog
     assert on.notes == () and on.events == ()
     off = await _pushed([n], [foreign], mode="off", rooms=_TWO_ROOMS)
     assert [x.id for x in off.notes] == ["from-a"]
-    # withdrawal is not a lineage question: removed in shadow too
-    gone = await _pushed([_note("w", lineage=_OWN, unsupported_at=5)], [], mode="shadow",
-                         rooms=_ONE_ROOM)
-    assert gone.notes == ()
 
 
 async def test_a_note_naming_an_excluded_person_is_withheld_because_no_roster_can_clear_it():
@@ -708,7 +678,7 @@ def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
 # ---- what the session row keeps of a person ---------------------------------------------------
 
 def test_the_session_row_keeps_a_person_id_never_a_canonical_name():
-    """`nora person forget` cannot rewrite an append-only row, so the name must
+    """`nora person forget` (removed) cannot rewrite an append-only row, so the name must
     never be written to it (#637 second review, minor 5)."""
     s = dataclasses_replace_person(_stim(1, A, ago=3, mid=12), "ada")
     rec = RecordItem(ref=s.ref, kind="message", message_id=12, room=A, author="Ada Lovelace",
@@ -1038,7 +1008,7 @@ async def test_an_item_promoted_from_deferred_by_a_skip_is_grounded():
 
 async def test_her_send_that_quotes_a_withdrawn_message_renders_without_the_quoted_text():
     """D1 (strongest-tier review of #646). A send of hers that REPLIES to a message
-    `nora person forget` has since hidden carries a pointer (`quoted_ts`) and, in
+    `nora person forget` (removed) has since hidden carries a pointer (`quoted_ts`) and, in
     its raw envelope, the quoted words. The session is shown her words and nothing
     of the quote: neither the pointer's target (the Record read excludes the hidden
     row) nor the words the envelope copied."""

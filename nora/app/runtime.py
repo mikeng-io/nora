@@ -479,7 +479,7 @@ _DREAM_BACKOFF_MAX_SECONDS = 3_600.0
 
 #: How far a repeatedly-failing unit's batch is allowed to shrink. A floor
 #: rather than 1 because a one-message batch is not a cheaper version of the
-#: same work — the note-candidates objective reads a CONVERSATION, and a
+#: same work — the (deleted, DEC-277) note-candidates objective read a CONVERSATION, and a
 #: single message in isolation is a different question with a worse answer.
 _DREAM_MIN_SHRUNK_BATCH = 5
 
@@ -762,7 +762,7 @@ async def _dream_adaptor_once(
         # A watermark-free adaptor on its own clock fires on its SLOT, never on
         # backlog: there is no cursor to age, and requiring `lag > 0` would
         # make a silent room's schedule never fire at all — which is precisely
-        # what a time-driven pass (the note curator retires on anchor dates
+        # what a time-driven pass (the deleted note curator retired on anchor dates
         # that pass whether or not anyone speaks) must not do.
         now = _now_ms() if now_ms is None else now_ms
         # ISSUE #55, THE REVIEW'S FIRST GAP: this read sat outside the
@@ -884,10 +884,9 @@ async def _dream_adaptor_once(
     if media_join is not None:
         # HERE rather than inside each adaptor (issue #116): every scope-keyed
         # dream adaptor reads this one batch, so joining once covers all of
-        # them and none of them has to hold a media store. `NoteCandidateAdaptor`
-        # renders these rows for a model deciding what the conversation
-        # ARRANGED — a photo it cannot see is exactly the content the issue was
-        # opened about.
+        # them and none of them has to hold a media store. the culture adaptor
+        # renders these rows for a model — a photo it cannot see is exactly the
+        # content the issue was opened about.
         batch = list(await traced_read(
             "media_join", "enrich", media_join.enrich(batch, path="dreamer"),
         ))

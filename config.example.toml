@@ -132,26 +132,6 @@ tagger_card_conclusions = 8
 # `read_timeout_seconds` — so raising it costs latency, not just budget.
 people_in_window_conclusions = 3
 people_in_window_speakers = 4
-# The PROACTIVE decide turn's `<people>` roster index (design 39 D9, issue
-# #210) — how many conclusions per home-room member. 0 leaves the block as it
-# was: names and aliases only.
-#
-# DELIBERATELY 1, and that is the decision rather than an economy. #206 rations
-# the decide pass to `[dreamer] max_memory_calls = 2`; the index exists so those
-# two reads are spent on DEPTH («what did Aaron say about Saturday») rather than
-# on «who is Aaron». An index carrying eight conclusions each WOULD be the depth,
-# and the ration would have nothing left to buy.
-roster_index_conclusions = 1
-# How many home-room members that index READS memory for. The render is
-# uncapped — every member keeps their name and aliases, because a member
-# missing from the index is invisible to her and invisible is indistinguishable
-# from absent — so this bounds the Honcho FAN-OUT only: `_roster_index` issues
-# one concurrent read per member, and a forty-person Discord home room would be
-# forty of them on the front of a pass. Members past the cap keep their names
-# and get no «·» line; the order is the roster's own, which makes this a cheap
-# bound rather than a good one (a home room past it wants a relevance order,
-# which is a different change).
-roster_index_members = 12
 # The wall-clock bound on the participation turn's memory reads, over the WHOLE
 # concurrent batch. `HonchoClient.representation` already carries its own 3s
 # transport timeout, so this is a belt over the PORT: an implementation is not
@@ -1446,182 +1426,14 @@ timezone = "Asia/Hong_Kong"   # the wall clock a recurrence KEEPS. An IANA zone
 
 
 [notes]
-# The note tier's gate (docs/superpowers/specs/2026-08-21-note-tier-design.md).
-# ON, every tag reads the standing note index for the room's UNIT — not
-# its conversation (§3/DEC-105: rooms sharing a unit are one social unit)
-# — and renders it as <notes>. OFF, no store is built, no query runs, and the
-# block never appears.
-#
-# Ships INERT, like [presence]/[search]/[compute]: a config.toml written
-# before this section existed keeps loading with the tier off.
-#
-# 2026-08-21: the four tools landed, so ON is no longer only a SELECT — she can
-# now create and revise notes herself (`note_create`/`note_update`, gated by a
-# read-before-write latch and a CAS on the head revision, R-55). What is still
-# absent is the CURATOR: nothing merges duplicates, retires an expired anchor,
-# or promotes a settled note to an event, because that is a Dreamer adaptor and
-# the runtime it needs is not built. So a notebook turned on today grows and is
-# never tidied — fine at this scale, and the thing to watch before it is not.
-#
-# 2026-08-28: the curator's MERGE and RETIRE halves landed — see
-# curator_enabled below. MERGE went again on 2026-09-08; only RETIRE runs.
-# Promote-to-event ARRIVED 2026-09-08 as the discharge pipeline's commitment
-# route (discharge_enabled below) rather than as a verb of its own: a
-# grounded "closed" verdict whose discharge names a commitment writes an
-# Event through the Events tier's own API. Fact-coherence rewriting is GONE
-# rather than pending: the knowledge tier it would have written into was
-# deleted (2026-09-07).
+# The note tier's gate. ON, every tag reads the standing note index for the
+# room's UNIT (rooms sharing a unit are one social unit, DEC-105), renders it as
+# <notes>, and holds the note tools (`note_create`/`note_update`, gated by a
+# read-before-write latch and a CAS on the head revision, R-55). The background
+# writer that creates, revises, retires and merges notes is the Cognition
+# session ([cognition]). OFF, no store is built and the block never appears.
+# Ships INERT: a config.toml written before this section existed keeps loading.
 enabled = false
-
-# The CURATOR, on its own gate and behind the tier's. Three flags have to be on
-# for a note ever to be retired: [dreamer] (the runtime exists), [notes]
-# enabled (the tier is on), and this one. (It read "merged or retired" until
-# 2026-09-13; the merge half went on 2026-09-08 and this line had not
-# followed it.)
-#
-# Three rather than two because this is a DIFFERENT RISK from the other two.
-# The tag path only reads and appends; the curator is the one thing in this
-# tier that REMOVES something from her index. An operator turning notes on has
-# not thereby asked for a background pass that reorganises them.
-#
-# What it does when on, on the schedule below, per unit:
-#
-#   (MERGE was here until 2026-09-08 — notes sharing an anchor date AND the
-#             same RESOLVED people were one occasion written twice. The
-#             people half was read from note_entity, which nothing could
-#             fill once the knowledge tier stopped minting entities, so
-#             every pair was refused by construction and the verb was
-#             removed. Duplicates moved to the create gate, matched on the
-#             anchor DATE — and THAT went too, on 2026-09-13: the date arm
-#             had fired twice since the tier shipped and conflated two
-#             unrelated occasions both times, so a date is no longer
-#             identity. The gate now asks the model which standing note a
-#             proposal updates; anything it cannot name is written as a NEW
-#             note. Folding duplicates came back on 2026-09-25 as its OWN
-#             pass, merge_mode below (DEC-202); this one stays retire-only.)
-#   RETIRE  — a note whose anchor date has passed, where the model reading the
-#             body says the question is answered ("closed") or can no longer be
-#             answered ("moot"). "Open" is the common answer and writes nothing.
-#
-# Nothing is deleted. Retirement is a status change, so a retired note stays
-# readable and a lossy step can be re-derived.
-curator_enabled = false
-
-# Expired bodies per tick, because the curator's only real cost is reading
-# whole note bodies and note_revision.body has no upper bound — ONE long body
-# can consume a tick's whole allowance. Expiry arrives in bursts: after a quiet
-# month every note whose date has passed becomes eligible at once, and a cap
-# of three would take a fortnight of ticks to clear a backlog that appeared in
-# a day. (There was a second cap, `max_groups_per_tick`, for merge groups;
-# merge was removed on 2026-09-08 and the knob went with it.)
-#
-# `nora_note_curator_bodies_read` is the reading. When it sits at the cap, the
-# pass is reporting "nothing to do" about notes it never reached.
-# max_expired_per_tick = 20
-
-# A note body is capped at 8000 characters and the database refuses anything
-# over 32000. NEITHER IS CONFIGURABLE, and there is deliberately no knob here:
-# the operating cap is enforced in the type that constructs a revision, where a
-# refusal is reviewable and names the cap, and a type cannot read this file.
-# No render cap here, and that is a decision rather than an omission: §5.1 makes the index uncapped, because a
-# note silently missing from it is invisible to her and invisible is
-# indistinguishable from absent. The budget is held by the per-entry caps in
-# the domain type (title <= 60 chars, description <= 200) and by the curator
-# retiring closed notes.
-
-# The CREATE PATH (design/dreamer-agent-loop/33-note-dreamer-schedule.md §4,
-# issue #98) — a THIRD gate, behind [dreamer] and [notes] enabled, on the
-# SAME two-risks argument curator_enabled makes above: [notes] enabled decides
-# whether the index and the read tools are reachable; this decides whether a
-# background pass WRITES NEW NOTES into that index at all. An operator who
-# turned [notes] on for the index has not thereby signed up for a background
-# process creating notes on her behalf.
-#
-# ON, a scope-keyed, hourly, tool-free Dreamer pass reads each room's message
-# batch and the unit's standing note index, proposes full notes for
-# anything not yet tracked, and a DETERMINISTIC gate — never the model —
-# decides whether that becomes a new note, a revision to one that already
-# covers the same occasion, or nothing. The model never writes a note
-# directly.
-candidates_enabled = false
-
-# Model calls per note-candidates fire, unioned. Measured 2026-09-08 (design
-# 37, issue #118): a plan ONE person states with an unsettled corner is
-# recognised in about 30% of single samples at the dreamer tier's temperature,
-# while no negative batch ever produced a note across every prompt variant
-# tried. N samples recognise it with probability 1 - 0.7^N (3 -> 0.66,
-# 5 -> 0.83) and stay empty on a negative batch. Duplicates across samples
-# collapse only when they are the same item, or share a title, day and people
-# (the staging key since DEC-189); two samples naming one arrangement under two
-# titles stage twice and can become two notes, which merge_mode below is the
-# back-stop for. Cost is N calls per fire on a pass that fires at most hourly
-# per room and only when the room spoke.
-# candidate_samples = 1
-
-# Minimum seconds between two note-candidates fires for one room; a fire needs
-# unread messages AND this long since the last one. Default 3600 (hourly),
-# minimum 300. The live operator runs 10800 (3 hours, operator ruling
-# 2026-10-01: "slower the note-candidate to every 3 hours"). A longer interval
-# DEFERS messages, it does not drop them: a fire reads at most 80 messages past
-# the watermark and advances it by what it read, so a room that says more than
-# 80 things per interval leaves a backlog that drains on later fires (80 per
-# interval per room), oldest first.
-# candidates_interval_seconds = 3600
-
-# The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
-# schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH gate, on its
-# own rather than riding curator_enabled: that pass retires NOTES, this one
-# WRITES to two other tiers entirely (an Event, a Honcho conclusion about a
-# named person) the moment a note it was already retiring turns out to hold a
-# settled commitment or person-claim. An operator who accepted "this pass
-# retires notes" has not thereby accepted "this pass also creates calendar
-# events and writes permanent memories about people". (Both sentences said
-# "merges and retires" until 2026-09-13, five days after merge was deleted —
-# an operator-facing gate argument is not allowed to name a verb that is
-# gone.)
-#
-# There was a THIRD route, a world-claim into the knowledge tier's fact store.
-# That tier was deleted (2026-09-07) and the route went with it; the objective
-# no longer asks for a world_claim and one is dropped if a model invents it.
-#
-# ON, discharge runs in the SAME curator tick that decides a note has closed
-# — never a separate adaptor — and only for a GROUNDED `closed` verdict that
-# actually retires; an `expired`/`moot` note answered nothing, so there is
-# nothing settled to route. Each classified item is written through the
-# OWNING tier's own existing API (never a new write path): a commitment
-# through the Gathering service, a person-claim through Honcho's conclusion
-# lane. "Nothing to discharge" is the ordinary, common answer and
-# is not an error.
-discharge_enabled = false
-
-# NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202) — the back-stop for
-# two open notes asking the same open question. Behind [dreamer] and [notes]
-# enabled like the passes above, and its own switch for the same two-risks
-# reason: this is the one pass that folds one note INTO another.
-#
-#   "off"    — not built; nothing runs.
-#   "shadow" — an hourly, unit-keyed, tool-free pass reads every open note of
-#              the unit side by side whenever one was created or revised since
-#              its last read, asks the model which are the same question, and
-#              writes NOTHING to the notes: each fold it would make becomes a
-#              note_merge_decision row (both titles and the model's reason) for
-#              the operator to label.
-#   "on"     — the same pass folds: the duplicate's question is appended to
-#              the OLDEST note of the group, which takes the later anchor, and
-#              the duplicate is retired "retired-merged" and forwards to it.
-#              Nothing is deleted; clearing the duplicate's retired_at restores
-#              it. Set only after the eval in design 41 §7.8 passes.
-#
-# Each mode keeps its OWN "last read" clock (note-merge:pass:shadow and
-# note-merge:pass:on), so the first "on" pass after a shadow run reconsiders
-# every pair once. With one shared clock, a pair shadow had already judged
-# counted as "unchanged" and was never folded after the flip.
-#
-# Whatever the mode, two things are live as soon as this code is deployed:
-# a pending proactive reminder about a note retired "retired-merged" follows
-# the note it was folded into instead of being cancelled, and the curator's
-# retirement is a no-op when the note's head moved under it.
-merge_mode = "off"
 
 [culture]
 # The culture tier (design/culture-tier). ON, a background pass reads each
@@ -1648,8 +1460,16 @@ merge_mode = "off"
 # NOTHING IN IT RETIRES. No TTL, no closing condition, no supersede: a quiet
 # room's culture is not stale, it is accurate, and an old name does not become
 # false — it becomes history, which is part of what the current one means.
+#
+# CHARACTER (DEC-278). The same fold, on the same clock, also writes one short
+# account per person the room lists in policy.toml: it asks Nora's memory «what
+# is the character of X?» (Honcho's dialectic, which is NOT scoped to a room —
+# a unit is one circle), combines the answer with the room's culture and the
+# room's messages, and stores it in the same store under the person's own key.
+# Every tag and fire turn then carries a <character> block of the accounts of
+# the people in that room. No separate switch: `enabled` turns on both.
 enabled = false
-# Seconds between folds of one room. A model asked this question twice in a day
+# Seconds between folds of one room (and of each person in it). A model asked this question twice in a day
 # answers from nearly the same material, so the second answer differs by model
 # variance rather than by anything the room did — and variance is the one thing
 # the revision chain must not accumulate.
@@ -1696,20 +1516,9 @@ max_chars = 1200
 # middle.
 #
 # SUPERSEDED MEASUREMENT (0d939413, 2026-09-03): the operating value was 200
-# at first ship; the event-fold accumulator was unreachable at 200, so the
-# deployment lowered it to 40. The template tracks the deployment.
+# at first ship; the deployment lowered it to 40. The template tracks the
+# deployment.
 fold_batch = 40
-# The EVENT-DRIVEN fold path (design/standing-watermark/10): every message that
-# lands in a conversation triggers a standing check off the listener path, and
-# the check enqueues an event fold only when the accumulator reaches fold_batch
-# (40). Off, only the tag path folds — strictly better than pre-bundle, but a
-# conversation that never tags Nora stays folded only when tagged.
-event_enabled = true
-# How many batch folds ONE spawned event fold may perform before stopping —
-# the rollup's bound (design/standing-watermark/30). A cold-start backlog folds
-# ceil(history / fold_batch) times across messages; this caps how many of those
-# happen per spawn, and the next message's check continues.
-rollup_max_folds = 5
 # The fold's own timeout, and it bounds the MODEL CALL TWICE — the client is
 # built with it, and the fold is wrapped in it. The number that matters is the
 # SUM, checked at startup by max_slot_hold_seconds below rather than worked out
@@ -1954,7 +1763,7 @@ store_timeout_seconds = 15.0
 # than one bounded query — nora.domain.media_join.DEFAULT_QUERY_BLOBS). 300s
 # is headroom for their NORMAL running time, not a bound on a hang. This
 # derivation moves with every future edit to a [dreamer.budgets.*]
-# timeout_seconds or to [notes] candidate_samples — a fixed literal here
+# timeout_seconds or sample count — a fixed literal here
 # would need a human to remember to raise it alongside either one, and
 # forgetting is either a refused boot (too low) or a silently thinner margin
 # (an old literal that still happens to validate).
@@ -2040,184 +1849,6 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 # higher; 6,000 is 2.2x the largest of n=2 (2,124 and 2,732).
 max_tokens = 6000
 
-# Per-adaptor run ceilings (`DreamBudgetConfig`; an adaptor with no block gets
-# the defaults: 6 turns, 40000 total tokens, 4000 output tokens, 120 s, and 2
-# memory reads per pass). The
-# proactive adaptor (design/dreamer-agent-loop/39 D1, revised by issue #136)
-# ticks hourly per unit but RENDERS — pays a model call — only on a daily
-# floor or a change in a quiet unit, and researches with real tools —
-# where_is, route, note_read, memory, the web — so it can afford more than a
-# tag turn's fixed budgets. Uncomment to
-# widen it; the two proactive eval suites (39 §5) are what say whether the
-# extra turns buy anything. It is wired only when policy.toml names a
-# `home_room = true` for a unit — there is no [dreamer] flag for it.
-# OPENED 2026-09-10, and these are the numbers the deployment runs. They are
-# NOT a measurement — they are room to take one, and the block is uncommented
-# so that the `proactive_decide` suite measures the configuration production
-# uses instead of the field defaults. It was measuring 6 turns / 40,000 while
-# the deployment ran 24 / 1,000,000, and two of its three errors were budget
-# cuts: `limit_total_tokens` on a run nobody has ever made.
-#
-# What the failing production traces showed: the context is only ~10k, but each
-# turn RE-SENDS it, so the loop's running total is roughly context x turns and
-# 40,000 bought four turns. The decide turn had not finished researching by
-# then, and R-7 was already vetoing a fifth `search_memory_workspace`. The cost
-# scales with the unit's roster: a one-person room finished in 19-28k, a
-# real one did not finish at all.
-#
-# So `turns` is the REAL budget here and `total_tokens` is a safety net, which
-# is the opposite of how the defaults read. Lifting total_tokens alone buys
-# more of the same circling.
-# THE NOTE-CANDIDATE BATCH. Declared here because the deployment sets it and
-# this file is the only committed record of the config's shape — it was set
-# live on 2026-09-17 while chasing issue #291 and the template did not follow,
-# which is exactly the drift `tests/test_env_template.py` exists to catch.
-#
-# **These two are the STRANDS LOOP budget and are NOT the ceiling that broke.**
-# #291's failure was `[dreamer] max_tokens` — the provider's limit on ONE
-# completion, which raises `PartialReplyError` — and raising these would not
-# have touched it. They are here for the other half of the same argument: a
-# batch pass's output scales with the BATCH, because the objective asks for one
-# verdict per message plus a candidate array, so the field defaults (40,000
-# total / 4,000 output, sized for a pass that makes one model call) are a tag
-# turn's numbers on a job that is not a tag turn.
-#
-# A RESEARCH LOOP since design/dreamer-agent-loop/43 §4: the pass holds every
-# read verb the runtime admits for it, so it CAN spend turns researching, and
-# the block now bounds that. `max_tool_calls` is the control: one pass's tool
-# calls over every verb together, answered `unavailable` past it
-# (`nora_dream_guard_vetoes_total{rule="pass-budget"}` says when it binds).
-# `max_memory_calls` is raised to the same 5 so the memory ration (default 2)
-# does not bind first and make the pass cap decoration. `turns` 8 is five tool
-# rounds plus the answer with room to spare; `total_tokens` doubles because
-# every turn re-sends the batch, the notebook and the tool schemas; 240 s is
-# the proactive pass's measured wall clock for a tool-using run. UNMEASURED
-# starting points, sized again from the first live read-back (43 §4).
-[dreamer.budgets.note-candidates]
-total_tokens = 400000
-output_tokens = 36000
-turns = 8
-timeout_seconds = 240.0
-max_tool_calls = 5
-max_memory_calls = 5
-
-[dreamer.budgets.proactive]
-turns = 24
-total_tokens = 1000000
-output_tokens = 10000
-# 120 was not enough to observe one: a live run was still going at 58s and was
-# cut off before it decided anything.
-timeout_seconds = 240.0
-# THE PER-PASS MEMORY CEILING (issue #160). How many reads ONE pass may make
-# across `about`, `ask_memory`, `search_memory_workspace` and `lookup_person`
-# TOGETHER — not per verb. The per-tool budgets above ([llm.budgets] and the
-# NATIVE_TOOLS table) bound each verb on its own, which is exactly what a pass
-# spends by asking four different verbs the same question.
-#
-# The measurement that put it here: a decide turn on the `friends` unit
-# (Langfuse 340373cd, 2026-09-10 18:03 HKT) made `note_read` three times,
-# `about`, `search_memory_workspace` and `ask_memory` — six held-state reads
-# for TWO notes whose two handles its own `<people>` block already carried.
-# Four rewrites of the objective moved the memory count from 7-8 down to 3-5
-# and never reached 2; the fifth, which stated the cap in words, cost `d02`
-# 5/5 -> 1/5 because a model told it has a hard cap declines the work rather
-# than spending less. So the ceiling is enforced in CODE and the objective says
-# nothing about it.
-#
-# The (N+1)th read is ANSWERED — R-27 `unavailable` with a reason the model can
-# read — never an error, never a silent empty. 2 is `d11`'s grading budget: the
-# one read the objective requires before any `remind`, plus one. Raise it for a
-# unit whose notes genuinely involve more people than the index can settle;
-# the reading that says so is the decide suite losing recall at 2 that it keeps
-# at 3. Omit the key and every adaptor gets 2 by default — a ceiling by
-# omission, never an unbounded pass.
-#
-# It is PER SAMPLE, so an adaptor with `samples = N` may make N x this per
-# fire — the same grain the three token caps above have. Inert here (the
-# proactive adaptor takes one sample per fire) and stated so that it is not a
-# surprise the day it is not.
-#
-# 2 -> 6 (operator, 2026-09-18), TRIPLED alongside `lookup_person` below —
-# and the pairing is the whole point. `lookup_person` is one of the four verbs
-# in `nora.agent.dreamer.MEMORY_TOOLS`, so THIS number bounds it before its
-# per-tool ceiling ever does: raising `tool_calls.lookup_person` to 12 against
-# a pass ceiling of 2 would have changed nothing at all and left this file
-# recording a bound the pass does not run under.
-#
-# A shared ceiling, not a reservation: the extra four are equally available to
-# `about`, `ask_memory` and `search_memory_workspace`, which is accepted
-# rather than overlooked — headroom on a ceiling costs nothing until a pass
-# spends it, and the instrument that says whether it is being spent well is
-# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="memory-budget"}`
-# against the decide suite's recall.
-#
-# 6 -> 16 (operator, 2026-09-24), with the per-verb ceilings below raised to
-# match: `ask_memory`, `search_memory_workspace` and `about` to 8 each. 6 was
-# below `lookup_person` alone, so it was the number every memory verb ran under.
-max_memory_calls = 16
-
-# **The per-tool call ceilings this pass overrides**, a tool name to how many
-# times ONE pass may call it. Applied OVER `NativeTool.budget` and over
-# `[llm.budgets]`, for this adaptor only.
-#
-# `note_read` — the table says 3, which is a TAG TURN's number: a reply that
-# reads a note or two before answering. This pass is asked for one decision
-# per note the group has open, so its need is the OPEN-NOTE COUNT, not a
-# constant.
-#
-# Measured on the deployment, 2026-09-17 05:00 (Langfuse trace `8b3e6522`):
-# the two live scopes hold 5 and 6 open notes. Each read three, was refused a
-# FOURTH DISTINCT note at the ceiling, and then decided every note anyway —
-# three grounded in a body, the rest in the index line alone. Nothing failed:
-# both passes returned a full decision set, status `ok`, watermark advanced.
-# That is the silent shape AGENTS.md names, where a judgement whose input
-# cannot ground it answers wrong at a rate nothing reports.
-#
-# 8, not 6: this is a CEILING and not a reservation, so the headroom costs
-# nothing until a pass spends it, and a roster that grows one note must not
-# re-open this file. The instrument that says whether it is still too low is
-# `nora_dream_guard_vetoes_total{adaptor="proactive",rule="tool-budget"}` —
-# a sustained non-zero rate on a read verb is the ceiling binding.
-#
-# NOT `[llm.budgets] note_read`, which is deployment-wide: raising it there
-# raises it for every reply Nora writes, and this is a background batch pass
-# nobody waits on. Same blast-radius argument `[dreamer] max_tokens` makes
-# against raising `[llm] max_tokens`.
-#
-# A key here naming a tool the adaptor does not declare REFUSES THE BOOT
-# (`nora.agent.dreamer.tool_call_faults`) — a raised ceiling that reaches
-# nothing would otherwise leave this file recording a bound the pass does not
-# actually run under, with nothing measuring the difference.
-[dreamer.budgets.proactive.tool_calls]
-# 8 -> 16 (operator, 2026-09-24): a unit's open-note count only grows between
-# curations, and a note decided from its index line alone is the silent shape
-# above.
-note_read = 16
-# `lookup_person` — the table says 4, another TAG TURN's number, sized for
-# "one message routinely names two people". TRIPLED to 12 (operator,
-# 2026-09-18). A decide pass is not answering one message: it is asked for a
-# verdict per open note across a whole roster, and a room's own nicknames
-# («@熱咖啡☕少奶多糖») resolve against the person index rather than against more
-# occurrences of the same handle — which is the reason the verb was granted to
-# this adaptor at all (issue #145).
-#
-# The call is a dict lookup over a cached roster, so this is sized by model
-# round trips and not by work. See `max_memory_calls = 6` above: that is the
-# ceiling that actually binds this verb, and 12 here is inert without it.
-lookup_person = 12
-# The other memory verbs, 4 -> 8 each (operator, 2026-09-24), and bound by
-# `max_memory_calls = 16` above, not by these numbers alone.
-ask_memory = 8
-search_memory_workspace = 8
-about = 8
-note_search = 4
-# `remind` — the table says 2, a tag turn's number: one reply rarely sets more.
-# This pass decides every open note of a unit at once, and a refused call is
-# still a spent one: Langfuse `42f7e8bd` (2026-09-23) spent both on refusals
-# and was stopped at the third. 6 (operator, 2026-09-24).
-# `reminders.max_pending_per_requester` still bounds what actually lands.
-remind = 6
-
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
 # adaptor stopped being tool-free: it now holds nine read verbs through an
 # `AdaptorGrant`, so its loop can spend turns researching before it writes, and
@@ -2297,9 +1928,9 @@ max_memory_calls = 12
 [dreamer.budgets.culture.tool_calls]
 lookup_person = 12
 
-# The Cognition session (design/cognition-loop/30-cognition.md §5, migration
-# step 3a-iii; DEC-247). REQUIRED when the cognition section's `session_mode =
-# "shadow"`: the config REFUSES TO LOAD without this block (#637 review),
+# The Cognition session (design/cognition-loop/30-cognition.md §5; DEC-247).
+# REQUIRED when the cognition section is enabled: the config REFUSES TO LOAD
+# without this block (#637 review),
 # because an adaptor with no block would run on numbers nobody chose for a
 # session that reads and writes across up to the cognition section's
 # `max_items` (12) agenda items. A deployment that turns sessions on carries
@@ -2326,8 +1957,8 @@ lookup_person = 12
 # The per-call `max_tokens` is `[dreamer] max_tokens`, not this block's.
 # `timeout_seconds` must end at least 60 s before the cognition section's
 # `session_timeout_seconds` (3900) or the runner refuses to start. UNMEASURED
-# starting points: a shadow week's traces size them for real; never stated in
-# the prompt (a model told of a cap declines the work).
+# starting points; never stated in the prompt (a model told of a cap declines
+# the work).
 [dreamer.budgets.cognition]
 turns = 200
 total_tokens = 10240000
@@ -2377,21 +2008,18 @@ enabled = false
 public_url = ""
 
 
-# The cognition loop's stimuli and wake evaluator (design/cognition-loop/
-# 20-observe.md §3; migration step 1). SHIPS OFF: a new subsystem does not
-# switch itself on. `mode = "shadow"` is step 1: every recorded person-authored
-# item (a message, a changed edit, a reaction, a delete) appends one row to its
-# unit's `stimulus` table with its deterministic cues, and the evaluator ticks,
-# applies the wake table and every brake exactly as it would to start a
-# Cognition session, and FIRES NOTHING — it records each would-wake, its
-# reason and the stimulus range it would consume in `cognition_wake`. The
-# clocked Dreamer adaptors keep running unchanged. The operator turns it on at
-# deploy and reads a week of would-wakes to size the numbers below.
 [cognition]
-mode = "off"
+# The cognition loop: stimuli, the wake evaluator and the Cognition session,
+# the one background writer of the notebook, events, Standing and Nora's own
+# reminders (design/cognition-loop/). Ships OFF; undo is this flag and a restart.
+# ON needs `[dreamer] enabled = true`, `[notes] enabled = true`, a
+# `[dreamer.budgets.cognition]` block (refused to start otherwise), and a
+# `home_room = true` room in policy.toml for every unit it should cover (a
+# unit with none is named at boot and never woken).
+enabled = false
 # How often the evaluator looks at every unit. One read per unit, no model.
 tick_seconds = 30
-# 20 §3's STARTING values, every one a guess the shadow week sizes.
+# 20 §3's STARTING values.
 # `quiet_seconds` and `max_age_seconds` reuse [dreamer]'s key NAMES, not its
 # values as a rule: the Dreamer's own clock keeps 1800 / 86400, configured
 # independently.
@@ -2415,29 +2043,15 @@ max_concurrent_sessions = 2
 # A person's reply to Nora's message (a quote of hers, or a reaction on hers)
 # inside this window is recorded and consumed, but never wakes a session alone.
 reply_quiet_seconds = 600
-# Not in 20 §3: how long a shadow would-wake is treated as a running session,
-# so single-flight and the cooldown are exercised while nothing runs.
-shadow_session_seconds = 60
-# The daily floors (proactive's 07:00, the curator's 00:00), local time in
-# `timezone`, raised as `time` stimuli once per unit per day, and only while
-# no more than `floor_grace_seconds` late (a deploy at 15:00 does not raise
-# that morning's 07:00).
+# The daily floors, local time in `timezone`, raised as `time` stimuli once per
+# unit per day: each wakes a session whose `time` item reviews the notebook
+# (passed anchors, due revisits, likely duplicates) and decides what to raise.
+# Raised only while no more than `floor_grace_seconds` late (a deploy at 15:00
+# does not raise that morning's 07:00).
 time_floors = ["07:00", "00:00"]
 timezone = "Asia/Hong_Kong"
 floor_grace_seconds = 3600
 store_timeout_seconds = 5
-# Migration step 3a (70-migration.md §2 row 3a): a SEPARATE switch from
-# `mode` above. `mode` governs the wake evaluator and makes no model call in
-# either value; `session_mode` governs whether a Cognition SESSION actually
-# runs on each would-wake the evaluator records — a real model call, its
-# note/event/Standing verbs in dry run, its `remind` mirrored and held.
-# Ships OFF, same as `mode`; `session_mode = "shadow"` requires
-# `mode = "shadow"` and `[dreamer] enabled = true` (refused to start otherwise:
-# a session runs on the Dreamer's model, tools and objectives), and every unit
-# it may wake needs a `home_room = true` room in policy.toml (a unit with none
-# is named at boot and not woken while sessions run). Off builds nothing: no
-# model client, no runner, no session.
-session_mode = "off"
 # 30-cognition.md §1/§2 starting values.
 max_items = 12
 max_strikes = 3
@@ -2483,9 +2097,11 @@ overflow_window_fraction = 0.8
 # photo shows) and the Register index lines. `record_chars` is shared across the
 # items by what each needs; `message_chars` clips one message; `register_lines`
 # caps the index lines listed per kind. When an item's messages do not fit the
-# OLDEST are dropped and the prompt says how many. Starting values a shadow
-# week sizes; independent of `[record_query] enabled`.
-record_chars = 8000
+# OLDEST are dropped and the prompt says how many. 40000 since 2026-10-03: the
+# snapshot replay showed 8000 cut a week's 344 messages to the newest 11, and
+# with `record_query` off the session cannot read what was cut. Independent of
+# `[record_query] enabled`.
+record_chars = 40000
 message_chars = 400
 register_lines = 40
 # D1 (DEC-245): Nora's own sends inside each item's window are shown, marked as

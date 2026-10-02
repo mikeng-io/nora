@@ -437,7 +437,7 @@ def test_the_note_names_only_the_writers_it_carries():
 
 
 def test_the_note_speaks_to_the_model_in_the_second_person():
-    """`nora.language.proactive` renders this block beside `<decisions>`, whose
+    """the deleted `nora.language.proactive` rendered this block beside `<decisions>`, whose
     note says «what YOU decided to raise». A neighbour speaking about «Nora's
     own loop» and «her deciders» invites the model — which IS Nora — to read
     the second block as somebody else's record. Same agent, same prompt, one

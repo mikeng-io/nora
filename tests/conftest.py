@@ -410,7 +410,6 @@ enabled = true
 enabled = true
 [notes]
 enabled = true
-candidates_enabled = true
 [store]
 prune_enabled = false
 """

@@ -166,19 +166,3 @@ async def test_render_dry_run_reports_the_legacy_count_not_updated(policy):
     assert "would set 0" not in lines
 
 
-async def test_a_legacy_event_the_cascade_marked_is_re_homed_too_and_stays_marked(policy):
-    """A writer that re-homes every row must read the marked ones as well: left
-    out, a marked legacy event keeps no unit for good and is unreachable by the
-    unit-scoped search once its mark is cleared. The update never writes the
-    mark (`_event_values`)."""
-    store = FakeGatheringStore()
-    marked = await store.create(
-        _event(conversation_id="g-friends", unit_id="", title="Marked legacy dinner"),
-    )
-    store.mark_unsupported(marked.id, 5)
-
-    report = await backfill_unit_ids(policy=policy, store=store, apply=True)
-
-    assert report.legacy == 1 and report.updated == 1
-    back = await store.get(marked.id)
-    assert back.unit_id == "friends" and back.unsupported_at == 5

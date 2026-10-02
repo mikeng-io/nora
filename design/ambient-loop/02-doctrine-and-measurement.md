@@ -11,6 +11,9 @@ version: 4
 
 # Inputs Per Objective, The Rule That Stays, The Cases With Their Cost
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. The change is what each stage is told, not what it is instructed
 
 `AGENTS.md`: **when a model judges badly, read its INPUT before you rewrite

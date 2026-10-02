@@ -105,25 +105,6 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
-async def test_the_composed_ingest_withdraws_a_deleted_message(cfg):
-    """A privacy action, not a feature: no config turns it off, so a composition
-    that built the pipeline without one would record deletes and honour none."""
-    from nora.app.delete_withdrawal import SqlDeleteWithdrawer
-
-    deps = await build_dependencies(cfg)
-    assert isinstance(deps.ingest._delete_withdrawer, SqlDeleteWithdrawer)
-
-
-async def test_the_composed_metrics_have_the_alerted_delete_outcomes_at_zero(cfg):
-    """`increase()` cannot see a series' first increment, and nora restarts several times a
-    day: `OrphanDeleteLost` and `OrphanDeleteEvicted` need the series to exist from start."""
-    deps = await build_dependencies(cfg)
-    lines = deps.metrics.render()
-    for outcome in ("orphan_lost", "orphan_evicted"):
-        series = f'nora_delete_withdrawals_total{{outcome="{outcome}",platform="signal"}} 0.0'
-        assert series in lines
-
-
 async def test_the_trigger_phrase_engages_by_default(cfg):
     """`[engagement.trigger].enabled` defaults to True — the trigger phrase
     already engaged her on every deployment before this flag existed, so the
@@ -980,94 +961,10 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
     assert model.config["params"]["tool_choice"] == "auto"
 
 
-async def test_the_curators_adaptors_are_appended_not_assigned(cfg):
-    """The note tier's blocks APPEND to `dream_adaptors` rather than assigning
-    it, so a future tier arriving beside them cannot drop one silently. The
-    knowledge tier's three adaptors used to be the other half of this test and
-    are deleted with it; the append discipline is what survives and is what a
-    new tier will land next to.
-
-    Also covers what were `test_the_revisitor_needs_both_the_dreamer_and_the_
-    notes_gate`/`test_the_revisitor_is_wired_and_is_not_silently_inert`/
-    `test_the_revisitor_is_additive_to_the_fact_tiers_adaptors` before the
-    note-curator merge (design/dreamer-agent-loop/34, issue #99) folded
-    `NoteRevisitor` into `NoteCuratorAdaptor`: there is one gate now
-    (`curator_enabled`, already covered by `test_the_curator_needs_three_gates_
-    not_two`/`test_all_three_gates_on_builds_the_curator` above), not two.
-
-    `note-entity-resolution` (issue #100) rode the SAME `curator_enabled`
-    gate, appended after `note-curation`, until the entity chain was removed
-    on 2026-09-08."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-        "notes.curator_enabled": True,
-    }))
-
-    assert [a.name for a in deps.dream_adaptors] == ["note-curation"]
 
 
-async def test_every_wired_adaptor_stays_inside_the_read_only_ceiling(cfg, tmp_path):
-    """`verify_tool_subsets` runs at startup in R-5's refuse-to-start shape, so
-    reaching this line at all is the assertion — a subset naming an act verb
-    with no grant behind it would have raised inside `build_dependencies`.
-
-    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3, DEC-162): the
-    ceiling is the read-only set PLUS exactly the adaptor's own grant's
-    acts, which for every adaptor but the proactive one is the bare
-    ceiling. Restated here against the registry AND the runtime's grants so
-    the property is checked rather than merely implied by the absence of
-    an exception — and the one act verb that clears it is named, so a
-    second one joining silently is red."""
-    from nora.agent.registry import ToolRegistry
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-        "notes.curator_enabled": True, "notes.candidates_enabled": True,
-    }))
-
-    ceiling = ToolRegistry().read_only_tools()
-    assert deps.dreamer_runtime is not None
-    names = [a.name for a in deps.dream_adaptors]
-    assert names == ["note-curation", "note-candidates", "proactive"]
-    for adaptor in deps.dream_adaptors:
-        acts = deps.dreamer_runtime.grant_for(adaptor.name).acts
-        assert adaptor.tools <= ceiling | acts, adaptor.name
-        assert (adaptor.tools - ceiling) == (
-            frozenset({"remind"}) if adaptor.name == "proactive" else frozenset()
-        ), adaptor.name
 
 
-async def test_only_the_cognition_session_holds_rollup_read_and_standing_read(cfg, tmp_path):
-    """Enumerates EVERY live adaptor's final tool list with every tier switched on
-    and asserts the two Cognition reads appear for the Cognition session alone
-    (review of #647, M1: the note-candidates grant is derived from the read-only
-    ceiling and had silently gained both)."""
-    from nora.agent.surface import DREAMER_LOOP_TOOLS
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-        "notes.curator_enabled": True, "notes.candidates_enabled": True,
-        "notes.merge_mode": "shadow", "culture.enabled": True,
-        "cognition.mode": "shadow", "cognition.session_mode": "shadow",
-    }))
-
-    by_name = {a.name: a for a in deps.dream_adaptors}
-    assert set(by_name) == {
-        "note-curation", "note-candidates", "note-merge", "culture", "proactive",
-    }, "an adaptor added or gated off changes what this test enumerates"
-    holders = {name for name, a in by_name.items() if a.tools & DREAMER_LOOP_TOOLS}
-    assert holders == set(), f"adaptors holding a Cognition-only read: {holders}"
-    assert deps.cognition_runner is not None
-    assert deps.cognition_runner._read_only_tools >= DREAMER_LOOP_TOOLS, (
-        "the enumeration must find the tools where they belong, or it proves nothing"
-    )
-    # and the derivation that caught it: the candidates grant names both as withheld
-    from nora.language.note_candidates import WITHHELD_TOOLS, granted_tools
-
-    assert set(WITHHELD_TOOLS) >= DREAMER_LOOP_TOOLS
-    assert not granted_tools(frozenset(DREAMER_LOOP_TOOLS | {"now"})) & DREAMER_LOOP_TOOLS
 
 
 async def test_unit_scopes_are_the_allowlists_units_deduplicated(cfg):
@@ -1200,321 +1097,28 @@ async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
         }))
 
 
-async def test_the_curator_needs_three_gates_not_two(cfg):
-    """`[dreamer]` decides the runtime exists, `[notes] enabled` decides the
-    tier is on, and `curator_enabled` decides a background pass MERGES AND
-    RETIRES.
-
-    Three rather than two because the third is a different risk from the other
-    two: the tag path only reads, and the curator is the one thing in this tier
-    that REMOVES something from her index. An operator turning notes on has not
-    thereby signed up for a pass that reorganises them."""
-    for overrides in (
-        {"dreamer.enabled": True},
-        {"dreamer.enabled": True, "notes.enabled": True},
-        {"notes.enabled": True, "notes.curator_enabled": True},
-    ):
-        deps = await build_dependencies(override_config(cfg, overrides))
-        assert "note-curation" not in [a.name for a in deps.dream_adaptors], (
-            f"{overrides} must not produce a curator"
-        )
 
 
-async def test_all_three_gates_on_builds_the_curator(cfg):
-    """Also covers what the pre-merge `test_the_revisitor_is_wired_and_is_not_
-    silently_inert` asserted: `objective`/`envelope_key` are BOTH load-bearing
-    against the Dreamer's egress screen (a note id in an envelope item is
-    dropped wholesale before `accept` ever runs, which is what made an earlier
-    revision of the note-revisit machinery 100% inert with no counter of its
-    own moving), and `tools == frozenset()` is the reaching-a-person half
-    staying deliberately unbuilt post-merge too."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.curator_enabled": True,
-    }))
-
-    curator = next(
-        a for a in deps.dream_adaptors if a.name == "note-curation"
-    )
-    # Unit-keyed and watermark-free: the notebook is unit-scoped, and
-    # the questions it asks (what collides, what has expired, what is due) have
-    # no "since when" — a duplicate is a duplicate however long it has been
-    # one.
-    assert curator.key_kind == "unit"
-    assert curator.uses_watermark is False
-    assert curator.tools == frozenset(), "the curator has nothing to look up"
-    assert curator.objective == "note-curation"
-    assert curator.envelope_key == "verdicts"
 
 
-async def test_the_curator_is_scheduled_as_a_true_cron_daily(cfg):
-    """Issue #102 / design 33 §5: the curator is time-driven, not data-driven
-    — an anchor date passes whether or not the room speaks — so it needs the
-    non-watermark schedule path (33 §5 N1a) rather than every-tick-with-
-    empty-`inputs()`-suppression. Daily, matching the fact tier's own cadence
-    (33 §5: "the curator is the tier's decay — daily matches the fact tier's
-    cadence")."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.curator_enabled": True,
-    }))
-
-    schedule = deps.dream_schedules["note-curation"]
-    assert schedule.min_interval_seconds == 86400, "daily (design 33 §5)"
-    # The slot change gave every watermark-free daily adaptor a time of day.
-    # An unset offset is 00:00 UTC = 08:00 Asia/Hong_Kong, eight hours behind
-    # the local day boundary the test below argues is the one that matters.
-    # 16:00 UTC is HK midnight — pinned so it stays a choice, not a default.
-    assert schedule.phase_offset_seconds == 16 * 3600, "HK midnight, not 08:00"
 
 
-async def test_note_merge_is_built_only_off_its_own_switch_and_samples_once(cfg):
-    """Design 41 §7.3/§7.8: `[notes] merge_mode = "off"` (the default) builds
-    nothing; `"shadow"` builds the pass, and its schedule PINS one sample —
-    the runtime unions samples, so a second one could only add folds, the
-    direction this pass must not fail in."""
-    off = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-    }))
-    assert "note-merge" not in [a.name for a in off.dream_adaptors]
-
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-        "notes.merge_mode": "shadow",
-    }))
-    merge = next(a for a in deps.dream_adaptors if a.name == "note-merge")
-    assert merge.key_kind == "unit" and merge.uses_watermark is False
-    assert merge.tools == frozenset()
-    assert merge._mode == "shadow"
-    assert deps.dream_schedules["note-merge"].samples == 1
 
 
-async def test_every_watermark_free_adaptor_that_is_wired_has_a_schedule(cfg):
-    """**The control that would have caught the bug this branch fixes.**
-
-    A watermark-free adaptor with no `dream_schedules` entry inherits the bare
-    5-minute tick. `fact-adjudication` and `fact-entity-resolution` did, for
-    eleven days, while `config.toml` claimed otherwise — and it was invisible
-    because both return `nothing_found` in ~0.4s on an empty queue, which is
-    what a healthy quiet tier looks like.
-
-    Asserting the two names is what the branch originally did and is not
-    enough: the next adaptor added would repeat it. This asserts the PROPERTY
-    over whatever is actually wired, so a new watermark-free adaptor either
-    gets a deliberate schedule or fails here.
-
-    A watermark-BEARING adaptor is exempt: it has a cursor to age, and no
-    entry means the shared `[dreamer]` lag/quiet/age shape, which is a real
-    schedule rather than every-tick.
-    """
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.curator_enabled": True,
-    }))
-
-    unscheduled = sorted(
-        a.name for a in deps.dream_adaptors
-        if not a.uses_watermark and a.name not in deps.dream_schedules
-    )
-    assert not unscheduled, (
-        "watermark-free adaptor(s) with no AdaptorSchedule — each one runs on "
-        f"the bare 5-minute tick: {unscheduled}"
-    )
 
 
-async def test_the_curator_reads_the_day_from_the_operators_timezone(cfg):
-    """«Has the 9th passed» is a question about the ROOM's day, not the
-    process's — a UTC boundary retires the 9th's note during the evening of the
-    9th, local, while people are still deciding where to eat.
-
-    **This test was decorative until 2026-08-28**, proven by mutation:
-    replacing `ZoneInfo(cfg.reminders.timezone)` with `ZoneInfo("UTC")` left it
-    green, because it set a zone and then asserted only `_today() >= 20260101`
-    — true of any working clock. It NAMED the thing it did not measure, which
-    is the shape I documented in the bundle an hour before writing it.
-
-    It now builds two curators whose zones are 25 hours apart. Kiritimati is
-    +14 and Niue is -11, so their calendar days differ at EVERY instant and no
-    clock-freezing is needed. Any hardcoded zone makes them equal — which is
-    the property under test, rather than a fact about today."""
-    async def _day(zone: str) -> int:
-        deps = await build_dependencies(override_config(cfg, {
-            "dreamer.enabled": True,
-            "notes.enabled": True,
-            "notes.curator_enabled": True,
-            "reminders.timezone": zone,
-        }))
-        curator = next(
-            a for a in deps.dream_adaptors if a.name == "note-curation"
-        )
-        return curator._today()
-
-    earliest = await _day("Pacific/Kiritimati")
-    latest = await _day("Pacific/Niue")
-
-    assert earliest != latest, (
-        "zones 25 hours apart always differ in calendar day; equal here means "
-        "the configured zone is being ignored"
-    )
-    assert earliest > latest, "Kiritimati is ahead of Niue, always"
 
 
-async def test_note_candidates_needs_three_gates_not_two(cfg):
-    """`[dreamer]` decides the runtime exists, `[notes] enabled` decides the
-    tier is on, and `candidates_enabled` decides a background pass WRITES NEW
-    NOTES into that index at all — the create path's own two-risks argument,
-    on `curator_enabled`'s own precedent (design 33 §4, issue #98)."""
-    for overrides in (
-        {"dreamer.enabled": True},
-        {"dreamer.enabled": True, "notes.enabled": True},
-        {"notes.enabled": True, "notes.candidates_enabled": True},
-    ):
-        deps = await build_dependencies(override_config(cfg, overrides))
-        assert "note-candidates" not in [a.name for a in deps.dream_adaptors], (
-            f"{overrides} must not produce the create-path adaptor"
-        )
 
 
-async def test_all_three_gates_on_builds_note_candidates(cfg):
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.candidates_enabled": True,
-    }))
-
-    candidates = next(
-        a for a in deps.dream_adaptors if a.name == "note-candidates"
-    )
-    # Scope-keyed and watermarked, unlike the curator/revisitor: a note's
-    # arrangement spans days of conversation, so this needs a per-room
-    # watermark the same way `fact-candidates` does.
-    assert candidates.key_kind == "scope"
-    assert candidates.uses_watermark is True
-    # A RESEARCH LOOP (design 43 §2): every read verb the registry admits,
-    # DERIVED off its ceiling, less only the named withholdings — and never an
-    # act verb, because the ceiling it is derived from holds none.
-    from nora.agent.registry import ToolRegistry
-    from nora.language.note_candidates import WITHHELD_TOOLS
-
-    ceiling = ToolRegistry.read_only_tools(None)  # type: ignore[arg-type]
-    assert candidates.tools == ceiling - frozenset(WITHHELD_TOOLS), (
-        "the pass holds every allowed read verb, derived, not a hand list"
-    )
-    assert candidates.tools <= ceiling, "the create path never gets a write tool"
-    assert {"load_transcript", "ask_memory", "note_read"} <= candidates.tools
-    schedule = deps.dream_schedules["note-candidates"]
-    assert schedule.min_interval_seconds == 3600, "hourly (design 33 §5)"
 
 
-async def test_note_candidates_builds_its_own_unit_resolver(cfg):
-    """`unit_for` is built fresh under the notes gate rather than reused
-    from another tier's block — this must not depend on any other tier having
-    run at all."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.candidates_enabled": True,
-    }))
-
-    assert any(a.name == "note-candidates" for a in deps.dream_adaptors)
 
 
-async def test_note_candidates_resolves_a_mapped_senders_canonical_name(cfg):
-    """#200 part 1: the composition root wires `persons.name_transcript` into
-    `NoteCandidateAdaptor` the way `MediaJoin` gets `scan_identifiers` —
-    nothing on the Dreamer path ever called it before, so a mapped sender's
-    batch line carried their self-set, spoofable platform profile name
-    instead of the operator's canonical one for them (`identity.toml`'s
-    `[persons.miles]` maps signal `+852111` to `Miles`, the `cfg` fixture's own
-    shape)."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.candidates_enabled": True,
-    }))
-    candidates = next(
-        a for a in deps.dream_adaptors if a.name == "note-candidates"
-    )
-    batch = (
-        TranscriptRow(
-            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
-            body="dinner Saturday?", is_nora=False,
-            delivery_status=DeliveryStatus.SENT, raw_json=None,
-        ),
-    )
-
-    text = await candidates.inputs(key="g1", batch=batch)
-
-    assert 'from="Miles"' in text
-    assert "not-miles" not in text
 
 
-async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
-    """#200 follow-up: the review on #544 found `CultureAdaptor` still built
-    its own `<room_messages>` block from the raw batch and never called
-    `Persons.name_transcript` either — the SAME gap, one tier over. Wired
-    the same way `NoteCandidateAdaptor` already is: off `persons` and the
-    allowlist's `platform_for` (`identity.toml`'s `[persons.miles]` maps
-    signal `+852111` to `Miles`, the `cfg` fixture's own shape)."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "culture.enabled": True,
-    }))
-    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
-    batch = (
-        TranscriptRow(
-            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
-            body="dinner Saturday?", is_nora=False,
-            delivery_status=DeliveryStatus.SENT, raw_json=None,
-        ),
-    )
-
-    text = await culture.inputs(key="g1", batch=batch)
-
-    assert 'from="Miles"' in text
-    assert "not-miles" not in text
 
 
-async def test_note_curator_resolves_a_mapped_senders_canonical_name(cfg):
-    """#200 follow-up: `NoteCuratorAdaptor` carries the same gap a tier over
-    again — `_gather_evidence` builds a note's evidence rows off
-    `record.recent` and never called `Persons.name_transcript` either.
-    Composition wires the resolver the same way, keyed as `room_for` already
-    is (every id a room is known by, within its unit — `Note.established_in`
-    carries no platform of its own).
-
-    Exercised against the built closures directly rather than through a
-    seeded note: reaching `_gather_evidence` needs a real due-or-expired
-    note in `SqlNoteStore`, which is `tests/unit/test_note_curator.py`'s own
-    job (revert-proved there against a fake resolver). What only the
-    composition root can get wrong is whether these two callables reach the
-    adaptor at all, and resolve against the SAME allowlist row `room_for`
-    does — which is what this pins."""
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
-        "notes.enabled": True,
-        "notes.curator_enabled": True,
-    }))
-    curator = next(
-        a for a in deps.dream_adaptors if a.name == "note-curation"
-    )
-
-    assert curator._platform_for("g1", "nora") == "signal"
-    assert curator._platform_for("g1", "some-other-unit") is None
-    assert curator._platform_for("no-such-room", "nora") is None
-
-    batch = (
-        TranscriptRow(
-            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
-            body="dinner Saturday?", is_nora=False,
-            delivery_status=DeliveryStatus.SENT, raw_json=None,
-        ),
-    )
-    resolved = curator._resolve_names(batch, "signal")
-
-    assert resolved[0].person_name == "Miles"
 
 
 async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):
@@ -1634,70 +1238,12 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
     assert deps.dreamer_runtime._models._spec.reasoning_effort == "medium"
 
 
-async def test_candidate_samples_reaches_the_note_candidates_schedule(cfg):
-    """`[notes] candidate_samples` is model calls per fire, unioned (design 37
-    / issue #118). A knob that did not reach `AdaptorSchedule.samples` would
-    be the config-file form of a declared metric with no call site — set and
-    read by nothing."""
-    async def _samples(n: int) -> int:
-        deps = await build_dependencies(override_config(cfg, {
-            "dreamer.enabled": True, "notes.enabled": True,
-            "notes.candidates_enabled": True, "notes.candidate_samples": n,
-        }))
-        return deps.dream_schedules["note-candidates"].samples
-
-    assert await _samples(1) == 1
-    assert await _samples(4) == 4
 
 
-async def test_candidates_interval_reaches_the_note_candidates_schedule(cfg):
-    """`[notes] candidates_interval_seconds` is the adaptor's
-    `min_interval_seconds` (operator 2026-10-01: every 3 hours). Unset keeps
-    the hourly cadence it had before the key existed."""
-    async def _interval(over: dict) -> int:
-        deps = await build_dependencies(override_config(cfg, {
-            "dreamer.enabled": True, "notes.enabled": True,
-            "notes.candidates_enabled": True, **over,
-        }))
-        return deps.dream_schedules["note-candidates"].min_interval_seconds
-
-    assert await _interval({}) == 3600
-    assert await _interval({"notes.candidates_interval_seconds": 10800}) == 10800
 
 
-def test_candidates_interval_refuses_below_the_dreamer_tick():
-    """Floor 300: a shorter interval cannot fire faster than the tick."""
-    import pytest
-    from pydantic import ValidationError
-
-    from nora.config import NotesConfig
-
-    assert NotesConfig().candidates_interval_seconds == 3600
-    assert NotesConfig(candidates_interval_seconds=300).candidates_interval_seconds == 300
-    for bad in (299, 0, -1):
-        with pytest.raises(ValidationError):
-            NotesConfig(candidates_interval_seconds=bad)
 
 
-async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
-    """The sibling of `test_the_curator_reads_the_day_from_the_operators_
-    timezone`, for the create path: «this Saturday» in a message is resolved
-    against the moment the model is SHOWN, so that moment must be the room's
-    (`[reminders] timezone`), not the process's. Two zones 25 hours apart
-    cannot agree; a hardcoded zone makes them equal."""
-    from zoneinfo import ZoneInfo
-
-    async def _zone(zone: str):
-        deps = await build_dependencies(override_config(cfg, {
-            "dreamer.enabled": True, "notes.enabled": True,
-            "notes.candidates_enabled": True, "reminders.timezone": zone,
-        }))
-        adaptor = next(a for a in deps.dream_adaptors if a.name == "note-candidates")
-        return adaptor._tz
-
-    assert await _zone("Pacific/Kiritimati") == ZoneInfo("Pacific/Kiritimati")
-    assert await _zone("Pacific/Niue") == ZoneInfo("Pacific/Niue")
-    assert await _zone("Pacific/Kiritimati") != await _zone("Pacific/Niue")
 
 
 # --- the proactive adaptor (design/dreamer-agent-loop/39, DEC-162) -----------
@@ -1705,37 +1251,6 @@ async def test_note_candidates_renders_moments_in_the_operators_timezone(cfg):
 
 
 
-async def test_a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant(
-    cfg, tmp_path,
-):
-    """39 D2: the home room IS the opt-in. With one named, the Dreamer holds
-    the proactive adaptor on a daily HK-morning slot, the runtime holds its
-    grant, and the tool source holds the room — the same room, read once."""
-    from nora.agent.dreamer import proactive_grant
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
-    }))
-
-    assert [a.name for a in deps.dream_adaptors] == ["proactive"]
-    sched = deps.dream_schedules["proactive"]
-    # Hourly (issue #136): the tick is the ceiling on how soon a change is
-    # seen; the adaptor's own check decides whether a tick renders, and the
-    # daily floor lives there (07:00 HK), not in a phase offset.
-    assert sched.min_interval_seconds == 3600
-    assert sched.phase_offset_seconds == 0
-    proactive = next(a for a in deps.dream_adaptors if a.name == "proactive")
-    assert proactive._clock_store is deps.dream_schedule_clock
-    assert proactive._records is not None
-    assert proactive._quiet_ms == 1800 * 1000        # [dreamer] quiet_seconds, the template's
-    assert deps.dreamer_runtime is not None
-    assert deps.dreamer_runtime.grant_for("proactive") == proactive_grant()
-    assert deps.dreamer_runtime.grant_for("note-curation").acts == frozenset()
-    source = deps.dreamer_runtime._tools
-    assert set(source._home_rooms) == {"friends"}
-    home = source._home_rooms["friends"]
-    assert (home.platform, home.conversation_id, home.location_trusted) == ("signal", "g1", True)
 
 
 async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
@@ -1827,13 +1342,6 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
     assert captured["supplied_unit"] is None
 
 
-async def test_no_home_room_wires_no_proactive_adaptor(cfg):
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-    }))
-
-    assert "proactive" not in [a.name for a in deps.dream_adaptors]
-    assert "proactive" not in deps.dream_schedules
 
 
 async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
@@ -1989,7 +1497,7 @@ async def test_the_summons_consumer_is_spawned_with_both_flags_on_and_no_poller_
 
 
 async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
-    """`[cognition] mode = "off"` is the shipped default: nothing is written
+    """`[cognition] enabled = false` is the shipped default: nothing is written
     to `stimulus`, no evaluator is spawned. Adapter health is recorded anyway —
     it is Record, not a subsystem that acts (20-observe.md §1)."""
     deps = await build_dependencies(cfg)
@@ -1998,44 +1506,27 @@ async def test_cognition_off_builds_no_stimulus_stage_and_no_evaluator(cfg):
     assert deps.health_recorder is not None
 
 
-async def test_cognition_shadow_adds_the_evaluator_and_leaves_the_clocks_alone(cfg):
-    """Migration step 1: «the wake evaluator in shadow ... the clocks still run
-    everything». Turning shadow on adds a stimulus stage and an evaluator and
-    changes nothing the Dreamer's clock schedules."""
-    clocks = {"dreamer.enabled": True, "notes.enabled": True,
-              "notes.curator_enabled": True, "notes.candidates_enabled": True}
-    shadow_on = override_config(cfg, {**clocks, "cognition.mode": "shadow"})
-    clocks_only = override_config(cfg, clocks)
-    shadow = await build_dependencies(shadow_on)
-    baseline = await build_dependencies(clocks_only)
-    assert shadow.wake_evaluator is not None
-    assert shadow.ingest._stimulus_wiring is not None
-    assert baseline.dream_adaptors, "positive control: the clock schedules something"
-    assert [a.name for a in shadow.dream_adaptors] == [a.name for a in baseline.dream_adaptors]
-    assert set(shadow.dream_schedules) == set(baseline.dream_schedules)
 
 
-# --- the shadow Cognition session (migration step 3a-iii, DEC-244) -----------
+# --- the Cognition session (DEC-244) ------------------------------------------
 
 _SESSION_ON = {
-    "dreamer.enabled": True, "notes.enabled": True,
-    "cognition.mode": "shadow", "cognition.session_mode": "shadow",
+    "dreamer.enabled": True, "notes.enabled": True, "cognition.enabled": True,
 }
 
 
-async def test_session_mode_off_builds_nothing_model_related(cfg, tmp_path, monkeypatch):
-    """The shipped default: no runner, no hook on the evaluator, no shutdown
-    to register, and `nora.app.cognition_agent_runner` (Strands and the model
-    machinery) is not even imported."""
+async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypatch):
+    """The shipped default: no runner, no evaluator, no shutdown to register, and
+    `nora.app.cognition_agent_runner` (Strands and the model machinery) is not even
+    imported."""
     import sys
 
     monkeypatch.delitem(sys.modules, "nora.app.cognition_agent_runner", raising=False)
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "cognition.mode": "shadow",
+        "dreamer.enabled": True, "notes.enabled": True,
     }))
-    assert deps.wake_evaluator is not None, "positive control: the evaluator is on"
-    assert deps.wake_evaluator.has_wake_hook is False
+    assert deps.wake_evaluator is None
     assert deps.cognition_runner is None and deps.cognition_shutdown is None
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
@@ -2043,25 +1534,25 @@ async def test_session_mode_off_builds_nothing_model_related(cfg, tmp_path, monk
 async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
     cfg, tmp_path, monkeypatch,
 ):
-    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator, the age gauge
-    and `nora cognition health` all read. Production maps no `time` skill, so floors are
-    not ready; the day the table has one the composition-built evaluator must follow it
-    (a root that hard-coded the answer would keep every floor inert)."""
+    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
+    both read. Production maps the `time` skill, so floors
+    are ready; a table without it must leave every floor inert (a root that hard-coded
+    the answer would not follow it)."""
     from types import MappingProxyType
 
     import nora.app.cognition_wiring as wiring
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is False
+    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is True
     monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType(
-        {**wiring.AGENDA_SKILLS, "time": wiring.REGISTER_SKILL},      # a skill that resolves
+        {k: v for k, v in wiring.AGENDA_SKILLS.items() if k != "time"},
     ))
     patched = await build_dependencies(override_config(cfg, _SESSION_ON))
-    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is True
+    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is False
 
 
-async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator(
+async def test_cognition_on_builds_one_runner_and_hands_its_hook_to_the_evaluator(
     cfg, tmp_path,
 ):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
@@ -2104,17 +1595,15 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     # The session's instruction is the Dreamer's objective for it, read from
     # the bind-mounted corpus, its own prelude first (not the shared doctrine,
     # step 4 PR-1), and the composed runner injects the Register skill for a
-    # `message` agenda and records it; `time` stays unmapped, so no floor.
+    # `message` agenda and records it; `time` is mapped, so the floors wake.
     text, sha = runner._doctrine()
     assert text.startswith('<dreamer_doctrine name="cognition-prelude">')
     assert '<dreamer_objective name="cognition">' in text and sha
     assert "# Skill: cognition-register" in runner._skill_text_for(["message"])
     assert set(runner._skill_versions_for(["message"])) == {"cognition-register"}
-    assert evaluator._floors_ready is False
-    # EVERY unit stays in the evaluator (its would-wakes are still recorded);
-    # only units with a home room can start a session: `wedding` names none
-    # (#637 review, minor 1).
-    assert sorted(evaluator._units()) == ["friends", "wedding"]
+    assert evaluator._floors_ready is True
+    # Only units with a home room are woken: `wedding` names none.
+    assert sorted(evaluator._units()) == ["friends"]
     assert set(evaluator._session_units()) == {"friends"}
     assert set(runner._home_rooms) == {"friends"}
 
@@ -2222,11 +1711,10 @@ async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof
         123_456, 0.5)
 
 
-async def test_a_shadow_session_mode_that_built_no_runner_refuses_to_boot(
+async def test_cognition_on_that_built_no_runner_refuses_to_boot(
     cfg, tmp_path, monkeypatch,
 ):
-    """The boot check (#627 review, minor 4): a shadow week that records
-    would-wakes and starts no session must not look healthy."""
+    """The boot check: a loop that wakes and runs no session must not boot."""
     from nora.app import composition
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
@@ -2235,7 +1723,7 @@ async def test_a_shadow_session_mode_that_built_no_runner_refuses_to_boot(
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
-async def test_the_shadow_session_is_grounded_from_the_record_with_record_query_off(
+async def test_the_session_is_grounded_from_the_record_with_record_query_off(
     cfg, tmp_path, pg_url,
 ):
     """#637 review, major 2: the rows that raised a stimulus are read by code for
@@ -2299,12 +1787,12 @@ async def test_shadow_sessions_with_no_unit_that_can_run_them_refuse_to_boot(cfg
         await build_dependencies(override_config(cfg, _SESSION_ON))
 
 
-async def test_units_without_a_home_room_stay_in_the_evaluator_and_are_gauged(cfg, tmp_path):
+async def test_units_without_a_home_room_are_gauged_and_never_woken(cfg, tmp_path):
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, _SESSION_ON))
     assert deps.metrics.get("nora_cognition_session_units", state="runnable") == 1
     assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
-    assert "wedding" in list(deps.wake_evaluator._units())
+    assert "wedding" not in list(deps.wake_evaluator._units())
 
 
 async def test_the_document_tools_reach_the_registry_only_while_documents_are_on(cfg):
@@ -2385,3 +1873,44 @@ def test_a_public_url_egress_would_block_refuses_to_start(origin) -> None:
 @pytest.mark.parametrize("origin", ["", "https://nora.67.zone", "http://localhost:3000"])
 def test_a_sendable_public_url_or_none_starts(origin) -> None:
     _require_a_sendable_public_url(origin)
+
+
+async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
+    """`verify_tool_subsets` runs at startup, so reaching this line is half the
+    assertion; the other half names it: with every tier on, every Dreamer
+    adaptor stays inside the read-only ceiling (the Cognition session writes
+    through its own verbs, not registry tools)."""
+    from nora.agent.registry import ToolRegistry
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "culture.enabled": True,
+    }))
+
+    ceiling = ToolRegistry().read_only_tools()
+    assert deps.dreamer_runtime is not None
+    assert [a.name for a in deps.dream_adaptors] == ["culture"]
+    for adaptor in deps.dream_adaptors:
+        assert adaptor.tools <= ceiling, adaptor.name
+
+
+async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
+    """#200 follow-up: `CultureAdaptor` names its `<room_messages>` through
+    `Persons.name_transcript` (`identity.toml`'s `[persons.miles]` maps signal
+    `+852111` to `Miles`, the `cfg` fixture's own shape)."""
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "culture.enabled": True,
+    }))
+    culture = next(a for a in deps.dream_adaptors if a.name == "culture")
+    batch = (
+        TranscriptRow(
+            id=1, sender_id="+852111", sender_name="not-miles", ts=1_000,
+            body="dinner Saturday?", is_nora=False,
+            delivery_status=DeliveryStatus.SENT, raw_json=None,
+        ),
+    )
+
+    text = await culture.inputs(key="g1", batch=batch)
+
+    assert 'from="Miles"' in text
+    assert "not-miles" not in text

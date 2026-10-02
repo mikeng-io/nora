@@ -36,8 +36,8 @@ from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 
 UNIT = "probe"
 POLICY = WakePolicy(
@@ -102,15 +102,14 @@ async def main() -> None:
     grace = float(os.environ.get("PROBE_GRACE", "1.5"))
     engine = create_sql_engine(os.environ["DATABASE_URL"])
     stimuli, ledger, metrics, model = (
-        SqlStimulusStore(engine), InMemoryCognitionDryRunStore(), Metrics(), _Model(mode),
+        SqlStimulusStore(engine), InMemoryCognitionStore(), Metrics(), _Model(mode),
     )
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=model,
+        store=ledger, stimulus_store=stimuli, agent_runner=model,
         home_rooms={UNIT: Room("signal", "home")}, read_tools_for=lambda unit, rooms: [],
         read_only_tools=frozenset(), skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha", open_note_titles=_empty,
-        open_events=_empty, prior_standing=_none, pending_self_wakes=_empty,
-        pending_mirrored_reminds=_empty, session_mode="shadow",
+        open_events=_empty, prior_standing=_none,
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=600),
         cooldown_seconds=300.0, units=(UNIT,), session_timeout_seconds=900.0, max_items=12,
         max_strikes=3, metrics=metrics,

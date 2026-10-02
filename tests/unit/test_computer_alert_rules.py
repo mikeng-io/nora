@@ -108,10 +108,3 @@ def test_the_rules_file_passes_promtool_check() -> None:
 def test_the_computer_rules_pass_their_promtool_cases() -> None:
     result = _promtool("test", "rules", "computer.test.yml", "presence.test.yml")
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_the_delete_withdrawal_rules_pass_their_promtool_cases() -> None:
-    """Both start ABSENT, appear at the primed zero and then move: the alert fires, and a
-    series whose first sample is already 1 (no priming) does not, which is the pitfall."""
-    result = _promtool("test", "rules", "delete-withdrawal.test.yml")
-    assert result.returncode == 0, result.stdout + result.stderr

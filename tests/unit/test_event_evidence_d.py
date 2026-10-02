@@ -1,8 +1,7 @@
 """The pure half of an event's evidence (fix PR D, migration `0086_event_citations`;
 design/cognition-loop/10-tiers.md §3, 40-register.md §3-§4): the lineage computed
 from citations, the citation checker, per-field reasoning, the set of statuses a
-session may still move, the heartbeat's gathering screen, and the cognition
-grounding's withdrawn-event guard. No database: `tests/infra/test_event_citations.py`
+session may still move. No database: `tests/infra/test_event_citations.py`
 is the same behaviours against real Postgres.
 
 What each test catches if its fix is reverted is named in
@@ -19,11 +18,7 @@ from typing import Any
 import pytest
 
 from nora.app.cognition_wiring import open_events_reader
-from nora.app.gathering_screen import GatheringScreen
-from nora.app.heartbeat import HeartbeatLoop
 from nora.domain.gatherings import (
-    HELD_REASONS,
-    HOLD_GRACE,
     EventCitation,
     EventEvidence,
     FieldMeta,
@@ -39,7 +34,6 @@ from nora.domain.gatherings import (
 )
 from nora.domain.lineage import Lineage, LineageEntry, message, unresolved
 from nora.domain.note_body import NoteBodyError, Shown, ShownMessage, check_citations
-from nora.domain.reminders import Reminder, ReminderState
 from nora.testing.gatherings import FakeGatheringStore
 
 T0 = dt.datetime(2026, 10, 2, 11, 0, tzinfo=dt.UTC)
@@ -220,11 +214,10 @@ def test_the_column_round_trips_and_a_bad_entry_reads_as_not_stated():
 
 async def test_a_session_is_shown_and_may_move_every_event_before_happened():
     store = FakeGatheringStore()
-    made = {s: await store.create(_event(status=s, title=s.value)) for s in GatheringStatus}
+    for s in GatheringStatus:
+        await store.create(_event(status=s, title=s.value))
     read = open_events_reader(store)
     assert {e.title for e in await read("ga")} == {"staged", "proposed", "confirmed"}
-    store.mark_unsupported(made[GatheringStatus.CONFIRMED].id, 5)
-    assert {e.title for e in await read("ga")} == {"staged", "proposed"}
 
 
 # -- how an abduced field is voiced (40 §4, 10 §2 rule 4) -------------------
@@ -254,166 +247,3 @@ def test_a_field_with_no_mode_of_its_own_reads_the_rows_and_none_is_stated():
     assert field_mode(_event(reasoning="abduced"), "place") == "abduced"
     assert field_mode(_event(), "place") is None
     assert render_field(_event(), "place", "x") == "place: x"
-
-
-# -- the heartbeat holds a withdrawn gathering's reminder -------------------
-
-def _reminder(name: str, *, due: dt.datetime, rid: uuid.UUID | None = None) -> Reminder:
-    return Reminder(
-        id=rid or uuid.uuid4(), requester_person_id="miles", platform="signal",
-        conversation_id="ga", conversation_type="group", text=f"Event: {name}",
-        created_at=due - dt.timedelta(hours=1), due_at=due, state=ReminderState.PENDING,
-        fired_at=None, outcome=None, kind="gathering", payload={"title": name},
-    )
-
-
-class _Beat:
-    """A heartbeat over a fake event store and a fake reminder store, its clock
-    a cell the test moves."""
-
-    def __init__(self, events: Any) -> None:
-        from nora.engagement.slots import ConversationSlots
-        from nora.obs.metrics import Metrics
-        from nora.testing.reminders import FakeReminderStore
-        from tests.unit.test_heartbeat_loop import _RecordingAllowlist
-
-        self.now = T0
-        self.metrics = Metrics()
-        self.reminders = FakeReminderStore()
-        self.fired: list[list[Reminder]] = []
-
-        async def fire(batch: list[Reminder]) -> str:
-            self.fired.append(list(batch))
-            return "sent"
-
-        self.loop = HeartbeatLoop(
-            store=self.reminders, slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-            policy=_RecordingAllowlist(allow=True), clock=lambda: self.now,
-            metrics=self.metrics, tick_seconds=60.0, fire=fire,
-            gatherings=GatheringScreen(events=events),
-        )
-
-    def held(self, reason: str) -> float:
-        return self.metrics.get("nora_gathering_reminders_held_total", reason=reason)
-
-
-async def _event_and_reminder(
-    events: FakeGatheringStore, beat: _Beat, name: str = "dinner",
-) -> tuple[Gathering, Reminder]:
-    row = _reminder(name, due=T0 - dt.timedelta(minutes=1))
-    await beat.reminders.create(row)
-    return await events.create(_event(title=name, reminder_id=row.id)), row
-
-
-async def test_a_marked_events_reminder_is_held_not_fired_and_not_cancelled():
-    events = FakeGatheringStore()
-    beat = _Beat(events)
-    _standing, standing_row = await _event_and_reminder(events, beat, "standing")
-    marked, marked_row = await _event_and_reminder(events, beat, "withdrawn")
-    events.mark_unsupported(marked.id, 5)
-    await beat.loop.tick()
-    assert [[r.id for r in batch] for batch in beat.fired] == [[standing_row.id]]
-    kept = await beat.reminders.get(marked_row.id)
-    assert kept is not None and kept.state is ReminderState.PENDING and kept.outcome is None
-    assert beat.held("unsupported") == 1
-    await beat.loop.tick()                      # asked again each tick, still held
-    assert beat.held("unsupported") == 2 and len(beat.fired) == 1
-
-
-async def test_a_held_reminder_fires_late_when_the_mark_is_cleared_inside_the_grace():
-    events = FakeGatheringStore()
-    beat = _Beat(events)
-    marked, row = await _event_and_reminder(events, beat)
-    events.mark_unsupported(marked.id, 5)
-    await beat.loop.tick()
-    assert beat.fired == []
-    events.clear_unsupported(marked.id)         # `nora person unforget --clear-unsupported`
-    beat.now = T0 + HOLD_GRACE - dt.timedelta(minutes=1)
-    await beat.loop.tick()
-    assert [[r.id for r in batch] for batch in beat.fired] == [[row.id]]
-
-
-async def test_a_reminder_still_held_past_the_grace_expires_and_says_so():
-    events = FakeGatheringStore()
-    beat = _Beat(events)
-    marked, row = await _event_and_reminder(events, beat)
-    events.mark_unsupported(marked.id, 5)
-    # The last moment inside the window: still held, nothing resolved.
-    beat.now = row.due_at + HOLD_GRACE - dt.timedelta(seconds=1)
-    await beat.loop.tick()
-    held = await beat.reminders.get(row.id)
-    assert held is not None and held.state is ReminderState.PENDING
-    beat.now = row.due_at + HOLD_GRACE
-    await beat.loop.tick()
-    gone = await beat.reminders.get(row.id)
-    assert gone is not None
-    assert gone.state is ReminderState.CANCELLED and gone.outcome == "expired_while_held"
-    assert beat.fired == []
-    assert beat.metrics.get("nora_reminders_fired_total", outcome="expired_while_held") == 1
-    # A mark cleared AFTER that does not revive it.
-    events.clear_unsupported(marked.id)
-    await beat.loop.tick()
-    assert beat.fired == []
-
-
-async def test_an_event_that_cannot_be_read_leaves_its_reminder_pending_for_the_next_tick():
-    """A transient database error must not cost a legitimate reminder its life
-    (the review of PR #669, MAJOR): held and counted, never terminal."""
-    real = FakeGatheringStore()
-
-    class Flaky:
-        down = True
-
-        async def get_by_reminder(self, reminder_id: uuid.UUID) -> Gathering | None:
-            if self.down:
-                raise RuntimeError("connection reset")
-            return await real.get_by_reminder(reminder_id)
-
-    flaky = Flaky()
-    beat = _Beat(flaky)
-    _event_row, row = await _event_and_reminder(real, beat)
-    await beat.loop.tick()
-    kept = await beat.reminders.get(row.id)
-    assert kept is not None and kept.state is ReminderState.PENDING and kept.outcome is None
-    assert beat.fired == [] and beat.held("read_error") == 1
-    assert beat.metrics.get("nora_reminders_fired_total") == 0
-    flaky.down = False                          # the database is back
-    await beat.loop.tick()
-    assert [[r.id for r in batch] for batch in beat.fired] == [[row.id]]
-
-
-async def test_a_reminder_no_event_owns_is_unaffected():
-    events = FakeGatheringStore()
-    beat = _Beat(events)
-    row = _reminder("orphan", due=T0 - dt.timedelta(minutes=1))
-    await beat.reminders.create(row)
-    await beat.loop.tick()
-    assert [[r.id for r in batch] for batch in beat.fired] == [[row.id]]
-    assert beat.held("unsupported") == 0 and beat.held("read_error") == 0
-
-
-async def test_a_held_reminder_is_left_out_of_every_listing():
-    events = FakeGatheringStore()
-    beat = _Beat(events)
-    marked, marked_row = await _event_and_reminder(events, beat, "withdrawn")
-    _standing, standing_row = await _event_and_reminder(events, beat, "standing")
-    assert await events.unsupported_reminder_ids([marked_row.id, standing_row.id]) == frozenset()
-    events.mark_unsupported(marked.id, 5)
-    assert await events.unsupported_reminder_ids(
-        [marked_row.id, standing_row.id, uuid.uuid4()],
-    ) == frozenset({marked_row.id})
-    assert await events.unsupported_reminder_ids([]) == frozenset()
-
-
-def test_the_fired_counters_help_names_every_outcome_a_screen_can_write():
-    from nora.obs.metric_specs import _COUNTERS
-
-    by_name = {c.name: c for c in _COUNTERS}
-    help_text = by_name["nora_reminders_fired_total"].help_text
-    for outcome in (
-        "failed_policy", "failed_error", "silent", "cancelled_note_retired",
-        "cancelled_note_moved", "expired_while_held",
-    ):
-        assert outcome in help_text, outcome
-    held = by_name["nora_gathering_reminders_held_total"].help_text
-    assert all(reason in held for reason in HELD_REASONS)

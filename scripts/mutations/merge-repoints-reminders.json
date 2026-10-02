@@ -89,12 +89,5 @@
     "old": "        if tag_path_progressed_since_wake(\n            head_revision_id=current[0].head_revision_id,\n            last_wake_revision_id=linked_at, chain=duplicate_chain,\n        ):\n            return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED\n        if current[0].retired_at is None:",
     "new": "        if False and tag_path_progressed_since_wake(\n            head_revision_id=current[0].head_revision_id,\n            last_wake_revision_id=linked_at, chain=duplicate_chain,\n        ):\n            return ReminderState.CANCELLED, CANCELLED_NOTE_MOVED\n        if current[0].retired_at is None:",
     "target": "tests/unit/test_note_merge_reminder_parity.py::test_merge_time_outcome_matches_the_fire_time_baseline"
-  },
-  {
-    "name": "#520 round-3 review: remind's forwarded check is the shared two-step function",
-    "file": "nora/agent/tools.py",
-    "old": "                dead = proactive_row_forwarded_is_moved(",
-    "new": "                dead = False and proactive_row_forwarded_is_moved(",
-    "target": "tests/unit/test_remind_one_open_row_per_note.py::test_a_merged_row_whose_own_note_moved_holds_nothing"
   }
 ]

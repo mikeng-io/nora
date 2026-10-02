@@ -72,8 +72,6 @@ class DocumentsContextReader:
                     self._store.list_room(
                         platform=platform, conversation_ids=ids, limit=self._put_away,
                         states=("archived", "deleted"),
-                        # A forgotten document's title leaves her context for good.
-                        hide_forgotten=True,
                     ),
                 ),
                 timeout=self._timeout,

@@ -282,44 +282,14 @@ def test_must_cite_is_substrings_for_an_act_case(meta, said, should_fail) -> Non
 # --- issue #158 rework: "none" scoped to ONE note ---------------------------
 
 
-def test_none_with_no_absent_rows_keeps_the_old_blanket_rule() -> None:
-    """Every corpus but `proactive_decide`'s double-booking guard cases states
-    no `rows`, or `rows` with no `absent`, and must grade exactly as before:
-    ANY write fails a `none` case."""
+def test_none_fails_on_any_write() -> None:
+    """ANY write fails a `none` case."""
     assert Outcome(admitted=None, written=1).meets("none") is False
     assert Outcome(admitted=None, written=0).meets("none") is True
     assert Outcome(admitted=None, changed=(("create", "x"),)).meets("none") is False
 
 
-def test_none_reads_absent_note_clash_when_the_case_declares_one() -> None:
-    """`absent_note_clash` is resolved by `evals.backbone._absent_note_clash`
-    (title -> id, at the anchor) and handed to `Outcome` already computed —
-    `meets()` itself just reads it (issue #158 review round 2). `None` (no
-    `absent` row declared) falls through to the blanket rule; `True`/`False`
-    is the scoped verdict."""
-    assert Outcome(admitted=None, written=1, absent_note_clash=False).meets("none") is True
-    assert Outcome(admitted=None, written=1, absent_note_clash=True).meets("none") is False
-    assert Outcome(admitted=None, written=0, absent_note_clash=False).meets("none") is True
-
-
-def test_remind_with_no_matched_row_keeps_the_old_blanket_rule() -> None:
-    """No corpus states a per-row `due_between` except `proactive_decide`'s
-    active `remind` cases (both of which DO), so this pins the fallback: a
-    `remind` case with `remind_matched=None` grades exactly as before —
-    `written > 0`, on any row, about any note, at any time."""
+def test_remind_passes_on_a_write() -> None:
+    """A `remind` case grades `written > 0`."""
     assert Outcome(admitted=None, written=1).meets("remind") is True
     assert Outcome(admitted=None, written=0).meets("remind") is False
-
-
-def test_remind_reads_remind_matched_when_a_row_states_a_window() -> None:
-    """`remind_matched` is resolved by `evals.backbone._remind_match` (note
-    id AND `due_between`, at the anchor) and handed to `Outcome` already
-    computed (issue #158 review round 2): `written > 0` alone used to pass a
-    `remind` case on a row about a wholly different note, at any time, which
-    is not what the corpus header has always claimed to grade."""
-    assert Outcome(admitted=None, written=1, remind_matched=True).meets("remind") is True
-    assert Outcome(admitted=None, written=1, remind_matched=False).meets("remind") is False
-    # written=0 but remind_matched somehow True never happens in practice
-    # (nothing to match), but meets() trusts the precomputed verdict either
-    # way — it is not re-deriving it from written.
-    assert Outcome(admitted=None, written=0, remind_matched=False).meets("remind") is False

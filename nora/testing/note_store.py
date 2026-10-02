@@ -47,10 +47,8 @@ the SEMANTIC one both implementations owe — case-insensitive literal substring
 the caller's query is data — and the simpler expression of it is the one that
 does not imply a mechanism it does not have.
 
-`notes`, `revisions` and `candidates` are public attributes because the
-contract suite needs to reach state the store's own surface cannot produce —
-retiring a note (there is no `retire` verb; retirement arrives later as
-`DreamSink.supersede`) and reading a `note_candidate` row back. That is the
+`notes` and `revisions` are public attributes because the contract suite
+needs to reach state the store's own surface cannot produce. That is the
 `read_row`-per-implementation shape `tests/contract/test_dream_sink_contract.py`
 already established, kept out of the production surface where it would be a
 test seam.
@@ -59,30 +57,21 @@ test seam.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from nora.domain.notes import (
-    CANDIDATE_CREATED,
-    CANDIDATE_PENDING,
-    CANDIDATE_REFUSED,
     MERGE_FORWARD_HOPS,
     Note,
-    NoteCreateCandidate,
-    NoteCreationProposal,
-    NoteMergeDecision,
     NoteRevision,
-    NoteRevisionProposal,
     NoteSupersedeReason,
     RetiredNoteError,
     StaleNoteHeadError,
-    WakeOutcome,
     note_handle,
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
-from nora.domain.ports import Proposal
 from nora.domain.reminders import (
     CANCELLED_DUPLICATE_NOTE,
     CANCELLED_NOTE_MOVED,
@@ -92,20 +81,6 @@ from nora.domain.reminders import (
     ReminderState,
 )
 from nora.testing.reminders import FakeReminderStore
-
-
-@dataclass(frozen=True)
-class NoteCandidate:
-    """One row of the miss cache (§4.5), `note_candidate`'s shape in a
-    dataclass. Frozen and replaced rather than mutated, so a caller holding an
-    earlier read cannot watch it change underneath."""
-
-    unit: str
-    probe: str
-    first_seen_at: int
-    last_seen_at: int
-    occurrence_count: int
-    observed_in: tuple[str, ...]
 
 
 def _like_matches(body: str, query: str) -> bool:
@@ -180,20 +155,6 @@ class InMemoryNoteStore:
 
     notes: dict[str, Note] = field(default_factory=dict)
     revisions: dict[str, NoteRevision] = field(default_factory=dict)
-    candidates: dict[tuple[str, str], NoteCandidate] = field(default_factory=dict)
-    #: `kind='create'` rows, by id — the create path's own table (§4, issue
-    #: #98), sharing NOTHING with `candidates` above beyond the table they
-    #: both stand in for: that dict is the miss cache, keyed on
-    #: `(unit, probe)`; this one has no probe at all and is looked up by
-    #: its OWN staging key, `(unit, anchor_date, anchor_entity_ids,
-    #: normalised title)` (#235), in
-    #: `record_create_candidate` below — a linear scan rather than a second
-    #: index, which is fine at this store's scale and keeps one dict from
-    #: drifting out of step with the other.
-    create_candidates: dict[str, NoteCreateCandidate] = field(default_factory=dict)
-    #: `note_merge_decision` rows, in insertion order — append-only, like the
-    #: table (design 41 §7.8).
-    merge_decisions: list[NoteMergeDecision] = field(default_factory=list)
     #: Optional — `None` is what every existing `InMemoryNoteStore()` call
     #: site still constructs, and `merge_into` then skips the reminders step
     #: entirely (module docstring: this double CANNOT know a duplicate held
@@ -208,7 +169,7 @@ class InMemoryNoteStore:
 
     #: **UUID-SHAPED, like the real store's.** This double minted `note-1` and
     #: `rev-2` until 2026-08-28, and that one divergence hid the defect that
-    #: made the whole curator inert: the Dreamer screens every adaptor item
+    #: made the whole (since-deleted) curator inert: the Dreamer screens every adaptor item
     #: against R-18/R-28 and `scan_identifiers` matches any hyphenated uuid, so
     #: production rejected every item while this double's ids sailed through.
     #: Eighteen tests passed over it.
@@ -236,8 +197,8 @@ class InMemoryNoteStore:
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
         # Passed through to the FIRST revision, and `None` from the tag path.
-        # `note_create` has no `Proposal` and no instruction digest; the
-        # debrief, arriving through `DreamSink.propose`, has both. See
+        # `note_create` has no instruction digest; the Cognition session's
+        # writes may. See
         # `0036_note_revision_provenance` for why the columns are nullable.
         instruction_sha256: str | None = None,
         model: str | None = None,
@@ -403,225 +364,7 @@ class InMemoryNoteStore:
         chain.sort(key=lambda r: (r.written_at, r.id))
         return tuple(chain)
 
-    async def record_wake(
-        self, *, unit: str, note_id: str, next_revisit_at: int,
-        now_ms: int,
-    ) -> WakeOutcome | None:
-        """`SqlNoteStore.record_wake`.
-
-        The head is read HERE and branched on here, matching the real store —
-        a double that took the decision from its caller would agree on every
-        happy path and diverge on the one case §9.6 exists for, a background
-        pass's own write being mistaken for progress.
-        """
-        note = self.notes.get(note_id)
-        if (
-            note is None
-            or note.unit != unit
-            or note.retired_at is not None
-        ):
-            return None
-        # THE SPAN SINCE THE WATERMARK, not the author of the head — the same
-        # shared predicate the SQL store walks, for the reason it states: a
-        # room revision followed by a background one is progress, and both
-        # implementations used to answer «no» to it in agreement.
-        progressed = tag_path_progressed_since_wake(
-            head_revision_id=note.head_revision_id,
-            last_wake_revision_id=note.last_wake_revision_id,
-            chain={
-                r.id: (r.parent_revision_id, r.established_by)
-                for r in self.revisions.values()
-                if r.note_id == note_id
-            },
-        )
-        if progressed:
-            self.notes[note_id] = replace(
-                note, strikes=0, last_wake_revision_id=note.head_revision_id,
-                revisit_at=next_revisit_at,
-            )
-            return WakeOutcome(strikes=0, reset=True)
-        self.notes[note_id] = replace(note, strikes=note.strikes + 1)
-        return WakeOutcome(strikes=note.strikes + 1, reset=False)
-
-    async def anchored_before(
-        self, *, unit: str, day: int, limit: int,
-    ) -> tuple[tuple[Note, str], ...]:
-        """`SqlNoteStore.anchored_before`."""
-        if limit <= 0:
-            return ()
-        hits = [
-            n for n in await self.standing(unit=unit)
-            if n.anchor_date is not None and n.anchor_date < day
-        ]
-        hits.sort(key=lambda n: (n.anchor_date or 0, n.id))
-        return tuple(
-            (n, self.revisions[n.head_revision_id].body) for n in hits[:limit]
-        )
-
-    async def due_for_revisit(
-        self, *, unit: str, now_ms: int, limit: int,
-    ) -> tuple[tuple[Note, str], ...]:
-        """`SqlNoteStore.due_for_revisit`: standing, `revisit_at` set and not
-        in the future, oldest `revisit_at` first — NOT also "or anchor
-        passed"; see the SQL store's own docstring for why that is the
-        caller's union to make, not this read's job."""
-        if limit <= 0:
-            return ()
-        hits = [
-            n for n in await self.standing(unit=unit)
-            if n.revisit_at is not None and n.revisit_at <= now_ms
-        ]
-        hits.sort(key=lambda n: (n.revisit_at or 0, n.id))
-        return tuple(
-            (n, self.revisions[n.head_revision_id].body) for n in hits[:limit]
-        )
-
-    # ---- DreamSink -------------------------------------------------------
-    #
-    # **This double must refuse what Postgres refuses, and it does not get that
-    # for free.** A double whose only refusals come from the domain constructor
-    # is more permissive than the store it stands in for the moment a caller
-    # reaches around the type — which is CLAUDE.md's "a fake that answers every
-    # request the same way", and a contract suite cannot see it unless a test
-    # constructs the illegal state directly. So the checks below are written
-    # HERE rather than relied upon from `NoteRevisionProposal.__post_init__`.
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
-    ) -> Sequence[str]:
-        """`SqlNoteStore.propose`'s behaviour, including its refusals and its
-        ORDER OF OPERATIONS.
-
-        **RESOLVE THE WHOLE BATCH, THEN APPLY IT.** This double has no
-        transaction, so it cannot roll back — what it CAN do is decide every
-        refusal before performing any mutation, which is where the SQL store's
-        atomicity is observable from outside.
-
-        **This docstring claimed exactly that on 2026-08-27 while the code did
-        not do it**, because only the `isinstance` loop had been hoisted:
-        `append_revision`'s CAS and `create`'s domain refusals still fired
-        inside the write loop, so a batch of (valid, stale) left the valid one
-        applied where Postgres rolls it back. Found by a reviewer executing it,
-        one fix after the same file's docstring was corrected for the same
-        class of mistake. Recorded rather than quietly repaired: **a claim
-        about a double is a claim about the real store**, and this one was
-        wrong twice in the same file in one day.
-
-        Resolving first also removes the SQL-only exemption the contract suite
-        needed for the rollback assertion — and that exemption was the tell
-        that the two implementations were never being compared on this.
-        """
-        typed: list[tuple[Proposal, NoteCreationProposal | NoteRevisionProposal]] = []
-        for p in proposals:
-            payload = p.payload
-            if not isinstance(
-                payload, NoteCreationProposal | NoteRevisionProposal
-            ):
-                raise TypeError(
-                    f"InMemoryNoteStore.propose accepts a "
-                    f"NoteRevisionProposal or a NoteCreationProposal, got "
-                    f"{type(payload).__name__}"
-                )
-            typed.append((p, payload))
-
-        # --- resolve: build every object and check every CAS, writing nothing
-        #
-        # `heads` simulates the batch's effect on each note's head, seeded from
-        # the store as it stands. `declared` is what each note's FIRST proposal
-        # claimed to be written against — the same distinction the SQL store
-        # draws, and for the same reason: the tracked head must be a CHECK, not
-        # a silent override, or two proposals parented on one read both land
-        # and the second buries the first.
-        pending: list[tuple[Note | None, NoteRevision]] = []  # (new note | None, revision)
-        ids: list[str] = []
-        heads: dict[str, str] = {}
-        declared: dict[str, str] = {}
-        for p, payload in typed:
-            if isinstance(payload, NoteCreationProposal):
-                note_id = self._shaped_id(next(self._ids), "note")
-                revision_id = self._shaped_id(next(self._ids), "rev")
-                note = Note(
-                    id=note_id, unit=key, title=payload.title,
-                    description=payload.description,
-                    uncertainty=payload.uncertainty,
-                    closing_condition=payload.closing_condition,
-                    established_in=payload.established_in, created_at=now_ms,
-                    head_revision_id=revision_id,
-                    anchor_date=payload.anchor_date,
-                    anchor_entity_ids=tuple(payload.anchor_entity_ids),
-                    # `SqlNoteStore.propose`'s own `_new_note` sets this from
-                    # the same field — the note-curator merge's §5.3
-                    # resolution (c).
-                    revisit_at=payload.revisit_at,
-                )
-                revision = NoteRevision(
-                    id=revision_id, note_id=note_id, body=payload.body,
-                    parent_revision_id=None, written_at=now_ms,
-                    established_by=p.established_by,
-                    instruction_sha256=p.instruction_sha256, model=p.model,
-                )
-                pending.append((note, revision))
-                heads[note_id] = revision_id
-                ids.append(note_id)
-                continue
-
-            if payload.note_id in declared:
-                if payload.parent_revision_id != declared[payload.note_id]:
-                    raise StaleNoteHeadError(
-                        f"note {payload.note_id} was already revised in this "
-                        f"batch against {declared[payload.note_id]}; this "
-                        f"proposal names {payload.parent_revision_id} — read "
-                        f"it again",
-                        observed_head=heads.get(payload.note_id),
-                    )
-            else:
-                declared[payload.note_id] = payload.parent_revision_id
-
-            existing = self.notes.get(payload.note_id)
-            reachable = existing is not None and existing.unit == key
-            head_now = existing.head_revision_id if existing is not None else None
-            # The CAS runs only for a note this batch has NOT already revised.
-            # For a later proposal the declared-parent check above has already
-            # established that it names the same parent the first one did, and
-            # the chain below supplies the real predecessor — so re-running the
-            # comparison against the STORED head would refuse every legitimate
-            # chained write.
-            first_touch = payload.note_id not in heads
-            stale = first_touch and (
-                not reachable
-                or head_now != payload.parent_revision_id
-            )
-            if reachable and existing is not None:
-                _refuse_if_retired(existing)
-            if not reachable or stale:
-                raise StaleNoteHeadError(
-                    f"note {payload.note_id} changed under you or is not in "
-                    f"unit {key!r} — read it again",
-                    observed_head=head_now if reachable else None,
-                )
-            revision = NoteRevision(
-                id=self._shaped_id(next(self._ids), "rev"), note_id=payload.note_id,
-                body=payload.body,
-                parent_revision_id=heads.get(
-                    payload.note_id, payload.parent_revision_id,
-                ),
-                written_at=now_ms, established_by=p.established_by,
-                instruction_sha256=p.instruction_sha256, model=p.model,
-            )
-            pending.append((None, revision))
-            heads[payload.note_id] = revision.id
-            ids.append(payload.note_id)
-
-        # --- apply: nothing above this line mutated anything
-        for created, revision in pending:
-            if created is not None:
-                self.notes[created.id] = created
-            else:
-                self.notes[revision.note_id] = replace(
-                    self.notes[revision.note_id], head_revision_id=revision.id,
-                )
-            self.revisions[revision.id] = revision
-        return tuple(ids)
+    # ---- retirement ------------------------------------------------------
 
     async def supersede(
         self,
@@ -900,138 +643,4 @@ class InMemoryNoteStore:
         if on_reminder_outcome is not None:
             on_reminder_outcome(outcome)
 
-    async def record_merge_decision(self, *, decision: NoteMergeDecision) -> None:
-        """`SqlNoteStore.record_merge_decision`: append, and refuse a reused id
-        as the primary key does."""
-        if any(d.id == decision.id for d in self.merge_decisions):
-            raise ValueError(f"merge decision {decision.id} already recorded")
-        self.merge_decisions.append(decision)
-
-    async def record_miss(
-        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
-    ) -> int:
-        """The negative cache (§4.5). Upserts on `(unit, probe)`, keeps
-        `first_seen_at`, appends a conversation to `observed_in` only if it is
-        not already there, and returns the new count — the same three decisions
-        `SqlNoteStore.record_miss`'s docstring argues for."""
-        key = (unit, probe)
-        existing = self.candidates.get(key)
-        if existing is None:
-            self.candidates[key] = NoteCandidate(
-                unit=unit, probe=probe, first_seen_at=now_ms,
-                last_seen_at=now_ms, occurrence_count=1,
-                observed_in=(conversation_id,),
-            )
-            return 1
-        observed = existing.observed_in
-        if conversation_id not in observed:
-            observed = (*observed, conversation_id)
-        updated = replace(
-            existing,
-            last_seen_at=now_ms,
-            occurrence_count=existing.occurrence_count + 1,
-            observed_in=observed,
-        )
-        self.candidates[key] = updated
-        return updated.occurrence_count
-
     # ---- the create path (§4, issue #98) -----------------------------------
-
-    async def record_create_candidate(
-        self,
-        *,
-        unit: str,
-        title: str,
-        description: str,
-        body: str,
-        closing_condition: str,
-        anchor_date: int,
-        anchor_entity_ids: Sequence[str],
-        message_ids: Sequence[int],
-        now_ms: int,
-    ) -> NoteCreateCandidate:
-        """`SqlNoteStore.record_create_candidate`'s behaviour: upserts on the
-        staging key `(unit, anchor_date, anchor_entity_ids,
-        normalised title)` (#235) — the entity list sorted and de-duplicated
-        HERE, exactly as the SQL store normalises it before the row reaches its
-        own unique index — and the update is a no-op once the row has left
-        `pending`, matching the SQL upsert's `WHERE status = 'pending'` guard:
-        a settled candidate is never relitigated by a later re-observation.
-
-        **The title normalisation DIVERGES from the SQL store's, and the
-        divergence is stated rather than papered over.** This scan uses
-        `casefold()` (matching `note_handle`, the tier's own normal form); the
-        index uses Postgres `lower(btrim(...))`, which does not fold `ß`→`ss`.
-        The two agree on every case this corpus produces (English and
-        Cantonese), so the contract suite must not fixture a title where they
-        differ — a test that did would be asserting an equivalence neither
-        store promises.
-
-        `message_ids` is APPENDED to the existing row's own list, deduplicated
-        only WITHIN this call's own argument — not merged with the existing
-        array — mirroring the SQL store's `||` concatenation exactly, so the
-        two implementations agree on the one property the contract suite can
-        actually observe: old ids are never lost, and a repeat sighting may
-        legitimately grow the array rather than staying capped at its
-        distinct count. This attribution list is not the count either store's
-        uniqueness protects (that is the anchor key), so an occasional
-        duplicate in it costs nothing.
-        """
-        entities = tuple(sorted(set(anchor_entity_ids)))
-        ids = tuple(dict.fromkeys(message_ids))
-        existing = next(
-            (c for c in self.create_candidates.values()
-             if c.unit == unit and c.anchor_date == anchor_date
-             and c.anchor_entity_ids == entities
-             and c.title.strip().casefold() == title.strip().casefold()),
-            None,
-        )
-        if existing is None:
-            candidate = NoteCreateCandidate(
-                id=self._shaped_id(next(self._ids), "cand"),
-                unit=unit, title=title, description=description,
-                body=body, closing_condition=closing_condition,
-                anchor_date=anchor_date, anchor_entity_ids=entities,
-                message_ids=ids, status=CANDIDATE_PENDING, attempts=0,
-                first_seen_at=now_ms, last_seen_at=now_ms,
-            )
-            self.create_candidates[candidate.id] = candidate
-            return candidate
-        if existing.status != CANDIDATE_PENDING:
-            # SETTLED: a re-observation of this occasion must not reopen a
-            # decision the gate already made. Returned unchanged, exactly as
-            # the SQL store's guarded upsert leaves the row untouched and
-            # reads it back.
-            return existing
-        updated = replace(
-            existing, title=title, description=description, body=body,
-            closing_condition=closing_condition, last_seen_at=now_ms,
-            attempts=existing.attempts + 1,
-            message_ids=(*existing.message_ids, *ids),
-        )
-        self.create_candidates[existing.id] = updated
-        return updated
-
-    async def set_create_candidate_status(
-        self, *, unit: str, candidate_id: str, status: str, now_ms: int,
-    ) -> int:
-        """`SqlNoteStore.set_create_candidate_status`'s behaviour: refuses a
-        non-terminal status, and is a no-op — never a second decision — for a
-        row that is gone, in another unit, or already terminal."""
-        if status not in (CANDIDATE_CREATED, CANDIDATE_REFUSED):
-            raise ValueError(
-                f"InMemoryNoteStore.set_create_candidate_status got "
-                f"status={status!r}; only a TERMINAL status may be set this "
-                f"way — {(CANDIDATE_CREATED, CANDIDATE_REFUSED)}"
-            )
-        existing = self.create_candidates.get(candidate_id)
-        if (
-            existing is None
-            or existing.unit != unit
-            or existing.status != CANDIDATE_PENDING
-        ):
-            return 0
-        self.create_candidates[candidate_id] = replace(
-            existing, status=status, last_seen_at=now_ms,
-        )
-        return 1

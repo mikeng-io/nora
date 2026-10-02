@@ -243,15 +243,15 @@ async def _cognition_probe(subject: Subject, case: Case, *, now_ms: int) -> Outc
     the tools it CALLED (`ToolRouteGrader`, from the tool spans).
 
     ERROR, never a pass, when the subject built no session runner: a
-    deployment whose `[cognition] session_mode` is off has no session to
-    measure, and a case that reached no model has measured nothing whatever it
+    deployment whose `[cognition]` is off has no session to measure, and a
+    case that reached no model has measured nothing whatever it
     prints (`nora.app.cognition_wiring`: off builds nothing)."""
     runner = getattr(subject.deps, "cognition_runner", None)
     if runner is None:
         return Outcome(
             admitted=None, source="fail_closed",
             error="the subject built no Cognition session runner "
-                  "([cognition] session_mode is off in the eval config)",
+                  "([cognition] is off in the eval config)",
         )
     try:
         await runner.probe(unit=subject.unit, summary=case.input, now_ms=now_ms)
@@ -271,7 +271,8 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
 
     `case.category` names the adaptor, because which adaptor runs is a property
     of the CASE and not of the runner: `note-candidates` and the proactive
-    adaptor are two passes over one runtime, and branching on them in the
+    adaptor (both deleted 2026-10-03, DEC-277) were two passes over one runtime, and branching on
+    them in the
     runner would be the eight drivers growing back inside one file.
     """
     # `now:` used to be refused here. It no longer is: `build_dependencies`
@@ -283,7 +284,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # conclusions follow, and the clock used to.
     #
     # The proactive corpora are MULTI-ROOM: a case names two rooms and keys its
-    # standing per room, because the decide pass judges a workspace and picks
+    # standing per room, because the (deleted) decide pass judged a workspace and picks
     # which of its rooms to stand in. `nora.subject.Knowledge` is single-room —
     # one transcript, one standing, one `DEFAULT_ROOM`.
     #
@@ -294,7 +295,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # shape this whole layer exists to refuse, and it survived one round of
     # fixing here because the clock was the louder problem.
     # `rooms` and `standing` are SEEDABLE now (GOAL step 1) and have moved to
-    # `knows`. What is still not is `rows` — the reminder rows a decide pass is
+    # `knows`. What is still not is `rows` — the reminder rows a decide pass was
     # asserted to WRITE, which is an expectation rather than an input, and is
     # checked against `Outcome.written` instead.
     unseeded = [k for k in ("row",) if case.metadata.get(k)]
@@ -307,7 +308,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
                 "multi-room seeding does not exist yet"
             ),
         )
-    adaptor = case.category or "note-candidates"
+    adaptor = case.category or "culture"
     if adaptor == "cognition":
         return await _cognition_probe(subject, case, now_ms=now_ms)
     try:
@@ -326,7 +327,8 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # that correctly found nothing.
     #
     # The half that was MISSING is `nothing_found` after a model call that
-    # failed. Measured with no provider reachable: four proactive cases came
+    # failed. Measured with no provider reachable: four cases of the (since-deleted,
+    # DEC-277) proactive-decide pass came
     # back `nothing_found` with NO error, and the one expecting silence scored
     # a PASS — ERROR-as-PASS inside the layer built to end it, found by
     # checking rather than by reading.
@@ -336,16 +338,6 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     # thing that separates "asked the model and could not reach it" from "never
     # needed to ask, because nothing was due". The second is a real verdict a
     # corpus expects; the first is not a verdict at all.
-    # WIRING, not a verdict. `no_home_room` means the workspace named no home
-    # room, so the pass returned before rendering anything — indistinguishable
-    # from "the workspace had not moved" in `status`, and every case expecting
-    # `none` would pass on a misconfigured policy.
-    if result.declined == "no_home_room":
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error="the workspace names no home room, so the pass never ran",
-            outcome_token=result.status,
-        )
     # `samples_failed and not samples_ok`, NOT `or samples_failed`: the
     # runtime's own rule is that a pass is `unavailable` only when NONE was
     # readable, because one good read is a read (`dreamer.py:1470`). Erroring on
@@ -368,22 +360,7 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
         admitted=None,
         changed=result.changed,
         written=result.written,
-        written_reminders=result.written_reminders,
-        staged=result.staged,
-        bodies=result.bodies,
-        speakers=result.speakers,
-        roster=result.roster,
-        nora_names=result.nora_names,
-        carried=result.carried,
-        body_refused=result.body_refused,
-        changed_dated=result.changed_dated,
-        # `declined` rides into the token so a `none` verdict says WHY it was
-        # none — `unchanged` and `held_quiet` are different facts about the
-        # workspace and a report that showed neither would be unreadable.
-        outcome_token=(
-            f"{result.status}:{result.declined}" if result.declined
-            else result.status
-        ),
+        outcome_token=result.status,
     )
 
 
@@ -708,14 +685,11 @@ ENTRY_POINTS = {
     # true, which is the deployment's own default and the reason this is the
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
-    # `[dreamer] enabled` ships false, and `[notes]` decides whether the
-    # note-candidates adaptor is built at all — two switches for two risks, and
-    # a corpus that needs the pass needs both on.
-    # The RUNTIME only. Which adaptor is built is the corpus's business and
-    # they differ: note-candidates needs `[notes] candidates_enabled`, the
-    # proactive adaptor has no flag at all and is wired by `policy.toml` naming
-    # a home room. Putting either here would make one corpus's requirement look
-    # like the entry point's.
+    # `[dreamer] enabled` ships false. The RUNTIME only: which adaptor is built is
+    # the corpus's business (the culture adaptor needs `[culture] enabled`; the
+    # note-candidates and proactive adaptors are deleted, DEC-277). Putting an
+    # adaptor's flag here would make one corpus's requirement look like the
+    # entry point's.
     "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition

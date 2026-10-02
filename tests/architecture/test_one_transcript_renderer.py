@@ -49,7 +49,7 @@ _RENDERERS = ("render_rows", "render_messages", "render_elements", "render_row_w
 #: rather than bending the transcript's signature around them.
 #: `render_row_window` is `render_elements` with `n` fixed to the row's own id
 #: (context-assembly step 1) — the same one renderer, a third entry point — and
-#: is what note-candidates and the curator call, so it counts as converted for
+#: is what the Cognition agenda calls, so it counts as converted for
 #: the same reason.
 _ELEMENT_RENDERERS = ("render_messages", "render_elements", "render_row_window")
 
@@ -58,11 +58,6 @@ CONVERTED = {
     "nora/agent/prefill.py": "the tag turn's group transcript",
     "nora/ingest/relevance_gate.py": "the window the gate decides on",
     "nora/language/culture.py": "the batch the culture fold reads",
-    "nora/language/note_curator.py":
-        "her own sends, and the evidence rows the retirement decision reads",
-    "nora/language/note_candidates.py":
-        "the message batch candidates are proposed from — `n` is the ROW ID "
-        "here, because `accept()` joins the model's `message_ids` onto it",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/cognition_render.py":
@@ -79,12 +74,6 @@ CONVERTED = {
 #: happening. Inverted, a new caller appears in the discovered set and has to be
 #: classified — converted, or exempted here with a sentence.
 _NOT_A_TRANSCRIPT = {
-    # ONE ROOM, ONE LINE. The proactive pass renders `UnitRoom` rows — a
-    # unit's rooms and where her own fold left each one — never a member's
-    # message. Design 39 §1 keeps `load_transcript` out of that pass on
-    # purpose, which is the same reason `test_media_join_reaches_every_
-    # transcript` exempts this module.
-    "nora/language/proactive.py": "renders one line per ROOM, not per message",
     # The NOTE INDEX, not a transcript — one element per standing note, through
     # the same `render_elements` the transcripts use. It appears in this
     # discovery because "calls an element renderer" is the net; it is exempt

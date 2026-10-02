@@ -18,29 +18,24 @@ not the tool is on, and a session with the tool off still sees who said what.
 - *The room.* A row is joined to the stimulus that named it and must be in that
   stimulus's own room: the item's room is the one the reads and the render
   resolve through (R-21).
-- *Withdrawal.* `nora person forget` hides a message, and so does a platform
-  delete or unsend (`nora.app.delete_withdrawal`, DEC-276); the Record read
-  excludes hidden rows (`transcript_select`), so a hidden message is not «shown as
-  withheld», it is absent, and that includes her OWN unsent send. The `deleted`
-  mark and the withheld words (the rule `record_query` keeps) are what is left
-  for a delete whose hide has not landed: one that failed and awaits its retry or
-  the start-up sweep. DEC-245 (3) said an unsent send of hers was shown as
-  deleted; amended by DEC-276.
+- *Withdrawal.* A platform delete or unsend hides a message
+  (`RecordStore.hide_message`); the Record read excludes hidden rows
+  (`transcript_select`), so a hidden message is not «shown as withheld», it is
+  absent, and that includes her OWN unsent send. The `deleted` mark and the
+  withheld words (the rule `record_query` keeps) are what is left for a delete
+  whose hide did not land. DEC-245 (3) said an unsent send of hers was shown as
+  deleted; amended by DEC-276, whose cascade was removed 2026-10-03.
 - *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
   never pushed"). No Standing text, head or revision is rendered here:
-  `standing_store.read()` returns rows the withdrawal cascade marked
-  unsupported, so a pushed head could carry a withdrawn person's words to the
-  model. The session sees no Standing until `standing_read` lands and applies
-  the withdrawal and lineage predicates itself (#637 second review, blocker).
-- *Every pushed index line honours withdrawal and lineage.* A note marked
-  `unsupported_at` is dropped here as well as in the store's read (the seam is
-  injected, so the rule is held where the line is built), and a note or an
+  a pushed head could carry words the lineage predicates would withhold. The
+  session reads Standing through `standing_read`, which applies them itself (#637
+  second review, blocker).
+- *Every pushed index line honours lineage.* A note or an
   event is shown only when lineage permits it for EVERY room on the agenda
   (`nora.agent.lineage`, the tag path's own predicates). `[lineage] mode` reads
   as it does on the tag path: `on` removes, `shadow` computes the same answer,
-  removes NOTHING and logs what it would have, `off` applies none. Withdrawal
-  (`unsupported_at`) is not a lineage question and applies in EVERY mode,
-  `off` and `shadow` included. `exclude_persons` follows the lineage mode: under
+  removes NOTHING and logs what it would have, `off` applies none.
+  `exclude_persons` follows the lineage mode: under
   `on` a row naming one is withheld (the session has no live roster to check it
   against, and unknown denies); under `shadow` it is logged, not removed; under
   `off` it is ignored.
@@ -58,6 +53,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Collection, Sequence
+from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
@@ -75,7 +71,7 @@ from nora.domain.cognition_ground import (
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
-from nora.domain.notes import Note
+from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
@@ -204,6 +200,7 @@ def build_grounder(
     clock: Callable[[], float] = time.time,
     own_send_lookback_seconds: float = 1800.0,
     own_sends_max: int = 6,
+    tz: tzinfo = UTC,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -289,19 +286,32 @@ def build_grounder(
         enforced = lineage.mode == "on"
         withheld = {"notes": 0, "events": 0}
         notes_out: list[NoteLine] = []
-        for n in await note_index(unit):
-            # WITHDRAWN: dropped here too, in every mode (not a lineage
-            # question). LINEAGE: shown only where it passes for every room the
-            # session reads.
-            if n.unsupported_at is not None:
-                continue
+        # The notebook review's facts, marked on every agenda's index (the `time`
+        # item is what asks her to act on them): the anchor day passed or
+        # the revisit date came, and a title that shares most of its words with
+        # another open note's. Read off the rows the index already holds.
+        now_ms = int(clock() * 1000)
+        now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
+        today = now.year * 10_000 + now.month * 100 + now.day
+        indexed = list(await note_index(unit))
+        twins = likely_duplicates(indexed)
+        for n in indexed:
+            # LINEAGE: shown only where it passes for every room the session reads.
             if applies and not all(derived_view(
                 notes=(n,), standing=None, culture=None, target=t,
             ).notes for t in targets):
                 withheld["notes"] += 1
                 if enforced:
                     continue
-            notes_out.append(NoteLine(id=n.id, title=n.title, description=n.description))
+            review = (
+                "anchor_passed" if n.anchor_date is not None and n.anchor_date < today
+                else "revisit_due" if n.revisit_at is not None and n.revisit_at <= now_ms
+                else None
+            )
+            notes_out.append(NoteLine(
+                id=n.id, title=n.title, description=n.description, review=review,
+                may_duplicate=twins.get(n.id),
+            ))
         notes = tuple(notes_out)
         events: list[EventLine] = []
         for room in agenda_rooms:
@@ -311,11 +321,6 @@ def build_grounder(
                 platform=room.platform, conversation_id=room.conversation_id,
             )
             for e in await events_in(unit, room.conversation_id):
-                if e.unsupported_at is not None:
-                    # Withdrawn (`nora.app.withdrawal`), dropped here too and in
-                    # every mode, exactly as a note is: the composition's read
-                    # already leaves it out, and this is the seam's own guard.
-                    continue
                 if applies and not all(visible_sections(
                     e.lineage, _EVENT_SHOWN_FIELDS, target,
                     origin=room_key(room.platform, room.conversation_id),

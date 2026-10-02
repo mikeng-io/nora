@@ -150,32 +150,12 @@ async def test_a_room_without_proactive_trust_is_an_error_not_silence(
     assert "failed_policy" in reason or "seeded notes are" in reason, state
 
 
-@pytest.mark.asyncio
-async def test_a_unit_with_no_home_room_is_an_error_not_none(
-    pg_url, pg_template, tmp_path, monkeypatch,
-) -> None:
-    """INDUCED, for the same reason. `no_home_room` makes the proactive adaptor
-    return BEFORE it renders anything, answering `nothing_found` with an empty
-    diff — which is what a unit that had not moved answers too, and `none` is
-    what several decide cases expect."""
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    out, state = await _graded(
-        entry="dreamer", expect="none", pg_url=pg_url, pg_template=pg_template,
-        tmp_path=tmp_path, policy=_policy(proactive=True, home_room_here=False),
-        metadata={"category": "proactive"},
-    )
-    assert out.label == ERROR, (
-        f"a unit with no home room graded {out.label}: {out.reason} {state}. The "
-        "pass returned before rendering anything."
-    )
-    assert "home room" in str(state["error"] or ""), state
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("entry", "expect", "metadata"),
     [
-        ("dreamer", "none", {"category": "proactive"}),
         ("proactive_act", "silence", {"row": {"note": "Raft update", "intent": "nudge"}}),
     ],
 )

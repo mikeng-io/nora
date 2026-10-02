@@ -140,7 +140,6 @@ from nora.domain.standing import (
 )
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
-from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -149,7 +148,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
-from nora.language.culture_render import read_culture
+from nora.language.culture_render import read_character, read_culture
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -346,7 +345,8 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     consequence of a `None` tagger. `speak` skips §12's refusal for it
     exactly as it does for a version announcement.
 
-    `body` is the INTENT the decide turn wrote — «raise the dinner plan now
+    `body` is the INTENT the Cognition session's `remind` wrote (the decide turn before
+    2026-10-03) — «raise the dinner plan now
     that people know where they are coming from» — put to her the way a
     reminder puts the requester's own sentence: as what was asked, in the
     asker's words, and the asker is her earlier self. The header carries
@@ -939,6 +939,7 @@ class FirePath:
         (
             (standing, culture, notes, decisions, presence, computer),
             documents,
+            character,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -949,6 +950,7 @@ class FirePath:
                 self._read_computer(occasion),
             ),
             self._read_documents(occasion),
+            self._read_character(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -961,6 +963,7 @@ class FirePath:
             people_in_window=people,
             standing=standing,
             culture=culture,
+            character=character,
             notes=notes,
             decisions=decisions,
             presence=presence,
@@ -1042,9 +1045,11 @@ class FirePath:
         A reminder or a gathering firing was decided when its row was written,
         so neither reads either. The proactive act turn now reads the decision
         log, because «the loop already took this floor 31 minutes ago» is a
-        fact about the ROOM that its own decide-pass index cannot carry — but
+        fact about the ROOM that the decide pass's index (deleted 2026-10-03, DEC-277) could not
+        carry — but
         it still does not read memory, because «what do I know about these
-        people» is research the decide pass already did, at Honcho round trips
+        people» is research the decide pass (now the Cognition session) already did, at Honcho
+        round trips
         rather than one SQL read, and design 39's whole split is research at
         decide time and the room at act time. This is the turn deciding
         whether to speak into a room nobody addressed her in AND holding no
@@ -1407,9 +1412,25 @@ class FirePath:
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
-        # WITHDRAWAL is `read_culture`'s, the one read every occasion shares
-        # (`nora.domain.withdrawal`): no copy of the rule here.
         return found
+
+    async def _read_character(
+        self, occasion: Event,
+    ) -> tuple[tuple[str, CultureRevision], ...]:
+        """Each listed person's account in this room (DEC-278): `_read_culture`'s
+        key and bounds, one head per person. `()` when the tier is off."""
+        if self._culture is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(
+            occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.primary_id:
+            return ()
+        return await read_character(
+            self._culture, scope=convo.primary_id,
+            members=self._room_members(occasion), stage="fire_character",
+            platform=occasion.platform, metrics=self._metrics,
+            timeout_seconds=self._standing_store_timeout_seconds,
+        )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).
@@ -1440,8 +1461,7 @@ class FirePath:
                 platform=occasion.platform,
             )
             return None
-        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).
-        return render_supported(found)
+        return found
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.
@@ -2245,7 +2265,8 @@ class FirePath:
         The log and the mirror are both write-only as far as a prompt is
         concerned: one goes to a file, one goes to a channel an operator reads.
         Neither is reachable from the gate deciding whether to admit the next
-        window in this room, or from the proactive pass deciding what to raise
+        window in this room, or from a proactive decider (the decide pass, deleted 2026-10-03)
+        deciding what to raise
         in it tomorrow. That is the whole gap — three decision paths, one room,
         and 2026-09-10's duplicate answered twice and raised a third time.
 
@@ -2609,7 +2630,7 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     Her OWN rows are excluded for the same reason `_window_speakers` excludes
     them: the question is what the ROOM is talking about, and an answer she
     already gave is the loudest self-echo there is (39 §1's argument for
-    dropping `load_transcript` from the decide turn, one path over).
+    dropping `load_transcript` from the decide turn (deleted 2026-10-03, DEC-277), one path over).
     """
     # FILTER, then slice. It sliced first until a reviewer read it on
     # 2026-09-11: a window whose newest six rows are four of her own replies

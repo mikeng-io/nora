@@ -12,6 +12,9 @@ edges:
 
 # Context Assembly
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## The measurement this starts from
 
 Six occasions build a model-facing prompt. Measured 2026-09-22 by reading every

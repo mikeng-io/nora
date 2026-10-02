@@ -1194,6 +1194,8 @@ portal restore of a deleted document. The decision row is DEC-255.
 
 Recorded here as rulings; none of the built-or-not facts below changes until the PR that builds it merges.
 
+> **SUPERSEDED 2026-10-03 (guard removal; AGENTS.md «A guard needs a consequence»).** `nora person forget` is deleted. The read side (a `forget:`-marked document stays gone) is kept for any such row already written.
+
 **`nora person forget` soft-deletes every document the person created. There is no purge.** Each of that
 person's documents gets a `deleted` row in `document_state` (§31), so it is off every list and every
 person-facing read answers 404, and every revision stays in `document_revision`. The unit is the whole

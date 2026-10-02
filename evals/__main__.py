@@ -57,14 +57,11 @@ from nora.subject import (
 )
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
-#: Approximate on purpose where a corpus is not wholly one class (e.g. only
-#: `proactive_decide`'s two-room pair is really "S1"; the rest of it is
-#: closer to a general reminder-write correctness check) — good enough to
-#: pick "which corpora" without re-deriving the map's own nuance here.
+#: Approximate on purpose where a corpus is not wholly one class — good enough
+#: to pick "which corpora" without re-deriving the map's own nuance here.
 #: S2/S4/S5 have no corpus at all (hand-written `Case`s only, not part of
 #: `evals/corpora/`), so they are not selectable through this script.
 CORPUS_CLASS: dict[str, str] = {
-    "proactive_decide": "S1",
     "proactive_act": "S1",
     "being_contradicted": "S3",
     "identity_grounding": "S3",
@@ -73,7 +70,6 @@ CORPUS_CLASS: dict[str, str] = {
     "tool_reporting": "S3",
     # S2, tool routing: which tool EXECUTED (design/tool-catalogue §2c).
     "tool_selection": "S2",
-    "note_candidates": "S6",
     "no_trigger": "S7",
     "near_miss": "S7",
     "trigger": "S7",

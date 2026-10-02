@@ -55,10 +55,8 @@ _OCCASIONS = _declared_occasions()
 def test_the_census_finds_the_five_occasions_it_used_to_list():
     """A census that silently found nothing would pass every test below."""
     assert {
-        "nora/ingest/relevance_gate.py", "nora/language/proactive.py",
-        "nora/language/note_curator.py", "nora/language/note_candidates.py",
-        "nora/language/culture.py",
-    } <= set(_OCCASIONS)
+        "nora/ingest/relevance_gate.py", "nora/language/culture.py",
+    } <= set(_OCCASIONS), sorted(_OCCASIONS)
 
 #: Imported name -> the ONE block name it always builds. Each lives in its
 #: own module (`nora.language.note_render`, `.standing_render`,

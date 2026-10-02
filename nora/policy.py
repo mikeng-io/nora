@@ -167,7 +167,8 @@ class Conversation:
     # truth about a real room is written down.
     #
     # It is rendered as DATA the model reads about the batch, never as an
-    # instruction to it — see `nora.language.note_candidates.ROOM_BLOCK_NOTE`.
+    # instruction to it — see the deleted `nora.language.note_candidates.ROOM_BLOCK_NOTE`
+    # (DEC-277) and the culture fold's `_room_block`.
     description: str | None = None
     # WHERE THIS GUILD'S SPOKEN UTTERANCES LAND (design/voice-channel/07
     # §12.2, reversed 2026-09-17 by the operator). Default False.
@@ -590,8 +591,8 @@ def load_policy(path: Path) -> Policy:
             by_id[key] = convo
 
     # EVERY ALLOWED ROOM CARRIES A LABEL (issue #200 part 2). `UnitRoom.label`
-    # (`nora.app.composition._unit_rooms`) and the note-candidates pass's
-    # `label_for` both render `label` or a floor — `UNNAMED_ROOM`, «a room
+    # (`nora.app.composition._unit_rooms`) and the (deleted) note-candidates pass's
+    # `label_for` both rendered `label` or a floor — `UNNAMED_ROOM`, «a room
     # with no name» — for a room the operator left unlabelled, deliberately,
     # so a missing label never puts a raw `primary_id` on the model's wire
     # (R-18, 2026-09-23). That floor is the right failure mode for OLD data a

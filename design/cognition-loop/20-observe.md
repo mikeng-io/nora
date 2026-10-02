@@ -12,6 +12,9 @@ edges:
 
 # 20 · Observe
 
+> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+
+
 Observe is **code**. It never asks a model what is worth recording; it records
 everything its sources give it and says what changed.
 

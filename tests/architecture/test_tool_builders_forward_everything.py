@@ -79,12 +79,6 @@ _SPECS_ONLY = frozenset({
     "events", "fire_turn",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
-    # Proactive destination map (design/dreamer-agent-loop/40, #248): the
-    # note-linked proactive row's origin-room resolution. Same seam as
-    # `dream_adaptor` — built by the composition root, threaded through
-    # `ToolRegistry.build`, and never touched by `build_tools`' non-Dreamer
-    # callers.
-    "origin_rooms",
     # design/tool-catalogue/02: `load_tools`' per-turn shelf. Created and
     # stocked inside `ToolRegistry.surface()`, which is the only thing that
     # knows what was deferred; a `build_tools` caller has no shelf to pass,

@@ -13,16 +13,8 @@ import json
 
 import pytest
 
-from nora.domain.delete_authorship import ORPHAN_CAP_PER_DELETER, ORPHAN_CAP_UNNAMED_PER_ROOM
 from nora.domain.media import MediaBlob
-from nora.domain.models import (
-    DeliveryStatus,
-    EditTarget,
-    NormalizedMessage,
-    Quote,
-    RowEdit,
-    Touch,
-)
+from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Quote, RowEdit
 from nora.domain.ports import RecordStore
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -849,9 +841,24 @@ async def test_a_reaction_and_its_removal_are_two_rows_beside_the_message(store)
     assert [r.body for r in rows] == ["dinner at 8"]
 
 
+async def test_hide_message_hides_once_and_find_edited_says_so(store):
+    """A platform delete hides its target (`hide_message`): the first call hides it, a
+    second says False (the first timestamp is kept), a row that does not exist says False,
+    and the lookup an edit uses still finds the row but reports it hidden."""
+    target = await store.append(message=_msg(body="dinner at 8", ts=1))
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111")
+    assert found is not None and found.hidden is False
+    assert await store.hide_message(message_id=target, now_ms=100) is True
+    assert await store.hide_message(message_id=target, now_ms=200) is False
+    assert await store.hide_message(message_id=target + 999, now_ms=100) is False
+    found = await store.find_edited(
+        conversation_id="g1", target=EditTarget(sent_ts=1), sender_id="+852111")
+    assert found is not None and found.hidden is True
+
+
 async def test_a_delete_is_recorded_and_the_message_still_reads(store):
-    """The delete is the Record item the withdrawal cascade (step 2c) will be
-    fed from; hiding the row is that step's, not this one's."""
+    """The delete is the Record item; hiding the row is `hide_message`'s."""
     target = await store.append(message=_msg(body="dinner at 8", ts=1))
     did = await store.append_delete(
         message_id=target, message=_touch("delete", ts=7, sender=""), person_id=None)
@@ -860,169 +867,3 @@ async def test_a_delete_is_recorded_and_the_message_still_reads(store):
     assert deletes == [(target, "", None, 7, {"touch": "delete", "ts": 7})]
     rows = await store.recent(conversation_id="g1", limit=10)
     assert [r.body for r in rows] == ["dinner at 8"]
-
-
-# --- orphan deletes: a delete whose target is not on record yet ---------------
-# `record_orphan_delete` / `match_orphan_deletes` / `discard_orphan_delete`: the key rule
-# (same platform and room, a NON-EMPTY handle or Signal's sent-timestamp) and the
-# authorship rule (`nora.domain.delete_authorship`) are the contract; both stores answer
-# the same, so the pipeline's check after an audit write and the gate's peek cannot drift
-# from what the sweep applies.
-
-
-def _orphan(store, *, platform="whatsapp", room="g1", handle="H1", sent_ts=None,
-            deleter="w1", ids=(), person=None, now=1000, whole=False):
-    msg = NormalizedMessage(
-        platform=platform, conversation_id=room, conversation_type="group",
-        sender_id=deleter, sender_name=None, timestamp=50, body="", raw={},
-    )
-    touch = Touch(
-        kind="delete", target=EditTarget(message_id=handle, sent_ts=sent_ts), actor_ids=ids,
-    )
-    pending = store.record_orphan_delete(
-        message=msg, touch=touch, person_id=person, now_ms=now)
-    return pending if whole else _id_of(pending)
-
-
-async def _id_of(pending):
-    return (await pending).id
-
-
-def _arriving(*, platform="whatsapp", room="g1", handle="H1", ts=7, sender="w1"):
-    return NormalizedMessage(
-        platform=platform, conversation_id=room, conversation_type="group",
-        sender_id=sender, sender_name=None, timestamp=ts, body="x", raw={},
-        message_id=handle,
-    )
-
-
-async def test_a_kept_delete_matches_the_message_it_names_by_handle_and_peeking_keeps_it(store):
-    oid = await _orphan(store)
-    first = await store.match_orphan_deletes(message=_arriving(), person_id=None)
-    again = await store.match_orphan_deletes(message=_arriving(), person_id=None)
-    assert [o.id for o in first] == [oid] and [o.id for o in again] == [oid]
-    assert (first[0].platform, first[0].handle, first[0].deleter_id) == ("whatsapp", "H1", "w1")
-    assert await store.discard_orphan_delete(orphan_id=oid) is True
-    assert await store.discard_orphan_delete(orphan_id=oid) is False
-    assert await store.match_orphan_deletes(message=_arriving(), person_id=None) == []
-
-
-async def test_a_kept_signal_delete_matches_by_timestamp_and_only_for_its_author(store):
-    oid = await _orphan(store, platform="signal", handle="", sent_ts=777, deleter="+1")
-    mine = _arriving(platform="signal", handle="", ts=777, sender="+1")
-    other = _arriving(platform="signal", handle="", ts=777, sender="+2")
-    assert [o.id for o in await store.match_orphan_deletes(message=mine, person_id=None)] == [oid]
-    assert await store.match_orphan_deletes(message=other, person_id=None) == []
-    assert await store.match_orphan_deletes(
-        message=_arriving(platform="signal", handle="", ts=778, sender="+1"), person_id=None,
-    ) == []
-
-
-async def test_a_kept_delete_never_matches_on_an_empty_handle(store):
-    await _orphan(store, platform="signal", handle="", sent_ts=777, deleter="+1")
-    assert await store.match_orphan_deletes(
-        message=_arriving(platform="signal", handle="", ts=5, sender="+1"), person_id=None,
-    ) == []
-
-
-async def test_a_kept_delete_is_per_platform_room_and_handle(store):
-    await _orphan(store, platform="discord", handle="H1", deleter="")
-    for message in (
-        _arriving(platform="whatsapp"), _arriving(platform="instagram"),
-        _arriving(platform="discord", room="g2"), _arriving(platform="discord", handle="H2"),
-    ):
-        assert await store.match_orphan_deletes(message=message, person_id=None) == []
-    assert len(await store.match_orphan_deletes(
-        message=_arriving(platform="discord", sender="d1"), person_id=None)) == 1
-
-
-async def test_a_kept_whatsapp_delete_is_the_authors_by_id_by_person_or_by_any_id_form(store):
-    await _orphan(store, handle="H1", deleter="+85211112222", ids=("+85211112222", "999"))
-    assert len(await store.match_orphan_deletes(
-        message=_arriving(sender="999"), person_id=None)) == 1, "stored under the other form"
-    assert len(await store.match_orphan_deletes(
-        message=_arriving(sender="+85211112222"), person_id=None)) == 1
-    assert await store.match_orphan_deletes(
-        message=_arriving(sender="+85299999999"), person_id=None) == []
-    oid = await _orphan(store, handle="H2", deleter="a-phone", person="ada")
-    assert [o.id for o in await store.match_orphan_deletes(
-        message=_arriving(handle="H2", sender="a-lid"), person_id="ada")] == [oid]
-    assert await store.match_orphan_deletes(
-        message=_arriving(handle="H2", sender="a-lid"), person_id="ben") == []
-
-
-# --- the held-delete table is bounded by EVICTION, never by refusal ------------
-
-
-async def _live(store, *, platform="whatsapp", room="g1", handle="H1", sender="w1"):
-    """Whether a held delete for `handle` still names a message just recorded."""
-    return bool(await store.match_orphan_deletes(
-        message=_arriving(platform=platform, room=room, handle=handle, sender=sender),
-        person_id=None))
-
-
-async def test_a_named_deleter_over_its_cap_evicts_its_own_oldest_and_a_new_one_always_lands(
-    store,
-):
-    cap = ORPHAN_CAP_PER_DELETER
-    for i in range(cap):
-        rec = await _orphan(store, handle=f"H{i}", deleter="hostile", now=1000 + i, whole=True)
-        assert rec.evicted == 0
-    other = await _orphan(store, room="g2", handle="OTHER", deleter="author", now=5000,
-                          whole=True)
-    over = await _orphan(store, handle="NEW", deleter="hostile", now=9000, whole=True)
-
-    assert over.evicted == 1, "the new one landed and pushed ONE older row out"
-    assert not await _live(store, handle="H0", sender="hostile"), "its oldest went first"
-    assert await _live(store, handle="H1", sender="hostile")
-    assert await _live(store, handle="NEW", sender="hostile")
-    assert await _live(store, room="g2", handle="OTHER", sender="author"), (
-        "a flood evicts only its own")
-    assert other.evicted == 0
-
-
-async def test_unnamed_deletes_are_bounded_per_room_not_as_one_bucket_for_the_platform(store):
-    """Discord and Instagram deletes name nobody (`deleter_id == ""`): the per-deleter cap
-    must not turn them into ONE shared bucket for the whole platform."""
-    for room in range(30):
-        for i in range(10):
-            rec = await _orphan(store, platform="discord", room=f"r{room}", handle=f"H{i}",
-                                deleter="", now=1000 + room * 10 + i, whole=True)
-            assert rec.evicted == 0, "300 unknown-target deletes over 30 rooms evict nothing"
-    fresh = await _orphan(store, platform="discord", room="fresh", handle="REAL", deleter="",
-                          now=9000, whole=True)
-    assert fresh.evicted == 0
-    assert await _live(store, platform="discord", room="fresh", handle="REAL", sender="d")
-    for i in range(ORPHAN_CAP_UNNAMED_PER_ROOM + 1):
-        await _orphan(store, platform="discord", room="busy", handle=f"B{i}", deleter="",
-                      now=20_000 + i)
-    assert not await _live(store, platform="discord", room="busy", handle="B0", sender="d")
-    assert await _live(store, platform="discord", room="busy", handle="B1", sender="d")
-
-
-async def test_a_redelivered_delete_evicts_nothing(store):
-    for i in range(ORPHAN_CAP_PER_DELETER):
-        await _orphan(store, handle=f"H{i}", deleter="hostile", now=1000 + i)
-    again = await _orphan(store, handle="H0", deleter="hostile", now=9999, whole=True)
-    assert again.evicted == 0 and await _live(store, handle="H0", sender="hostile")
-
-
-async def test_the_room_cap_evicts_the_heaviest_contributors_oldest_not_the_rooms(
-    store, monkeypatch,
-):
-    """Both stores: at the room cap the row that goes is the oldest of the deleter holding
-    the MOST rows there, so a victim's single (oldest) row outlives a flooder's."""
-    import nora.infra.sql.audit as sql_audit
-    import nora.testing.fakes as fakes
-
-    for module in (sql_audit, fakes):
-        monkeypatch.setattr(module, "ORPHAN_CAP_PER_ROOM", 4)
-    await _orphan(store, handle="VICTIM", deleter="victim", now=1000)
-    for i in range(3):
-        await _orphan(store, handle=f"F{i}", deleter="flooder", now=2000 + i)
-    over = await _orphan(store, handle="F3", deleter="flooder", now=3000, whole=True)
-
-    assert over.evicted == 1
-    assert await _live(store, handle="VICTIM", sender="victim"), "the lone row survived"
-    assert not await _live(store, handle="F0", sender="flooder"), "the flooder's oldest went"
-    assert await _live(store, handle="F3", sender="flooder")

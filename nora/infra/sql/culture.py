@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import CultureRevision
 from nora.domain.lineage import BODY, Lineage, own_room_lineage, room_key
-from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import CULTURE, CULTURE_REVISION, MESSAGES
 
 __all__ = ["SqlCultureStore"]
@@ -50,7 +49,6 @@ def _revision(row: sa.Row[Any]) -> CultureRevision:
         model=row.model,
         lineage=Lineage.from_json(row.lineage, origin=row.culture_key),
         exclude_persons=tuple(row.exclude_persons or ()),
-        unsupported_at=getattr(row, "unsupported_at", None),
     )
 
 
@@ -67,7 +65,7 @@ class SqlCultureStore:
         what that guards against. Two revisions can also share a millisecond.
         """
         stmt = (
-            sa.select(CULTURE_REVISION, CULTURE.c.unsupported_at)
+            sa.select(CULTURE_REVISION)
             .select_from(
                 CULTURE.join(
                     CULTURE_REVISION,
@@ -107,7 +105,7 @@ class SqlCultureStore:
             # The room key comes from the Record: a culture key is the room's
             # bare `primary_id` (`nora.domain.lineage`, module docstring).
             newest = (await conn.execute(
-                sa.select(MESSAGES.c.platform, MESSAGES.c.id)
+                sa.select(MESSAGES.c.platform)
                 .where(
                     MESSAGES.c.conversation_id == key,
                     MESSAGES.c.hidden_at.is_(None),
@@ -164,14 +162,6 @@ class SqlCultureStore:
                         "updated_at": stmt.excluded.updated_at,
                     },
                 )
-            )
-            # The citation edge table (migration `0075_withdrawal`, step
-            # 2c): the newest message on record in this room, the one
-            # message id this store can name today (its body has no
-            # citation schema yet, `12-schemas.md` §4 arrives at step 4+).
-            await record_message_citation(
-                conn, citing_store="culture", citing_key=key,
-                message_id=newest.id if newest is not None else None,
             )
         return CultureRevision(
             id=revision_id,

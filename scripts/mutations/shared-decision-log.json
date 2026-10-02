@@ -28,20 +28,6 @@
     "target": "tests/unit/test_fire_path.py -k participation_turn_that_speaks_is_written_to_the_decision_log"
   },
   {
-    "name": "#199 the proactive decide turn records every decision",
-    "file": "nora/language/proactive.py",
-    "old": "            await self._log_decision(key, decision)",
-    "new": "            pass",
-    "target": "tests/unit/test_proactive_adaptor.py -k decide_turn_logs_every_decision_including_the_declines"
-  },
-  {
-    "name": "#199 a decide row is logged against the HOME room",
-    "file": "nora/language/proactive.py",
-    "old": "            writer=\"proactive_decide\", platform=home.platform,\n            conversation_id=home.conversation_id,",
-    "new": "            writer=\"proactive_decide\", platform=self._rooms_of(key)[-1].platform,\n            conversation_id=self._rooms_of(key)[-1].conversation_id,",
-    "target": "tests/unit/test_proactive_adaptor.py -k decide_turns_rows_land_in_the_home_room"
-  },
-  {
     "name": "#199 the tag path records its outcome",
     "file": "nora/engagement/pipeline.py",
     "old": "                    verdict=(\n                        \"replied\" if delivered\n                        else \"silent\" if real_outcome == \"silent\"\n                        else \"failed\"\n                    ),\n                    reason=real_outcome,",
@@ -84,39 +70,11 @@
     "target": "tests/unit/test_fire_path.py -k participation_turn_sees_what_she_already_raised"
   },
   {
-    "name": "#199 the proactive pass READS the log",
-    "file": "nora/language/proactive.py",
-    "old": "        blocks.append(await self._loop_decisions(key, rooms, home, now=now))",
-    "new": "        pass",
-    "target": "tests/unit/test_proactive_adaptor.py -k pass_sees_what_the_other_deciders_did_in_each_room"
-  },
-  {
-    "name": "#199 the proactive pass's read excludes its own writers",
-    "file": "nora/language/proactive.py",
-    "old": "            writers=PROACTIVE_DECISION_WRITERS,\n        )\n        labels =",
-    "new": "        )\n        labels =",
-    "target": "tests/unit/test_proactive_adaptor.py -k pass_never_reads_back_its_own_proactive_rows"
-  },
-  {
-    "name": "#199 the two decision blocks keep separate names",
-    "file": "nora/domain/decision_log.py",
-    "old": "        name=\"loop_decisions\", body=\"\\n\".join(lines) if lines else empty,",
-    "new": "        name=\"decisions\", body=\"\\n\".join(lines) if lines else empty,",
-    "target": "tests/unit/test_proactive_adaptor.py -k the_two_decision_blocks_keep_their_separate_names"
-  },
-  {
     "name": "#199 a note is rendered by id",
     "file": "nora/domain/decision_log.py",
     "old": "    if row.note_id:\n        parts.append(f\"note {escape(row.note_id)}\")",
     "new": "    pass",
     "target": "tests/domain/test_decision_log.py -k note_is_rendered_by_id_and_never_by_title"
-  },
-  {
-    "name": "#199 the decide turn's model-authored why is NOT stored",
-    "file": "nora/language/proactive.py",
-    "old": "            verdict=\"remind\" if decision.action == \"remind\" else \"decline\",\n            note_id=decision.note_id,",
-    "new": "            verdict=\"remind\" if decision.action == \"remind\" else \"decline\",\n            note_id=decision.note_id, reason=decision.why,",
-    "target": "tests/unit/test_proactive_adaptor.py -k decide_turn_logs_every_decision_including_the_declines"
   },
   {
     "name": "#199 a log write can never fail a turn (record)",

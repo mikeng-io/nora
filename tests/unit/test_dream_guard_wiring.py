@@ -27,7 +27,7 @@ leave it unclear which one refused the call.
 from __future__ import annotations
 
 from nora.agent import factory
-from nora.agent.dreamer import DreamerRuntime, proactive_grant
+from nora.agent.dreamer import AdaptorGrant, DreamerRuntime
 from nora.obs.metrics import Metrics
 from tests.unit.test_dream_memory_budget import (
     BUDGET,
@@ -37,6 +37,11 @@ from tests.unit.test_dream_memory_budget import (
     _ScriptedModel,
     _Tools,
 )
+
+
+def _REMIND_GRANT() -> AdaptorGrant:
+    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
+    return AdaptorGrant(home_room=True)
 
 
 def _runtime(model, tools) -> tuple[DreamerRuntime, Metrics]:
@@ -50,7 +55,7 @@ def _runtime(model, tools) -> tuple[DreamerRuntime, Metrics]:
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
         model_name="scripted",
-        grants={"proactive": proactive_grant()},
+        grants={"proactive": _REMIND_GRANT()},
         store_timeout_seconds=10.0,
     ), metrics
 

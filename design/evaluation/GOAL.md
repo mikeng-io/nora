@@ -1,5 +1,8 @@
 # GOAL — finish the evaluation rebuild, end to end
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 > **STATUS, 2026-09-19 — superseded by scope, not withdrawn.**
 > `GOAL-2-backbone.md` is the live task order and reads first. Its own scope
 > puts porting the thirteen corpora, the gate's span problem, red teaming,

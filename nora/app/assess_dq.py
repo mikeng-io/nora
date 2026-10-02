@@ -38,14 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from nora.domain.assess import DqCheckResult
 from nora.infra.sql.schema import (
-    CITATION,
-    CULTURE,
     EVENTS,
-    MESSAGES,
-    NOTE,
     PRESENCE_STAYS,
     ROLLUP_OUTING,
-    STANDING,
 )
 
 __all__ = [
@@ -56,7 +51,6 @@ __all__ = [
     "rollup_rebuild_divergence",
     "run_deterministic_checks",
     "sections_past_age_horizon",
-    "unresolved_citations",
 ]
 
 _SAMPLE_LIMIT = 5
@@ -64,82 +58,6 @@ _SAMPLE_LIMIT = 5
 
 def _sample(keys: Sequence[str]) -> tuple[str, ...]:
     return tuple(keys[:_SAMPLE_LIMIT])
-
-
-async def unresolved_citations(conn: AsyncConnection) -> DqCheckResult:
-    """A citation whose cited message no longer resolves (hidden or gone)
-    while the citing HEAD is not itself `unsupported_at` — the gap the
-    withdrawal cascade (`nora.app.withdrawal`) should have closed but did
-    not (a cascade that never ran over this id, or a message hidden by a
-    path that never called it)."""
-    note_rows = await conn.execute(
-        sa.select(sa.literal("note").label("store"), NOTE.c.id.label("key"))
-        .select_from(
-            CITATION.join(NOTE, sa.cast(NOTE.c.id, sa.Text) == CITATION.c.citing_key)
-            .outerjoin(
-                MESSAGES,
-                sa.cast(MESSAGES.c.id, sa.Text) == CITATION.c.cited_id,
-            )
-        )
-        .where(
-            CITATION.c.citing_store == "note",
-            CITATION.c.cited_store == "message",
-            NOTE.c.unsupported_at.is_(None),
-            sa.or_(MESSAGES.c.id.is_(None), MESSAGES.c.hidden_at.isnot(None)),
-        )
-        .distinct()
-    )
-    standing_rows = await conn.execute(
-        sa.select(
-            sa.literal("standing").label("store"),
-            (STANDING.c.platform + ":" + STANDING.c.conversation_id).label("key"),
-        )
-        .select_from(
-            CITATION.join(
-                STANDING,
-                (STANDING.c.platform + ":" + STANDING.c.conversation_id)
-                == CITATION.c.citing_key,
-            )
-            .outerjoin(
-                MESSAGES,
-                sa.cast(MESSAGES.c.id, sa.Text) == CITATION.c.cited_id,
-            )
-        )
-        .where(
-            CITATION.c.citing_store == "standing",
-            CITATION.c.cited_store == "message",
-            STANDING.c.unsupported_at.is_(None),
-            sa.or_(MESSAGES.c.id.is_(None), MESSAGES.c.hidden_at.isnot(None)),
-        )
-        .distinct()
-    )
-    culture_rows = await conn.execute(
-        sa.select(sa.literal("culture").label("store"), CULTURE.c.key.label("key"))
-        .select_from(
-            CITATION.join(CULTURE, CULTURE.c.key == CITATION.c.citing_key)
-            .outerjoin(
-                MESSAGES,
-                sa.cast(MESSAGES.c.id, sa.Text) == CITATION.c.cited_id,
-            )
-        )
-        .where(
-            CITATION.c.citing_store == "culture",
-            CITATION.c.cited_store == "message",
-            CULTURE.c.unsupported_at.is_(None),
-            sa.or_(MESSAGES.c.id.is_(None), MESSAGES.c.hidden_at.isnot(None)),
-        )
-        .distinct()
-    )
-    offenders = [
-        f"{r.store}:{r.key}" for r in (*note_rows, *standing_rows, *culture_rows)
-    ]
-    if not offenders:
-        return DqCheckResult(check="unresolved_citations", status="ok")
-    return DqCheckResult(
-        check="unresolved_citations", status="fail", failing=len(offenders),
-        sample=_sample(offenders),
-        detail="citing head not unsupported, but its cited message is hidden or gone",
-    )
 
 
 async def cross_room_duplicate_events(conn: AsyncConnection) -> DqCheckResult:
@@ -331,7 +249,6 @@ async def run_deterministic_checks(
     build_a, build_b = rollup_builds if rollup_builds else (None, None)
     since_ms, through_ms = rollup_window_ms
     return (
-        await _isolated("unresolved_citations", unresolved_citations(conn)),
         await _isolated(
             "cross_room_duplicate_events", cross_room_duplicate_events(conn),
         ),

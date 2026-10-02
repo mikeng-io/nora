@@ -80,11 +80,11 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
-from ..domain.models import PersonRef, TranscriptRow
+from ..domain.models import TranscriptRow
 from ..domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DreamAdaptor,
@@ -101,7 +101,6 @@ from .dream_screen import screen
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .surface import DREAMER_LOOP_TOOLS
-from .tools import OriginRoom
 
 log = logging.getLogger("nora.dreamer")
 
@@ -152,11 +151,9 @@ TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 
 #: THE VERBS THE PER-PASS MEMORY CEILING COUNTS (issue #160) — every read that
 #: answers «what is already known about this person», whichever store it goes
-#: to. The four are the memory cluster of `nora.language.proactive.
-#: PROACTIVE_TOOLS`; they are spelled HERE rather than imported because
-#: `nora.agent` may not import `nora.language` (the layer contract), and
-#: `tests/unit/test_dream_memory_budget.py` pins this set against that one so
-#: the two cannot drift into disagreement in silence.
+#: to. The four were the memory cluster of the deleted proactive pass's tool
+#: set (`nora.language.proactive`, DEC-277); `tests/unit/test_dream_memory_budget.py`
+#: pins the set.
 #:
 #: `lookup_person` is in, and it is the inclusion worth defending because it
 #: looks like the one that could STARVE a pass — a note involving three people
@@ -256,8 +253,8 @@ class AdaptorBudget:
     #: lives. This is the per-adaptor override OF that table, the same
     #: relationship `[llm.budgets]` already has to it for a tag turn — the
     #: difference being that `[llm.budgets]` is deployment-wide and this is
-    #: one adaptor's. Without it the only way to give the proactive pass more
-    #: `note_read` was to give every one of Nora's own replies more too.
+    #: one adaptor's. Without it the only way to give one pass (the proactive pass,
+    #: deleted 2026-10-03) more `note_read` was to give every one of Nora's own replies more too.
     #:
     #: Empty by omission, so an adaptor that says nothing runs on exactly the
     #: ceilings it ran on before this field existed.
@@ -308,7 +305,8 @@ class AdaptorSchedule:
     dispatches adaptors as CONCURRENT tasks with no ordering
     (design/dreamer-agent-loop/33 §6 M6 states this and declines to solve it
     for the note tier, which has no such dependency). The mechanism stays
-    because the note tier's own slots use it (`note-curation` at 16:00 UTC).
+    for any watermark-free adaptor's slot (the note tier's `note-curation`
+    slot at 16:00 UTC used it until its deletion, 2026-10-03, DEC-277).
     Give all three the same daily interval and they coincide every day; give
     them the same interval at different offsets and a claim written in the
     morning is adjudicated the same afternoon rather than tomorrow. Ignored
@@ -321,7 +319,8 @@ class AdaptorSchedule:
     max_items: int | None = None
     phase_offset_seconds: float = 0.0
     #: Model calls per fire, UNIONED (design/dreamer-agent-loop/37, issue
-    #: #118). Measured 2026-09-08 on `note-candidates`: one shape of entry —
+    #: #118). Measured 2026-09-08 on `note-candidates` (deleted 2026-10-03, DEC-277): one shape of
+    #: entry —
     #: a plan one person states with an unsettled corner — is recognised in
     #: ~30% of samples at temperature 0.7 while precision stays 1.00 on every
     #: negative sample across every prompt variant tried. Three prompt-level
@@ -359,7 +358,7 @@ class AdaptorSchedule:
     #: carries rather than merely costing calls.
     #:
     #: **Default `False`, because the right answer is per adaptor.** An
-    #: extractor that appends idempotently (`note-candidates`) may legitimately
+    #: extractor that appends idempotently (as `note-candidates` did) may legitimately
     #: want the whole backlog; an adaptor whose output is a single evolving
     #: HEAD wants only what the room has been saying lately. Only the second
     #: kind sets this.
@@ -438,11 +437,6 @@ class AdaptorGrant:
     `AdaptorGrant()` — no act verbs, no home room — which is the whole
     pre-DEC-162 ceiling, by omission.
 
-    `acts` are act-verb NAMES admitted past `read_only_tools()` for this
-    adaptor and no other. The three enforcement points all read it —
-    `tool_subset_faults` (startup and per run) and `RegistryToolSource.build`
-    — so an allowance is never a fourth list that can drift from the three.
-
     `home_room` says the adaptor's `Room` is built from a REAL room — a real
     roster source, `self_ids` and `location_trusted` — rather than from the
     empty one, and that `UNIT_SAFE_TOOLS` does not apply to it.
@@ -465,24 +459,7 @@ class AdaptorGrant:
     cases. This is a widening for adaptors that ASK, never a default.
     """
 
-    acts: frozenset[str] = frozenset()
     home_room: bool = False
-
-
-def proactive_grant() -> AdaptorGrant:
-    """The proactive adaptor's grant (39 D3): every read verb through the home
-    room, and exactly one act verb — her own `remind`, which under the
-    `dream_adaptor` provenance stamps kind/owner/destination/payload in code
-    and screens the text before `create`. Not `send_reply` (the Dreamer does
-    not speak), not `send_to`, not `note_create`/`note_update` (39 D6).
-
-    A function returning a fresh value rather than a module-level constant,
-    for DEC-13's reason (`tests/architecture/test_no_module_level_mutable_
-    singletons.py`): the composition root builds one and hands the SAME
-    object to the runtime and the startup check, which is the identity that
-    matters — not one shared across every importer of this module.
-    """
-    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
 
 
 def culture_grant() -> AdaptorGrant:
@@ -496,13 +473,11 @@ def culture_grant() -> AdaptorGrant:
     is the difference between a declared tool set and a reachable one
     (`design/dreamer-agent-loop/03-no-agent-loop §7.4`).
 
-    **`acts` is deliberately empty and stays so.** The culture pass writes
-    one row through its own store and speaks to nobody; the read-only
-    ceiling already refuses every act verb, and an empty `acts` is that
-    refusal said twice rather than relied on once.
+    The culture pass writes one row through its own store and speaks to nobody;
+    the read-only ceiling refuses every act verb.
 
-    A function rather than a module-level constant, for `proactive_grant`'s
-    reason (DEC-13).
+    A function rather than a module-level constant (DEC-13): the composition
+    root hands the SAME object to the runtime and the startup check.
     """
     return AdaptorGrant(home_room=True)
 
@@ -510,12 +485,11 @@ def culture_grant() -> AdaptorGrant:
 def cognition_grant() -> AdaptorGrant:
     """The Cognition adaptor's grant (design/cognition-loop/30 §2): a real
     room, and NO act verb. Its write, pace and act verbs are not registry
-    tools at all: the session holds them as its own closures, dry-run in
-    shadow (`nora.app.cognition_session`), so nothing here widens the
-    read-only ceiling and `acts` stays empty, said twice rather than relied on
-    once. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
+    tools at all: the session holds them as its own closures
+    (`nora.app.cognition_session`), so nothing here widens the
+    read-only ceiling. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
     item's room as the key), so lineage and the roster's disclosure guard are
-    the room's own. A function, for `proactive_grant`'s reason (DEC-13)."""
+    the room's own. A function, for `culture_grant`'s reason (DEC-13)."""
     return AdaptorGrant(home_room=True)
 
 
@@ -728,9 +702,7 @@ def tool_subset_faults(
     unusable by this adaptor:
 
     1. **read vs act.** Outside `read_only_tools()` is an act verb, and no
-       background loop may hold one — except the verbs `grant.acts` names
-       for THIS adaptor (39 D3: the proactive adaptor's `remind`, and
-       nothing else today).
+       background loop may hold one.
     2. **room-scoped vs unit-safe.** A UNIT-keyed adaptor gets a
        unit name as its `key`, which is not a conversation id. Every
        room-scoped read tool is bound to one — `load_transcript` reads one
@@ -757,7 +729,7 @@ def tool_subset_faults(
     allowance = grant if grant is not None else AdaptorGrant()
     faults: list[str] = []
     declared = frozenset(adaptor.tools)
-    escaped = declared - ceiling - allowance.acts
+    escaped = declared - ceiling
     if escaped:
         faults.append(
             f"Dreamer adaptor {adaptor.name!r} declares tools outside the "
@@ -945,7 +917,7 @@ def parse_envelope(raw: str, *, key: str) -> tuple[Mapping[str, object], ...] | 
     # was loud and retryable.
     #
     # Worse than lossy on an objective that prints a POPULATED example (the
-    # deleted `fact-adjudication` did; `note-candidates` does): the tier would
+    # deleted `fact-adjudication` and `note-candidates` did): the tier would
     # write the documentation's own worked example as a real row.
     #
     # Last is also what the measurement says: the model narrates, then
@@ -984,9 +956,8 @@ class RegistryToolSource:
     that room — the real roster source for its platform, Nora's own
     `self_ids` so her account is skipped rather than counted `unnamed`, and
     `location_trusted` from the room's `location` flag — so `where_is` and
-    its siblings run the disclosure guard exactly as on a tag; and its
-    `grant.acts` are admitted past `read_only()`. Everything about the
-    build that is not the room or the acts is unchanged: `deliverer=None`,
+    its siblings run the disclosure guard exactly as on a tag. Everything
+    about the build that is not the room is unchanged: `deliverer=None`,
     and the unit is still SUPPLIED. A home-room grant that resolves no
     room falls back to the closed shape above and says so — never a guessed
     room.
@@ -1014,10 +985,8 @@ class RegistryToolSource:
         metrics: Metrics, ai_peer: str = "nora",
         home_rooms: Mapping[str, HomeRoom] | None = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
-        origin_rooms: Mapping[str, OriginRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
-        online_scope_for: Callable[[str], Awaitable[tuple[PersonRef, ...]]] | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -1040,11 +1009,6 @@ class RegistryToolSource:
         # names none, which leaves the scope-keyed build exactly as closed as
         # it was before this map existed.
         self._scope_rooms = dict(scope_rooms or {})
-        # Conversation id -> origin room (design/dreamer-agent-loop/40, #248).
-        # Built by the composition root from `Policy.conversations`; empty for
-        # every composition that names none, which keeps the home-room
-        # destination unchanged for tag paths and unwired units.
-        self._origin_rooms = dict(origin_rooms or {})
         # Platform -> roster source, the same map `FirePath` holds: a home
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
@@ -1058,14 +1022,6 @@ class RegistryToolSource:
         # units). The COUNTER carries the ongoing reading; the log carries
         # the news.
         self._home_room_reported: set[tuple[str, str]] = set()
-        # `online_now`'s input-domain resolver (design/online-status/03):
-        # unit -> the home roster unioned with the note subjects. Bound
-        # per BUILD below, and ONLY when a home-room grant resolved — the
-        # decide turn is the one occasion that may answer about people
-        # outside the room it stands in, and a background loop never gets
-        # it. `None` (every composition that did not wire one) leaves
-        # `online_now` on its tag-path domain: the room's own roster.
-        self._online_scope_for = online_scope_for
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
@@ -1097,9 +1053,7 @@ class RegistryToolSource:
             # Loud, and CLOSED: the grant said «stand in a real room» and
             # none resolved. Building the room-scoped tools against a
             # synthetic room would answer «nobody is here» (`available=
-            # False`) and `remind` would write into a conversation that does
-            # not exist, so neither is built — the acts are withheld along
-            # with the room.
+            # False`), which is why the room is withheld, not faked.
             self._metrics.inc(
                 "nora_dream_home_room_missing_total",
                 adaptor=adaptor, unit=unit or "",
@@ -1119,42 +1073,17 @@ class RegistryToolSource:
                     log.error(
                         "dream adaptor %r is granted a home room but scope %r "
                         "is not a conversation in policy.toml; building "
-                        "without acts or a room", adaptor, key,
+                        "without a room", adaptor, key,
                     )
                 else:
                     log.error(
                         "dream adaptor %r is granted a home room but unit "
-                        "%r names none in policy.toml; building without acts "
-                        "or a room", adaptor, unit,
+                        "%r names none in policy.toml; building without a "
+                        "room", adaptor, unit,
                     )
-        acts = allowance.acts if home is not None else frozenset()
-        wanted = frozenset(names) & (self.read_only() | acts)
+        wanted = frozenset(names) & self.read_only()
         if not wanted:
             return []
-        # `online_now`'s input-domain resolver (design/online-status/03),
-        # bound to exactly THIS decide turn: only when the home-room grant
-        # resolved — a background loop (home is None) keeps the tag-path
-        # domain, so the union scope can never leak into one. The resolver
-        # raising is the tool's `unavailable`, never a narrowed guess. A
-        # LOCAL, not the attribute: mypy does not narrow `self._x is not
-        # None` into a closure, and the guard above it is what makes the
-        # call safe.
-        online_scope_for = self._online_scope_for
-        online_scope = (
-            (lambda: online_scope_for(unit))
-            # `unit is not None` is the third clause and it is not
-            # tidiness: the resolver is keyed by UNIT, and a scope-keyed
-            # home-room build has none. Passing `""` would resolve the union
-            # for no unit — an empty domain at best, and at worst the
-            # widened decide-turn domain reaching a background pass it was
-            # never meant to. A scope-keyed adaptor keeps the tag-path
-            # domain: `online_now` answers about ITS OWN room's roster, which
-            # is the only question it has.
-            if home is not None
-            and online_scope_for is not None
-            and unit is not None
-            else None
-        )
         if home is not None:
             room = Room(
                 platform=home.platform, conversation_id=home.conversation_id,
@@ -1211,12 +1140,6 @@ class RegistryToolSource:
             # whose tools resolve through the room — the EMPTY room without a
             # home-room grant, and the room the key names with one.
             supplied_unit=unit,
-            # Bound above, where the home-room grant was resolved.
-            online_scope=online_scope,
-            # Proactive destination map (design/dreamer-agent-loop/40, #248):
-            # conversation ids -> OriginRoom, threaded to `remind` so a
-            # note-linked proactive row is stamped into the note's own room.
-            origin_rooms=self._origin_rooms,
             # The rows the transcript reads return, for an adaptor that
             # grounds on what it loaded (design 43 §3); `None` otherwise.
             on_rows=on_rows,
@@ -1411,10 +1334,11 @@ class DreamerRuntime:
         `_dream_adaptor_once` reads the same field off the same mapping.
 
         Measured 2026-09-22: the eval seam drove EVERY adaptor with a
-        hardcoded 64 while the deployment hands note-candidates 80 and
+        hardcoded 64 while the deployment handed note-candidates 80 and
         culture 300 — a tier present but REDUCED, which
         `design/evaluation/11-the-sandbox-rebuild.md` §6 R7 calls the same
-        divergence as one absent. It surfaced as note-candidates emitting
+        divergence as one absent. It surfaced as note-candidates (deleted 2026-10-03, DEC-277)
+        emitting
         ~7,000 output tokens a call against production's median of 711.
         """
         sched = self._schedules.get(adaptor_name)
@@ -1523,13 +1447,13 @@ class DreamerRuntime:
                 # that is 288 full `web_search`/`web_fetch` loops per unit
                 # per day with nothing pending. The port's own docstring says
                 # such an adaptor "must carry its own fire condition", and this
-                # is where the runtime lets it: the shipped curator's is a
+                # is where the runtime lets it: the (deleted, DEC-277) note curator's was a
                 # daily slot plus a blank `inputs` on a tidy notebook.
                 #
                 # `commit(key, ())` is still called, so the decay contract is
                 # untouched: a watermarked adaptor over a quiet room renders a
                 # blank prompt too, and that path is exactly where a tier's
-                # time-driven work lives — the curator records its wakes on an
+                # time-driven work lives — the (deleted) note curator recorded its wakes on an
                 # empty commit, whatever the model did or did not say. Reported
                 # `nothing_found` — «I looked and there was nothing» — because
                 # that is what happened; `unavailable` would hold a watermark
@@ -1699,7 +1623,7 @@ class DreamerRuntime:
             )
             # Called even when `proposals` is empty, and that is not a
             # formality: an empty `commit` is R-27's `nothing_found` and the
-            # sink may act on it — the curator records its wakes on one,
+            # sink may act on it — the (deleted, DEC-277) curator recorded its wakes on one,
             # because decay is time-driven. Skipping the call would drop decay
             # silently.
             # BOUNDED (issue #60), and the cancellation this can deliver is a
@@ -1712,13 +1636,14 @@ class DreamerRuntime:
             #
             # **The trade holds only where the tier ORDERED its writes for
             # it, and that is a property of each adaptor rather than of this
-            # line.** Cold review found the proactive pass stamping its daily
+            # line.** Cold review found the proactive pass (deleted 2026-10-03, DEC-277) stamping
+            # its daily
             # clock FIRST — so a cancelled commit recorded the day as done
             # with nothing written and orphaned the rows the model loop had
             # already created; the stamp moved to the end, with a named test.
-            # The note curator's discharge step still has the shape (it
-            # retires, then writes the content) and is issue #195; it is off
-            # by default. An adaptor added later has to answer the same
+            # The note curator's discharge step had the shape (it
+            # retired, then wrote the content; deleted 2026-10-03, DEC-277). An adaptor added
+            # later has to answer the same
             # question rather than inherit an answer.
             written = await self._bounded_store_call(
                 adaptor=adaptor, key=key, phase="commit",

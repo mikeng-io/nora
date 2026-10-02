@@ -88,10 +88,9 @@ def age(ts_ms: int, now: datetime) -> str:
     needs — «is this still current?» — and it costs a few characters per line
     instead of a full datetime.
 
-    NOT the only age vocabulary in the tree yet: `nora.language.proactive`
-    renders «2 h» where this renders «2h ago», in a prompt whose wording is
-    graded by the `proactive_decide` suite. Merging them changes that prompt,
-    so it is a measured change and not a tidy-up.
+    NOT the only age vocabulary in the tree: the deleted `nora.language.proactive`
+    (DEC-277) rendered «2 h» where this renders «2h ago». Any remaining
+    second vocabulary is a measured change to merge, not a tidy-up.
     """
     seconds = max(0, int(now.timestamp() - ts_ms / 1000))
     if seconds < 90:

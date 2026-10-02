@@ -208,20 +208,6 @@ async def test_a_head_with_no_revision_omits_the_key_not_null(engine, tmp_path):
     assert "revision" not in result
 
 
-async def test_an_unsupported_head_is_not_returned(engine, tmp_path):
-    """Withdrawal (10 §2 rule 7): the cascade marked the position unsupported,
-    so none of its words reach the session, in any section."""
-    await SqlStandingStore(engine).write(standing=_standing(body="Words of a withdrawn item."))
-    async with engine.begin() as conn:
-        await conn.execute(sa.update(STANDING).values(unsupported_at=T + 5))
-    result = await _call(_tool(engine, tmp_path))
-    assert result["status"] == "nothing_found"
-    assert "No supported position" in result["note"]
-    text = json.dumps(result)
-    assert "withdrawn item" not in text and "Friday" not in text and "booking" not in text
-    assert "revision" not in result
-
-
 async def test_a_room_that_never_folded_is_nothing_found_not_an_error(engine, tmp_path):
     result = await _call(_tool(engine, tmp_path))
     assert result["status"] == "nothing_found" and "No supported position" in result["note"]

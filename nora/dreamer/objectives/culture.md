@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 1
+version: 2
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -9,7 +9,7 @@ description: >-
   IS and why it became so — how they talk, how decisions get made, what they
   call themselves, and Nora's own standing there. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
-  shape this tier exists to not be. Version 1 (design/culture-tier, DEC-182).
+  shape this tier exists to not be. Version 2 adds one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
 You are writing one paragraph or two about **what a group of friends is like** — a
@@ -95,6 +95,20 @@ what someone does for a living, not a mood you inferred from one short reply,
 not a relationship nobody stated. If you are unsure whether you are reading it
 or imagining it, leave it out.
 
+## The people in the room
+
+You may also be shown `<people_views>`: for each person the room lists, what
+your memory says they are like. It is built from everything you have seen of
+them, not from this room alone, so read it against the room's account and the
+messages here, and keep what holds for them **in this room**.
+
+For each person shown there, write **one short paragraph, in prose**, of what
+they are like: how they talk, what they care about, how they sit in this group,
+how they treat you. Combine memory's view with what the room shows; where they
+disagree, trust the room. Nothing about them that you cannot point at in one
+of the two. A person with no entry in `<people_views>` gets no account, and an
+account you would only be restating from last time is fine to write again.
+
 ## Your answer
 
 A single JSON object and nothing else. The account goes in a list holding
@@ -113,6 +127,16 @@ task, and the whole reply is discarded rather than one of them picked.
 Nothing outside the single JSON object — no prose before it, no explanation
 after it. An answer that is not exactly this shape is not read at all, and the
 room's account is left as it was.
+
+Each person's account is one more entry in the same list, naming the person by
+the name shown in `<people_views>`, after the room's own entry:
+
+```json
+{"account": [{"body": "<the room>"}, {"person": "Miles", "body": "<one paragraph>"}]}
+```
+
+Still exactly one entry **without** a `person`. A name not shown to you is
+read as nobody and dropped.
 
 If you genuinely have nothing — an empty batch, or nothing you can point at —
 respond with exactly `{"account": []}`. That is a real answer and it leaves the

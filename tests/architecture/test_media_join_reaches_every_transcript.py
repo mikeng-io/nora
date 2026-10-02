@@ -68,12 +68,6 @@ _NOT_A_BUILDER = {
     # human reading `[image a3f2c1]` in a CLI table is not being told a photo
     # was never looked at; a model reading it in a prompt is.
     "nora/app/cli.py": "renders unattributed rows for an operator on the CLI",
-    # The proactive adaptor's QUIET check (issue #136): `recent(limit=1)` per
-    # room, and the only field read is `ts` — is the room still talking. No
-    # body reaches a prompt from this read; the pass renders notes, Standing
-    # and its own log, never transcript rows (39 §1 keeps `load_transcript`
-    # out of it on purpose).
-    "nora/language/proactive.py": "reads one row's ts per room for the quiet check",
     # The eval seam's read-back (`design/evaluation/01-boundaries.md`): `heard`
     # reads NORA'S OWN rows after a turn, to report what the room heard, and
     # `last_row_id` reads one row's id as a watermark. Neither body reaches a
@@ -237,9 +231,7 @@ PATHS = {
     "nora/engagement/context.py": "tag",
     "nora/app/fire.py": "fire",
     "nora/engagement/stages/debrief.py": "debrief",
-    "nora/ingest/stages/standing_event.py": "standing_event",
     "nora/app/runtime.py": "dreamer",
-    "nora/language/note_curator.py": "note_curator",
     "nora/app/adoption.py": "adoption",
     "nora/agent/tools.py": "load_transcript",
     "nora/ingest/relevance_gate.py": "relevance_gate",
@@ -263,9 +255,7 @@ BUILDERS = {
     "nora/engagement/context.py": "recent",
     "nora/app/fire.py": "recent",
     "nora/engagement/stages/debrief.py": "since_including_nora",
-    "nora/ingest/stages/standing_event.py": "since_including_nora",
     "nora/app/runtime.py": "since",
-    "nora/language/note_curator.py": "recent",
     "nora/app/adoption.py": "unattributed",
     "nora/app/memory_backfill.py": "since",
     "nora/agent/tools.py": "recent",

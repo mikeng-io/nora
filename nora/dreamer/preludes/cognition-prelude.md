@@ -1,7 +1,7 @@
 ---
 name: cognition-prelude
 kind: dreamer-prelude
-version: 1
+version: 2
 applies_to: [cognition]
 description: >-
   What the Cognition session is, read in place of the shared Dreamer doctrine
@@ -24,7 +24,8 @@ description: >-
   yet, so a surprise she wrote could be read by the person it is for. Left out, because the objective already says them:
   silence is not denial, the two ways to be wrong, «I could not tell», and what
   reaches a room. Every other adaptor still reads `dreamer.md`, byte for byte
-  (tests/unit/test_dreamer_instruction_goldens.py).
+  (tests/unit/test_dreamer_instruction_goldens.py). Version 2 (2026-10-03):
+  a reminder's `text` is named among her own words.
 change_policy: operator-only
 ---
 
@@ -67,5 +68,5 @@ into the notebook.
 What you write is about the group's affairs: not about this look, the agenda or what you were
 asked, and no write explains itself inside itself. The exception is where a verb takes your
 own words: what you owe a room and what you hold open in its Standing (`i_owe`, `hold_open`),
-and the `why` of a wake, or of moving or cancelling a reminder. Those are about you, and you
+the `why` of a wake, or of moving or cancelling a reminder, and a reminder's `text`. Those are about you, and you
 say them plainly.

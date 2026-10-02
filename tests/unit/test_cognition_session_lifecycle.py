@@ -33,8 +33,8 @@ from nora.app.wake import WakeEvaluator
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import NewStimulus, UnitView, WakeHook, WakePolicy
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.unit.cognition_view import items as agenda_items
 
@@ -160,7 +160,7 @@ def _counter() -> Callable[[], str]:
 
 @dataclass
 class Rig:
-    ledger: InMemoryCognitionDryRunStore
+    ledger: InMemoryCognitionStore
     stimuli: InMemoryStimulusStore
     clock: Clock
     metrics: Metrics
@@ -206,9 +206,8 @@ def _rig(
     max_self_wakes_per_day: int = 12,
     model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
     grounder: Any = None, person_known: Callable[[str], bool] | None = None,
-    real_pending_reminds: bool = False,
 ) -> Rig:
-    ledger = InMemoryCognitionDryRunStore()
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     clock = Clock(T)
     metrics = Metrics()
@@ -219,21 +218,15 @@ def _rig(
         await asyncio.sleep(0)  # a real store yields here; so must the double
         return rows
 
-    async def _reminds(unit: str) -> Any:
-        if not real_pending_reminds:
-            return ()
-        return await ledger.pending_mirrored_reminds(unit=unit, now_ms=int(clock() * 1000))
-
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
+        store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms=dict.fromkeys(units, HOME),
         read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=read_only_tools,
         skill_text_for=lambda kinds: "", grounder=grounder or EmptyGrounder(),
         doctrine_text="DOCTRINE", doctrine_sha256="sha",
         open_note_titles=_const(()), open_events=_const(()),
-        prior_standing=_const(None), pending_self_wakes=_pending,
-        pending_mirrored_reminds=_reminds, session_mode="shadow",
+        prior_standing=_const(None),
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100,
                              timeout_seconds=timeout),
         cooldown_seconds=300.0, units=units,
@@ -330,7 +323,7 @@ async def test_a_failed_sessions_stimuli_are_not_lost():
 
     # The watermark did NOT move: the wake row exists, but every stimulus is
     # still pending, and the unit's mark is back at zero.
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1, 2, 3]
     assert view.mark is not None and view.mark.through_stimulus_id == 0
     assert view.last_wake is not None  # the brakes still see the wake
@@ -358,7 +351,7 @@ async def test_a_closed_session_does_advance_the_watermark():
     await rig.tick()
     await rig.settle()
     assert rig.ends() == ["closed"]
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.pending == ()
     assert view.mark is not None and view.mark.through_stimulus_id == 1
 
@@ -377,7 +370,7 @@ async def test_a_timed_out_session_is_cancelled_recorded_timeout_and_strands_not
     assert agent.cancelled, "the model loop must be cancelled at the wall clock"
     assert rig.ends() == ["timeout"]
     assert rig.metrics.get("nora_cognition_session_ended_total", outcome="timeout") == 1
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1]
 
 
@@ -470,7 +463,7 @@ async def test_a_wake_with_no_outcome_blocks_its_unit_and_no_later_wake_swallows
     # W2, written by an evaluator that died before its hook ran: no session
     # row, no outcome.
     w2 = await rig.stimuli.record_wake(wake=NewWake(
-        unit="u1", mode="shadow", reason="settled", from_stimulus_id=first,
+        unit="u1", mode="live", reason="settled", from_stimulus_id=first,
         through_stimulus_id=w2_sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=rig.clock.ms, cut_cooldown=False, at_ms=rig.clock.ms,
         tracked=True,
@@ -513,7 +506,7 @@ async def test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wak
     await rig.settle()
     assert rig.agent.calls == 0 and rig.ledger.sessions == []
     assert rig.ends() == ["failed"] and "record_session" in rig.detail()
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1, 2]
 
     rig.ledger.fail_on.clear()
@@ -562,7 +555,7 @@ async def test_a_session_task_cancelled_before_its_first_step_loses_nothing():
     assert rig.agent.calls == 0 and rig.ledger.sessions == []
     assert wake_id not in rig.stimuli.outcomes
 
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.pending == ()                     # claimed while OPEN …
     rig.clock.advance(600)
     assert await rig.tick() == []                 # … and the unit held
@@ -698,7 +691,7 @@ async def test_an_unclosed_item_returns_with_a_strike_and_is_struck_at_max_strik
     states = {c.stimulus_id: (c.state, c.strike) for _, _, c in rig.stimuli.carries}
     assert states == {1: ("struck", 2), 2: ("carried", 1)}
     # Struck is closed for good: the fresh one is still carried, alone.
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [2] and dict(view.carry) == {2: 1}
     assert rig.metrics.get("nora_cognition_carry_total", state="struck") == 1
 
@@ -722,33 +715,6 @@ async def test_a_model_close_waiting_takes_a_strike_like_an_unclosed_item():
 # MINOR 6: a room is named, never guessed; a read tool is on the allowlist
 # ---------------------------------------------------------------------------
 
-async def test_a_write_on_a_multi_room_agenda_without_a_room_is_refused_not_guessed():
-    answers: list[dict[str, object]] = []
-
-    async def write(agent: ScriptedAgent, tools: list[Any]) -> CognitionRunResult:
-        by = {t.__name__: t for t in tools if hasattr(t, "__name__")}
-        answers.append(await by["standing_revise"](where_it_stands="dinner is on"))
-        answers.append(await by["standing_revise"](
-            where_it_stands="dinner is on", room="signal:elsewhere",
-        ))
-        answers.append(await by["standing_revise"](
-            where_it_stands="dinner is on", room="signal:room-b",
-        ))
-        return CognitionRunResult(stop_reason="end_turn")
-
-    rig = _rig(agent=ScriptedAgent(script=[write]))
-    await rig.say(room="room-a")
-    await rig.say(room="room-b")
-    rig.clock.advance(1)
-    await rig.tick()
-    await rig.settle()
-
-    assert answers[0]["reason"] == "room_required"
-    assert answers[1]["reason"] == "unknown_room"
-    assert answers[2] == {"status": "ok"}
-    assert len(rig.ledger.would_writes) == 1     # the two refusals wrote nothing
-    _, write_row, _ = rig.ledger.would_writes[0]
-    assert (write_row.platform, write_row.conversation_id) == ("signal", "room-b")
 
 
 async def test_a_read_tool_off_the_allowlist_is_refused_and_the_session_fails_closed():
@@ -822,7 +788,7 @@ async def test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled():
     assert agent.cancelled
     assert rig.ends() == ["cancelled"]
     assert rig.metrics.get("nora_cognition_session_ended_total", outcome="cancelled") == 1
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1]
 
 
@@ -849,7 +815,7 @@ async def test_a_hook_that_raises_synchronously_does_not_abort_the_tick_for_othe
             return None
         return run()
 
-    ledger = InMemoryCognitionDryRunStore()
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     clock = Clock(T)
     metrics = Metrics()
@@ -1135,7 +1101,7 @@ async def test_a_self_wake_cancelled_while_carried_never_fires_through_carry():
         rig.clock.advance(3600)
         assert await rig.tick() == []
     assert len(rig.stimuli.wakes) == wakes_before
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.pending == () and dict(view.carry) == {}
 
 
@@ -1246,16 +1212,14 @@ def _runner_kwargs(
     *, units: tuple[str, ...] = ("u1",), home_rooms: dict[str, Room] | None = None,
     budget_timeout: float = 30.0, session_timeout: float = 900.0,
 ) -> dict[str, Any]:
-    ledger = InMemoryCognitionDryRunStore()
+    ledger = InMemoryCognitionStore()
     return {
-        "dry_run_store": ledger, "stimulus_store": InMemoryStimulusStore(ledger=ledger),
+        "store": ledger, "stimulus_store": InMemoryStimulusStore(ledger=ledger),
         "agent_runner": ScriptedAgent(), "home_rooms": home_rooms or {"u1": HOME},
         "read_tools_for": lambda unit, rooms: [], "skill_text_for": lambda kinds: "",
         "grounder": EmptyGrounder(),
         "doctrine_text": "D", "doctrine_sha256": None, "open_note_titles": _const(()),
         "open_events": _const(()), "prior_standing": _const(None),
-        "pending_self_wakes": _const(()), "pending_mirrored_reminds": _const(()),
-        "session_mode": "shadow",
         "budget": AdaptorBudget(turns=1, total_tokens=1, output_tokens=1,
                                 timeout_seconds=budget_timeout),
         "cooldown_seconds": 300.0, "units": units,
@@ -1274,7 +1238,7 @@ async def test_a_wake_for_a_unit_with_no_home_room_is_recorded_failed_not_consum
     await rig.settle()
     assert rig.agent.calls == 0
     assert rig.ends() == ["failed"] and "no home room" in rig.detail()
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [1]
 
 
@@ -1326,7 +1290,7 @@ async def test_a_late_close_between_the_read_and_the_write_refuses_the_new_wake(
     sid = await rig.say()
     rig.clock.advance(1)
     w1 = await rig.stimuli.record_wake(wake=NewWake(
-        unit="u1", mode="shadow", reason="settled", from_stimulus_id=0,
+        unit="u1", mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=sid, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=T, cut_cooldown=False, at_ms=rig.clock.ms, tracked=True,
     ), recorded_at_ms=rig.clock.ms, guard=_guard_of(rig.stimuli))

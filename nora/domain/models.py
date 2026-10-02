@@ -110,8 +110,7 @@ class Touch:
     never happened; a delete withdraws a row, it says nothing. So, like an
     edit, each is recorded BESIDE the message it touches (`message_reaction`,
     `message_delete`) and never as a `messages` row. They are Record items
-    because the withdrawal cascade, the cited-message cues and the tie need
-    them; nothing reads them to answer yet.
+    because the cited-message cues and the tie need them; nothing reads them to answer yet.
 
     `target` names the message the way the platform does, exactly as an
     edit's does: a handle (`message_id`) on WhatsApp, Instagram and Discord,
@@ -129,11 +128,6 @@ class Touch:
     target_author: str = ""
     emoji: str = ""
     removed: bool = False
-    #: Every id form the platform gave for the account that acted (WhatsApp's
-    #: phone, LID and raw JID, of which `NormalizedMessage.sender_id` is the one the
-    #: parser picked). Empty where the platform gives one. The authorship check for
-    #: a delete reads these (`nora.domain.delete_authorship`).
-    actor_ids: tuple[str, ...] = ()
 
 
 #: What Signal puts in a message body where an @-mention's name appears
@@ -327,39 +321,6 @@ class RowEdit:
 
 
 @dataclass(frozen=True)
-class OrphanDelete:
-    """A delete whose target was not on record when it arrived, kept so the message
-    is withdrawn the moment it is (`RecordStore.record_orphan_delete`).
-
-    `handle` is the platform's id for the target ("" where the platform names it by
-    timestamp) and `sent_ts` Signal's sent-timestamp (None otherwise): the same key
-    the lookup uses. `deleter_id` is the sender id the parser picked, `deleter_ids`
-    every form the platform gave, `deleter_person_id` the person they resolved to
-    when it arrived: what the authorship rule compares."""
-
-    id: int
-    platform: str
-    conversation_id: str
-    handle: str
-    sent_ts: int | None
-    deleter_id: str
-    deleter_ids: tuple[str, ...]
-    deleter_person_id: str | None
-    event_ts: int
-    recorded_at: int
-
-
-@dataclass(frozen=True)
-class OrphanRecord:
-    """What `RecordStore.record_orphan_delete` did: the row that now holds the delete
-    (a delivery already held returns its own) and how many OLDER held deletes were
-    evicted to make room for it (`nora.domain.delete_authorship.ORPHAN_CAP_*`)."""
-
-    id: int
-    evicted: int = 0
-
-
-@dataclass(frozen=True)
 class EditedMessage:
     """The recorded message an edit targets, as the edit path needs it
     (`RecordStore.find_edited`, design/message-edits/01 §2).
@@ -401,10 +362,9 @@ class EditedMessage:
     # attachment placeholders are given back, instead of re-fetching bytes
     # Nora already holds (`nora.ingest.stages.edit_media`).
     media_json: str | None = None
-    # `messages.hidden_at IS NOT NULL`: withdrawn (a delete or unsend, or
-    # `nora person forget`). The row is still on record, so a lookup still
-    # finds it; a stage that would attach or fold something onto it must not
-    # (`nora.ingest.stages.edit_target`).
+    # `messages.hidden_at IS NOT NULL`: hidden (a platform delete or unsend). The
+    # row is still on record, so a lookup still finds it; a stage that would attach
+    # or fold something onto it must not (`nora.ingest.stages.edit_target`).
     hidden: bool = False
 
 
@@ -549,7 +509,7 @@ class TagContext:
     # Deliberately the whole standing set and never a top-N: a note absent from
     # the index is invisible to her, and invisible is indistinguishable from
     # absent. The prompt budget is paid by the per-entry caps in
-    # `nora.domain.notes` and by the curator's retirement pass, not here.
+    # `nora.domain.notes` and by `note_retire`, not here.
     notes: tuple[Note, ...] = ()
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
     # THIS conversation, folded from the previous turn by the debrief stage.
@@ -590,6 +550,10 @@ class TagContext:
     # a while after the tier is switched on: a fold needs new messages and a
     # day.
     culture: CultureRevision | None = None
+    # What each person in this room is like, `(name, account)` per person who
+    # has one (the Character tier, DEC-278), read through `read_character` on
+    # the same occasions and under the same `[culture] enabled` as `culture`.
+    character: tuple[tuple[str, CultureRevision], ...] = ()
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
@@ -602,7 +566,8 @@ class TagContext:
     # participation and the proactive act turn (`FirePath.build_context`,
     # `_DECISION_WRITERS_BY_KIND`) — because «she already raised this two hours
     # ago» is what changes the answer for both. The act turn was left out until
-    # 2026-09-17 on the argument that it already holds the decide pass's index;
+    # 2026-09-17 on the argument that it already held the decide pass's index (deleted 2026-10-03,
+    # DEC-277);
     # that index is what she MEANT to raise, and two rows due 30 minutes apart
     # duplicated a raise because nothing said what the loop had since DONE.
     # Each occasion reads with its own writer set (`decision_log`).

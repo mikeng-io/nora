@@ -5,7 +5,7 @@ workspace (DEC-214). One-time; dry run unless `--apply`.
 WHAT IS STRANDED WITHOUT IT. Since DEC-214 every memory read for a room or
 unit passes that unit's named scope, which reads the `(scope.<unit>, person)`
 collection. The facts written before that — `remember` in a turn and the
-note curator's person-claim discharge — went through `conclude` with Nora as
+deleted note curator's person-claim discharge — went through `conclude` with Nora as
 observer and NO session, so they are in `(nora, person)` only. A scope's own
 backfill copies what was derived from its member SESSIONS; a conclusion with
 no session belongs to no session and is copied into no scope. So every one

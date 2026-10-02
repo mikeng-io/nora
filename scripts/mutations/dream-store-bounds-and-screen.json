@@ -35,53 +35,11 @@
     "target": "tests/unit/test_dreamer_runtime.py -k wedged_inputs_is_cut_off"
   },
   {
-    "name": "#60 the declared count must match the source (constant moved)",
-    "file": "nora/language/note_candidates.py",
-    "old": "STORE_CALLS_PER_TICK = 15",
-    "new": "STORE_CALLS_PER_TICK = 16",
-    "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count"
-  },
-  {
-    "name": "#60 the declared count must match the source (store call added)",
-    "file": "nora/language/note_candidates.py",
-    "old": "        room = self._label_for(key) or unit or UNNAMED_ROOM",
-    "new": "        await self._notes.standing(unit=unit or key)\n        room = self._label_for(key) or unit or UNNAMED_ROOM",
-    "target": "tests/architecture/test_dream_store_calls_are_declared.py -k declared_count_is_the_count"
-  },
-  {
-    "name": "#63 an adaptor may not render a row id into its prompt",
-    "file": "nora/language/note_curator.py",
-    "old": "        for note, body in expired:\n            handle = str(next(ordinal))",
-    "new": "        for note, body in expired:\n            handle = note.id",
-    "target": "tests/contract/test_dream_adaptor_contract.py -k renders_nothing_the_egress_screen"
-  },
-  {
-    "name": "#63 a legal batch must survive the real screen in the runtime's order",
-    "file": "nora/language/note_curator.py",
-    "old": "            resolved = shown.by_handle.get(note_id_raw)",
-    "new": "            resolved = shown.by_handle.get(note_id_raw + \"?\")",
-    "target": "tests/contract/test_dream_adaptor_contract.py -k survives_the_runtimes_own_egress_screen"
-  },
-  {
     "name": "#63 a batch the screen takes all of is named, not inferred",
     "file": "nora/agent/dreamer.py",
     "old": "            self._metrics.inc(\n                \"nora_dream_empty_after_screen_total\", adaptor=adaptor.name,\n            )",
     "new": "            pass",
     "target": "tests/unit/test_dreamer_runtime.py -k screen_rejects_entirely_is_counted"
-  },
-  {
-    "name": "#63 an objective's worked example may not show the model a row id",
-    "file": "nora/dreamer/objectives/note-curation.md",
-    "old": "\"cited_message_id\": 482}, {\"note_id\": \"5\"",
-    "new": "\"cited_message_id\": 482}, {\"note_id\": \"7c9e6679-7425-40de-944b-e07fc1f90ae7\"",
-    "target": "tests/unit/test_objective_parser_parity.py -k worked_example_survives_the_egress_screen"
-  },
-  {
-    "name": "#60 the proactive pass clock is stamped LAST, not first",
-    "file": "nora/language/proactive.py",
-    "old": "        shown = self._shown.get(key) or _Shown({}, {})\n        seen: set[str] = set()",
-    "new": "        shown = self._shown.get(key) or _Shown({}, {})\n        if shown.rendered and self._clock_store is not None:\n            await self._clock_store.record_fire(\n                adaptor_name=PASS_CLOCK_NAME, key=key, at_ms=now_ms,\n            )\n        seen: set[str] = set()",
-    "target": "tests/unit/test_proactive_adaptor.py -k cancelled_commit_leaves_the_pass_slot_open"
   },
   {
     "name": "#60 a collaborator's own TimeoutError is not the runtime's",
@@ -117,12 +75,5 @@
     "old": "        return f\"{n:08x}-0000-4000-8000-{ord(kind[0]):012x}\"",
     "new": "        return f\"{kind}-{n}\"",
     "target": "tests/contract/test_note_store_contract.py -k minted_id_is_shaped"
-  },
-  {
-    "name": "#63 a vacuous render cannot satisfy the prompt screen",
-    "file": "tests/contract/test_dream_adaptor_contract.py",
-    "old": "    for n, title in enumerate((\"Dinner, 1 Jan\", \"Wedding venue\")):",
-    "new": "    for n, title in enumerate(()):",
-    "target": "tests/contract/test_dream_adaptor_contract.py -k renders_nothing_the_egress_screen"
   }
 ]

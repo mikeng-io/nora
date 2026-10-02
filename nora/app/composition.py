@@ -43,7 +43,6 @@ from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
     culture_grant,
-    proactive_grant,
     verify_tool_subsets,
 )
 from nora.agent.egress import scan_identifiers, scan_reply
@@ -58,7 +57,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX, OriginRoom
+from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -80,8 +79,6 @@ from nora.app.cognition_wiring import (
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
-from nora.app.delete_withdrawal import ReconcileReport, SqlDeleteWithdrawer, prime_delete_metrics
-from nora.app.delete_withdrawal import reconcile_deletes as reconcile_deleted_messages
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
@@ -104,7 +101,6 @@ from nora.domain.computer_sessions import ComputerSessionStore
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
-from nora.domain.models import PersonRef
 from nora.domain.ports import (
     ArtifactIngest,
     BlobStore,
@@ -115,7 +111,6 @@ from nora.domain.ports import (
     DreamAdaptor,
     EngagePolicy,
     MemoryStore,
-    NoteHead,
     PlatformAdapter,
     RecordStore,
     ReverseGeocoder,
@@ -146,7 +141,7 @@ from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
-from nora.infra.sql.cognition_dry_run import SqlCognitionDryRunStore
+from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.computer_exports import SqlComputerExportStore
@@ -196,21 +191,12 @@ from nora.ingest.policy import (
 )
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
-from nora.ingest.stages import standing_event
 from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
-from nora.language.note_candidates import NoteCandidateAdaptor, granted_tools
-from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.note_merge import NoteMergeAdaptor
-from nora.language.proactive import (
-    PROACTIVE_ADAPTOR_NAME,
-    ProactiveAdaptor,
-    UnitRoom,
-)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
@@ -224,7 +210,7 @@ from nora.platform.registry import AdapterRegistry, AdapterRegistryError, MediaS
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
-from nora.policy import Conversation, Policy, PolicyError, load_policy
+from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
 from nora.web.games import PulseGamesClient
 
@@ -242,7 +228,6 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gathering_screen import GatheringScreen
 from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
@@ -265,33 +250,12 @@ _REASONING_EFFORTS: frozenset[str] = frozenset(
 )
 
 
-def _unit_rooms(allowlist: Policy) -> dict[str, tuple[UnitRoom, ...]]:
-    """Unit -> its rooms, as the proactive adaptor names them.
-
-    `label` is the operator's `policy.toml` label or `""` — NEVER `primary_id`.
-    It fell back to the id until 2026-09-23, and every model-facing render of
-    it (`<rooms>`, `<loop_decisions>`, the no-reader `<presence>`) then put a
-    room id on the wire for an unlabelled room (R-18). Nothing reads it as a
-    key: `conversation_id` is the key, and the renders supply their own
-    stand-in for a room with no name.
-    """
-    rooms_by_unit: dict[str, tuple[UnitRoom, ...]] = {}
+def _unit_room_ids(allowlist: Policy) -> dict[str, tuple[str, ...]]:
+    """Unit -> its rooms' primary ids, from `policy.toml`."""
+    out: dict[str, tuple[str, ...]] = {}
     for conv in allowlist.conversations:
-        rooms_by_unit[conv.unit] = (
-            *rooms_by_unit.get(conv.unit, ()),
-            UnitRoom(
-                platform=conv.platform, conversation_id=conv.primary_id,
-                label=conv.label, home=conv.home_room,
-                # The operator's own description of the room (issue #161) —
-                # the SAME `policy.toml` field the note candidates pass reads,
-                # so the two passes cannot hold two ideas of what a room is.
-                description=conv.description,
-                # The same two facts `origin_rooms` keys `remind`'s refusal on,
-                # so the notes list and the refusal cannot disagree.
-                proactive=conv.proactive, ids=tuple(sorted(conv.ids)),
-            ),
-        )
-    return rooms_by_unit
+        out[conv.unit] = (*out.get(conv.unit, ()), conv.primary_id)
+    return out
 
 
 def _presence_reader(
@@ -325,96 +289,6 @@ def _presence_reader(
         # a member of a room she is in. `<presence>` reads neither.
         rosters=rosters, self_ids=registry.self_aliases(),
     )
-
-
-def _home_room_people(
-    rosters: Mapping[str, RosterSource], persons: Persons,
-) -> Callable[[UnitRoom], Awaitable[tuple[PersonRef, ...]]]:
-    """The proactive pass's people index (issue #145, design 39 D9).
-
-    D9's rule is «inject the index, call for depth», and it was implemented for
-    notes and for Standing and for nothing else. A note's body is written in
-    whatever the group calls each other — «@熱咖啡☕少奶多糖», «@隨風而去» — while
-    the roster holds the mapped name; nothing joined the two, so every unknown
-    handle cost a tool call. Measured on the `friends` unit: six of ten
-    calls in one pass were the same memory search asking who these people were,
-    until R-7 stopped the pass.
-
-    The SAME `Room` the tag path builds, so the pass and a turn cannot hold two
-    ideas of who is in a room. A platform with no roster source returns nothing
-    and the block is omitted — the pre-2026-09-10 shape, and the honest one.
-    """
-    async def read(home: UnitRoom) -> tuple[PersonRef, ...]:
-        source = rosters.get(home.platform)
-        if source is None:
-            return ()
-        view = await Room(
-            platform=home.platform, conversation_id=home.conversation_id,
-            roster_source=source, persons=persons,
-        ).members()
-        return view.people if view.available else ()
-
-    return read
-
-
-def _online_scope_of(
-    homes: Mapping[str, Conversation],
-    rosters: Mapping[str, RosterSource],
-    persons: Persons,
-    notes: SqlNoteStore | None,
-    self_ids: frozenset[str],
-) -> Callable[[str], Awaitable[tuple[PersonRef, ...]]]:
-    """`online_now`'s proactive input domain (design/online-status/03): the
-    home room's roster UNIONED with the standing notes' subjects, resolved
-    per decide turn.
-
-    The union is 03's own rule: the decide turn stands in the home room,
-    but a note may name people from its `established_in` room, and the #248
-    failure was exactly a note about someone the home roster alone would
-    not have covered. The roster half is the SAME `Room` the tag path
-    builds (one idea of who is in a room); a unit with no home room,
-    or a roster that cannot be read, contributes nothing from that half.
-
-    Subjects come from each standing note's `title` + `description` ONLY —
-    not the head revision's body: the title is the model's own naming of
-    who the note is about, and the body is free prose where a name
-    substring would over-match. A person whose name, first/last name or
-    alias (two characters or more — a one-letter alias matches everything)
-    appears case-folded in that text is a subject. Still friend-circle
-    members, never strangers: the candidates are identity.toml's people,
-    never parsed-out handles. `notes=None` (the note tier off) is the
-    roster alone. A resolver that RAISES is the tool's `unavailable`, never
-    a narrowed guess — the tool wraps the call.
-    """
-    async def resolve(unit: str) -> tuple[PersonRef, ...]:
-        people: dict[str, PersonRef] = {}
-        home = homes.get(unit)
-        if home is not None:
-            source = rosters.get(home.platform)
-            if source is not None:
-                view = await Room(
-                    platform=home.platform, conversation_id=home.primary_id,
-                    roster_source=source, persons=persons, self_ids=self_ids,
-                ).members()
-                if view.available:
-                    people.update((p.person_id, p) for p in view.people)
-        if notes is not None:
-            for note in await notes.standing(unit=unit):
-                text = f"{note.title} {note.description}".casefold()
-                for person in persons.by_person.values():
-                    if person.person_id in people:
-                        continue
-                    names = (
-                        person.name, person.first_name, person.last_name,
-                        *person.aliases,
-                    )
-                    if any(
-                        len(n) >= 2 and n.casefold() in text for n in names if n
-                    ):
-                        people[person.person_id] = person
-        return tuple(people.values())
-
-    return resolve
 
 
 def _reasoning_effort(value: str, *, source: str) -> ReasoningEffort:
@@ -465,9 +339,8 @@ def _build_wake_evaluator(
     session_units: Callable[[], Collection[str]] | None = None,
     floors_ready: bool = True,
 ) -> WakeEvaluator:
-    """The cognition loop's wake evaluator (design/cognition-loop/20 §3). With
-    `on_wake` (`session_mode = "shadow"`) every would-wake starts a shadow
-    session and the brakes count real sessions; without it, exactly step 1."""
+    """The cognition loop's wake evaluator (design/cognition-loop/20 §3): every
+    wake starts a session through `on_wake`."""
     return WakeEvaluator(
         store=store,
         units=units,
@@ -479,7 +352,6 @@ def _build_wake_evaluator(
             max_age_seconds=cfg.cognition.max_age_seconds,
             cooldown_seconds=cfg.cognition.cooldown_seconds,
             max_concurrent_sessions=cfg.cognition.max_concurrent_sessions,
-            session_seconds=cfg.cognition.shadow_session_seconds,
             session_timeout_seconds=cfg.cognition.session_timeout_seconds,
             backoff_max_seconds=cfg.cognition.backoff_max_seconds,
             max_consecutive_failures=cfg.cognition.max_consecutive_failures,
@@ -488,7 +360,7 @@ def _build_wake_evaluator(
         floors=tuple(Floor.parse(f) for f in cfg.cognition.time_floors),
         tz=ZoneInfo(cfg.cognition.timezone),
         floor_grace_seconds=cfg.cognition.floor_grace_seconds,
-        mode="shadow",
+        mode="live",
         store_timeout_seconds=cfg.cognition.store_timeout_seconds,
         on_wake=on_wake,
         session_units=session_units,
@@ -1091,7 +963,7 @@ class Dependencies:
     #: that; the object was already built and already held.
     fire_path: FirePath | None
     #: The ONE `<presence>` reader (design/self-awareness/02) the tag path's
-    #: assembler, the fire path and the proactive pass all hold. Named for the
+    #: assembler and the fire path both hold. Named for the
     #: reason the two entry points above are: it was built and held three
     #: times over and reachable only through privates. NOT `presence` below,
     #: which is the Life360 store — where the PEOPLE are; this is where SHE is.
@@ -1215,13 +1087,10 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
-    # The cognition loop's wake evaluator in SHADOW (design/cognition-loop/20
-    # §3, migration step 1) — `None` under `[cognition] mode = "off"`, the
-    # shipped default. It fires nothing: `nora.app.wake`.
+    # The cognition loop's wake evaluator and session (design/cognition-loop/):
+    # `None` under `[cognition] enabled = false`, the shipped default. The
+    # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
-    # The shadow Cognition session (step 3a-iii): `None` under `[cognition]
-    # session_mode = "off"`, the shipped default. Its shutdown cancels the
-    # sessions in flight, once (`nora.app.cognition_wiring`).
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     wake_tick_seconds: float = 30.0
@@ -1230,12 +1099,6 @@ class Dependencies:
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
     computer_sweep_seconds: float = 300.0
-    # The sweep that finishes what a delete left visible
-    # (`nora.app.delete_withdrawal.reconcile_deletes`, `--apply`): run once at start
-    # by `nora/__main__.py`. A withdrawal that failed (`cascade_failed`) is retried
-    # inline a bounded number of times; this is what is left, and the process
-    # restarts several times a day. `None` only where there is no engine.
-    reconcile_deletes: Callable[[], Awaitable[ReconcileReport]] | None = None
     # The timed probe of computerd (`nora.infra.computer.probe`): `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_probe_loop` on it.
@@ -1263,7 +1126,7 @@ async def build_dependencies(
 
     **`clock` names a dependency this function already had.** Nine components
     below take `clock: Callable[[], datetime]` — `FirePath`, `HeartbeatLoop`,
-    `ComputePoller`, `VersionAnnouncer`, `ProactiveAdaptor` and the rest — each
+    `ComputePoller`, `VersionAnnouncer` and the rest — each
     for the reason `FirePath`'s own docstring gives: *"a module that read the
     wall clock itself could not be tested at a fixed instant."* Every one of
     them was then handed a separately-written wall-clock read from here: SEVEN
@@ -1323,9 +1186,6 @@ async def build_dependencies(
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
     metrics = Metrics()
-    # The alerted delete outcomes exist at zero from the start (`increase()` cannot see a
-    # series' first increment, and nora restarts several times a day).
-    prime_delete_metrics(metrics)
     # ONE engine (one pool) shared by the record store and the presence reader —
     # the shape `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`
@@ -1490,8 +1350,8 @@ async def build_dependencies(
         )
     # ONE media join for the whole process (issue #116, operator 2026-09-08),
     # handed to every transcript builder there is: the tag assembler, the fire
-    # path, the tag-path debrief, the standing event fold, the note tier's two
-    # adaptors and lazy adoption. On master the sticker description and the
+    # path, the tag-path debrief, the Cognition session and lazy adoption. On master the sticker
+    # description and the
     # voice-note transcript were baked into `messages.body`, so all of them saw
     # them; the first cut of this change put the join on the tag assembler
     # alone and left the other seven rendering bare handles.
@@ -1978,8 +1838,8 @@ async def build_dependencies(
         from nora.platform.instagram.roster import InstagramRoster
         rosters["instagram"] = InstagramRoster(cfg.platforms.instagram.base_url)
     # `<presence>` (design/self-awareness/02): ONE reader, handed to the tag
-    # path's assembler, the fire path and the proactive pass, so none of the
-    # three holds its own idea of which rooms exist or which networks are up.
+    # path's assembler and the fire path, so none of the
+    # two holds its own idea of which rooms exist or which networks are up.
     # Over the SAME allowlist ingest admits against and the SAME adapter map
     # the tag path sends through.
     presence_reader = _presence_reader(cfg, allowlist, registry, rosters)
@@ -1992,7 +1852,8 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
-    # The note curator's join from a note to its room's account (DEC-207):
+    # The join from a note to its room's account (DEC-207; the note curator it was
+    # built for was deleted 2026-10-03, DEC-277):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
     # the note was born under — within the note's UNIT, since ids are unique
     # per platform and a note carries no platform.
@@ -2006,7 +1867,7 @@ async def build_dependencies(
     def note_room_for(cid: str, unit: str) -> tuple[str, str | None] | None:
         return note_rooms.get((cid, unit))
 
-    # THE SAME JOIN, for the note curator's name resolver (issue #200): every
+    # THE SAME JOIN, for the name resolver (issue #200): every
     # id a room is known by, within the note's unit, to the room's platform —
     # what `Persons.name_transcript` needs and `Note.established_in` alone
     # cannot supply, since a note carries no platform of its own.
@@ -2131,23 +1992,10 @@ async def build_dependencies(
     # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162)
     # needs the SAME runner shape for the same reason — its act turn may end
     # in silence — so the one auto-runner is built when EITHER occasion is
-    # wired and handed to `FirePath` under both names. Proactive is wired
-    # when the Dreamer and the note tier are on and `policy.toml` names a
-    # home room (39 D2): no home room, no decide turn, no act turn.
+    # wired and handed to `FirePath` under both names. The act turn is wired
+    # when `policy.toml` names a home room (39 D2); its rows are written by the
+    # Cognition session's `remind` (DEC-277).
     proactive_homes = allowlist.home_rooms()
-    proactive_wired = bool(
-        cfg.dreamer.enabled and cfg.notes.enabled and proactive_homes
-    )
-    if proactive_homes and not proactive_wired:
-        # LOUD: the operator named a home room, which is the opt-in, and the
-        # tier it needs is off. Silent here is the subsystem-that-does-nothing
-        # shape — she would look wired and never decide anything.
-        log.warning(
-            "policy.toml names a home_room for %s but the proactive adaptor "
-            "is not wired: it needs [dreamer] enabled = true and [notes] "
-            "enabled = true (dreamer=%s, notes=%s)",
-            sorted(proactive_homes), cfg.dreamer.enabled, cfg.notes.enabled,
-        )
     participation_runner: LiveAgentRunner | None = None
     if cfg.participation.enabled or proactive_homes:
         participation_runner = LiveAgentRunner(
@@ -2226,16 +2074,11 @@ async def build_dependencies(
     # backfilled every pre-existing event to `unit_id=""` — units live in
     # `policy.toml`, not the DB, so it could not fill this column — and
     # `search_events`'s unit-wide filter would otherwise never find one
-    # again. `_unit_rooms(allowlist)` is the SAME unit -> rooms mapping the
-    # proactive adaptor already builds from policy (below); reusing it here
-    # means `GatheringService` and the Dreamer cannot disagree about which
-    # rooms a unit has.
-    event_unit_rooms = _unit_rooms(allowlist)
+    # again: it reads a unit's rooms from policy instead.
+    event_unit_rooms = _unit_room_ids(allowlist)
 
     def _event_unit_room_ids(unit_id: str) -> tuple[str, ...]:
-        return tuple(
-            room.conversation_id for room in event_unit_rooms.get(unit_id, ())
-        )
+        return event_unit_rooms.get(unit_id, ())
 
     events = GatheringService(
         store=event_store,
@@ -2364,78 +2207,23 @@ async def build_dependencies(
     # two would be two locks and no serialisation at all. Built HERE, above the
     # registry, because the relay below needs it and the registry needs the
     # relay — and above the ingest pipeline, because the standing EVENT trigger
-    # (below) enqueues its folds through this same instance (D2,
-    # design/standing-watermark/10): the event fold and the tag path must
-    # serialize per conversation, and two slots objects would be two locks.
+    # (deleted 2026-10-03, DEC-277) enqueued its folds through this same
+    # instance (D2, design/standing-watermark/10): the tag path and other
+    # per-conversation work must serialize on one lock, and two slots objects
+    # would be two locks.
     slots = ConversationSlots(
         maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn,
     )
 
-    # The event-driven standing fold (design/standing-watermark/10), wired like
-    # `debrief.Wiring` below but gated on `[standing] event_enabled` rather
-    # than `enabled`: OFF (default) leaves the ingest stage inert — only the
-    # tag path folds, which is strictly better than pre-bundle. ON, every
-    # message triggers a spawned check that folds when the accumulator reaches
-    # fold_batch. Same client/objective as the debrief — the event fold is the
-    # same fold, minus the turn.
-    standing_event_wiring: Any | None = None
-    if cfg.standing.enabled and cfg.standing.event_enabled:
-        standing_event_wiring = standing_event.Wiring(
-            store=standing_store,
-            record_store=audit,
-            media_join=media_join,
-            client=_DebriefModelClient(
-                base_url=cfg.llm.base_url,
-                api_key=os.environ.get(cfg.llm.api_key_env, ""),
-                max_tokens=cfg.llm.max_tokens,
-                temperature=cfg.llm.temperature,
-                model=cfg.standing.model or cfg.llm.model,
-                timeout_seconds=cfg.standing.timeout_seconds,
-                reasoning_effort=_reasoning_effort(
-                    cfg.standing.reasoning_effort or cfg.llm.reasoning_effort,
-                    source=(
-                        "[standing] reasoning_effort"
-                        if cfg.standing.reasoning_effort
-                        else "[llm] reasoning_effort (inherited)"
-                    ),
-                ),
-                # The event fold's Strands agents are named for the fold it
-                # is, so its traces are filterable apart from the tag path's
-                # debrief — both flow through this one client class.
-                agent_name="standing.event_fold",
-            ),
-            objective=dreamer_instructions,
-            slots=slots,
-            display_name=cfg.doctrine.display_name,
-            fold_batch=cfg.standing.fold_batch,
-            rollup_max_folds=cfg.standing.rollup_max_folds,
-            timeout_seconds=cfg.standing.timeout_seconds,
-            store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            max_chars=cfg.standing.max_chars,
-            working_set_max_items=cfg.standing.working_set_max_items,
-            working_set_max_chars=cfg.standing.working_set_max_chars,
-            # The room's account above the prior (DEC-207), keyed through the
-            # policy to the room's `primary_id` — `culture_key` is `None` for a
-            # room outside it.
-            culture=culture_reader,
-            culture_key=lambda platform, conversation_id: (
-                c.primary_id
-                if (c := allowlist.conversation(platform, conversation_id))
-                else None
-            ),
-        )
-    # The cognition loop's stimuli (design/cognition-loop/20-observe.md §3,
-    # migration step 1): OFF under `[cognition] mode = "off"`, the shipped
-    # default. On (`shadow`), the ingest pipeline appends one stimulus per
-    # recorded person-authored item, and the evaluator below reads them and
-    # records would-wakes, firing nothing.
+    # The cognition loop's stimuli (design/cognition-loop/20-observe.md §3): OFF
+    # under `[cognition] enabled = false`, the shipped default. On, the ingest
+    # pipeline appends one stimulus per recorded person-authored item, and the
+    # evaluator reads them and starts sessions. The evaluator is built after the
+    # Dreamer block below (`_build_wake_evaluator`): it is handed the session
+    # runner's hook, and the runner needs the Dreamer's model and tool sources.
     stimulus_wiring: stimulus_stage.Wiring | None = None
-    # The evaluator itself is built after the Dreamer block below
-    # (`_build_wake_evaluator`): under `session_mode = "shadow"` it is handed
-    # the session runner's hook, and the runner needs the Dreamer's model and
-    # tool sources.
     stimulus_store: SqlStimulusStore | None = None
-    if cfg.cognition.mode != "off":
+    if cfg.cognition.enabled:
         stimulus_store = SqlStimulusStore(engine)
         stimulus_wiring = stimulus_stage.Wiring(
             store=stimulus_store,
@@ -2452,11 +2240,7 @@ async def build_dependencies(
         stickers=sticker_reader, transcriber=transcriber,
         comprehension=comprehension,
         language=cfg.speech.stt.language,
-        standing_event_wiring=standing_event_wiring,
         stimulus_wiring=stimulus_wiring,
-        # A delete or unsend withdraws its message (hide + cascade, one
-        # transaction): wired unconditionally, a privacy action and no feature.
-        delete_withdrawer=SqlDeleteWithdrawer(engine),
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
     # enabled` AND the SELECTED backend's key is present — the `route`-keyless
@@ -3266,10 +3050,10 @@ async def build_dependencies(
             event_registry={
                 "reminder": reminder_occasion,
                 "gathering": gathering_occasion,
-                # The proactive act turn (39 D4): a row the decide turn wrote
-                # under Dreamer provenance, built `person_id=None`. Registered
-                # unconditionally — a row of this kind can only exist if the
-                # adaptor was once wired, and an unregistered kind fails the
+                # The proactive act turn (39 D4): a row the Cognition session's `remind` writes
+                # (the decide turn did before 2026-10-03), built `person_id=None`. Registered
+                # unconditionally — a row of this kind can only exist if a writer
+                # was once wired, and an unregistered kind fails the
                 # row `failed_error` with no way to say why.
                 "proactive": proactive_occasion,
             },
@@ -3411,10 +3195,6 @@ async def build_dependencies(
             # was switched off in between — and with no screen the loop
             # fails such a row rather than firing it unscreened.
             proactive=proactive_screen,
-            # A gathering whose evidence was withdrawn is not announced: the
-            # reminder carries the event's title and the fire turn never reads
-            # the event, so this is the read that makes the cascade reach it.
-            gatherings=GatheringScreen(events=event_store),
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:
@@ -3672,343 +3452,25 @@ async def build_dependencies(
     # subsystem that is off builds NOTHING, so a wiring mistake in it cannot
     # cost a deployment that never turned it on.
     #
-    # `dream_adaptors` is empty unless `[notes]` turns its passes on:
-    # `dream_loop` with an empty tuple ticks the cursor and runs nothing.
+    # `dream_adaptors` is empty unless `[culture]` turns its pass on (the note
+    # tier's passes were deleted 2026-10-03, DEC-277): `dream_loop` with an
+    # empty tuple ticks the cursor and runs nothing.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
-    # ONE schedule-state store, shared by the loop's slots and the proactive
-    # adaptor's pass/wake clocks (issue #136): two instances would be two
+    # ONE schedule-state store, shared by the loop's slots and
+    # any other schedule clock (issue #136): two instances would be two
     # engines over one table for no reason.
     dream_schedule_clock = SqlDreamScheduleClock(engine)
-    # The shadow Cognition session (step 3a-iii): built inside the Dreamer
-    # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
-    # builds nothing here, no model client and no agent-runner import.
-    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill for
-    #: `message`, `rollup` and `self`). A `time` floor wakes a session only once the
-    #: table has its kind (M8, DEC-245), and it does not: see `AGENDA_SKILLS`.
+    # The Cognition session: built inside the Dreamer block below ONLY under
+    # `[cognition] enabled`; off builds nothing here, no model client and no
+    # agent-runner import.
+    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill).
     agenda_skills = cognition_agenda_skills(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
-    # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
-    # no home room keeps recording its would-wakes, it only cannot start a
-    # session. `cognition_session_units` is the ones that can.
-    cognition_units: Callable[[], Sequence[str]] = unit_scopes
+    #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
     if cfg.dreamer.enabled:
-        # The note tier's curator, on its OWN gate and behind the tier's.
-        # `[notes] enabled` decides whether the index is injected and the four
-        # tools reachable; `curator_enabled` decides whether a background pass
-        # RETIRES. Two switches for two risks: the tag path only reads, and
-        # this is the one thing in the tier that removes something from her
-        # index. (It merged too, until 2026-09-08 — merge eligibility needed a
-        # resolved entity set that nothing could populate once the knowledge
-        # tier was gone, so the verb was inert by construction and went with
-        # the entity-resolution chain.)
-        #
-        # This is ALSO where `note-revisit` used to be wired, before the
-        # note-curator merge (design/dreamer-agent-loop/34, issue #99): the
-        # revisitor's due-selection, evidence grounding and wake/strike
-        # bookkeeping all live in `NoteCuratorAdaptor` now, so there is one
-        # gate here rather than two. **This is a real behaviour change worth
-        # naming rather than burying in a diff**: the revisitor previously
-        # retired notes whenever `[notes] enabled` alone was true (no separate
-        # switch), and now that machinery is folded into the pass that has
-        # always required `curator_enabled` too. `[dreamer]` and `[notes]
-        # enabled` are BOTH true in the current deployment, so the pre-merge
-        # revisitor really was ticking every cycle — this is a genuine
-        # behaviour change at the next deploy, not a hypothetical one, and
-        # `curator_enabled = false` (the deployed default) is what turns
-        # retiring off starting there. Read back 2026-09-06: the deployed
-        # `note` table holds 0 rows, so there was nothing for the revisitor
-        # to have retired regardless — the observable outcome is unaffected
-        # today, but only because the tier is still empty. An operator who
-        # had `curator_enabled` on gains the revisitor's due-selection and
-        # wake bookkeeping under the SAME flag they already used to accept
-        # "this pass merges and retires" — the wording `config.example.toml`
-        # carried at the time. Merge went on 2026-09-08 and that file now
-        # says "retires"; the flag and its argument are unchanged.
-        #
-        # It takes `audit` for its evidence read (inherited from the
-        # revisitor), and that is the whole reason this adaptor needs no
-        # room-scoped TOOL: the evidence is selected in code, from a note's own
-        # `established_in`, where it can be capped and counted. A
-        # unit-keyed adaptor handed a room-scoped tool would get a
-        # unit where a conversation id is expected and be answered EMPTY.
-        #
-        # THE GROUP'S calendar day, not UTC and not the store's clock. The
-        # curator compares against a YYYYMMDD day, and "has the 9th passed" is
-        # a question about the room's day rather than the process's: a UTC
-        # boundary retires the 9th's note during the evening of the 9th, local,
-        # while people are still deciding where to eat.
-        #
-        # Read from `[reminders] timezone` rather than written here. That value
-        # is operator-owned and already carries the argument for being an IANA
-        # NAME rather than an offset; a second copy in this file is the
-        # unguarded-copy class — it stays plausible after the original moves and
-        # fails somewhere else later. Reminders and note expiry are the same
-        # question («what day is it, for these people»), so they should not be
-        # able to disagree.
-        if cfg.notes.enabled and cfg.notes.curator_enabled and note_store is not None:
-            def _today_hk() -> int:
-                now = datetime.now(ZoneInfo(cfg.reminders.timezone))
-                return now.year * 10000 + now.month * 100 + now.day
-
-            # A TRUE CRON, not a data-gated one (design/dreamer-agent-loop/33
-            # §5, issue #102): `NoteCuratorAdaptor.uses_watermark = False` and
-            # its retirement sweep must fire on the CALENDAR even when
-            # the room is silent — a note's anchor date passes whether or not
-            # anybody is talking. `AdaptorSchedule` only gates a watermark-free
-            # adaptor's clock once `_dream_adaptor_once` checks the schedule
-            # BEFORE the watermark early return (33 §5 N1a, `runtime.py`); with
-            # that path in place this entry makes the curator fire once daily
-            # instead of every ~300s tick paying a SQL round-trip forever for
-            # nothing (empty-`inputs()` suppression already avoided the model
-            # call — this removes the wasted read too). Daily to match the
-            # fact tier's own cadence change (33 §5's "the curator is the
-            # tier's decay — daily matches the fact tier's cadence"): a note
-            # arrangement spans days, so a check more often than once a day
-            # buys nothing an hourly `note-candidates` tick has not already
-            # fed it.
-            dream_schedules = {
-                **dream_schedules,
-                "note-curation": AdaptorSchedule(
-                    min_interval_seconds=86400,
-                    # EXPLICIT, because the slot change gave this adaptor a
-                    # time of day it did not have and nobody chose. Under the
-                    # old elapsed-time clock it fired 24h after whenever the
-                    # process last started; under slots an unset offset means
-                    # 00:00 UTC, which is 08:00 Asia/Hong_Kong — eight hours
-                    # BEHIND the local day boundary this tier's own
-                    # `test_the_curator_reads_the_day_from_the_operators_
-                    # timezone` argues is the one that matters for retiring a
-                    # past anchor. 16:00 UTC is midnight in HK, so the sweep
-                    # runs just as the day it is retiring against rolls over.
-                    # A default would have been an accident; this is a choice,
-                    # and it belongs to the note tier's owner to revise.
-                    phase_offset_seconds=16 * 3600,
-                    # Inert for this adaptor: `batch_limit` sizes a
-                    # watermark-bearing adaptor's `record.since` read, and the
-                    # curator is watermark-free — `_dream_adaptor_once` never
-                    # reaches that read for it, always running with an empty
-                    # batch. Set to the curator's own per-tick expiry cap
-                    # rather than an unrelated magic number, so a reader
-                    # checking this value against the adaptor's actual
-                    # per-tick ceiling finds one that means something.
-                    batch_limit=cfg.notes.max_expired_per_tick,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                NoteCuratorAdaptor(
-                    notes=note_store,
-                    record=audit,
-                    media_join=media_join,
-                    today=_today_hk,
-                    max_expired_per_tick=cfg.notes.max_expired_per_tick,
-                    max_revisits_per_tick=cfg.notes.max_revisits_per_tick,
-                    evidence_messages_per_note=cfg.notes.revisit_evidence_messages,
-                    metrics=metrics,
-                    # The accounts of the rooms its notes were raised in
-                    # (DEC-207). `room_for` maps EVERY id a room is known by —
-                    # `Note.established_in` holds whichever one the note was
-                    # born under — to `(primary_id, label)`, within the note's
-                    # UNIT: ids are unique per platform, not across platforms.
-                    culture=culture_reader,
-                    room_for=note_room_for,
-                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
-                    # the same `persons.name_transcript` every other Dreamer
-                    # adaptor's evidence now resolves through, keyed the same
-                    # way `room_for` is. This is what lets `_gather_evidence`
-                    # fill a mapped sender's canonical name into a note's
-                    # evidence rows before `_render_evidence` ever renders
-                    # them, instead of their self-set, spoofable profile name.
-                    platform_for=note_platform_for,
-                    resolve_names=(
-                        lambda rows, platform:
-                            persons.name_transcript(rows, platform=platform)
-                    ),
-                    # The discharge pipeline (design/dreamer-agent-loop/33 §7,
-                    # issue #101), on its OWN gate — see `NotesConfig.
-                    # discharge_enabled`'s docstring for why it does not ride
-                    # `curator_enabled`. Both collaborators are the SAME
-                    # instances every other write path in this file already
-                    # uses (`events`/`memory`, built above) — discharge never
-                    # gets its own event service or Honcho client. Passed
-                    # unconditionally (harmless while the flag is off:
-                    # `commit` never calls them), so a later flip of the flag
-                    # alone — no restart needed beyond the config's own
-                    # load-once rule — has real collaborators waiting rather
-                    # than `None`s that would report every discharge as
-                    # `unavailable`.
-                    #
-                    # There was a THIRD, `facts=fact_store`, routing a closed
-                    # note's world-claims into the knowledge tier. That tier
-                    # is deleted and the route went with it.
-                    discharge_enabled=cfg.notes.discharge_enabled,
-                    events=events,
-                    conclusions=memory,
-                    ai_peer=cfg.memory.ai_peer,
-                ),
-            )
-        # The note tier's CREATE PATH (design/dreamer-agent-loop/33 §4, issue
-        # #98) — a THIRD gate, on `NotesConfig.candidates_enabled`'s own
-        # two-risks argument: `[notes] enabled` decides whether the index and
-        # the read tools are reachable, `candidates_enabled` decides whether
-        # a background pass WRITES NEW NOTES into that index at all. An
-        # operator who turned `[notes]` on for the index did not thereby sign
-        # up for a background process creating notes on their behalf.
-        #
-        # Scope-keyed, unlike the curator: a note's arrangement spans days of
-        # conversation, so this needs a PER-ROOM watermark to see the whole
-        # exchange rather than a slice. The scope key must still be translated
-        # to a UNIT for the note table (DEC-105) — an unresolvable scope
-        # RAISES rather than guessing, since a guessed unit is one social
-        # unit's notes entering another's.
-        if cfg.notes.enabled and cfg.notes.candidates_enabled and note_store is not None:
-            dream_schedules = {
-                **dream_schedules,
-                # Hourly — design 33 §5's "可能每一個鐘": a note arrangement
-                # spans days, not minutes, so this gives the adaptor a week's
-                # exchange to read without paying for a model call every
-                # 5-minute tick. `batch_limit=200`: "a week of one room's
-                # planning" (33 §5), the size the design itself argues for
-                # rather than a whole-unit daily figure, which is sized
-                # for a different unit of work rather
-                # than one room's arrangements.
-                "note-candidates": AdaptorSchedule(
-                    # `[notes] candidates_interval_seconds`, default 3600.
-                    min_interval_seconds=cfg.notes.candidates_interval_seconds,
-                    # 80, DOWN FROM 200 on 2026-09-08, and the reason is the
-                    # objective's shape rather than a cost preference. v4
-                    # asks for one verdict per message before the candidate
-                    # list (design 37 / issue #118), so the OUTPUT now scales
-                    # with the batch: at ~15 tokens a verdict, 200 messages
-                    # is ~3000 of the shipped 4000-token output budget before
-                    # a single candidate is written. An output cap that binds
-                    # truncates the JSON, `parse_envelope` reads no envelope,
-                    # the run is `unavailable` and the watermark is HELD — so
-                    # the same over-long batch is re-read and re-truncated on
-                    # every fire, forever. That trap is worth more than the
-                    # latency: a room that says more than 80 things in an
-                    # hour drains over the next fires, because the watermark
-                    # advances by what was read and lag stays positive.
-                    # *The reading that would reopen this*: a per-adaptor
-                    # `[dreamer.budgets.note-candidates] output_tokens` sized
-                    # for the batch, at which point the cap can go back up.
-                    batch_limit=80,
-                    # `[notes] candidate_samples` — model calls per fire,
-                    # unioned; see `NotesConfig.candidate_samples`.
-                    samples=cfg.notes.candidate_samples,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                NoteCandidateAdaptor(
-                    notes=note_store,
-                    candidates=note_store,
-                    # The room's account (DEC-207). This adaptor's key is the
-                    # room's `primary_id` already, the fold's own key.
-                    culture=culture_reader,
-                    unit_for={
-                        conv.primary_id: conv.unit
-                        for conv in allowlist.conversations
-                        if conv.primary_id and conv.unit
-                    }.get,
-                    # THE ROOM, off the SAME allowlist read and keyed the same
-                    # way (issue #161). `label_for` is what the room is called
-                    # — the string that reaches every rendered batch line, so
-                    # two rooms of one unit stop reading as one room.
-                    # `description_for` is the operator's sentence about what
-                    # kind of room it is, rendered once above the batch.
-                    # A room with neither is simply absent from the map; the
-                    # adaptor falls back without ever rendering an id.
-                    label_for={
-                        conv.primary_id: conv.label
-                        for conv in allowlist.conversations
-                        if conv.primary_id and conv.label
-                    }.get,
-                    description_for={
-                        conv.primary_id: conv.description
-                        for conv in allowlist.conversations
-                        if conv.primary_id and conv.description
-                    }.get,
-                    metrics=metrics,
-                    # The ROOM's zone for each rendered message's moment —
-                    # the same `[reminders] timezone` the curator's `_today`
-                    # reads, for the same reason: «this Saturday» is a
-                    # question about the room's calendar, not the process's.
-                    timezone=ZoneInfo(cfg.reminders.timezone),
-                    # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200),
-                    # off the SAME allowlist read `label_for`/`description_for`
-                    # already are, plus `persons` — the one instance every
-                    # other write path in this file already holds. This is
-                    # what lets `inputs()` fill `person_name` from the SAME
-                    # roster the tag path resolves against (DEC-80) before a
-                    # batch line ever renders a mapped sender's self-set,
-                    # spoofable profile name instead of their canonical one.
-                    platform_for={
-                        conv.primary_id: conv.platform
-                        for conv in allowlist.conversations
-                        if conv.primary_id
-                    }.get,
-                    resolve_names=(
-                        lambda rows, platform:
-                            persons.name_transcript(rows, platform=platform)
-                    ),
-                    # A RESEARCH LOOP (design/dreamer-agent-loop/43 §2): every
-                    # read verb the runtime admits for a scope-keyed adaptor,
-                    # DERIVED off the registry's ceiling, less the verbs
-                    # `WITHHELD_TOOLS` names with a reason. The per-fire cap
-                    # (`max_tool_calls`) is the control, not this list.
-                    tools=granted_tools(tool_registry.read_only_tools()),
-                ),
-            )
-        # NOTE-MERGE (design/dreamer-agent-loop/41 §7, DEC-202): the back-stop
-        # for two open notes asking the same question, on its own switch —
-        # `[notes] merge_mode`, "off" by default, which builds nothing.
-        #
-        # Hourly, at :30 — an arbitrary slot, not one sequenced after
-        # `note-candidates`, which is watermark-driven and has no :00 slot to
-        # follow. What a candidates fire writes is simply seen by the next
-        # merge tick. A tick where no note moved is one clock read, one
-        # `standing()` and one `revision_chain` per open note, and no model
-        # call (the adaptor's own change check). `samples=1` is PINNED, not defaulted: the runtime
-        # unions samples, so a second sample could only add folds — the
-        # direction this pass must not fail in (41 §7.3).
-        if (
-            cfg.notes.enabled and cfg.notes.merge_mode != "off"
-            and note_store is not None
-        ):
-            dream_schedules = {
-                **dream_schedules,
-                "note-merge": AdaptorSchedule(
-                    min_interval_seconds=3600,
-                    phase_offset_seconds=1800,
-                    # Inert: the pass is watermark-free and never reads a
-                    # batch. The largest group a unit could name is its open
-                    # notes; nothing here is sized by it.
-                    batch_limit=1,
-                    samples=1,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                NoteMergeAdaptor(
-                    notes=note_store,
-                    clock_store=dream_schedule_clock,
-                    mode=cfg.notes.merge_mode,
-                    timezone=ZoneInfo(cfg.reminders.timezone),
-                    # A note's birth room by its operator label, off the same
-                    # allowlist read `note-candidates` uses; an unlabelled
-                    # room renders as `room N`, never as its id.
-                    label_for={
-                        conv.primary_id: conv.label
-                        for conv in allowlist.conversations
-                        if conv.primary_id and conv.label
-                    }.get,
-                    metrics=metrics,
-                ),
-            )
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
         # how each room works and why, folded once a day from that room's own
         # messages and appended to a chain.
@@ -4020,7 +3482,7 @@ async def build_dependencies(
         # is gated on a measured improvement.
         #
         # Gated on `[culture] enabled` alone — no note-tier dependency, unlike
-        # the proactive adaptor below: the corpus is `messages`, which every
+        # the (deleted, DEC-277) proactive adaptor: the corpus is `messages`, which every
         # deployment has, and nothing it writes is read by another tier.
         if cfg.culture.enabled:
             dream_schedules = {
@@ -4125,7 +3587,7 @@ async def build_dependencies(
                     # other write path in this file already holds. This is
                     # what lets `inputs()` fill a mapped sender's canonical
                     # name into `<room_messages>` before it renders, the same
-                    # wiring `NoteCandidateAdaptor` already carries.
+                    # wiring the deleted `NoteCandidateAdaptor` carried.
                     platform_for={
                         conv.primary_id: conv.platform
                         for conv in allowlist.conversations
@@ -4135,110 +3597,21 @@ async def build_dependencies(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
                     ),
+                    # THE CHARACTER TIER (DEC-278): the room's listed persons
+                    # (the same `persons.room_members` the tag prompt's
+                    # `<room_members>` uses), Nora's memory and observer peer,
+                    # and R-18's screen on what memory answers.
+                    members_for={
+                        conv.primary_id: persons.room_members(conv.persons)
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    memory=memory,
+                    ai_peer=cfg.memory.ai_peer,
+                    screen=scan_identifiers,
                 ),
             )
 
-        # THE PROACTIVE ADAPTOR — Nora's other half (design/dreamer-agent-
-        # loop/39, DEC-162). Gated on the note tier being on (its inputs are
-        # the notes) and on `policy.toml` naming at least one home room
-        # (39 D2): the home room IS the operator's opt-in, so there is no
-        # config flag — a unit without one is simply a unit she
-        # does not act for. Its rows fire through the heartbeat; wiring it
-        # with the heartbeat off is legal and loud, because the rows would
-        # sit PENDING forever.
-        if proactive_wired and note_store is not None:
-            if not cfg.heartbeat.enabled:
-                log.warning(
-                    "proactive adaptor wired with [heartbeat] enabled = false: "
-                    "its rows will be written and never fired"
-                )
-            # Unit -> its rooms, with the home room marked. ONE read of
-            # the allowlist, here, so the adaptor and the tool source name
-            # the same room (39 D2: two readers with two ideas of a
-            # unit's home would put the decide turn in one room and the
-            # act turn in another).
-            rooms_by_unit = _unit_rooms(allowlist)
-            dream_schedules = {
-                **dream_schedules,
-                # Daily, on the Dreamer's existing clock (39 D10), phased to
-                # 07:00 Asia/Hong_Kong: 23:00 UTC of the previous calendar
-                # day, so the slot rolls over an hour before the group is
-                # awake and a row for «this afternoon» is written the same
-                # morning it is about. The curator's 16:00 UTC (HK midnight)
-                # is the template; this one is deliberately NOT 00:00 UTC
-                # (08:00 HK), because that is `phase_offset_seconds`'s
-                # default and a chosen value must not be indistinguishable
-                # from an unset one. The reading that would move it is the
-                # decide suite (39 §5) showing rows scheduled too close to
-                # their moment to matter.
-                # HOURLY since issue #136 (operator, 2026-09-09), not the
-                # daily 07:00 HK slot 39 D10 first chose: the adaptor's own
-                # deterministic check decides whether a tick RENDERS — a
-                # daily floor at 07:00 HK, or a change in the unit's
-                # notes/Standing once its HOME ROOM is quiet — and a tick that
-                # does not render is one SQL read and no model call. The
-                # slot is therefore the ceiling on how soon a change is seen,
-                # and the reversal condition is on
-                # `nora_proactive_pass_total{reason}`, not on this number.
-                PROACTIVE_ADAPTOR_NAME: AdaptorSchedule(
-                    min_interval_seconds=3600,
-                    # Inert for a watermark-free adaptor (the curator's own
-                    # comment): no `record.since` read ever happens for it.
-                    batch_limit=1,
-                ),
-            }
-            dream_adaptors = (
-                *dream_adaptors,
-                ProactiveAdaptor(
-                    notes=note_store,
-                    standing=standing_store if cfg.standing.enabled else None,
-                    reminders=reminders,
-                    memory=memory,
-                    # Each of the unit's rooms' accounts (DEC-207), keyed on
-                    # `UnitRoom.conversation_id` — a `primary_id` by
-                    # construction (`_unit_rooms`).
-                    culture=culture_reader,
-                    rooms_of=lambda ws: rooms_by_unit.get(ws, ()),
-                    # WHO IS IN THE HOME ROOM (issue #145). Built HERE because
-                    # `nora.language` may not import `nora.agent.room`, and
-                    # through the same `Room` the tag path uses so the pass and
-                    # a turn cannot disagree about who is in a room. No roster
-                    # for the platform means no block, not a failure.
-                    people_of=_home_room_people(rosters, persons),
-                    # WHERE SHE STANDS (design/self-awareness/02, D2): the
-                    # SAME reader the tag and fire paths hold, read on the
-                    # home room at pass time. `<presence>` replaced
-                    # `<home_room>` in this prompt.
-                    presence_of=lambda home: presence_reader.read(
-                        platform=home.platform, conversation_id=home.conversation_id,
-                    ),
-                    ai_peer=cfg.memory.ai_peer,
-                    clock=clock,
-                    timezone=ZoneInfo(cfg.reminders.timezone),
-                    self_card_conclusions=cfg.memory.self_card_conclusions,
-                    # The roster index's DEPTH (issue #210, 39 D9). Read from
-                    # the same `[memory]` section the participation turn's
-                    # numbers come from, so «how much memory may a prompt hold»
-                    # has one operator-visible home rather than two.
-                    roster_index_conclusions=cfg.memory.roster_index_conclusions,
-                    roster_index_members=cfg.memory.roster_index_members,
-                    read_timeout_seconds=cfg.memory.read_timeout_seconds,
-                    metrics=metrics,
-                    # The SAME schedule-state store the runtime's slots use,
-                    # for the pass and wake clocks (issue #136); the audit
-                    # store for the quiet check; `[dreamer] quiet_seconds`
-                    # with its existing meaning.
-                    clock_store=dream_schedule_clock,
-                    records=audit,
-                    quiet_seconds=cfg.dreamer.quiet_seconds,
-                    # The shared decision log (issue #199): this pass
-                    # writes its own decide verdicts and reads back the
-                    # participation / tag rows of every room of the
-                    # unit. Never its OWN rows — 39 sec.1's
-                    # self-echo brake, here as a predicate.
-                    decisions=decision_log,
-                ),
-            )
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends
@@ -4322,8 +3695,8 @@ async def build_dependencies(
             # `home_room = true` to read: the grant resolves the adaptor's own
             # room, and this map is what carries the platform (the roster
             # source), the id to bind and the `location` flag DEC-74 threads.
-            # Read off the SAME allowlist as `home_rooms` and `origin_rooms`
-            # above so the three cannot disagree about which room an id names.
+            # Read off the SAME allowlist as `home_rooms` above so the two cannot
+            # disagree about which room an id names.
             # Inert for an adaptor with no home-room grant, exactly as
             # `home_rooms` is.
             scope_rooms={
@@ -4335,46 +3708,17 @@ async def build_dependencies(
                 for conv in allowlist.conversations
                 for cid in conv.ids
             },
-            # Proactive destination map (design/dreamer-agent-loop/40, #248):
-            # every policy conversation id -> its `OriginRoom`, so a
-            # note-linked proactive row can be stamped into the room the note
-            # was born in instead of the home room. Passed whether or not the
-            # proactive adaptor is wired: the map is inert for tag paths, and
-            # `remind` refuses (never falls back) when the id is not here.
-            origin_rooms={
-                cid: OriginRoom(
-                    platform=conv.platform,
-                    conversation_id=conv.primary_id,
-                    conversation_type="group",
-                    proactive=conv.proactive,
-                    unit=conv.unit,
-                )
-                for conv in allowlist.conversations
-                for cid in conv.ids
-            },
             rosters=rosters,
             # EVERY platform's aliases, for `_presence_preflight`'s reason: a
             # home room's roster must skip Nora's own account rather than
             # count it as one unnamed stranger — which alone makes `where_is`
             # refuse in a location-trusted room (39 D2, review finding).
             self_ids=registry.self_aliases(),
-            # `online_now`'s proactive input domain (design/online-status/03):
-            # the home roster unioned with the standing notes' subjects,
-            # resolved per decide turn. `note_store` may be None (the note
-            # tier off) — the resolver then carries the roster alone, and
-            # `RegistryToolSource` hands it out ONLY for a home-room build.
-            online_scope_for=_online_scope_of(
-                proactive_homes, rosters, persons, note_store,
-                registry.self_aliases(),
-            ),
         )
-        # The ONE allowance past the read-only ceiling (39 D3), by NAME: the
-        # proactive adaptor's `remind`, and its home-room build. Handed to
-        # the runtime AND to the startup check below, so the two measure the
-        # same grant. Every other adaptor's entry is absent, which is the
-        # whole pre-DEC-162 ceiling by omission.
+        # Each adaptor's room grant, by NAME, handed to the runtime AND to the
+        # startup check below so the two measure the same grant. No adaptor
+        # holds an act verb.
         dream_grants: dict[str, AdaptorGrant] = {
-            PROACTIVE_ADAPTOR_NAME: proactive_grant(),
             # The culture adaptor's own room, and no act verb
             # (`culture_grant`). SCOPE-keyed, so this resolves through
             # `scope_rooms` above rather than through `home_rooms`: its key
@@ -4384,11 +3728,6 @@ async def build_dependencies(
             # adaptor that is not wired is never read, and `[culture] enabled
             # = false` is what keeps the adaptor out of `dream_adaptors`.
             CULTURE_ADAPTOR_NAME: culture_grant(),
-            # NOTE-CANDIDATES' own room, and no act verb, for culture's
-            # reason (design 43 §2): scope-keyed, so the grant is an identity,
-            # and without it every room-scoped read it holds answers off the
-            # empty `Room`: a declared tool set, not a reachable one.
-            NoteCandidateAdaptor.name: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the
@@ -4450,18 +3789,16 @@ async def build_dependencies(
             },
         )
 
-        if cfg.cognition.session_mode == "shadow" and stimulus_store is not None:
+        if cfg.cognition.enabled and stimulus_store is not None:
             # Sessions ride the Dreamer's model, tool source and objective
-            # corpus (the config validator refuses shadow sessions without
-            # `[dreamer] enabled`), and touch NO live tier store: the runner
-            # is handed the dry-run ledger, the stimulus store and three read
-            # callables (`nora.app.cognition_wiring`).
+            # corpus (the config validator refuses sessions without
+            # `[dreamer] enabled`), and write through the tag path's stores.
             surface = read_surface(
                 read_only=dream_tools.read_only(),
                 enabled_flags={"record_query.enabled"} if cfg.record_query.enabled else (),
             )
             log.info(
-                "cognition sessions (shadow): read tools wired=%s missing=%s withheld=%s",
+                "cognition sessions: read tools wired=%s missing=%s withheld=%s",
                 sorted(surface.wired), sorted(surface.missing), sorted(surface.withheld),
             )
             homes = allowlist.home_rooms()
@@ -4480,12 +3817,15 @@ async def build_dependencies(
             if cognition_skipped:
                 log.error(
                     "cognition sessions: unit(s) %s name no home room in policy.toml, so no "
-                    "session can start for them; their would-wakes are still recorded "
+                    "session can start for them and they are not woken "
                     "(nora_cognition_session_units{state=no_home_room}). Set `home_room = "
                     "true` on one of their rooms to cover them",
                     cognition_skipped,
                 )
-            dry_run_store = SqlCognitionDryRunStore(engine)
+            if note_store is None:
+                raise StartupError(
+                    "[cognition] enabled needs [notes] enabled: a session writes the notebook",
+                )
 
             async def _note_titles(unit: str) -> Sequence[str]:
                 if note_store is None:
@@ -4498,23 +3838,6 @@ async def build_dependencies(
                 return await note_store.standing(unit=unit)
 
             _open_events = open_events_reader(event_store)
-
-            async def _note_head(unit: str, note_id: str) -> NoteHead | None:
-                """The note's head through the live store's own read
-                (`note_by_id`, a SELECT): what a dry-run `note_update` is held
-                to, so its refusals are the store's."""
-                if note_store is None:
-                    raise RuntimeError("no note store: a note's head cannot be read")
-                note = await note_store.note_by_id(unit=unit, note_id=note_id)
-                return None if note is None else NoteHead(
-                    head_revision_id=note.head_revision_id,
-                    retired=note.retired_at is not None,
-                )
-
-            async def _requester_pending() -> int:
-                if reminders is None:
-                    raise RuntimeError("no reminder store: pending rows cannot be counted")
-                return await reminders.count_pending(cfg.memory.ai_peer)
 
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
@@ -4546,6 +3869,7 @@ async def build_dependencies(
                 clock=lambda: clock().timestamp(),
                 own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
                 own_sends_max=cfg.cognition.own_sends_max,
+                tz=ZoneInfo(cfg.cognition.timezone),
             )
 
             try:
@@ -4553,12 +3877,10 @@ async def build_dependencies(
                     cfg=cfg, models=dream_models,
                     retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
                     metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
-                    dry_run_store=dry_run_store, stimulus_store=stimulus_store,
+                    store=SqlCognitionStore(engine), stimulus_store=stimulus_store,
                     note_titles=_note_titles, open_events_in=_open_events,
-                    note_head=_note_head,
-                    # Nora's own pending rows in the LIVE reminder store: what the live
-                    # `remind` tool counts against `max_pending_per_requester`.
-                    requester_pending=_requester_pending,
+                    notes=note_store, events=events, standing=standing_store,
+                    reminders=reminders, ai_peer=cfg.memory.ai_peer,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
                         platform=platform, conversation_id=conversation_id,
@@ -4591,15 +3913,15 @@ async def build_dependencies(
                 # not the first wake's failure and never a raw `LookupError`.
                 raise StartupError(f"Cognition session error: {exc}") from exc
 
-    # The wake evaluator, after the Dreamer block so `session_mode = "shadow"`
-    # can hand it the runner's hook. The boot check below refuses a shadow
-    # session mode that ended with no runner or no hook (#627 review, minor
-    # 4): a week of would-wakes and no session must not look healthy.
+    # The wake evaluator, after the Dreamer block so it can be handed the
+    # runner's hook. The boot check below refuses `enabled` with no runner or
+    # no hook. Only units a session can run for are woken.
     wake_evaluator: WakeEvaluator | None = None
     cognition_shutdown: CognitionShutdown | None = None
     if stimulus_store is not None:
         wake_evaluator = _build_wake_evaluator(
-            cfg, store=stimulus_store, units=cognition_units, metrics=metrics,
+            cfg, store=stimulus_store,
+            units=lambda: sorted(cognition_session_units or ()), metrics=metrics,
             on_wake=cognition_runner.wake_hook if cognition_runner is not None else None,
             session_units=(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
@@ -4613,7 +3935,7 @@ async def build_dependencies(
             )
     try:
         require_session_hook(
-            session_mode=cfg.cognition.session_mode, runner=cognition_runner,
+            enabled=cfg.cognition.enabled, runner=cognition_runner,
             evaluator=wake_evaluator, session_units=cognition_session_units,
         )
     except RuntimeError as exc:
@@ -4645,7 +3967,6 @@ async def build_dependencies(
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store,
         language_scopes=language_scopes,
-        reconcile_deletes=functools.partial(_reconcile_deletes_now, engine),
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,
@@ -5002,13 +4323,6 @@ def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
         return convo.ids if convo is not None else frozenset({conversation_id})
 
     return room_ids
-
-
-async def _reconcile_deletes_now(engine: Any) -> ReconcileReport:
-    """`reconcile_deletes --apply`, stamped with the time it runs."""
-    return await reconcile_deleted_messages(
-        engine, apply=True, now_ms=int(datetime.now(UTC).timestamp() * 1000),
-    )
 
 
 def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:

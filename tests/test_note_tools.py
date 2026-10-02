@@ -284,64 +284,6 @@ async def test_note_search_does_not_match_on_the_title_alone():
     assert (await tools["note_search"](query="Hotel"))["status"] == "nothing_found"
 
 
-async def test_a_search_that_finds_nothing_is_recorded_as_a_candidate():
-    """§4.5, and the whole reason a miss is worth writing down: the second and
-    third time the room asks about something no note covers is the signal the
-    curator reads to decide a note should exist."""
-    store = InMemoryNoteStore()
-    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
-    tools = _tools(notes=store)
-
-    assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
-    assert (await tools["note_search"](query="酒店"))["status"] == "nothing_found"
-
-    candidate = store.candidates[(UNIT, "酒店")]
-    assert candidate.occurrence_count == 2
-    assert candidate.observed_in == (GROUP,)
-
-
-async def test_a_search_that_finds_something_records_no_miss():
-    store = InMemoryNoteStore()
-    await _seed(store, title="Dinner, 9 Sept", body="Ada suggested a hotel buffet.")
-    tools = _tools(notes=store)
-    await tools["note_search"](query="hotel")
-    assert store.candidates == {}
-
-
-async def test_a_recorded_miss_is_counted_as_a_candidate():
-    """`nora_note_candidates_total{trigger="miss"}` is one half of the tier's
-    own named diagnostic — a climbing candidate count against a flat write
-    count is «she recognises and does not act», and for the tier's first eight
-    days neither half existed."""
-    store = InMemoryNoteStore()
-    metrics = Metrics()
-    await _seed(store, title="Dinner, 9 Sept", body="Nobody has booked.")
-    tools = _tools(notes=store, metrics=metrics)
-
-    await tools["note_search"](query="酒店")
-    await tools["note_search"](query="酒店")
-
-    # Reconciles against the STORE rather than against a literal: the count and
-    # the row it claims to describe have to agree, or the metric is attesting
-    # to itself.
-    assert metrics.get("nora_note_candidates_total", trigger="miss") == 2
-    assert store.candidates[(UNIT, "酒店")].occurrence_count == 2
-
-
-async def test_a_search_that_hits_counts_no_candidate():
-    """The negative half, and it is not decorative: a counter incremented
-    before the `search` rather than after the `record_miss` would climb on
-    every search and read as a room full of gaps."""
-    store = InMemoryNoteStore()
-    metrics = Metrics()
-    await _seed(store, title="Dinner, 9 Sept", body="Ada suggested a hotel buffet.")
-    tools = _tools(notes=store, metrics=metrics)
-
-    await tools["note_search"](query="hotel")
-
-    assert metrics.get("nora_note_candidates_total", trigger="miss") == 0
-
-
 # ── note_create (§6.5) ───────────────────────────────────────────────────────
 
 async def test_note_create_writes_the_note_and_its_first_revision():

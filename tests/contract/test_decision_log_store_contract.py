@@ -140,7 +140,8 @@ async def test_an_appended_row_reads_back_whole(store):
 
 async def test_a_nullable_note_id_survives_the_round_trip(store):
     """`note_id` is the one nullable column, and NULL is the ordinary case —
-    only the proactive decide turn decides about a note. A store that coerced
+    only the proactive decide turn (deleted 2026-10-03; its old rows remain)
+    decided about a note. A store that coerced
     it to `""` would make «about note X» and «about the room» the same row."""
     await store.append(row=_row("d1"))
     await store.append(row=_row("d2", writer="proactive_decide", verdict="remind",

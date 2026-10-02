@@ -111,7 +111,7 @@ def test_the_failed_mark_is_the_newest_failed_wakes_watermark():
 
     def wake(i: int, through: int, at: int) -> WakeRow:
         return WakeRow(
-            id=i, unit="u", mode="shadow", reason="settled", from_stimulus_id=0,
+            id=i, unit="u", mode="live", reason="settled", from_stimulus_id=0,
             through_stimulus_id=through, stimulus_count=1, eligible_count=1,
             oldest_pending_ms=None, cut_cooldown=False, at_ms=at, recorded_at_ms=at,
         )
@@ -188,7 +188,7 @@ async def test_a_stimulus_that_arrived_after_the_failed_wakes_is_not_struck_unse
     rig.clock.advance(TICK)
     await rig.tick()
     assert late not in rig.stimuli.retracted
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert [s.id for s in view.pending] == [late]
 
 
@@ -206,7 +206,7 @@ async def test_a_closed_session_resets_the_backoff_and_the_strike_count():
     assert 300 <= gaps[0] < 600 and 600 <= gaps[1] < 900 and 1200 <= gaps[2] < 1500, gaps
     # the 4th closed: the 5th waits only the cooldown
     assert 300 <= gaps[3] < 600, gaps
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.failures == 1                       # a new streak, not 4
     while rig.agent.calls < 7:                      # the streak climbs again from one
         await _run(rig, ticks=1, chatty=True)
@@ -280,7 +280,7 @@ async def test_twenty_infrastructure_failures_back_off_to_the_cap_and_strike_not
     assert max(gaps) < cap + 2 * TICK + int(POLICY.cooldown_seconds), gaps    # never past the cap
     assert gaps[-6:] and all(cap <= g < cap + 2 * TICK + 60 for g in gaps[-6:]), gaps[-6:]
     assert {o.cause for o in rig.stimuli.outcomes.values() if o.outcome == "failed"} == {"infra"}
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert view.pending == () and view.failures == 0     # the backlog was processed
 
 
@@ -307,7 +307,7 @@ async def test_one_agenda_failure_among_infrastructure_ones_is_not_a_strike():
         await rig.say()
     await _until_calls(rig, 7)
     assert rig.stimuli.retracted == set()
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=100)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=100)
     assert (view.failures, view.agenda_failures) == (7, 1)
 
 
