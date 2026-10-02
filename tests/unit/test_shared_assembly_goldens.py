@@ -46,10 +46,10 @@ def _blocks() -> list[ContextBlock]:
     characters a renderer must leave alone (`assemble` renders; it never
     escapes)."""
     return [
-        ContextBlock(name="note", body="n body", order=20),
+        ContextBlock(name="notes", body="n body", order=20),
         ContextBlock(name="today", body="2026-10-01 Thu", order=10),
-        ContextBlock(name="evidence", body="", order=15),
-        ContextBlock(name="own_sends", body="a & b <c>\nline2", order=40),
+        ContextBlock(name="events", body="", order=15),
+        ContextBlock(name="standing", body="a & b <c>\nline2", order=40),
     ]
 
 
@@ -79,17 +79,17 @@ def test_a_separator_joins_and_does_not_terminate():
     """The default closes every block with a newline; a separator goes BETWEEN
     blocks, so the text ends on the last block's closing tag."""
     blocks = _blocks()
-    assert assemble(blocks).endswith("</own_sends>\n")
-    assert assemble(blocks, sep="\n\n").endswith("</own_sends>")
+    assert assemble(blocks).endswith("</standing>\n")
+    assert assemble(blocks, sep="\n\n").endswith("</standing>")
     assert assemble([blocks[2]], sep="\n\n") == ""  # an empty body is dropped
 
 
 def test_ordering_by_order_holds_with_a_separator():
     blocks = _blocks()
     rendered = assemble(blocks, sep="\n\n")
-    positions = [rendered.index(f"<{name} ") for name in ("today", "note", "own_sends")]
+    positions = [rendered.index(f"<{name} ") for name in ("today", "notes", "standing")]
     assert positions == sorted(positions)
-    assert "<evidence" not in rendered
+    assert "<events" not in rendered
     assert assemble(list(reversed(blocks)), sep="\n\n") == rendered
 
 

@@ -88,9 +88,9 @@ def _everything() -> str:
         records=records, rollups={roll.ref: roll}, room_labels=LABELS,
         own_sends={0: (_rec(50, "message", mid=50, text="noted", own=True, author="Nora"),)},
         notes=(
-            *(NoteLine(id=f"n-{i}", title=f"Note {i}", description="d") for i in range(2)),
-            NoteLine(id="n-2", title="Note 2", description="d", review="anchor_passed",
+            NoteLine(id="n-0", title="Note 0", description="d", review="anchor_passed",
                      may_duplicate="n-1"),
+            *(NoteLine(id=f"n-{i}", title=f"Note {i}", description="d") for i in (1, 2)),
         ),
         events=(
             EventLine(id="e-1", room=A, title="Dinner", when_ms=NOW, venue="Ramen Ya",
