@@ -531,6 +531,19 @@ the series born at 1, which stay silent: that is the miss, kept as the reason.
 `NoraErrorsRising` reads `nora_errors_total{stage}`, created lazily by the error it
 counts, and has the same blind spot for the first error of a stage in a process.
 
+The zero only helps if one scrape lands before the first session ends: Prometheus must
+see the child at 0 to have something to subtract. The scrape interval (30 s,
+`deploy/prometheus/prometheus.yml`) and the default `[cognition] tick_seconds` (30 s) are
+equal, so a session cannot start and fail before the first scrape in the default
+configuration; a `tick_seconds` BELOW the scrape interval, with a first session that
+fails instantly, can reopen the blind spot for that session.
+
+**`nora cognition health` always judges `tracked=True`** (sessions): it cannot know which
+units have a home room. So a stalled `time` stimulus on a unit that cannot start a session
+(no home room) is counted by the `nora_stimulus_pending_age_seconds` gauge, where the
+evaluator reads it as untracked and wakes would-wake rows for it, and ignored by the
+health command, which treats every `time` stimulus as inert while no `time` skill ships.
+
 **`NoraRestartLoop` is blind to a process that dies before it serves.** The series
 is exposed only once `App.run` has started the metrics server, so a startup failure
 (a bad config, a failed migration) never moves it; `TargetDown` is the rule for that,

@@ -163,6 +163,36 @@ async def test_a_database_or_any_other_exception_is_an_error_and_leaks_no_messag
     assert "no verdict" in captured.err
 
 
+async def test_the_inert_kinds_follow_the_agenda_table_the_day_a_time_skill_ships(
+    monkeypatch, capsys,
+):
+    """ONE table decides which kinds are inert (`nora.domain.stimuli.AGENDA_SKILL_KINDS`),
+    and the command reads it at call time: hard-coding the answer here would keep
+    reporting a floor as unclaimable after a `time` skill shipped. The control is the
+    shipped (empty) table, which is the test below."""
+    import nora.domain.stimuli as stimuli
+
+    monkeypatch.setattr(stimuli, "AGENDA_SKILL_KINDS", {"time": "daily-floor"})
+    _, _, seen = await _run(monkeypatch, capsys)
+    assert seen["inert_kinds"] == frozenset()
+
+
+@pytest.mark.parametrize(("flag", "since", "until"), [
+    ("--since", "notadate", None), ("--until", None, "notadate"),
+    ("--since", "2026-10-01T00:00:00", None),                        # naive: the tz message
+])
+async def test_a_bad_window_names_the_flag_that_was_bad(monkeypatch, capsys, flag, since, until):
+    """`_cutover` said `--before` for every caller."""
+    monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace(
+        cognition=SimpleNamespace(timezone="Asia/Hong_Kong", session_timeout_seconds=3900.0),
+    ))
+    rc = await cli.cmd_cognition_health(
+        Namespace(config="unused.toml", since=since, until=until, unit=None, json=False),
+    )
+    err = capsys.readouterr().err
+    assert rc == 2 and f"error: {flag} " in err and "--before" not in err
+
+
 async def test_the_inert_kinds_reach_the_read(monkeypatch, capsys):
     """Production ships no skill for `time`, so the command reads a `time` stimulus as
     what the evaluator reads it as: one no wake can claim."""

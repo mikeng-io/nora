@@ -226,7 +226,7 @@
   {
     "name": "health command passes no inert kinds to the read",
     "file": "nora/app/cli.py",
-    "old": "            inert_kinds=inert_kinds_for(tracked=True, floors_ready=\"time\" in AGENDA_SKILL_KINDS),\n",
+    "old": "            inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),\n",
     "new": "",
     "target": "tests/unit/test_cognition_health_cli.py -k inert_kinds_reach"
   },
@@ -327,5 +327,26 @@
     "old": "    try:\n        return await _cognition_health(args)\n    except CliError as exc:\n        print(f\"error: {exc}\", file=sys.stderr)\n",
     "new": "    try:\n        return await _cognition_health(args)\n    except CliError:\n        raise\n",
     "target": "tests/unit/test_cognition_health_cli.py"
+  },
+  {
+    "name": "health command hard-codes floors_ready=False (ignores the agenda table)",
+    "file": "nora/app/cli.py",
+    "old": "inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),",
+    "new": "inert_kinds=inert_kinds_for(tracked=True, floors_ready=False),",
+    "target": "tests/unit/test_cognition_health_cli.py -k follow_the_agenda_table"
+  },
+  {
+    "name": "composition builds its own empty agenda table",
+    "file": "nora/app/composition.py",
+    "old": "AgendaSkills(by_kind=agenda_skill_kinds(), resolve=lambda name: None)",
+    "new": "AgendaSkills(by_kind={}, resolve=lambda name: None)",
+    "target": "tests/test_composition.py -k floors_ready_follows"
+  },
+  {
+    "name": "_cutover names --before for every flag",
+    "file": "nora/app/cli.py",
+    "old": "raise CliError(f\"{flag} must be ISO 8601; got {text!r}\") from exc",
+    "new": "raise CliError(f\"--before must be ISO 8601; got {text!r}\") from exc",
+    "target": "tests/unit/test_cognition_health_cli.py -k names_the_flag"
   }
 ]

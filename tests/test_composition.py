@@ -2021,6 +2021,23 @@ async def test_session_mode_off_builds_nothing_model_related(cfg, tmp_path, monk
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
+async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
+    cfg, tmp_path, monkeypatch,
+):
+    """`nora.domain.stimuli.AGENDA_SKILL_KINDS` is the table the evaluator, the age gauge
+    and `nora cognition health` all read. Production ships no `time` skill, so floors are
+    not ready; the day the table has one the composition-built evaluator must follow it
+    (a root that built its own empty table would keep every floor inert)."""
+    import nora.domain.stimuli as stimuli
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is False
+    monkeypatch.setattr(stimuli, "AGENDA_SKILL_KINDS", {"time": "daily-floor"})
+    patched = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is True
+
+
 async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator(
     cfg, tmp_path,
 ):

@@ -99,7 +99,7 @@ from nora.domain.cognition_shadow_compare import report_json as shadow_report_js
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
-from nora.domain.stimuli import AGENDA_SKILL_KINDS, inert_kinds_for
+from nora.domain.stimuli import floors_ready, inert_kinds_for
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
@@ -757,13 +757,15 @@ async def cmd_memory_detach(args: argparse.Namespace) -> int:
     return 1 if result.failed else 0
 
 
-def _cutover(text: str) -> datetime:
+def _cutover(text: str, flag: str = "--before") -> datetime:
+    """A timezone-aware ISO 8601 instant. `flag` names the option in the error, so a
+    bad `--since` says `--since` (it said `--before` for every caller)."""
     try:
         stamp = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise CliError(f"--before must be ISO 8601; got {text!r}") from exc
+        raise CliError(f"{flag} must be ISO 8601; got {text!r}") from exc
     if stamp.tzinfo is None:
-        raise CliError(f"--before needs a timezone (e.g. +08:00); got {text!r}")
+        raise CliError(f"{flag} needs a timezone (e.g. +08:00); got {text!r}")
     return stamp
 
 
@@ -921,8 +923,8 @@ async def cmd_cognition_compare(args: argparse.Namespace) -> int:
     finding, so it is not a failure; exit 1 only when a tier could not be read
     (ERROR, never zero). It prints counts and does not decide the gate."""
     cfg = _config(args)
-    since = _cutover(args.since)
-    until = _cutover(args.until) if args.until else datetime.now(UTC)
+    since = _cutover(args.since, "--since")
+    until = _cutover(args.until, "--until") if args.until else datetime.now(UTC)
     if until <= since:
         raise CliError("--until must be after --since")
     if args.tolerance_minutes < 0:
@@ -1001,8 +1003,8 @@ async def cmd_cognition_health(args: argparse.Namespace) -> int:
 async def _cognition_health(args: argparse.Namespace) -> int:
     cfg = _config(args)
     now = datetime.now(UTC)
-    until = _cutover(args.until) if args.until else now
-    since = _cutover(args.since) if args.since else until - timedelta(hours=24)
+    until = _cutover(args.until, "--until") if args.until else now
+    since = _cutover(args.since, "--since") if args.since else until - timedelta(hours=24)
     if until <= since:
         raise CliError("--until must be later than --since")
     tz = ZoneInfo(cfg.cognition.timezone)
@@ -1012,9 +1014,11 @@ async def _cognition_health(args: argparse.Namespace) -> int:
             engine, since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
             now_ms=int(now.timestamp() * 1000), unit=args.unit, tz=tz,
             session_timeout_seconds=cfg.cognition.session_timeout_seconds,
-            # Sessions are what this judges, so the unit is tracked; the table is the
-            # composition root's own (`AGENDA_SKILL_KINDS`).
-            inert_kinds=inert_kinds_for(tracked=True, floors_ready="time" in AGENDA_SKILL_KINDS),
+            # The rule is the evaluator's (`inert_kinds_for`) over the composition root's
+            # own table (`floors_ready()`). `tracked=True` always: this judges SESSIONS and
+            # cannot know which units have a home room, so a stalled `time` stimulus on a
+            # unit that cannot start a session is seen by the age gauge and ignored here.
+            inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),
         )
     finally:
         await engine.dispose()

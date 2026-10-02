@@ -567,9 +567,25 @@ flip-day check script can `&&` it:
 | 1 | FAIL | **a measured threshold was breached**, and nothing else: the line names which |
 | 2 | ERROR | no verdict: a section failed to read, no session ran and nothing waits (zero sessions is unknown, not healthy: a quiet day exits 2 by design), **or the command itself could not run** (an unreadable `--config`, a bad `--since`/`--until`, a database it cannot reach, any exception; argparse already exits 2 for a bad flag). A FAIL outranks an ERROR |
 
-So `1` is only ever «the loop is failing»; a mistyped path or a down database is `2`
-with a one-line `error:` on stderr (the exception class name for anything unexpected,
-never its message). `nora-db` down and a failing loop must not read the same.
+So `1` is only ever «the loop is failing». Two different things give `2`, and they look
+different: a command that could not run (an unreadable `--config`, a bad `--since` /
+`--until`, any other exception before a report exists) prints one `error:` line on
+stderr and nothing on stdout (the exception class name for anything unexpected, never
+its message); a database it cannot reach still produces a REPORT, on stdout, with
+`ERROR unreadable: <section> could not be read (ConnectionRefusedError)` per section and
+an EMPTY stderr. Either way a down `db` (the compose service; its container is `nora-db`)
+and a failing loop do not read the same.
+
+**Check the container first, because the exit code can be docker's.** Through
+`docker compose exec`, a stopped or restarting `nora` container makes DOCKER exit 1
+(`service "nora" is not running`) before the command starts: that `1` is not the
+command's and says nothing about the loop. A flip-day script must pre-check, and stop
+there with its own code:
+
+```bash
+docker compose ps --status running --services | grep -qx nora || { echo "nora is not running"; exit 2; }
+```
+
 
 The thresholds (`nora/domain/cognition_health.py`): **no session in the window while a
 stimulus waits** (FAIL); **a stimulus that could wake a unit has waited over 4 h**
