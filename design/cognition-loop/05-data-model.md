@@ -202,7 +202,7 @@ or a column, never parsed out of a body:
 
 | reference | from → to | what code does with it |
 |---|---|---|
-| **citation** | entry (and the `part` it supports) → Record id or Rollup key | lineage is computed from it; the withdrawal cascade walks it (`nora/app/withdrawal.py` over the `citation` table) |
+| **citation** | entry (and the `part` it supports) → Record id or Rollup key | lineage is computed from it; nothing reads it since 2026-10-03 (the withdrawal cascade that walked it was removed) |
 | **about** | entry → person, place, room, unit | finds entries by entity; forget hides the entries about a person ([70](70-migration.md) §9); the lineage source for unit-wide kinds (§3) |
 | **link** | entry → entry, typed; **links point down the order Register → Character → Lessons → Standing** and never up: a note *tracks* an event, a note *closes into* a memo, an event *leaves behind* a memo, a room's or the unit's Character *draws on* its members' Characters, a lesson *draws on* a Character line, a Standing line *is informed by* a Character line or a lesson | `exclude_persons` is unioned across it ([10](10-tiers.md) §3); a link to a hidden or unsupported entry is not followed when a View is assembled |
 
@@ -374,6 +374,8 @@ the debrief through `standing_revise` (DEC-239), and the operator through
   bodies rest on;
 - her tool calls are logged only when cacheable and `ok`; her Instagram
   comment replies are not Record (§1a);
+> **SUPERSEDED 2026-10-03 (guard removal; AGENTS.md «A guard needs a consequence»).** `--clear-unsupported` is deleted; clear a stuck mark with SQL.
+
 - a head the fold re-derives keeps its `unsupported_at` (neither upsert clears
   it), so it stays hidden until `unforget --clear-unsupported`
   ([context-assembly/04](../context-assembly/04-every-occasion.md) §7);

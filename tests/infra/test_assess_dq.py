@@ -25,7 +25,6 @@ from nora.app.assess_dq import (
     rollup_rebuild_divergence,
     run_deterministic_checks,
     sections_past_age_horizon,
-    unresolved_citations,
 )
 from nora.app.assess_run import run_nightly
 from nora.domain.assess import DQ_CHECKS
@@ -36,8 +35,7 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.schema import MESSAGES, ROLLUP_BUILD, ROLLUP_OUTING
+from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_OUTING
 
 pytestmark = pytest.mark.asyncio
 
@@ -107,72 +105,6 @@ def _event(
         reminder_id=None, created_at=when, unit_id=unit_id, end=end,
         people=people,
     )
-
-
-# ---------------------------------------------------------------- citations
-
-
-async def test_unresolved_citations_ok_when_every_citation_resolves(engine):
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    async with engine.connect() as conn:
-        result = await unresolved_citations(conn)
-    assert result.status == "ok"
-    assert result.failing == 0
-
-
-async def test_unresolved_citations_fails_when_the_hide_never_cascaded(engine):
-    """A message hidden by a path that never called `nora.app.withdrawal` —
-    the exact gap this check exists to catch."""
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    async with engine.begin() as conn:
-        await conn.execute(
-            sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(hidden_at=2000)
-        )
-    async with engine.connect() as conn:
-        result = await unresolved_citations(conn)
-    assert result.status == "fail"
-    assert result.failing == 1
-    assert f"note:{note.id}" in result.sample
-
-
-async def test_unresolved_citations_excludes_a_note_the_cascade_already_marked(engine):
-    """A note already `unsupported_at` (the withdrawal cascade already ran,
-    `nora.app.withdrawal`) is NOT counted again — the gap this check exists
-    for is a hide that never cascaded, not a hide that already did."""
-    from nora.app.withdrawal import withdraw_message
-
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    async with engine.begin() as conn:
-        await conn.execute(
-            sa.update(MESSAGES).where(MESSAGES.c.id == mid).values(hidden_at=2000)
-        )
-        report = await withdraw_message(conn, message_id=mid, now_ms=2000)
-    assert set(report.marked["note"]) == {note.id}
-    async with engine.connect() as conn:
-        result = await unresolved_citations(conn)
-    assert result.status == "ok"
-    assert result.failing == 0
 
 
 # -------------------------------------------------------------------- events
@@ -301,20 +233,20 @@ async def test_induced_line_no_aggregate_is_not_applicable_before_step_8(engine)
 async def test_a_raising_check_errors_without_dropping_the_others(engine, monkeypatch):
     """PR #623 review: a check that raises must not take the whole night's
     report down with it, including checks that already passed. Patches
-    `unresolved_citations` — the first check `run_deterministic_checks` runs
+    `cross_room_duplicate_events` — the first check `run_deterministic_checks` runs
     — to raise, and asserts every OTHER check still ran to its own verdict."""
 
     async def _raises(conn):
         raise RuntimeError("boom: citation query exploded")
 
-    monkeypatch.setattr(assess_dq, "unresolved_citations", _raises)
+    monkeypatch.setattr(assess_dq, "cross_room_duplicate_events", _raises)
     async with engine.connect() as conn:
         results = await run_deterministic_checks(conn)
 
     by_check = {r.check: r for r in results}
     assert set(by_check) == set(DQ_CHECKS)
 
-    errored = by_check["unresolved_citations"]
+    errored = by_check["cross_room_duplicate_events"]
     assert errored.status == "error"
     assert errored.failing == 0
     assert "RuntimeError" in errored.detail
@@ -322,7 +254,6 @@ async def test_a_raising_check_errors_without_dropping_the_others(engine, monkey
 
     # Every check besides the one patched to raise still ran to its own,
     # real verdict — none of them silently became "error" or "not run".
-    assert by_check["cross_room_duplicate_events"].status == "ok"
     assert by_check["rollup_rebuild_divergence"].status == "not_applicable"
     assert by_check["happened_place_mismatch"].status == "ok"
     assert by_check["sections_past_age_horizon"].status == "not_applicable"

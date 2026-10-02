@@ -91,25 +91,11 @@
   "target": "tests/infra/test_event_citations.py::test_a_tag_turn_s_event_cites_the_message_that_raised_it_and_rests_on_its_room"
  },
  {
-  "name": "E1a: the cascade skips events",
-  "file": "nora/app/withdrawal.py",
-  "old": "    if \"event\" in stores and by_store.get(\"event\"):",
-  "new": "    if False:",
-  "target": "tests/infra/test_event_citations.py::test_withdrawing_a_cited_message_marks_the_event_and_only_once tests/infra/test_event_citations.py::test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it"
- },
- {
   "name": "E1a: a revision writes the mark back",
   "file": "nora/infra/sql/gatherings.py",
   "old": "        \"field_meta\": field_meta_to_json(event.field_meta),\n        # `unsupported_at` is deliberately NOT written",
   "new": "        \"field_meta\": field_meta_to_json(event.field_meta),\n        \"unsupported_at\": event.unsupported_at,\n        # `unsupported_at` is deliberately NOT written",
   "target": "tests/infra/test_event_citations.py::test_a_later_revision_cannot_undo_the_mark"
- },
- {
-  "name": "E1a: the operator lever cannot lift an event",
-  "file": "nora/app/person_forget.py",
-  "old": "        if event_ids:\n            await conn.execute(",
-  "new": "        if False:\n            await conn.execute(",
-  "target": "tests/infra/test_event_citations.py::test_forget_person_cascades_to_an_event_and_clear_unsupported_lifts_it"
  },
  {
   "name": "reader: a room's list shows a withdrawn event",
@@ -135,8 +121,8 @@
  {
   "name": "reader: the tag path can revise or RSVP a withdrawn event",
   "file": "nora/app/gatherings.py",
-  "old": "        if event.unsupported_at is not None:\n            # Withdrawn (`nora.app.withdrawal`): the tag path's revise",
-  "new": "        if False:\n            # Withdrawn (`nora.app.withdrawal`): the tag path's revise",
+  "old": "        if event.unsupported_at is not None:\n            # Withdrawn (no writer left): the tag path's revise",
+  "new": "        if False:\n            # Withdrawn (no writer left): the tag path's revise",
   "target": "tests/infra/test_event_citations.py::test_the_service_reads_a_withdrawn_event_as_an_unknown_id"
  },
  {
@@ -156,8 +142,8 @@
  {
   "name": "reader: the cognition grounding shows a withdrawn event",
   "file": "nora/app/cognition_grounding.py",
-  "old": "                if e.unsupported_at is not None:\n                    # Withdrawn (`nora.app.withdrawal`), dropped here too",
-  "new": "                if False:\n                    # Withdrawn (`nora.app.withdrawal`), dropped here too",
+  "old": "                if e.unsupported_at is not None:\n                    # Withdrawn (no writer left), dropped here too",
+  "new": "                if False:\n                    # Withdrawn (no writer left), dropped here too",
   "target": "tests/unit/test_cognition_grounding.py::test_an_event_the_withdrawal_cascade_marked_unsupported_is_not_shown"
  },
  {

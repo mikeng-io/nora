@@ -215,7 +215,7 @@ async def test_reclaiming_twice_releases_once():
 
 async def test_a_store_that_fails_costs_the_release_not_the_boot():
     """The wake stays open and expires on its own clock, exactly as before; the
-    process starts, and the failure is counted where `NoraErrorsRising` reads it."""
+    process starts, and the failure is counted on `nora_errors_total`."""
     store, clock, metrics = InMemoryStimulusStore(), Clock(T), Metrics()
     await _say(store, clock)
     clock.advance(1)

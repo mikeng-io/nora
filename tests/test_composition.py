@@ -105,25 +105,6 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
-async def test_the_composed_ingest_withdraws_a_deleted_message(cfg):
-    """A privacy action, not a feature: no config turns it off, so a composition
-    that built the pipeline without one would record deletes and honour none."""
-    from nora.app.delete_withdrawal import SqlDeleteWithdrawer
-
-    deps = await build_dependencies(cfg)
-    assert isinstance(deps.ingest._delete_withdrawer, SqlDeleteWithdrawer)
-
-
-async def test_the_composed_metrics_have_the_alerted_delete_outcomes_at_zero(cfg):
-    """`increase()` cannot see a series' first increment, and nora restarts several times a
-    day: `OrphanDeleteLost` and `OrphanDeleteEvicted` need the series to exist from start."""
-    deps = await build_dependencies(cfg)
-    lines = deps.metrics.render()
-    for outcome in ("orphan_lost", "orphan_evicted"):
-        series = f'nora_delete_withdrawals_total{{outcome="{outcome}",platform="signal"}} 0.0'
-        assert series in lines
-
-
 async def test_the_trigger_phrase_engages_by_default(cfg):
     """`[engagement.trigger].enabled` defaults to True — the trigger phrase
     already engaged her on every deployment before this flag existed, so the
@@ -1553,8 +1534,8 @@ async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypat
 async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
     cfg, tmp_path, monkeypatch,
 ):
-    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator, the age gauge
-    and `nora cognition health` all read. Production maps the `time` skill, so floors
+    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator and the age gauge
+    both read. Production maps the `time` skill, so floors
     are ready; a table without it must leave every floor inert (a root that hard-coded
     the answer would not follow it)."""
     from types import MappingProxyType

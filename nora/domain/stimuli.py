@@ -226,7 +226,7 @@ OUTCOME_CAUSES: tuple[str, ...] = (*FAILURE_CAUSES, NO_CAUSE)
 #: failure of the session, the agenda or the world, so it takes no cause of its
 #: own: `cancelled` already neither counts toward the failure backoff nor strikes
 #: (`failure_streak`), and the detail is what tells an operator why
-#: (`nora cognition health` reads it).
+#: (the session's `cancelled` outcome carries it).
 RESTART_DETAIL = "restart"
 
 

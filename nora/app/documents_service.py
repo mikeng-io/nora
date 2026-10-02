@@ -519,8 +519,8 @@ class DocumentService:
         id the room answers to). A handle is resolved among THIS room's documents in any
         state, and one that matches none or more than one, like another room's document,
         answers exactly like an unknown id. A deleted document is found here, and only
-        here, so it can be restored. A FORGOTTEN one (`nora person forget` wrote its latest
-        state row, `FORGET_SET_BY_PREFIX`) is not: it answers exactly like an unknown id for
+        here, so it can be restored. A FORGOTTEN one (`nora person forget`, removed, wrote its
+        latest state row, `FORGET_SET_BY_PREFIX`) is not: it answers exactly like an unknown id for
         every caller and every state, because forgetting a person must stay forgotten and
         must not confirm that the document exists. Only the operator, in the database,
         brings it back.

@@ -80,12 +80,12 @@ class FakeGatheringStore:
         return replace(row, lineage=lineage)
 
     def mark_unsupported(self, event_id: UUID, at_ms: int) -> None:
-        """What the withdrawal cascade does to the head (the real store's is
-        `nora.app.withdrawal`'s UPDATE)."""
+        """A head marked before the cascade was removed (2026-10-03): no code marks one
+        now, so a test sets the mark to exercise the readers."""
         self._events[event_id] = replace(self._events[event_id], unsupported_at=at_ms)
 
     def clear_unsupported(self, event_id: UUID) -> None:
-        """What `nora person unforget --clear-unsupported` does to the head."""
+        """What an operator's SQL `UPDATE ... SET unsupported_at = NULL` does."""
         self._events[event_id] = replace(self._events[event_id], unsupported_at=None)
 
     async def create(

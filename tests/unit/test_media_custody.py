@@ -200,8 +200,7 @@ class _RecordingComprehension:
         self.subjects: list = []
         self.calls: list[tuple[str, str]] = []
 
-    def schedule(self, *, subjects, platform, conversation_id, person, timestamp,
-                 withdrawn=None):
+    def schedule(self, *, subjects, platform, conversation_id, person, timestamp):
         self.subjects.extend(subjects)
         self.calls.append((platform, conversation_id))
 

@@ -324,38 +324,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Ambient messages by how the ingest ended (see IngestOutcome).",
         ("platform", "conversation_type", "outcome"),
     ),
-    # A delete or unsend of a message, by how it was HONOURED
-    # (`nora.app.delete_withdrawal`): `hidden` (newly hidden, the cascade run),
-    # `already_hidden` (a redelivered or second delete), `not_stored` (its target
-    # was not on record when it arrived: it is kept durably as an `orphan_delete`),
-    # `applied_from_orphan` (a kept delete applied when its message was recorded; the
-    # message also counts `hidden`), `refused_not_author` (Signal or WhatsApp, the
-    # deleter is not the message's author: nothing changes), `cascade_failed` (the
-    # hide was rolled back; the message is still visible, and is retried and then
-    # swept at the next start), `reconciled` (a failed withdrawal that a retry or the
-    # start-up sweep finished), `orphan_expired` (a kept delete older than 3 days that
-    # found nothing, purged), `orphan_evicted` (OLDER kept deletes of one scope evicted to
-    # make room for a new one at a cap: a LEAK-direction loss if an evicted delete's
-    # message then arrives, so a rising count is a flood worth reading) and `apply_failed`
-    # (a matched kept delete could not be applied; left for the sweep, the message
-    # stopped), `orphan_stale_target` (a delete whose target is not on record and is older
-    # than `ORPHAN_RACE_WINDOW_MS`, read from a Discord snowflake or a Signal
-    # sent-timestamp: DROPPED, on the assumption that a message reaches Nora within
-    # seconds; a LEAK-direction loss if it arrives late after all, e.g. a Discord RESUME
-    # replay or a skewed Signal clock) and
-    # `orphan_lost` (the held-delete write failed after every retry, a deadlock that did
-    # not pass or a store that was down: the delete is gone, and the message stays visible
-    # if it then arrives). The start-up sweep counts under platform="all".
-    # Rare by nature, so an empty series after a restart means nothing was deleted
-    # since, never that nothing can fail.
-    _CounterSpec(
-        "nora_delete_withdrawals_total",
-        "Deletes or unsends of a message, by how they were honoured (hidden, "
-        "already_hidden, not_stored, applied_from_orphan, refused_not_author, "
-        "cascade_failed, reconciled, orphan_expired, orphan_evicted, orphan_stale_target, "
-        "orphan_lost, apply_failed).",
-        ("platform", "outcome"),
-    ),
     _CounterSpec(
         "nora_denied_senders_total",
         "Tags from a sender not allowed in that conversation.",
@@ -2268,27 +2236,6 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "1 when the last public summons write was refused writes_blocked "
         "(the bridge latched comment writes off after an action block; an "
         "operator must clear it), 0 after a write published.",
-    ),
-    _GaugeSpec(
-        "nora_cognition_wake_last_tick_seconds",
-        "Unix time the wake evaluator's loop last FINISHED a tick (one that "
-        "raised counts: nora_errors_total{stage=cognition_wake} says it failed), "
-        "by the evaluator's mode (" + " / ".join(WAKE_MODES) + "). Written from "
-        "inside the loop, so a loop that is gone or hung stops moving it; read "
-        "`time() - this` against a few ticks (30 s each). ABSENT while "
-        "[cognition] mode is off: not applicable, never 0.",
-        ("mode",),
-    ),
-    # The process's own start. `prometheus_client`'s default `process_start_time_seconds`
-    # is exported only by the GLOBAL registry's collector, and `Metrics` owns a
-    # registry of its own (DEC-13), so no such series exists on :9100. Unlabelled and
-    # set at the start of `App.run`: it is 0 for the instants before that, which no
-    # rule reads, because the one that does (`NoraRestartLoop`) counts CHANGES.
-    _GaugeSpec(
-        "nora_process_start_time_seconds",
-        "Unix time this nora process started serving (App.run). It changes when "
-        "the process restarts and at no other time, so `changes()` over it counts "
-        "restarts that were scraped.",
     ),
     _GaugeSpec(
         "nora_stimulus_pending_age_seconds",

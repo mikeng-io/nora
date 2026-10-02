@@ -33,7 +33,6 @@ __all__ = [
 #: and `tests/unit/test_assess_dq.py::test_every_named_check_has_a_function`
 #: ties the two so a renamed or dropped check cannot drift silently.
 DQ_CHECKS: tuple[str, ...] = (
-    "unresolved_citations",
     "cross_room_duplicate_events",
     "rollup_rebuild_divergence",
     "happened_place_mismatch",

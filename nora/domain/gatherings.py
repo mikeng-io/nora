@@ -373,11 +373,11 @@ class Gathering:
     #: `reasoning`/`confidence` above stay for a write that states one for the
     #: whole row.
     field_meta: tuple[FieldMeta, ...] = ()
-    #: Epoch ms the withdrawal cascade found a citation of this event's gone
-    #: (`nora.app.withdrawal`, 10 §2 rule 7); `None` while it stands. Set by
-    #: the cascade and by nothing else: a write never carries it
-    #: (`compare=False`, and the store's write never sets it, so a revision
-    #: read before a cascade cannot overwrite the mark).
+    #: Epoch ms an event was marked withdrawn (10 §2 rule 7); `None` while it
+    #: stands. READ only since 2026-10-03: the cascade that set it was removed, so only
+    #: a row marked before then, or by an operator's SQL, carries it. A write never
+    #: carries it (`compare=False`, and the store's write never sets it, so a revision
+    #: read before a mark cannot overwrite it).
     unsupported_at: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:

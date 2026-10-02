@@ -227,10 +227,7 @@ from nora.domain.models import (
     EditedMessage,
     EditTarget,
     NormalizedMessage,
-    OrphanDelete,
-    OrphanRecord,
     TagContext,
-    Touch,
     TranscriptRow,
     UnattributedRow,
     WeatherObservation,
@@ -911,62 +908,15 @@ class RecordStore(Protocol):
     ) -> int:
         """Record that the `messages` row `message_id` was deleted or unsent
         on its platform; returns the new row's id. This write does NOT hide
-        the row: hiding it and marking what cites it `unsupported` is
-        `DeleteWithdrawer.withdraw`, one transaction of its own, which the
-        touch stage runs beside this write and `nora withdrawal
-        reconcile-deletes` re-runs for a record whose hide never landed."""
+        the row: the touch stage calls `hide_message` right after it."""
         ...
 
-    async def record_orphan_delete(
-        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
-        now_ms: int,
-    ) -> OrphanRecord:
-        """Keep a delete whose target is not on record (yet), in its own transaction;
-        returns the row that holds it. `touch.target` is the key (`handle`, or Signal's
-        `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`, `person_id`).
-        It is applied when the message is recorded (`match_orphan_deletes`) or by the
-        start-up sweep, and purged if it never is. Ids and times only. See `OrphanDelete`.
-
-        BOUNDED, by EVICTION and never by refusal. The same delivery again returns the row
-        it already has and adds (and evicts) nothing. A new one lands unless a concurrent writer
-        deadlocks and the caller's retries are exhausted (`orphan_lost`), and a flood can evict
-        it later: when its scope already holds the cap (a NAMED deleter:
-        `ORPHAN_CAP_PER_DELETER`; an
-        unnamed one, as Discord and Instagram deletes are: per room,
-        `ORPHAN_CAP_UNNAMED_PER_ROOM`; the room: `ORPHAN_CAP_PER_ROOM`; everything:
-        `ORPHAN_CAP_GLOBAL`, all in `nora.domain.delete_authorship`) the OLDEST rows of that
-        scope are evicted first (in the room scope, the oldest of the deleter holding the most
-        rows there), before the insert, and counted in `evicted`. Eviction is a
-        leak-direction loss if the evicted delete's message then arrives: see the constants.
-        Expired rows (`ORPHAN_TTL_MS`) are purged in the same transaction, a bounded few."""
-        ...
-
-    async def is_hidden(self, *, row_id: int) -> bool:
-        """Whether the `messages` row `row_id` is hidden (`hidden_at`): one read by
-        primary key. The pipeline asks it right before it hands an audited message to
-        any downstream stage, the one fail-closed point every race against a delete
-        ends at."""
-        ...
-
-    async def match_orphan_deletes(
-        self, *, message: NormalizedMessage, person_id: str | None,
-        edit_timestamps: Sequence[int] = (),
-    ) -> list[OrphanDelete]:
-        """The held deletes that name `message` (a message just recorded, or one a
-        job asks about), by the one rule `nora.domain.delete_authorship.
-        orphan_names_message`: the same platform and room, a non-empty `handle` equal to
-        its platform id or `sent_ts` equal to its timestamp, and, on a platform where
-        only the author can delete, a deleter who IS its author. A non-author's is never
-        returned. It removes nothing: the caller applies what it returns and then
-        `discard_orphan_delete`s each, so a crash in between leaves the row for the
-        start-up sweep and nothing is lost. `edit_timestamps` are the timestamps of the
-        message's edits: a Signal delete may name an edit by its own (the edit path
-        asks about the original and the edit that just landed)."""
-        ...
-
-    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
-        """Remove one held delete once it has been applied. True when this call
-        removed it (nobody had)."""
+    async def hide_message(self, *, message_id: int, now_ms: int) -> bool:
+        """Hide the `messages` row `message_id` (`hidden_at`): a platform delete or
+        unsend of it. Every replay and render reads through `transcript_select`, which
+        excludes a hidden row. True when THIS call hid it, False when it already was
+        (the first timestamp is kept) or the row does not exist. Nothing derived from
+        the message is touched, and Honcho keeps what it was already fed."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
@@ -984,38 +934,6 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
-
-
-#: How one delete of a stored message ended (`nora_delete_withdrawals_total`'s
-#: `outcome` label). `not_stored` is a delete whose target is not on record;
-#: `cascade_failed` is a hide that was ROLLED BACK because the cascade raised
-#: (the message is still visible until `nora withdrawal reconcile-deletes`).
-DeleteOutcome = Literal["hidden", "already_hidden", "not_stored", "cascade_failed"]
-
-
-@dataclass(frozen=True)
-class DeleteWithdrawal:
-    """What `DeleteWithdrawer.withdraw` did. `marked` is how many derived rows
-    THIS call newly marked `unsupported` (never rows already unsupported)."""
-
-    outcome: DeleteOutcome
-    marked: int = 0
-
-
-@runtime_checkable
-class DeleteWithdrawer(Protocol):
-    """Withdraw one message a platform deleted or unsent: hide the `messages`
-    row (`hidden_at`) and run the withdrawal cascade over it, in ONE
-    transaction (`nora.app.withdrawal`'s docstring on why one), idempotently.
-
-    Implemented by `nora.app.delete_withdrawal.SqlDeleteWithdrawer`; it lives
-    above `nora.ingest` because the cascade does, so the touch stage is handed
-    it rather than importing it. Never raises: a failure is the
-    `cascade_failed` outcome, counted by the caller. Never writes Honcho, which
-    has no per-message delete (`design/context-assembly/04-every-occasion.md`
-    §7)."""
-
-    async def withdraw(self, *, message_id: int, now_ms: int) -> DeleteWithdrawal: ...
 
 
 @runtime_checkable

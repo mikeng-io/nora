@@ -281,8 +281,8 @@ AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
 def floors_ready() -> bool:
     """True once a skill ships for the `time` agenda kind: a floor then wakes a
     session. Read at CALL time over `AGENDA_SKILLS`, so the composition root (through
-    the `AgendaSkills` it builds), the wake evaluator's age gauge and `nora cognition
-    health` all follow the ONE table, and a test that replaces it reaches all three."""
+    the `AgendaSkills` it builds) and the wake evaluator's age gauge follow the ONE
+    table, and a test that replaces it reaches both."""
     return "time" in AGENDA_SKILLS
 
 

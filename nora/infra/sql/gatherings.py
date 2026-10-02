@@ -21,7 +21,6 @@ suite both pass.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Sequence
 from dataclasses import replace as _replace
 from typing import Any
@@ -46,7 +45,6 @@ from nora.domain.gatherings import (
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
-from nora.infra.sql.citation import lock_cited_messages, mark_if_cites_hidden
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
@@ -55,27 +53,6 @@ from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 # also carries a CHECK constraint, and a bad status value must not be
 # reported as "duplicate id".
 _PG_UNIQUE_VIOLATION = "23505"
-
-
-def _cited_message_ids(evidence: EventEvidence | None) -> set[int]:
-    if evidence is None:
-        return set()
-    return {int(c.ref) for c in evidence.citations if c.store == "message" and c.ref.isdigit()}
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
-async def _cites_hidden(conn: Any, event_id: UUID, evidence: EventEvidence) -> bool:
-    """Mark the event `unsupported` when a message it now cites is already hidden:
-    a write after the withdrawal the cascade has already run (`citation.
-    mark_if_cites_hidden`). The event row exists by now."""
-    ids = _cited_message_ids(evidence)
-    return await mark_if_cites_hidden(
-        conn, citing_store="event", citing_key=str(event_id), message_ids=ids,
-        now_ms=_now_ms(),
-    )
 
 
 def _row_to_event(r: Row[Any]) -> Gathering:
@@ -239,9 +216,6 @@ class SqlGatheringStore:
         row = normalise_gathering(event)
         try:
             async with self._engine.begin() as conn:
-                # The cited messages first (`citation.lock_cited_messages`): one lock
-                # order, message rows before the event row.
-                await lock_cited_messages(conn, _cited_message_ids(evidence))
                 if evidence is not None:
                     lineage, as_of = await apply_evidence(
                         conn, event=row, held=row.lineage, evidence=evidence,
@@ -255,8 +229,6 @@ class SqlGatheringStore:
                 await conn.execute(
                     sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
                 )
-                if evidence is not None and await _cites_hidden(conn, row.id, evidence):
-                    row_with_head = _replace(row_with_head, unsupported_at=_now_ms())
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
@@ -331,8 +303,6 @@ class SqlGatheringStore:
     ) -> Gathering:
         row = normalise_gathering(event)
         async with self._engine.begin() as conn:
-            # The cited messages BEFORE the event row below is locked: one lock order.
-            await lock_cited_messages(conn, _cited_message_ids(evidence))
             current = (await conn.execute(
                 sa.select(EVENTS.c.head_revision_id, EVENTS.c.lineage)
                 .where(EVENTS.c.id == row.id)
@@ -364,8 +334,6 @@ class SqlGatheringStore:
             await conn.execute(
                 sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
             )
-            if evidence is not None and await _cites_hidden(conn, row.id, evidence):
-                row = _replace(row, unsupported_at=_now_ms())
         return _replace(row, head_revision_id=revision.id)
 
     async def add_rsvp(self, rsvp: RSVP) -> None:

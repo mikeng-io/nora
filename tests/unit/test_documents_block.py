@@ -291,8 +291,8 @@ async def test_nothing_put_away_renders_exactly_what_it_did_before():
 
 
 async def test_a_forgotten_documents_title_never_reaches_her_context():
-    """`nora person forget` deleted it: unlike a person's own delete, it is not offered back
-    to the room in the put-away section, so its title leaves her context."""
+    """`nora person forget` (removed) deleted it: unlike a person's own delete, it is
+    not offered back to the room in the put-away section, so its title leaves her context."""
     store = FakeDocumentStore()
     forgotten = await _make(store, "Forgotten title")
     by_hand = await _make(store, "Deleted by hand")

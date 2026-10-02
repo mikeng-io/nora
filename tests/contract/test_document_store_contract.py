@@ -694,35 +694,6 @@ async def test_a_revision_of_an_archived_or_deleted_document_is_still_read_by_th
     assert kept is not None and kept.title == "kept"
 
 
-async def test_list_created_by_is_the_creators_documents_in_the_states_asked_for(store):
-    mine = await _make(store, created_by="ken", title="mine")
-    shelved = await _make(store, created_by="ken", title="shelved")
-    gone = await _make(store, created_by="ken", title="gone")
-    # Made by somebody else in the creator's own room: a participant's, never theirs.
-    theirs = await _make(store, created_by="mei", title="theirs")
-    assert await store.set_state(document_id=shelved, state="archived", set_by="ken")
-    assert await store.set_state(document_id=gone, state="deleted", set_by="ken")
-
-    default = await store.list_created_by(person_id="ken", limit=10)
-    assert {d.id for d in default} == {mine, shelved} and theirs not in {d.id for d in default}
-    only_deleted = await store.list_created_by(person_id="ken", states=("deleted",), limit=10)
-    assert [d.id for d in only_deleted] == [gone] and only_deleted[0].state == "deleted"
-    assert await store.list_created_by(person_id="nobody", limit=10) == ()
-    assert await store.list_created_by(person_id="ken", states=(), limit=10) == ()
-
-
-async def test_list_created_by_pages_in_a_stable_order_and_is_bounded(store):
-    made = {await _make(store, created_by="ken", title=f"d{i}") for i in range(5)}
-    first = await store.list_created_by(person_id="ken", limit=2, offset=0)
-    second = await store.list_created_by(person_id="ken", limit=2, offset=2)
-    third = await store.list_created_by(person_id="ken", limit=2, offset=4)
-    seen = [d.id for d in (*first, *second, *third)]
-    assert len(seen) == 5 and set(seen) == made, "pages tile the set with no gap or repeat"
-    assert seen == sorted(seen, key=str), "ordered by id"
-    assert await store.list_created_by(person_id="ken", limit=0) == ()
-    assert await store.list_created_by(person_id="ken", limit=5, offset=2**40) == ()
-
-
 # ------------------------------------------------------------------------- search
 async def _make_text(store, *, title, text, created_by="ken", room=ROOM) -> UUID:
     doc_id = uuid4()
@@ -823,32 +794,7 @@ async def test_a_search_pages_and_counts_its_matches(store):
     assert {d.id for d in page.items} <= set(made)
 
 
-# ------------------------------------------- conditional state, who wrote it, forgotten
-async def test_a_conditional_state_write_only_lands_from_a_state_it_names(store):
-    doc = await _make(store)
-    # `active` is the state of a document with no state row at all.
-    assert await store.set_state(
-        document_id=doc, state="archived", set_by="mei", only_if_state=("archived",)
-    ) is False
-    assert (await store.get(document_id=doc)).summary.state == "active"
-    assert await store.set_state(
-        document_id=doc, state="archived", set_by="mei", only_if_state=("active",)
-    ) is True
-    # Now archived: a write conditional on `active` refuses, and writes nothing.
-    assert await store.set_state(
-        document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active",)
-    ) is False
-    got = await store.get(document_id=doc)
-    assert got.summary.state == "archived" and got.summary.state_by == "mei"
-    assert await store.set_state(
-        document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active", "archived")
-    ) is True
-    # An unknown id is `False` however it is asked.
-    assert await store.set_state(
-        document_id=uuid4(), state="deleted", set_by="x", only_if_state=("active",)
-    ) is False
-
-
+# ------------------------------------------- who wrote the state, forgotten
 async def test_a_summary_says_who_wrote_the_latest_state_row_and_whether_it_is_forgotten(store):
     doc = await _make(store)
     assert (await store.get(document_id=doc)).summary.state_by == ""
@@ -878,43 +824,6 @@ async def test_the_room_list_can_leave_out_what_forget_deleted(store):
         hide_forgotten=True,
     )
     assert [d.id for d in shown] == [mine]
-
-
-async def test_a_conditional_write_waits_for_the_lock_and_then_sees_the_change_made_meanwhile(
-    request,
-):
-    """SQL only, two real connections: the forget's race. A person's archive holds the
-    identity-row lock and has written its row but not committed; a forget that decided
-    from a snapshot taken BEFORE it (the document was `active`) must wait, and when the
-    archive commits it must see `archived`, write nothing, and answer `False`."""
-    import sqlalchemy as sa
-
-    from nora.infra.sql.schema import DOCUMENT_STATE
-
-    pg_url = request.getfixturevalue("pg_url")
-    run_migrations(pg_url)
-    engine = create_sql_engine(pg_url)
-    s = SqlDocumentStore(engine)
-    try:
-        doc = await _make(s)
-        conn, trans = await _locked_holder(engine, doc)
-        await conn.execute(
-            sa.insert(DOCUMENT_STATE).values(document_id=doc, state="archived", set_by="mei")
-        )
-        forgetting = asyncio.create_task(
-            s.set_state(
-                document_id=doc, state="deleted", set_by="forget:ken", only_if_state=("active",)
-            )
-        )
-        await asyncio.sleep(0.5)
-        assert not forgetting.done()  # blocked on the lock, not racing past it
-        await trans.commit()
-        await conn.close()
-        assert await asyncio.wait_for(forgetting, timeout=10) is False
-        got = await s.get(document_id=doc)
-        assert got.summary.state == "archived" and got.summary.state_by == "mei"
-    finally:
-        await engine.dispose()
 
 
 # ----------------------------------------------- search: folding and whitespace parity

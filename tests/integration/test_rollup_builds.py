@@ -237,7 +237,7 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
 
 async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(pg_url):
     """NEGATIVE, PR #622 review: `message_facts`'s `quoted` join carried no
-    `hidden_at` filter, so a `nora person forget`-hidden message a reply
+    `hidden_at` filter, so a `nora person forget` (removed)-hidden message a reply
     quotes still counted as a reply relationship feeding `rollup_tie` (and,
     on the main select, a hidden message's own reactions/mentions still fed
     `rollup_daybook`/`rollup_response`). Build once as seeded — b's reply to

@@ -707,7 +707,7 @@ def test_twelve_items_cannot_exceed_the_record_budget_however_high_the_floor():
 # ---- what the session row keeps of a person ---------------------------------------------------
 
 def test_the_session_row_keeps_a_person_id_never_a_canonical_name():
-    """`nora person forget` cannot rewrite an append-only row, so the name must
+    """`nora person forget` (removed) cannot rewrite an append-only row, so the name must
     never be written to it (#637 second review, minor 5)."""
     s = dataclasses_replace_person(_stim(1, A, ago=3, mid=12), "ada")
     rec = RecordItem(ref=s.ref, kind="message", message_id=12, room=A, author="Ada Lovelace",
@@ -1037,7 +1037,7 @@ async def test_an_item_promoted_from_deferred_by_a_skip_is_grounded():
 
 async def test_her_send_that_quotes_a_withdrawn_message_renders_without_the_quoted_text():
     """D1 (strongest-tier review of #646). A send of hers that REPLIES to a message
-    `nora person forget` has since hidden carries a pointer (`quoted_ts`) and, in
+    `nora person forget` (removed) has since hidden carries a pointer (`quoted_ts`) and, in
     its raw envelope, the quoted words. The session is shown her words and nothing
     of the quote: neither the pointer's target (the Record read excludes the hidden
     row) nor the words the envelope copied."""

@@ -382,9 +382,9 @@ class GatheringService:
         )
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
-        """A reader: a withdrawn event (`unsupported_at`, the cascade's mark,
-        `nora.app.withdrawal`) reads as absent, like an id that does not
-        exist."""
+        """A reader: a withdrawn event (`unsupported_at`; nothing marks one any
+        more, but a mark written before 2026-10-03 stays) reads as absent, like an
+        id that does not exist."""
         event = await self._store.get(event_id)
         return None if event is None or event.unsupported_at is not None else event
 
@@ -500,7 +500,7 @@ class GatheringService:
         if event.conversation_id != conversation_id:
             raise GatheringNotFoundError(event_id)
         if event.unsupported_at is not None:
-            # Withdrawn (`nora.app.withdrawal`): the tag path's revise, status,
+            # Withdrawn (no writer left): the tag path's revise, status,
             # RSVP and venue reads see it as it sees an unknown id. It cannot
             # be revised into standing again by a model that was never shown it
             # (`event_search` and the room's list leave it out); a room that

@@ -13,7 +13,7 @@ table: three routes read and copy what is already there, for ONE viewer.
 THE GATE is the document's own read gate, `DocumentStore.get_visible`, before anything
 else is read: whoever may open the document may read its history, and a document they may
 not read, a deleted one, an unknown id, and a revision number the document never had are
-the one 404, and so is a forgotten one (`nora person forget`, DEC-264). An archived
+the one 404, and so is a forgotten one (`nora person forget` (removed), DEC-264). An archived
 document's history is readable (it still opens by its link), and its restore is refused
 like any revision of an archived document (`not_active`). Both reads carry `roomLabel` by
 the detail payload's rule: only for a viewer in that room.
@@ -80,7 +80,7 @@ async def _readable(
     document_id: UUID,
 ) -> StoredDocument | None:
     # The document's own read gate: not readable, deleted and unknown are one `None`. A
-    # forgotten document (`nora person forget`, design §32) is `deleted` and so already
+    # forgotten document (`nora person forget` (removed), design §32) is `deleted` and so already
     # `None`; the check says it again for any state, as `change_document_state` does, so
     # its history stays as gone as the document.
     stored = await store.get_visible(

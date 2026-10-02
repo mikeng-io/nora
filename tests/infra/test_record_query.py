@@ -467,7 +467,7 @@ async def test_by_refs_reads_the_named_messages_in_the_named_rooms_only(engine, 
 
 
 async def test_by_refs_never_returns_a_message_the_withdrawal_cascade_hid(engine, said):
-    """`nora person forget` sets `messages.hidden_at`: the message is ABSENT
+    """`nora person forget` (removed) sets `messages.hidden_at`: the message is ABSENT
     from the read (not returned and blanked), like every transcript read."""
     async with engine.begin() as conn:
         await conn.execute(sa.text("UPDATE messages SET hidden_at = 1 WHERE id = :id"),

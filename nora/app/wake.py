@@ -38,7 +38,6 @@ from typing import Any
 from nora.domain.ports import NewWakeOutcome, StimulusStore
 from nora.domain.stimuli import (
     NO_CAUSE,
-    WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
     UnitView,
@@ -173,10 +172,6 @@ class WakeEvaluator:
         #: a session whose row is not yet written (or whose task is alive
         #: past what the rows can say) still holds its unit.
         self._live: dict[str, asyncio.Task[None]] = {}
-
-    @property
-    def mode(self) -> WakeMode:
-        return self._mode
 
     @property
     def has_wake_hook(self) -> bool:
@@ -452,8 +447,8 @@ class WakeEvaluator:
         """`nora_stimulus_pending_age_seconds{unit}`: the oldest stimulus that
         could wake the unit, 0 when none is pending. A stimulus that waits, or
         whose kind is inert (a `time` floor while no skill ships for it), can
-        never wake the unit: counting it would hold `StimulusBacklog` firing on
-        a unit that is not stuck."""
+        never wake the unit: counting it would read a unit that is not stuck as
+        backed up."""
         eligible = [
             s.pending_since_ms for s in view.pending
             if not s.waits and s.kind not in view.inert_kinds
@@ -527,44 +522,12 @@ class WakeEvaluator:
         return wake_id
 
 
-def precreate_session_series(metrics: Any) -> None:
-    """Create every `nora_cognition_session_ended_total{outcome}` child at 0.
-
-    A labelled prometheus counter has no child until its first `inc`, so a series
-    appears at its FIRST increment already at 1 and `increase()` has no earlier
-    sample to subtract: that first session is invisible. Nora restarts 2 to 24
-    times a day (the 2026-10-02 audit), each process starts with no children, so
-    `CognitionSessionsFailing` read 3 failures in one fresh process as an increase
-    of 2.05 (under its floor of 3) and 5 failures over 5 processes as 0 (each new
-    process re-shows `1`, which is no change). A child created at 0 gives every
-    process a baseline. Every outcome the code can write is created, not only the
-    ones the rule reads: a series the rule leaves out (`cancelled`) is the same
-    hole the day a rule reads it. ONE place, called when the wake loop starts."""
-    for outcome in WAKE_OUTCOMES:
-        metrics.inc("nora_cognition_session_ended_total", 0.0, outcome=outcome)
-
-
 async def wake_loop(
     evaluator: WakeEvaluator, metrics: Any, *, tick_seconds: float,
-    clock: Callable[[], float] = time.time,
 ) -> None:
     """The evaluator's clock: `tick` every `tick_seconds`, forever. A failing
-    tick is logged and counted and never takes the loop down.
-
-    `nora_cognition_wake_last_tick_seconds{mode}` is the loop's pulse: the wall
-    time of the last tick this loop FINISHED (a tick that raised finished, and
-    `nora_errors_total{stage="cognition_wake"}` says it failed). It is written
-    after the tick and from inside the loop, so a loop that is gone or hung in a
-    tick stops moving it and `CognitionWakeStalled` reads `time()` minus it. It is
-    also written once before the first sleep, so a loop that dies before its
-    first tick is not mistaken for one that was never started. Labelled by `mode`
-    so that the series is ABSENT when cognition is off (an unlabelled gauge
-    exports 0 from the moment it is declared, and a rule on `time() - 0` would
-    page a deployment that has no wake loop)."""
+    tick is logged and counted and never takes the loop down."""
     log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
-    mode = evaluator.mode
-    precreate_session_series(metrics)
-    metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)
     while True:
         await asyncio.sleep(tick_seconds)
         try:
@@ -572,4 +535,3 @@ async def wake_loop(
         except Exception:
             log.exception("cognition wake tick failed")
             metrics.inc("nora_errors_total", stage="cognition_wake")
-        metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)
