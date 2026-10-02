@@ -59,6 +59,7 @@ from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.cognition_compare import CompareWindow
 from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
 from nora.app.cognition_health import run_health as cognition_run_health
+from nora.app.cognition_wiring import floors_ready
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -99,7 +100,7 @@ from nora.domain.cognition_shadow_compare import report_json as shadow_report_js
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
-from nora.domain.stimuli import floors_ready, inert_kinds_for
+from nora.domain.stimuli import inert_kinds_for
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (

@@ -166,13 +166,15 @@ async def test_a_database_or_any_other_exception_is_an_error_and_leaks_no_messag
 async def test_the_inert_kinds_follow_the_agenda_table_the_day_a_time_skill_ships(
     monkeypatch, capsys,
 ):
-    """ONE table decides which kinds are inert (`nora.domain.stimuli.AGENDA_SKILL_KINDS`),
+    """ONE table decides which kinds are inert (`nora.app.cognition_wiring.AGENDA_SKILLS`),
     and the command reads it at call time: hard-coding the answer here would keep
     reporting a floor as unclaimable after a `time` skill shipped. The control is the
     shipped (empty) table, which is the test below."""
-    import nora.domain.stimuli as stimuli
+    from types import MappingProxyType
 
-    monkeypatch.setattr(stimuli, "AGENDA_SKILL_KINDS", {"time": "daily-floor"})
+    import nora.app.cognition_wiring as wiring
+
+    monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType({"time": "daily-floor"}))
     _, _, seen = await _run(monkeypatch, capsys)
     assert seen["inert_kinds"] == frozenset()
 

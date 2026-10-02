@@ -65,7 +65,6 @@ from __future__ import annotations
 import re
 from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Literal, Protocol, get_args
 
 from .cues import is_strong
@@ -402,25 +401,6 @@ def prove_overflow_is_the_agenda(
 #: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances
 #: the watermark; the other three return the wake's stimuli to pending.
 WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
-
-
-#: Agenda kind -> the skill injected for it (30 §4). No skill ships for any kind
-#: yet, so the table is empty and a `time` floor wakes nothing (M8, DEC-245). ONE
-#: place: the composition root builds `AgendaSkills` from it, and `inert_kinds_for`
-#: reads it, so the wake evaluator, the stimulus-age gauge and `nora cognition
-#: health` agree on which pending stimuli can never wake a unit.
-AGENDA_SKILL_KINDS: Mapping[str, str] = MappingProxyType({})
-
-
-def agenda_skill_kinds() -> Mapping[str, str]:
-    """The table, read at CALL time (a reader that imported the name would keep the
-    old object when a test, or the day a skill ships, replaces the attribute)."""
-    return AGENDA_SKILL_KINDS
-
-
-def floors_ready() -> bool:
-    """True once a skill ships for the `time` agenda kind: a floor then wakes a session."""
-    return "time" in agenda_skill_kinds()
 
 
 def inert_kinds_for(*, tracked: bool, floors_ready: bool) -> frozenset[str]:

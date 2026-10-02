@@ -336,10 +336,10 @@
     "target": "tests/unit/test_cognition_health_cli.py -k follow_the_agenda_table"
   },
   {
-    "name": "composition builds its own empty agenda table",
+    "name": "composition hard-codes floors_ready=False (ignores the agenda table)",
     "file": "nora/app/composition.py",
-    "old": "AgendaSkills(by_kind=agenda_skill_kinds(), resolve=lambda name: None)",
-    "new": "AgendaSkills(by_kind={}, resolve=lambda name: None)",
+    "old": "floors_ready=\"time\" in agenda_skills.by_kind,",
+    "new": "floors_ready=False,",
     "target": "tests/test_composition.py -k floors_ready_follows"
   },
   {

@@ -344,6 +344,10 @@ SkillsFor = Callable[[Sequence[str]], str]
 #: these agenda kinds, recorded on the session row (30 §1: "the skill versions
 #: injected").
 SkillVersionsFor = Callable[[Sequence[str]], Mapping[str, object]]
+#: `(text, versions)` for these agenda kinds from ONE resolution of each skill:
+#: the text injected and the digests recorded, so a hot reload between two
+#: separate reads cannot leave a row naming a digest of text the model never read.
+SkillsResolvedFor = Callable[[Sequence[str]], tuple[str, Mapping[str, object]]]
 #: `(text, sha256)` of the session's instruction, read PER SESSION: the Dreamer
 #: objective hot-reloads (DEC-128), and a text captured at construction would
 #: keep serving an objective the operator has already edited.
@@ -592,6 +596,7 @@ class CognitionSessionRunner:
         clock: Callable[[], float] = time.time,
         doctrine_source: DoctrineSource | None = None,
         skill_versions_for: SkillVersionsFor | None = None,
+        skills_for: SkillsResolvedFor | None = None,
         tz: tzinfo = UTC, render_budget: RenderBudget | None = None,
         model_window_tokens: int | None = None, overflow_window_fraction: float = 0.8,
         person_known: Callable[[str], bool] | None = None,
@@ -609,7 +614,11 @@ class CognitionSessionRunner:
         as the constructor's fixed fallback for a caller with a fixed text):
         the production composition passes the Dreamer's hot-reloading
         objective through it. `skill_versions_for` records what
-        `skill_text_for` injected.
+        `skill_text_for` injected. `skills_for`, when given, replaces both: the
+        text and the versions come from one resolution, taken once per session
+        BEFORE the awaited grounding read and carried through (the production
+        composition passes it: a skill hot-reloads, and two reads of it could
+        straddle an edit).
 
         `read_only_tools` is the allowlist `read_tools_for`'s result is
         held to (the composition passes the registry's own read-only set,
@@ -665,6 +674,7 @@ class CognitionSessionRunner:
         self._doctrine_source = doctrine_source
         self._tz = tz
         self._skill_versions_for = skill_versions_for
+        self._skills_for = skills_for
         self._open_note_titles = open_note_titles
         self._open_events = open_events
         self._prior_standing = prior_standing
@@ -861,10 +871,11 @@ class CognitionSessionRunner:
 
             doctrine_text, doctrine_sha256 = self._doctrine()
             kinds = sorted({item.kind for item in situation.agenda.items})
-            skill_versions = (
-                {} if self._skill_versions_for is None
-                else dict(self._skill_versions_for(kinds))
-            )
+            # The skill is resolved ONCE, here, and its text carried to the prompt:
+            # the grounding read below awaits, and a hot reload in that window
+            # must not leave `skill_versions` naming a different text than the
+            # one the model reads.
+            skill_text, skill_versions = self._skills(kinds)
             # GROUNDED AFTER THE SKIP, BEFORE ANYTHING IS RECORDED (30 §1, #637
             # review major 2): the agenda is final, so the grounding's per-item
             # index (her own sends) is the index the render reads, and an item
@@ -895,7 +906,8 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
-                grounding=grounding, retained=sorted(retained), spend=spend,
+                skill_text=skill_text, grounding=grounding, retained=sorted(retained),
+                spend=spend,
             )
         except asyncio.CancelledError:
             # Only a process shutdown cancels a session (`shutdown`,
@@ -949,12 +961,15 @@ class CognitionSessionRunner:
             unit=unit, now_ms=now_ms, last_session_ms=None, agenda=Agenda(items=(item,)),
         )
         doctrine_text, doctrine_sha256 = self._doctrine()
+        skill_text, skill_versions = self._skills([item.kind])
         session_id = await self._store.record_session(
             session=NewCognitionSession(
                 unit=unit, mode="shadow", started_at_ms=now_ms, from_stimulus_id=0,
                 through_stimulus_id=0, situation=situation.as_dict(),
                 agenda={"items": [item.as_dict()], "deferred_stimulus_ids": []},
-                doctrine_sha256=doctrine_sha256, skill_versions={},
+                # What the system prompt below injects, as a wake's session
+                # records it: an eval arm's rows name the skill it ran with.
+                doctrine_sha256=doctrine_sha256, skill_versions=skill_versions,
                 model_id=self._model_id, model_route=self._model_route, wake_id=None,
             ),
             recorded_at_ms=now_ms,
@@ -966,7 +981,7 @@ class CognitionSessionRunner:
         )
         tools = await self._build_tools(unit=unit, state=state, now_ms=now_ms)
         return await self._agent_runner.run(
-            system_prompt=doctrine_text + self._skill_text_for([item.kind]),
+            system_prompt=doctrine_text + skill_text,
             prompt=render_agenda(
                 [item], reads_note=state.reads_note, now_ms=now_ms,
                 last_session_ms=None, tz=self._tz, budget=self._render_budget,
@@ -979,6 +994,15 @@ class CognitionSessionRunner:
         if self._doctrine_source is not None:
             return self._doctrine_source()
         return self._doctrine_text, self._doctrine_sha256
+
+    def _skills(self, kinds: Sequence[str]) -> tuple[str, dict[str, object]]:
+        """The skill text a session injects and the versions its row records."""
+        if self._skills_for is not None:
+            text, versions = self._skills_for(kinds)
+            return text, dict(versions)
+        return self._skill_text_for(kinds), (
+            {} if self._skill_versions_for is None else dict(self._skill_versions_for(kinds))
+        )
 
     async def shutdown(self) -> None:
         """Cancel every session still in flight and wait for it to record
@@ -1045,8 +1069,8 @@ class CognitionSessionRunner:
 
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
-        wake_id: int, now_ms: int, doctrine_text: str, grounding: Grounding,
-        spend: TokenSpend, retained: Sequence[int] = (),
+        wake_id: int, now_ms: int, doctrine_text: str, skill_text: str,
+        grounding: Grounding, spend: TokenSpend, retained: Sequence[int] = (),
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
@@ -1064,7 +1088,7 @@ class CognitionSessionRunner:
             unit=unit, state=state, now_ms=now_ms, labels=grounding.room_labels,
         )
         kinds = sorted({item.kind for item in items})
-        system_prompt = doctrine_text + self._skill_text_for(kinds)
+        system_prompt = doctrine_text + skill_text
         prompt = render_agenda(
             items, stimuli={s.id: s for s in view.pending}, grounding=grounding,
             reads_note=state.reads_note, now_ms=now_ms,
