@@ -985,10 +985,12 @@ def test_the_diff_is_against_the_merge_base_not_the_base_tip(tiny_repo):
 
 
 def _clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """The environment minus make's own bookkeeping: when this suite runs under
-    `make gate`, MAKEFLAGS carries that run's `BASE=origin/master` override,
-    and a nested `make test-affected` here would inherit it."""
-    dropped = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
+    """The environment minus what an enclosing `make gate` leaks into it: make
+    puts its command-line variables in the environment of every recipe (here
+    BASE=origin/master and INCLUDE_WORKTREE=--include-worktree, which a nested
+    `make test-affected` reads through `BASE ?=`) and in MAKEFLAGS."""
+    dropped = {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES",
+               "BASE", "INCLUDE_WORKTREE", "SELECTOR", "PYTEST"}
     return {**{k: v for k, v in os.environ.items() if k not in dropped}, **(extra or {})}
 
 
