@@ -48,8 +48,8 @@ imports:
 # against origin/master, INCLUDING uncommitted edits and untracked files (the
 # gate must judge the tree as it stands, not just the tree at HEAD — an
 # uncommitted fix is still untested if the gate skips it). It fails closed: an
-# unmapped or broad change runs the whole suite, so it is never weaker than
-# full-gate on a change it cannot scope. `full-gate` is the whole suite,
+# unmapped or broad change, or a selector that fails or says nothing, runs the
+# whole suite, so it is never weaker than full-gate on a change it cannot scope. `full-gate` is the whole suite,
 # serial, unconditionally.
 gate: lint typecheck imports
 	@$(MAKE) --no-print-directory test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree
@@ -73,24 +73,36 @@ test-fast:
 	uv run pytest -q -n 8
 
 # Selects pytest targets from what actually changed (scripts/affected_tests.py,
-# spec §3), fails closed to the full parallel suite on anything it can't map
-# with confidence. BASE is the diff base: HEAD~1 (the last commit) by
-# default, origin/master when `gate` runs it for the whole branch.
-# INCLUDE_WORKTREE is empty by default (loop: committed history only, at
-# HEAD~1, unchanged); `gate` sets it to `--include-worktree` so uncommitted
-# edits and untracked files are judged too.
+# spec §3). BASE is the diff base: HEAD~1 (the last commit) by default,
+# origin/master when `gate` runs it for the whole branch. INCLUDE_WORKTREE is
+# empty by default (loop: committed history only, at HEAD~1, unchanged); `gate`
+# sets it to `--include-worktree` so uncommitted edits and untracked files are
+# judged too.
+#
+# FAILS CLOSED. The selector's one line of stdout is `ALL`, `NONE` or a list of
+# targets (its module docstring). Only an explicit `NONE` runs nothing: a
+# nonzero exit status, or an EMPTY line (a script that died before it could
+# answer), runs the whole suite. This recipe used to read empty as "docs-only
+# change", ignore the exit status, and pass with zero tests run when the script
+# raised. SELECTOR and PYTEST are variables so tests/test_affected_tests.py can
+# drive this exact recipe against a stub; nobody else sets them.
 BASE ?= HEAD~1
 INCLUDE_WORKTREE ?=
+SELECTOR ?= uv run python scripts/affected_tests.py
+PYTEST ?= uv run pytest -q -n 8
 test-affected:
-	@targets="$$(uv run python scripts/affected_tests.py --base $(BASE) $(INCLUDE_WORKTREE))"; \
-	if [ "$$targets" = "ALL" ]; then \
+	@targets="$$($(SELECTOR) --base $(BASE) $(INCLUDE_WORKTREE))"; rc=$$?; \
+	if [ "$$rc" -ne 0 ] || [ -z "$$targets" ]; then \
+		echo "affected_tests: selector failed (exit $$rc) or printed nothing, running the full suite"; \
+		$(PYTEST); \
+	elif [ "$$targets" = "ALL" ]; then \
 		echo "affected_tests: unmapped or broad change, running the full suite"; \
-		uv run pytest -q -n 8; \
-	elif [ -z "$$targets" ]; then \
-		echo "affected_tests: docs-only change, nothing to run"; \
+		$(PYTEST); \
+	elif [ "$$targets" = "NONE" ]; then \
+		echo "affected_tests: no test reads this diff (NONE), nothing to run"; \
 	else \
 		echo "affected_tests: $$targets"; \
-		uv run pytest -q -n 8 $$targets; \
+		$(PYTEST) $$targets; \
 	fi
 
 # --- eval gates (evals/scenarios, the SDK-native spine; the live ones need

@@ -156,7 +156,8 @@ only in prose grows whatever headings the author remembers. Then:
 - **Gate on the merged tree** — the real `make gate` outcome, run once on the
   final head (not per fix round — `AGENTS.md` *Gate commands*). `make gate`
   scopes its tests to the branch's diff (`scripts/affected_tests.py`, whole
-  suite when unmapped); `make full-gate` is the unconditional full serial run.
+  suite when unmapped or when the selector fails; only an explicit `NONE` runs
+  nothing); `make full-gate` is the unconditional full serial run.
   A pre-existing unrelated failure is named explicitly with its issue number,
   never absorbed into "tests pass".
 - **Deploy note** — only when the change touches `nora/doctrine` or

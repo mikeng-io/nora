@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "The repo's own test selector and Makefile; no user of Nora sees it.",
+  "details": [],
+  "limitations": []
+}

@@ -60,7 +60,7 @@ grep -E '^affected_tests:|passed|failed|error' "$LOG/gate.log" | tail -n 5
 ```
 
 `make gate`: static steps in full, then the tests the diff against `origin/master`
-reaches (all when unmapped). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per PR,
+reaches (all when unmapped or the selector fails; only `NONE` runs nothing). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per PR,
 on the final head; fix rounds run their own tests. `make full-gate` = whole suite.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
