@@ -1407,8 +1407,9 @@ class FirePath:
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
-        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).
-        return render_supported(found)
+        # WITHDRAWAL is `read_culture`'s, the one read every occasion shares
+        # (`nora.domain.withdrawal`): no copy of the rule here.
+        return found
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).

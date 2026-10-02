@@ -122,6 +122,7 @@ from nora.domain.prompt import escape, one_line
 from nora.domain.reminders import Reminder
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.domain.withdrawal import render_supported
 from nora.language.culture_render import read_culture, render_culture
 from nora.language.note_render import render_note_rows, standing_only
 from nora.language.presence_render import render_presence
@@ -937,6 +938,9 @@ class ProactiveAdaptor:
         if self._standing is not None:
             for room in rooms:
                 try:
+                    # RAW, on purpose: this is a change signal and renders
+                    # nothing, so a withdrawn head is read as the row it is
+                    # (`tests/architecture/test_withdrawal_reaches_every_prompt.py`).
                     position = await self._standing.read(
                         platform=room.platform, conversation_id=room.conversation_id,
                     )
@@ -1030,9 +1034,12 @@ class ProactiveAdaptor:
         lines: list[str] = []
         for room in rooms:
             try:
-                position = await self._standing.read(
+                # WITHDRAWAL (`nora.domain.withdrawal`): a position the
+                # cascade marked `unsupported_at` is a room with no position,
+                # and renders no line, not a line that says it was withdrawn.
+                position = render_supported(await self._standing.read(
                     platform=room.platform, conversation_id=room.conversation_id,
-                )
+                ))
             except Exception:
                 # Fail-soft, counted where the tag path counts it: a room
                 # whose position could not be read is rendered as unread,

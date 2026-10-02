@@ -86,8 +86,8 @@
   {
     "name": "part 2b: the standing read becomes fail-soft",
     "file": "nora/language/culture.py",
-    "old": "            block = render_standing(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            ))",
-    "new": "            try:\n                block = render_standing(await self._standing.read(\n                    platform=platform, conversation_id=conversation_id,\n                ))\n            except Exception:\n                block = None",
+    "old": "            block = render_standing(render_supported(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            )))",
+    "new": "            try:\n                block = render_standing(render_supported(await self._standing.read(\n                    platform=platform, conversation_id=conversation_id,\n                )))\n            except Exception:\n                block = None",
     "target": "tests/unit/test_culture_adaptor.py -k RAISES_takes_the_fold"
   },
   {

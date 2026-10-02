@@ -538,18 +538,159 @@ async def _f_withdrawn(_mp) -> list[list[str]]:
 # the criterion
 # =============================================================================
 
+#: A withdrawn head renders as master renders the SAME input with that head
+#: absent (a room never folded): the block is gone, not replaced by anything
+#: that says it was withdrawn. The twin is master's own capture, so the
+#: comparison is against the reader's existing «no head» form, never against a
+#: string this step wrote.
+WITHDRAWN_IS_ABSENT = {
+    "gate-standing-withdrawn": "gate-no-standing-row",
+    "proactive-standing-withdrawn-culture-live": "proactive-no-standing-row-culture-live",
+    "proactive-standing-live-culture-withdrawn": "proactive-standing-live-no-culture-row",
+    "proactive-standing-and-culture-both-withdrawn": "proactive-neither-row-exists",
+    "proactive-standing-withdrawn-in-one-room-beside-a-live-one":
+        "proactive-standing-only-the-other-room",
+    "proactive-culture-withdrawn-in-one-room-beside-a-live-one":
+        "proactive-culture-only-the-other-room",
+    "proactive-only-withdrawn-standing-and-nothing-open-is-the-whole-prompt":
+        "proactive-no-standing-row-and-nothing-open-is-blank",
+    "culture-fold-standing-withdrawn": "culture-fold-no-standing-row",
+    "culture-fold-both-withdrawn": "culture-fold-previous-live-no-standing-row",
+    "candidates-culture-withdrawn": "candidates-no-culture-row",
+    "curator-one-culture-withdrawn-beside-a-live-one":
+        "curator-only-the-other-rooms-culture",
+    "curator-every-culture-withdrawn": "curator-no-culture-row",
+    "event-fold-culture-withdrawn": "event-fold-no-culture-row",
+    "event-fold-both-withdrawn": "event-fold-no-culture-row",
+}
+
+#: Words a model read on master and must not read now, as they stand in the
+#: rendered prompt (escaped), so a case cannot pass by the twin alone.
+LEAKS = {
+    "gate-standing-withdrawn": ("planning a trip to Taipei",),
+    "proactive-standing-withdrawn-culture-live": (
+        "Dinner Saturday is agreed", "games night is weekly"),
+    "proactive-standing-live-culture-withdrawn": (
+        "they decide by attrition", "short bursts at night"),
+    "proactive-standing-and-culture-both-withdrawn": (
+        "Dinner Saturday is agreed", "they decide by attrition"),
+    "proactive-standing-withdrawn-in-one-room-beside-a-live-one": (
+        "Dinner Saturday is agreed",),
+    "proactive-culture-withdrawn-in-one-room-beside-a-live-one": (
+        "they decide by attrition",),
+    "proactive-only-withdrawn-standing-and-nothing-open-is-the-whole-prompt": (
+        "Dinner Saturday is agreed", "games night is weekly"),
+    "culture-fold-standing-withdrawn": ("they ask me for routes and nothing else",),
+    "culture-fold-both-withdrawn": ("they ask me for routes and nothing else",),
+    "candidates-culture-withdrawn": ("bursts at night",),
+    "curator-one-culture-withdrawn-beside-a-live-one": ("they decide by attrition",),
+    "curator-every-culture-withdrawn": ("they decide by attrition", "a games room"),
+    "event-fold-culture-withdrawn": ("decide by attrition",),
+    "event-fold-both-withdrawn": ("decide by attrition",),
+}
+
+#: A fold's OWN prior is read raw on purpose, and the withdrawn mark changes
+#: nothing it renders: the case is master's bytes, equal to its live twin, and
+#: the block is still there.
+OWN_PRIOR_STILL_RENDERS = {
+    "culture-fold-own-previous-account-withdrawn-must-still-render":
+        ("culture-fold-standing-live-previous-live", "<previous_account"),
+    "event-fold-own-prior-withdrawn-must-still-render":
+        ("event-fold-culture-live-prior-live", "<standing_prior"),
+    "tag-fold-own-prior-withdrawn-must-still-render":
+        ("tag-fold-own-prior-live", "<standing_prior"),
+}
+
+WITHDRAWN = set(WITHDRAWN_IS_ABSENT)
+HELD = set(CASES) - WITHDRAWN
+
 
 async def _run(name: str, monkeypatch: pytest.MonkeyPatch) -> Any:
     fn = CASES[name]
     return await (fn(monkeypatch) if fn.__code__.co_argcount else fn())
 
 
-@pytest.mark.parametrize("name", sorted(CASES))
-async def test_the_prompt_is_byte_identical_to_master(
+def _text(rendered: Any) -> str:
+    return json.dumps(rendered, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("name", sorted(HELD))
+async def test_a_head_that_is_not_withdrawn_renders_byte_identical_to_master(
     name: str, monkeypatch: pytest.MonkeyPatch,
 ):
+    """Live heads, absent heads and a fold's own prior, whatever its mark."""
     assert await _run(name, monkeypatch) == GOLDEN[name]
+
+
+@pytest.mark.parametrize("name", sorted(WITHDRAWN))
+async def test_a_withdrawn_head_renders_as_a_room_with_no_head(
+    name: str, monkeypatch: pytest.MonkeyPatch,
+):
+    now = await _run(name, monkeypatch)
+    assert now == GOLDEN[WITHDRAWN_IS_ABSENT[name]]
+    # Not vacuous: master rendered something else for this input.
+    assert now != GOLDEN[name]
+
+
+@pytest.mark.parametrize("name", sorted(WITHDRAWN))
+async def test_what_was_withdrawn_is_gone_from_the_prompt(
+    name: str, monkeypatch: pytest.MonkeyPatch,
+):
+    now = _text(await _run(name, monkeypatch))
+    for words in LEAKS[name]:
+        assert words in _text(GOLDEN[name]), f"{words!r} was never in master's prompt"
+        assert words not in now, f"{words!r} reached the model again"
+
+
+@pytest.mark.parametrize("name", sorted(OWN_PRIOR_STILL_RENDERS))
+async def test_a_folds_own_prior_still_renders_when_it_is_withdrawn(
+    name: str, monkeypatch: pytest.MonkeyPatch,
+):
+    live_twin, block = OWN_PRIOR_STILL_RENDERS[name]
+    now = await _run(name, monkeypatch)
+    assert now == GOLDEN[name] == GOLDEN[live_twin]
+    assert block in _text(now)
 
 
 def test_every_case_has_a_golden_and_no_golden_is_orphaned():
     assert set(CASES) == set(GOLDEN)
+
+
+def test_every_case_is_classified_once():
+    assert set(CASES) >= WITHDRAWN
+    assert set(OWN_PRIOR_STILL_RENDERS) <= HELD
+    assert set(LEAKS) == WITHDRAWN
+    assert set(WITHDRAWN_IS_ABSENT.values()) <= HELD
+    assert all(twin in HELD for twin, _ in OWN_PRIOR_STILL_RENDERS.values())
+
+
+def test_master_rendered_every_withdrawn_head_as_if_it_were_live():
+    """The finding this step is built on, held in the fixture: before it, the
+    mark changed nothing any of these prompts rendered (14 inputs; the three
+    one-room and withdrawn-only proactive inputs render both rooms' text)."""
+    pairs = {
+        "gate-standing-withdrawn": "gate-standing-live",
+        "proactive-standing-withdrawn-culture-live": "proactive-standing-and-culture-live",
+        "proactive-standing-live-culture-withdrawn": "proactive-standing-and-culture-live",
+        "proactive-standing-and-culture-both-withdrawn":
+            "proactive-standing-and-culture-live",
+        "culture-fold-standing-withdrawn": "culture-fold-standing-live-previous-live",
+        "culture-fold-both-withdrawn": "culture-fold-standing-live-previous-live",
+        "candidates-culture-withdrawn": "candidates-culture-live",
+        "curator-one-culture-withdrawn-beside-a-live-one": "curator-cultures-live",
+        "curator-every-culture-withdrawn": "curator-cultures-live",
+        "event-fold-culture-withdrawn": "event-fold-culture-live-prior-live",
+        "event-fold-both-withdrawn": "event-fold-culture-live-prior-live",
+    }
+    for withdrawn, live in pairs.items():
+        assert GOLDEN[withdrawn] == GOLDEN[live], withdrawn
+
+
+async def test_a_wired_head_that_is_not_withdrawn_is_still_read_for_every_room(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The proactive pass reads every room's head and drops only the withdrawn
+    one: a withdrawn head beside a live one leaves the live one."""
+    out = await _run("proactive-standing-withdrawn-in-one-room-beside-a-live-one", monkeypatch)
+    assert "games night is weekly" in out
+    assert "Dinner Saturday is agreed" not in out

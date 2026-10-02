@@ -35,10 +35,10 @@
     "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_standing_position_does_not_render"
   },
   {
-    "name": "the culture block actually stops rendering an unsupported account",
-    "file": "nora/engagement/context.py",
-    "old": "        return render_supported(found)\n\n    async def _computer",
-    "new": "        return found\n\n    async def _computer",
+    "name": "the culture block actually stops rendering an unsupported account (the tag turn's, through the one read)",
+    "file": "nora/language/culture_render.py",
+    "old": "    return render_supported(found)\n",
+    "new": "    return found\n",
     "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_culture_account_does_not_render"
   },
   {
