@@ -25,9 +25,12 @@ __all__ = [
     "ORPHAN_CAP_PER_DELETER",
     "ORPHAN_CAP_PER_ROOM",
     "ORPHAN_CAP_UNNAMED_PER_ROOM",
+    "ORPHAN_RACE_WINDOW_MS",
     "ORPHAN_TTL_MS",
     "deleter_is_author",
     "orphan_names_message",
+    "target_age_ms",
+    "target_is_stale",
 ]
 
 #: How long a delete waits for a message that has not arrived. The race it exists for
@@ -36,32 +39,85 @@ __all__ = [
 #: the start-up sweep and opportunistically whenever one is written. A message that
 #: arrives later than this after its own delete stays visible: there is nothing left to
 #: apply, and that is a LEAK-direction loss, which is why the window is generous and
-#: why a row is never refused for room (see the caps).
+#: why a row is not refused for room (see the caps).
 ORPHAN_TTL_MS = 3 * 24 * 3600 * 1000
 
+#: How old a delete's TARGET may be, at the moment the delete arrives, for the delete to be
+#: held at all. A held delete exists for one race: the delete overtook its own message
+#: (a photo's custody fetch, a listener task scheduled late, a restart that replays both).
+#: That lasts seconds to a few minutes, so a target already older than this when its delete
+#: arrives is not that race: it is a message from before Nora joined, a post she never
+#: records (an embed-only post, a bot's), pruned history, or a forged id, and holding it
+#: only fills the table. The age is read off the target where the platform puts one in its
+#: id or handle: a Discord snowflake carries its creation time, a Signal target IS its sent
+#: timestamp (the age is the event's timestamp minus it). WhatsApp and Instagram handles
+#: carry no time, so those deletes are always held. Thirty minutes is ten times the slowest
+#: legitimate case seen (a custody fetch plus a restart); a message that arrives more than
+#: this after its own delete would have been recorded long before it. A delete skipped on
+#: this ground counts `orphan_stale_target` and is a LEAK-direction loss only if its message
+#: is, against this reasoning, recorded later than the window after it was sent.
+ORPHAN_RACE_WINDOW_MS = 30 * 60 * 1000
+
+_DISCORD_EPOCH_MS = 1420070400000          # a snowflake's creation time, in ms, is
+_DISCORD_SHIFT = 22                        # (id >> 22) + this epoch
+
+
+def target_age_ms(
+    *, platform: str, handle: str, sent_ts: int | None, event_ts: int,
+) -> int | None:
+    """How old the deleted message was when the delete arrived, in ms, or None where
+    the platform's handle carries no time (WhatsApp, Instagram, a non-numeric id)."""
+    if sent_ts is not None:
+        return event_ts - sent_ts if platform == "signal" else None
+    handle = _id(handle)
+    if platform == "discord" and handle.isascii() and handle.isdigit():
+        return event_ts - ((int(handle) >> _DISCORD_SHIFT) + _DISCORD_EPOCH_MS)
+    return None
+
+
+def target_is_stale(
+    *, platform: str, handle: str, sent_ts: int | None, event_ts: int,
+) -> bool:
+    """True when the delete's target is older than `ORPHAN_RACE_WINDOW_MS`: not the
+    overtaking race, so not worth holding. A future-dated target is never stale."""
+    age = target_age_ms(platform=platform, handle=handle, sent_ts=sent_ts, event_ts=event_ts)
+    return age is not None and age > ORPHAN_RACE_WINDOW_MS
+
+
 #: Caps on held deletes, enforced when one is written, SOFT (counted before the insert
-#: under READ COMMITTED, so concurrent writers can overshoot by a few) and by EVICTION,
-#: never by refusal: a new held delete always lands, and a flood evicts the OLDEST rows of
-#: its own scope first (`orphan_evicted`, logged without text). Authorship can only be
-#: checked once a target exists, so any WhatsApp member can write rows by revoking ids that
-#: do not exist, and Discord and Instagram deletes name nobody at all.
+#: under READ COMMITTED, so concurrent writers can overshoot by a few) and by EVICTION
+#: of the oldest rows of a scope, never by refusal. A new held delete lands unless a
+#: concurrent writer deadlocks and the retries are exhausted (`orphan_lost`), and any
+#: held delete can be evicted by a large enough flood (`orphan_evicted`, logged without
+#: text). Authorship can only be checked once a target exists, so any WhatsApp member can
+#: write rows by revoking ids that do not exist, and Discord and Instagram deletes name
+#: nobody at all and are often of messages Nora never recorded.
 #:
-#: Ordered so that one party cannot starve another: a NAMED deleter is bounded well below
-#: the room (`PER_DELETER` < `PER_ROOM`), an UNNAMED deleter (Discord and Instagram name
-#: nobody, so every row has `deleter_id == ""`) is bounded per ROOM, never as one shared
-#: bucket for the platform, and the room is bounded well below the global ceiling.
+#: Eviction takes the OLDEST rows, in three scopes tried in this order: per DELETER (a
+#: named deleter's own rows, so a flooder evicts its OWN oldest first: true of this scope
+#: only), per ROOM, then overall. The room scope evicts the oldest row of the HEAVIEST
+#: contributor in that room (the deleter, or the unnamed bucket, holding the most rows),
+#: so a victim's single row survives unless every deleter in the room holds a single row.
+#: The overall scope is plain oldest-first. Ordered so that one party cannot starve
+#: another: PER_DELETER < PER_ROOM, UNNAMED_PER_ROOM < PER_ROOM (every Discord and
+#: Instagram row has `deleter_id == ""`, so they are bounded per ROOM, never as one bucket
+#: for the platform), and GLOBAL is at least ten rooms.
 #:
 #: **Residual risk, stated plainly.** Eviction is a LEAK-direction event: an evicted held
-#: delete that a message then arrives for leaves that message VISIBLE and fed to memory. It
-#: needs a flood large enough to push a legitimate row out within its seconds-to-minutes
-#: race window (more than `PER_DELETER` revokes of ids that do not exist from one
-#: modified WhatsApp client for ITS OWN rows; more than `PER_ROOM` from many for a room's),
-#: and the flood is loud (`orphan_evicted` counts it). What bounds it is that evictions
-#: take the flooder's oldest rows first and that the table cannot grow without limit.
+#: delete that a message then arrives for leaves that message VISIBLE and fed to memory.
+#: What it takes, by scope: (1) per deleter, more than `PER_DELETER` revokes of ids that
+#: do not exist from one modified WhatsApp client evicts that client's OWN oldest rows
+#: only; (2) per room, the room must hold `PER_ROOM` rows with no deleter holding more
+#: than the victim's, which needs hundreds of distinct deleters; (3) overall, a flood
+#: across many rooms. A Discord or Instagram flood, which names nobody, fills the unnamed
+#: bucket (`UNNAMED_PER_ROOM` rows) and evicts that bucket's oldest, so it CAN evict a
+#: legitimate unnamed row inside the race window with `UNNAMED_PER_ROOM` ids that look
+#: recent (`ORPHAN_RACE_WINDOW_MS` rules out the old ones). The floods are loud
+#: (`orphan_evicted` counts them) and the table is bounded.
 ORPHAN_CAP_PER_DELETER = 40
-ORPHAN_CAP_UNNAMED_PER_ROOM = 100
-ORPHAN_CAP_PER_ROOM = 200
-ORPHAN_CAP_GLOBAL = 5000
+ORPHAN_CAP_UNNAMED_PER_ROOM = 500
+ORPHAN_CAP_PER_ROOM = 1000
+ORPHAN_CAP_GLOBAL = 10_000
 
 
 #: The key under which Nora stores the deleter's id forms in a `message_delete` record's

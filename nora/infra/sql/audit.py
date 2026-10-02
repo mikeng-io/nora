@@ -581,10 +581,12 @@ class SqlRecordStore:
         """See `nora.domain.ports.RecordStore.record_orphan_delete`. One transaction: the
         opportunistic purge of a few expired rows; the delivery's own row if it is
         already held (a re-delivered event adds nothing and evicts nothing); EVICTION of
-        the oldest rows of whichever scope would pass its cap, BEFORE the insert (so the
-        table never holds a row only to remove it, and `row_history` grows by one insert
-        and at most a few evictions per new delivery, never a pair for a refusal); then
-        the INSERT. A new held delete always lands.
+        rows of whichever scope would pass its cap (oldest first; the heaviest contributor's
+        in the room scope), BEFORE the insert (so the table never holds a row only to
+        remove it, and `row_history` grows by one insert and at most a few evictions per
+        new delivery, never a pair for a refusal); then the INSERT. A new held delete
+        lands unless a concurrent writer deadlocks and the caller's retries are exhausted
+        (`orphan_lost`); a flood can evict it later (`orphan_evicted`).
 
         The caps are SOFT: they are counted before the insert under READ COMMITTED, so
         writers racing each other can overshoot by the number racing. The table is
@@ -634,7 +636,9 @@ class SqlRecordStore:
                     conn, sa.and_(in_room, orphan.c.deleter_id == ""),
                     ORPHAN_CAP_UNNAMED_PER_ROOM,
                 )
-            evicted += await self._evict_orphans(conn, in_room, ORPHAN_CAP_PER_ROOM)
+            evicted += await self._evict_orphans(
+                conn, in_room, ORPHAN_CAP_PER_ROOM, heaviest_first=True,
+            )
             evicted += await self._evict_orphans(conn, sa.true(), ORPHAN_CAP_GLOBAL)
             inserted = (await conn.execute(
                 pg_insert(orphan).values(**values).on_conflict_do_nothing()
@@ -647,32 +651,62 @@ class SqlRecordStore:
         return OrphanRecord(id=int(inserted), evicted=evicted)
 
     @staticmethod
-    async def _evict_orphans(conn: Any, scope: Any, cap: int) -> int:
-        """Make room for ONE more row in `scope`: when it already holds `cap`, delete its
-        oldest rows until it holds `cap - 1`. Returns how many went."""
+    async def _evict_orphans(
+        conn: Any, scope: Any, cap: int, *, heaviest_first: bool = False,
+    ) -> int:
+        """Make room for ONE more row in `scope`: when it already holds `cap`, delete
+        rows until it holds `cap - 1`, the oldest first, or with `heaviest_first` the
+        oldest of the deleter holding the MOST rows in the scope (the unnamed bucket
+        counts as one deleter), so a row alone in its room outlives a flooder's.
+        Returns how many went.
+
+        Each row is claimed with `FOR UPDATE SKIP LOCKED`, so an eviction never WAITS
+        on a row another writer holds: two writers evicting overlapping sets, in the same
+        scope or across rooms, cannot deadlock on each other. A row skipped because it
+        is locked is being deleted (or applied) by that writer anyway, so the cap stays
+        soft by at most the writers racing."""
+        orphan = ORPHAN_DELETE
         held = (await conn.execute(
-            sa.select(sa.func.count()).select_from(ORPHAN_DELETE).where(scope)
+            sa.select(sa.func.count()).select_from(orphan).where(scope)
         )).scalar_one()
-        if held < cap:
-            return 0
-        doomed = (
-            sa.select(ORPHAN_DELETE.c.id).where(scope)
-            .order_by(ORPHAN_DELETE.c.recorded_at, ORPHAN_DELETE.c.id)
-            .limit(held - cap + 1)
-        )
-        result = await conn.execute(
-            sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id.in_(doomed))
-        )
-        return int(result.rowcount or 0)
+        evicted = 0
+        for _ in range(max(0, held - cap + 1)):
+            pick = scope
+            if heaviest_first:
+                heaviest = (await conn.execute(
+                    sa.select(orphan.c.deleter_id).where(scope)
+                    .group_by(orphan.c.deleter_id)
+                    .order_by(sa.func.count().desc(), orphan.c.deleter_id)
+                    .limit(1)
+                )).scalar_one_or_none()
+                if heaviest is not None:
+                    pick = sa.and_(scope, orphan.c.deleter_id == heaviest)
+            victim = None
+            for where in (pick, scope):           # the heaviest's rows, else any in scope
+                victim = (await conn.execute(
+                    sa.select(orphan.c.id).where(where)
+                    .order_by(orphan.c.recorded_at, orphan.c.id)
+                    .limit(1).with_for_update(skip_locked=True)
+                )).scalar_one_or_none()
+                if victim is not None or where is scope:
+                    break
+            if victim is None:
+                break                             # everything left is claimed by others
+            evicted += int((await conn.execute(
+                sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == victim)
+            )).rowcount or 0)
+        return evicted
 
     @staticmethod
     async def _purge_orphans(conn: Any, *, before_ms: int, limit: int) -> int:
-        doomed = (
+        doomed = (await conn.execute(
             sa.select(ORPHAN_DELETE.c.id)
             .where(ORPHAN_DELETE.c.recorded_at < before_ms)
-            .order_by(ORPHAN_DELETE.c.recorded_at)
-            .limit(limit)
-        )
+            .order_by(ORPHAN_DELETE.c.recorded_at, ORPHAN_DELETE.c.id)
+            .limit(limit).with_for_update(skip_locked=True)
+        )).scalars().all()
+        if not doomed:
+            return 0
         result = await conn.execute(
             sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id.in_(doomed))
         )

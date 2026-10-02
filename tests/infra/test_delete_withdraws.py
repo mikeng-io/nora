@@ -2756,3 +2756,428 @@ async def test_a_held_delete_whose_record_the_live_path_already_wrote_is_not_rec
             sa.select(sa.func.count()).select_from(MESSAGE_DELETE)
             .where(MESSAGE_DELETE.c.message_id == mid))).scalar_one() == 1
     assert await w.hidden_at(mid) is not None
+
+
+# =============================================================================
+# round 6: the age window, heaviest-first eviction, deadlock-free writers
+# =============================================================================
+
+
+def _snowflake(ms: int) -> str:
+    """A Discord id created at `ms` (its time is in the id: `(id >> 22) + epoch`)."""
+    from nora.platform.discord.snowflake import DISCORD_EPOCH_MS
+
+    return str((ms - DISCORD_EPOCH_MS) << 22)
+
+
+DAY = 24 * 3600 * 1000
+
+
+async def test_a_flood_of_deletes_of_old_discord_messages_holds_nothing_and_costs_no_real_race(
+    engine,
+):
+    """The ordinary flood: messages Nora never stored (her own sends, embed-only posts,
+    history from before she joined) deleted in one room. Each carries a snowflake days
+    old, so it can never be the race a held delete exists for: nothing is stored, the
+    unnamed bucket stays empty, and the first REAL early delete in that room lands."""
+    shape = SHAPES[2]
+    w = World(engine)
+    for n in range(300):
+        await w.pipeline.run(message=shape.deletion(
+            0, _snowflake(T0 - 3 * DAY + n * 1000), at=T0 + n))
+    assert await _orphans(engine) == [], "an old target is not held"
+    assert w.count("orphan_stale_target", shape.platform) == 300
+    assert w.count("not_stored", shape.platform) == 0, "counted once, as stale"
+
+    real = _snowflake(T0 + 8_000)                       # created a second before the delete
+    await w.run(shape.deletion(0, real, at=T0 + 9_000))
+    assert len(await _orphans(engine)) == 1
+    result = await w.run(shape.said(M_TS, "a real race", real))
+
+    assert result.message is None and w.memory.fed == []
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+
+
+async def test_a_recent_looking_unknown_target_is_held_and_the_unnamed_cap_bounds_the_flood(
+    engine, monkeypatch,
+):
+    """THE BOUND, stated as a test. A target created seconds ago looks like the race, so
+    it is held; what stops a flood of them is the per-room unnamed cap, which evicts the
+    bucket's oldest. A held delete pushed out that way leaves its message visible."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_UNNAMED_PER_ROOM", 50)
+    shape = SHAPES[2]
+    w = World(engine)
+    first = _snowflake(T0 + 1_000)
+    await w.pipeline.run(message=shape.deletion(0, first, at=T0 + 2_000))
+    for n in range(60):
+        await w.pipeline.run(message=shape.deletion(
+            0, _snowflake(T0 + 3_000 + n), at=T0 + 4_000 + n))
+
+    held = await _orphans(engine)
+    assert len(held) == 50
+    assert first not in {o.handle for o in held}, "the oldest went: the documented residual"
+    assert w.count("orphan_evicted", shape.platform) == 11
+
+
+async def test_a_signal_target_older_than_the_window_is_not_held_and_a_recent_one_is(engine):
+    """A Signal target IS its sent time. Nora deleting her own two-hour-old message names
+    one older than any race: not held. A delete of one sent seconds ago is held."""
+    shape = SHAPES[0]
+    w = World(engine)
+    for n in range(10):
+        await w.pipeline.run(message=shape.deletion(
+            T0 - 2 * 3600 * 1000 + n, "", at=T0))
+    assert await _orphans(engine) == []
+    assert w.count("orphan_stale_target", shape.platform) == 10
+
+    await w.pipeline.run(message=shape.deletion(T0 - 5_000, "", at=T0))
+    assert len(await _orphans(engine)) == 1
+    assert w.count("orphan_stale_target", shape.platform) == 10
+
+
+@pytest.mark.parametrize("shape", [SHAPES[1], SHAPES[3]], ids=["whatsapp", "instagram"])
+async def test_a_handle_that_carries_no_time_is_always_held(engine, shape):
+    w = World(engine)
+    await w.pipeline.run(message=shape.deletion(0, "opaque-handle", at=T0 + 10 * DAY))
+    assert len(await _orphans(engine)) == 1
+    assert w.count("orphan_stale_target", shape.platform) == 0
+
+
+async def test_an_old_target_whose_lookup_failed_is_held_not_dropped(engine, monkeypatch):
+    """«Could not look» is not «not there»: the age filter acts only on a lookup that
+    found nothing. An old message that IS on record, deleted while the store hiccups,
+    must still be held for the sweep."""
+    shape = SHAPES[2]
+    w = World(engine)
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(w.audit, "find_edited", boom)
+    await w.pipeline.run(message=shape.deletion(0, _snowflake(T0 - 3 * DAY), at=T0))
+
+    assert len(await _orphans(engine)) == 1
+    assert w.count("orphan_stale_target", shape.platform) == 0
+
+
+async def test_a_deleted_old_message_that_is_on_record_is_still_withdrawn(engine):
+    """The window decides only what to HOLD. A stored message, however old, is found by
+    the lookup and withdrawn as ever."""
+    shape = SHAPES[2]
+    w = World(engine)
+    old = _snowflake(T0 - 3 * DAY)
+    await w.run(shape.said(M_TS, "an old message", old))
+
+    await w.run(shape.deletion(0, old, at=T0 + 9_000))
+
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+    assert w.count("orphan_stale_target", shape.platform) == 0
+
+
+async def test_the_room_cap_spares_a_lone_deleters_row_while_a_flooder_holds_more(
+    engine, monkeypatch,
+):
+    """Heaviest-first at the room scope. Five modified clients (each under its own cap)
+    fill a room; the victim's single, OLDEST row survives because each eviction takes the
+    oldest row of whoever holds the MOST."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 21)
+    shape = SHAPES[1]
+    w = World(engine)
+    await w.pipeline.run(message=shape.deletion(M_TS, "H-REAL", sender="w1", at=T0 + 1))
+    for n in range(40):                                  # 5 flooders x 8 = 40 rows over the cap
+        await w.pipeline.run(message=shape.deletion(
+            M_TS + 10 + n, f"NOPE-{n}", sender=f"w-flood{n % 5}", at=T0 + 100 + n))
+
+    held = await _orphans(engine)
+    assert len(held) == 21
+    assert "H-REAL" in {o.handle for o in held}, "the lone row outlived five flooders"
+    assert w.count("orphan_evicted", shape.platform) == 41 - 21
+
+    await w.run(shape.said(M_TS, "the author's early unsent words", "H-REAL"))
+    assert w.memory.fed == []
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+
+
+async def test_the_room_cap_takes_the_oldest_when_every_deleter_holds_one_row(
+    engine, monkeypatch,
+):
+    """Where heaviest-first cannot help, stated as a test: every deleter in the room holds
+    exactly one row, so the oldest goes. It takes as many distinct deleters as the cap."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 3)
+    store = SqlRecordStore(engine)
+    for n in range(3):
+        await _keep(store, platform="whatsapp", handle=f"R{n}", deleter=f"d{n}", now=T0 + n)
+    await _keep(store, platform="whatsapp", handle="R3", deleter="d3", now=T0 + 10)
+
+    assert sorted(o.handle for o in await _orphans(engine)) == ["R1", "R2", "R3"]
+
+
+async def test_heaviest_first_counts_the_unnamed_bucket_as_one_deleter(engine, monkeypatch):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 4)
+    store = SqlRecordStore(engine)
+    await _keep(store, platform="whatsapp", handle="NAMED", deleter="d1", now=T0)
+    for n in range(3):
+        await _keep(store, platform="whatsapp", handle=f"U{n}", deleter="", now=T0 + 1 + n)
+    await _keep(store, platform="whatsapp", handle="U3", deleter="", now=T0 + 10)
+
+    assert sorted(o.handle for o in await _orphans(engine)) == ["NAMED", "U1", "U2", "U3"]
+
+
+async def _waiting_backends(engine: Any) -> int:
+    async with engine.connect() as conn:
+        return int((await conn.execute(sa.text(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+            "AND wait_event_type = 'Lock'"
+        ))).scalar_one())
+
+
+async def _until_waiting(engine: Any, n: int) -> None:
+    for _ in range(200):
+        if await _waiting_backends(engine) >= n:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"fewer than {n} backends ever waited on a lock")
+
+
+def _eng_with_pool(engine: Any) -> Any:
+    big = create_sql_engine(engine.url.render_as_string(hide_password=False))
+    big.pool._pool.maxsize = 60  # type: ignore[attr-defined]
+    return big
+
+
+async def test_concurrent_held_delete_writers_at_small_caps_neither_deadlock_nor_lose_one(
+    engine, monkeypatch,
+):
+    """The reviewer's E5: 24 writers at once over three rooms and six deleters, caps small
+    enough that every write evicts. Eviction claims its rows with SKIP LOCKED, so two
+    writers never wait on each other's rows: no error at all, every write lands, and the
+    cap is exceeded only by the writers racing (soft) and is restored by the next write."""
+    import random
+
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_DELETER", 3)
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 6)
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_GLOBAL", 12)
+    big = _eng_with_pool(engine)
+    store = SqlRecordStore(big)
+    rng = random.Random(7)
+    seq = 0
+    most = 0
+    try:
+        for _ in range(40):
+            jobs = []
+            for _ in range(24):
+                seq += 1
+                jobs.append(_keep(
+                    store, platform="whatsapp", room=f"g{rng.randrange(3)}",
+                    handle=f"h{seq}", deleter=f"d{rng.randrange(6)}", now=T0 + seq))
+            records = await asyncio.gather(*jobs)      # a deadlock raises here
+            assert all(r.id for r in records), "every write landed"
+            async with big.connect() as conn:
+                most = max(most, int((await conn.execute(
+                    sa.select(sa.func.count()).select_from(ORPHAN_DELETE))).scalar_one()))
+        await _keep(store, platform="whatsapp", room="g0", handle="last", deleter="dz",
+                    now=T0 + seq + 1)
+        assert len(await _orphans(engine)) <= 12 + 24, "overshoot is bounded by the writers"
+        assert most <= 12 + 24
+    finally:
+        await big.dispose()
+
+
+async def test_concurrent_unnamed_writers_across_rooms_neither_deadlock_nor_lose_one(
+    engine, monkeypatch,
+):
+    import random
+
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_UNNAMED_PER_ROOM", 4)
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 6)
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_GLOBAL", 10)
+    big = _eng_with_pool(engine)
+    store = SqlRecordStore(big)
+    rng = random.Random(3)
+    seq = 0
+    try:
+        for _ in range(40):
+            jobs = []
+            for _ in range(24):
+                seq += 1
+                jobs.append(_keep(store, platform="discord", room=f"c{rng.randrange(4)}",
+                                  handle=f"h{seq}", deleter="", now=T0 + seq))
+            assert all(r.id for r in await asyncio.gather(*jobs))
+    finally:
+        await big.dispose()
+
+
+async def test_two_writers_each_evicting_the_others_rows_across_rooms_do_not_deadlock(
+    engine, monkeypatch,
+):
+    """The reviewer's E6, built by hand. A is at its per-deleter cap with its oldest row
+    in room R2 and writes in R1 (full, oldest row B's); B mirrors it. Each has evicted
+    its own oldest row, which the other then needs for the room: WAITING for it is the
+    cycle. Paused between the two evictions so both hold their first row."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_DELETER", 2)
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 3)
+    store = SqlRecordStore(engine)
+    for room, who, h, at in (
+        ("R1", "dB", "b1", 0), ("R2", "dA", "a1", 1), ("R2", "dA", "a2", 2),
+        ("R1", "dB", "b2", 3), ("R1", "dx", "x1", 4), ("R2", "dy", "y1", 5),
+    ):
+        await _keep(store, platform="whatsapp", room=room, handle=h, deleter=who, now=T0 + at)
+    real = audit_module.SqlRecordStore._evict_orphans
+    calls: dict[str, int] = {}
+    gate = asyncio.Barrier(2)
+
+    async def paused(conn: Any, scope: Any, cap: int, **kw: Any) -> int:
+        n = await real(conn, scope, cap, **kw)
+        name = asyncio.current_task().get_name()          # type: ignore[union-attr]
+        calls[name] = calls.get(name, 0) + 1
+        if calls[name] == 1:
+            await asyncio.wait_for(gate.wait(), 10)
+        return n
+
+    monkeypatch.setattr(audit_module.SqlRecordStore, "_evict_orphans", staticmethod(paused))
+    a = asyncio.create_task(_keep(store, platform="whatsapp", room="R1", handle="a3",
+                                  deleter="dA", now=T0 + 10), name="A")
+    b = asyncio.create_task(_keep(store, platform="whatsapp", room="R2", handle="b3",
+                                  deleter="dB", now=T0 + 11), name="B")
+    ra, rb = await asyncio.wait_for(asyncio.gather(a, b), 30)
+
+    assert ra.id and rb.id
+    assert {"a3", "b3"} <= {o.handle for o in await _orphans(engine)}
+
+
+async def test_lock_cited_messages_takes_its_rows_in_ascending_id_order(engine):
+    """The one lock order every writer shares, pinned by what it HOLDS while it waits.
+    Another connection holds the HIGHER row; the writer locks [lo, hi]: ascending, it
+    takes `lo` first and then waits on `hi`, so `lo` is already locked against a
+    third party. Descending it waits on `hi` holding nothing, and `lo` is free."""
+    from nora.infra.sql.citation import lock_cited_messages
+
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    lo, hi = sorted((sc.s, sc.m))
+    holder = await engine.connect()
+    await holder.begin()
+    await holder.execute(sa.text("SELECT id FROM messages WHERE id = :i FOR UPDATE"), {"i": hi})
+
+    async def writer() -> None:
+        async with engine.begin() as conn:
+            await lock_cited_messages(conn, [hi, lo])      # given out of order on purpose
+
+    task = asyncio.create_task(writer())
+    try:
+        await _until_waiting(engine, 1)
+        async with engine.connect() as probe:
+            with pytest.raises(sa.exc.DBAPIError):
+                await probe.execute(sa.text(
+                    "SELECT id FROM messages WHERE id = :i FOR UPDATE NOWAIT"), {"i": lo})
+    finally:
+        await holder.rollback()
+        await holder.close()
+    await asyncio.wait_for(task, 10)
+
+
+@pytest.mark.parametrize("mode", ["SHARE", "UPDATE"])
+async def test_a_person_forget_and_a_batch_citing_that_persons_messages_do_not_deadlock(
+    engine, mode,
+):
+    """Both directions, with the interleaving FORCED. A blocker holds the lowest of the
+    person's messages (`SHARE` makes the FORGET wait on it while a batch can still take
+    its shared locks; `UPDATE` makes both wait). Forget is started first and waits, then
+    the batch starts; the blocker is released. If either side took its rows in
+    DESCENDING order, one now holds the higher message and waits for the lower, the
+    other the reverse: a cycle, a 40P01 error and a rolled-back hide. Ascending on both
+    sides, whoever waits first gets all its rows before the other gets any."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)                           # s and m are both ada's
+    lo = min(sc.s, sc.m)
+    big = _eng_with_pool(engine)
+    blocker = await big.connect()
+    await blocker.begin()
+    lock = {
+        "SHARE": sa.text("SELECT id FROM messages WHERE id = :i FOR SHARE"),
+        "UPDATE": sa.text("SELECT id FROM messages WHERE id = :i FOR UPDATE"),
+    }[mode]
+    await blocker.execute(lock, {"i": lo})
+    try:
+        forget = asyncio.create_task(forget_person(
+            big, documents=SqlDocumentStore(big), person_id="ada", apply=True, now_ms=T0 + 5))
+        await _until_waiting(engine, 1)
+        batch = _batch((sc.note_s, await _head(engine, sc.note_s),
+                        f"now resting on [{sc.s}] and [{sc.m}]"))
+        proposed = asyncio.create_task(
+            SqlNoteStore(big).propose(key="u", proposals=batch, now_ms=T0 + 6))
+        await asyncio.sleep(0.5)
+    finally:
+        await blocker.rollback()
+        await blocker.close()
+    try:
+        report, ids = await asyncio.wait_for(asyncio.gather(forget, proposed), 20)
+    finally:
+        await big.dispose()
+
+    assert not report.failure and report.hidden >= 2
+    assert list(ids) == [sc.note_s]
+    assert await w.hidden_at(sc.m) is not None
+
+
+async def test_an_eviction_skips_a_row_another_writer_holds_instead_of_waiting_for_it(
+    engine, monkeypatch,
+):
+    """The property that makes the writers deadlock-free, directly: the OLDEST row of the
+    scope is locked by someone else, and the writer takes the next oldest rather than
+    queueing behind that lock (a queue is how two writers end up waiting on each other)."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_DELETER", 3)
+    store = SqlRecordStore(engine)
+    for n in range(3):
+        await _keep(store, platform="whatsapp", handle=f"K{n}", deleter="d1", now=T0 + n)
+    oldest = (await _orphans(engine))[0].id
+    blocker = await engine.connect()
+    await blocker.begin()
+    await blocker.execute(sa.text("SELECT id FROM orphan_delete WHERE id = :i FOR UPDATE"),
+                          {"i": oldest})
+    try:
+        rec = await asyncio.wait_for(
+            _keep(store, platform="whatsapp", handle="K3", deleter="d1", now=T0 + 9), 10)
+    finally:
+        await blocker.rollback()
+        await blocker.close()
+
+    assert rec.evicted == 1
+    assert sorted(o.handle for o in await _orphans(engine)) == ["K0", "K2", "K3"]
+
+
+async def test_the_opportunistic_purge_skips_an_expired_row_another_writer_holds(engine):
+    from nora.domain.delete_authorship import ORPHAN_TTL_MS
+
+    store = SqlRecordStore(engine)
+    await _keep(store, handle="OLD", now=1)
+    [old] = await _orphans(engine)
+    blocker = await engine.connect()
+    await blocker.begin()
+    await blocker.execute(sa.text("SELECT id FROM orphan_delete WHERE id = :i FOR UPDATE"),
+                          {"i": old.id})
+    try:
+        await asyncio.wait_for(_keep(store, handle="FRESH", now=ORPHAN_TTL_MS + 10), 10)
+    finally:
+        await blocker.rollback()
+        await blocker.close()
+
+    assert sorted(o.handle for o in await _orphans(engine)) == ["FRESH", "OLD"]

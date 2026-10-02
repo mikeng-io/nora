@@ -343,14 +343,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # make room for a new one at a cap: a LEAK-direction loss if an evicted delete's
     # message then arrives, so a rising count is a flood worth reading) and `apply_failed`
     # (a matched kept delete could not be applied; left for the sweep, the message
-    # stopped). The start-up sweep counts under platform="all".
+    # stopped), `orphan_stale_target` (a delete whose target is not on record and is older
+    # than the overtaking race lasts, `ORPHAN_RACE_WINDOW_MS`, read from a Discord
+    # snowflake or a Signal sent-timestamp: NOT held, since it can never be that race;
+    # a LEAK-direction loss only if the message is recorded late after all) and
+    # `orphan_lost` (the held-delete write failed after every retry, a deadlock that did
+    # not pass or a store that was down: the delete is gone, and the message stays visible
+    # if it then arrives). The start-up sweep counts under platform="all".
     # Rare by nature, so an empty series after a restart means nothing was deleted
     # since, never that nothing can fail.
     _CounterSpec(
         "nora_delete_withdrawals_total",
         "Deletes or unsends of a message, by how they were honoured (hidden, "
         "already_hidden, not_stored, applied_from_orphan, refused_not_author, "
-        "cascade_failed, reconciled, orphan_expired, orphan_evicted, apply_failed).",
+        "cascade_failed, reconciled, orphan_expired, orphan_evicted, orphan_stale_target, "
+        "orphan_lost, apply_failed).",
         ("platform", "outcome"),
     ),
     _CounterSpec(

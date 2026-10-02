@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import fnmatch
 import hashlib
 import json
@@ -353,7 +354,8 @@ class FakeRecordStore:
         now_ms: int,
     ) -> OrphanRecord:
         """Mirrors `SqlRecordStore.record_orphan_delete`: the unique delivery key, eviction
-        of the oldest rows of a scope at its cap, and the opportunistic purge."""
+        of the oldest rows of a scope at its cap (the heaviest contributor's in the room),
+        and the opportunistic purge."""
         self.orphans = [o for o in self.orphans if o.recorded_at >= now_ms - ORPHAN_TTL_MS]
         ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
         key = (message.platform, message.conversation_id, touch.target.message_id,
@@ -367,22 +369,26 @@ class FakeRecordStore:
 
         evicted = 0
 
-        def evict(scope: Any, cap: int) -> None:
+        def evict(scope: Any, cap: int, heaviest_first: bool = False) -> None:
             nonlocal evicted
-            held = sorted((o for o in self.orphans if scope(o)),
-                          key=lambda o: (o.recorded_at, o.id))
-            if len(held) < cap:
-                return
-            gone = {o.id for o in held[: len(held) - cap + 1]}
-            self.orphans = [o for o in self.orphans if o.id not in gone]
-            evicted += len(gone)
+            held = [o for o in self.orphans if scope(o)]
+            for _ in range(max(0, len(held) - cap + 1)):
+                pool = held
+                if heaviest_first:
+                    counts = collections.Counter(o.deleter_id for o in held)
+                    top = min(counts, key=lambda d: (-counts[d], d))
+                    pool = [o for o in held if o.deleter_id == top]
+                victim = min(pool, key=lambda o: (o.recorded_at, o.id))
+                held.remove(victim)
+                self.orphans = [o for o in self.orphans if o.id != victim.id]
+                evicted += 1
 
         if message.sender_id:
             evict(lambda o: o.platform == message.platform and o.deleter_id == message.sender_id,
                   ORPHAN_CAP_PER_DELETER)
         else:
             evict(lambda o: room(o) and o.deleter_id == "", ORPHAN_CAP_UNNAMED_PER_ROOM)
-        evict(room, ORPHAN_CAP_PER_ROOM)
+        evict(room, ORPHAN_CAP_PER_ROOM, heaviest_first=True)
         evict(lambda o: True, ORPHAN_CAP_GLOBAL)
         self.orphans.append(OrphanDelete(
             id=(max((o.id for o in self.orphans), default=0) + 1),

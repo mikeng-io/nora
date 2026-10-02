@@ -394,7 +394,7 @@
   {
     "name": "the per-room cap on held deletes is off",
     "file": "nora/infra/sql/audit.py",
-    "old": "            evicted += await self._evict_orphans(conn, in_room, ORPHAN_CAP_PER_ROOM)",
+    "old": "            evicted += await self._evict_orphans(\n                conn, in_room, ORPHAN_CAP_PER_ROOM, heaviest_first=True,\n            )",
     "new": "            evicted += 0",
     "target": "tests/infra/test_delete_withdraws.py -k test_the_room_cap_evicts"
   },
@@ -469,7 +469,7 @@
     "target": "tests/infra/test_delete_withdraws.py -k test_the_match_reads_the_handle_and_timestamp_indexes"
   },
   {
-    "name": "the rule accepts an empty deleter id (both sides empty are «the same id»)",
+    "name": "the rule accepts an empty deleter id (both sides empty are \u00abthe same id\u00bb)",
     "file": "nora/domain/delete_authorship.py",
     "old": "    if author and author == deleter:",
     "new": "    if author == deleter:",
@@ -513,8 +513,8 @@
   {
     "name": "a new held delete is refused instead of evicting the oldest (evicts the NEWEST)",
     "file": "nora/infra/sql/audit.py",
-    "old": ".order_by(ORPHAN_DELETE.c.recorded_at, ORPHAN_DELETE.c.id)\n            .limit(held - cap + 1)",
-    "new": ".order_by(ORPHAN_DELETE.c.recorded_at.desc(), ORPHAN_DELETE.c.id.desc())\n            .limit(held - cap + 1)",
+    "old": ".order_by(orphan.c.recorded_at, orphan.c.id)\n                    .limit(1).with_for_update(skip_locked=True)",
+    "new": ".order_by(orphan.c.recorded_at.desc(), orphan.c.id.desc())\n                    .limit(1).with_for_update(skip_locked=True)",
     "target": "tests/infra/test_delete_withdraws.py -k test_eviction_takes_the_oldest"
   },
   {
@@ -607,5 +607,152 @@
     "old": "        orphans = None\n        for attempt in (1, 2):",
     "new": "        orphans = None\n        for attempt in (1,):",
     "target": "tests/infra/test_delete_withdraws.py -k test_held_deletes_that_cannot_be_read_once"
+  },
+  {
+    "name": "round 6: the age filter is gone (an old unknown target is held)",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        if looked and target_is_stale(",
+    "new": "        if False and target_is_stale(",
+    "target": "tests/infra/test_delete_withdraws.py -k old_discord_messages_holds_nothing"
+  },
+  {
+    "name": "round 6: a failed lookup is taken for \u00abnot there\u00bb by the age filter",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        if looked and target_is_stale(",
+    "new": "        if target_is_stale(",
+    "target": "tests/infra/test_delete_withdraws.py -k old_target_whose_lookup_failed"
+  },
+  {
+    "name": "round 6: the age filter holds nothing back but counts nothing",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "platform=message.platform, outcome=\"orphan_stale_target\",",
+    "new": "platform=message.platform, outcome=\"not_stored\",",
+    "target": "tests/infra/test_delete_withdraws.py -k old_discord_messages_holds_nothing"
+  },
+  {
+    "name": "round 6: a Signal target is not aged",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "return event_ts - sent_ts if platform == \"signal\" else None",
+    "new": "return None",
+    "target": "tests/infra/test_delete_withdraws.py -k signal_target_older_than_the_window"
+  },
+  {
+    "name": "round 6: the Discord snowflake is read with the wrong shift",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "_DISCORD_SHIFT = 22 ",
+    "new": "_DISCORD_SHIFT = 21 ",
+    "target": "tests/unit/test_delete_authorship.py -k snowflake"
+  },
+  {
+    "name": "round 6: the window is a year",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "ORPHAN_RACE_WINDOW_MS = 30 * 60 * 1000",
+    "new": "ORPHAN_RACE_WINDOW_MS = 365 * 24 * 3600 * 1000",
+    "target": "tests/unit/test_delete_authorship.py -k a_targets_age"
+  },
+  {
+    "name": "round 6: a target OLDER than the window is not stale (comparison flipped)",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "return age is not None and age > ORPHAN_RACE_WINDOW_MS",
+    "new": "return age is not None and age < ORPHAN_RACE_WINDOW_MS",
+    "target": "tests/unit/test_delete_authorship.py -k a_targets_age"
+  },
+  {
+    "name": "round 6: a handle with no time is held as stale (WhatsApp ids count)",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "    handle = _id(handle)\n    if platform == \"discord\" and handle.isascii() and handle.isdigit():",
+    "new": "    handle = _id(handle)\n    if handle.isascii() and handle.isdigit():",
+    "target": "tests/unit/test_delete_authorship.py -k a_targets_age"
+  },
+  {
+    "name": "round 6: the unnamed per-room cap is back to 100",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "ORPHAN_CAP_UNNAMED_PER_ROOM = 500",
+    "new": "ORPHAN_CAP_UNNAMED_PER_ROOM = 100",
+    "target": "tests/unit/test_delete_authorship.py -k caps_are_ordered"
+  },
+  {
+    "name": "round 6: room eviction is oldest-of-the-room, not the heaviest contributor's",
+    "file": "nora/infra/sql/audit.py",
+    "old": "conn, in_room, ORPHAN_CAP_PER_ROOM, heaviest_first=True,",
+    "new": "conn, in_room, ORPHAN_CAP_PER_ROOM, heaviest_first=False,",
+    "target": "tests/infra/test_delete_withdraws.py -k the_room_cap_spares_a_lone_deleters_row"
+  },
+  {
+    "name": "round 6: room eviction takes the LIGHTEST contributor's oldest",
+    "file": "nora/infra/sql/audit.py",
+    "old": ".order_by(sa.func.count().desc(), orphan.c.deleter_id)",
+    "new": ".order_by(sa.func.count(), orphan.c.deleter_id)",
+    "target": "tests/infra/test_delete_withdraws.py -k the_room_cap_spares_a_lone_deleters_row"
+  },
+  {
+    "name": "round 6: the heaviest contributor's oldest is not preferred when it is locked-free (fallback always taken)",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            for where in (pick, scope):           # the heaviest's rows, else any in scope",
+    "new": "            for where in (scope,):                # always any in scope",
+    "target": "tests/infra/test_delete_withdraws.py -k the_room_cap_spares_a_lone_deleters_row"
+  },
+  {
+    "name": "round 6: eviction waits on a locked row instead of skipping it",
+    "file": "nora/infra/sql/audit.py",
+    "old": ".limit(1).with_for_update(skip_locked=True)\n                )).scalar_one_or_none()",
+    "new": ".limit(1).with_for_update()\n                )).scalar_one_or_none()",
+    "target": "tests/infra/test_delete_withdraws.py -k an_eviction_skips_a_row"
+  },
+  {
+    "name": "round 6: eviction waits on a locked row (the cross-room cycle)",
+    "file": "nora/infra/sql/audit.py",
+    "old": ".limit(1).with_for_update(skip_locked=True)\n                )).scalar_one_or_none()",
+    "new": ".limit(1).with_for_update()\n                )).scalar_one_or_none()",
+    "target": "tests/infra/test_delete_withdraws.py -k each_evicting_the_others_rows"
+  },
+  {
+    "name": "round 6: the purge waits on an expired row another writer holds",
+    "file": "nora/infra/sql/audit.py",
+    "old": ".limit(limit).with_for_update(skip_locked=True)",
+    "new": ".limit(limit)",
+    "target": "tests/infra/test_delete_withdraws.py -k opportunistic_purge_skips"
+  },
+  {
+    "name": "round 6: no retry of the held-delete write",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "ORPHAN_WRITE_ATTEMPTS = 4",
+    "new": "ORPHAN_WRITE_ATTEMPTS = 1",
+    "target": "tests/unit/test_delete_touch.py -k write_fails_is_retried"
+  },
+  {
+    "name": "round 6: the retry pause is fixed, not jittered",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "random.uniform(0, ORPHAN_RETRY_BASE_S * 2 ** attempt)  # noqa: S311  jitter",
+    "new": "ORPHAN_RETRY_BASE_S * 2 ** attempt  # noqa: S311  jitter",
+    "target": "tests/unit/test_delete_touch.py -k pauses_a_random_time"
+  },
+  {
+    "name": "round 6: a lost held delete is not counted orphan_lost",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "platform=message.platform, outcome=\"orphan_lost\",",
+    "new": "platform=message.platform, outcome=\"not_stored\",",
+    "target": "tests/unit/test_delete_touch.py -k keeps_failing_is_counted_lost"
+  },
+  {
+    "name": "round 6: lock_cited_messages takes its rows in DESCENDING id order",
+    "file": "nora/infra/sql/citation.py",
+    "old": ".order_by(MESSAGES.c.id).with_for_update(read=True)",
+    "new": ".order_by(MESSAGES.c.id.desc()).with_for_update(read=True)",
+    "target": "tests/infra/test_delete_withdraws.py -k lock_cited_messages_takes_its_rows_in_ascending"
+  },
+  {
+    "name": "round 6: lock_cited_messages descending, seen by forget-vs-batch",
+    "file": "nora/infra/sql/citation.py",
+    "old": ".order_by(MESSAGES.c.id).with_for_update(read=True)",
+    "new": ".order_by(MESSAGES.c.id.desc()).with_for_update(read=True)",
+    "target": "tests/infra/test_delete_withdraws.py -k person_forget_and_a_batch"
+  },
+  {
+    "name": "round 6: person forget locks the person's rows DESCENDING",
+    "file": "nora/app/person_forget.py",
+    "old": ".order_by(MESSAGES.c.id).with_for_update()",
+    "new": ".order_by(MESSAGES.c.id.desc()).with_for_update()",
+    "target": "tests/infra/test_delete_withdraws.py -k person_forget_and_a_batch"
   }
 ]

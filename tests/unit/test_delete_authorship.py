@@ -14,9 +14,12 @@ from nora.domain.delete_authorship import (
     ORPHAN_CAP_PER_DELETER,
     ORPHAN_CAP_PER_ROOM,
     ORPHAN_CAP_UNNAMED_PER_ROOM,
+    ORPHAN_RACE_WINDOW_MS,
     ORPHAN_TTL_MS,
     deleter_is_author,
     orphan_names_message,
+    target_age_ms,
+    target_is_stale,
 )
 from nora.domain.models import OrphanDelete
 from nora.platform.whatsapp.parser import revoker_ids
@@ -184,10 +187,56 @@ def test_a_held_delete_waits_three_days_at_most_and_the_caps_are_ordered_by_blas
     deleter is held well below the room, an unnamed one (Discord, Instagram) is held per
     ROOM, and the room well below the global ceiling, so one party cannot starve another."""
     assert ORPHAN_TTL_MS == 3 * 24 * 3600 * 1000
+    assert ORPHAN_RACE_WINDOW_MS == 30 * 60 * 1000, "thirty minutes: see the constant"
     assert ORPHAN_CAP_PER_DELETER < ORPHAN_CAP_UNNAMED_PER_ROOM < ORPHAN_CAP_PER_ROOM
     assert ORPHAN_CAP_PER_ROOM * 10 <= ORPHAN_CAP_GLOBAL
     assert (ORPHAN_CAP_PER_DELETER, ORPHAN_CAP_UNNAMED_PER_ROOM, ORPHAN_CAP_PER_ROOM,
-            ORPHAN_CAP_GLOBAL) == (40, 100, 200, 5000)
+            ORPHAN_CAP_GLOBAL) == (40, 500, 1000, 10_000)
+
+
+def _snowflake(ms: int) -> str:
+    from nora.platform.discord.snowflake import DISCORD_EPOCH_MS
+    return str((ms - DISCORD_EPOCH_MS) << 22)
+
+
+def test_the_domains_snowflake_clock_is_the_platforms():
+    """The domain cannot import the platform package, so it carries its own copy of the
+    epoch and shift: this pins the copy to the one the Discord parser uses."""
+    from nora.platform.discord.snowflake import timestamp_ms
+    sf = 1_234_567_890_123_456_789
+    assert target_age_ms(platform="discord", handle=str(sf), sent_ts=None,
+                         event_ts=10**13) == 10**13 - timestamp_ms(sf)
+
+
+def test_a_targets_age_is_read_from_a_snowflake_or_a_signal_timestamp_only():
+    now = 1_900_000_000_000
+    old = ORPHAN_RACE_WINDOW_MS + 1
+    kw = {"event_ts": now}
+    assert target_age_ms(platform="discord", handle=_snowflake(now - 5_000),
+                         sent_ts=None, **kw) == 5_000
+    assert target_age_ms(platform="signal", handle="", sent_ts=now - 7_000, **kw) == 7_000
+    # no time in the handle: WhatsApp, Instagram, a non-numeric or non-ASCII Discord id
+    assert target_age_ms(platform="whatsapp", handle="3EB0ABC", sent_ts=None, **kw) is None
+    assert target_age_ms(platform="instagram", handle="mid.123", sent_ts=None, **kw) is None
+    assert target_age_ms(platform="discord", handle="abc", sent_ts=None, **kw) is None
+    assert target_age_ms(platform="discord", handle="\u0661\u0662", sent_ts=None, **kw) is None
+    assert target_is_stale(platform="discord", handle=_snowflake(now - old),
+                           sent_ts=None, **kw) is True
+    assert target_is_stale(platform="discord", handle=_snowflake(now - old + 10),
+                           sent_ts=None, **kw) is False
+    assert target_is_stale(platform="signal", handle="", sent_ts=now - old, **kw) is True
+    assert target_is_stale(platform="whatsapp", handle="3EB0ABC", sent_ts=None, **kw) is False
+    # a digits-only handle on a platform that carries no time in it is never read as a snowflake
+    for platform in ("whatsapp", "instagram"):
+        assert target_age_ms(platform=platform, handle="1234567890123456789",
+                             sent_ts=None, **kw) is None
+        assert target_is_stale(platform=platform, handle="1234567890123456789",
+                               sent_ts=None, **kw) is False
+    # the window itself, in literal minutes: not a restatement of the constant
+    assert target_is_stale(platform="signal", handle="", sent_ts=now - 31 * 60_000, **kw) is True
+    assert target_is_stale(platform="signal", handle="", sent_ts=now - 29 * 60_000, **kw) is False
+    # dated after the delete: not stale (a clock skew is never a reason to drop one)
+    assert target_is_stale(platform="signal", handle="", sent_ts=now + 10**9, **kw) is False
 
 
 def test_whitespace_is_no_id_in_the_rule_itself():

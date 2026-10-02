@@ -929,12 +929,15 @@ class RecordStore(Protocol):
         start-up sweep, and purged if it never is. Ids and times only. See `OrphanDelete`.
 
         BOUNDED, by EVICTION and never by refusal. The same delivery again returns the row
-        it already has and adds (and evicts) nothing. A new one always lands: when its
-        scope already holds the cap (a NAMED deleter: `ORPHAN_CAP_PER_DELETER`; an
+        it already has and adds (and evicts) nothing. A new one lands unless a concurrent writer
+        deadlocks and the caller's retries are exhausted (`orphan_lost`), and a flood can evict
+        it later: when its scope already holds the cap (a NAMED deleter:
+        `ORPHAN_CAP_PER_DELETER`; an
         unnamed one, as Discord and Instagram deletes are: per room,
         `ORPHAN_CAP_UNNAMED_PER_ROOM`; the room: `ORPHAN_CAP_PER_ROOM`; everything:
         `ORPHAN_CAP_GLOBAL`, all in `nora.domain.delete_authorship`) the OLDEST rows of that
-        scope are evicted first, before the insert, and counted in `evicted`. Eviction is a
+        scope are evicted first (in the room scope, the oldest of the deleter holding the most
+        rows there), before the insert, and counted in `evicted`. Eviction is a
         leak-direction loss if the evicted delete's message then arrives: see the constants.
         Expired rows (`ORPHAN_TTL_MS`) are purged in the same transaction, a bounded few."""
         ...

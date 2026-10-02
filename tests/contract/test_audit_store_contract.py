@@ -1005,3 +1005,24 @@ async def test_a_redelivered_delete_evicts_nothing(store):
         await _orphan(store, handle=f"H{i}", deleter="hostile", now=1000 + i)
     again = await _orphan(store, handle="H0", deleter="hostile", now=9999, whole=True)
     assert again.evicted == 0 and await _live(store, handle="H0", sender="hostile")
+
+
+async def test_the_room_cap_evicts_the_heaviest_contributors_oldest_not_the_rooms(
+    store, monkeypatch,
+):
+    """Both stores: at the room cap the row that goes is the oldest of the deleter holding
+    the MOST rows there, so a victim's single (oldest) row outlives a flooder's."""
+    import nora.infra.sql.audit as sql_audit
+    import nora.testing.fakes as fakes
+
+    for module in (sql_audit, fakes):
+        monkeypatch.setattr(module, "ORPHAN_CAP_PER_ROOM", 4)
+    await _orphan(store, handle="VICTIM", deleter="victim", now=1000)
+    for i in range(3):
+        await _orphan(store, handle=f"F{i}", deleter="flooder", now=2000 + i)
+    over = await _orphan(store, handle="F3", deleter="flooder", now=3000, whole=True)
+
+    assert over.evicted == 1
+    assert await _live(store, handle="VICTIM", sender="victim"), "the lone row survived"
+    assert not await _live(store, handle="F0", sender="flooder"), "the flooder's oldest went"
+    assert await _live(store, handle="F3", sender="flooder")

@@ -4,7 +4,7 @@
   "details": [
     "Before this, an unsent message stayed visible to Nora in every transcript and in everything derived from it.",
     "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused, including old ones the first start after this change finds on record.",
-    "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives.",
+    "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives. That fails, and the message stays visible, if the kept delete was evicted by a flood, lost to a write that kept failing, skipped because its target was already older than 30 minutes (a Discord or Signal message that old cannot be the overtaking race), or older than three days.",
     "A message deleted in the instant it arrives is held back from her memory feed, her notes and her replies (and a photo unsent within seconds is no longer read by the vision model); a delete that lands after those steps have run is the ordinary after-the-fact case, and what was already passed on is not taken back.",
     "An operator command, `nora withdrawal reconcile-deletes`, applies the same to deletes that were already recorded, and it also runs every time she starts."
   ],
@@ -12,6 +12,6 @@
     "Honcho, her long-term memory, has no way to delete one message, so something it already learned from a deleted message may remain there.",
     "A deleted message stays hidden, and a note or event that rested on it stays withdrawn: nothing clears the mark when a note is rewritten, and an operator has to clear it. The room's overall position and culture are not withdrawn, so in a quiet room they can keep the deleted message's content until the next time they are rewritten.",
     "On WhatsApp a group admin removing someone else's message is not recognised, and deleting one of Nora's own messages is only recognised on Signal.",
-    "A very large flood of revokes of messages that do not exist, from a modified WhatsApp client, can push a legitimate early delete out of the table before its message arrives; that message then stays visible. It is counted and bounded, but it is not impossible."
+    "A flood of deletes of messages that do not exist can push a legitimate early delete out of the table before its message arrives, and that message then stays visible. On Discord and Instagram a delete names nobody, so 500 deletes of recent-looking, unrecorded messages in one room while the real message is still on its way do it (deletes of old ones are not kept at all, so ordinary traffic does not); on WhatsApp it takes hundreds of distinct members, since a room's eviction takes the heaviest sender's oldest row first, and one modified client only evicts its own. A write that deadlocks four times in a row is lost the same way. All of these are counted (`orphan_evicted`, `orphan_lost`, `orphan_stale_target`) and none is impossible."
   ]
 }

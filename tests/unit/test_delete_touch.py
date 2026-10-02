@@ -237,3 +237,111 @@ async def test_a_pipeline_applies_a_kept_delete_when_its_message_is_audited():
     assert audit.orphans == [], "applied, then discarded"
     assert w.calls == [1]
     assert _count(m, "applied_from_orphan") == 1
+
+
+async def test_a_held_delete_whose_write_fails_is_retried_and_then_lands(monkeypatch):
+    """A deadlock or serialization abort between concurrent writers passes a moment later."""
+    monkeypatch.setattr(touch_stage, "ORPHAN_RETRY_BASE_S", 0.0)
+    audit = FakeRecordStore()
+    real = audit.record_orphan_delete
+    failures = {"left": 3}               # three aborts in a row, then it passes
+
+    async def flaky(**kw: Any) -> Any:
+        if failures["left"]:
+            failures["left"] -= 1
+            raise RuntimeError("deadlock detected")
+        return await real(**kw)
+
+    monkeypatch.setattr(audit, "record_orphan_delete", flaky)
+    m = Metrics()
+
+    done = await _run(_delete("H-NOT-YET"), audit, FakeDeleteWithdrawer(audit), m)
+
+    assert done.ending == "delete_orphaned"
+    assert len(audit.orphans) == 1, "kept after the retries"
+    assert _count(m, "orphan_lost") == 0
+
+
+async def test_a_held_delete_whose_write_keeps_failing_is_counted_lost_and_never_raised(
+    monkeypatch,
+):
+    monkeypatch.setattr(touch_stage, "ORPHAN_RETRY_BASE_S", 0.0)
+    audit = FakeRecordStore()
+    attempts = {"n": 0}
+
+    async def down(**_kw: Any) -> Any:
+        attempts["n"] += 1
+        raise RuntimeError("deadlock detected")
+
+    monkeypatch.setattr(audit, "record_orphan_delete", down)
+    m = Metrics()
+
+    done = await _run(_delete("H-NOT-YET"), audit, FakeDeleteWithdrawer(audit), m)
+
+    assert done.ending == "delete_orphaned"
+    assert attempts["n"] == touch_stage.ORPHAN_WRITE_ATTEMPTS
+    assert audit.orphans == []
+    assert _count(m, "orphan_lost") == 1
+
+
+async def test_the_retry_pauses_a_random_time_between_attempts(monkeypatch):
+    """Two writers that collided must not retry in step: each pause is drawn at random from
+    0 up to a doubling bound, never the bound itself."""
+    audit = FakeRecordStore()
+    pauses: list[float] = []
+    bounds: list[float] = []
+
+    async def record_sleep(seconds: float) -> None:
+        pauses.append(seconds)
+
+    def half(low: float, high: float) -> float:
+        bounds.append(high)
+        return high / 2
+
+    async def down(**_kw: Any) -> Any:
+        raise RuntimeError("deadlock detected")
+
+    monkeypatch.setattr(touch_stage.asyncio, "sleep", record_sleep)
+    monkeypatch.setattr(touch_stage.random, "uniform", half)
+    monkeypatch.setattr(audit, "record_orphan_delete", down)
+
+    await _run(_delete("H-X"), audit, FakeDeleteWithdrawer(audit), Metrics())
+
+    base = touch_stage.ORPHAN_RETRY_BASE_S
+    assert bounds == [base, base * 2, base * 4], "a doubling bound, three pauses for four tries"
+    assert pauses == [base / 2, base, base * 2], "each pause is the random draw, not the bound"
+
+
+async def test_a_stale_discord_target_is_not_held_and_a_failed_lookup_is_never_taken_for_stale(
+    monkeypatch,
+):
+    from nora.platform.discord.snowflake import DISCORD_EPOCH_MS
+
+    now = 1_900_000_000_000
+    old = str((now - 5 * 24 * 3600 * 1000 - DISCORD_EPOCH_MS) << 22)
+    msg = NormalizedMessage(
+        "discord", "123/456", "group", "", None, now, "", {},
+        touch=Touch(kind="delete", target=EditTarget(message_id=old)),
+    )
+    audit = FakeRecordStore()
+    m = Metrics()
+
+    done = await touch_stage.run(
+        message=msg, touch=msg.touch, audit=audit,                  # type: ignore[arg-type]
+        persons=Persons(by_person={}, index={}), metrics=m,
+        withdrawer=FakeDeleteWithdrawer(audit),
+    )
+    assert done.ending == "delete_orphaned" and audit.orphans == []
+    assert m.get("nora_delete_withdrawals_total", platform="discord",
+                 outcome="orphan_stale_target") == 1
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(audit, "find_edited", boom)
+    await touch_stage.run(
+        message=msg, touch=msg.touch, audit=audit,                  # type: ignore[arg-type]
+        persons=Persons(by_person={}, index={}), metrics=m,
+        withdrawer=FakeDeleteWithdrawer(audit),
+    )
+    assert len(audit.orphans) == 1

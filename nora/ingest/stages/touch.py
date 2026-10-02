@@ -50,8 +50,10 @@ it raises no stimulus; that is a judgement about waking, not a Record claim.)
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -60,12 +62,21 @@ from nora.domain.delete_authorship import (
     AUTHOR_ONLY_DELETES,
     DELETER_IDS_KEY,
     deleter_is_author,
+    target_is_stale,
 )
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import DeleteWithdrawal, DeleteWithdrawer, RecordStore
 from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.touch")
+
+#: The durable write of a held delete is tried this many times in all. A failure here is
+#: usually a deadlock or serialization abort between concurrent writers, which a retry a
+#: moment later passes (the eviction itself takes no waiting locks, but a unique-index wait
+#: or the history trigger can still conflict); the pause is random, so two writers that
+#: collided do not collide again in step. Exhausted, the delete is LOST (`orphan_lost`).
+ORPHAN_WRITE_ATTEMPTS = 4
+ORPHAN_RETRY_BASE_S = 0.05
 
 __all__ = ["AUTHOR_ONLY_DELETES", "TouchEnding", "TouchResult", "run"]
 
@@ -106,16 +117,29 @@ async def run(
     withdrawing = touch.kind == "delete" and withdrawer is not None
     person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
     person_id = person.person_id if person is not None else None
-    target = await _lookup(audit, message, touch, metrics)
+    target, looked = await _lookup(audit, message, touch, metrics)
     orphan_id: int | None = None
     if target is None and withdrawing:
+        if looked and target_is_stale(
+            platform=message.platform, handle=touch.target.message_id,
+            sent_ts=touch.target.sent_ts, event_ts=message.timestamp,
+        ):
+            # Looked, and it is not there, and it is older than the overtaking race
+            # lasts (`ORPHAN_RACE_WINDOW_MS`): a message from before Nora joined, one she
+            # never records, pruned history. Holding it would only fill the table. A
+            # lookup that FAILED is never taken for this: it is held below.
+            metrics.inc(
+                "nora_delete_withdrawals_total",
+                platform=message.platform, outcome="orphan_stale_target",
+            )
+            return TouchResult(ending=orphaned, message=message)
         # THE DURABLE RECORD, FIRST, in its own transaction, then one more look:
         # the message may have been recorded between the first lookup and this
         # write, and the pipeline's check after a message's audit write has
         # already run. Written whether the target was absent or the lookup FAILED
         # («could not look» is not «not there»), so neither loses the delete.
         orphan_id = await _record_orphan(audit, message, touch, person_id, metrics)
-        target = await _lookup(audit, message, touch, metrics)
+        target, _ = await _lookup(audit, message, touch, metrics)
     if target is None:
         if withdrawing:
             metrics.inc(
@@ -137,16 +161,18 @@ async def run(
 
 async def _lookup(
     audit: RecordStore, message: NormalizedMessage, touch: Touch, metrics: Any,
-) -> EditedMessage | None:
+) -> tuple[EditedMessage | None, bool]:
+    """The target and whether the store was actually read: `(None, False)` is a lookup
+    that FAILED, `(None, True)` is «looked, not there»."""
     try:
         return await audit.find_edited(
             conversation_id=message.conversation_id, target=touch.target,
             sender_id=touch.target_author or message.sender_id,
-        )
+        ), True
     except Exception:
         log.exception("%s target lookup failed", touch.kind)
         metrics.inc("nora_errors_total", stage="touch_target", platform=message.platform)
-        return None
+        return None, False
 
 
 async def _record_orphan(
@@ -155,22 +181,43 @@ async def _record_orphan(
 ) -> int | None:
     if not touch.target.message_id and touch.target.sent_ts is None:
         return None             # it names nothing: nothing could ever match it
-    try:
-        recorded = await audit.record_orphan_delete(
-            message=message, touch=touch, person_id=person_id,
-            now_ms=int(time.time() * 1000),
-        )
-    except Exception:
-        # Dropped, counted, never raised, and logged without a word of the message.
-        log.exception("an orphan delete could not be recorded; it is lost")
+    recorded = None
+    for attempt in range(ORPHAN_WRITE_ATTEMPTS):
+        try:
+            recorded = await audit.record_orphan_delete(
+                message=message, touch=touch, person_id=person_id,
+                now_ms=int(time.time() * 1000),
+            )
+            break
+        except Exception:
+            # Logged without a word of the message. A concurrent writer's deadlock or
+            # serialization abort passes on a retry; a store that is down does not.
+            log.exception(
+                "an orphan delete could not be recorded (attempt %d of %d)",
+                attempt + 1, ORPHAN_WRITE_ATTEMPTS,
+            )
+            if attempt + 1 < ORPHAN_WRITE_ATTEMPTS:
+                await asyncio.sleep(
+                    random.uniform(0, ORPHAN_RETRY_BASE_S * 2 ** attempt)  # noqa: S311  jitter
+                )
+    if recorded is None:
+        # Dropped, counted, never raised: this delete is LOST. A leak-direction loss if
+        # its message then arrives (it stays visible and is fed to memory).
+        log.error("an orphan delete could not be recorded after %d attempts; it is lost",
+                  ORPHAN_WRITE_ATTEMPTS)
         metrics.inc("nora_errors_total", stage="touch_orphan", platform=message.platform)
+        metrics.inc(
+            "nora_delete_withdrawals_total",
+            platform=message.platform, outcome="orphan_lost",
+        )
         return None
     if recorded.evicted:
-        # A cap bound and the OLDEST held deletes of that scope went to make room: the new
-        # delete always lands. This is a LEAK-direction loss if an evicted delete's message
-        # then arrives (it stays visible and is fed to memory): it takes a flood big enough
-        # to push a legitimate row out within its seconds-to-minutes window, and the flood
-        # is loud (this counter). See `nora.domain.delete_authorship` for the caps.
+        # A cap bound and held deletes of that scope went to make room (the oldest, or at
+        # the room scope the heaviest contributor's oldest). This is a LEAK-direction loss
+        # if an evicted delete's message then arrives (it stays visible and is fed to
+        # memory): it takes a flood big enough to push a legitimate row out within its
+        # seconds-to-minutes window, and the flood is loud (this counter). See
+        # `nora.domain.delete_authorship` for the caps and what each scope takes.
         log.warning(
             "%d held deletes evicted to make room (%s)", recorded.evicted, message.platform,
         )
