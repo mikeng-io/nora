@@ -11,14 +11,13 @@ model call, one a restart ended, a provider that reported no usage). No row is
 rewritten and nothing is backfilled: `cognition_wake_outcome` is append-only
 (10 §8), so an outcome written before this migration reads NULL.
 
-Numbered 0090 on purpose: 0088 is `fix-delete-withdraws` (#711) and 0089 is the
-live ledger (the Cognition cut-over's PR-2), neither merged when this was written.
-`down_revision` names the head of THIS tree (`0087_document_state`); whoever merges
-this after either of them re-points it at the then head, and `uv run alembic heads`
-must print exactly ONE line afterwards.
+Numbered 0090 on purpose: 0089 is reserved for the live ledger (the Cognition
+cut-over's PR-2), not merged when this was written. 0088 is `orphan_delete` (#711),
+the head this follows; whoever merges after it re-points `down_revision` at the then
+head, and `uv run alembic heads` must print exactly ONE line afterwards.
 
 Revision ID: 0090_cognition_outcome_tokens
-Revises: 0087_document_state
+Revises: 0088_orphan_delete
 Create Date: 2026-10-02
 """
 
@@ -28,7 +27,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0090_cognition_outcome_tokens"
-down_revision = "0087_document_state"
+down_revision = "0088_orphan_delete"
 branch_labels = None
 depends_on = None
 

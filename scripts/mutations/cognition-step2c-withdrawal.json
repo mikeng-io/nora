@@ -2,7 +2,7 @@
   {
     "name": "the cascade actually finds every store that cites the withdrawn message, not just note",
     "file": "nora/app/withdrawal.py",
-    "old": "    if by_store.get(\"standing\"):",
+    "old": "    if \"standing\" in stores and by_store.get(\"standing\"):",
     "new": "    if False:",
     "target": "tests/infra/test_withdrawal.py -k test_cascade_marks_every_citing_store_unsupported"
   },

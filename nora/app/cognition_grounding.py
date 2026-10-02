@@ -18,10 +18,14 @@ not the tool is on, and a session with the tool off still sees who said what.
 - *The room.* A row is joined to the stimulus that named it and must be in that
   stimulus's own room: the item's room is the one the reads and the render
   resolve through (R-21).
-- *Withdrawal.* `nora person forget` hides a message; the Record read excludes
-  hidden rows (`transcript_select`), so a hidden message is not «shown as
-  withheld», it is absent. A deleted message's words are withheld (the row is
-  shown as deleted), the rule `record_query` keeps.
+- *Withdrawal.* `nora person forget` hides a message, and so does a platform
+  delete or unsend (`nora.app.delete_withdrawal`, DEC-276); the Record read
+  excludes hidden rows (`transcript_select`), so a hidden message is not «shown as
+  withheld», it is absent, and that includes her OWN unsent send. The `deleted`
+  mark and the withheld words (the rule `record_query` keeps) are what is left
+  for a delete whose hide has not landed: one that failed and awaits its retry or
+  the start-up sweep. DEC-245 (3) said an unsent send of hers was shown as
+  deleted; amended by DEC-276.
 - *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
   never pushed"). No Standing text, head or revision is rendered here:
   `standing_store.read()` returns rows the withdrawal cascade marked

@@ -18,6 +18,11 @@ three things, and the pipeline acts on each:
   now, where a tag in it opened a turn on something long settled, and a race
   wrote a duplicate row. Losing the rare genuine edit of an unrecorded message
   is the smaller cost.
+  The same ending when the original IS on record but withdrawn (a delete or
+  unsend hid it, `EditedMessage.hidden`): an edit after a delete must not fold a
+  new version onto a hidden row, feed Honcho a correction «of» it (which would
+  quote what it first said), or open a turn on it. A late edit event for a
+  message its author took back is the common way this arrives.
 * **`edit_stale`** — older than the newest edit on record (see `_is_stale`).
 * **`edit_refused`** — the original is Nora's own (R-12: she never ingests her
   own words, edited or not), or somebody other than its author is editing it.
@@ -86,7 +91,7 @@ async def run(
         metrics.inc("nora_errors_total", stage="edit_target", platform=message.platform)
         return EditTargetResult(message=message, original=None, ending="edit_orphaned")
 
-    if original is None:
+    if original is None or original.hidden:
         return EditTargetResult(message=message, original=None, ending="edit_orphaned")
 
     if original.is_nora or not _same_author(message, original, persons):

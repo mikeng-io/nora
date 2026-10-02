@@ -503,6 +503,8 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `ComputerDown` | `nora_computer_up == 0` for 5m | the 2026-10-01 audit of Nora's computer found no series at all that said computerd was down, hung, stopped by a lapsed Docker login, or answering 401 after a token rotation |
 | `ComputerCallsFailing` | 5+ computer calls answered `unavailable` in 15m | computerd answering and failing (a full disk, an OS error) keeps `nora_computer_up` at 1 |
 | `ComputerAuditFailing` | any computer audit write failing, by stage | `nora_computer_audit_failures_total` was never seen live: its series did not exist until the first failure |
+| `OrphanDeleteLost` | any `orphan_lost` outcome of `nora_delete_withdrawals_total` in 1h (a held delete whose write failed after four attempts) | a deleted message stays visible and is fed to memory if it then arrives; the loss was a counter and one log line, and a rare series is lost across restarts |
+| `OrphanDeleteEvicted` | more than 50 `orphan_evicted` in 1h (a flood of deletes of messages not on record pushing held deletes out at a cap; 50 is a pick, not a measurement) | an evicted delete whose message arrives leaves that message visible |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
 
 **What this pipeline cannot say, stated rather than discovered.** There is **no
@@ -573,6 +575,12 @@ nora's 2 to 24 daily restarts (the 2026-10-02 audit: 47 starts in 4.5 days) woul
 Read back: `ssh norty 'curl -s localhost:9100/metrics | grep ^nora_computer_'` shows
 `nora_computer_up` (1 when healthy) and the zero-valued counters; with the computer
 off it shows neither.
+
+**The delete counters are created at zero too** (`nora.app.delete_withdrawal.prime_delete_metrics`,
+PR #711): `orphan_lost` and `orphan_evicted` of `nora_delete_withdrawals_total`, for each of the four
+platforms, for the same `increase()` reason as the computer counters above. The promtool cases
+(`deploy/prometheus/tests/delete-withdrawal.test.yml`) start the series absent, then at the primed zero, and
+include the unprimed case (first sample already 1) that the rule cannot see.
 
 **Thresholds are deliberately slack** (900s for platform silence, not the old
 script's 300s; a 12h repeat interval). A rule that cries wolf is a rule

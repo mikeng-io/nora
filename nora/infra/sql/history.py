@@ -131,6 +131,10 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # Before 0086 it was APPEND_ONLY, an edge written once and never changed;
     # the note, Standing and culture edges still are, in practice.
     "citation": ("id",),
+    # 0088_orphan_delete: a platform delete waiting for its message. A row is deleted
+    # when the delete is applied or purged, so the trigger keeps what was waiting at T
+    # (ids and times only, no text).
+    "orphan_delete": ("id",),
     # design/sandbox-runtime §15.2 (0082_computer_sessions): a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),

@@ -6,7 +6,9 @@
 (`messages.hidden_at`) every message `person_id` authored — never a delete —
 and cascades `unsupported` (`nora.app.withdrawal`) to whatever `note`,
 `standing` or `culture` head cites one of those messages. `unforget_person`
-clears `hidden_at`; it does NOT clear a cascade's `unsupported_at`, because
+clears `hidden_at` EXCEPT on a message a platform delete withdrew (a `message_delete`
+record names it: `kept_deleted`, reported separately); it does NOT clear a cascade's
+`unsupported_at`, because
 those two are distinct per 10 §2 rule 7's own text — "hiding" is about the
 withdrawn row itself, the cascade is about rows that only CITE it, and
 un-hiding a person's messages does not retroactively make an already-marked
@@ -86,9 +88,17 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.app.delete_withdrawal import genuine_delete_ids
 from nora.app.withdrawal import WithdrawalReport, withdraw_messages
 from nora.domain.documents import FORGET_SET_BY_PREFIX, DocumentState, DocumentStore
-from nora.infra.sql.schema import CITATION, CULTURE, EVENTS, MESSAGES, NOTE, STANDING
+from nora.infra.sql.schema import (
+    CITATION,
+    CULTURE,
+    EVENTS,
+    MESSAGES,
+    NOTE,
+    STANDING,
+)
 
 log = logging.getLogger("nora.person_forget")
 
@@ -127,6 +137,10 @@ class UnforgetReport:
     person_id: str
     applied: bool
     restored: int = 0
+    #: Hidden messages left hidden because a platform delete or unsend withdrew
+    #: them (a `message_delete` record names them): a person's change of mind
+    #: about being forgotten is not the message's author's un-deleting it.
+    kept_deleted: int = 0
 
 
 @dataclass
@@ -187,6 +201,14 @@ async def forget_person(
         return report
     if candidate_ids:
         async with engine.begin() as conn:
+            # The rows locked in id order BEFORE the update takes them: a writer citing two
+            # or more of this person's messages (`citation.lock_cited_messages`, sorted)
+            # and this multi-row hide then acquire row locks in the same order and cannot
+            # wait on each other in a cycle.
+            await conn.execute(
+                sa.select(MESSAGES.c.id).where(MESSAGES.c.id.in_(candidate_ids))
+                .order_by(MESSAGES.c.id).with_for_update()
+            )
             result = await conn.execute(
                 sa.update(MESSAGES)
                 .where(MESSAGES.c.id.in_(candidate_ids))
@@ -218,26 +240,37 @@ async def forget_person(
 async def unforget_person(
     engine: AsyncEngine, *, person_id: str, apply: bool,
 ) -> UnforgetReport:
+    """Un-hide what `forget` hid, EXCEPT a message a platform delete withdrew: that
+    one stays hidden (`kept_deleted`, counted separately, nothing else said about
+    it). A delete is the author taking the words back, which forgetting a person
+    and un-forgetting them has no say in, and `--clear-unsupported` would otherwise
+    clear the marks on everything that cited it. «A delete» is a GENUINE record
+    (`nora.app.delete_withdrawal.genuine_delete_ids`: the same authorship rule ingest
+    applies), so a revoke an admin or a forger sent before that rule existed does not
+    keep a message hidden."""
+    hidden_of_person = (
+        MESSAGES.c.person_id == person_id, MESSAGES.c.hidden_at.is_not(None),
+    )
     async with engine.connect() as conn:
-        hidden_count = (await conn.execute(
-            sa.select(sa.func.count()).select_from(MESSAGES).where(
-                MESSAGES.c.person_id == person_id,
-                MESSAGES.c.hidden_at.is_not(None),
-            )
-        )).scalar_one()
-    report = UnforgetReport(person_id=person_id, applied=apply)
+        hidden_ids = [
+            int(i) for i in (await conn.execute(
+                sa.select(MESSAGES.c.id).where(*hidden_of_person)
+            )).scalars()
+        ]
+        deleted = await genuine_delete_ids(conn, message_ids=hidden_ids)
+    restorable = [i for i in hidden_ids if i not in deleted]
+    report = UnforgetReport(
+        person_id=person_id, applied=apply, kept_deleted=len(deleted),
+    )
     if not apply:
-        report.restored = hidden_count
+        report.restored = len(restorable)
         return report
-    if not hidden_count:
+    if not restorable:
         return report
     async with engine.begin() as conn:
         result = await conn.execute(
             sa.update(MESSAGES)
-            .where(
-                MESSAGES.c.person_id == person_id,
-                MESSAGES.c.hidden_at.is_not(None),
-            )
+            .where(MESSAGES.c.id.in_(restorable), MESSAGES.c.hidden_at.is_not(None))
             .values(hidden_at=None)
             .returning(MESSAGES.c.id)
         )
@@ -382,6 +415,10 @@ def render_unforget(report: UnforgetReport) -> list[str]:
         f"({'APPLIED' if report.applied else 'dry run: nothing written'})",
         f"  {verb} {report.restored} message(s)",
     ]
+    if report.kept_deleted:
+        lines.append(
+            f"  {report.kept_deleted} message(s) stay hidden: a platform delete withdrew them"
+        )
     if not report.applied:
         lines.append("re-run with --apply to write")
     return lines
