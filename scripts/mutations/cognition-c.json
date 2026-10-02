@@ -170,7 +170,7 @@
  {
   "name": "M6: the session hands the store no revision id",
   "file": "nora/app/cognition_session.py",
-  "old": "prior_revision_id=None if head is None else head.revision_id,",
+  "old": "prior_revision_id=current_revision,",
   "new": "prior_revision_id=None,",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_standing_revise_against_a_stale_revision_id_is_refused_and_a_fresh_one_passes"
  },

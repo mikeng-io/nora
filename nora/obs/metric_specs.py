@@ -2503,7 +2503,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Cognition verb calls the code refused (or could not check: an "
         "`unavailable_<reason>` rule), by verb and by the rule that refused it. "
         "The rule is the refusal reason the model was told, a code constant "
-        "(`stale_base`, `room_daily_cap`, `daily_cap`, a note-body rule, ...). "
+        "(`stale_base`, `duplicate_title`, `pending_ceiling`, `past`, `daily_cap` "
+        "of a self-wake, a note-body rule, ...). A note head that moved reads to the "
+        "model as `unavailable` and counts as `unavailable_stale_head`. "
         "Counted at the verb, so an early return cannot refuse unseen.",
         ("verb", "rule"),
     ),

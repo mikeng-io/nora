@@ -15,6 +15,16 @@ dry run.
 the work). `wake_at`'s text said «too many pending or too many today» and a
 refusal said how many.
 
+**What «no number» means here, exactly.** The checks THIS catalogue owns (`remind`'s
+past, too_soon, too_far and pending_ceiling; `wake_at`'s daily_cap, too_many_pending
+and horizons) state no digit at all (`test_the_remind_and_wake_refusals_carry_no_digit`).
+Elsewhere a digit is allowed only where it is the LIVE verb's own validator wording,
+which this path shares: a field's length limit («at most 60 characters», Standing's
+4000-character ceiling), or an echo of what the model passed. Those are schema facts
+the model must be able to meet, not caps on its work; `_ALLOWED_DIGITS` is the whole
+list, and a result with any other digit fails
+(`test_the_only_numbers_a_result_carries_...`, which runs the oversize refusals).
+
 **What is scanned** (every string the model can read that this catalogue owns):
 the assembled instruction (`DreamerInstructions.for_objective("cognition")`), the
 prompt the session renders, every verb's description and parameter descriptions as
@@ -203,6 +213,8 @@ async def _results() -> list[Any]:
             event_id="nope", status="confirmed", reasoning="told", confidence="high",
             cited_ids=["101"]))
         out.append(await by["standing_revise"](where_it_stands=""))
+        out.append(await by["standing_revise"](where_it_stands="x" * 9000))     # oversize
+        out.append(await by["note_create"](**{**NOTE, "title": "t" * 400}, body=GOOD_BODY))
         out.append(await by["standing_revise"](where_it_stands="fine"))
         out.append(await by["wake_at"](subject_rows=[], at=at, why="x"))
         out.append(await by["wake_at"](subject_rows=["event:1"], at=iso(NOW + 1_000), why="x"))
@@ -415,3 +427,56 @@ def test_no_refusal_detail_the_pure_checks_can_produce_names_the_mode_or_a_cap()
     assert len(details) == 26 and all(details)
     for detail in details:
         assert findings(detail) == [], detail
+
+
+#: Digits a refusal may carry. This is the precise claim, and it is narrower than «no
+#: number anywhere»: a number IS allowed where the live verb's own validator says it (a
+#: field's length limit, «at most 60 characters», which is a schema fact the model must
+#: be able to satisfy, not a cap on its work, and which the live path shares), where the
+#: refusal ECHOES an argument the model passed (the item index it named, a message id it
+#: cited, a length it overran, the format example of a time), and nowhere else. A count of
+#: pending rows, a duration, a horizon or a daily ceiling is never allowed (`LIMIT`, and
+#: the no-digit check below).
+_ALLOWED_DIGITS = re.compile(
+    r"\b\d+[- ]characters?|\b\d+ is not an item|2026-10-03T19:40\+08:00|cites \[\d+\]|\(got \d+\)",
+)
+
+
+async def test_the_only_numbers_a_result_carries_are_a_validators_length_limit_or_an_echo():
+    results = await _results()
+    oversize = [r for r in results if "characters" in str(r.get("detail"))]
+    assert oversize, "the Standing and note oversize refusals were not exercised"
+    for result in results:
+        detail = str(result.get("detail") or "")
+        assert not re.search(r"\d", _ALLOWED_DIGITS.sub("", detail)), result
+
+
+def test_the_remind_and_wake_refusals_carry_no_digit_at_all():
+    """The pure checks' details (`remind` past, too_soon, too_far, pending_ceiling;
+    `wake_at` daily_cap, too_many_pending, horizons) state no number whatever: these
+    are the caps and the limits the design keeps in code."""
+    from nora.domain.cognition_pace import check_wake_at
+    from nora.domain.cognition_remind import RemindContext, check_remind
+    ctxs = [
+        RemindContext(now_ms=NOW, at_ms=NOW - 1, min_lead_seconds=120, max_horizon_days=365),
+        RemindContext(now_ms=NOW, at_ms=NOW + 1, min_lead_seconds=120, max_horizon_days=365),
+        RemindContext(now_ms=NOW, at_ms=NOW + 9999 * 86_400_000, min_lead_seconds=1,
+                      max_horizon_days=365),
+        RemindContext(max_pending=7, live_pending=7),
+    ]
+    details = [
+        check_remind(subject_rows=["a"], intent="tell", platform="s", conversation_id="c",
+                     pending=(), context=c).detail    # type: ignore[union-attr]
+        for c in ctxs
+    ]
+    wake = [
+        check_wake_at(subject_rows=["a"], at_ms=NOW + 3_600_000, now_ms=NOW,
+                      cooldown_seconds=300, pending=(), created_today=99,
+                      max_self_wakes_per_day=12)[0],
+        check_wake_at(subject_rows=["a"], at_ms=NOW + 99 * 86_400_000, now_ms=NOW,
+                      cooldown_seconds=300, pending=())[0],
+    ]
+    details += [w.detail for w in wake if w is not None]
+    assert len(details) == 6
+    assert not any(re.search(r"\d", d) for d in details), details
+    assert not any(MODE.search(d) for d in details), details

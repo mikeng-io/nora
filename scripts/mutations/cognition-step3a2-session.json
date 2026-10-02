@@ -121,7 +121,7 @@
  {
   "name": "cognition_dry_run: event_propose actually refuses two-or-more still-open proposed events",
   "file": "nora/agent/cognition_dry_run.py",
-  "old": "    if len(still_open) >= 2:\n        return await refuse(\n            \"ambiguous_open_gatherings\",",
+  "old": "    if len(still_open) + len(own_open) >= 2:\n        return await refuse(\n            \"ambiguous_open_gatherings\",",
   "new": "    if False:\n        return await refuse(\n            \"ambiguous_open_gatherings\",",
   "target": "tests/unit/test_cognition_dry_run.py -k test_event_propose_refuses_two_open_proposed_events_the_same_way_the_live_verb_does"
  },

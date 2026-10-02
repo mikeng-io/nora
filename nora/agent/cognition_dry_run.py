@@ -299,7 +299,8 @@ async def dry_run_event_propose(
     platform: str, conversation_id: str, now_ms: int, shown: Shown,
     reasoning: str, confidence: str, cited_ids: Sequence[str],
     build: type[Gathering] = Gathering, open_proposed_events: Sequence[Gathering] = (),
-    now: datetime | None = None, **event_kwargs: object,
+    now: datetime | None = None, session_proposed: Sequence[datetime | None] = (),
+    **event_kwargs: object,
 ) -> WouldWrite:
     """`event_propose` in shadow. `event_kwargs` are `Gathering`'s own
     constructor arguments (`id`, `title`, `created_by`, `when`, `status`,
@@ -321,6 +322,9 @@ async def dry_run_event_propose(
     every reader render it as a question (`nora.domain.gatherings.render_field`)
     and what no later assent changes: only a write that restates the field, on
     its own citations, can.
+
+    `session_proposed`: the `when` of each `proposed` event THIS session already
+    would have created in the room, which the live store would hold by now.
 
     `open_proposed_events` (review follow-up on #625's step 3a-i): the
     conversation's already-`PROPOSED` events, READ-ONLY input the caller
@@ -346,10 +350,13 @@ async def dry_run_event_propose(
 
     clock = now if now is not None else datetime.fromtimestamp(now_ms / 1000, tz=UTC)
     still_open = still_open_gatherings(open_proposed_events, now=clock)
-    if len(still_open) >= 2:
+    # THIS session's own earlier proposals (`when` per proposal, None: no time yet)
+    # are open events the live store would hold, counted by the same rule.
+    own_open = [w for w in session_proposed if w is None or w >= clock]
+    if len(still_open) + len(own_open) >= 2:
         return await refuse(
             "ambiguous_open_gatherings",
-            f"{len(still_open)} open proposed events for {conversation_id}",
+            f"{len(still_open) + len(own_open)} open proposed events for {conversation_id}",
         )
     if event_kwargs.get("status") not in (GatheringStatus.STAGED, GatheringStatus.PROPOSED):
         return await refuse("bad_status", "an event is proposed or staged, nothing later")

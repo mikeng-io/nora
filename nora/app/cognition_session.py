@@ -160,6 +160,18 @@ SESSION_VERB_NAMES: frozenset[str] = frozenset({
 
 _DAY_MS = 24 * 3600 * 1000
 _PACE_VERBS = frozenset({"wake_at", "wake_move", "wake_cancel"})
+#: What a verb that only writes the dry-run ledger says when its store or a read it
+#: needed failed: true, because the ledger row is the whole write.
+_NOT_WRITTEN = (
+    "I couldn't do that just now, so nothing was written. Leave it for the next pass."
+)
+#: What a PACE verb says. It changes a real `self` stimulus as well as the ledger, so a
+#: failure part-way may have taken effect: «nothing was written» would be false, and a
+#: retry on that word would stand a second wake beside the first.
+_PACE_UNFINISHED = (
+    "I couldn't finish that just now, so it may or may not have taken effect: don't "
+    "assume either, and don't set it again."
+)
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -388,6 +400,11 @@ class _RunState:
     created_titles: list[str] = field(default_factory=list)
     revised_notes: set[tuple[str, str]] = field(default_factory=set)
     event_overlay: dict[str, tuple[GatheringStatus | None, Any]] = field(default_factory=dict)
+    #: Per room: when each `proposed` event this session would have created is for
+    #: (None: no time yet), so the open-proposals backstop counts them; and the
+    #: revision id a room's Standing would be at after this session's own write.
+    proposed_whens: dict[str, list[datetime | None]] = field(default_factory=dict)
+    standing_overlay: dict[str, str] = field(default_factory=dict)
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
@@ -690,8 +707,16 @@ class CognitionSessionRunner:
         return self.on_wake
 
     def _inc(self, name: str, value: float = 1.0, **labels: str) -> None:
-        if self._metrics is not None:
+        """Count, and NEVER raise: it runs after writes have landed (a self-wake
+        stands, a ledger row is recorded), and a counter that fails (`Metrics.inc`
+        raises on an undeclared name) must not turn a landed write into an error the
+        model would answer by writing it again."""
+        if self._metrics is None:
+            return
+        try:
             self._metrics.inc(name, value, **labels)
+        except Exception:
+            log.exception("could not count %s", name)
 
     def _counted(self, verb: str, call: Any) -> Any:
         """A verb whose every refusal is counted by rule
@@ -715,8 +740,7 @@ class CognitionSessionRunner:
                 self._inc("nora_errors_total", stage="cognition_session")
                 result = {
                     "status": "unavailable", "reason": "error",
-                    "detail": "I couldn't do that just now, so nothing was written. "
-                              "Leave it for the next pass.",
+                    "detail": _PACE_UNFINISHED if verb in _PACE_VERBS else _NOT_WRITTEN,
                 }
             status = result.get("status")
             if status in ("refused", "unavailable"):
@@ -1354,8 +1378,9 @@ class CognitionSessionRunner:
             `waiting`, comes back on the next agenda with a strike, and code
             closes it for good after a few.
 
-            Returns `status`: ok or refused, with a `reason` when refused
-            (`written` with no write of yours for that item is refused).
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok (`written` with no write of yours for that
+            item is refused).
 
             Args:
                 item_index: The item's number in the agenda.
@@ -1413,8 +1438,8 @@ class CognitionSessionRunner:
             it) and an anchor (`anchor_date`, `anchor_entities` or both), or it
             is refused.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 title: A short handle, at most 60 characters, that names the
@@ -1457,17 +1482,23 @@ class CognitionSessionRunner:
                 return shown
             # The unit's open titles AND the ones this session already created: the
             # live store would hold the first when the second is written.
-            open_titles = (*await self._open_note_titles(unit), *state.created_titles)
-            write = await dry_run_note_create(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id,
-                open_titles=open_titles, now_ms=now_ms, established_by=established_by,
-                shown=shown, title=title, description=description,
-                uncertainty=uncertainty, closing_condition=closing_condition, body=body,
-                anchor_date=anchor_day, anchor_entity_ids=tuple(anchor_entities or ()),
-            )
-            if write.outcome == "would_commit":
-                state.created_titles.append(title)
+            # UNDER THE UNIT'S LOCK, with the check and the record on either side of
+            # the awaited write: Strands runs the tool calls of one turn concurrently,
+            # and two calls that each read the overlay before either recorded would
+            # both land.
+            async with self._lock(unit):
+                open_titles = (*await self._open_note_titles(unit), *state.created_titles)
+                write = await dry_run_note_create(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id,
+                    open_titles=open_titles, now_ms=now_ms, established_by=established_by,
+                    shown=shown, title=title, description=description,
+                    uncertainty=uncertainty, closing_condition=closing_condition,
+                    body=body, anchor_date=anchor_day,
+                    anchor_entity_ids=tuple(anchor_entities or ()),
+                )
+                if write.outcome == "would_commit":
+                    state.created_titles.append(title)
             return wrote(platform, conversation_id, write, item)
 
         async def note_update(
@@ -1479,8 +1510,8 @@ class CognitionSessionRunner:
             folded in: `body` replaces the current contents, and the old
             revision is kept.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 note_id: The note's id.
@@ -1506,34 +1537,35 @@ class CognitionSessionRunner:
             shown = await shown_for(platform, conversation_id, body)
             if isinstance(shown, dict):
                 return shown
-            head: NoteHead | None
-            if (note_id, parent_revision_id) in state.revised_notes:
-                # This session already revised the note against that head: the live
-                # store would hold a newer one now, so it is stale. (This session's
-                # reads never show its own write, which is the measurement.)
-                head = NoteHead(head_revision_id="")
-            elif self._note_head is None:
-                # Unwired (a test): the check is left out, never guessed.
-                head = NoteHead(head_revision_id=parent_revision_id)
-            else:
-                try:
-                    head = await self._note_head(unit, note_id)
-                except Exception:
-                    log.exception("cognition note_update could not read the note's head")
-                    return {
-                        "status": "unavailable", "reason": "note_head",
-                        "detail": "the note could not be read, so whether this revision "
-                                  "still fits it cannot be checked; say so and try again later",
-                    }
-            write = await dry_run_note_update(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id, now_ms=now_ms,
-                established_by=established_by, shown=shown, note_id=note_id, body=body,
-                parent_revision_id=parent_revision_id, head=head,
-                entity_ids=tuple(entity_ids or ()),
-            )
-            if write.outcome == "would_commit":
-                state.revised_notes.add((note_id, parent_revision_id))
+            async with self._lock(unit):
+                head: NoteHead | None
+                if (note_id, parent_revision_id) in state.revised_notes:
+                    # This session already revised the note against that head: the live
+                    # store would hold a newer one now, so it is stale. (This session's
+                    # reads never show its own write, which is the measurement.)
+                    head = NoteHead(head_revision_id="")
+                elif self._note_head is None:
+                    # Unwired (a test): the check is left out, never guessed.
+                    head = NoteHead(head_revision_id=parent_revision_id)
+                else:
+                    try:
+                        head = await self._note_head(unit, note_id)
+                    except Exception:
+                        log.exception("cognition note_update could not read the note's head")
+                        return {
+                            "status": "unavailable", "reason": "note_head",
+                            "detail": "the note could not be read, so whether this revision "
+                                      "still fits it cannot be checked; say so and try again later",
+                        }
+                write = await dry_run_note_update(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id, now_ms=now_ms,
+                    established_by=established_by, shown=shown, note_id=note_id, body=body,
+                    parent_revision_id=parent_revision_id, head=head,
+                    entity_ids=tuple(entity_ids or ()),
+                )
+                if write.outcome == "would_commit":
+                    state.revised_notes.add((note_id, parent_revision_id))
             if write.refusal_reason in ("stale_base", "note_retired"):
                 # The live verb reports a head that moved (or a note retired under
                 # it) as `unavailable`, never `refused` (`StaleNoteHeadError`):
@@ -1564,8 +1596,8 @@ class CognitionSessionRunner:
             abduced and is put to the room as a question, and a yes to it later
             does not make it told.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 title: What the gathering is, in their words.
@@ -1601,23 +1633,33 @@ class CognitionSessionRunner:
             if isinstance(shown, dict):
                 return shown
             created = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
-            # The backstop counts PROPOSED events only: a staged one is a guess
-            # and a confirmed one is settled, neither is a second open proposal.
-            proposed = [
-                e for e in await self._open_events(unit, conversation_id)
-                if e.status is GatheringStatus.PROPOSED
-            ]
-            write = await dry_run_event_propose(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id, now_ms=now_ms,
-                shown=shown, reasoning=reasoning, confidence=confidence,
-                cited_ids=cited_ids, open_proposed_events=tuple(proposed),
-                id=uuid.uuid4(), title=title, created_by=established_by, when=due,
-                venue_text=venue_text or None, venue_place_id=None, venue_name=None,
-                venue_address=None, venue_rating=None, venue_price_level="",
-                venue_maps_url=None, venue_resolved_at=None,
-                status=GatheringStatus(status), reminder_id=None, created_at=created,
-            )
+            room_key = _room_key(Room(platform, conversation_id))
+            async with self._lock(unit):
+                # The backstop counts PROPOSED events only: a staged one is a guess
+                # and a confirmed one is settled, neither is a second open proposal.
+                # THIS session's own earlier proposals count too (`session_proposed`):
+                # the live store would hold them.
+                proposed = [
+                    e for e in await self._open_events(unit, conversation_id)
+                    if e.status is GatheringStatus.PROPOSED
+                ]
+                write = await dry_run_event_propose(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id, now_ms=now_ms,
+                    shown=shown, reasoning=reasoning, confidence=confidence,
+                    cited_ids=cited_ids, open_proposed_events=tuple(proposed),
+                    session_proposed=tuple(state.proposed_whens.get(room_key, ())),
+                    id=uuid.uuid4(), title=title, created_by=established_by, when=due,
+                    venue_text=venue_text or None, venue_place_id=None, venue_name=None,
+                    venue_address=None, venue_rating=None, venue_price_level="",
+                    venue_maps_url=None, venue_resolved_at=None,
+                    status=GatheringStatus(status), reminder_id=None, created_at=created,
+                )
+                if (
+                    write.outcome == "would_commit"
+                    and GatheringStatus(status) is GatheringStatus.PROPOSED
+                ):
+                    state.proposed_whens.setdefault(room_key, []).append(due)
             return wrote(platform, conversation_id, write, item)
 
         async def _current_event(
@@ -1665,8 +1707,8 @@ class CognitionSessionRunner:
             reasoning: if the time and the place rest on different evidence,
             make two writes.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 event_id: The event's id.
@@ -1708,15 +1750,16 @@ class CognitionSessionRunner:
             shown = await shown_for(platform, conversation_id, "")
             if isinstance(shown, dict):
                 return shown
-            current = _overlaid(await _current_event(conversation_id, event_id), event_id)
-            write = await dry_run_event_revise(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id, current=current,
-                base_revision_id=base_revision_id or None, now_ms=now_ms, shown=shown,
-                reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
-                **changes,
-            )
-            _moved(write, event_id, None)
+            async with self._lock(unit):
+                current = _overlaid(await _current_event(conversation_id, event_id), event_id)
+                write = await dry_run_event_revise(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id, current=current,
+                    base_revision_id=base_revision_id or None, now_ms=now_ms, shown=shown,
+                    reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
+                    **changes,
+                )
+                _moved(write, event_id, None)
             return wrote(platform, conversation_id, write, item)
 
         async def event_set_status(
@@ -1735,8 +1778,8 @@ class CognitionSessionRunner:
             evidence is the clock. Only a status before `happened` moves: an
             event that happened, was cancelled or lapsed stays as it is.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 event_id: The event's id.
@@ -1770,14 +1813,15 @@ class CognitionSessionRunner:
             shown = await shown_for(platform, conversation_id, "")
             if isinstance(shown, dict):
                 return shown
-            current = _overlaid(await _current_event(conversation_id, event_id), event_id)
-            write = await dry_run_event_set_status(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id, current=current,
-                status=parsed, base_revision_id=base_revision_id or None, now_ms=now_ms,
-                shown=shown, reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
-            )
-            _moved(write, event_id, parsed)
+            async with self._lock(unit):
+                current = _overlaid(await _current_event(conversation_id, event_id), event_id)
+                write = await dry_run_event_set_status(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id, current=current,
+                    status=parsed, base_revision_id=base_revision_id or None, now_ms=now_ms,
+                    shown=shown, reasoning=reasoning, confidence=confidence, cited_ids=cited_ids,
+                )
+                _moved(write, event_id, parsed)
             return wrote(platform, conversation_id, write, item)
 
         async def standing_revise(
@@ -1789,8 +1833,8 @@ class CognitionSessionRunner:
             when what a room has settled, or is holding open, has changed. Give
             the whole position, not a delta.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 where_it_stands: The position, in a short paragraph. Required.
@@ -1812,15 +1856,25 @@ class CognitionSessionRunner:
             if isinstance(resolved, dict):
                 return resolved
             (platform, conversation_id), item = resolved
-            head = await self._prior_standing(platform, conversation_id)
-            write = await dry_run_standing_revise(
-                ledger=self._store, session_id=state.session_id, unit=unit,
-                platform=platform, conversation_id=conversation_id,
-                prior=None if head is None else head.standing,
-                prior_revision_id=None if head is None else head.revision_id,
-                where_it_stands=where_it_stands, hold_open=hold_open, i_owe=i_owe,
-                mode=mode, base_revision_id=base_revision_id, now_ms=now_ms,
-            )
+            standing_key = _room_key(Room(platform, conversation_id))
+            async with self._lock(unit):
+                head = await self._prior_standing(platform, conversation_id)
+                # The revision the live store would hold NOW: this session's own
+                # earlier write moved it, so a second write on the base the first
+                # used is stale (the session's reads never show its own write).
+                current_revision = state.standing_overlay.get(
+                    standing_key, None if head is None else head.revision_id,
+                )
+                write = await dry_run_standing_revise(
+                    ledger=self._store, session_id=state.session_id, unit=unit,
+                    platform=platform, conversation_id=conversation_id,
+                    prior=None if head is None else head.standing,
+                    prior_revision_id=current_revision,
+                    where_it_stands=where_it_stands, hold_open=hold_open, i_owe=i_owe,
+                    mode=mode, base_revision_id=base_revision_id, now_ms=now_ms,
+                )
+                if write.outcome == "would_commit":
+                    state.standing_overlay[standing_key] = uuid.uuid4().hex
             return wrote(platform, conversation_id, write, item)
 
         async def wake_at(
@@ -1832,8 +1886,8 @@ class CognitionSessionRunner:
             sent: it only wakes you. A new one that shares a subject row with a
             pending one replaces it.
 
-            Returns `status`: ok (with the `wake_id` to move or cancel it) or
-            refused, with a `reason` and `detail` when refused.
+            Returns `status`: ok (with the `wake_id` to move or cancel it), refused
+            or unavailable, with a `reason` and `detail` when it is not ok.
 
             Args:
                 subject_rows: The rows to look at again, at least one.
@@ -1867,8 +1921,8 @@ class CognitionSessionRunner:
             """Move a self-wake you set to a new time. Call this when the time
             you chose no longer fits. The old time no longer wakes you.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 wake_id: The id `wake_at` returned.
@@ -1895,8 +1949,8 @@ class CognitionSessionRunner:
             """Cancel a self-wake you set. Call this when there is no longer
             anything to look at. It will not wake you.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 wake_id: The id `wake_at` returned.
@@ -1922,8 +1976,8 @@ class CognitionSessionRunner:
             asks it something. Call this when a room should hear from you and
             not before.
 
-            Returns `status`: ok (with the `reminder_id`) or refused, with a
-            `reason` and `detail` when refused.
+            Returns `status`: ok (with the `reminder_id`), refused or
+            unavailable, with a `reason` and `detail` when it is not ok.
 
             Args:
                 intent: `tell` to say something, `ask` to ask something.
@@ -1970,8 +2024,8 @@ class CognitionSessionRunner:
             """Move a reminder you set to a new time. Call this when the time
             you chose no longer fits. Only your own.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -2001,8 +2055,8 @@ class CognitionSessionRunner:
             """Cancel a reminder you set. Call this when the room no longer
             needs to hear it. Only your own.
 
-            Returns `status`: ok or refused, with a `reason` and `detail` when
-            refused.
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -2053,6 +2107,9 @@ class CognitionSessionRunner:
             True if self._room_proactive is None
             else self._room_proactive(platform, conversation_id)
         )
+        # The mirrored reminders the check adds are THIS unit's; the live ceiling counts
+        # per requester (Nora's one id), so across several units the shadow can
+        # undercount by the other units' mirrored reminders. Stated, not changed.
         live_pending = 0
         if self._requester_pending is not None:
             live_pending = await self._requester_pending()

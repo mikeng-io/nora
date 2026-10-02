@@ -400,3 +400,50 @@ def test_the_report_says_what_matched_means_and_that_a_say_so_is_not_evidence():
     assert "no skills injected in 4 of 4 session(s)" in text
     assert "2 of 6 wake(s) never became a session (1 of those failed)" in text
     assert "2.0 per day over 2.0 day(s)" in text
+
+
+# ---- the act tier: a close explains a row only by naming it, and proves nothing -----------
+
+def _act(note_id="n1", at=100):
+    live = ProactiveAct(
+        reminder_id=f"p-{note_id}", platform="signal", conversation_id="r", note_id=note_id,
+        at_ms=at,
+    )
+    return CompareResult(matched=(), cognition_only=(), proactive_only=(live,))
+
+
+def test_a_self_attested_close_on_a_proactive_row_is_never_closed_by_code():
+    """The act tier has no would-write to back a `covered` close (cognition's act is a
+    mirrored `remind`, not a would-write), so nothing there is provable today: a close
+    that explains the row is the model's word, counted self-attested and left open."""
+    for reason in ("no_change", "waiting", "covered"):
+        result = act_tier(
+            "act", _act(),
+            closes=[Close(session_id=1, room="r", reason=reason, at_ms=110, kind="message",
+                          cited=frozenset({"n1"}))],
+            tolerance_ms=50,
+        )
+        w = result.writers[0]
+        (gap,) = w.clocked_only
+        assert (gap.closed_by, gap.closed_by_code) == (reason, False), reason
+        assert (w.closed, w.closed_self_attested, w.open) == (0, 1, 1), reason
+
+
+def test_a_close_that_names_no_id_does_not_explain_a_proactive_row_that_has_one():
+    result = act_tier(
+        "act", _act(),
+        closes=[Close(session_id=1, room="r", reason="no_change", at_ms=110, kind="message")],
+        tolerance_ms=50,
+    )
+    (gap,) = result.writers[0].clocked_only
+    assert gap.closed_by is None and result.writers[0].closed_self_attested == 0
+
+
+def test_a_close_that_names_another_note_does_not_explain_a_proactive_row():
+    result = act_tier(
+        "act", _act(),
+        closes=[Close(session_id=1, room="r", reason="no_change", at_ms=110, kind="message",
+                      cited=frozenset({"n2"}))],
+        tolerance_ms=50,
+    )
+    assert result.writers[0].clocked_only[0].closed_by is None
