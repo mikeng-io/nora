@@ -72,15 +72,6 @@ CONVERTED = {
         "`render_elements`",
 }
 
-#: **Transcript builders still on `render_rows`** — the census this gate was
-#: opened with, at `08d369b1`. Each entry is one `xfail` below, so converting a
-#: builder turns a NAMED row green and forgetting to delete its line here turns
-#: the same row red (`strict=True`). The list is the scope of issue #292; an
-#: empty dict is the finish line.
-#:
-#: Ordered by blast radius, lightest first — the order the conversion lands in.
-UNCONVERTED: dict[str, str] = {}
-
 #: Modules that call a row renderer and are NOT rendering a transcript. The
 #: direction matters, exactly as it does in `test_media_join_reaches_every_
 #: transcript`: listing the builders alone catches a rename and misses a
@@ -141,6 +132,21 @@ def _calls(rel: str) -> dict[str, list[ast.Call]]:
     return found
 
 
+def _row_renderers_called(tree: ast.Module) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for n in ast.walk(tree):
+        if (
+            isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id in _RENDERERS
+        ):
+            out[n.func.id] = out.get(n.func.id, 0) + 1
+    return out
+
+
+def _unclassified(discovered: set[str]) -> set[str]:
+    return discovered - set(_CLASSIFIED)
+
+
 def _discovered() -> set[str]:
     """Every module under `nora/` that calls a row renderer.
 
@@ -166,7 +172,7 @@ def _discovered() -> set[str]:
     return out
 
 
-_CLASSIFIED = {**CONVERTED, **UNCONVERTED, **_NOT_A_TRANSCRIPT, **_OPERATOR_SURFACE}
+_CLASSIFIED = {**CONVERTED, **_NOT_A_TRANSCRIPT, **_OPERATOR_SURFACE}
 
 
 def test_every_row_renderer_caller_is_classified():
@@ -176,12 +182,13 @@ def test_every_row_renderer_caller_is_classified():
     classified. Nothing else in this file can notice one that was never listed.
     """
     discovered = _discovered()
-    unclassified = discovered - set(_CLASSIFIED)
+    unclassified = _unclassified(discovered)
     assert not unclassified, (
         f"{sorted(unclassified)} render rows and are classified nowhere. "
-        "Add each to CONVERTED (it uses render_messages), UNCONVERTED (it is a "
-        "transcript still on render_rows — see #292), _NOT_A_TRANSCRIPT, or "
-        "_OPERATOR_SURFACE, with a reason."
+        "Convert it (render_messages, then add it to CONVERTED), or, if it "
+        "renders no transcript, add it to _NOT_A_TRANSCRIPT or "
+        "_OPERATOR_SURFACE with a reason. There is no list of transcript "
+        "builders still on render_rows."
     )
     stale = set(_CLASSIFIED) - discovered
     assert not stale, (
@@ -192,11 +199,11 @@ def test_every_row_renderer_caller_is_classified():
 
 
 def test_no_module_is_classified_twice():
-    """Four dicts, one home each. Two entries for one module means one of them
+    """Three dicts, one home each. Two entries for one module means one of them
     is being silently ignored by `_CLASSIFIED`'s merge."""
     seen: dict[str, list[str]] = {}
     for label, group in (
-        ("CONVERTED", CONVERTED), ("UNCONVERTED", UNCONVERTED),
+        ("CONVERTED", CONVERTED),
         ("_NOT_A_TRANSCRIPT", _NOT_A_TRANSCRIPT),
         ("_OPERATOR_SURFACE", _OPERATOR_SURFACE),
     ):
@@ -219,25 +226,14 @@ def test_a_converted_builder_renders_messages_and_not_rows(rel: str):
     )
 
 
-@pytest.mark.parametrize("rel", sorted(UNCONVERTED))
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue #292: #220's transcript renderer reached one builder of six",
-)
-def test_every_transcript_builder_renders_messages(rel: str):
-    """THE GATE. One renderer for every transcript a model reads.
-
-    Each `xfail` here is one row of #292's census. Converting a builder turns
-    its own row green; `strict=True` means converting one and forgetting to
-    move it out of `UNCONVERTED` turns that row red instead of passing
-    silently, which is the half a non-strict xfail gets wrong.
-    """
-    calls = _calls(rel)
-    assert "render_rows" not in calls, (
-        f"{rel} still renders its transcript with render_rows, which collapses "
-        "every body to one line before a model reads it"
-    )
-    assert any(r in calls for r in _ELEMENT_RENDERERS)
+def test_a_transcript_builder_on_render_rows_is_caught():
+    """Positive control, through the same two functions the gate uses: a
+    synthetic module that renders a transcript with `render_rows` is
+    discovered and classified nowhere, so the census test fails on it."""
+    offender = ast.parse("def build(rows):\n    return render_rows(rows)\n")
+    assert _row_renderers_called(offender) == {"render_rows": 1}
+    assert _unclassified({"nora/scratch.py"}) == {"nora/scratch.py"}
+    assert _unclassified({"nora/language/culture.py"}) == set()
 
 
 @pytest.mark.parametrize("rel", sorted(_OPERATOR_SURFACE))

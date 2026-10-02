@@ -70,20 +70,6 @@
     "target": "tests/architecture/test_every_block_declares_its_type.py"
   },
   {
-    "name": "4c: the ledger's ceiling is raised again, which a paid debt may not be",
-    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
-    "old": "CEILING = 0\n",
-    "new": "CEILING = 1\n",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_ledger_is_exactly_the_size_it_says"
-  },
-  {
-    "name": "4c: the summarize path is recorded as a hand-built debt again",
-    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
-    "old": "KNOWN_HAND_BUILT: dict[str, str] = {}\n",
-    "new": "KNOWN_HAND_BUILT: dict[str, str] = {\"nora/infra/vision/comprehend.py\": \"summarize sends a voice note transcript or a video chunk text as a raw second user message with no framing at all\"}\n",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger"
-  },
-  {
     "name": "4c review: the speaker strip drops `[` only",
     "file": "nora/domain/blocks.py",
     "old": "_ASCII_DELIMITERS = \"[]:\"",
