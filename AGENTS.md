@@ -90,6 +90,61 @@ budget blown = FAIL; timeout = ERROR ≠ PASS), serialize a verdict bound to its
 Langfuse trace. Same three verbs, same mindset — that is how a new capability's
 evaluation reuses this framework instead of growing a bespoke one.
 
+## Build the least that works
+
+Nora is a private, experimental project among friends, not a production
+service. It must stay maintainable (clear code, a green gate, true docs, one
+deploy path); it does not need production ceremony. Distilled from
+[ponytail](https://github.com/DietrichGebert/ponytail) (MIT), and active on
+every task: writing, fixing, reviewing, designing.
+
+**Read first, then climb the ladder and stop at the first rung that holds.**
+Trace the real flow end to end before choosing; the ladder shortens the
+solution, never the reading.
+
+1. **Does it need to exist at all?** A speculative need is skipped, in one line.
+2. **Already in this codebase?** Reuse the helper, store, verb or pattern a few
+   files over. Re-implementing it is the most common slop.
+3. **Stdlib, a Postgres constraint, or an installed dependency does it?** Use
+   it. Never add a dependency for what a few lines can do.
+4. **One line?** One line.
+5. **Only then** the minimum code that works.
+
+**A guard needs a consequence.** Before writing a validator, cascade, cap,
+alert, ledger, switch or review round, name the harm it prevents and show it
+can happen: a live count, an incident, or a real trust boundary (an identifier
+or coordinate egressing, a room reading another room, a credential). Then check
+that the store that matters honours it. If the harm has never happened and
+nothing breaks without the guard, leave it out and note the ceiling in one
+line. 2026-10-03: two days built delete-withdrawal cascades, lineage, a shadow
+compare and a live ledger around a loop that had never written a row. Live
+there had been 2 deletes ever, and Honcho keeps the deleted text anyway: it
+has no per-message delete.
+
+- **Ship the feature, then harden what breaks.** Undo is a config flip and a
+  restart, or a database backup, not revert, pause or ledger machinery.
+- **One integrated change from one spec**, measured once by snapshot replay.
+  No piecewise PRs with nothing measured between them, and no shadow week at
+  this volume.
+- **No unrequested abstraction**: no port with one implementation and no
+  reason, no config for a value that never changes, no scaffolding "for later".
+- **Deletion over addition; fewest files; shortest working diff**, but only in
+  the right place. A bug fix goes where every caller routes through, not in
+  the one path the report names.
+- **A deliberate corner gets a `# ponytail:` comment** naming its ceiling and
+  the upgrade path (`# ponytail: one global lock; per-unit locks if sessions
+  contend`).
+- **One check, not a suite.** Non-trivial logic leaves the smallest test that
+  fails if it breaks. A mutation table, a second review round or a strongest-
+  tier reviewer is spent only where a real failure was found.
+- **Complex ask: ship the small version and question the rest in the same
+  report.** "Did X; Y covers it. Need full X? Say so." Never stall on a choice
+  you can default.
+
+**Never simplified away:** the egress and disclosure rules (R-18, R-28, R-31),
+fail-closed measurement (R-27), error handling that would lose input, and
+anything the operator asked for explicitly.
+
 ## Skills: the procedures
 
 Each skill is a `SKILL.md` under `.agents/skills/` (the cross-tool location);
