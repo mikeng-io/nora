@@ -21,7 +21,7 @@ the "Reaching the deployment" section of `docs/CONVENTIONS.md`, and
 | changed | reaches the process through | needs |
 |---|---|---|
 | `nora/` (except doctrine, dreamer), `nora/skills`, `evals/`, `pyproject.toml`, `uv.lock` | `COPY` in the `Dockerfile` | rebuild `nora:latest`, recreate `nora presence analytics` (step 3) |
-| `nora/doctrine`, `nora/dreamer` | directory bind-mount, `reload = "mtime"` in the live config | pull only (step 4) |
+| `nora/doctrine`, `nora/dreamer` | directory bind-mount, `reload = "mtime"` in the live config | pull only (step 4), for an edit. Never for deleting or renaming a dreamer file the code maps (a skill in `AGENDA_SKILLS`, `cognition-prelude`): the running image fails at its next start or session; image and pull together |
 | `config.toml` | file mount in `nora presence analytics stt voice-wake` | host edit, recreate (step 5) |
 | `identity.toml` | file mount in `nora app presence analytics`, loaded once | host edit, recreate those |
 | `policy.toml` | file mount in `nora`, loaded once | host edit, recreate `nora` |
