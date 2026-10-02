@@ -59,7 +59,6 @@ from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, Pe
 from nora.domain.record_query import RecordQuery
 from nora.domain.standing import Standing
 from nora.domain.withdrawal import render_supported
-from nora.engagement.debrief_render import render_rollup_input
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.citation import mark_if_cites_hidden, record_citations
 from nora.infra.sql.culture import SqlCultureStore
@@ -1051,43 +1050,6 @@ async def test_deleting_a_fold_boundary_message_leaves_standing_and_culture_stan
         conversation_id=shape.room)} == {"event on s"}
 
 
-async def test_the_next_folds_input_does_not_hold_the_deleted_message(engine):
-    """The real fold input builders: the batch the Standing fold reads
-    (`since_including_nora` after its watermark) and the prompt text it renders
-    (`render_rollup_input`), with the culture head the fold reads beside it. The
-    deleted message's words are in neither; its neighbours' are."""
-    shape = SHAPES[1]
-    w = World(engine)
-    boundary = await w.audit.append(
-        message=shape.said(T0 + 100, "the boundary words", "H-B"), person_id="ada")
-    await SqlStandingStore(engine).write(standing=Standing(
-        platform=shape.platform, conversation_id=shape.room, body="the prior position",
-        fold_count=1, updated_at=T0 + 100, last_folded_row_id=boundary,
-    ))
-    await SqlCultureStore(engine).append(
-        key=shape.room, body="the prior account", written_at=T0 + 100, established_by="fold")
-    await w.run(shape.said(T0 + 200, "keepable neighbour words", "H-1"))
-    await w.run(shape.said(T0 + 300, "the unsent secret words", "H-2"))
-    await w.run(shape.said(T0 + 400, "another neighbour words", "H-3"))
-
-    await w.run(shape.deletion(T0 + 300, "H-2", at=T0 + 9000))
-
-    prior = await SqlStandingStore(engine).read(
-        platform=shape.platform, conversation_id=shape.room)
-    assert prior is not None and prior.last_folded_row_id == boundary
-    rows = await w.audit.since_including_nora(
-        conversation_id=shape.room, after_id=prior.last_folded_row_id or 0, limit=50)
-    rendered = render_rollup_input(
-        prior=prior, rows=rows, display_name="Nora", now_ms=T0 + 10_000,
-        culture=await read_culture(
-            SqlCultureStore(engine).head(key=shape.room), stage="t",
-            platform=shape.platform, metrics=None),
-    )
-    assert "unsent secret" not in rendered
-    assert "keepable neighbour" in rendered and "another neighbour" in rendered
-    assert "the prior position" in rendered and "the prior account" in rendered
-    # `render_rollup_input`'s transcript line for the deleted message is absent too.
-    assert [r.body for r in rows] == ["keepable neighbour words", "another neighbour words"]
 
 
 # =============================================================================

@@ -65,9 +65,7 @@ claim is atomic within one event loop, as the SQL one is across processes.
 `InMemoryNoteStore` is the same rule for the note tier, bound to
 `nora.infra.sql.notes.SqlNoteStore` by
 `tests/contract/test_note_store_contract.py`. It lives in its own module
-(`nora.testing.note_store`) alongside `NoteCandidate`, the dataclass shape of a
-`note_candidate` row, which the suite reads back to check the miss cache
-accumulates. Like `InMemoryStandingStore` it makes its production sibling's
+(`nora.testing.note_store`). Like `InMemoryStandingStore` it makes its production sibling's
 refusals rather than accepting everything — the compare-and-swap on a note's
 head is the one that matters: a fake that took a stale parent would turn a
 missing guarantee into a passing gate.
@@ -147,7 +145,7 @@ from nora.testing.fakes import (
     FakeVideoReadingStore,
     transcript_rows,
 )
-from nora.testing.note_store import InMemoryNoteStore, NoteCandidate
+from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.online import (
     FakeDiscordPresenceSource,
     FakeSteamPresenceProvider,
@@ -213,7 +211,6 @@ __all__ = [
     "InMemoryNoteStore",
     "InMemoryStandingStore",
     "InMemorySummonsLedger",
-    "NoteCandidate",
     "ScriptedModel",
     "ScriptedTurn",
     "group_event",

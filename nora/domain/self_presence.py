@@ -8,7 +8,7 @@ each network's transport is up, and the public handles people use for her.
 Pure data and one pure function. Reading policy and adapter health is
 `nora.engagement.self_presence.PresenceReader`'s job; rendering it is
 `nora.language.presence_render`'s. Nothing here does I/O, so the same model
-reaches the tag path, the fire path and the proactive pass unchanged.
+reaches the tag path and the fire path unchanged.
 """
 
 from __future__ import annotations
@@ -24,9 +24,10 @@ if TYPE_CHECKING:
 #: How each network is named to her. A display name, not the wire key:
 #: `signal` is a value on the wire, `Signal` is what the room calls it.
 #:
-#: Moved here from `nora.agent.prefill` (design/self-awareness/06) because the
-#: proactive pass in `nora.language` renders the same block and may not import
-#: `nora.agent`. `x` and `threads` have no adapter; they are here for the
+#: Moved here from `nora.agent.prefill` (design/self-awareness/06) because a
+#: pass in `nora.language` (the proactive pass, deleted 2026-10-03) rendered the
+#: same block and may not import `nora.agent`. `x` and `threads` have no adapter; they are here
+#: for the
 #: handle line, which names every network she has a public handle on.
 #:
 #: A network with no entry falls back to its key rather than being hidden:

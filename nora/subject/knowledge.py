@@ -58,8 +58,8 @@ class Message:
     """One prior room message.
 
     `row_id` and `at_ms` exist because some corpora CITE their own messages:
-    the note-candidates cases assert that a staged candidate's `message_ids`
-    contain a particular row. A case that says "note 101" and a store that
+    the (deleted, DEC-277) note-candidates cases asserted that a staged candidate's
+    `message_ids` contained a particular row. A case that says "note 101" and a store that
     assigns ids by insertion order are two different facts, and the second
     cannot be asserted against.
 
@@ -104,7 +104,7 @@ class Message:
     #: what matters is that `media_join.enrich` has something to join and the
     #: renderer does not drop the row as an empty body.
     #:
-    #: Restored by audit: `media: true` existed on five note-candidates rows,
+    #: Restored by audit: `media: true` existed on five note-candidates rows (deleted corpus),
     #: was dropped in the move, and the pin was GREEN over it — it compares body
     #: and id and nothing else. `n3_media_and_stickers_only` is a case named for
     #: stickers whose stickers had been removed.
@@ -198,8 +198,9 @@ class Written:
 class RoomSeed:
     """One OTHER room of the same workspace, with what it knows.
 
-    The proactive decide pass judges a WORKSPACE and picks which of its rooms to
-    stand in, so a case about it names more than one room and keys its standing
+    The proactive decide pass (deleted 2026-10-03, DEC-277) judged a WORKSPACE
+    and picked which of its rooms to stand in, so a case about it named more than one room and
+    keys its standing
     per room. A single-room `Knowledge` cannot state that, and a pass given an
     empty workspace finds nothing due, writes nothing, and answers
     `nothing_found` — which grades as a PASS for every case expecting none.
@@ -217,7 +218,7 @@ class RoomSeed:
     transcript: tuple[Message, ...] = ()
     standing: str | None = None
     #: How long ago the standing was written. It renders as an AGE, and how
-    #: stale a position is is part of what the decide pass is judging.
+    #: stale a position is was part of what the decide pass judged.
     standing_age_hours: float | None = None
 
 

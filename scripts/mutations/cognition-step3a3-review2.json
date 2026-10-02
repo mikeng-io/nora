@@ -1,12 +1,5 @@
 [
   {
-    "name": "blocker: a withdrawn note is pushed",
-    "file": "nora/app/cognition_grounding.py",
-    "old": "            if n.unsupported_at is not None:\n                continue\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_grounding.py::test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed"
-  },
-  {
     "name": "blocker: a note is pushed whatever its lineage",
     "file": "nora/app/cognition_grounding.py",
     "old": "            if applies and not all(derived_view(",

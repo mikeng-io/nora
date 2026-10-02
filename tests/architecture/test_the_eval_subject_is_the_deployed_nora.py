@@ -73,7 +73,6 @@ shadow = false
 enabled = true
 [standing]
 enabled = true
-event_enabled = true
 fold_batch = 40
 max_slot_hold_seconds = 150.0
 reasoning_effort = "none"
@@ -81,9 +80,6 @@ reasoning_effort = "none"
 enabled = true
 [notes]
 enabled = true
-candidates_enabled = true
-curator_enabled = false
-discharge_enabled = false
 [search]
 enabled = true
 [online]

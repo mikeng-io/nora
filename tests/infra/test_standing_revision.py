@@ -452,7 +452,8 @@ async def _source(engine: Any, *, conversation_id: str = CONV) -> str:
 async def test_a_fold_records_source_fold_by_default(
     store: SqlStandingStore, engine: Any
 ) -> None:
-    """The fold writers (`debrief.py`, `standing_event.py`) never pass
+    """The fold writers (`debrief.py`, and `standing_event.py` until its deletion,
+    2026-10-03) never pass
     `source` — this is the value every one of their calls produces."""
     await store.write(standing=_standing("the fold's own position"))
     assert await _source(engine) == "fold"

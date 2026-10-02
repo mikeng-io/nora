@@ -179,7 +179,7 @@ groups:
       # last_tick_seconds` is the unix time the loop last FINISHED a tick, written from
       # inside the loop, so a loop that is gone or hung in a store call stops moving it.
       # 600 s is 20 ticks (30 s each) and several times the 5 s store timeout, so a slow
-      # tick is not a stall. ABSENT while `[cognition] mode = off`: not applicable, and
+      # tick is not a stall. ABSENT while `[cognition] enabled = false`: not applicable, and
       # a rule on `time() - x` over an absent series is empty, never firing.
       - alert: CognitionWakeStalled
         expr: time() - max(nora_cognition_wake_last_tick_seconds{job="nora"}) > 600

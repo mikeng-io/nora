@@ -28,7 +28,7 @@ from typing import Any
 from strands.models.model import Model
 
 from nora.agent import factory
-from nora.agent.dreamer import AdaptorBudget, DreamerRuntime, proactive_grant
+from nora.agent.dreamer import AdaptorBudget, AdaptorGrant, DreamerRuntime
 from nora.obs.metrics import Metrics
 from tests.unit.test_dream_memory_budget import (
     ENVELOPE,
@@ -37,6 +37,11 @@ from tests.unit.test_dream_memory_budget import (
     _Models,
     _Tools,
 )
+
+
+def _REMIND_GRANT() -> AdaptorGrant:
+    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
+    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
 
 BUDGET = AdaptorBudget(
     turns=8, total_tokens=100_000, output_tokens=4_000, timeout_seconds=10.0,
@@ -120,7 +125,7 @@ async def _run(*, reasons: bool) -> tuple[_RecordingStore, Metrics]:
         retry=factory.RetryPolicy(max_attempts=1, initial_delay=0, max_delay=0),
         metrics=metrics,
         model_name="scripted",
-        grants={"proactive": proactive_grant()},
+        grants={"proactive": _REMIND_GRANT()},
         store_timeout_seconds=10.0,
         reasoning_strip_store=store,
     )

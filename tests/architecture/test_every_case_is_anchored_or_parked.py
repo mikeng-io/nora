@@ -274,9 +274,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     documents-on arm only), plus 1 for `document_set_status` (a delete whose id is
     in `<documents>` only, seeded the same way, against `document_publish`;
     documents-on arm only), plus 1 negative for it (an edit that says «remove»
-    must not reach `document_set_status`; documents-on arm only); a change to it
+    must not reach `document_set_status`; documents-on arm only), less the 40 cases of the
+    `note_candidates` and `proactive_decide` corpora (2026-10-03, DEC-277: the Dreamer passes they
+    measured are deleted with their adaptors, the cognition session owns
+    notes and reminders now); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 290
-    assert sum(c.active + c.parked for c in totals) == 290
+    assert sum(c.total for c in totals) == 250
+    assert sum(c.active + c.parked for c in totals) == 250

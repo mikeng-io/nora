@@ -154,7 +154,8 @@ class RollupConfig:
     #: backlog of any size, one event at a time, so this bounds memory, never
     #: what is computed.
     batch_limit: int
-    #: Kept so a config naming them still loads; the event fold has no batch
+    #: Kept so a config naming them still loads; the event fold (deleted 2026-10-03, DEC-277) had
+    #: no batch
     #: to widen and no backlog threshold (design 27 §1.4's batch-stall fix is
     #: subsumed: an undecided group simply stays in the window).
     backfill_batch_limit: int

@@ -25,11 +25,10 @@ before it, under `timeout_seconds`. Any failure in the stage — the write, a
 cue pattern, a policy read — is logged and counted
 (`nora_errors_total{stage="stimulus"}`) and ingest carries on: the item is
 already Record, and a missing stimulus costs lateness (the next item's wake
-covers the room), never the message. Shadow is the only consumer at step 1.
+covers the room), never the message. The Cognition session's wake evaluator is the consumer.
 
-**Off unless `[cognition] mode` is on.** `None` wiring — the default and
-every offline/eval composition — makes the stage inert, the `standing_event`
-shape.
+**Off unless `[cognition] enabled` is on.** `None` wiring — the default and
+every offline/eval composition — makes the stage inert.
 
 One public entry point: `run(...)`.
 """

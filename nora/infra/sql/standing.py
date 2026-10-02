@@ -222,9 +222,10 @@ class SqlStandingStore:
         ordering on it picks the later fold rather than the luckier uuid.
 
         **Where `fold_count` is not enough, stated rather than left to be
-        found.** It is not strictly increasing: a rollup fold carries the
-        prior's value forward unchanged (`standing_event`), rather than
-        incrementing it. (Before 2026-09-24 a rebuild also reset it to 1
+        found.** It is not strictly increasing: a rollup fold (`standing_event`, deleted
+        2026-10-03, DEC-277) carried the
+        prior's value forward unchanged, rather than incrementing it. (Before 2026-09-24 a rebuild
+        also reset it to 1
         — deleted with the ceiling trigger, design/standing-compact/.) So two
         revisions that share BOTH a millisecond and a `fold_count` are still a
         tie. `id DESC` stays on as the final key purely to make the ordering
@@ -266,7 +267,7 @@ class SqlStandingStore:
         2026-09-25): the head carries no writer-provenance column, because the
         property worth recording is who wrote each POSITION the room held,
         which is what the chain behind the head is for. All three callers —
-        `debrief.py`, `standing_event.py`, and the eval sandbox's
+        `debrief.py`, `standing_event.py` (deleted 2026-10-03), and the eval sandbox's
         `standing_fold.py` (which stamps its seeded prior `'fold'` too, since
         it is reproducing a fold that already happened) — stay on the
         default; nothing about this method's shape or its transaction

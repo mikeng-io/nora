@@ -81,7 +81,8 @@ PROACTIVE_KIND = "proactive"
 #: said now. A note may have at most ONE proactive row in them.
 OPEN_STATES: frozenset[str] = frozenset({"pending", "firing"})
 
-#: Stamped on the row a note-merge fold cancels when it resolves two notes'
+#: Stamped on the row a note-merge fold (`merge_into`, now the Cognition session's `note_merge`)
+#: cancels when it resolves two notes'
 #: open proactive rows into one (`SqlNoteStore.merge_into`, issue #158
 #: residue: `uq_reminders_proactive_open_note` keys on the RAW note id a row
 #: carries, so a merge that left both rows alone produced two rows that both

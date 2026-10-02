@@ -123,11 +123,7 @@ EXEMPT = {
 #: nothing to import; each builder must still be declared).
 RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     "nora/agent/dreamer.py": ((
-        "nora/language/proactive.py",
         "nora/language/culture.py",
-        "nora/language/note_candidates.py",
-        "nora/language/note_curator.py",
-        "nora/language/note_merge.py",
     ), "dispatched"),
     "nora/app/agent_runner.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/stages/invoke.py": (("nora/agent/prefill.py",), "dispatched"),
@@ -426,8 +422,8 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
     declared = {rel for rel, tree in modules.items() if declares_blocks(tree)}
     assert len(declared) >= 6
     adaptors = {rel for rel, tree in modules.items() if defines_inputs(tree)}
-    assert "nora/language/note_merge.py" in adaptors, (
-        "the `inputs` net must find note-merge, the adaptor that has no table"
+    assert "nora/language/culture.py" in adaptors, (
+        "the `inputs` net must find culture, the one Dreamer adaptor left"
     )
 
 

@@ -4,8 +4,8 @@
 #
 # THE QUESTION is the same as `tool_selection.yaml`'s — does she reach for
 # the right verb — over a DIFFERENT catalogue: Cognition's write, pace and
-# act verbs (`nora.agent.cognition_dry_run`, `nora.agent.cognition_pace`,
-# `nora.agent.cognition_remind_mirror`), never the tag path's own tools.
+# act verbs (`nora.agent.cognition_pace` and the session's write verbs in
+# `nora.app.cognition_session`), never the tag path's own tools.
 # Confusable pairs weighted the same way: note_create/note_update,
 # event_propose/event_revise/event_set_status, wake_at/wake_move/wake_cancel,
 # remind/remind_move/remind_cancel.
@@ -24,7 +24,7 @@
 # instruction (`nora/dreamer/objectives/cognition.md`) and the same agent
 # runner as a wake's session, on the model `[dreamer] model` names. It needs
 # the eval subject to build that runner, so the deployment's config must hold
-# `[cognition] mode = "shadow"` and `session_mode = "shadow"`; with sessions
+# `[cognition] enabled = true`; with sessions
 # off the case is an ERROR, never a pass (migration step 3a-iii). Every case
 # is anchored (no `parked:`) because the anchor itself is real and reused
 # (`tool_selection.yaml`'s own ROOM A) — what is synthetic is the AGENDA

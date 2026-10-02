@@ -9,11 +9,12 @@ read filters.
 
 ONE function, `render_supported`. Every culture head reaches a prompt through
 `nora.language.culture_render.read_culture`, which applies it, so the tag turn,
-the fire turn, proactive, note-candidates, the curator and the event fold share
-one copy. A Standing head has no shared reader (each caller bounds and counts
+the fire turn and the Cognition session share
+one copy (proactive, note-candidates, the curator and the event fold did, until
+2026-10-03, DEC-277). A Standing head has no shared reader (each caller bounds and counts
 its own read), so each applies it at its call site: the tag path
 (`nora.engagement.context`), the fire path (`nora.app.fire`), the relevance gate,
-proactive's `<rooms>` lines and the culture fold's `<standing>`. The rule lived
+the Cognition session's reads and the culture fold's `<standing>`. The rule lived
 inline in the tag path and was missing from the fire path, so a withdrawn head
 rendered in every fire turn, and from every Dreamer prompt until step 5 of
 design/context-assembly/04-every-occasion.md. Two copies of a rule drift;
@@ -21,7 +22,7 @@ design/context-assembly/04-every-occasion.md. Two copies of a rule drift;
 a head that reaches a prompt without passing through it.
 
 **The deliberate exception is a fold's OWN prior** (the culture fold's
-`previous_account`, the debrief's and the event fold's `standing_prior`): it is
+`previous_account`, the debrief's `standing_prior`): it is
 read raw so the fold sees what it wrote and can supersede it; the cascade sends a
 withdrawn row to "its writer's next session for re-derivation" (10-tiers.md §2
 rule 7), and a writer that could not see the row could not re-derive it. Each is

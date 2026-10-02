@@ -186,7 +186,7 @@ class Outcome:
     #: Empty for every entry point that writes no notes.
     changed: tuple[tuple[str, str], ...] = ()
 
-    #: Rows the pass WROTE. The proactive decide pass's entire output.
+    #: Rows the pass WROTE (the deleted proactive decide pass's entire output).
     written: int = 0
 
     #: This pass's own NEW reminder rows, as `(note_id, due_at_ms)`
@@ -250,7 +250,7 @@ class Outcome:
     #:
     #: SEPARATE from `judged`, which is a model's opinion: these are facts the
     #: corpus states and something checks — `must_cite`, `anchor_date`,
-    #: `creates`, `updates`. Eight note-candidates cases asserted all four while
+    #: `creates`, `updates`. Eight note-candidates cases (deleted, DEC-277) asserted all four while
     #: `meets` checked only "a create happened", so a case passed if the adaptor
     #: created the wrong note, cited nothing, and revised three others.
     checks_failed: tuple[str, ...] = ()
@@ -413,7 +413,8 @@ class Outcome:
             if self.absent_note_clash is not None:
                 return not self.absent_note_clash
             # BOTH, because `none` is the negative of two different positives:
-            # the note pass writing a note and the proactive pass writing a row.
+            # a pass writing a note and a pass writing a row (the deleted note and
+            # proactive passes).
             return not self.changed and self.written == 0
         return not self.said
 

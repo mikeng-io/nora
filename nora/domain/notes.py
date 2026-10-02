@@ -98,41 +98,17 @@ _MIN_ANCHOR_DATE = 1_000_00_00
 #: `default_revisit_at` so the two never disagree about what a "day" is.
 MS_PER_DAY = 86_400_000
 
-#: The merged curator's wake policy (design/dreamer-agent-loop/34 §5.3, Kimi
-#: finding M2). Module constants rather than config: `[notes]` already has
-#: `max_revisits_per_tick`/`revisit_evidence_messages` as the operator-facing
-#: knobs for the wake PASS, and these two numbers are a judgement about the
-#: SHAPE of the schedule itself — how early to check an anchored note, how
-#: long a dateless one may go untouched — which is closer to `BODY_MAX_CHARS`
-#: (a domain decision, not a deployment one) than to a per-tick cap.
+#: When a note is next due to be looked at (`default_revisit_at`): a domain
+#: decision about the schedule's shape, not a deployment knob.
 #:
-#: **`REVISIT_LEAD_DAYS = 3`**: an anchored note's first (and, absent
-#: progress, only) early-close check lands three days before its anchor. 33
-#: §1's own framing is "an arrangement spans days, not minutes" — three days
-#: is long enough that a genuinely early close (booked weeks in advance) is
-#: still caught before the anchor, and short enough that the note is not
-#: pestered while the anchor is still comfortably far off. Once the anchor
-#: itself passes, `anchored_before` selects the note regardless of
-#: `revisit_at`, so this number only governs the PRE-anchor check.
+#: **`REVISIT_LEAD_DAYS = 3`**: an anchored note's first early-close check
+#: lands three days before its anchor: early enough that a close booked weeks
+#: ahead is caught, late enough not to pester while the anchor is far off.
 REVISIT_LEAD_DAYS = 3
 
 #: **`DATELESS_REVISIT_HORIZON_DAYS = 7`**: 33/34's own worked example for an
 #: undated note's wake cadence ("+7d, capped by the strike ceiling").
 DATELESS_REVISIT_HORIZON_DAYS = 7
-
-#: **`MAX_DATELESS_STRIKES = 4`**: at the horizon above, four strikes is
-#: roughly a month (4 * 7 days) of a dateless note waking with no tag-path
-#: progress before it is ELIGIBLE for dateless retirement (spec §9.6) — long
-#: enough that an undated question ("what are we playing next") is not
-#: aged out while people are still plausibly deciding, short enough that a
-#: note nobody has touched in a month is a real candidate for the notebook
-#: only growing. **Eligibility, not action**: `WakeOutcome` reports the
-#: strike count and the CALLER decides what follows (its own docstring), and
-#: this merge's curator only counts a note crossing the ceiling
-#: (`nora_note_curator_total{action="stale"}`) rather than auto-retiring it —
-#: building the retirement policy for a note nothing has said is a
-#: discharge-pipeline decision (issue #101) this merge does not make.
-MAX_DATELESS_STRIKES = 4
 
 
 def anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
@@ -140,13 +116,13 @@ def anchor_bounds_ms(anchor_date: int) -> tuple[int, int] | None:
     `None` if the value is not a date this can read.
 
     Moved here from `nora.language.note_revisitor` in the note-curator merge
-    (design 34) — a pure function two modules need (the merged curator's
-    grounding check, and `default_revisit_at` below) belongs in the domain,
+    (design 34; the curator was deleted 2026-10-03, DEC-277) — a pure function
+    two modules need (the grounding check, and `default_revisit_at` below) belongs in the domain,
     not duplicated or imported sideways between two `nora.language` modules.
 
     Both start and end are returned, but **only the end had a reader before
-    this merge** — the curator's `default_revisit_at` is this function's
-    second caller and its first reader of the START.
+    this merge** — `default_revisit_at` is this function's second caller and
+    its first reader of the START.
 
     END of the day, not the start: a note anchored to the 15th is not stale
     at 00:00 on the 15th. Computed from the calendar rather than from a
@@ -189,21 +165,20 @@ def default_revisit_at(
     lead_days: int = REVISIT_LEAD_DAYS,
     dateless_horizon_days: int = DATELESS_REVISIT_HORIZON_DAYS,
 ) -> int:
-    """The `revisit_at` a note gets, either at CREATION (design 34 §5.3
-    resolution (c), `nora.language.note_candidates`) or after a WAKE that
-    left the note standing (`nora.language.note_curator`'s `record_wake`
-    call) — the SAME formula both callers use, so a gate-created note's first
-    wake is a normal scheduled wake rather than a strike bootstrap.
+    """The `revisit_at` a note gets at CREATION (design 34 §5.3 resolution
+    (c)): the Cognition session's `note_create` calls it. Its other callers, the
+    note-candidates gate and the note curator's `record_wake` after a WAKE that
+    left a note standing, were deleted 2026-10-03 (DEC-277); the formula was
+    one, so a created note's first wake is a normal scheduled wake rather than
+    a strike bootstrap.
 
     **Anchored**: the anchor's own day START minus `lead_days` — early enough
     to catch a note answered well before its moment, on the reasoning
     `REVISIT_LEAD_DAYS` states. Once the anchor itself has passed this value
-    is in the past too (and stays there), which is harmless: `anchored_before`
-    selects a past-anchor note unconditionally, so an already-elapsed
-    `revisit_at` on such a note changes nothing about whether it is selected,
-    only that `due_for_revisit` would ALSO select it — deduplicated by the
-    caller, exactly as a merge-group member is excluded from the expired
-    render today.
+    is in the past too (and stays there), which is harmless: the (deleted)
+    `anchored_before` selected a past-anchor note unconditionally, so an
+    already-elapsed `revisit_at` on such a note changed nothing about whether
+    it was selected.
 
     **Dateless, or an anchor this cannot read**: `now_ms` plus
     `dateless_horizon_days` — the bounded horizon 33/34 name for a note with
@@ -233,9 +208,10 @@ def note_handle(title: str) -> str:
     **It lives in the DOMAIN because there are now four readers and they must
     agree exactly** — `nora.agent.tools`' `note_read`/`note_update` resolve a
     title against the standing set, `ReplyGuard`'s R-55 latch keys on the very
-    same string, the debrief's note-read latch reads it back, and since
-    2026-09-13 `nora.language.note_candidates`' create gate resolves the title
-    the model names for an update (#228). That fourth reader is what moved it:
+    same string, the debrief's note-read latch reads it back, and, from
+    2026-09-13 until its deletion (2026-10-03, DEC-277), the note-candidates
+    create gate, which resolved the title the model named for an update (#228).
+    That fourth reader is what moved it:
     `nora.language` sits BELOW `nora.agent` in the layered import contract, so
     the only alternative to moving it down was a second copy — and two copies
     of a `casefold()` is how a latch silently stops matching the tool it
@@ -286,17 +262,38 @@ def note_handle(title: str) -> str:
     return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
 
 
+def _title_words(title: str) -> frozenset[str]:
+    return frozenset(w for w in note_handle(title).split() if len(w) > 2)
+
+
+def likely_duplicates(notes: Sequence[Note]) -> dict[str, str]:
+    """Note id -> the id of another open note whose title shares at least half
+    of the two titles' words (Jaccard >= 0.5, words of three letters or more):
+    the code-side hint that two notes may track one question. Each note names
+    its most similar partner; a note with none is absent."""
+    words = {n.id: _title_words(n.title) for n in notes}
+    out: dict[str, str] = {}
+    for a in notes:
+        best, score = None, 0.5
+        for b in notes:
+            if a.id == b.id or not words[a.id] or not words[b.id]:
+                continue
+            union = words[a.id] | words[b.id]
+            jaccard = len(words[a.id] & words[b.id]) / len(union)
+            if jaccard >= score:
+                best, score = b.id, jaccard
+        if best is not None:
+            out[a.id] = best
+    return out
+
+
 def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
     """Design 41 §7.2: an open title refuses a second note under the same
-    handle. Extracted from `nora.agent.tools`' `note_create` (the live verb)
-    so `nora.agent.cognition_dry_run.dry_run_note_create` (step 3a-ii's
-    review follow-up) runs the identical check rather than a second copy —
-    `30-cognition.md` §2's own rule, "a note ... written by cognition and one
-    written on a tag turn pass the same validator", extended to this
-    refusal. `open_titles` is READ-ONLY input the caller already fetched
-    (live: `book.standing(unit=...)`'s titles; shadow: the same read, done
-    by the session's own wiring) — this function makes no store call, the
-    same "prior is a parameter" shape every check in this tree uses."""
+    handle. Shared by the tag path's `note_create` and the Cognition
+    session's, so both refuse identically (30-cognition.md §2: "a note ...
+    written by cognition and one written on a tag turn pass the same
+    validator"). `open_titles` is READ-ONLY input the caller already fetched
+    (`book.standing(unit=...)`'s titles); this function makes no store call."""
     wanted = note_handle(title)
     return any(note_handle(t) == wanted for t in open_titles)
 
@@ -363,11 +360,11 @@ class Note:
     replaced_by: str | None = None
     # WHY it was retired — `NoteSupersedeReason`'s vocabulary, written by
     # `DreamSink.supersede`. A closed vocabulary rather than free text because
-    # "how many notes did the curator retire this week, and on what ground"
-    # is the reading that justifies the curator existing, and prose does not
+    # "how many notes were retired this week, and on what ground"
+    # is the reading that justifies keeping the reason, and prose does not
     # aggregate. (It was written as "how many did it merge"; the curator's
     # merge was deleted 2026-09-08, and a fold is `retired-merged`, written by
-    # the `note-merge` pass since 2026-09-25, never by the curator.)
+    # `merge_into` (the Cognition session's `note_merge`).)
     # `None` until retired; the `retired_at is None` invariant below is what
     # pairs them.
     retire_reason: str | None = None
@@ -479,8 +476,9 @@ class NoteRevision:
     established_by: str
     entity_ids: tuple[str, ...] = field(default_factory=tuple)
     # DEC-125/DEC-126, and `None` is a REAL state rather than an absence: this
-    # table has two writers and only one of them is an adaptor. A curator
-    # revision arrives as a `Proposal` and carries both; a tag-path revision has
+    # table has two writers and only one of them is an adaptor. A background
+    # revision (the Dreamer's, formerly the curator's) arrives as a `Proposal` and carries both; a
+    # tag-path revision has
     # no `Proposal` and no instruction digest to carry. `established_by` already
     # tells the two apart (`tag:<person_id>` versus a run id) and is required
     # for that reason, so these say only what it cannot: WHICH instruction
@@ -509,7 +507,7 @@ class NoteRevision:
         if len(self.body) > BODY_MAX_CHARS:
             raise ValueError(
                 f"a note body is at most {BODY_MAX_CHARS} characters (got "
-                f"{len(self.body)}). Bodies are read whole by the curator "
+                f"{len(self.body)}). Bodies are read whole by background passes "
                 f"against a per-tick budget counted in rows, so an unbounded "
                 f"one silently eats the allowance"
             )
@@ -523,7 +521,8 @@ class NoteRevision:
 
 @dataclass(frozen=True, slots=True)
 class NoteRevisionProposal:
-    """What the curator hands `DreamSink.propose` — a revision to append, named
+    """What a background pass hands `DreamSink.propose` (the curator did, until
+    2026-10-03, DEC-277) — a revision to append, named
     against the head it was written from.
 
     **This type exists so the note sink has something to `isinstance` against.**
@@ -538,14 +537,14 @@ class NoteRevisionProposal:
     It is NOT `NoteRevision`. A `NoteRevision` is a row that exists — it has an
     `id` and a `written_at`, both of which the STORE assigns. A proposal is a
     request that one be written, so it carries neither, and using the row type
-    here would force the curator to mint an id the store then ignores or
+    here would force the proposer to mint an id the store then ignores or
     honours, and neither answer is good. `written_at` in particular belongs to
     `propose`'s `now_ms`, on the verb rather than the payload, because one tick
     writes many proposals at a single instant and a per-proposal clock invites a
     batch whose rows disagree about when the batch happened.
 
     `parent_revision_id` is REQUIRED here, unlike on `NoteRevision` where `None`
-    means the first revision. The curator never writes a note's first revision —
+    means the first revision. A revision proposal never writes a note's first revision —
     it acts ACROSS notes that already exist (§2), so it always has a head to
     name, and §6.3's compare-and-swap is the only thing standing between a
     background pass and the tag path silently overwriting each other. Typing it
@@ -590,13 +589,13 @@ class NoteCreationProposal:
     required fields is what makes the refusal possible at all.
 
     **Why the debrief needs its own shape rather than reusing
-    `NoteRevisionProposal`.** That type's docstring says it plainly: *the
-    curator never writes a note's first revision — it acts ACROSS notes that
+    `NoteRevisionProposal`.** That type's docstring says it plainly: *a
+    revision never writes a note's first revision — it acts ACROSS notes that
     already exist.* The debrief's job is the opposite one. It reviews a
     finished turn, and the valuable thing it can see is an uncertainty NOBODY
     tracked, which is by definition a note that is not there. Revising an
-    existing note is the tag path's job in-turn (R-55's latch) and the
-    curator's across notes (§2).
+    existing note is the tag path's job in-turn (R-55's latch) and a background pass's across
+    notes (§2).
 
     **The anchor is required, and in practice it is a DATE.** `Note`
     `__post_init__` refuses a note anchored to nothing — without a referent
@@ -611,12 +610,13 @@ class NoteCreationProposal:
     **A create proposal never names a note, so it cannot collide with one — and
     the sink does NOT check whether a similar note already exists.** That is
     deliberate. Deduplication acts across notes and belongs to the pass built
-    for it — the `note-merge` adaptor since 2026-09-25 (design 41 §7), the
+    for it — the `note_merge` verb of the Cognition session since 2026-10-03 (the
+    `note-merge` adaptor, design 41 §7, before it), the
     anchor-keyed curator merge before 2026-09-08; a sink that
     reinterpreted a create as a revision because it found a plausible match
     would be doing cross-note reasoning at the storage boundary, silently, on
-    a guess. Two notes about the same occasion is a state the curator is built
-    to resolve. One note silently absorbing another's content is not
+    a guess. Two notes about the same occasion is a state the Cognition session's
+    `note_merge` is there to resolve. One note silently absorbing another's content is not
     recoverable in the direction that matters.
     """
 
@@ -632,12 +632,12 @@ class NoteCreationProposal:
     #: creates gets an explicit wake time at CREATION, derived from its own
     #: anchor via `default_revisit_at` — so its first wake is a normal
     #: scheduled one, not a strike bootstrap (a gate-created chain has no
-    #: `tag:` revision either way, so `record_wake`'s progress test would
-    #: otherwise charge a strike on a note nobody has had a chance to answer
-    #: yet). `None` is a legal value — the tag path's own creates (through
+    #: `tag:` revision either way, so the (deleted) `record_wake`'s progress
+    #: test would otherwise have charged a strike on a note nobody had a chance
+    #: to answer yet). `None` is a legal value — the tag path's own creates (through
     #: `SqlNoteStore.create`, never this proposal type) do not set it, and
-    #: `record_wake` remains the only writer of a note's SUBSEQUENT
-    #: `revisit_at`.
+    #: `record_wake` (deleted 2026-10-03) was the only writer of a note's
+    #: SUBSEQUENT `revisit_at`.
     revisit_at: int | None = None
 
     def __post_init__(self) -> None:
@@ -740,8 +740,9 @@ def tag_path_progressed_since_wake(
     background pass also touches each cycle, never resets and marches to the
     strike ceiling. The curator's `merge` wrote exactly such a revision and
     is gone (2026-09-08); the note-candidates gate's appended revision
-    (`nora.language.note_candidates`, #228) writes one on the same shape, so
-    the sequence is live and this walk still earns its keep.
+    (#228, deleted 2026-10-03, DEC-277) wrote one on the same shape, and a
+    Cognition-session `note_update` still does, so the sequence is live and
+    this walk still earns its keep.
 
     Both implementations agreed on the wrong answer, which is why the contract
     suite could not see it: they shared a belief, not a check.
@@ -816,81 +817,6 @@ def proactive_row_forwarded_is_moved(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class WakeOutcome:
-    """What a wake did — returned so the CALLER decides what follows.
-
-    `strikes` is the count AFTER this wake. `reset` says the head had moved on
-    the tag path, so the note is making progress and the counter went back to
-    zero.
-
-    **The store does not retire at the ceiling, and that is deliberate.**
-    §9.6 says a note past K strikes "stops waking and becomes eligible for
-    dateless retirement" — ELIGIBLE, which is a judgement about what to do
-    next, not a fact about the row. Retirement is a `supersede` with a reason
-    and a `replaced_by`; hiding one inside a bookkeeping verb would make one
-    call do two things, and the destructive half would be the invisible one. So
-    the wake reports and the revisitor decides, which is also where K lives.
-    """
-
-    strikes: int
-    reset: bool
-
-
-#: `note_candidate.status` for a `kind='create'` row (migration `0049`,
-#: design/dreamer-agent-loop/33-note-dreamer-schedule.md §4). `pending` is the
-#: staged proposal before the deterministic gate has run (or re-run after a
-#: transient failure); `created` is a proposal the gate materialized, as a new
-#: note OR as a revision to an existing one sharing its anchor key — the
-#: store's `status` column does not distinguish the two, because both are
-#: "this occasion is now represented in the notebook", which is the property
-#: `nora.language.note_candidates` needs to avoid reopening a settled
-#: candidate, not which verb did it; `refused` is a proposal the gate declined
-#: — a duplicate that added nothing, or a malformed candidate the domain type
-#: itself rejected.
-CANDIDATE_PENDING = "pending"
-CANDIDATE_CREATED = "created"
-CANDIDATE_REFUSED = "refused"
-CANDIDATE_STATUSES: tuple[str, ...] = (
-    CANDIDATE_PENDING, CANDIDATE_CREATED, CANDIDATE_REFUSED,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class NoteCreateCandidate:
-    """One `kind='create'` row of `note_candidate` — a full note proposal the
-    `note-candidates` adaptor (`nora.language.note_candidates`) read off a
-    room's transcript, staged for a deterministic gate to decide create,
-    update or refuse over. Migration `0049`; see its own docstring for the
-    column shapes and the two uniqueness domains this table now holds.
-
-    **In the SAME shape `NoteCreationProposal` requires**, deliberately: this
-    row exists only because there is no note yet to build one against, and it
-    is turned into exactly that proposal (or a `NoteRevisionProposal`, if the
-    gate finds a standing note sharing this occasion's anchor key) once the
-    gate has decided. A row that could not become one of those two proposals
-    would not have been accepted into this table to begin with.
-
-    `anchor_entity_ids` is stored SORTED and DE-DUPLICATED — never as the
-    model wrote it — because it is half of `note_candidate_create_anchor_key`;
-    see that index's own comment in `nora/infra/sql/schema.py`.
-    """
-
-    id: str
-    unit: str
-    title: str
-    description: str
-    body: str
-    closing_condition: str
-    anchor_date: int
-    anchor_entity_ids: tuple[str, ...]
-    message_ids: tuple[int, ...]
-    status: str
-    attempts: int
-    first_seen_at: int
-    last_seen_at: int
-
-
 class NoteSupersedeReason:
     """The `because` values `SqlNoteStore.supersede` accepts, and the shape of
     the tier's retirement vocabulary.
@@ -906,8 +832,8 @@ class NoteSupersedeReason:
     RETIRED_EXPIRED = "retired-expired"
     RETIRED_CLOSED = "retired-closed"
     #: Folded into another open note, which `replaced_by` names (design 41
-    #: §7.6, DEC-202). Written by `merge_into` — the `note-merge` pass in
-    #: `on` — and by operator triage. A lookup that lands here FORWARDS to
+    #: §7.6, DEC-202). Written by `merge_into` — the Cognition session's
+    #: `note_merge` — and by operator triage. A lookup that lands here FORWARDS to
     #: that note rather than reporting nothing — see `NoteStore.successor`.
     RETIRED_MERGED = "retired-merged"
     #: Never an open question of the group — an entry about Nora's own turn,
@@ -932,16 +858,18 @@ class NoteSupersedeReason:
 MERGE_FORWARD_HOPS = 8
 
 
-# --- note-merge (design 41 §7.3-7.8, DEC-202) --------------------------------
+# --- note-merge (design 41 §7.3-7.8, DEC-202; the pass was deleted 2026-10-03,
+# DEC-277 — the table `note_merge_decision` and these constants stay as data)
+# --------------------------------
 
-#: What `[notes] merge_mode` may be once the adaptor is wired at all. `off`
-#: is not here: an adaptor that is off is not built (the composition root's
-#: gate), so it never records a decision.
+#: What the deleted `[notes] merge_mode` could be once the adaptor was wired
+#: at all (`off` is not here: an adaptor that was off was not built). Rows
+#: written by the deleted pass carry one of these; nothing writes new ones.
 NOTE_MERGE_MODES: tuple[str, ...] = ("shadow", "on")
 
 #: What one considered fold came to, recorded per (survivor, duplicate) pair
-#: on `note_merge_decision` and counted on `nora_note_merge_total{outcome}`.
-#: The CHECK constraint and the metric's help text both read this tuple.
+#: on `note_merge_decision` (and counted on the since-removed
+#: `nora_note_merge_total{outcome}`). The CHECK constraint reads this tuple.
 #:
 #: - `would_merge` — `shadow` only: every code check passed and nothing was
 #:   written. The row the operator labels.
@@ -963,21 +891,15 @@ NOTE_MERGE_OUTCOMES: tuple[str, ...] = (
     "cross_room", "not_changed",
 )
 
-#: The line an appended merge revision starts its folded-in half with. A
-#: marked line rather than a blank one (unlike `note_candidates._appended`)
-#: because this half is ANOTHER note's question, and a reader of the body
-#: needs to see where the one note ends and the folded one begins.
-MERGE_MARKER = "--- folded in from another note ---"
-
 #: The model's `why` as kept on a decision row. A sentence, not a document.
 MERGE_REASON_MAX_CHARS = 500
 
 
 @dataclass(frozen=True, slots=True)
 class NoteMergeDecision:
-    """One fold the `note-merge` pass considered, as `note_merge_decision`
-    stores it — the row the operator labels in `shadow` and the audit of a
-    fold in `on`.
+    """One fold the (deleted, DEC-277) `note-merge` pass considered, as
+    `note_merge_decision` stores it — the row the operator labelled in `shadow`
+    and the audit of a fold in `on`.
 
     **Not the shared decision log** (`nora.domain.decision_log`), though
     design 41 §7.8 called these «decision-log rows». That table is the ambient
@@ -1024,8 +946,8 @@ class NoteMergeDecision:
 def latest_anchor(first: int | None, second: int | None) -> int | None:
     """The later of two anchor days, a dated one over a dateless one (§7.7).
 
-    A survivor that kept its own earlier anchor would be selected by
-    `anchored_before` on that day and could be expired with the later question
+    A survivor that kept its own earlier anchor would have been selected by
+    `anchored_before` (deleted) on that day and could be expired with the later question
     folded inside it.
     """
     if first is None:
@@ -1035,43 +957,6 @@ def latest_anchor(first: int | None, second: int | None) -> int | None:
     return max(first, second)
 
 
-def merged_body(
-    *, survivor_body: str, duplicate: Note, duplicate_body: str,
-) -> str:
-    """The survivor's next head after folding `duplicate` into it (§7.7): the
-    survivor's body, then — under `MERGE_MARKER` — the duplicate's title,
-    uncertainty and closing condition, and only the paragraphs of its body the
-    survivor does not already contain.
-
-    Paragraph-level and syntactic, `note_candidates._adds_information`'s
-    reading one grain finer: a paragraph whose whitespace-collapsed, casefolded
-    text is already inside the survivor's body is left out. A paraphrase is
-    kept, which is the direction that loses no text.
-
-    The caller refuses a result over `BODY_MAX_CHARS` (`too_long`); this never
-    truncates.
-    """
-    def _norm(text: str) -> str:
-        return " ".join(text.split()).casefold()
-
-    have = _norm(survivor_body)
-    fresh = [
-        p.strip() for p in duplicate_body.split("\n\n")
-        if p.strip() and _norm(p) not in have
-    ]
-    lines = [
-        survivor_body.rstrip(),
-        "",
-        MERGE_MARKER,
-        f"title: {duplicate.title}",
-        f"uncertainty: {duplicate.uncertainty}",
-        f"closing condition: {duplicate.closing_condition}",
-    ]
-    if fresh:
-        lines += ["", *fresh]
-    return "\n".join(lines)
-
-
 class StaleNoteHeadError(Exception):
     """The compare-and-swap in §6.3 refused: the head this revision was written
     against is not the head any more.
@@ -1079,7 +964,7 @@ class StaleNoteHeadError(Exception):
     **Why a refusal and not a merge, an overwrite, or a silent no-op.** A note's
     value is the *arrangement* — the writer read one body, reasoned over it, and
     is now appending prose that only makes sense against that body. If the head
-    moved (the note-candidates gate appended to it mid-turn, or a parallel turn
+    moved (a background pass appended to it mid-turn, or a parallel turn
     in the other room of the same unit revised it), the text being appended is an answer
     to a question that has changed. Writing it on top destroys the intervening
     revision's arrangement with nothing recording that it happened; returning 0

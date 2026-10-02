@@ -202,6 +202,22 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "Step 5 is the consumer, and it is gated on a measured improvement "
         "rather than assumed.",
     ),
+    # DEC-277 deleted the Dreamer note adaptors (candidates, curator, merge) and
+    # with them the only production callers of these two. The cognition session
+    # writes notes through its own verbs. They are dead code the cutover left
+    # behind (the contract suite still exercises `propose`), pinned here so the
+    # leftover is a named decision and not a silent one; delete them with the
+    # `DreamSink` port when that port is retired.
+    ("notes.py", "propose"): _Pin(
+        "defect",
+        "`DreamSink.propose`: its callers were the deleted note-candidates and "
+        "note-curation adaptors (DEC-277); only the contract suite calls it now.",
+    ),
+    ("notes.py", "note_by_id"): _Pin(
+        "defect",
+        "The curator's retired-or-not lookup (DEC-277 deleted the curator); "
+        "no production caller remains.",
+    ),
     ("announcements.py", "announced"): _Pin(
         "read_back_affordance",
         "Its own docstring: «the operator's read, and what the tests assert the "
@@ -271,7 +287,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
     {
         "aclose", "append", "claim", "create", "delete",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
-        "recent", "record", "record_wake", "resolve", "rsvps_for", "save", "search",
+        "recent", "record", "resolve", "rsvps_for", "save", "search",
         "sweep_firing", "update", "apply",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
@@ -293,7 +309,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
 # other files and define no public methods, so they are simply not here.
 _STORE_MODULES: frozenset[str] = frozenset(
     {
-        "announcements.py", "assess.py", "audit.py", "cognition_dry_run.py",
+        "announcements.py", "assess.py", "audit.py", "cognition_store.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",
         "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",

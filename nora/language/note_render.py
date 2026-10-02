@@ -22,7 +22,7 @@ relevance-scored subset has the same defect with extra machinery on top. The
 prompt-budget answer is paid in two other places instead: `TITLE_MAX_CHARS` /
 `DESCRIPTION_MAX_CHARS` in `nora.domain.notes`, enforced in the CONSTRUCTOR so
 an over-long entry is unrepresentable rather than silently truncated here; and
-the curator's retirement pass (§7.4/§9), which makes the index track live
+retirement (`note_retire`; formerly the curator's pass, §7.4/§9), which makes the index track live
 uncertainty rather than history. `test_the_index_is_uncapped_and_every_standing_note_appears`
 is the guard, because "just show the top ten" is the change somebody makes
 without noticing it is a decision.
@@ -53,7 +53,8 @@ question, and §6.2 requires a `note_read` before any revision anyway.
 **This tier is LIVE.** `TagContext.notes` still defaults to `()` — an
 unwired caller renders nothing rather than raising — but
 `nora.engagement.context` populates it from the unit's standing notes,
-and the note-candidates pass (#98) writes them, so this index is on the
+and the Cognition session (formerly the note-candidates pass, #98) writes them, so this index is
+on the
 prompt in production. The paragraph here said the opposite until 2026-09-13,
 which is the ordinary cost of a "not yet" written beside a switch somebody
 else later flips.
@@ -74,7 +75,7 @@ from ..domain.prompt import age, escape
 # a message went out on it (issue #226) — WHOSE WORDS THESE ARE. The pointer
 # clause was a read-before-WRITE latch and nothing more: it stopped her revising
 # a body she had not read, and said nothing about speaking. So a description the
-# curator wrote for triage — her own bookkeeping, model-authored, capped at 200
+# curator (deleted 2026-10-03) wrote for triage — her own bookkeeping, model-authored, capped at 200
 # characters, hedged correctly — was read aloud to the room it was about, flat
 # and without the hedge, while the transcript that contradicted it sat in the
 # same prompt. The three things the sentence now makes unmissable:
@@ -160,8 +161,8 @@ def render_note_rows(
     a newline rendered as TWO index entries. One note became two; a title with
     an em dash had no determinable end.
 
-    Neither was cosmetic. Since #228 the note-candidates create gate resolves
-    the TITLE the model names back against this index
+    Neither was cosmetic. Since #228 (the note-candidates create gate, deleted 2026-10-03, resolved
+    the TITLE the model named back against this index; now `note_update` does)
     (`domain.notes.note_handle`) and `ReplyGuard`'s R-55 latch keys on the same
     string, so an unclear title boundary is a mis-resolution rather than a
     legibility cost. `speaker_label` was written for exactly this class on the
@@ -192,7 +193,7 @@ def render_note_rows(
     the grammar, not the ballot.
 
     `extra` is the one knob that is genuinely about a note rather than about the
-    block: the proactive pass's `revisit` and `raised`. Additive, so a caller
+    block: the (deleted, DEC-277) proactive pass's `revisit` and `raised`. Additive, so a caller
     that passes none renders byte-identically to the tag path.
 
     `n` is POSITIONAL by default: a closed 1..N set, so a reference to a note
@@ -224,8 +225,8 @@ def standing_only(notes: Sequence[Note]) -> tuple[Note, ...]:
 
     A retired note is never rendered: it would sit in the index as a live
     uncertainty, and beside its own replacement when there is one. This is a
-    function rather than a comprehension repeated at each call site because the
-    proactive pass builds its `n -> note_id` map over exactly this sequence and
+    function rather than a comprehension repeated at each call site because a
+    caller building an `n -> note_id` map must use exactly this sequence and
     a second spelling of the predicate is a second answer waiting to happen.
     """
     return tuple(n for n in notes if n.is_standing)
@@ -247,15 +248,15 @@ def render_notes(
 def today_block(when: date | str) -> ContextBlock:
     """The one-line `<today>` block: a DAY, `2026-10-01 Thu`, no time and no zone.
 
-    Built three ways before this (note-merge, note-candidates and the curator
-    each wrote `ContextBlock(name="today", body=escape(...))` and the curator
+    Built three ways before this (note-merge, note-candidates and the curator,
+    all deleted 2026-10-03, each wrote `ContextBlock(name="today", body=escape(...))` and the
+    curator
     its own fallback), so a change to the format was three edits. The caller
     passes the day and stamps its own `order` and `key` with `restamp` — where
-    a block sits is the prompt's, not the block's. Note-merge declares no table
-    and takes the defaults.
+    a block sits is the prompt's, not the block's. A caller declaring no table takes the defaults.
 
     `when` is a `date` for every real day; a `str` is shown as written, which
-    is the curator's floor for a stored `YYYYMMDD` that is not a date (month 13)
+    was the curator's floor for a stored `YYYYMMDD` that is not a date (month 13)
     — a day it cannot name is still printed, because the model reads every
     `anchor` against this line.
 
@@ -263,7 +264,7 @@ def today_block(when: date | str) -> ContextBlock:
     anyway: it is a block body, and `assemble`'s contract is that a body arrives
     escaped.
 
-    `<today>`, NOT `<now>`: the proactive pass's `<now>` is a MOMENT with a time
+    `<today>`, NOT `<now>`: the (deleted) proactive pass's `<now>` was a MOMENT with a time
     and a zone, a different block with a different description (#314).
     """
     text = f"{when:%Y-%m-%d %a}" if isinstance(when, date) else when
@@ -347,9 +348,9 @@ def open_note_parts(
     """One open note's attributes and body: what it is about, what is
     undecided, what would settle it, and its body (design 42 §8.6).
 
-    ONE line renderer for the two passes that read a note's body, each
-    building its OWN block type from it: note-merge's `open_note`,
-    note-candidates' `candidate_open_note`. The type is not shared because a
+    ONE line renderer for the two passes that read a note's body (both deleted
+    2026-10-03, DEC-277), each building its OWN block type from it: note-merge's
+    `open_note`, note-candidates' `candidate_open_note`. The type is not shared because a
     type's `fields` render on every block of it, and note-candidates' `form`
     must not change merge's prompt (a deviation from §8.6, recorded in design
     42). note-merge sets `handle` (its `id`), `changed` and `excerpt`;

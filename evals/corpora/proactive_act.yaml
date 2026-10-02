@@ -1,6 +1,6 @@
 # The proactive ACT suite (design/dreamer-agent-loop/39 §5, DEC-162 (10)).
 #
-# Each case is ONE proactive row coming due — what the decide turn wrote to
+# Each case is ONE proactive row coming due — what the decide turn (the Cognition session's `remind` since 2026-10-03) wrote to
 # its later self — plus the room as it REALLY was at fire time: its transcript
 # up to the instant, its standing where the history holds one, and the note
 # the row is about as the unit's notebook really held it. The row goes through

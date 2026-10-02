@@ -1,45 +1,10 @@
 [
  {
-  "name": "M2: an event's citations are not checked against what the session saw",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "    ids, keys = check_citations(cited_ids, shown, what=verb)\n    return meta, ids, keys",
-  "new": "    return meta, (), ()",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_a_proposal_citing_a_message_it_was_never_shown_is_refused_unknown_id tests/unit/test_cognition_session_events_d.py::test_a_rollup_row_is_citable_only_once_the_session_read_it tests/unit/test_cognition_session_events_d.py::test_a_message_the_session_fetched_with_record_query_is_citable"
- },
- {
-  "name": "M2: an event may cite nothing",
-  "file": "nora/domain/note_body.py",
-  "old": "    if not ids and not keys:\n        raise NoteBodyError(\n            \"uncited\", f\"{what} cites nothing;",
-  "new": "    if False:\n        raise NoteBodyError(\n            \"uncited\", f\"{what} cites nothing;",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_a_proposal_with_no_citation_or_one_of_nora_s_own_messages_is_refused tests/unit/test_event_evidence_d.py::test_anything_else_is_refused_with_the_rule_a_note_would_name"
- },
- {
-  "name": "M2: an abduced field is stored as told",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "    meta = tuple(FieldMeta(field=p, reasoning=reasoning, confidence=confidence) for p in parts)",
-  "new": "    meta = tuple(FieldMeta(field=p, reasoning=\"told\" if reasoning == \"abduced\" else reasoning, confidence=confidence) for p in parts)",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_an_abduced_proposal_is_stored_with_its_mode_and_voiced_as_a_question tests/unit/test_cognition_session_events_d.py::test_an_abduced_revision_changes_the_field_and_keeps_the_others_modes"
- },
- {
   "name": "M2: an abduced value is voiced as a statement",
   "file": "nora/domain/gatherings.py",
   "old": "    if field_mode(event, part) == \"abduced\":\n        return f\"{part}: {value}? (a guess to check, not a fact)\"",
   "new": "    if False:\n        return f\"{part}: {value}? (a guess to check, not a fact)\"",
   "target": "tests/unit/test_event_evidence_d.py::test_an_abduced_field_is_voiced_as_a_question_and_no_assent_upgrades_it"
- },
- {
-  "name": "M2: the event tier allows any mode",
-  "file": "nora/domain/gatherings.py",
-  "old": "            raise InvalidEventFieldModeError(\"field\", self.field)\n        validate_event_field_mode(self.reasoning)",
-  "new": "            raise InvalidEventFieldModeError(\"field\", self.field)\n        pass",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_a_mode_the_event_tier_does_not_allow_is_refused tests/unit/test_event_evidence_d.py::test_a_field_carries_only_a_mode_and_a_confidence_the_event_tier_allows"
- },
- {
-  "name": "M2: a revision forgets which fields it restated",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "            field_meta=merge_field_meta(current.field_meta, meta),",
-  "new": "            field_meta=meta,",
-  "target": "tests/unit/test_event_evidence_d.py::test_a_write_restates_its_own_fields_and_leaves_the_rest tests/unit/test_cognition_session_events_d.py::test_a_staged_or_confirmed_event_can_be_revised tests/unit/test_cognition_session_events_d.py::test_a_revision_keeps_what_the_fields_it_leaves_alone_already_stated"
  },
  {
   "name": "M4: a session reads proposed events only",
@@ -54,34 +19,6 @@
   "old": "            e for e in await store.list_for_conversation(conversation_id=conversation_id)\n",
   "new": "            e for e in await store.list_for_conversation(conversation_id=conversation_id, include_unsupported=True)\n",
   "target": "tests/unit/test_event_evidence_d.py::test_a_session_is_shown_and_may_move_every_event_before_happened"
- },
- {
-  "name": "M4: a staged or confirmed event blocks a proposal",
-  "file": "nora/app/cognition_session.py",
-  "old": "                    if e.status is GatheringStatus.PROPOSED\n                ]\n                write = await dry_run_event_propose(",
-  "new": "                    if True\n                ]\n                write = await dry_run_event_propose(",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_a_staged_event_is_a_proposal_the_room_has_not_made_and_does_not_block_one"
- },
- {
-  "name": "M4: a finished event can be moved",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "    if current.status in TERMINAL_STATUSES:\n        # 40 §3",
-  "new": "    if False:\n        # 40 §3",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_an_unknown_event_reads_not_found_and_a_finished_one_does_not_move"
- },
- {
-  "name": "M4: lapsed needs a citation",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "            may_be_uncited=str(field_changes.get(\"status\")) == GatheringStatus.LAPSED,",
-  "new": "            may_be_uncited=False,",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_a_move_to_lapsed_may_cite_nothing_but_no_other_may"
- },
- {
-  "name": "M4: an event is born in any status",
-  "file": "nora/agent/cognition_dry_run.py",
-  "old": "    if event_kwargs.get(\"status\") not in (GatheringStatus.STAGED, GatheringStatus.PROPOSED):",
-  "new": "    if False:",
-  "target": "tests/unit/test_cognition_session_events_d.py::test_an_event_can_be_proposed_or_staged_and_nothing_later"
  },
  {
   "name": "E1a: the store writes no edge",

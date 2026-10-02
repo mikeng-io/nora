@@ -267,10 +267,8 @@ def test_the_case_list_is_derived_and_not_empty():
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
     a hand-written list was exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
-    assert len(CASES) >= 2
-    assert {c.id for c in CASES} >= {
-        "NoteCandidateAdaptor", "NoteCuratorAdaptor",
-    }
+    assert len(CASES) >= 1
+    assert {c.id for c in CASES} >= {"CultureAdaptor"}
 
 
 def test_every_shipped_adaptor_is_covered():
@@ -328,9 +326,9 @@ def test_the_orphan_check_can_actually_fire():
         path.stem for path in sorted(OBJECTIVES.glob("*.md"))
         if f'"{path.stem}"' not in source
     ]
-    # FOUR since 2026-09-08 (`note-entity-resolution` went with the note
-    # tier's entity-resolution chain); five before that.
-    assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 4
+    # THREE since 2026-10-03 (DEC-277 deleted the note and proactive
+    # objectives); four before that, five before `note-entity-resolution`.
+    assert len(orphans) == len(list(OBJECTIVES.glob("*.md"))) >= 3
 
 
 @pytest.mark.parametrize(("objective", "envelope_key", "sites"), CASES)

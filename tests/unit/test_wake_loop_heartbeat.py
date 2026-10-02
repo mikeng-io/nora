@@ -22,7 +22,7 @@ GAUGE = "nora_cognition_wake_last_tick_seconds"
 
 
 class _Evaluator:
-    mode = "shadow"
+    mode = "live"
 
     def __init__(self) -> None:
         self.ticks = 0
@@ -137,7 +137,7 @@ async def test_the_gauge_is_set_before_the_first_sleep():
         wake_loop(_Evaluator(), metrics, tick_seconds=3600.0, clock=_Counting()),
     )
     try:
-        await _until(lambda: metrics.get(GAUGE, mode="shadow") == 1_001.0, what="set at start")
+        await _until(lambda: metrics.get(GAUGE, mode="live") == 1_001.0, what="set at start")
     finally:
         await _stop(task)
 
@@ -148,7 +148,7 @@ async def test_the_gauge_moves_with_every_tick():
     try:
         await _until(lambda: evaluator.ticks >= 3, what="three ticks")
         await _until(
-            lambda: metrics.get(GAUGE, mode="shadow") >= 1_004.0, what="moved by the ticks",
+            lambda: metrics.get(GAUGE, mode="live") >= 1_004.0, what="moved by the ticks",
         )
     finally:
         await _stop(task)
@@ -165,7 +165,7 @@ async def test_a_tick_that_raises_still_moves_the_gauge_and_counts_the_error():
     try:
         await _until(lambda: evaluator.ticks >= 3, what="three raising ticks")
         await _until(
-            lambda: metrics.get(GAUGE, mode="shadow") > 1_001.0, what="moved by a raising tick",
+            lambda: metrics.get(GAUGE, mode="live") > 1_001.0, what="moved by a raising tick",
         )
         assert metrics.get("nora_errors_total", stage="cognition_wake") >= 1
     finally:
@@ -182,10 +182,10 @@ async def test_a_loop_hung_inside_a_tick_stops_moving_the_gauge():
         await _until(lambda: evaluator.ticks >= 1, what="a healthy tick")
         evaluator.behaviour = "hang"
         await _until(lambda: evaluator.ticks >= 2, what="the hung tick starts")
-        frozen = metrics.get(GAUGE, mode="shadow")
+        frozen = metrics.get(GAUGE, mode="live")
         clock.now = 9_999.0
         await asyncio.sleep(0.05)
-        assert metrics.get(GAUGE, mode="shadow") == frozen != clock.now
+        assert metrics.get(GAUGE, mode="live") == frozen != clock.now
     finally:
         evaluator.hung.set()
         await _stop(task)

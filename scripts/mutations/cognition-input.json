@@ -154,13 +154,6 @@
     "target": "tests/contract/test_stimulus_store_contract.py -k count_rollup"
   },
   {
-    "name": "dry-run store: jsonb columns hold the object, not a string of it",
-    "file": "nora/infra/sql/cognition_dry_run.py",
-    "old": "reads either.\"\"\"\n    return value",
-    "new": "reads either.\"\"\"\n    return json.dumps(value)  # type: ignore[return-value]",
-    "target": "tests/contract/test_cognition_dry_run_store_contract.py -k jsonb_objects"
-  },
-  {
     "name": "stores: a closed or cancelled outcome records no cause",
     "file": "nora/domain/stimuli.py",
     "old": "    return NO_CAUSE if outcome in (\"closed\", \"cancelled\") else cause",

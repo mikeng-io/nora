@@ -2,7 +2,7 @@
   {
     "name": "#160 the pass ceiling is wired into the guard at all",
     "file": "nora/agent/dreamer.py",
-    "old": "            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99 (design/social-per-network/30-link-owner-registry.md):\n            # the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method\n            # already holds \u2014 never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
+    "old": "            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99 (design/social-per-network/30-link-owner-registry.md):\n            # the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method\n            # already holds — never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
     "new": "        )",
     "target": "tests/unit/test_dream_memory_budget.py -k third_memory_read_is_answered_unavailable"
   },
@@ -79,15 +79,8 @@
   {
     "name": "#160 the ration is rebuilt per pass, not held on the runtime",
     "file": "nora/agent/dreamer.py",
-    "old": "        guard = DreamGuard(\n            adaptor=adaptor.name,\n            budgets=dict(tool_budgets),\n            metrics=self._metrics,\n            result_caps=_TOOL_RESULT_CAPS,\n            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99 (design/social-per-network/30-link-owner-registry.md):\n            # the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method\n            # already holds \u2014 never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
+    "old": "        guard = DreamGuard(\n            adaptor=adaptor.name,\n            budgets=dict(tool_budgets),\n            metrics=self._metrics,\n            result_caps=_TOOL_RESULT_CAPS,\n            memory_tools=MEMORY_TOOLS,\n            memory_budget=budget.max_memory_calls,\n            pass_budget=budget.max_tool_calls,\n            # R-99 (design/social-per-network/30-link-owner-registry.md):\n            # the same table `deliver.build`'s callers thread into\n            # `ReplyGuard`, read off the SAME `DreamToolSource` this method\n            # already holds — never a second `ToolRegistry` instance.\n            param_names=self._tools.tool_param_names(),\n        )",
     "new": "        guard = getattr(self, \"_leaky_guard\", None)\n        if guard is None:\n            guard = DreamGuard(\n                adaptor=adaptor.name,\n                budgets=dict(tool_budgets),\n                metrics=self._metrics,\n                result_caps=_TOOL_RESULT_CAPS,\n                memory_tools=MEMORY_TOOLS,\n                memory_budget=budget.max_memory_calls,\n                pass_budget=budget.max_tool_calls,\n                param_names=self._tools.tool_param_names(),\n            )\n            self._leaky_guard = guard",
     "target": "tests/unit/test_dream_memory_budget.py -k ration_resets_for_the_next_pass"
-  },
-  {
-    "name": "#160 the eval grader counts the same four verbs the ceiling does",
-    "file": "tests/offline_eval_support.py",
-    "old": "    \"nora_room_lookups_total\": frozenset(\n        {\"about\", \"ask_memory\", \"lookup_person\"}),",
-    "new": "    \"nora_room_lookups_total\": frozenset({\"about\", \"ask_memory\"}),",
-    "target": "tests/unit/test_dream_memory_budget.py -k grader_counts_every_verb_the_ceiling"
   }
 ]

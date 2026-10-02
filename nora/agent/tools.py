@@ -1446,7 +1446,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # exactly as `remind` is.
     #
     # `cacheable=False` on all four, by default and on purpose: a note is
-    # unit-scoped state that the curator and a parallel turn in another
+    # unit-scoped state that the Cognition session and a parallel turn in another
     # room may both move, so a replayed answer would be a body that is no
     # longer the head — the "true-in-the-past returned as current" error the
     # whole tier is written to avoid.
@@ -2040,7 +2040,7 @@ RECALL_LOOKUPS_MAX_CHARS = 8000
 # How many notes one `note_search` hands back, and it is NOT a model-supplied
 # parameter on purpose (DEC-24's rule: a parameter is a value the model must
 # invent on every call, so each one buys a way to get the call wrong). A
-# unit holds tens of notes and the curator's retirement pass is what keeps
+# unit holds tens of notes and the Cognition session's `note_retire` is what keeps
 # it that way, so a query matching more than five bodies is a query too vague
 # to act on — the answer to that is a better query, not a longer list. Each hit
 # carries a whole head body, and a tool result is re-sent on every subsequent
@@ -4205,7 +4205,7 @@ class NoteCollaborator(Protocol):
     `tests/contract/test_note_store_contract.py`, which is what actually holds
     them to one behaviour. This declares the verbs the tool layer calls
     and no more: `standing` (title resolution, §16.1), `read`, `search`,
-    `create`, `append_revision`, `record_miss`,
+    `create`, `append_revision`,
     `merged_successor_by_title` (a merged note's title forwards, design 41
     §7.5), and `revision_chain`/`successor` (`remind`'s one-open-row check,
     issue #158).
@@ -4238,10 +4238,6 @@ class NoteCollaborator(Protocol):
         evidence_room: str | None = None,
     ) -> NoteRevision: ...
 
-    async def record_miss(
-        self, *, unit: str, probe: str, conversation_id: str, now_ms: int,
-    ) -> int: ...
-
     async def merged_successor_by_title(
         self, *, unit: str, title: str,
     ) -> Note | None: ...
@@ -4259,7 +4255,8 @@ class NoteCollaborator(Protocol):
 
 #: NOT DEFINED HERE — an ordinary import, used by `note_read`/`note_update`
 #: below. `note_handle` moved to `nora.domain.notes` on 2026-09-13 (#228) when
-#: `nora.language.note_candidates` became its fourth reader: `nora.language`
+#: `nora.language.note_candidates` (deleted 2026-10-03, DEC-277) became its fourth reader:
+#: `nora.language`
 #: sits below `nora.agent` in the layered import contract, so the choice was
 #: move it down or keep a second copy, and the whole argument for one spelling
 #: is in that function's own docstring. It also stays importable FROM here
@@ -4615,15 +4612,16 @@ def build_tool_specs(
     answers from whichever half IS wired and says so
     (`steam_wired`/`discord_wired`/`voice_wired`).
 
-    `online_scope` is the proactive decide turn's input-domain override
+    `online_scope` was the proactive decide turn's input-domain override (deleted
+    2026-10-03, DEC-277; no caller supplies one now)
     (design/online-status/03): a per-CALL resolver for "who this call may
     answer about", supplied by `RegistryToolSource` only for a home-room
-    decide turn — the home roster unioned with the note's established-in
+    build — the home roster unioned with the note's established-in
     subjects — where a tag turn leaves it `None` and the domain is the
     invoking room's own roster. When supplied it WINS and `room.scope()` is
     never queried; when it raises, the call answers `unavailable`, never a
     narrowed guess. It must never become a registry field — it is bound to
-    exactly one decide turn, the way `supplied_unit` below is.
+    exactly one build, the way `supplied_unit` below is.
 
     `supplied_unit` is the Dreamer's half of the key-path fix (32 §3.4,
     and `08-state.md` §10's named trap): a UNIT-keyed adaptor's key IS
@@ -7888,7 +7886,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "couldn't check, and never guess who is online, playing, "
                         "or in voice.",
             }
-        # The input domain (03-guards): the decide turn's supplied union WINS
+        # The input domain (03-guards): a supplied union WINS
         # when present — and `room.scope()` is then never queried — otherwise
         # the invoking room's own roster. A scope the tool cannot obtain is
         # `unavailable`, never a narrowed guess; a DEGRADED room (narrowed to
@@ -12530,8 +12528,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record(metrics, "note_read", "unavailable")
             return dict(notes_off)
         if found is None:
-            # The note was standing a moment ago and is not readable now — the
-            # curator retired it out from under this call, or the unit
+            # The note was standing a moment ago and is not readable now — a
+            # note_retire (or note_merge) took it out from under this call, or the unit
             # moved. «I could not read it», never «there is no such note»: the
             # index she is looking at still says there is.
             _record(metrics, "note_read", "unavailable", reason="vanished")
@@ -12587,35 +12585,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             _record(metrics, "note_search", "unavailable")
             return dict(notes_off)
         if not hits:
-            # THE NEGATIVE CACHE (§4.5), and the whole reason a miss is worth
-            # writing down: one room asking after something no note covers is
-            # noise; the third time is the signal the curator reads to decide
-            # a note should exist. Best-effort — a miss cache that cannot be
-            # written must not turn a real `nothing_found` into a failure.
-            #
-            # NOT UNDER A SHADOW COGNITION SESSION (#637 review, blocker): the
-            # session's ceiling is «may look, may not write», and this upsert
-            # is a write to `note_candidate`, the live table the note curator
-            # reads to decide a note should exist, plus the counter that
-            # counts it. A session whose every probe fed the live curator
-            # would make «shadow» a claim about the session's VERBS and not
-            # about its reads. It reads the answer and records nothing.
-            if dream_adaptor != COGNITION_ADAPTOR:
-                try:
-                    await book.record_miss(
-                        unit=_unit() or "", probe=probe,
-                        conversation_id=bound_conversation_id, now_ms=_now_ms(),
-                    )
-                except Exception:
-                    log.exception("note_search could not record the miss")
-                else:
-                    # INSIDE the `else`, so this counts a miss that was actually
-                    # WRITTEN. Counting before the call would make the metric agree
-                    # with itself while the cache stayed empty — and a candidate
-                    # series that cannot be reconciled against `note_candidate`'s
-                    # row count is the same self-attesting instrument this whole
-                    # block exists to stop shipping.
-                    metrics.inc("nora_note_candidates_total", trigger="miss")
             _record(metrics, "note_search", "nothing_found")
             return {
                 "status": "nothing_found",
@@ -12797,7 +12766,7 @@ Args:
         positions mapped to the row ids her transcript showed (G4), then
         parsed against those rows, the roster and the ids the note already
         cites. The normalised body, or the refusal she reads, naming the
-        rule so she can correct the call (27 §5.3). Unlike note-candidates
+        rule so she can correct the call (27 §5.3). Unlike the deleted note-candidates pass
         there is no carry-forward check: `note_update` replaces freely, with
         a person in the turn, which is where a conflated line comes out."""
         rows = [r.id for r in bound_window]
@@ -12871,7 +12840,7 @@ Args:
             return dict(notes_off)
         # WHO WROTE IT. `established_by` is not decoration: §9.6's strike reset
         # fires only on a tag-path revision, and a revision written under
-        # nobody's name makes the curator's loop breaker reset itself forever.
+        # nobody's name makes the strike-reset loop breaker reset itself forever.
         # Same refusal `remind` makes, for the same class of reason.
         tagger = room.tagger
         if tagger is None:
@@ -12890,7 +12859,8 @@ Args:
         # AN OPEN TITLE IS REFUSED (design 41 §7.2). Nothing in the schema
         # stops a second open note with the same title, and one is an
         # amplifier on both write paths: a later `updates` naming it matches
-        # two notes, and note-candidates used to create a third. The room's
+        # two notes, and the (deleted, DEC-277) note-candidates pass used to create a third. The
+        # room's
         # question already has a note; the model's job is to update it.
         try:
             open_titles = [n.title for n in await book.standing(unit=_unit() or "")]
@@ -12983,7 +12953,7 @@ Args:
             # model-facing argument can carry; this keys on the resolved note
             # ID. They differ in exactly one case, and it is the one that
             # matters: the title resolved to a DIFFERENT note between the read
-            # and the write (the curator retired one and another now answers to
+            # and the write (a note_retire left one and another now answers to
             # the name). The guard would wave that through on a title it has
             # seen; there is no head recorded for the note it actually reached,
             # so this refuses.

@@ -182,13 +182,6 @@
   "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
  },
  {
-  "name": "note-candidates: rollup_read/standing_read are no longer withheld (M1)",
-  "file": "nora/language/note_candidates.py",
-  "old": "    \"rollup_read\": \"Cognition-only: lineage binds it to a room this pass has no grant for\",\n    \"standing_read\": \"Cognition-only: lineage binds it to a room this pass has no grant for\",\n",
-  "new": "",
-  "target": "tests/test_composition.py::test_only_the_cognition_session_holds_rollup_read_and_standing_read"
- },
- {
   "name": "dreamer: an adaptor may declare the Cognition-only reads (M1, class closure)",
   "file": "nora/agent/dreamer.py",
   "old": "    loop_only = declared & DREAMER_LOOP_TOOLS\n",

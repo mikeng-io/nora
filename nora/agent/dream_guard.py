@@ -22,8 +22,8 @@ What it ADDS, and the tag path has no equivalent:
 
 * **a per-PASS ceiling on MEMORY reads** (issue #160). The per-tool budgets
   bound each verb on its own, which a turn spends by asking four different
-  memory verbs the same question: the proactive decide turn's live trace
-  (Langfuse `340373cd`, 2026-09-10) held two notes whose two handles were
+  memory verbs the same question: the (since-deleted, DEC-277) proactive decide
+  turn's live trace (Langfuse `340373cd`, 2026-09-10) held two notes whose two handles were
   already rendered in its own `<people>` index and still spent `about`,
   `search_memory_workspace` and `ask_memory` on them. The objective was
   rewritten four ways to ration it; the count moved every time and never
@@ -100,7 +100,8 @@ _PASS_TOOLS = "<tool calls this pass>"  # noqa: S105 — a ledger key, not a sec
 #: — so «this tool does not exist» and «this pass has read as many notes as
 #: it may» were one series, and the series could not answer the only question
 #: worth asking of it: is a ceiling BINDING. Measured that morning, the 05:00
-#: proactive pass was refused a fourth note in each of its two scopes and
+#: proactive pass (deleted 2026-10-03, DEC-277) was refused a fourth note in each of its two
+#: scopes and
 #: went on to decide every note anyway; nothing in Prometheus could
 #: distinguish that from a misspelled tool name, and nothing did. Its own
 #: rate is the instrument for `[dreamer.budgets.<adaptor>] tool_calls`: a

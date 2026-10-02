@@ -549,7 +549,7 @@ class TagContext:
     # Deliberately the whole standing set and never a top-N: a note absent from
     # the index is invisible to her, and invisible is indistinguishable from
     # absent. The prompt budget is paid by the per-entry caps in
-    # `nora.domain.notes` and by the curator's retirement pass, not here.
+    # `nora.domain.notes` and by `note_retire`, not here.
     notes: tuple[Note, ...] = ()
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
     # THIS conversation, folded from the previous turn by the debrief stage.
@@ -602,7 +602,8 @@ class TagContext:
     # participation and the proactive act turn (`FirePath.build_context`,
     # `_DECISION_WRITERS_BY_KIND`) — because «she already raised this two hours
     # ago» is what changes the answer for both. The act turn was left out until
-    # 2026-09-17 on the argument that it already holds the decide pass's index;
+    # 2026-09-17 on the argument that it already held the decide pass's index (deleted 2026-10-03,
+    # DEC-277);
     # that index is what she MEANT to raise, and two rows due 30 minutes apart
     # duplicated a raise because nothing said what the loop had since DONE.
     # Each occasion reads with its own writer set (`decision_log`).

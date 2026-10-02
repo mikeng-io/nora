@@ -1019,11 +1019,12 @@ class ToolRegistry:
         row in code rather than from a tagger it does not have.
 
         `online_scope` is per-CALL for the same reason `supplied_unit`
-        is, from that same caller: `RegistryToolSource` supplies it only for
-        a home-room decide turn, resolving `online_now`'s input domain to the
+        is, from that same caller: `RegistryToolSource` supplied it only for
+        a home-room decide turn (deleted 2026-10-03, DEC-277; no caller now), resolving
+        `online_now`'s input domain to the
         home roster unioned with the note's established-in subjects
         (design/online-status/03). It must not become a registry field — it
-        is bound to exactly one decide turn, never to background loops, and
+        is bound to exactly one build, never to background loops, and
         every tag-path caller leaves it None so the domain is the invoking
         room's own roster."""
         return build_tool_specs(

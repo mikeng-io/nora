@@ -99,21 +99,12 @@ RAW = {
     ("nora/engagement/stages/debrief.py", "run", "read"): (1,
         "the tag fold's OWN prior position (`standing_prior`): read raw so the fold "
         "sees what it wrote and can supersede it"),
-    ("nora/ingest/stages/standing_event.py", "_event_fold", "read"): (1,
-        "the event fold's OWN prior position (`standing_prior`), for the same reason "
-        "as the tag fold's"),
-    ("nora/ingest/stages/standing_event.py", "_check", "read"): (1,
-        "the trigger counts the rows since the prior's watermark to decide whether to "
-        "fold; renders nothing"),
     ("nora/language/culture.py", "inputs", "head"): (1,
         "the culture fold's OWN prior account (`previous_account`): the fold must see "
         "what it wrote to supersede it. Its `<standing>` beside it IS guarded"),
     ("nora/language/culture.py", "commit", "head"): (1,
         "compares the head's body with the proposal to skip an identical write; "
         "renders nothing"),
-    ("nora/language/proactive.py", "_changed_since", "read"): (1,
-        "a change signal (`updated_at` newer than the last pass): renders nothing, "
-        "and the pass it triggers renders through the guarded `_standing_lines`"),
     ("nora/subject/standing_fold.py", "read_fold_turn", "read_as_of"): (1,
         "the eval seam reads the prior as of a past instant to seed a sandbox; the "
         "fold under test reads it raw like production's own, and nothing renders here"),

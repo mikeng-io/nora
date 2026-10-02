@@ -118,7 +118,7 @@ NORA_BLOCKS_EMPTY = "nora.blocks_empty"
 #:
 #: Eval runs force `[obs.tracing]` off, deliberately: a run's spans would land
 #: in the deployment's own collector beside real ones. The cost of that was
-#: measured on 2026-09-22 — a note-candidates case failed with a truncation
+#: measured on 2026-09-22 — a note-candidates case (since deleted, DEC-277) failed with a truncation
 #: and the call that truncated was invisible, so the only way to ask "cut off
 #: at what?" was to change a ceiling and re-run. Reading the numbers HERE
 #: needs no second Langfuse project, no credential, and cannot pollute
@@ -1314,8 +1314,8 @@ def _refuse_a_remind_case_already_pending(
 
     Measured live, issue #158: a case anchored where its own expected
     reminder is ALREADY pending does not measure the decision it is named
-    for. The decide turn's own `<decisions>` block shows the pending row, a
-    turn that declines to double-book it ("one reminder per thing") is
+    for. The (deleted, DEC-277) decide turn's own `<decisions>` block showed the pending row, a
+    turn that declined to double-book it ("one reminder per thing") is
     correct to do so, and a case expecting `remind` there measures the
     double-booking guard instead of itself.
     """
@@ -1329,7 +1329,7 @@ def _refuse_a_remind_case_already_pending(
         raise ValueError(
             f"case {case.name!r} expects a fresh `remind` about note id(s) "
             f"{clash}, but its own anchor instant already has a reminder "
-            "PENDING on that note — the decide turn will correctly decline "
+            "PENDING on that note — the (deleted) decide turn would have correctly declined "
             "('one reminder per thing'), so this case would measure the "
             "double-booking guard, not itself. Re-anchor it before the "
             "pending row was created, or change its expectation to `none` "
@@ -1779,7 +1779,8 @@ def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
         person=str(md.get("person") or "miles_novak"),
         mention=bool(md.get("mention", False)),
         # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
-        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs.
+        # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs (only
+        # `culture` is left; the default names a deleted adaptor, DEC-277).
         category=str(md.get("category") or ""),
         # `NoraCase.metadata`'s own docstring is "whatever else the corpus
         # recorded, carried verbatim" — `proactive_act` reads its `row` off
@@ -1986,7 +1987,7 @@ class IdempotenceGrader(Evaluator):
     **Scoped to notes/staging, not room speech** (review, 2026-09-19): this
     reads `written`/`changed`/`staged` only. `dreamer()`
     (`evals/rebuilt/entry.py`) never populates `Outcome.said` at all — the
-    decide pass writes notes and reminders, not room messages — so there is
+    (deleted) decide pass wrote notes and reminders, not room messages — so there is
     no `said` signal here to check, and "writes nothing new" means exactly
     the notes/staging surface, not a broader claim about speech.
     """

@@ -1,4 +1,4 @@
-"""A shadow Cognition session's READ tools write nothing live (#637 review,
+"""A Cognition session's READ tools write nothing (#637 review,
 blocker).
 
 **The defect.** `note_search` upserted `note_candidate` and bumped
@@ -18,8 +18,8 @@ counted again: NOT ONE table outside `cognition_*` may have gained a row.
 Honcho is a recording double that fails on any write verb.
 
 A test that finds nothing proves nothing, so it has its own positive control:
-the same miss under a non-cognition adaptor DOES add a `note_candidate` row,
-so the snapshot can see the write it exists to catch.
+a row written to a live table DOES move the snapshot, so it can see the write
+it exists to catch.
 
 Rooms, people and words are placeholders.
 
@@ -327,24 +327,20 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.
-    assert world.metrics.get("nora_note_candidates_total", trigger="miss") == 0
     assert world.memory.fed == [] and world.memory.writes == [] and world.memory.peers == []
     assert world.memory.queries and world.memory.chats and world.memory.searches   # and it WAS read
 
 
-async def test_the_positive_control_the_same_miss_under_another_adaptor_does_write(engine, world):
-    """Without this the assertion above could pass because the snapshot cannot
-    see the write. A non-cognition Dreamer adaptor's miss IS recorded."""
+async def test_the_positive_control_a_live_write_moves_the_snapshot(engine, world):
+    """Without this the assertions above could pass because the snapshot cannot
+    see a write. `note_search` no longer records a miss anywhere (DEC-277), so
+    the control is a row written to a live table directly: `_live` must move."""
     before = await _counts(engine)
-    other = world.source.build(
-        key="ROOM-A", names=frozenset({"note_search"}), unit=None,
-        adaptor="note-candidates", grant=cognition_grant(),
-    )
-    (tool,) = other
-    assert (await _call(tool, query="zzz-no-such-word"))["status"] == "nothing_found"
+    await _say(engine, platform="signal", room="ROOM-A", person="p1", sender=ADA,
+               ts=NOW_MS, body="a control row")
     after = await _counts(engine)
-    assert after["note_candidate"] == before["note_candidate"] + 1
-    assert world.metrics.get("nora_note_candidates_total", trigger="miss") == 1
+    assert after["messages"] == before["messages"] + 1
+    assert _live(after) != _live(before)
 
 
 async def test_a_cognition_miss_records_nothing_and_still_answers_nothing_found(engine, world):
@@ -356,7 +352,6 @@ async def test_a_cognition_miss_records_nothing_and_still_answers_nothing_found(
     answer = await _call(tool, query="zzz-no-such-word")
     assert answer["status"] == "nothing_found"                  # the read is unchanged
     assert (await _counts(engine))["note_candidate"] == before
-    assert world.metrics.get("nora_note_candidates_total", trigger="miss") == 0
 
 
 # ---- a two-room agenda reads each room through itself, through the real registry ----------------
@@ -389,4 +384,3 @@ async def test_the_two_room_reads_write_nothing_either(engine, world):
             for room in ("signal:ROOM-A", "discord:ROOM-B"):
                 await _call(tools[name], room=room, **arguments)
     assert _live(await _counts(engine)) == _live(before)
-    assert world.metrics.get("nora_note_candidates_total", trigger="miss") == 0

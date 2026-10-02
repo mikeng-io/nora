@@ -5,8 +5,9 @@ and the room Standing schema, live: the debrief and the ingest fold both
 write through it from here, so the head has one shape." Two callers wrote
 `Standing` rows directly before this — the tag path's debrief
 (`nora.engagement.stages.debrief`) and the rollup fold
-(`nora.ingest.stages.standing_event`) — each constructing a `Standing` and
-calling `SqlStandingStore.write` on its own. From this step both go through
+(`nora.ingest.stages.standing_event`, deleted 2026-10-03, DEC-277) — each constructing a
+`Standing` and
+calling `SqlStandingStore.write` on its own. From this step both went through
 one verb (`nora.infra.sql.standing_revise.standing_revise`, the async half
 that resolves a caller's `base_revision_id` against the stored head and then
 calls the checks below), so a row written by the tag path's debrief and one

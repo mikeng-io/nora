@@ -84,8 +84,9 @@ async def read_culture(
     **WITHDRAWAL IS APPLIED HERE, for every occasion at once**
     (design/cognition-loop/10-tiers.md §2 rule 7, `nora.domain.withdrawal`).
     This is every prompt's way to a culture head, so a head whose source was
-    withdrawn stops rendering in the tag turn, the fire turn, proactive,
-    note-candidates, the curator and the event fold alike, and a new occasion
+    withdrawn stops rendering in the tag turn and the fire turn (and, until
+    2026-10-03, proactive, note-candidates, the curator and the event fold)
+    alike, and a new occasion
     that reads through here cannot forget it: the rule used to be two copies at
     the tag and fire call sites, and the Dreamer prompts had none, so a
     retracted message or a forgotten person's account could be read by a model
@@ -126,7 +127,7 @@ def render_culture(
     block that appeared blank would be read as «this room has no character».
 
     `room` names WHICH room the account is of, and is passed only by an
-    occasion that reads more than one room in one prompt (proactive, the note
+    occasion that reads more than one room in one prompt (the since-deleted proactive pass and note
     curator): there, an unlabelled account is an account of nowhere. An
     occasion inside one room omits it, and its block is byte-identical to the
     participation turn's from before the tier was widened.

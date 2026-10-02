@@ -89,7 +89,7 @@ BlockKey = Literal["global", "unit", "room", "person", "turn"]
 #: a closed set of 1..N, so an out-of-range `reply_to` is refusable rather than
 #: a lookup that might hit some other row, and no raw identifier reaches the
 #: model. `row_id` is the note tier's `[7]`, which IS the row id because the
-#: curator's grounding check cites it back. `bullet` is the operator surfaces'
+#: grounding check cites it back. `bullet` is the operator surfaces'
 #: `- `, which addresses nothing. `bare_id` is the note-candidate index's `7 `
 #: — the same row id without brackets, because that line already opens with a
 #: bracketed clock and two bracketed fields in a row read as one.
@@ -153,7 +153,7 @@ class RowStyle:
     #: delimits the head of the line.
     bracket_speaker: bool = False
     #: What HER OWN rows are called. The tag prompt uses her display name so the
-    #: transcript and `tag_message from=` agree; the curator's own-sends block
+    #: transcript and `tag_message from=` agree; an own-sends block
     #: uses "you" because the surrounding sentence is addressed to her.
     self_name: str = ""
 
@@ -915,8 +915,9 @@ def render_elements(
     per-render handle rather than a field: a closed set of 1..N, so an
     out-of-range reference is refusable rather than a lookup that might hit some
     other record. A caller that needs the row's own id instead returns it here —
-    `note_candidates` must, because `accept()` joins the model's `message_ids`
-    back onto real ids and a positional index would silently fail that join.
+    a pass whose model cites `message_ids` must (the deleted note-candidates
+    pass did, DEC-277), because a positional index would silently fail the join
+    back onto real ids.
 
     **A `None` value DROPS its attribute** rather than rendering empty. Same
     rule as `_when`'s: a symbol that can mean "unknown" invites a model to emit
@@ -1032,17 +1033,17 @@ def render_row_window(
     back shares fixed.
 
     **`n` IS THE ROW'S OWN ID, never a position, and it is always first.** A pass
-    whose model cites rows back — note-candidates' `message_ids`, the curator's
-    grounding — validates the citation against the ids it rendered, and a
+    whose model cites rows back — the Cognition session's cited ids (and the deleted note-candidates
+    `message_ids`) — validates the citation against the ids it rendered, and a
     per-render position fails that join silently and empties the pass. The tag
     prompt is the one occasion that uses positions, with `resolve_positions` to
     map them back, and it renders through `render_messages` instead. A pass that
     cites ids must not be able to forget that, so it is not an attribute the
     caller supplies.
 
-    `attrs` is the occasion's OWN attributes after `n`, in its order — the
-    candidates' `at`, `from`, `room`, `reply_to`; the curator's `age` and `from`
-    — and a `None` drops its attribute, as in `render_elements`. Escaping, the
+    `attrs` is the occasion's OWN attributes after `n`, in its order — e.g.
+    `at`, `from`, `room`, `reply_to` — and a `None` drops its attribute, as in `render_elements`.
+    Escaping, the
     one-line collapse of every value and the body's escape are
     `render_elements`'; nothing here can switch them off.
     """

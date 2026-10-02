@@ -81,7 +81,7 @@ SENT = "sent"
 # (design/dreamer-agent-loop/39 D12): a `kind="proactive"` act turn reading
 # its own earlier intention against the room now and declining it. DONE, not
 # FAILED — the decision log (39 D7) reads every row of Nora's own, and a
-# restraint recorded as a failure teaches the next decide turn that
+# restraint recorded as a failure teaches the next decider that
 # restraint fails. The same string `nora.app.fire.SILENT` answers with; a
 # spelling drift here would turn every restraint back into a failure.
 SILENT = "silent"
@@ -448,7 +448,7 @@ def _state_for(outcome: str) -> ReminderState:
     turn can answer it (`nora.app.fire`), and for that turn saying nothing
     is the healthy default, not a delivery that never happened. Mapped to
     FAILED it would read as one in every query, in the metric, and in the
-    decision log the next decide turn learns from.
+    decision log the next decider learns from.
     """
     return ReminderState.DONE if outcome in (SENT, SILENT) else ReminderState.FAILED
 

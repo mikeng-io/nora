@@ -206,7 +206,6 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.cognition_pace import PendingSelfWake
-from nora.domain.cognition_remind import PendingMirroredRemind
 from nora.domain.computer import BytesResult as BytesResult
 from nora.domain.computer import FileResult as FileResult
 from nora.domain.computer import ListResult as ListResult
@@ -1213,59 +1212,15 @@ class NewCognitionSessionClose:
     strike: int = 0
 
 
-@dataclass(frozen=True)
-class NoteHead:
-    """A note's head as the live store's compare-and-swap would see it: the
-    revision id a revision must be written against, and whether the note is
-    retired (an append requires an open one). Read through the real read path
-    (`SqlNoteStore.note_by_id`) by the Cognition session's dry-run
-    `note_update`, so the same refusals the live store makes are made without a
-    write; `None` in its place is a note absent from the unit."""
-
-    head_revision_id: str
-    retired: bool = False
-
-
-@dataclass(frozen=True)
-class NewCognitionWouldWrite:
-    """A `nora.domain.cognition_write.WouldWrite`, addressed to a session
-    and a unit — the port's own copy of the same fields rather than an
-    import of the domain dataclass, matching `NewStimulus`/`Stimulus` next
-    door: the domain type is what code BUILDS, the port type is what a store
-    PERSISTS, and they are allowed to diverge without either changing the
-    other's shape."""
-
-    session_id: int | None
-    unit: str
-    tier: str
-    verb: str
-    platform: str
-    conversation_id: str
-    args: dict[str, object]
-    outcome: str
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-    candidate: dict[str, object] | None = None
-    base_revision_id: str | None = None
-
-
 @runtime_checkable
-class CognitionDryRunStore(Protocol):
-    """`cognition_session`, `cognition_session_close` and
-    `cognition_would_write` (design/cognition-loop/70-migration.md step 3a).
-    All three append-only (10-tiers.md §8): a session is one row written at
-    its start, never revised; a close and a would-write are each their own
-    row. Implementations: `nora.infra.sql.cognition_dry_run.
-    SqlCognitionDryRunStore`, `nora.testing.cognition_dry_run_store.
-    InMemoryCognitionDryRunStore`, bound by
-    `tests/contract/test_cognition_dry_run_store_contract.py`.
-
-    **Never called outside `[cognition] session_mode = "shadow"`.** This
-    port exists so shadow has somewhere to write instead of a live tier
-    store — see `nora.agent.cognition_dry_run` for the wrappers that call
-    it and `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`
-    for what a module reachable from shadow may import.
-    """
+class CognitionStore(Protocol):
+    """A Cognition session's own bookkeeping: `cognition_session`,
+    `cognition_session_close` and `cognition_self_wake`, each append-only
+    (10-tiers.md §8). The session's writes to the tiers go to the tiers'
+    own stores (notes, events, Standing, reminders), never here.
+    Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
+    `nora.testing.cognition_store.InMemoryCognitionStore`, bound by
+    `tests/contract/test_cognition_store_contract.py`."""
 
     async def record_session(
         self, *, session: NewCognitionSession, recorded_at_ms: int,
@@ -1279,25 +1234,11 @@ class CognitionDryRunStore(Protocol):
         """Append one agenda item's close row and return its id."""
         ...
 
-    async def record_would_write(
-        self, *, write: NewCognitionWouldWrite, recorded_at_ms: int,
-    ) -> int:
-        """Append one would-write row and return its id."""
-        ...
-
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
     ) -> int:
         """Append one pace-verb transition (`wake_at`/`wake_move`/
         `wake_cancel`, step 3a-ii) and return its id."""
-        ...
-
-    async def record_remind_mirror(
-        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
-    ) -> int:
-        """Append one mirrored `remind`/`remind_move`/`remind_cancel` call
-        (step 3a-ii, 30-cognition.md §2: "every reminder cognition writes is
-        mirrored to a review channel and held") and return its id."""
         ...
 
     async def pending_self_wakes(
@@ -1314,17 +1255,6 @@ class CognitionDryRunStore(Protocol):
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
         """`created` (recorded, not refused) `wake_at` rows for the unit at or
         after `since_ms` (the per-day cap's count; moves do not count)."""
-        ...
-
-    async def pending_mirrored_reminds(
-        self, *, unit: str, now_ms: int,
-    ) -> Sequence[PendingMirroredRemind]:
-        """The unit's mirrored reminds still PENDING at `now_ms`: per
-        `reminder_ref`, the latest recorded link decides; cancelled and due
-        (its time is at or before `now_ms`; nothing fires in shadow) are not
-        pending (`nora.domain.cognition_remind.fold_pending_reminds`). BOUNDED:
-        only refs with a recorded `remind` or `remind_move` due at or after
-        `now_ms` are read."""
         ...
 
 
@@ -1352,29 +1282,6 @@ class NewCognitionPace:
     refusal_detail: str | None = None
     stimulus_id: int | None = None
     supersedes: str | None = None
-
-
-@dataclass(frozen=True)
-class NewCognitionRemindMirror:
-    """One `remind`/`remind_move`/`remind_cancel` call, mirrored and held
-    (never sent, never fired) — design/cognition-loop/30-cognition.md §2 and
-    the migration's "shadow before cut-over" rule."""
-
-    session_id: int | None
-    unit: str
-    verb: str
-    reminder_ref: str | None
-    platform: str
-    conversation_id: str
-    intent: str | None
-    subject_rows: tuple[str, ...]
-    at_ms: int | None
-    why: str | None
-    outcome: str
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-
-    async def aclose(self) -> None: ...
 
 
 #: How a source's health row came about: a `poll` it made, or a `transition`
@@ -1408,7 +1315,7 @@ class MemoryStore(Protocol):
     workspace's HONCHO workspace and its own named scope inside it. A caller
     never names a Honcho workspace itself: a `workspace_id` parameter used to
     be here, and a unit name passed through it addressed a Honcho workspace
-    that did not exist (`NoteCurator._discharge`, 2026-09-19). On the peer
+    that did not exist (the since-deleted `NoteCurator._discharge`, 2026-09-19). On the peer
     verbs (`ensure_peer`, `conclude`, `peer_card`, `representation`, `chat`)
     the key ROUTES only; it never narrows a read to one session. `peer_card`
     and `representation` also take `workspace` — a NORA workspace name — for
@@ -2526,9 +2433,9 @@ class Proposal:
 #: module both sides can read. `DEFAULT_STANDING_STORE_TIMEOUT_SECONDS` in
 #: `nora.domain.standing` is the same arrangement for the same reason.
 #:
-#: **15s is sized against the CURATOR's degraded worst case, not against one
-#: healthy call.** The number multiplies SITES, and a site inside a per-note
-#: loop runs once per note: `NoteCuratorAdaptor.inputs` renders up to
+#: **15s was sized against the (deleted, DEC-277) CURATOR's degraded worst
+#: case, not against one healthy call.** The number multiplies SITES, and a site inside a per-note
+#: loop runs once per note: `NoteCuratorAdaptor.inputs` rendered up to
 #: `max_expired_per_tick` + `max_revisits_per_tick` notes (20 + 10 on the
 #: shipped config) and each one costs a `record.recent` plus a
 #: `MediaJoin.enrich` that carries its OWN 3s bound (`[media]
@@ -2542,9 +2449,10 @@ DEFAULT_DREAM_STORE_TIMEOUT_SECONDS = 15.0
 
 
 #: The ceiling every `DreamAdaptor.store_calls_per_tick` may declare (issue
-#: #191). Today's four are 5 (`CultureAdaptor`), 10 (`NoteCuratorAdaptor`), 12
-#: (`NoteCandidateAdaptor`) and 17 (`ProactiveAdaptor`) — this is headroom over
-#: the widest of those, not a measurement of any one of them.
+#: #191). Today's one is 5 (`CultureAdaptor`); the four it was sized against were 5, 10
+#: (`NoteCuratorAdaptor`), 12 (`NoteCandidateAdaptor`) and 17
+#: (`ProactiveAdaptor`), the last three deleted 2026-10-03 (DEC-277) — this is
+#: headroom over the widest of those, not a measurement of any one of them.
 #:
 #: **It exists so `[dreamer] max_unit_hold_seconds`'s startup gate
 #: (`nora.config`) can PROVE its number against `2 x
@@ -2660,8 +2568,8 @@ class DreamAdaptor(Protocol):
     uses_watermark: bool
     """False for an adaptor that does not consume a message batch at all, and
     which therefore gets no watermark, lag or quiet condition and must carry
-    its own fire condition. `nora.language.note_curator.NoteCuratorAdaptor` is
-    the shipped one: it reads LIVE STATE — which anchors have passed, which
+    its own fire condition. the (deleted, DEC-277) `NoteCuratorAdaptor` was
+    the shipped one: it read LIVE STATE — which anchors have passed, which
     notes are due — and none of those questions has a "since when"."""
 
     objective: str
@@ -2707,9 +2615,9 @@ class DreamAdaptor(Protocol):
     **SITES, not dynamic calls, and the difference is where the arithmetic
     bites.** A site inside a per-item loop runs once per item, so the real
     fan-out is the site count times the adaptor's own per-tick cap:
-    `NoteCandidateAdaptor.commit` can reach 64 items (`MAX_ITEMS`) x 6 sites,
-    and `NoteCuratorAdaptor.inputs` renders up to 30 notes x 2 evidence
-    calls. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` above is therefore sized
+    the (deleted) `NoteCandidateAdaptor.commit` could reach 64 items
+    (`MAX_ITEMS`) x 6 sites, and `NoteCuratorAdaptor.inputs` rendered up to 30
+    notes x 2 evidence calls. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` above is therefore sized
     against the widest of those degraded cases and NOT against one healthy
     call — an earlier draft of this paragraph divided a per-PHASE bound by a
     per-CALL latency, claimed three orders of magnitude of headroom, and was
@@ -2773,8 +2681,8 @@ class DreamAdaptor(Protocol):
 
         **`commit(key, ())` is a legal and meaningful call**, not a call to
         skip: it is R-27's `nothing_found` — «I looked and there was nothing» —
-        and it is where time-driven decay lives. Verified against the shipped
-        curator: `NoteCuratorAdaptor.commit` with zero proposals still records
+        and it is where time-driven decay lives. Verified against the (since-deleted)
+        curator: `NoteCuratorAdaptor.commit` with zero proposals still recorded
         a WAKE for every note the run selected, advancing `revisit_at` and
         charging a strike to a note nobody answered. None of the adaptor's
         other fields has a slot for that. The runtime NOT calling `commit` is
@@ -2816,7 +2724,7 @@ class DreamSink(Protocol):
     - `propose(key, ())` — the adaptor ran and found nothing. `nothing_found`,
       «I looked and there was nothing». It is a LEGAL call and the sink may act
       on it, because decay is TIME-driven rather than evidence-driven: the
-      shipped curator's own `commit` with zero proposals still records a wake
+      (since-deleted) curator's own `commit` with zero proposals still recorded a wake
       for every note the run selected. None of the five adaptor fields has a
       slot for that, so this is where it lives.
     - not calling `propose` at all — the adaptor could not check. `unavailable`,
@@ -3286,7 +3194,7 @@ class StandingStore(Protocol):
         """This conversation's current position, or `None` if it has none."""
         ...
 
-    async def write(self, *, standing: Standing) -> None:
+    async def write(self, *, standing: Standing, source: str = "fold") -> None:
         """Revise the row in place, keyed `(platform, conversation_id)`.
 
         An upsert rather than an insert-or-update pair: two tags for one

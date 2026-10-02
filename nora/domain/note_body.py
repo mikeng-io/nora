@@ -9,10 +9,11 @@ language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
 abbreviation) are keys, and code parses keys (§5).
 
-**One writer calls `parse_note_body` so far**: note-candidates' `accept()`,
-on a CREATE's body (design 42 S2, `nora.language.note_candidates`). S4a adds
-that pass's update arm, S4b the tag path's `note_create`/`note_update`, S6
-note-merge's fold.
+**Writers that call `parse_note_body`**: the tag path's `note_create`/`note_update`
+(S4b) and the Cognition session's `note_create`/`note_update`/`note_merge`
+(`nora.app.cognition_session`). Its first callers, the note-candidates pass's
+`accept()` and the `note-merge` fold (design 42 S2/S4a/S6), were deleted
+2026-10-03 (DEC-277).
 It is called by each WRITER and never by `NoteRevision.__post_init__`: rows
 written before the schema must still read back (§9).
 
@@ -67,8 +68,8 @@ REQUIRED: tuple[str, ...] = ("Decided", "Open")
 ATTRIBUTED: frozenset[str] = frozenset({"Decided", "Proposed", "Ruled out"})
 
 #: Every rule a refusal names (§4.5). One value per `NoteBodyError.rule`, so a
-#: counter labelled by it (`nora_note_candidate_body_refused_total{rule}`, S2)
-#: has a closed vocabulary.
+#: counter labelled by it (`nora_cognition_refused_total{verb, rule}`) has a
+#: closed vocabulary.
 RULES: frozenset[str] = frozenset({
     "unknown_section", "section_order", "missing_section", "not_a_line",
     "uncited", "unknown_id", "cites_nora", "misattributed", "unknown_owner",
@@ -633,7 +634,7 @@ def _line(
 def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> NoteBody:
     """The body, held to §4, or `NoteBodyError` naming the rule it broke.
 
-    `require_open` is note-candidates' create: the objective's own rule for a
+    `require_open` is a create's (and a merge's): the objective's own rule for a
     new entry is `committed` AND a non-empty `open`, so `## Open` holds at
     least one line there (§4.1). Elsewhere an empty `## Open` means «nothing
     left open as of this revision».

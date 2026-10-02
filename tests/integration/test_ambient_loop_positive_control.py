@@ -36,12 +36,9 @@ THE ASSERTIONS, EACH AT THE STAGE WHERE IT BECOMES DECIDABLE
    `delivery_status=sent`  (`test_1_*`)
 2. after the tag turn — `llm_error`, and no second send  (`test_2_*`)
 3. after the debrief — the header is turn-scoped (`3a`), the fold is told her
-   row in the window was delivered (`3a2`), no note and no create-candidate come out
-   of a dead turn (`3c`), and neither background pass is shown the false
-   premise (`3d`)
-4. after the proactive decide tick at +80min — the pass declines to render
-   (`unchanged`) and no `kind="proactive"` reminder row exists  (`test_4_*`;
-   read its docstring for what a green there is and is not worth)
+   row in the window was delivered (`3a2`) (the note-candidates and proactive
+   passes this case once followed further are deleted; the Cognition session
+   replaced them)
 5. across the whole run — zero sends into the home room  (`test_5_*`)
 
 **3 WAS RED ON MASTER AND THAT WAS THE POINT.** This case was landed as the
@@ -74,9 +71,7 @@ a journey case is a stage that silently never happened:
 * the tag turn actually reached the model and actually raised (the scripted
   runner records its invocations; a tag that never ran would leave zero);
 * the debrief fold actually ran — the scripted debrief client records its
-  call, and `test_0_*` refuses a run where it made none;
-* the proactive pass actually ran — it counted itself on
-  `nora_proactive_pass_total`.
+  call, and `test_0_*` refuses a run where it made none.
 
 WHAT IS FAKE, AND WHAT THAT COSTS
 ---------------------------------
@@ -85,7 +80,7 @@ the real `IngestPipeline` + `EngagementPipeline` + `Dispatcher` from
 `tests.offline_pipeline.build_offline_pipeline`, the real `RelevanceGatePolicy`, the
 real `RelevanceGate`, the real `ParticipationTrigger`, the real `FirePath`, the
 real guards and `Deliverer`, the real `debrief.run` stage over the real
-`nora/dreamer/` objectives, and the real `ProactiveAdaptor`. The stores are
+`nora/dreamer/` objectives. The stores are
 `nora/testing/`'s in-memory doubles, each of which is bound to its production
 sibling by a suite under `tests/contract/`.
 
@@ -191,8 +186,6 @@ from nora.engagement.stages import debrief
 from nora.ingest.policy import RelevanceGatePolicy
 from nora.ingest.relevance_gate import Completion as GateCompletion
 from nora.ingest.relevance_gate import RelevanceGate
-from nora.language.note_candidates import NoteCandidateAdaptor
-from nora.language.proactive import PASS_CLOCK_NAME, ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import load_policy
@@ -201,7 +194,6 @@ from nora.testing import (
     FakeAgentRunner,
     FakeMemoryStore,
     FakeRecordStore,
-    InMemoryDreamScheduleClock,
     InMemoryNoteStore,
     InMemoryStandingStore,
     ScriptedTurn,
@@ -244,14 +236,6 @@ T_ANSWER = _ms(16, 43, 57)
 #: the fold had her row in its window and generalised past it anyway.
 T_TAG = _ms(16, 43, 57)
 T_DEBRIEF = _ms(16, 45, 14)
-#: The hourly proactive tick between the debrief and the one this case asserts
-#: on. The adaptor ticks hourly per unit; 17:00 is the first tick that sees
-#: the debrief's write, and 18:03 — the one that actually raised it live — is
-#: the next. Stamping the pass clock here is what makes the +80-minute tick a
-#: statement about "has anything moved SINCE", which is the check the adaptor
-#: actually makes, rather than about a pass that never happened.
-T_PASS_BEFORE = _ms(17, 0, 0)
-T_PROACTIVE = _ms(18, 3, 33)
 
 QUESTION = "聽朝10點要由屋企到Cyberport ABC Service Centre，點去？"
 ROUTE_ANSWER = "聽朝 10 點到數碼港：喺天華邨搭 969P，8:25 左右出門，轉 970 入數碼港。"
@@ -395,16 +379,6 @@ class _Journey:
     sent_all: tuple[tuple[str, str], ...] = ()
     #: the fold's INPUT, as the debrief stage rendered it
     fold_input: str = ""
-    #: the note-candidates tick's rendered batch
-    note_candidates_envelope: str = ""
-    #: the proactive pass's rendered envelope; `""` means it did not render
-    proactive_envelope: str = ""
-    proactive_pass_reasons: tuple[str, ...] = ()
-    #: the envelope of the FIRST pass that could see the debrief's writes — the
-    #: pass clock stamped before the question rather than after the fold. This
-    #: one renders, so it is where what the decider is SHOWN becomes readable.
-    first_seeing_envelope: str = ""
-    note_titles_at_decide: tuple[str, ...] = ()
 
 
 def _sends(adapter: FakeAdapter) -> tuple[tuple[str, str], ...]:
@@ -588,93 +562,7 @@ async def _drive(tmp_path: Path) -> _Journey:
         debrief_client.standing_calls[-1] if debrief_client.standing_calls else ""
     )
 
-    # --- the note-candidates tick over the same room ------------------------
-    # The real `NoteCandidateAdaptor`, over the real batch the runtime would
-    # hand it (`RecordStore.since`, human rows only). Driven at `inputs` only,
-    # for the same reason the proactive pass below is: `inputs` is the
-    # runtime's own fire condition (`nora/agent/dreamer.py`: a blank prompt
-    # means no model and no tools), and everything past it is a model's
-    # decision, which with a scripted model would be my decision wearing a
-    # measurement's clothes.
-    #
-    # What it is here for: this is the SECOND tier shown what the fold wrote,
-    # and `test_3d_*` reads the envelope back.
-    batch = await audit.since(
-        conversation_id=THREAD_ROOM, after_id=0, limit=cfg.standing.fold_batch,
-    )
-    candidates = NoteCandidateAdaptor(
-        notes=note_store, candidates=note_store,
-        unit_for=lambda _scope: UNIT, metrics=metrics,
-        timezone=HKT,
-        # #161 (PR #202) landed after this case was written: the adaptor now
-        # requires the room's label and the operator's description, keyed the
-        # same way `composition.py` keys them. The journey's two rooms carry
-        # the labels its policy block declares; no description is set, which
-        # is the deployment's state too.
-        label_for={THREAD_ROOM: "thread", HOME_ROOM: "home"}.get,
-        description_for={}.get,
-    )
-    journey.note_candidates_envelope = await candidates.inputs(
-        key=THREAD_ROOM, batch=batch,
-    )
-
-    # --- 18:03:33 — Decide (proactive), +80 minutes. -----------------------
-    # BEFORE both passes, and load-bearing: `clock.now` is read by reference
-    # inside `_pass_reason`, whose daily-floor arm compares LOCAL DATES.
-    clock.advance_to(T_PROACTIVE)
-    rooms = (
-        UnitRoom(
-            platform="signal", conversation_id=THREAD_ROOM, label="thread",
-        ),
-        UnitRoom(
-            platform="telegram", conversation_id=HOME_ROOM, label="home", home=True,
-        ),
-    )
-
-    async def _pass(*, last_pass_ms: int) -> tuple[str, tuple[str, ...]]:
-        """One real proactive pass over THIS journey's own stores.
-
-        Reads nothing but the adaptor's own inputs and writes nothing (the
-        wake and the pass stamp are `commit`'s, which a pass that does not
-        render never reaches), so the two passes below are independent.
-        """
-        pass_clock = InMemoryDreamScheduleClock()
-        await pass_clock.record_fire(
-            adaptor_name=PASS_CLOCK_NAME, key=UNIT, at_ms=last_pass_ms,
-        )
-        pass_metrics = Metrics()
-        adaptor = ProactiveAdaptor(
-            notes=note_store, standing=standing_store, reminders=reminders,
-            memory=memory, rooms_of=lambda ws: rooms if ws == UNIT else (),
-            ai_peer=cfg.memory.ai_peer, clock=clock.now, timezone=HKT,
-            clock_store=pass_clock, records=audit, metrics=pass_metrics,
-        )
-        envelope = await adaptor.inputs(key=UNIT, batch=())
-        reasons = tuple(sorted({
-            dict(labels).get("reason", "")
-            for (name, labels), value in pass_metrics.snapshot().items()
-            if name == "nora_proactive_pass_total" and value
-        }))
-        return envelope, reasons
-
-    journey.note_titles_at_decide = tuple(
-        note.title for note in await note_store.standing(unit=UNIT)
-    )
-    # The pass this case's assertion 4 is about: the last pass ran at 17:00,
-    # after the fold, so the 18:03 tick is deciding whether anything has moved
-    # SINCE — which is the check the adaptor actually makes.
-    journey.proactive_envelope, journey.proactive_pass_reasons = await _pass(
-        last_pass_ms=T_PASS_BEFORE,
-    )
-    # And the pass that FIRST sees the fold's writes — last pass at 16:42,
-    # before the question. This one renders, which is what makes the decide
-    # turn's INPUT readable at all.
-    journey.first_seeing_envelope, _ = await _pass(last_pass_ms=T_QUESTION)
-
     journey.sent_all = _sends(adapter)
-    # AFTER both passes, and load-bearing: `_quiet` fails closed on a read
-    # error, so a store closed first would turn both passes into `held_quiet`
-    # — a reason `test_4_*` rejects, but for the wrong cause.
     await audit.aclose()
     return journey
 
@@ -718,10 +606,6 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     assert journey.debrief_client.other_calls == [], (
         "the debrief fold made a call other than its one position call"
     )
-    assert journey.note_candidates_envelope, (
-        "the note-candidates tick must have rendered the room's batch — an "
-        "empty batch means the tick never saw the exchange"
-    )
     # THE CONTROL THE WHOLE OF STAGE 3 RESTS ON, asserted here rather than
     # inside an xfail (where it would never execute): the fold's own window
     # carries her sent row, at the clock the incident recorded, ABOVE the tag.
@@ -748,10 +632,6 @@ def test_0_every_stage_of_the_journey_actually_ran(journey: _Journey) -> None:
     )
     assert "Nora" not in lines[2], (
         f"the tag must render AFTER her row, not before it; got {lines}"
-    )
-    assert journey.proactive_pass_reasons, (
-        "the proactive pass must have counted itself — no reason label means "
-        "no pass ran and assertion 4 proves nothing"
     )
 
 
@@ -926,135 +806,9 @@ def test_3a2_the_fold_is_told_her_row_in_the_window_was_delivered(
     )
 
 
-async def test_3c_no_note_is_proposed_from_a_dead_turn(journey: _Journey) -> None:
-    """#199 shape 3 — a note proposed from a dead turn is about the TURN.
-
-    The fold was scripted to propose the incident's own note, whose premise
-    («the model call failed, Nora sent no reply») was false at the moment of
-    writing, and whose closing condition («Nora successfully sends a route»)
-    had already been met, by her own row, 78 seconds earlier.
-
-    Decidable on the notebook, not on the note's language: an `llm_error` fold
-    must leave the unit with no new note and no staged create-candidate.
-
-    Since 2026-09-24 the debrief creates no notes on ANY outcome, so this
-    holds by construction: the fold is still scripted to answer with the
-    note, and the stray field reaches nothing.
-    """
-    assert await journey.notes.standing(unit=UNIT) == (), (
-        "an llm_error fold must not create a note: "
-        f"{[n.title for n in journey.notes.notes.values()]}"
-    )
-    assert journey.notes.create_candidates == {}, (
-        "an llm_error fold must not even stage a create-candidate: "
-        f"{journey.notes.create_candidates}"
-    )
-
-
-def test_3d_the_proactive_decider_is_never_shown_the_false_premise(
-    journey: _Journey,
-) -> None:
-    """#199 shape 3, read one stage later — «and the loop raised it in the
-    wrong room 90 minutes later».
-
-    The decide turn reads `<open_notes>` and Standing and, by D9, no
-    transcript: faced with a note saying «未覆» it had no input that could
-    contradict it. So the measurement that matters at this stage is not what
-    the model chose — with a scripted model that is my script — but what it was
-    SHOWN.
-
-    This is the pass whose clock sits BEFORE the question, i.e. the first one
-    that can see the fold's writes at all; it renders, so its envelope is
-    readable. Decidable on the structure, not on the note's language: the
-    unit must have no open note for the tick to carry.
-
-    The note-candidates tick is asserted here too, and for the same reason at a
-    different tier: it is the SECOND background pass shown the note index, and
-    the false note reaches it the same way.
-
-    KNOWN FALSE-NEGATIVE, low severity and loud: if the fix also stops the fold
-    writing a POSITION on `llm_error`, this pass has no open notes and no
-    standing lines, returns `""` via `nothing_shown`, and the first assert
-    below fails on a correct fix. It fails with that message, not silently.
-    """
-    assert journey.first_seeing_envelope, (
-        "the first pass after the fold must have rendered, or this assertion "
-        "is about an envelope nobody was shown (if the fix also stopped the "
-        "fold writing a position, this pass now renders nothing — rewrite, "
-        "do not delete)"
-    )
-    # `<notes>` since #314, not `<open_notes>`: this pass renders the tag
-    # path's block through the tag path's renderer, and the second name was an
-    # accident of the two prompts being written months apart.
-    open_notes = journey.first_seeing_envelope.split("<notes")[1].split(
-        "</notes>",
-    )[0]
-    assert "(none)" in open_notes, (
-        "a dead tag turn must leave the proactive decider nothing to raise; "
-        f"it was shown {journey.note_titles_at_decide}"
-    )
-    assert not any(
-        title in journey.note_candidates_envelope
-        for title in journey.note_titles_at_decide
-    ), (
-        "the note-candidates tick must not be shown the false note either; "
-        f"its rendered index carries {journey.note_titles_at_decide}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # 4 — the proactive decide tick, +80 minutes
 # ---------------------------------------------------------------------------
-
-
-async def test_4_the_proactive_tick_raises_nothing(journey: _Journey) -> None:
-    """18:03:33 — the pass runs, declines to render, and writes no row.
-
-    WHAT THIS DOES AND DOES NOT COVER, because the distinction is the whole
-    value of the assertion. The `remind` rows are written inside the model
-    loop, so with a scripted model "she chose not to remind" would be my
-    script, not a measurement. What IS a measurement is the deterministic pass
-    check that runs BEFORE any model is near (`_pass_reason`, issue #136): it
-    reads this journey's own note store, standing store and record store and
-    decides whether the tick renders at all. A pass that does not render cannot
-    raise anything, whatever a model would have said.
-
-    WHAT IT IS WORTH, said plainly so nobody reads more into a green than is
-    there. The pass clock is stamped at 17:00 — after the fold — and nothing in
-    this journey moves between 17:00 and 18:03, so `unchanged` is guaranteed by
-    CONSTRUCTION: `_pass_reason` returns it at the `_changed_since` arm before
-    `held_quiet` is ever evaluated. This assertion would have been green during
-    the live incident too. **It has no discriminating power for #199** — it is
-    a regression guard on the change-detector, and the instrument for the
-    incident's own 90-minute raise is `test_3d_*`.
-
-    `unchanged` is asserted exactly, not as a disjunction with `nothing_shown`:
-    `nothing_shown` is unreachable here (the unit has both a note and a
-    position), and a disjunction that can only ever take one branch reads like
-    two covered cases while covering one.
-    """
-    assert journey.proactive_pass_reasons == ("unchanged",), (
-        "the +80-minute pass must have declined to render, and for the right "
-        f"reason; got {journey.proactive_pass_reasons}. It was shown notes "
-        f"{journey.note_titles_at_decide} and rendered "
-        f"{journey.proactive_envelope[:400]!r}"
-    )
-    assert journey.proactive_envelope == "", (
-        "a pass that rendered an envelope paid for a model call it did not "
-        f"need: {journey.proactive_envelope[:400]!r}"
-    )
-    # THE LITERAL CLAIM — «nothing lands in any room after the first answer» —
-    # and it cannot fail in this journey: no stage here reaches the `remind`
-    # tool, which the runtime builds below the fire condition. Kept because it
-    # is what the claim actually says and it costs nothing; NOT an instrument.
-    # The day a sibling case drives a real `commit`, that is where it earns.
-    proactive_rows = [
-        row for row in await journey.reminders.all_pending(limit=1000)
-        if row.kind == "proactive"
-    ]
-    assert proactive_rows == [], (
-        f"nothing may be scheduled into any room after her answer: {proactive_rows}"
-    )
 
 
 # ---------------------------------------------------------------------------

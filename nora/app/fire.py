@@ -346,7 +346,8 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     consequence of a `None` tagger. `speak` skips §12's refusal for it
     exactly as it does for a version announcement.
 
-    `body` is the INTENT the decide turn wrote — «raise the dinner plan now
+    `body` is the INTENT the Cognition session's `remind` wrote (the decide turn before
+    2026-10-03) — «raise the dinner plan now
     that people know where they are coming from» — put to her the way a
     reminder puts the requester's own sentence: as what was asked, in the
     asker's words, and the asker is her earlier self. The header carries
@@ -1042,9 +1043,11 @@ class FirePath:
         A reminder or a gathering firing was decided when its row was written,
         so neither reads either. The proactive act turn now reads the decision
         log, because «the loop already took this floor 31 minutes ago» is a
-        fact about the ROOM that its own decide-pass index cannot carry — but
+        fact about the ROOM that the decide pass's index (deleted 2026-10-03, DEC-277) could not
+        carry — but
         it still does not read memory, because «what do I know about these
-        people» is research the decide pass already did, at Honcho round trips
+        people» is research the decide pass (now the Cognition session) already did, at Honcho
+        round trips
         rather than one SQL read, and design 39's whole split is research at
         decide time and the room at act time. This is the turn deciding
         whether to speak into a room nobody addressed her in AND holding no
@@ -2245,7 +2248,8 @@ class FirePath:
         The log and the mirror are both write-only as far as a prompt is
         concerned: one goes to a file, one goes to a channel an operator reads.
         Neither is reachable from the gate deciding whether to admit the next
-        window in this room, or from the proactive pass deciding what to raise
+        window in this room, or from a proactive decider (the decide pass, deleted 2026-10-03)
+        deciding what to raise
         in it tomorrow. That is the whole gap — three decision paths, one room,
         and 2026-09-10's duplicate answered twice and raised a third time.
 
@@ -2609,7 +2613,7 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     Her OWN rows are excluded for the same reason `_window_speakers` excludes
     them: the question is what the ROOM is talking about, and an answer she
     already gave is the loudest self-echo there is (39 §1's argument for
-    dropping `load_transcript` from the decide turn, one path over).
+    dropping `load_transcript` from the decide turn (deleted 2026-10-03, DEC-277), one path over).
     """
     # FILTER, then slice. It sliced first until a reviewer read it on
     # 2026-09-11: a window whose newest six rows are four of her own replies

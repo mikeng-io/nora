@@ -196,10 +196,6 @@ CONVERTED = (
     "nora/infra/transit/arrivals.py",
     "nora/language/cognition_render.py",
     "nora/language/culture.py",
-    "nora/language/note_candidates.py",
-    "nora/language/note_curator.py",
-    "nora/language/note_merge.py",
-    "nora/language/proactive.py",
     "nora/domain/summons.py",
     "nora/skills/loader.py",
 )

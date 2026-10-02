@@ -175,7 +175,7 @@ tests:
   # simulated clock itself). Never fires.
   - interval: 1m
     input_series:
-      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="shadow"}'
+      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="live"}'
         values: '0+60x60'
     alert_rule_test:
       - eval_time: 55m
@@ -186,7 +186,7 @@ tests:
   # tick (minute 15), pending for the 2m `for`, then fires. Not at 16m (pending).
   - interval: 1m
     input_series:
-      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="shadow"}'
+      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="live"}'
         values: '0+60x5 300x55'
     alert_rule_test:
       - eval_time: 16m
@@ -203,7 +203,7 @@ tests:
                 what is pending; the log says why the tick stopped
                 (`docker logs nora --since 1h | grep -i "wake tick"`).
 
-  # NOT APPLICABLE: `[cognition] mode = off` exports no sample, while the target is
+  # NOT APPLICABLE: `[cognition] enabled = false` exports no sample, while the target is
   # alive. An absence-based rule would page a deployment that has no wake loop.
   - interval: 1m
     input_series:

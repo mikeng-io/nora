@@ -867,7 +867,7 @@ class Sandboxed:
     #: seeded into anything. BY ID rather than title (issue #158 review: a
     #: title match is missed by a rename and collapsed by a duplicate title).
     #: `evals.backbone` refuses a `remind` case whose own expected note
-    #: resolves to an id in here: the decide turn's `<decisions>` would show
+    #: resolves to an id in here: the (deleted) decide turn's `<decisions>` would show
     #: the row pending, and a correct decline ("one reminder per thing")
     #: would measure the double-booking guard rather than the case itself.
     #: Defaulted so a fake `Sandboxed` built before this field existed still

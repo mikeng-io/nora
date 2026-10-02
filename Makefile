@@ -8,7 +8,7 @@
 
 .PHONY: test test-fast test-affected lint typecheck imports gate full-gate mutate \
         setup hooks schema-parity heads decision-numbers \
-        eval-participation eval-note-candidates eval-adversarial-corpora eval-gate \
+        eval-participation eval-adversarial-corpora eval-gate \
         release-check release-notes release \
         build build-release up stop logs ps \
         branches
@@ -131,14 +131,6 @@ eval-source:
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
 	uv run python -m evals participation
-
-# The note-candidates scenario suite (design/dreamer-agent-loop/37 §7, issue
-# #118): 18 batches through the real Dreamer runtime + adaptor, N samples
-# each, graded on the notebook. `make eval-note-candidates SAMPLES=5`
-# measures with that many draws per case.
-SAMPLES ?= 3
-eval-note-candidates:
-	uv run python -m evals note_candidates --sample $(SAMPLES)
 
 # --- release fragments ---
 

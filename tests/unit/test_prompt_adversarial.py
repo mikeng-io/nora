@@ -110,13 +110,6 @@ _NO_MEMBER_CONTENT = {"prefill.header"}
 #: the value, so there is nothing to render and nothing to assert. Each is a
 #: validator doing its job, named here rather than silently skipped.
 _REFUSED_UPSTREAM = {
-    # `Note.__post_init__` bounds a title to 60 characters and a description to
-    # 200 «because it is injected on every tag», and `_required` rejects a blank
-    # one. The proactive pass renders notes, so an over-long or blank payload
-    # never becomes one.
-    ("proactive", "a_very_long_body"),
-    ("proactive", "only_whitespace"),
-    ("proactive", "only_a_non_breaking_space"),
     # `parse_skill` rejects a blank `description` outright — it is one of two
     # required keys — so no such skill is ever loaded to be rendered.
     ("skills", "only_whitespace"),
@@ -254,12 +247,10 @@ async def test_no_payload_breaks_an_opening_tag(builder: str, payload: str):
 #: Verbatim is the DEFAULT and each exception is a bound somebody is defending,
 #: which is the right way round: `render_messages`' whole point is that «the
 #: body keeps its shape — a member's paragraph breaks, list and pasted block
-#: survive intact». Two of the three entries here are not clips at all but
-#: destinations — a value that lands in an ATTRIBUTE is not the text of an
+#: survive intact». The entry here is not a clip at all but a
+#: destination — a value that lands in an ATTRIBUTE is not the text of an
 #: element and cannot be checked as one.
 _NOT_VERBATIM = {
-    "proactive": "the payload is a note DESCRIPTION, bounded to 200 characters "
-                 "by `Note.__post_init__` because it is injected on every tag",
     "skills": "`when_to_load` is an attribute, not a body — a skill's body is "
               "withheld on purpose, which is what progressive disclosure IS — "
               "and an attribute value is COLLAPSED, so it is not verbatim by "
@@ -384,7 +375,7 @@ async def test_a_body_cannot_hold_a_character_xml_cannot_represent(
 #: parsers write the sender's own profile string to `sender_name` unsanitised
 #: (`speaker_label`'s 2026-09-13 finding).
 _GUARDS_THE_COLLAPSED_NAME = (
-    "relevance_gate", "note_curator", "note_candidates", "culture",
+    "relevance_gate", "culture",
 )
 
 #: **Was the unfinished half; now empty.** `prefill._label` and

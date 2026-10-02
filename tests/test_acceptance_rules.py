@@ -50,12 +50,6 @@ RULE_TESTS = {
     # (ordinary ambient traffic constructs ZERO agents) and its sibling pins
     # the exception's gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-75: the curator, the note tier's only cross-note writer. Its merge
-    # clauses were deprecated on 2026-09-08 with the merge half itself (the
-    # row says which clauses survive); the named test is now the retire
-    # clause that outlives it — a note whose body moved between `inputs` and
-    # `commit` is never retired on the stale reading.
-    "R-75": "test_a_note_that_moved_since_inputs_is_not_retired",
     # R-1b: R-1's FIRST clause, revised. `nora.app.fire.FirePath` made "only the
     # tagging path may cause a send" false — a fire turn is a send not caused by
     # a tag. R-1 keeps its entry rather than losing it (the DEC-40 precedent
@@ -462,12 +456,6 @@ RULE_TESTS = {
     # at `who_said`'s enforcement instead, which the decision index's own
     # R-73 row already cited as a second satisfying test.
     "R-73": "test_neither_the_words_nor_a_line_reaches_the_collector",
-    # R-74 names the no-evidence refusal rather than the citation check,
-    # because it is the clause a future change is most likely to "simplify":
-    # a passed anchor date LOOKS sufficient for expiry, and treating it as
-    # sufficient is what turns a quiet room into a swept notebook. The other
-    # five grounds are named in the decision index row.
-    "R-74": "test_no_retirement_is_reachable_without_evidence",
     # R-76 names the CHILD test rather than either drop test, and that is the
     # deliberate choice: «ingest is not exported» is the symptom everyone
     # remembers, but the rule a future change breaks is that the decision is

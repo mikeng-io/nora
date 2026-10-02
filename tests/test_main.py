@@ -647,8 +647,16 @@ async def test_app_run_releases_what_a_previous_process_left_before_the_wake_loo
     import nora.__main__ as main_module
 
     cfg = tomllib.loads(env.read_text())
-    cfg["cognition"] = {"mode": "shadow"}
+    cfg["cognition"] = {"enabled": True}
+    cfg["dreamer"]["enabled"] = True
+    cfg["notes"] = {"enabled": True}
+    cfg["dreamer"].setdefault("budgets", {})["cognition"] = {
+        "turns": 200, "total_tokens": 10240000, "output_tokens": 120000,
+        "timeout_seconds": 3600.0,
+    }
     env.write_text(tomli_w.dumps(cfg))
+    policy = env.parent / "policy.toml"
+    policy.write_text(policy.read_text() + 'unit = "friends"\nhome_room = true\n')
     order: list[str] = []
     started: list[int] = []
 
@@ -680,7 +688,7 @@ async def test_app_run_releases_what_a_previous_process_left_before_the_wake_loo
 
 
 async def test_no_reclaim_and_no_wake_loop_when_cognition_is_off(env, monkeypatch):
-    """The control: with `[cognition] mode = off` there is no evaluator to ask."""
+    """The control: with `[cognition] enabled = false` there is no evaluator to ask."""
     app = await build_app(env)
     try:
         assert app.deps.wake_evaluator is None

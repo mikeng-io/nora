@@ -71,7 +71,6 @@ from .stages import media as media_stage
 from .stages import memory_feed as memory_feed_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
-from .stages import standing_event as standing_event_stage
 from .stages import stimulus as stimulus_stage
 from .stages import touch as touch_stage
 
@@ -210,7 +209,6 @@ class IngestPipeline:
         transcriber: Transcriber | None = None,
         comprehension: MediaComprehension | None = None,
         language: str = "",
-        standing_event_wiring: Any | None = None,
         stimulus_wiring: stimulus_stage.Wiring | None = None,
         delete_withdrawer: DeleteWithdrawer | None = None,
         withdrawal_retry_delays: tuple[float, ...] = (2.0, 15.0, 120.0),
@@ -250,16 +248,8 @@ class IngestPipeline:
         the body beside the handle. `language` is the BCP-47 hint forwarded to
         the transcriber.
 
-        `standing_event_wiring` is the event-driven standing fold path
-        (design/standing-watermark/10): `None` (the default and every offline/
-        eval composition) leaves the stage inert. Present, every message that
-        lands in this conversation triggers a spawned check that folds when
-        the accumulator reaches `fold_batch`. Gated on `[standing]
-        event_enabled` in the composition root, like `debrief.Wiring` is gated
-        on `[standing] enabled`.
-
         `stimulus_wiring` is the stimulus stage (design/cognition-loop/20 §3):
-        `None` — the default, `[cognition] mode = "off"`, and every offline/
+        `None` — the default, `[cognition] enabled = false`, and every offline/
         eval composition — writes no stimulus. Present, every recorded
         person-authored item (a message, a changed edit, a reaction, a delete)
         appends one stimulus row with its cues.
@@ -288,7 +278,6 @@ class IngestPipeline:
         self._transcriber = transcriber
         self._comprehension = comprehension
         self._language = language
-        self._standing_event_wiring = standing_event_wiring
         self._stimulus_wiring = stimulus_wiring
         self._delete_withdrawer = delete_withdrawer
         self._withdrawal_retry_delays = withdrawal_retry_delays
@@ -454,8 +443,8 @@ class IngestPipeline:
             _outcome(m, message, stopped)
             return IngestResult(message=None, decision=None)
         # The STIMULUS, right behind the Record row it names (20 §3). Inside the
-        # guard for `standing_event`'s reason: a span for a stage that cannot
-        # run would claim work that never happened.
+        # guard: a span for a stage that cannot run would claim work that never
+        # happened.
         if self._stimulus_wiring is not None:
             with span("ingest.stimulus"):
                 await stimulus_stage.run(
@@ -468,24 +457,6 @@ class IngestPipeline:
                 message=message, person=person, memory=self._memory, metrics=m,
                 spawn=self._spawn,
             )
-
-        # The standing event trigger (design/standing-watermark/10): EVERY
-        # message — tagged or not — spawns a check that reads the conversation's
-        # watermark and folds when the accumulator reaches fold_batch. Off the
-        # listener path via `spawn` (the same pattern memory_feed uses just
-        # above): the check reads two stores and may enqueue a fold, so an
-        # inline await would stall the socket read for every conversation on the
-        # adapter. `None` wiring (`[standing] event_enabled = false` or the tier
-        # off) makes this whole stage inert — and the span is INSIDE the guard
-        # so an unconfigured stage leaves the ingest trace exactly as it was:
-        # a span for a stage that cannot run would make every message's trace
-        # claim work that never happened.
-        if self._standing_event_wiring is not None:
-            with span("ingest.standing_event"):
-                await standing_event_stage.run(
-                    message=message, wiring=self._standing_event_wiring,
-                    metrics=m, spawn=self._spawn,
-                )
 
         with span("ingest.gate"):
             decision = await gate_stage.run(

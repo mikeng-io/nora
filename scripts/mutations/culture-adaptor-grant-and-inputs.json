@@ -35,20 +35,6 @@
     "target": "tests/test_composition.py -k culture"
   },
   {
-    "name": "part 2a: the grant stops naming a home room",
-    "file": "nora/agent/dreamer.py",
-    "old": "    A function rather than a module-level constant, for `proactive_grant`'s\n    reason (DEC-13).\n    \"\"\"\n    return AdaptorGrant(home_room=True)",
-    "new": "    A function rather than a module-level constant, for `proactive_grant`'s\n    reason (DEC-13).\n    \"\"\"\n    return AdaptorGrant()",
-    "target": "tests/test_composition.py::test_the_granted_verbs_are_actually_BUILT_for_a_culture_key"
-  },
-  {
-    "name": "part 2a: the grant quietly picks up an act verb",
-    "file": "nora/agent/dreamer.py",
-    "old": "    A function rather than a module-level constant, for `proactive_grant`'s\n    reason (DEC-13).\n    \"\"\"\n    return AdaptorGrant(home_room=True)",
-    "new": "    A function rather than a module-level constant, for `proactive_grant`'s\n    reason (DEC-13).\n    \"\"\"\n    return AdaptorGrant(acts=frozenset({\"remind\"}), home_room=True)",
-    "target": "tests/unit/test_culture_adaptor.py -k grant_names_NO_act"
-  },
-  {
     "name": "part 2a: the adaptor goes back to tool-free",
     "file": "nora/language/culture.py",
     "old": "    tools: frozenset[str] = CULTURE_TOOLS",

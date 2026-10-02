@@ -252,8 +252,8 @@ class TranscriptInjection:
         # degrades to the stored body — which already says `[image a3f2c1]`,
         # so a join that does not happen claims nothing.
         #
-        # `MediaJoin` is SHARED with the fire path, both standing folds, the
-        # Dreamer's batch, the note curator, lazy adoption and
+        # `MediaJoin` is SHARED with the fire path, the standing fold, the
+        # Dreamer's batch, lazy adoption and
         # `load_transcript` — EIGHT transcript builders, one answer to «what
         # did that photo show». The first cut of #116 put this join here and
         # nowhere else, so seven of the eight saw a bare handle where master
@@ -662,7 +662,7 @@ class TranscriptInjection:
                 "nora_errors_total", stage="notes", platform=msg.platform)
             return ()
         # `config.toml`'s [notes] section names this metric as "the tell": with
-        # no curator, nothing retires a note, so the reading that matters is
+        # no retirement, nothing retires a note, so the reading that matters is
         # whether the index grows faster than it earns.
         #
         # It is published HERE and not from a new `gather` leaf in `assemble`,

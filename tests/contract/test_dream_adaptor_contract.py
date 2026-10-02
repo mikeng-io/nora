@@ -55,26 +55,16 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from nora.agent.dream_screen import screen
-from nora.agent.dreamer import AdaptorGrant, proactive_grant
+from nora.agent.dreamer import AdaptorGrant
 from nora.agent.registry import ToolRegistry
 from nora.domain.models import DeliveryStatus, TranscriptRow
-from nora.domain.notes import anchor_bounds_ms
 from nora.domain.ports import DreamAdaptor, Proposal
-from nora.language.note_candidates import NoteCandidateAdaptor
-from nora.language.note_curator import NoteCuratorAdaptor
-from nora.language.note_merge import NoteMergeAdaptor
-from nora.language.proactive import ProactiveAdaptor, UnitRoom
 from nora.obs.metrics import Metrics
-from nora.testing import InMemoryDreamScheduleClock, InMemoryNoteStore
-from nora.testing.fakes import FakeRecordStore
-from nora.testing.reminders import FakeReminderStore
 
 DREAMER_DIR = Path(__file__).resolve().parents[2] / "nora" / "dreamer"
 
@@ -133,7 +123,7 @@ class _FakeAdaptor:
     # A real objective file, not an invented name: the contract asserts that an
     # adaptor's objective RESOLVES, and a fake pointing at a name nobody ships
     # would make that test pass by never being able to fail.
-    objective = "note-curation"
+    objective = "culture"
     envelope_key = "observations"
     tools = frozenset({"load_transcript", "now"})
     #: `DreamAdaptor.store_calls_per_tick` (issue #60) — the runtime reads it
@@ -224,293 +214,6 @@ class _Impl:
     grant: AdaptorGrant = field(default_factory=AdaptorGrant)
 
 
-# -- the proactive adaptor (design/dreamer-agent-loop/39, DEC-162) ------------
-#
-# The first PRODUCTION adaptor in this map. Its backing is the in-memory note
-# store its sink writes wakes to; `written` counts notes woken, which is what
-# `commit` returns for it — its rows are written by `remind` inside the loop,
-# not by the sink. `prepare` seeds two open notes and renders `inputs` once,
-# because `accept` is HANDLE-based and a handle is meaningless before the
-# render that assigned it (the same reason the field exists).
-
-_PROACTIVE_WS = KEY
-
-
-def _build_proactive() -> tuple[ProactiveAdaptor, InMemoryNoteStore]:
-    notes = InMemoryNoteStore()
-    adaptor = ProactiveAdaptor(
-        notes=notes, standing=None, reminders=FakeReminderStore(), memory=None,
-        rooms_of=lambda ws: (
-            UnitRoom(platform="signal", conversation_id="g1", label="G1", home=True),
-        ) if ws == _PROACTIVE_WS else (),
-        ai_peer="nora", clock=lambda: datetime(2026, 9, 9, 0, 0, tzinfo=UTC),
-        timezone=ZoneInfo("Asia/Hong_Kong"),
-    )
-    return adaptor, notes
-
-
-async def _prepare_proactive(adaptor: object) -> None:
-    assert isinstance(adaptor, ProactiveAdaptor)
-    notes = adaptor._notes
-    assert isinstance(notes, InMemoryNoteStore)
-    for n, title in enumerate(("Dinner venue", "Taipei trip")):
-        await notes.create(
-            unit=_PROACTIVE_WS, title=title, description="open",
-            uncertainty="where", closing_condition="settled", established_in="g1",
-            body="open corner", established_by="tag:miles", now_ms=1_000 + n,
-            anchor_date=20260912,
-        )
-    await adaptor.inputs(key=_PROACTIVE_WS, batch=())
-
-
-def _proactive_items() -> tuple[Mapping[str, object], ...]:
-    return (
-        {"note": "1", "action": "remind", "why": "Saturday is near"},
-        {"note": "2", "action": "decline", "why": "nothing to raise"},
-    )
-
-
-def _proactive_malformed_item() -> Mapping[str, object]:
-    return {"note": "9", "action": "maybe", "why": 7}
-
-
-def _proactive_written(_adaptor: object, notes: object) -> int:
-    assert isinstance(notes, InMemoryNoteStore)
-    return sum(1 for n in notes.notes.values() if n.last_wake_revision_id is not None)
-
-
-# -- the note tier's two adaptors (design/dreamer-agent-loop/33, /34) --------
-#
-# **They joined on 2026-09-11 and this file's own docstring had been asking for
-# them since the knowledge tier went.** A contract suite exercising one fake
-# measures the SHAPE and no production behaviour; worse for THIS port, the two
-# properties an adaptor is most likely to get wrong — the handle scheme and the
-# egress screen — are exactly the ones a fake cannot have.
-#
-# Both are keyed on `KEY` so the unit an entry seeds is the unit the
-# shared tests tick. `NoteCandidateAdaptor` is scope-keyed and translates
-# through `unit_for`; `NoteCuratorAdaptor` is unit-keyed and the two
-# are the same string here, which is legal and keeps the fixtures readable.
-
-_NOTE_WS = KEY
-_NOTE_ROOM = "conv-1"
-#: An anchor safely in the past, and deliberately not a plausible near date —
-#: a fixture pinned to next month goes quiet the month after (the note
-#: curator's own suite makes this argument and it is inherited here).
-_PASSED_ANCHOR = 20260101
-_CURATOR_TODAY = 20261001
-
-
-def _after(anchor_date: int) -> int:
-    """The first instant after `anchor_date`'s last — what `_covers` needs
-    before an `expired`/`moot` verdict can ever be grounded."""
-    bounds = anchor_bounds_ms(anchor_date)
-    assert bounds is not None
-    return bounds[1] + 1
-
-
-def _evidence_row(row_id: int, body: str, *, ts: int) -> dict[str, object]:
-    """One `FakeRecordStore` row in the store's own dict shape, in the room
-    the seeded notes name — so it is in scope as evidence for them."""
-    return {
-        "id": row_id, "platform": "signal", "conversation_id": _NOTE_ROOM,
-        "sender_id": "p1", "sender_name": "Ada", "person_id": "ada",
-        "ts": ts, "body": body, "is_nora": False,
-        "delivery_status": DeliveryStatus.SENT, "raw_json": None,
-        "quoted_ts": None, "media_json": "[]",
-    }
-
-
-# -- note-candidates --------------------------------------------------------
-
-
-def _build_note_candidates() -> tuple[NoteCandidateAdaptor, InMemoryNoteStore]:
-    store = InMemoryNoteStore()
-    return (
-        NoteCandidateAdaptor(
-            notes=store, candidates=store,
-            unit_for=lambda scope: _NOTE_WS if scope == KEY else None,
-            label_for=lambda scope: "Zone 42" if scope == KEY else None,
-            description_for=lambda _scope: None,
-            metrics=Metrics(),
-        ),
-        store,
-    )
-
-
-async def _prepare_note_candidates(adaptor: object) -> None:
-    """Render `inputs` over the batch whose ids `make_items` cites.
-
-    `accept` drops any candidate naming a `message_ids` entry outside THIS
-    run's batch — invented provenance is worse than missing provenance — so
-    the render is not scene-setting, it is the half that makes the parse
-    possible at all. Same reason `prepare` exists for the proactive adaptor.
-    """
-    assert isinstance(adaptor, NoteCandidateAdaptor)
-    rows = tuple(
-        TranscriptRow(
-            id=n, sender_id="p1", sender_name="Ada", ts=1_000 + n,
-            body=body, is_nora=False,
-            delivery_status=DeliveryStatus.SENT, raw_json=None,
-        )
-        for n, body in ((1, "邊度食好"), (2, "九月十九號個婚禮仲未揀場"))
-    )
-    await adaptor.inputs(key=KEY, batch=rows)
-
-
-def _note_candidate_items() -> tuple[Mapping[str, object], ...]:
-    """Two candidates on DIFFERENT anchor dates, each body in design 42 §4's
-    schema, citing the rows `_prepare_note_candidates` rendered: a create's
-    body that does not hold to it is refused in `accept` (S2).
-
-    Same date would be one occasion by the create gate's own rule — the second
-    would land as a revision to the first's note rather than a second note —
-    and `test_commit_writes_what_it_was_given` would then be asserting the
-    update arm while reading as the create one.
-    """
-    return (
-        {
-            "title": "Where dinner is",
-            "description": "Three places named, nobody picked one.",
-            "body": "## Decided\n- dinner is on 2026-09-19 (Ada) [1]\n## Open\n- where [1]",
-            "closing_condition": "somebody names the place",
-            "anchor_date": 20260919,
-            "message_ids": [1],
-        },
-        {
-            "title": "Wedding venue",
-            "description": "The September wedding has no venue yet.",
-            "body": "## Decided\n## Open\n- which venue [2]",
-            "closing_condition": "a venue is booked and confirmed",
-            "anchor_date": 20260920,
-            "message_ids": [2],
-        },
-    )
-
-
-def _note_candidate_malformed_item() -> Mapping[str, object]:
-    #  `anchor_date` below the eight-digit floor AND a non-string title: the
-    #  parse drops the whole item rather than filling either in.
-    return {
-        "title": 7, "description": None, "body": "",
-        "closing_condition": "", "anchor_date": 1, "message_ids": [],
-    }
-
-
-def _note_candidate_written(_adaptor: object, store: object) -> int:
-    assert isinstance(store, InMemoryNoteStore)
-    return len(store.notes)
-
-
-# -- note-curation ----------------------------------------------------------
-
-
-def _build_note_curator() -> tuple[NoteCuratorAdaptor, InMemoryNoteStore]:
-    store = InMemoryNoteStore()
-    record = FakeRecordStore()
-    record.rows.append(
-        _evidence_row(1, "冇人講落", ts=_after(_PASSED_ANCHOR)),
-    )
-    return (
-        NoteCuratorAdaptor(
-            notes=store, record=record,
-            today=lambda: _CURATOR_TODAY,
-            max_expired_per_tick=10,
-            metrics=Metrics(),
-            clock=lambda: _after(_PASSED_ANCHOR),
-        ),
-        store,
-    )
-
-
-async def _prepare_note_curator(adaptor: object) -> None:
-    """Two notes whose anchor has passed, then the render that hands them
-    ordinal handles.
-
-    The handles are what `make_items` speaks, and that is the whole point:
-    the model is shown `### note 1`, never a uuid, because the runtime's own
-    egress screen drops any item carrying one. A fixture that passed ids would
-    be exercising a path production cannot take — which is exactly how this
-    adaptor passed eighteen tests while every real item was rejected.
-    """
-    assert isinstance(adaptor, NoteCuratorAdaptor)
-    notes = adaptor._notes
-    assert isinstance(notes, InMemoryNoteStore)
-    for n, title in enumerate(("Dinner, 1 Jan", "Wedding venue")):
-        await notes.create(
-            unit=_NOTE_WS, title=title, description="one line",
-            uncertainty="undecided", closing_condition="somebody decides",
-            established_in=_NOTE_ROOM, body="as it stands",
-            established_by="tag:miles", now_ms=1_000 + n,
-            anchor_date=_PASSED_ANCHOR, anchor_entity_ids=("ada",),
-        )
-    await adaptor.inputs(key=_NOTE_WS, batch=())
-
-
-def _note_curator_items() -> tuple[Mapping[str, object], ...]:
-    return (
-        {"note_id": "1", "verdict": "moot", "why": "the date has passed"},
-        {"note_id": "2", "verdict": "moot", "why": "the date has passed"},
-    )
-
-
-def _note_curator_malformed_item() -> Mapping[str, object]:
-    #  `maybe` is not one of the four verdicts, and `why` is not a string.
-    return {"note_id": "1", "verdict": "maybe", "why": 7}
-
-
-def _note_curator_written(_adaptor: object, store: object) -> int:
-    assert isinstance(store, InMemoryNoteStore)
-    return sum(1 for n in store.notes.values() if not n.is_standing)
-
-
-# -- note-merge ---------------------------------------------------------------
-
-
-def _build_note_merge() -> tuple[NoteMergeAdaptor, InMemoryNoteStore]:
-    """`on`, not `shadow`: the suite asserts a legal batch WRITES, and a
-    shadow pass writes no note by design (it records a decision row)."""
-    store = InMemoryNoteStore()
-    return (
-        NoteMergeAdaptor(
-            notes=store, clock_store=InMemoryDreamScheduleClock(), mode="on",
-            timezone=ZoneInfo("Asia/Hong_Kong"), metrics=Metrics(),
-            clock=lambda: 10_000,
-        ),
-        store,
-    )
-
-
-async def _prepare_note_merge(adaptor: object) -> None:
-    """Two open notes of one room, then the render that hands them ordinal
-    handles — the handles `make_items` speaks."""
-    assert isinstance(adaptor, NoteMergeAdaptor)
-    notes = adaptor._notes
-    assert isinstance(notes, InMemoryNoteStore)
-    for n, title in enumerate(("Saturday dinner", "Neway booking")):
-        await notes.create(
-            unit=_NOTE_WS, title=title, description="one line",
-            uncertainty="where", closing_condition="somebody books it",
-            established_in=_NOTE_ROOM, body="as it stands",
-            established_by="tag:miles", now_ms=1_000 + n, anchor_date=20260927,
-        )
-    await adaptor.inputs(key=_NOTE_WS, batch=())
-
-
-def _note_merge_items() -> tuple[Mapping[str, object], ...]:
-    return ({"notes": ["1", "2"], "why": "both ask where Saturday's dinner is"},)
-
-
-def _note_merge_malformed_item() -> Mapping[str, object]:
-    # `notes` is not a list, and `why` is not a string.
-    return {"notes": "1,2", "why": 7}
-
-
-def _note_merge_written(_adaptor: object, store: object) -> int:
-    assert isinstance(store, InMemoryNoteStore)
-    return sum(1 for n in store.notes.values() if not n.is_standing)
-
-
 IMPLEMENTATIONS: dict[str, _Impl] = {
     "fake": _Impl(
         build=_build_fake,
@@ -518,50 +221,6 @@ IMPLEMENTATIONS: dict[str, _Impl] = {
         make_malformed_item=_fake_malformed_item,
         written=_fake_written,
         empty_commits=_fake_empty_commits,
-    ),
-    "proactive": _Impl(
-        build=_build_proactive,
-        make_items=_proactive_items,
-        make_malformed_item=_proactive_malformed_item,
-        written=_proactive_written,
-        # No `DreamSink` behind it: the empty commit is legal and records
-        # nothing, and there is no counter to reach.
-        empty_commits=None,
-        prepare=_prepare_proactive,
-        grant=proactive_grant(),
-    ),
-    "note-candidates": _Impl(
-        build=_build_note_candidates,
-        make_items=_note_candidate_items,
-        make_malformed_item=_note_candidate_malformed_item,
-        written=_note_candidate_written,
-        # `commit` over an empty batch reaches no sink at all: it resolves the
-        # unit and loops over nothing. The decay argument the field
-        # documents does not apply — this tier's time-driven work is the
-        # curator's, not this one's.
-        empty_commits=None,
-        prepare=_prepare_note_candidates,
-    ),
-    "note-curation": _Impl(
-        build=_build_note_curator,
-        make_items=_note_curator_items,
-        make_malformed_item=_note_curator_malformed_item,
-        written=_note_curator_written,
-        # Same: an empty `commit` still records wakes for the notes this run
-        # rendered, but it reaches no `DreamSink.propose`, so there is no
-        # empty-propose counter to read.
-        empty_commits=None,
-        prepare=_prepare_note_curator,
-    ),
-    "note-merge": _Impl(
-        build=_build_note_merge,
-        make_items=_note_merge_items,
-        make_malformed_item=_note_merge_malformed_item,
-        written=_note_merge_written,
-        # An empty commit stamps the pass clock and reaches no `DreamSink`;
-        # there is no empty-propose counter to read.
-        empty_commits=None,
-        prepare=_prepare_note_merge,
     ),
 }
 
@@ -974,6 +633,4 @@ def test_every_registered_implementation_is_exercised():
     its own docstring flagged that as a known gap rather than the shipped
     state. A silently shrinking map makes every test in this file vacuous, and
     the shrink is invisible: the suite stays green, faster."""
-    assert set(IMPLEMENTATIONS) >= {
-        "fake", "proactive", "note-candidates", "note-curation", "note-merge",
-    }, sorted(IMPLEMENTATIONS)
+    assert set(IMPLEMENTATIONS) >= {"fake"}, sorted(IMPLEMENTATIONS)

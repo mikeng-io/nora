@@ -28,13 +28,6 @@
     "target": "tests/unit/test_media_join.py -k blob_count_is_the_true_count"
   },
   {
-    "name": "K5 a wait_for with timeout=None is not bounded",
-    "file": "nora/ingest/stages/standing_event.py",
-    "old": "                            wiring.media_join.enrich(rows, path=\"standing_event\"),\n                            timeout=wiring.store_timeout_seconds,",
-    "new": "                            wiring.media_join.enrich(rows, path=\"standing_event\"),\n                            timeout=None,",
-    "target": "tests/architecture/test_slot_held_awaits_are_bounded.py"
-  },
-  {
     "name": "K6 a failed write is not counted ok",
     "file": "nora/ingest/comprehension.py",
     "old": "        if not stored:",

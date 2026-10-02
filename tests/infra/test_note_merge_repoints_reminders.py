@@ -15,7 +15,8 @@ proactive row's `payload` carries. Before this fix, folding two notes that
 each held an open row left both rows alone — neither row's OWN note id ever
 collided, so the index never objected — and both then forwarded to the
 survivor through `nora.app.proactive_screen`'s `successor()` chase and both
-fired. Reachable only under `[notes] merge_mode = "on"`.
+fired. Reachable through the Cognition session's `note_merge` (formerly only
+under `[notes] merge_mode = "on"`, deleted 2026-10-03, DEC-277).
 
 THE BLOCKER A FIRST REVIEW ROUND FOUND: re-pointing `note_id` alone leaves
 `revision_id` naming a revision of the RETIRED duplicate — not in the

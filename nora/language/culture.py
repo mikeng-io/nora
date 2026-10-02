@@ -167,7 +167,7 @@ CULTURE_ADAPTOR_NAME = "culture"
 STORE_CALLS_PER_TICK = 5
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
-#: hand-copied into the metric's help text — `note_candidates`' own precedent,
+#: hand-copied into the metric's help text — the deleted `note_candidates`' own precedent,
 #: enforced at RUNTIME because `Metrics.inc` takes `**labels: object` and mypy
 #: cannot check a string passed through an `object` parameter.
 #:
@@ -218,7 +218,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
     # two people by one, is wrong in the way nobody notices. `lookup_person` is
-    # here for the reason it was granted to the proactive pass (issue #145): a
+    # here for the reason it was granted to the (deleted) proactive pass (issue #145): a
     # room's own nicknames («@熱咖啡☕少奶多糖») resolve against an index and
     # not against more occurrences of the same handle.
     "about", "lookup_person", "group_members",
@@ -280,8 +280,8 @@ class _StandingReader(Protocol):
 
 
 class _NoteStore(Protocol):
-    """The note tier's index — what the room has OPEN. `NoteCandidateAdaptor`
-    reads exactly this, keyed exactly this way (DEC-105: notes are a UNIT
+    """The note tier's index — what the room has OPEN. the deleted `NoteCandidateAdaptor`
+    read exactly this, keyed exactly this way (DEC-105: notes are a UNIT
     store, so a scope key must be translated).
 
     Note the vocabulary trap this bundle has fallen into before
@@ -333,11 +333,9 @@ def _batch_day(batch: Sequence[TranscriptRow], *, tz: _dt.tzinfo) -> int | None:
     """`yyyymmdd` for the newest row of a batch, in the ROOM's zone — what the
     note index renders its distances against.
 
-    Deliberately a second, four-line copy of `nora.language.note_candidates`'
-    own `_batch_day` rather than an import of a private name from a sibling
-    module or a move of it: that file is being reworked under issue #292 and
-    this change does not reach into it. Collapse the two when a shared home for
-    the batch-rendering helpers exists.
+    Written as its own four-line helper (it was a copy of the deleted
+    `nora.language.note_candidates`' `_batch_day`, DEC-277), rather than an import
+    of a private name from a sibling module.
     """
     if not batch:
         return None
@@ -394,8 +392,8 @@ def _parse(item: Mapping[str, object]) -> CultureProposal | None:
 #: alone. `inputs` also renders `standing` (via
 #: `nora.language.standing_render.render_standing`) and `notes` (via
 #: `nora.language.note_render.render_notes`) when their inputs resolve, both
-#: shared with other occasions. The same gap found in `proactive`
-#: (`loop_decisions`) and `note_candidates` (`notes`) — a survey of literal
+#: shared with other occasions. The same gap was found in `proactive`
+#: (`loop_decisions`) and `note_candidates` (`notes`), both since deleted — a survey of literal
 #: `ContextBlock(name=...)` calls misses a block built by a call to a shared
 #: function.
 #:
@@ -427,7 +425,8 @@ class CultureAdaptor:
     name = CULTURE_ADAPTOR_NAME
     key_kind = "scope"
     #: **`True`, and an earlier draft had it `False`**, borrowed from the note
-    #: curator. The curator needs a watermark-free clock because AN ANCHOR DATE
+    #: curator (deleted 2026-10-03). The curator needed a watermark-free clock because AN ANCHOR
+    #: DATE
     #: PASSING IS ITSELF THE EVENT — retirement is time-driven whether or not
     #: anyone speaks. Culture has no equivalent clock event, so the precedent
     #: does not transfer, and DEC-183 ("a quiet room's culture is accurate, not
@@ -455,7 +454,7 @@ class CultureAdaptor:
         # every one of these is the same `.get` over the allowlist that the
         # composition root builds off `conv.primary_id` in one place, so they
         # cannot disagree about which room a key names —
-        # `NoteCandidateAdaptor`'s own arrangement (issue #161).
+        # the deleted `NoteCandidateAdaptor`'s arrangement (issue #161).
         #
         # REQUIRED rather than defaulted, for that adaptor's stated reason: a
         # wiring gap here renders a plausible, WRONG prompt and nothing counts
@@ -480,13 +479,13 @@ class CultureAdaptor:
         notes: _NoteStore | None = None,
         metrics: Metrics | None = None,
         # The ROOM's zone, for the note index's distances — the same
-        # `[reminders] timezone` the curator and the note-candidate pass read
+        # `[reminders] timezone` the (deleted) curator and note-candidate pass read
         # «today» from, for their reason: «this Saturday» is a question about
         # the room's calendar, not the process's. UTC by default so a bare
         # construction still renders a true day.
         timezone: _dt.tzinfo = _dt.UTC,
         # THE ROOM'S PLATFORM and A NAME RESOLVER (issue #200), the same
-        # pair `NoteCandidateAdaptor` takes and for the same reason: this
+        # pair the deleted `NoteCandidateAdaptor` took and for the same reason: this
         # fold builds its own `<room_messages>` block from the raw batch
         # (`_render_batch`) and never called `Persons.name_transcript`, so a
         # mapped sender's line was attributed to their self-set, spoofable
@@ -562,8 +561,8 @@ class CultureAdaptor:
         `_standing_lines`) is right for a pass that must still decide
         something; here it would let a silent store fault produce accounts that
         GUESS at her standing forever, which is the §1.2 defect re-created as a
-        supported degraded mode. `notes.standing` is unguarded in
-        `NoteCandidateAdaptor` for the same reason.
+        supported degraded mode. `notes.standing` was unguarded in
+        the deleted `NoteCandidateAdaptor` for the same reason.
 
         `batch` empty renders `""`. `DreamAdaptor` has no `should_fire` verb;
         the runtime's fire condition IS "did `inputs` render anything", so a
@@ -571,8 +570,8 @@ class CultureAdaptor:
         """
         if not batch:
             return ""
-        # RESOLVE NAMES (issue #200), the same projection `NoteCandidateAdaptor`
-        # applies before its own batch renders. Every row this fold gets from
+        # RESOLVE NAMES (issue #200), the same projection the deleted `NoteCandidateAdaptor`
+        # applied before its own batch renders. Every row this fold gets from
         # `record.since` carries `person_name=None` — nothing on this path
         # ever called `Persons.name_transcript` — so without this a mapped
         # sender's line in `<room_messages>` was attributed to their
@@ -644,7 +643,7 @@ class CultureAdaptor:
                 # RESTAMPED: `render_standing` is shared with the tag path
                 # and builds an unstamped block.
                 parts.append(restamp(block, _ROW))
-        # WHAT THE ROOM HAS OPEN. `NoteCandidateAdaptor.inputs`' own read, same
+        # WHAT THE ROOM HAS OPEN. the deleted `NoteCandidateAdaptor.inputs`' read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
         unit = self._unit_for(key)
@@ -694,14 +693,14 @@ class CultureAdaptor:
                 "(unit=%r standing_key=%r); folding without those inputs",
                 key, unit, standing_key,
             )
-        # WRAPPED, for the reason the note-candidates batch is (#292 audit):
+        # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained
         # batch let a member's message write free text at prompt top level,
         # beside `<previous_account>` and the note index rather than inside
         # anything.
         parts.append(
             # `room_messages`, NOT `batch`. They looked like one block and are
-            # two: note-candidates' `<batch>` renders `n` as the stored row id
+            # two: the deleted note-candidates' `<batch>` rendered `n` as the stored row id
             # so the pass can cite it in `message_ids`; this one renders a 1..N
             # position and suppresses ids by construction, because an account
             # that can cite rows becomes the chronicle this tier exists not to
@@ -718,12 +717,10 @@ class CultureAdaptor:
     def _room_block(self, key: str) -> ContextBlock:
         """What this room is CALLED and what the operator says it IS.
 
-        **INLINE, and to be collapsed.** `nora.language.note_candidates` holds
-        `_room_block` / `ROOM_BLOCK_NOTE` / `UNNAMED_ROOM`, and issue #292 is
-        moving them to a shared home. This is deliberately not a second copy of
-        that helper and not a move of it: it renders the same two policy fields
-        with this tier's own note, and it collapses into the shared helper the
-        day that lands.
+        **INLINE.** The deleted `nora.language.note_candidates` held
+        `_room_block` / `ROOM_BLOCK_NOTE` / `UNNAMED_ROOM` (issue #292 was moving
+        them to a shared home). This renders the same two policy fields
+        with this tier's own note.
 
         The note's second half is the not-an-instruction clause every injected
         block carries, and it is load-bearing rather than ceremonial: the

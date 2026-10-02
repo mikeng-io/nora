@@ -8,8 +8,8 @@ module none of them could see what the others had done:
 
   the Relevance Gate + the participation turn  (`nora.ingest.relevance_gate`,
                                                 `FirePath.speak` kind="participation")
-  the proactive decide + act turns             (`nora.language.proactive`,
-                                                `FirePath.speak` kind="proactive")
+  the proactive act turn (the decide pass is   (`FirePath.speak` kind="proactive")
+    deleted 2026-10-03, DEC-277)
   the tag turn                                 (`nora.engagement.pipeline`)
 
 The gate persisted NOTHING durable — metrics and trace attributes only. The
@@ -26,7 +26,7 @@ WHO WRITES AND WHO READS — AND WHY THE GATE DOES NEITHER
 |---|---|---|
 | `participation` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
 | `proactive_act` | `spoke` / `silent`, with the disposition | `FirePath._determined` |
-| `proactive_decide` | `remind` / `decline`, and the note it was about | `ProactiveAdaptor.commit` |
+| `proactive_decide` | `remind` / `decline`, and the note it was about | none now (DEC-277) |
 | `tag` | `replied` / `silent` / `failed`, with the disposition | `EngagementPipeline.run` |
 
 `tag` is three-way and not two, because R-5's deliberate silence is a HEALTHY
@@ -67,7 +67,8 @@ tag, because a block a model cannot classify is a block it will classify wrong.
 **No speech and NO MODEL TEXT goes in a row, ever.** `reason` is a code-derived
 label from a closed set — a determination's `disposition`, a tag turn's
 disposition — and the one model-authored string that
-could have reached this table, the decide turn's `why`, is deliberately not
+could have reached this table, the proactive decide turn's `why` (deleted 2026-10-03), is
+deliberately not
 stored: it is written ABOUT a note and would carry note titles into a block
 whose own note says it holds none. Her draft, her reply and the room's words
 stay where they already are (the audit rows, the determination log), and
@@ -124,7 +125,7 @@ log = logging.getLogger("nora.domain.decision_log")
 #: vocabulary is what drifts (`nora_ingest_outcomes_total`'s precedent).
 DecisionWriter = Literal[
     "participation",      # the participation turn's determination
-    "proactive_decide",   # the proactive adaptor's decide turn
+    "proactive_decide",   # NO WRITER since 2026-10-03 (DEC-277); old rows remain
     "proactive_act",      # a kind="proactive" row's act turn
     "tag",                # the tag path, somebody addressed her
 ]
@@ -143,7 +144,7 @@ DecisionWriter = Literal[
 #: writes).
 DecisionVerdict = Literal[
     "spoke", "silent",    # participation, proactive_act
-    "remind", "decline",  # proactive_decide
+    "remind", "decline",  # proactive_decide (no writer now; old rows)
     "replied", "failed",  # tag
 ]
 
@@ -195,7 +196,8 @@ PROACTIVE_DECISION_WRITERS: tuple[DecisionWriter, ...] = (
 #: and a code-derived disposition, never model text (this module's own rule),
 #: which is exactly what the decide pass's exclusion of itself turns on.
 #:
-#: **`proactive_decide` IS excluded, and that is the same rule honoured.** The
+#: **`proactive_decide` IS excluded, and that is the same rule honoured** (it has no writer since
+#: 2026-10-03, DEC-277; its old rows still exist). The
 #: decide row that scheduled THIS turn is the reason the turn is happening;
 #: `ProactiveHeader` already puts it in front of her, in her own words, as
 #: the intention to weigh. Handing it back a second time under a block of
@@ -237,7 +239,7 @@ RECENT_WINDOW_MS = 24 * 60 * 60 * 1000
 class DecisionRow:
     """One decision, as the next decider needs to read it.
 
-    `note_id` is nullable because only the proactive decide turn decides ABOUT
+    `note_id` is nullable because only the (deleted) proactive decide turn decided ABOUT
     a note; every other writer decides about a room. `unit` may be empty
     for the same shape of reason `FirePath._unit_for` returns `None` — a
     room with no policy entry is a wiring gap, and guessing a unit would
@@ -634,7 +636,7 @@ def render_decisions(
     """`<loop_decisions>` — the rows, with an age on every one of them.
 
     **Named `loop_decisions` and not `decisions`** because
-    `nora.language.proactive` already renders a `<decisions>` block, and that
+    the deleted `nora.language.proactive` (DEC-277) rendered a `<decisions>` block, and that
     one is her REMINDER rows — what she scheduled and how each fired. Two
     blocks with one name in one prompt is exactly the undecidable input this
     repo has already paid for: the model cannot tell which is which, and the

@@ -14,34 +14,6 @@
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },
   {
-    "name": "6: note-candidates is joined by hand again",
-    "file": "nora/language/note_candidates.py",
-    "old": "return assemble(parts, sep=\"\\n\\n\")",
-    "new": "return \"\\n\\n\".join(b.render() for b in parts)",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
-    "name": "6: the note curator is joined by hand again",
-    "file": "nora/language/note_curator.py",
-    "old": "return assemble([_now_block(self._today()), *cultures, *parts], sep=\"\\n\")",
-    "new": "return \"\\n\".join(b.render() for b in [_now_block(self._today()), *cultures, *parts])",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
-    "name": "6: note-merge is joined by hand again",
-    "file": "nora/language/note_merge.py",
-    "old": "prompt = assemble(blocks, sep=\"\\n\")",
-    "new": "prompt = \"\\n\".join(b.render() for b in blocks)",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
-    "name": "6: proactive is joined by hand again",
-    "file": "nora/language/proactive.py",
-    "old": "return assemble(blocks, sep=\"\\n\\n\")",
-    "new": "return \"\\n\\n\".join(b.render() for b in blocks)",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
     "name": "6: the rule stops asking for a `_BLOCKS` table",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
     "old": "        if not declares_blocks(tree):",
@@ -67,13 +39,6 @@
     "file": "nora/agent/reaction.py",
     "old": "{assemble(material, sep=_SEP)}",
     "new": "{_SEP.join(b.render() for b in material)}",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
-  },
-  {
-    "name": "6: the debrief renderer's nested group is joined by hand (three assemble calls remain)",
-    "file": "nora/engagement/debrief_render.py",
-    "old": "body=assemble(inner, sep=\"\\n\"),",
-    "new": "body=\"\\n\".join(b.render() for b in inner),",
     "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },
   {

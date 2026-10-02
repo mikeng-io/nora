@@ -26,7 +26,6 @@ from nora.engagement.debrief_render import (
     CLIP_KINDS,
     render_debrief_input,
     render_debrief_turn,
-    render_rollup_input,
 )
 from nora.obs.metrics import Metrics
 
@@ -630,20 +629,6 @@ def test_a_sent_nothing_header_denies_the_room_reading_outright():
     assert "read off the send record" in out
 
 
-def test_the_rollup_render_marks_and_explains_the_same_way():
-    """The event-path fold reads the same rows through the same renderer. A
-    delivery mark in the tag fold's transcript and a bare one in the rollup's
-    would be one token meaning two things to the same model."""
-    out = render_rollup_input(
-        prior=None, display_name="Nora", tz=UTC, now_ms=1_756_001_000_000,
-        rows=(_row(1, 1_756_000_920_000, None, "路線係咁", is_nora=True),),
-    )
-    assert 'from="Nora" delivery="delivered">路線係咁</m>' in out
-    # `<stretch>`, not `<transcript>`: this path folds an untagged stretch of
-    # many turns, and the turn-scoped description was false here (#314).
-    assert "<transcript " not in out
-    assert "it spans however many turns" in out.split("<stretch ")[1]
-    assert "Nothing here says which turn sent it" in out.split("<stretch ")[1]
 
 
 def test_every_gloss_that_sent_nothing_scopes_itself_to_the_turn():
@@ -776,22 +761,6 @@ def test_the_prior_carries_when_it_was_written_against_the_turns_time():
     assert 'written="5h ago"' in out.split("<standing_prior ", 1)[1].split(">", 1)[0]
 
 
-def test_the_rollup_prior_carries_when_it_was_written_against_now_ms():
-    """The event path has no turn, so its clock is the `now_ms` it is handed —
-    the same `written` attribute, the same `age` vocabulary."""
-    now_ms = 1_756_000_000_000
-    out = render_rollup_input(
-        prior=_prior(updated_at=now_ms - 2 * _DAY_MS), display_name="Nora",
-        tz=UTC, now_ms=now_ms,
-        rows=(_row(1, now_ms - 60_000, "Miles", "去邊食"),),
-    )
-    opening = out.split("<standing_prior ", 1)[1].split(">", 1)[0]
-    assert 'written="2d ago"' in opening, opening
-    out = render_rollup_input(
-        prior=_prior(updated_at=now_ms - 40 * 60_000), display_name="Nora",
-        tz=UTC, now_ms=now_ms, rows=(),
-    )
-    assert 'written="40m ago"' in out.split("<standing_prior ", 1)[1].split(">", 1)[0]
 
 
 def test_no_prior_renders_no_age_and_a_prior_renders_no_first_fold_sentence():
@@ -906,46 +875,8 @@ def test_narration_and_tool_calls_still_clip_at_the_block_bound():
 # --- design/standing-compact/10 §5: amended after review (2026-09-24) -------
 
 
-def test_every_row_carries_its_date_on_the_tag_and_the_rollup_render():
-    """§5 «Every row carries its date». A watermark batch can span days, and
-    the objective asks the fold to turn «tomorrow» into a date: a row stamped
-    only «02:02» leaves a member's «tomorrow» from three days back
-    unconvertible. Two rows on two different days, through BOTH renders — the
-    tag fold's `<transcript>` and the rollup's `<stretch>` read the same
-    `_clock`, and a date on one and a bare clock on the other would be one
-    attribute meaning two things to the same model."""
-    rows = (
-        _row(1, 1_756_000_920_000, "Miles", "聽日十點"),            # 2025-08-24 02:02 UTC
-        _row(2, 1_756_000_920_000 + 3 * _DAY_MS, "Miles", "到未"),  # 2025-08-27 02:02 UTC
-    )
-    tag = _inner(_render(trace=_trace(rows=rows)), "transcript")
-    rollup = _inner(render_rollup_input(
-        prior=None, display_name="Nora", tz=UTC,
-        now_ms=1_756_000_920_000 + 4 * _DAY_MS, rows=rows,
-    ), "stretch")
-    for name, block in (("tag", tag), ("rollup", rollup)):
-        assert '<m at="2025-08-24 02:02" from="Miles">聽日十點</m>' in block, name
-        assert '<m at="2025-08-27 02:02" from="Miles">到未</m>' in block, name
 
 
-def test_the_rollups_conversation_carries_the_folds_own_time_and_declares_it():
-    """§5: the rollup has no `<turn at=…>`, so without an `at` on
-    `<conversation>` the fold is told to write dates and shown no «now» to
-    write them from. The value is `now_ms` — the fold's own instant, NOT the
-    last row's time: the last row here is two days before the fold, and a
-    «now» read off it would convert «tomorrow» to the wrong day. The TYPE
-    declares the attribute (`fields=`), so the model is told what it means."""
-    now_ms = 1_756_000_920_000 + 2 * _DAY_MS + 3 * 3_600_000  # 2025-08-26 05:02 UTC
-    out = render_rollup_input(
-        prior=None, display_name="Nora", tz=UTC, now_ms=now_ms,
-        rows=(_row(1, 1_756_000_920_000, "Miles", "去邊食"),),
-    )
-    opening = out.split("<conversation ", 1)[1].split(">", 1)[0]
-    assert 'at="2025-08-26 05:02 UTC"' in opening, opening
-    assert "`at` is when you are folding it" in opening, opening
-    # The tag path's `<turn>` is the other carrier of «now» and is unchanged:
-    # a control that the rollup's attribute is not the tag path's leaking.
-    assert "<turn " not in out
 
 
 def test_a_thinking_clip_is_counted_on_its_own_label_and_narration_on_reasoning():

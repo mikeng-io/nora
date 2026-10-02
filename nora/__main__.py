@@ -314,10 +314,10 @@ class App:
             )
         else:
             log.info("dream loop disabled (dreamer.enabled = false)")
-        # The cognition loop's wake evaluator, in SHADOW (design/cognition-loop/
-        # 20 §3, migration step 1): it records would-wakes and fires nothing;
-        # the Dreamer's clock above keeps running everything. `None` under
-        # `[cognition] mode = "off"`, the shipped default.
+        # The cognition loop's wake evaluator (design/cognition-loop/20 §3): it
+        # records wakes and hands each to the Cognition session, the one
+        # background writer (the Dreamer's note passes are deleted, DEC-277).
+        # `None` under `[cognition] enabled = false`.
         if deps.wake_evaluator is not None:
             # BEFORE the loop starts, and awaited, for the reason the watermarks
             # above are: whatever a previous process left open is released before
@@ -332,7 +332,7 @@ class App:
                 tick_seconds=deps.wake_tick_seconds,
             ))
         else:
-            log.info("cognition wake evaluator disabled (cognition.mode = off)")
+            log.info("cognition loop disabled ([cognition] enabled = false)")
         # The computer session sweeper (design/sandbox-runtime §15.2):
         # composition builds it only while `[computer] enabled`.
         if deps.computer_sweeper is not None:

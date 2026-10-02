@@ -152,9 +152,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(one speaker's <people_in_window> read did, counted once per failed "
         "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
         "[memory] read_timeout_seconds — a port that never answers, which is "
-        "not the same failure as one that raises), and "
-        "stage=\"proactive_roster_index\" (a <people> roster-index recall on "
-        "the decide pass). All four are issue #210 and all four are "
+        "not the same failure as one that raises). All three are issue #210 "
+        "and all three are "
         "fail-soft: the block is lost, never the turn, so absence is the only "
         "symptom and this series is the only tell. The three fire_* stages "
         "sit beside the pre-existing fire_peer_card / fire_standing / "
@@ -162,13 +161,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "operator asking WHICH half of the context went blind must not have "
         "to guess. The <culture> read (DEC-207) is counted per occasion, one "
         "stage each, for the same reason: stage=\"tag_culture\", "
-        "stage=\"fire_culture\", stage=\"proactive_culture\", "
-        "stage=\"note_candidates_culture\", stage=\"note_curator_culture\" "
-        "and stage=\"standing_event_culture\" — a room's account that exists "
-        "and could not be read (a raise, or the bounded read timing out). A "
-        "room never folded is not an error and moves nothing. The two note "
-        "passes carry platform=\"dreamer\": they are keyed on a room or a "
-        "unit, not on a message's network.",
+        "and stage=\"fire_culture\" — a room's account that exists and could "
+        "not be read (a raise, or the bounded read timing out). A room never "
+        "folded is not an error and moves nothing.",
         ("stage", "platform"),
     ),
     _CounterSpec(
@@ -1316,8 +1311,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # CONFIG state, true on every pass until somebody edits a file, so the log
     # line beside it is emitted once per (adaptor, unit) — that is what
     # this counter is for. Without it, deduplicating the log would have traded
-    # a stream of identical errors for no signal at all, and «the proactive
-    # adaptor has been inert in this unit for a week» is exactly the
+    # a stream of identical errors for no signal at all, and «an adaptor
+    # has been inert in this unit for a week» is exactly the
     # reading an operator needs and cannot get from a single startup line.
     _CounterSpec(
         "nora_dream_home_room_missing_total",
@@ -1326,8 +1321,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "config gap, counted every pass; the log says it once.",
         ("adaptor", "unit"),
     ),
-    # Issue #200 follow-up (#546 review): `CultureAdaptor` and
-    # `NoteCuratorAdaptor` both call an injected `resolve_names`
+    # Issue #200 follow-up (#546 review): `CultureAdaptor` (and the
+    # since-deleted `NoteCuratorAdaptor`) called an injected `resolve_names`
     # (`Persons.name_transcript`) before rendering a sender's name, and a
     # raising resolver must not take the whole occasion down with it — the
     # occasion still renders, on the pre-#200 `speaker_name` floor (the
@@ -1424,7 +1419,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     #                          and called it again (2026-09-17). Split OFF
     #                          `R-7`, which carried both until then and so
     #                          could not answer whether a ceiling was binding:
-    #                          the proactive pass was refused a fourth note in
+    #                          the (since-deleted, DEC-277) proactive pass was refused a fourth
+    # note in
     #                          both its scopes that morning and decided every
     #                          note anyway, indistinguishable in this series
     #                          from a misspelled tool name. This is the
@@ -1570,10 +1566,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_standing_overflow_refusals_total",
         "Standing writes refused for exceeding [standing] max_chars, by "
-        "stage: first (the model was asked to consolidate), final (nothing "
-        "was written and the prior position stands) or rollup (an event-path "
-        "fold refused the batch; the watermark did not advance and the next "
-        "message's check retries).",
+        "stage: first (the model was asked to consolidate) or final (nothing "
+        "was written and the prior position stands). (stage=rollup, the "
+        "event-path fold's, was retired 2026-10-03, DEC-277.)",
         ("stage",),
     ),
     # design/standing-compact/30-working-set.md, issue #445. A dropped item
@@ -1604,412 +1599,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "working_set_max_items or working_set_max_chars. The whole new set "
         "is refused and the PRIOR working set is kept — never a silent "
         "truncation, no consolidate retry (unlike the body's own overflow).",
-    ),
-    _CounterSpec(
-        "nora_standing_event_folds_total",
-        "Event-triggered standing fold ROUTINES (design/standing-watermark/10): "
-        "the accumulator reached [standing] fold_batch and an event fold was "
-        "enqueued through ConversationSlots. One per trigger firing that led "
-        "to a fold — read against nora_standing_rollup_folds_total: the gap "
-        "(rollup > event) is the backlog a cold start or a burst had to drain "
-        "in batches.",
-    ),
-    _CounterSpec(
-        "nora_standing_rollup_folds_total",
-        "Rollup folds — the BATCHES folded by the event path's rollup loop "
-        "(design/standing-watermark/30). Each increment is one fold of up to "
-        "[standing] fold_batch rows that wrote a position and advanced the "
-        "watermark. Rollup folds do NOT increment the row's fold_count (D3): "
-        "that counter stays the tag path's ceiling feed; this series is where "
-        "rollup work is counted instead.",
-    ),
-    # ---- the note tier (2026-08-21 note-tier design §11) -------------------
-    #
-    # THREE SERIES, NOT THE TEN THE SPEC NAMES, and the count is the decision.
-    # Four of the ten already have a home: `note_read`/`note_search`/
-    # `note_create`/`note_update` all reach `_record` in `nora.agent.tools`, so
-    # `nora_tool_calls_total{tool,status}` already carries reads-by-result,
-    # searches-by-result and writes-by-kind (the tool name IS the kind). A
-    # second series over those same calls is the double-count `_record_room`
-    # and `_record_media` both refuse in their own docstrings. The tier's named
-    # diagnostic survives the omission: a climbing `nora_note_candidates_total`
-    # against a flat `nora_tool_calls_total{tool=~"note_create|note_update",
-    # status="ok"}` is «she recognises and does not act», in two series that
-    # both exist.
-    #
-    # The other three — `curator_total`, `curator_bodies_read`,
-    # `revisit_total` — plus `strikes_total` measure adaptors that are UNBUILT.
-    # `note.strikes` is a column with a CHECK constraint and no writer; the
-    # strike is the revisitor's wake pass (spec §9.6). Declaring them here
-    # would ship a name whose call site does not exist, which is
-    # `nora_fact_entity_unresolved` again — instance 7 in
-    # `design/dreamer-agent-loop/02-instrument-blindness.md`'s own tally, and
-    # the exact defect this block was written to close. They ship with their
-    # adaptor.
-    #
-    # `trigger` carried one value until issue #98 (the create path):
-    # `"create"` is the second one this comment anticipated — a FRESH
-    # `kind='create'` row staged by `nora.language.note_candidates`, counted
-    # only on the first sighting of an occasion (a re-observation refreshes
-    # the row without being a second "recording", exactly as a repeated miss
-    # is not a second miss).
-    #
-    # **UNTIL 2026-09-13 `trigger="create"` OVER-COUNTED, and the code had
-    # been contradicting the sentence above since #98 shipped (fixed in
-    # #228).** The guard was `row.attempts == 0` alone, and `attempts` counts
-    # GATE attempts, not sightings: a candidate handed back a row the gate had
-    # already SETTLED comes back with `attempts == 0` every time, so every
-    # re-observation of a settled occasion counted as a fresh arrival. Not a
-    # double-count with a factor — unbounded in the number of ticks the room
-    # keeps mentioning the same thing. The guard is now `row.attempts == 0 and
-    # row.status == CANDIDATE_PENDING`. Anything read off this series BEFORE
-    # that date is an upper bound on arrivals and nothing more; in particular
-    # `nora_note_candidates_total` minus `nora_note_candidate_gate_total` was
-    # not the count of proposals that never reached a decision, which is what
-    # it looks like and what `nora_note_candidate_staging_total` below now
-    # actually answers. Prometheus keeps ~4 days on this deployment, so the
-    # contaminated window closes on its own; the note is here because a reader
-    # of a longer-range export would have no other way to know. No in-repo
-    # consumer read it — no recording rule, no alert, no dashboard — which is
-    # why this is a spec comment rather than a release fragment.
-    _CounterSpec(
-        "nora_note_candidates_total",
-        "Note candidates recorded by what raised them. trigger=\"miss\": a "
-        "note_search that matched nothing, written to the negative cache so "
-        "the SECOND ask on the same ground is evidence rather than a guess. "
-        "trigger=\"create\": a full note proposal the note-candidates "
-        "adaptor staged for the deterministic gate — see "
-        "nora_note_candidate_gate_total for what the gate then decided.",
-        ("trigger",),
-    ),
-    # ---- note-candidates (§4, issue #98): the create path -------------------
-    #
-    # The gate's OWN outcome, separate from the staging count above: a row can
-    # be staged (and counted there) many times across ticks before the gate
-    # ever decides it, so this is the reading that answers "did the tier
-    # actually write anything", not "how many proposals arrived".
-    _CounterSpec(
-        "nora_note_candidate_gate_total",
-        "The note-candidates adaptor's deterministic gate, by outcome: "
-        "created (the model named no standing note, so a brand new one was "
-        "written), updated (a revision of the standing note the model NAMED "
-        "in its updates field — resolved by title since 2026-09-13, the "
-        "anchor date having been the key from 2026-09-08 until it merged two "
-        "unrelated occasions twice out of two firings; appended from that "
-        "day, issue #228, and a restatement of the whole body since design "
-        "42 S4a, 2026-09-26), dropped_citation (a restatement that left some "
-        "line of the head with none of its citations carried — left PENDING, "
-        "nothing written, design 42 §7), unresolved (the model named a "
-        "title NO standing note answers to — mistyped or invented — so a "
-        "new note was written; its own "
-        "action rather than part of created because this is the rate the "
-        "whole design rests on being low, and it was invisible inside "
-        "created, with no log either, until 2026-09-13), ambiguous (the "
-        "named title answers to MORE than one standing note, so a NEW note "
-        "was written rather than a guess at which one was meant — a "
-        "duplicate overwrites nothing and a reader can see both, appending "
-        "to the wrong note is neither; since 2026-09-25 the note-merge "
-        "pass is the back-stop that folds such a duplicate, DEC-202 — it "
-        "read «nothing MERGES the duplicate afterwards» before that, and "
-        "issue #236 carries the bound), refused (a "
-        "duplicate with nothing new, or a malformed proposal the domain type "
-        "itself rejected; until design 42 S4a an appended body past the "
-        "ceiling was counted as full, which a restatement can no longer "
-        "reach), deferred (a transient failure — a raced CAS, a store exception, "
-        "or a note that moved or retired between the read and the write — "
-        "left PENDING for the next tick to retry, never a decision), or "
-        "not_shown (the model named a note the pass rendered WITHOUT its "
-        "body, because the notebook's budget bound or its head could not be "
-        "read — left PENDING, nothing written, design 42 §8.6), or "
-        "no_new_evidence (an update whose body cites only messages older "
-        "than the note's last change: its own old evidence, not news; "
-        "refused, 2026-09-26). A "
-        "candidate handed back a row an EARLIER tick already settled reaches "
-        "no action here at all; nora_note_candidate_staging_total is where "
-        "that is counted.",
-        ("action",),
-    ),
-    # The SETTLED-ROW branch of `_settle`, which the gate's own vocabulary
-    # deliberately does not cover — nothing is decided there, so folding it in
-    # would stop the gate's sum being the number of candidates decided.
-    #
-    # It gets a series at all because the two things that reach it are a
-    # benign no-op and a DESTROYED proposal, and until 2026-09-13 they were
-    # indistinguishable from outside: measured against the real adaptor, two
-    # different same-day candidates with no people named and one occasion
-    # re-observed a tick later produced the SAME arrivals count, the same gate
-    # total and the same note count. `nora_note_candidates_total` minus
-    # `nora_note_candidate_gate_total` therefore could not say whether a
-    # proposal had been destroyed — R-27's `unavailable`-reported-as-
-    # `nothing_found` one layer down, and the reason this was declared before
-    # the collision itself was fixed (issue #235).
-    #
-    # THE COLLISION IS FIXED as of 2026-09-16: the staging key gained
-    # `lower(btrim(title))`, so two arrangements on one day are two staged rows
-    # and the second reaches the gate. `displaced` is therefore expected to
-    # read ZERO from here on, and that expectation is the reading — a non-zero
-    # sample now means the key widened again, or that the index's `lower()`
-    # and the branch's `casefold()` disagreed on a title. The series is kept
-    # for exactly that: a loss counter that cannot fire is the right state for
-    # a loss that no longer happens, and deleting it would let a regression
-    # land as silence, which is what it was declared to prevent.
-    _CounterSpec(
-        "nora_note_candidate_staging_total",
-        "A note candidate handed back a staging row the gate had ALREADY "
-        "settled, by what that means. reobserved: the same arrangement seen "
-        "again across ticks — the benign case the staging table exists to "
-        "absorb, and nothing is lost. displaced: a DIFFERENT arrangement "
-        "that collided on the staging key (unit, anchor date, named "
-        "people, normalised title) and was dropped before the gate ever saw "
-        "it — one proposal destroyed, no note written, no gate action "
-        "counted, issue #235. Since 2026-09-16 the title is part of that key, "
-        "so displaced is expected to read zero and a sample on it means the "
-        "key no longer separates two arrangements on one day; reobserved is "
-        "the ordinary steady-state value here.",
-        ("outcome",),
-    ),
-    # Design 42 S2 (§4.5): a note-candidates CREATE whose body does not hold
-    # to the schema is refused in `accept()`, before anything is staged, so
-    # it reaches neither series above. Without this one a refusal would be
-    # silence: the proposal simply never arrives. Its own series rather than
-    # a gate action because nothing was staged and nothing was decided; the
-    # rule vocabulary is `nora.domain.note_body.RULES`, enforced at runtime by
-    # the adaptor's `_VOCABULARIES` and named in full below.
-    _CounterSpec(
-        "nora_note_candidate_body_refused_total",
-        "A note-candidates create refused before staging because its body "
-        "broke the note-body schema (design 42 §4.5), by the rule it broke: "
-        "unknown_section (a heading that is not one of the schema's, or one "
-        "only code writes), section_order (a heading repeated or out of "
-        "order), missing_section (## Decided or ## Open absent, both empty, "
-        "or ## Open empty on a new note), not_a_line (text outside a list "
-        "item, a nested list, a line not in its section's grammar), uncited "
-        "(a line with no [ids]), unknown_id (an id the pass did not show), "
-        "cites_nora (an id of one of Nora's own messages), misattributed (a "
-        "name that wrote none of the ids its line cites), unknown_owner (an "
-        "## Owed owner the pass did not show as a sender, or Nora), bad_date "
-        "(a malformed or impossible date, or the wrong weekday), "
-        "unknown_rollup_key (a Rollup row the pass did not read; no "
-        "note-candidates pass reads one). One sample "
-        "per refused candidate; the candidate is not written. An update's body "
-        "is checked here too since design 42 S4a, as a restatement.",
-        ("rule",),
-    ),
-    _CounterSpec(
-        "nora_note_candidate_parse_dropped_total",
-        "A note-candidates envelope item dropped before the gate because a "
-        "field could not be read, by the first such field: title, "
-        "description, body, closing_condition (missing, empty or over its "
-        "limit), anchor_date (missing, not an integer date), "
-        "anchor_entity_ids (malformed), other. A dropped item is never "
-        "staged, so without this it reads as an empty answer.",
-        ("field",),
-    ),
-    # A DELIBERATE second series over calls already counted, on
-    # `_record_created`'s precedent (`nora.agent.tools`) rather than against
-    # `_record_room`'s rule — and the difference is that the REASON is the
-    # whole reading, and today it survives only in a log line.
-    #
-    # THREE reasons, and they are two different diagnoses wearing one verb.
-    # `not_read` is a MODEL-DISCIPLINE reading — it tried to rewrite a body it
-    # had not seen, and a healthy rate means the latch is doing its job.
-    # `title_moved` and `stale_head` are CONTENTION readings — the note it
-    # reached was not the note it read, or the head moved under the call. A
-    # rising contention rate on a tier with no curator running is a defect
-    # report; the same rate once the curator ships is the cost of having one.
-    #
-    # No existing series can separate them, and today they are not even in the
-    # same one: the guard's `not_read` is `nora_guard_vetoes_total{rule=
-    # "R-55"}`, while `title_moved` and `stale_head` land in
-    # `nora_tool_calls_total{tool="note_update"}` under `refused` and
-    # `unavailable`, with the reason surviving only in a log line.
-    #
-    # `not_read` and `title_moved` are kept apart rather than folded, though
-    # both mean «no head recorded», because the tool-layer backstop is keyed on
-    # the resolved note ID and the guard on the title (see `note_update`'s own
-    # comment). The one case they differ in is the one worth counting: a title
-    # that resolved to a DIFFERENT note between the read and the write.
-    # ---------------------------------------------------------------------
-    # The revisitor's OWN negative-measurement series, folded into
-    # `nora_note_curator_*` by the note-curator merge
-    # (design/dreamer-agent-loop/34, issue #99): `NoteRevisitor` is gone, its
-    # due-selection/evidence/grounding logic lives in
-    # `nora.language.note_curator.NoteCuratorAdaptor` now, and the series
-    # below are its renamed replacements. A stale `nora_note_revisit_*` series
-    # left publishing would double-count the retirement readings this merge
-    # exists to unify — see `nora_note_retirements_total` further down, which
-    # is the one series this merge does NOT rename.
-    # ---------------------------------------------------------------------
-    _CounterSpec(
-        "nora_note_curator_candidates_total",
-        "Notes the curator gathered evidence for, by whether it had anything "
-        "to judge them against — every anchored_before/due_for_revisit note "
-        "(the set that inherits the former revisitor's grounding), NOT a "
-        "merge-group member, which is judged on its body alone (deliberately "
-        "exempt — see nora.language.note_curator's own module docstring). "
-        "FOUR values, and a reader who sees only three has an out-of-date "
-        "copy of this text. evidence=\"present\": the conversation has "
-        "spoken since the note was written. evidence=\"absent\": it has not, "
-        "so NEITHER retirement is reachable and the note stays — silence is "
-        "not an answer. evidence=\"self_only\": the conversation HAS spoken "
-        "since the note and every row in the window was Nora's own — the cap "
-        "is applied before the is_nora filter, so her own traffic can exhaust "
-        "the window by itself. Counted apart from \"absent\" because calling "
-        "that a quiet room is false, and the prompt says so in different words "
-        "too. evidence=\"unavailable\": the record read itself "
-        "failed, which lands on the same safe path but for a different reason "
-        "and must not be counted as an honestly quiet room.",
-        ("evidence",),
-    ),
-    _CounterSpec(
-        "nora_note_curator_deferred_total",
-        "Ticks where [notes] max_revisits_per_tick capped the due-by-"
-        "revisit_at selection — a BIT, not a magnitude "
-        "(nora.domain.bounds' own over-fetch-by-one convention): "
-        "SqlNoteStore takes no metrics collaborator, so the curator "
-        "over-fetches by one and counts a tick where more were due than it "
-        "judged, rather than the exact backlog size the pre-merge revisitor "
-        "could see from an unbounded scan. A backlog stated rather than "
-        "silently truncated either way: without this, a tick that judged ten "
-        "of forty due notes reads identically to a notebook with ten due.",
-    ),
-    _CounterSpec(
-        "nora_note_retirements_total",
-        "Retirements the curator attempted, by reason (because="
-        "\"retired-expired\" or \"retired-closed\" — nora.domain.notes."
-        "NoteSupersedeReason's own vocabulary) and by whether they MOVED "
-        "anything — emitted by nora.language.note_curator."
-        "NoteCuratorAdaptor.commit since the note-curator merge (design 34, "
-        "issue #99; previously the revisitor's own). KEPT under this EXACT "
-        "name through the merge — it is the real retirement series and must "
-        "not fold into a renamed one. result=\"applied\": supersede affected "
-        "a row. result=\"no_rows\": it affected none — the note was already "
-        "retired or the id no longer resolves. That split is the point: "
-        "supersede returns 0 for an unknown target and never raises, so "
-        "without it a retirement that silently did nothing is "
-        "indistinguishable from one that was never attempted.",
-        ("because", "result"),
-    ),
-    # ---- the curator's readings, shipped WITH the curator ------------------
-    #
-    # Declared now and not earlier, which was the whole argument of the block
-    # above: a name with no call site exports a flat zero and a flat zero reads
-    # as a measurement. These three have call sites as of the same commit that
-    # declares them.
-    # The tier's OWN named justification, finally readable: 27 §6 says the
-    # curator's whole case rests on "notes retired versus notes grown", and
-    # `nora_note_index_entries` was only ever half of that. This is the other
-    # half — without it a flat index means either "nothing needed retiring" or
-    # "the curator retired one and somebody wrote one", and those are opposite
-    # healths. (It sat above the REFUSALS counter until 2026-08-28, two specs
-    # further down, describing neither of the things next to it.)
-    _CounterSpec(
-        "nora_note_curator_total",
-        "Curator actions by what it did: retire_failed, retire_stale, closed, "
-        "moot, expired, lapsed, dateless_stale. **retire_stale is NOT an error** — "
-        "the note moved under the pass, which is the tag path winning a race "
-        "the head check exists to arbitrate, and the work is re-selected "
-        "next tick because the selection read is live state rather than a "
-        "cursor. retire_failed IS a fault. (merge, merge_refused and "
-        "merge_failed were here until the merge half was removed on "
-        "2026-09-08.) expired is the "
-        "note-curator merge's addition (design 34, issue #99) — the former "
-        "revisitor's word for the moment passing with nothing answering it, "
-        "now grounded the same way moot is. dateless_stale is OBSERVED, not a "
-        "retirement: a dateless note's strikes crossed the ceiling after a "
-        "wake with no tag-path progress, which makes it ELIGIBLE for dateless "
-        "retirement without this merge acting on it (issue #101's job). lapsed "
-        "is counted at grounding, before commit, so it can exceed the "
-        "retirements it led to (a stale head, a conflicting verdict): an "
-        "expired/moot verdict accepted only because the anchor ended more "
-        "than ANCHOR_LAPSE_MS ago and a human spoke after it, while the "
-        "evidence window did not reach back to the note (a busy room), so an "
-        "answer older than the window reads as expired rather than closed, "
-        "and a change of plan older than the window can retire a live note. "
-        "The "
-        "vocabulary is derived from nora.language.note_curator.CURATOR_ACTIONS "
-        "and a test asserts this text names exactly that set.",
-        ("action",),
-    ),
-    _CounterSpec(
-        "nora_note_curator_dropped_total",
-        "Model answers the curator refused, by reason: malformed (a field "
-        "missing or a verdict outside the four the objective defines), "
-        "unknown_note (a handle this run did not render), or "
-        "conflicting_verdict (two contradictory answers about one note — not a "
-        "tie to break but «I cannot tell», so the note stays standing). The "
-        "four merged-body refusals (body_too_long, shorter_than_inputs, "
-        "not_shown_in_group, conflicting_merged_body) went with the merge "
-        "half on 2026-09-08. A drop is "
-        "never a guess — a retirement is a permanent removal from an index "
-        "nobody can see the inside of. Five more reasons folded in by the "
-        "note-curator merge (design 34, issue #99), the former revisitor's own "
-        "grounding refusals — applied to a closed/expired/moot verdict about "
-        "an anchored_before/due_for_revisit note, NEVER to a merge-group "
-        "member, which stays exempt (judged on its body alone, unchanged "
-        "from the pre-merge curator): "
-        "no_evidence (nothing in the note's evidence window to judge a "
-        "retirement against — silence is not an answer), citation_missing / "
-        "citation_ungrounded (a closed verdict with no usable cited message, "
-        "or one citing a message this run never showed for that note), "
-        "anchor_not_passed (an expired/moot verdict on a note whose anchor "
-        "has not gone by, or has none at all — the clock decides that, not "
-        "the model), anchor_not_covered (the anchor HAS passed but the "
-        "evidence window does not span it — the room fell silent before the "
-        "anchor, or is busier than the window, until ANCHOR_LAPSE_MS after the "
-        "anchor, when a human speaking after it is enough), or discharge_malformed (a "
-        "closed verdict's discharge field, or one entry in it, did not fit "
-        "the three warrant shapes issue #101's discharge step accepts).",
-        ("reason",),
-    ),
-    # Discharge (design/dreamer-agent-loop/33-note-dreamer-schedule.md §7,
-    # 19-between-tiers.md §1, issue #101) — what a CLOSED note's settled
-    # content becomes on its way out of the notebook, riding the curator's
-    # own tick rather than a new adaptor. Two series for two different
-    # questions: whether discharge ran at all for a note (below), and what
-    # happened to each item it classified (this one).
-    _CounterSpec(
-        "nora_note_discharge_total",
-        "One classified discharge item's write, by kind (commitment -> the "
-        "Gathering/Event service, person_claim -> Honcho's conclusion lane) "
-        "and outcome: written (ok), refused (a code-level "
-        "decision — malformed, or the closing citation's sender maps to no "
-        "resolvable person to attach it to — never a guess), self_cited "
-        "(issue #199: the note was closed by citing one of Nora's OWN "
-        "delivered rows, so no person's warrant carries the item — kept apart "
-        "from refused because an unmapped sender is a roster gap an operator "
-        "can close and this boundary never closes), unavailable "
-        "(discharge_enabled is true but the owning tier's collaborator is "
-        "missing, or its write raised). Emitted by nora.language."
-        "note_curator.NoteCuratorAdaptor's discharge step, which runs only "
-        "for a GROUNDED closed verdict that actually retired — an "
-        "expired/moot note answered nothing, so it never reaches this "
-        "metric at all. The kind vocabulary is nora.language.note_curator's "
-        "DISCHARGE_KINDS, which the writer validates against before "
-        "incrementing — a third kind was routed to the knowledge tier until "
-        "it was deleted on 2026-09-07, and this text is what said so after "
-        "the route was gone.",
-        ("kind", "outcome"),
-    ),
-    _CounterSpec(
-        "nora_note_discharge_notes_total",
-        "Whether a closed, retired note had anything to discharge, by "
-        "result: items (its classification named at least one commitment "
-        "or person-claim — regardless of whether each one then "
-        "wrote or was refused), empty (the ordinary, common answer — most "
-        "closed notes settle one question with nothing else worth routing, "
-        "and that is R-27's nothing_found, not a wiring gap), or lost "
-        "(discharge STARTED and did not finish — the dream pass was "
-        "cancelled by its wall clock part-way through, and because the note "
-        "is already retired its content is gone with nothing to re-derive it "
-        "from: issue #195, R-27's unavailable, counted from a finally "
-        "because CancelledError is a BaseException). Absence of a "
-        "sample for a note is different from all three: it means discharge "
-        "never ran at all (discharge_enabled is false, or the verdict was "
-        "expired/moot/ungrounded). A non-zero lost once discharge_enabled is "
-        "on is the stated condition for building the durable, resumable "
-        "version instead.",
-        ("result",),
     ),
     _CounterSpec(
         "nora_note_update_refused_total",
@@ -2112,50 +1701,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Proactive act turns that spoke and delivered, by platform. Read "
         "against nora_proactive_silence_total.",
         ("platform",),
-    ),
-    # The decide turn's own reading (39 D4): what the proactive adaptor's
-    # envelope said it did, per item — `remind` (a row was written by the
-    # tool call this item records) or `decline` (considered and left). The
-    # rows themselves are counted by `nora_reminders_created_total`; this is
-    # the decision record beside them.
-    # The deterministic check before the decide turn (issue #136): why an
-    # hourly tick rendered a prompt, or why it did not. `daily` and `changed`
-    # are the ticks that cost a model call; `unchanged` and `held_quiet` cost
-    # one store read; `unclocked` is a wiring gap (no pass clock) that
-    # renders every tick. The reversal condition on the change-driven shape
-    # is `changed` runs far outnumbering remind decisions.
-    _CounterSpec(
-        "nora_proactive_pass_total",
-        "Proactive adaptor ticks, by what the tick DID — not by what made it "
-        "due, which is why a due tick that rendered nothing is not counted as "
-        "a pass. RENDERED: daily (the floor), changed (notes/Standing moved "
-        "and the HOME ROOM is quiet), unclocked (no pass clock wired — every tick "
-        "renders). DID NOT: held_quiet (moved but the HOME ROOM is still "
-        "talking — the room a row fires into, and so the only one a pass can "
-        "interrupt; every room of the unit until 2026-09-10), "
-        "unchanged, nothing_shown (due, but no open notes and no room has "
-        "written a position), no_home_room (the operator has not said where "
-        "she stands — a wiring gap, and it is here so it does not read as "
-        "silence).",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_proactive_decisions_total",
-        "Proactive decide-turn decisions, by action: remind or decline.",
-        ("action",),
-    ),
-    _CounterSpec(
-        "nora_proactive_reconciled_total",
-        "Reminder rows `remind` wrote inside the decide loop that the pass's "
-        "own envelope never reported, found by reading the rows back in "
-        "`commit` and charged a wake there. `remind` writes during the model "
-        "loop, so a screened item, an unknown handle, or a run with no "
-        "readable sample loses the account of a write that already happened — "
-        "and an uncharged wake lets the next pass raise the same note again. "
-        "Expected to sit at zero: any sustained rate here says a screen or a "
-        "sample is dropping decisions, and this series is the only place that "
-        "is visible.",
-        (),
     ),
     # The Relevance Gate (design/dreamer-agent-loop/36). TWO series, and the
     # split is the point: this one moves only when the gate actually decided,
@@ -2327,56 +1872,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "tell apart from one wedged since Tuesday.",
         ("adaptor",),
     ),
-    # The `note-merge` adaptor (design/dreamer-agent-loop/41 §7.8, DEC-202).
-    # A rare counter on a process that restarts several times a day, so the
-    # DURABLE count is the table, not this series: `note_merge_decision` rows
-    # (shadow) and `note.retire_reason = 'retired-merged'` (on).
-    _CounterSpec(
-        "nora_note_merge_total",
-        "Folds the note-merge pass considered, by outcome — one sample per "
-        "(survivor, duplicate) pair, or per group when the group names no pair. "
-        "would_merge: shadow mode, every check passed, nothing written. "
-        "merged: on mode, folded. stale: a head moved between the render and "
-        "the fold. too_long: the folded body would pass the body cap. "
-        "not_open: one of the two was retired first. overlap: the note was in "
-        "two groups, every such group refused whole. cross_room: the group's "
-        "notes were born in different rooms. not_changed: no note in the group "
-        "changed since the last pass, so it was already judged. "
-        "unknown_ordinal: a handle the pass did not show. singleton: fewer than "
-        "two distinct notes. malformed: an item that did not parse. Every value "
-        "but the last three is also a note_merge_decision row.",
-        ("outcome",),
-    ),
-    _CounterSpec(
-        "nora_note_merge_pass_total",
-        "note-merge ticks by whether they rendered: changed (a note was "
-        "created, or revised by anything but this pass, since the last "
-        "rendered pass — a model call follows), unchanged (nothing moved, no "
-        "call), nothing_open (fewer than two open notes, no call).",
-        ("reason",),
-    ),
-    # `SqlNoteStore.merge_into`'s reminders step (issue #158 residue): what it
-    # did to either note's open proactive row, per fold. Separate from
-    # `nora_note_merge_total` above rather than a value on it: that series is
-    # one sample per (survivor, duplicate) PAIR judgement, and a pair can
-    # produce zero, one or two reminder events, so folding this axis into it
-    # would stop either series answering "how many pairs" or "how many
-    # reminder events" cleanly.
-    _CounterSpec(
-        "nora_note_merge_proactive_total",
-        "What a fold did to either note's open proactive reminder, by "
-        "outcome. repointed: only the duplicate held one; moved onto the "
-        "survivor. collision_repointed: both held one, the duplicate's "
-        "survived and was re-pointed. collision_kept_survivor: both held "
-        "one, the survivor's own survived, the duplicate's was cancelled "
-        "cancelled_duplicate_note. moved: a row that would have been "
-        "re-pointed was cancelled cancelled_note_moved instead — the "
-        "survivor's tag path wrote something after the row was linked. "
-        "skipped_firing_collision: both rows were firing; neither is "
-        "cancelled, since the heartbeat's own mark() resolves the one in "
-        "flight and would overwrite a cancel written here.",
-        ("outcome",),
-    ),
     # The public Instagram summons (design/instagram-adoption/19,
     # `nora.app.summons`). Both label vocabularies are DERIVED from
     # `nora.domain.summons`, which is what the increments pass.
@@ -2413,7 +1908,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "pushed out of the full inbox by a newer one.",
         ("outcome",),
     ),
-    # The cognition loop's stimuli and its shadow wake evaluator
+    # The cognition loop's stimuli and its wake evaluator
     # (design/cognition-loop/20-observe.md §3-§4, migration step 1). Both
     # vocabularies are DERIVED from `nora.domain.cues` / `nora.domain.stimuli`.
     # `nora_stimulus_total` and `nora_stimulus_pending_age_seconds` were
@@ -2441,9 +1936,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         + " / ".join(WAKE_REASONS)
         + ") and mode ("
         + " / ".join(WAKE_MODES)
-        + "). mode=shadow is a WOULD-wake: recorded with its reason and "
-        "stimulus range in cognition_wake, and nothing fired (migration step "
-        "1). The operator sizes the wake values from this week of rows.",
+        + "). mode is live: a wake starts a Cognition session, recorded with "
+        "its reason and stimulus range in cognition_wake.",
         ("reason", "mode"),
     ),
     _CounterSpec(
@@ -2458,14 +1952,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_cognition_session_total",
-        "Cognition sessions started in shadow (migration step 3a-ii): one "
-        "per would-wake whose agenda was non-empty, session row recorded "
-        "before the model call.",
+        "Cognition sessions started: one per wake whose agenda was non-empty, "
+        "session row recorded before the model call.",
         ("mode",),
     ),
     _CounterSpec(
         "nora_cognition_session_skipped_total",
-        "Would-wakes on which no Cognition session ran, by reason "
+        "Wakes on which no Cognition session ran, by reason "
         "(no_home_room, also recorded failed so its stimuli stay pending / "
         "empty_agenda). No model call is made on either.",
         ("reason",),
@@ -2525,7 +2018,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "measures how long brakes hold, not how many wakes they stopped.",
         ("brake",),
     ),
-    # The shadow session's own outcomes (design/cognition-loop/70-migration.md
+    # The session's own outcomes (design/cognition-loop/70-migration.md
     # §10, the metrics the design named and 3a-iii had not shipped). None of the
     # four carries a room, a person, a unit or any text as a label: each label is
     # a closed vocabulary the code owns.
@@ -2614,11 +2107,10 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
     # the shape that went unnoticed for days.
     _GaugeSpec(
         "nora_cognition_session_units",
-        "Units the wake evaluator watches, by whether a Cognition session can "
-        "run for them: state=runnable (a home_room = true room in policy.toml) "
-        "or no_home_room (would-wakes are recorded, no session ever starts). "
-        "Set at boot with [cognition] session_mode = shadow; a non-zero "
-        "no_home_room is a unit the shadow week silently does not cover.",
+        "Units by whether a Cognition session can run for them: state=runnable "
+        "(a home_room = true room in policy.toml, woken by the evaluator) or "
+        "no_home_room (never woken). Set at boot with [cognition] enabled; a "
+        "non-zero no_home_room is a unit the loop does not cover.",
         ("state",),
     ),
     _GaugeSpec(
@@ -2633,14 +2125,6 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "it reports otherwise. ABSENT, never 0, when nora could not read it "
         "— a gauge that cannot be measured must not assert a value.",
         ("guild_id",),
-    ),
-    _GaugeSpec(
-        "nora_standing_watermark_gap",
-        "Rows behind a conversation's standing watermark, as the event "
-        "trigger's accumulator read measured them (design/standing-watermark/"
-        "10). Capped at [standing] fold_batch by the read's limit: a value "
-        "of fold_batch means AT LEAST a batch remains, not exactly one. Zero "
-        "or near-zero is caught up.",
     ),
     _GaugeSpec("nora_last_event_age_seconds", "Seconds since the last ingest event."),
     # The per-platform answer to the same question, added rather than folded
@@ -2769,104 +2253,11 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Seconds since the heartbeat's last completed tick, computed at scrape "
         "time. Climbing past a few ticks means the loop has stopped.",
     ),
-    # `config.toml`'s [notes] section calls this one "the tell" by name: with
-    # no curator, the notebook only grows, and this is the series that says
-    # whether it grows faster than it earns.
-    #
-    # LABELLED BY UNIT, which the spec's own name is not, and the label is
-    # load-bearing rather than decoration. A note index is keyed on the
-    # UNIT (§3/DEC-105) and this deployment has more than one — `friends`
-    # and `ridgeline` are separate notebooks that policy says are never paired.
-    # An unlabelled gauge is written by whichever room tagged last, so two
-    # notebooks would overwrite each other's reading and the exported number
-    # would mean «the size of whichever notebook was consulted most recently»,
-    # which is not a quantity anybody can alert on. Same argument as
-    # `nora_dream_evidence_lost_total{scope}` above: a specific unit's reading
-    # has to stay findable rather than merging into one process-wide number.
-    #
-    # Published from `TranscriptInjection._notes` on the read that already
-    # happens, NOT from a new `gather` leaf — `assemble`'s nested gather has
-    # distinctly-typed overloads only to six positional awaitables and both
-    # live branches sit at five, so a seventh joins every return type down to
-    # `object` under mypy.
-    #
-    # ABSENT rather than zero when the tier is off, and that distinction is the
-    # point: `_notes` returns `()` before this line when no store is wired, so
-    # a missing series means «not wired» while `0` means «wired, and this
-    # unit has written nothing». Those are the two states the tier has
-    # been unable to tell apart since it was switched on, and publishing `0`
-    # for both would preserve exactly the blindness this closes.
-    #
-    # **CORRECTION, 2026-08-27, found by reading this series on the first
-    # deployment that carried it: absence has a THIRD meaning, and it is the
-    # common one.** A prometheus series does not exist until something writes
-    # it, and this is written per TAG — so between a restart and the first
-    # tagged turn the series is absent on a perfectly healthy process. Observed
-    # directly: container up at 15:21:18Z, last tag 15:17:53Z, metric declared
-    # in the running image, series absent. Nothing was wrong.
-    #
-    # So **absence is not alertable on its own** — an alert on it pages on every
-    # deploy. It is readable only against a denominator that says whether this
-    # process has handled a tag at all (`nora_tags_total`), and the honest
-    # reading is:
-    #
-    #   absent + no tags yet      -> nothing has been asked of the tier
-    #   absent + tags handled     -> off, or the read failed (see
-    #                                `nora_errors_total{stage="notes"}`)
-    #   0                         -> wired, reached, and this unit is empty
-    #
-    # Recorded here rather than fixed by publishing `0` at startup, which was
-    # the tempting fix and is wrong: a zero written before any read is a
-    # measurement of nothing, and it would collapse the first two rows above
-    # into the third — the exact `unavailable`-as-`nothing_found` failure this
-    # gauge was built to prevent, reintroduced by the attempt to tidy it.
-    # A GAUGE against its per-tick cap, not a counter, and the distinction is
-    # 27 §5.2's: the curator reads whole bodies and `note_revision.body` has no
-    # upper bound, so ONE long body can consume a tick's whole allowance. The
-    # reading that matters is "how much of the budget did this tick spend",
-    # which is a level; a running total cannot answer it.
-    #
-    # When this sits at the cap, the tier reports "nothing to do" for the notes
-    # it never reached — the `unavailable`-as-`nothing_found` failure at the
-    # pass level, which the tier's own spec names in advance.
-    _GaugeSpec(
-        "nora_note_curator_bodies_read",
-        "Note bodies the curator FETCHED on its last tick for a unit — "
-        "every expired note it read ([notes] max_expired_per_tick, one body "
-        "each) and every due-by-revisit_at note it read ([notes] "
-        "max_revisits_per_tick, one body each — folded in by the note-curator "
-        "merge, design 34/issue #99). The merge-group read and its cap went "
-        "with the merge half on 2026-09-08. Written on every tick including "
-        "an idle one, where it is 0; absent means the pass did not run. A "
-        "note selected by both reads is "
-        "fetched once per read that selected it and counted that many times, "
-        "because it spends a slot in each cap it occupies. Sitting at a cap "
-        "means the pass is reporting 'nothing to do' about notes it never "
-        "reached.",
-        ("unit",),
-    ),
     _GaugeSpec(
         "nora_note_index_entries",
         "Standing notes rendered into <notes> for a unit on the last tag "
         "it handled. Absent when [notes] is off; 0 means the notebook is "
         "wired and empty.",
-        ("unit",),
-    ),
-    # The curator's own view of the same notebook, and deliberately a SECOND
-    # series rather than a reuse of the one above: that gauge is written on the
-    # tag path and says what a TURN saw, this one is written on the Dreamer's
-    # clock and says what the retiring pass saw. They diverge exactly when it
-    # matters — a pass running against a notebook that has changed since the
-    # last turn — and a single series would average the two into a number that
-    # answers neither question. Renamed from `nora_note_revisit_standing` by
-    # the note-curator merge (design 34, issue #99) — same reading, same
-    # writer's clock, now the curator's own rather than a second adaptor's.
-    _GaugeSpec(
-        "nora_note_curator_standing",
-        "Standing notes the curator read for a unit on its last tick. "
-        "0 means the pass ran and the notebook was empty; ABSENT means the "
-        "pass has not run for that unit at all, which is the distinction "
-        "that says whether the curator is wired.",
         ("unit",),
     ),
     # 1 once a summons write came back `writes_blocked`: Instagram answered a
@@ -3074,16 +2465,6 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
-    ),
-    # 41 §7.4 asks for prompt TOKENS per pass. The adaptor never sees the
-    # model call's usage — that is on the pass's Langfuse trace — so this
-    # records the rendered prompt's size in characters, which it does see.
-    _HistogramSpec(
-        "nora_note_merge_prompt_chars",
-        "Characters in one rendered note-merge prompt (every open note of the "
-        "unit, side by side). Tokens per pass are the model call's usage on "
-        "the dream:note-merge Langfuse trace.",
-        (1000, 2500, 5000, 10000, 20000, 40000, 80000),
     ),
 )
 

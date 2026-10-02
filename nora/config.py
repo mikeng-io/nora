@@ -276,23 +276,6 @@ class MemoryConfig(BaseModel):
     # deployment; the bound is on the READS, not just on the render, so raising
     # it costs latency as well as tokens.
     people_in_window_speakers: int = Field(default=4, ge=0)
-    # The PROACTIVE decide turn's roster index depth (design 39 D9: inject the
-    # index, call for depth) — how many conclusions per home-room member ride
-    # in `<people>`. 0 leaves the block exactly as it was: names and aliases.
-    #
-    # DELIBERATELY SMALLER than everything above, and that is the decision
-    # rather than an economy. #206 rations the decide pass to
-    # `max_memory_calls = 2` reads; the index exists so those two are spent on
-    # DEPTH («what did Aaron say about Saturday») instead of on «who is Aaron».
-    # An index that carried eight conclusions each would BE the depth, and the
-    # ration would have nothing left to buy.
-    roster_index_conclusions: int = Field(default=1, ge=0)
-    # How many home-room members the proactive index READS memory for. The
-    # render is uncapped — every member keeps their name and aliases, because a
-    # member missing from the index is invisible to her — so this bounds the
-    # Honcho FAN-OUT only: one concurrent read per member, and a forty-person
-    # Discord home room is forty of them on the front of a pass.
-    roster_index_members: int = Field(default=12, ge=0)
     # The wall-clock bound on the participation turn's memory reads, in seconds.
     #
     # `HonchoClient.representation` already carries its own 3s transport
@@ -1449,7 +1432,8 @@ class AnalyticsConfig(BaseModel):
     # ── the unit rollups and their stimuli (step 2,
     # design/cognition-loop/25-rollup.md §3-§4). Starting values, each a
     # judgement to be sized from the first weeks of rows, as 20 §3's wake
-    # values are sized from the shadow week.
+    # values were sized from the shadow week (the shadow phase ended with the
+    # cut-over, 2026-10-03, DEC-277).
     #
     # Two members' stays are one co-location when their centres are this
     # close — the stay radius (120 m) plus the measured resting scatter's
@@ -2481,8 +2465,7 @@ class StandingConfig(BaseModel):
     English, but **approaching 1200 tokens in a CJK-heavy room**, and this room
     is mixed by default — the cap has to be read against the denser case.
 
-    **`fold_batch = 200`, the batch size AND the event trigger's accumulator
-    threshold — one number** (design/standing-watermark D1). The fold reads
+    **`fold_batch = 200`, the batch size** (design/standing-watermark D1). The fold reads
     `since_including_nora(after_id=watermark, limit=fold_batch)` — the NEXT
     fold_batch rows since the last fold's row-id watermark, not the LAST 40
     rows of the reply path's window. The 40-row window is gone entirely (D6):
@@ -2526,25 +2509,13 @@ class StandingConfig(BaseModel):
     # see `DEFAULT_WORKING_SET_MAX_ITEMS`'s docstring.
     working_set_max_items: int = Field(default=DEFAULT_WORKING_SET_MAX_ITEMS, ge=1)
     working_set_max_chars: int = Field(default=DEFAULT_WORKING_SET_MAX_CHARS, ge=1)
-    # The fold's batch size AND the event trigger's accumulator threshold —
-    # ONE number (design/standing-watermark D1). Every fold reads
+    # The fold's batch size (design/standing-watermark D1). Every fold reads
     # `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
     # fold_batch rows since the last fold's watermark, not the LAST fold_batch
     # rows. It is a batch size, not a recency window, so it deliberately has NO
     # cap relationship to `[store] context_window` — the 40-row window is gone
     # entirely (D6). 200 is the operator's number from the bundle's index.
     fold_batch: int = Field(default=200, ge=1)
-    # The event-driven fold path (design/standing-watermark/10): every message
-    # that lands in a conversation triggers a standing check off the listener
-    # path, and the check folds only when the accumulator reaches `fold_batch`.
-    # OFF by default like `enabled` — a new subsystem does not switch itself
-    # on; the deployment turns it on deliberately.
-    event_enabled: bool = False
-    # The rollup's bound (design/standing-watermark/30): how many batch folds
-    # ONE spawned event fold may perform before it stops and lets the NEXT
-    # message's check continue. Bounds how long a cold-start backlog can hold
-    # the model budget in a single event.
-    rollup_max_folds: int = Field(default=5, ge=1)
     timeout_seconds: float = Field(default=20.0, gt=0)
     # The bound on the stage's TWO STORE CALLS — the read of the prior position
     # and the write of the revised one. It exists because they had no bound at
@@ -2691,14 +2662,15 @@ class CultureConfig(BaseModel):
     #: Default **False**, unconditionally: this is a NEW capability and landing
     #: its code must not change what any deployed `config.toml` does on the next
     #: restart. Turning it on is a deliberate later change — the same rule
-    #: `[notes] candidates_enabled` states.
+    #: the deleted `[notes] candidates_enabled` stated (DEC-277).
     #:
     #: **What turning it on does — TWO things, under this one flag.** A
     #: background pass writes one short account of each room per day into its
     #: own store, AND every runtime reads the room's current account as
-    #: `<culture>`: the tag turn, every fire occasion, the proactive pass, both
-    #: note passes and both standing folds (DEC-207, 2026-09-25; the
-    #: participation turn alone from #382, 2026-09-22). The relevance gate
+    #: `<culture>`: the tag turn, every fire occasion and the tag-path
+    #: standing fold (DEC-207, 2026-09-25, when the note passes and the
+    #: event fold also read it; the participation turn alone from #382,
+    #: 2026-09-22). The relevance gate
     #: never does (design/context-assembly/02).
     #:
     #: There is no separate read switch. This comment said «NOTHING READS IT»
@@ -2733,208 +2705,22 @@ class CultureConfig(BaseModel):
 
 
 class NotesConfig(BaseModel):
-    """The note tier's gate (the `2026-08-21-note-tier-design` spec under
-    `docs/superpowers/specs/`).
+    """The note tier's gate. `enabled` defaults to **False**, because a new
+    subsystem does not switch itself on. On: the store is built, `<notes>`
+    renders whatever is standing on a tag turn and its tools are reachable;
+    the Cognition session (`[cognition]`) is the background writer that
+    creates, revises, retires and merges notes. Off: composition wires
+    `notes=None`, and no block is emitted.
 
-    `FactsConfig`'s shape immediately above, for the same reasons: the whole
-    section is optional and every field defaults, so a `config.toml` written
-    before this section existed keeps loading under `extra="forbid"`; and
-    `enabled` defaults to **False**, because a new subsystem does not switch
-    itself on — least of all one whose read lands in a block every tagged turn
-    carries.
-
-    **On today: the store is built and `<notes>` renders whatever is standing.**
-    Off: composition wires `notes=None` into `TranscriptInjection`, `_notes`
-    answers `()` without a query, and `render_notes(())` emits no block — the
-    dormant state the tier shipped in. Nothing WRITES a note yet either way
-    (`nora.dreamer` has no curator wired by default), so turning this on today
-    buys a `SELECT` that returns nothing; it is the operator's switch for the
-    moment a writer lands, not a retroactive one.
-
-    **There is deliberately no render cap here** (the deleted knowledge tier's
-    section had one, `max_rendered_facts`, and it was the one place the two
-    differed). §5.1 decides the
-    index is UNCAPPED: a note silently missing from it is invisible to her, and
-    invisible is indistinguishable from absent — the same
-    `unavailable`-reported-as-`nothing_found` failure R-27 exists to prevent. A
-    top-N knob here would be a supported way to reintroduce it. The prompt
-    budget is paid instead by the per-entry caps in `nora.domain.notes` (a
-    title is ≤ 60 chars and a description ≤ 200, enforced in the constructor
-    rather than truncated at render) and by the curator retiring closed notes.
-    An index long enough to hurt is a curation problem, and a cap would hide it.
-
-    No `retention_days` either: retirement is a status change, not a delete
-    (§7.4) — a retired note stays readable so a lossy step can be re-derived —
-    so there is nothing here for a prune sweep to bound.
+    **There is deliberately no render cap here.** A note silently missing from
+    the index is invisible to her, and invisible is indistinguishable from
+    absent (R-27); the prompt budget is paid by the per-entry caps in
+    `nora.domain.notes` and by retiring settled notes.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-
-    # --- the due-by-`revisit_at` selection, folded from the former
-    # REVISITOR into `nora.language.note_curator.NoteCuratorAdaptor`
-    # (design/dreamer-agent-loop/34, issue #99) --------------------------
-    #
-    # `max_revisits_per_tick = 10`: how many DUE notes one pass judges. A
-    # ceiling on the PROMPT as much as on the work — each candidate carries its
-    # own evidence block, so this multiplies with `revisit_evidence_messages`
-    # below into the size of one model call. A unit with more due than
-    # this drains over several ticks, which is correct for a background pass
-    # nobody is waiting on, and the overflow is COUNTED
-    # (`nora_note_curator_deferred_total`) rather than silently truncated.
-    #
-    # `revisit_evidence_messages = 40`: messages of a note's own
-    # `established_in` rendered as the evidence it is judged against.
-    #
-    # **This comment used to claim "there is no setting of this that causes a
-    # wrong retirement". That was FALSE and an external review caught it.** A
-    # truncated window whose oldest row postdates the anchor hides exactly the
-    # conversation an answer would be in, so a busy room could turn an ANSWERED
-    # note into a `retired-expired` one — the unrecoverable direction. The
-    # sentence is kept, corrected, because a config docstring asserting a
-    # safety property the code does not have is worse than one saying nothing.
-    #
-    # **The first correction was still false, and an external review caught
-    # that too.** It claimed safety on a `_covers` that measured truncation
-    # against the ANCHOR, so a window starting before the anchor passed while an
-    # answer given weeks earlier — any time after the note was written, which is
-    # what a closing condition allows — sat outside it. Lowering this number
-    # still turned an answered note into a retired one.
-    #
-    # It WAS safe from 2026-09-08 because `_covers` measures the window against
-    # the NOTE: a truncated window whose oldest row does not predate
-    # `created_at` refuses the expiry rather than judging on what it happens to
-    # hold. So the cap failed in ONE direction — too few messages meant a note
-    # stayed open longer.
-    #
-    # **In a busy room «longer» was «forever», and that safety was given up for
-    # past-anchor notes on 2026-09-25 (DEC-203).** A room posting more than
-    # this between a note and its moment never shows a window that predates the
-    # note — 8 live notes, 2 to 17 days past, none retirable. Past
-    # `ANCHOR_LAPSE_MS` (`nora.language.note_curator`) the reach-back half no
-    # longer binds, so **this number again changes which notes get retired**:
-    # an answer or a change of plan said before the window is not shown, and an
-    # `expired` verdict can then mislabel an answered note or retire a live
-    # one. The model is told when its window is cut short; each verdict
-    # accepted this way is counted `nora_note_curator_total{action="lapsed"}`.
-    # Inside the lapse the one-direction property above still holds.
-    #
-    # Twice-wrong is worth leaving on the page: a config docstring asserting a
-    # safety property is a claim about code somebody else has to verify, and
-    # this one was believed twice before it was true.
-    max_revisits_per_tick: int = Field(default=10, ge=1)
-    revisit_evidence_messages: int = Field(default=40, ge=1)
-    #: The curator, separately from the tier. `[notes] enabled` decides whether
-    #: the INDEX is injected and the four tools reachable; this decides whether
-    #: the background pass runs. Two switches because they are two risks: the
-    #: tag path only reads, and the curator RETIRES — the one thing in this
-    #: tier that removes something from her index. An operator turning notes
-    #: on should not thereby have signed up for a pass that reorganises them.
-    #:
-    #: Also off because the curator is the tier's only writer that acts across
-    #: notes, and 27 §2 makes that the Dreamer's alone precisely because it is
-    #: the dangerous half.
-    curator_enabled: bool = False
-
-    #: The CREATE PATH (`nora.language.note_candidates.NoteCandidateAdaptor`,
-    #: design/dreamer-agent-loop's note-dreamer-schedule node §4, issue #98),
-    #: separately from the tier and from the curator — a THIRD switch on the
-    #: SAME two-risks argument `curator_enabled` already states: `[notes]
-    #: enabled` decides whether the index and the read tools are reachable;
-    #: `candidates_enabled` decides whether a background pass WRITES NEW
-    #: NOTES into that index at all. An operator who turned `[notes]` on in
-    #: the past — for the index, for `note_read`/`note_search` — did not
-    #: thereby sign up for a background process creating notes on their
-    #: behalf; that is a materially different capability and gets its own
-    #: flag, the same way `curator_enabled` is a separate risk from reading.
-    #:
-    #: Default **False**, unconditionally: this is a NEW capability and
-    #: landing its code must not change what any deployed `config.toml`
-    #: does on the next restart. Turning it on is a deliberate later change.
-    candidates_enabled: bool = False
-
-    #: The DISCHARGE PIPELINE (design/dreamer-agent-loop/33-note-dreamer-
-    #: schedule.md §7, 19-between-tiers.md §1, issue #101) — a FOURTH switch on
-    #: the same two-risks argument, and deliberately its own rather than riding
-    #: `curator_enabled`. That precedent cuts both ways: the note tier's
-    #: entity-resolution pass (deleted 2026-09-08) rode `curator_enabled`
-    #: because it "carried none of those risks — it never touched a note's
-    #: content, never created a note, and never merged one". Discharge is the
-    #: opposite case: it WRITES to two tiers outside this one entirely — an
-    #: Event, and a
-    #: Honcho conclusion about a named person — the moment a note the curator
-    #: was already going to retire turns out to classify as a commitment or a
-    #: person-claim. (A third kind, a world-claim, went to the knowledge tier
-    #: until that tier was deleted on 2026-09-07.) An operator who accepted
-    #: "this pass retires notes" did not thereby accept "this pass
-    #: also creates calendar events and writes permanent memories about
-    #: people"; that is a materially different, materially larger capability
-    #: and it gets its own flag, the same reasoning `candidates_enabled` states
-    #: for writing new notes.
-    #:
-    #: Default **False**, unconditionally, for the same reason as
-    #: `candidates_enabled`: landing this code must not change what any
-    #: deployed `config.toml` does on the next restart.
-    discharge_enabled: bool = False
-
-    #: EXPIRED notes per tick. Larger than the group cap because expiry is the
-    #: common case and each costs one body: after a quiet month, every note
-    #: whose date has passed becomes eligible at once, and a cap of three would
-    #: take a fortnight of ticks to work through a backlog that appeared in a
-    #: day.
-    #:
-    #: When this binds, the pass reports "nothing to do" about the notes it did
-    #: not reach — the `unavailable`-as-`nothing_found` failure at the pass
-    #: level, which is why the gauge exists and why the cap is generous.
-    max_expired_per_tick: int = Field(default=20, ge=1, le=200)
-
-    #: Model calls per `note-candidates` fire, UNIONED (`AdaptorSchedule.
-    #: samples`, design/dreamer-agent-loop/37, issue #118). 1 is one call.
-    #: Measured 2026-09-08: one shape of entry — a plan one person states
-    #: with an unsettled corner — is recognised in ~30% of single samples at
-    #: the tier's temperature while no negative sample ever produced a note;
-    #: N samples recognise it with probability 1 - 0.7^N (3 → 0.66, 5 →
-    #: 0.83) and stay empty on a negative batch. Cost is N model calls per
-    #: fire, on a pass that fires at most hourly per room and only when the
-    #: room spoke. Duplicates across samples collapse in the staging key and
-    #: the create gate; the run is unavailable only when every sample was.
-    candidate_samples: int = Field(default=1, ge=1, le=10)
-
-    #: Minimum seconds between two `note-candidates` fires for one room (the
-    #: adaptor's `AdaptorSchedule.min_interval_seconds`). A fire needs unread
-    #: backlog AND the watermark row at least this old. Default 3600, the
-    #: cadence before the key existed, so a config without it behaves exactly
-    #: as before. The floor is 300, the dreamer tick: a smaller number cannot
-    #: fire any faster and would only read as a promise the loop cannot keep.
-    #: A longer interval defers messages, never drops them: a fire reads at
-    #: most `batch_limit` (80) rows past the watermark and advances it by what
-    #: was read, so a room speaking faster than 80 per interval builds lag.
-    candidates_interval_seconds: int = Field(default=3600, ge=300)
-
-    #: The `note-merge` pass (design/dreamer-agent-loop/41 §7, DEC-202) — the
-    #: back-stop for two open notes asking the same question, and a FIFTH
-    #: switch on the two-risks argument above: this is the one pass that
-    #: folds one note INTO another.
-    #:
-    #: `"off"` builds nothing. `"shadow"` runs the pass and writes no note:
-    #: every fold it would make is a `note_merge_decision` row for the
-    #: operator to label. `"on"` folds through `SqlNoteStore.merge_into`, and
-    #: is for after 41 §7.8's eval passes (a full-unit eval with 20+ near-miss
-    #: negatives, k >= 5, zero false merges, operator-signed labels).
-    #:
-    #: Default **"off"** for `candidates_enabled`'s reason: landing the code
-    #: must not change what any deployed `config.toml` does.
-    merge_mode: Literal["off", "shadow", "on"] = "off"
-
-    # NO `max_body_chars`, and its absence is the decision. The field existed
-    # here with a twelve-line docstring and a range validator and NOTHING READ
-    # IT — the cap was `nora.domain.notes.BODY_MAX_CHARS` in four places the
-    # whole time. A knob that changes nothing is the config-file form of a
-    # declared metric with no call site. It is not threaded because the cap's
-    # own argument is that it is enforced in the TYPE, and `__post_init__`
-    # cannot see config; making the knob true would mean moving the refusal out
-    # to a store boundary to serve the knob.
 
 
 class XaiImageGenConfig(BaseModel):
@@ -3123,7 +2909,7 @@ class DreamBudgetConfig(BaseModel):
     #: `ask_memory`, `search_memory_workspace`, `lookup_person`. The per-tool
     #: budgets above it (`[llm.budgets]`, `NativeTool.budget`) bound each verb
     #: on its own, which a pass spends by asking four verbs the same question:
-    #: the decide turn's live trace held two notes whose two handles its own
+    #: the (deleted, DEC-277) decide turn's live trace held two notes whose two handles its own
     #: `<people>` block already carried and still made six held-state reads.
     #:
     #: Four rewrites of the objective moved that count between 3 and 8 and
@@ -3153,8 +2939,8 @@ class DreamBudgetConfig(BaseModel):
     #: Dreamer was inheriting it with no way to say otherwise — the same
     #: category error `[dreamer] max_tokens` was added for (issue #291), one
     #: ceiling over. `note_read = 3` is sized for a reply that reads a note or
-    #: two before answering; the proactive pass is asked for one decision per
-    #: note the group has open, so its need is the OPEN-NOTE COUNT and not a
+    #: two before answering; the proactive pass (deleted 2026-10-03) was asked for one decision per
+    #: note the group had open, so its need is the OPEN-NOTE COUNT and not a
     #: constant.
     #:
     #: Measured on norty, 2026-09-17, the 05:00 pass (Langfuse trace
@@ -3291,7 +3077,7 @@ class DreamerConfig(BaseModel):
     **It is NOT `[standing] store_timeout_seconds`' number, and the first
     draft made it one.** That value bounds ONE call; this one multiplies
     SITES, and a site inside a per-note loop runs once per note — so at 5s the
-    curator's bound was 50s against a legitimate degraded case of 90s, which
+    (deleted) curator's bound was 50s against a legitimate degraded case of 90s, which
     turns a slow tick into a counted store timeout and, for a daily-slotted
     adaptor, a lost day. `DEFAULT_DREAM_STORE_TIMEOUT_SECONDS` in
     `nora.domain.ports` carries that arithmetic and is the single definition
@@ -3332,7 +3118,8 @@ class DreamerConfig(BaseModel):
     # to override it, and `[llm] max_tokens = 2000` is sized for a TAG TURN
     # ("the largest legitimate completion — reasoning block plus the tool call
     # — was 371 tokens, so 2000 is 5.4x headroom"). A batch pass is a different
-    # unit of work: `note-candidates`' objective asks for one verdict per
+    # unit of work: `note-candidates`' (deleted 2026-10-03, DEC-277) objective asked for one
+    # verdict per
     # message PLUS a candidate array, so its output scales with the batch.
     #
     # Measured, 2026-09-16/17: one scope spent ~24 hours failing EVERY run on
@@ -3386,7 +3173,7 @@ class DreamerConfig(BaseModel):
     # evidence went with the tier it was taken on.** The paragraphs above were
     # measured on the knowledge tier's two adaptors, both deleted 2026-09-07,
     # and a live setting defended only by a probe nobody can repeat is a claim.
-    # The note tier's scenario suite (`evals.run --suite note_candidates`,
+    # The note tier's scenario suite (`evals.run --suite note_candidates`, deleted with the tier,
     # design/dreamer-agent-loop/37 §7) re-ran the same question on
     # `note-candidates`, sixteen scenarios against the deployed model:
     #
@@ -3457,17 +3244,11 @@ class DreamerConfig(BaseModel):
     #                                                      bounds the two
     #                                                      phases separately.
     #
-    # `samples` is only configurable through `[notes] candidate_samples`
-    # today (every other adaptor's schedule fixes it at 1 in code), so the
-    # startup check reads that field rather than importing `nora.language` to
-    # re-derive it — the same cross-section shape
-    # `_the_reminder_interval_fits_the_heartbeat` already uses across
-    # `[reminders]`/`[heartbeat]`. `store_calls_per_tick` has no config
-    # equivalent at all — it is a class attribute in `nora.language`, four
-    # layers above `nora.config` — so the check uses
+    # Every adaptor's schedule fixes `samples` at 1 in code. `store_calls_per_tick`
+    # has no config equivalent at all — it is a class attribute in
+    # `nora.language`, four layers above `nora.config` — so the check uses
     # `DREAM_MAX_STORE_CALLS_PER_TICK` (`nora.domain.ports`), a documented
-    # ceiling with headroom over the widest shipped adaptor
-    # (`ProactiveAdaptor` at 17) and pinned there against every adaptor by
+    # ceiling with headroom over every shipped adaptor, pinned by
     # `tests/architecture/test_dream_store_calls_are_declared.py`.
     #
     # **`None` DERIVES the value at load time (#191 independent review,
@@ -3478,8 +3259,8 @@ class DreamerConfig(BaseModel):
     # 15 = 1320 > 1200: the rebuilt image would have REFUSED TO BOOT the
     # first time anyone checked it against the real config, not the example.
     # A fixed literal is a number that goes stale the moment an operator
-    # raises ANY `[dreamer.budgets.*] timeout_seconds` or `[notes]
-    # candidate_samples` — forgetting to raise it alongside either one is
+    # raises ANY `[dreamer.budgets.*] timeout_seconds` — forgetting to raise
+    # it alongside is
     # either a refused boot (too low) or a silently under-bounded wedge (an
     # old literal that happens to still validate but no longer carries real
     # headroom). `Config.dreamer_max_unit_hold_seconds()` is the resolver:
@@ -3533,40 +3314,26 @@ class DreamerConfig(BaseModel):
 
 
 class CognitionConfig(BaseModel):
-    """The cognition loop's stimuli and wake evaluator
-    (design/cognition-loop/20-observe.md §3, migration step 1).
+    """The cognition loop (design/cognition-loop/): stimuli, the wake evaluator
+    (20 §3) and the Cognition session (30), the one background writer of the
+    notebook, events, Standing and Nora's own reminders.
 
-    **Ships OFF** (`mode = "off"`): a new subsystem does not switch itself on,
-    the `[dreamer]`/`[analytics]` shape. Off, the ingest pipeline builds no
-    stimulus stage and no evaluator is spawned; nothing is written to
-    `stimulus` or `cognition_wake`.
+    **Ships OFF** (`enabled = false`): off, the ingest pipeline builds no
+    stimulus stage, no evaluator is spawned and no session runs. On, every
+    recorded person-authored item appends a stimulus with its cues, the
+    evaluator ticks every `tick_seconds` and starts a session on each wake.
+    Undo is this flag and a restart.
 
-    **`mode = "shadow"`** is migration step 1: every recorded person-authored
-    item appends a stimulus with its cues, and the evaluator ticks every
-    `tick_seconds`, applying 20 §3's wake table and brakes exactly as it
-    would to start a session — and FIRES NOTHING. Each would-wake is recorded
-    with its reason and the stimulus range it would consume; the clocked
-    Dreamer adaptors keep running as before. A `live` mode arrives with the
-    Cognition adaptor (step 3/4), not here.
-
-    The wake numbers are 20 §3's STARTING values, every one a guess the
-    shadow week sizes. `quiet_seconds` and `max_age_seconds` reuse
-    `[dreamer]`'s key NAMES (20 §3), not their values as a rule: the two are
-    configured independently, and the Dreamer's clock keeps its own 1800 s /
-    86400 s, untouched. `quiet_seconds` itself was set to match — 1800 s,
-    the operator's 30-minute settled window (2026-09-29, was 600 s).
-
-    Two keys are not in 20 §3 and are this implementation's:
-    `shadow_session_seconds` is how long a would-wake is treated as a running
-    session, so single-flight and the cooldown can be exercised while nothing
-    runs; `floor_grace_seconds` is how late a daily floor may still be raised
-    after its instant (a restart at 07:02 raises the 07:00 floor; a deploy at
-    15:00 does not raise that morning's).
+    The wake numbers are 20 §3's starting values. `quiet_seconds` and
+    `max_age_seconds` reuse `[dreamer]`'s key NAMES (20 §3), not their values.
+    `floor_grace_seconds` is how late a daily floor may still be raised after
+    its instant (a restart at 07:02 raises the 07:00 floor; a deploy at 15:00
+    does not raise that morning's).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    mode: Literal["off", "shadow"] = "off"
+    enabled: bool = False
     tick_seconds: float = Field(default=30.0, gt=0)
     quiet_seconds: float = Field(default=1800.0, ge=0)  # operator 2026-09-29, was 600
     cue_quiet_seconds: float = Field(default=120.0, ge=0)
@@ -3576,33 +3343,12 @@ class CognitionConfig(BaseModel):
     cooldown_seconds: float = Field(default=300.0, ge=0)
     max_concurrent_sessions: int = Field(default=2, ge=1)
     reply_quiet_seconds: float = Field(default=600.0, ge=0)
-    shadow_session_seconds: float = Field(default=60.0, ge=0)
-    # The daily floors (20 §3: proactive's 07:00 HK and the curator's 00:00
-    # HK), local wall-clock "HH:MM" in `timezone`.
+    # The daily floors (20 §3), local wall-clock "HH:MM" in `timezone`: each
+    # wakes a session with a `time` item that reviews the notebook.
     time_floors: list[str] = Field(default_factory=lambda: ["07:00", "00:00"])
     timezone: str = "Asia/Hong_Kong"
     floor_grace_seconds: float = Field(default=3600.0, ge=0)
     store_timeout_seconds: float = Field(default=5.0, gt=0)
-    # Migration step 3a (design/cognition-loop/70-migration.md §2 row 3a):
-    # a SEPARATE switch from `mode` above, deliberately. `mode` governs the
-    # wake EVALUATOR (20-observe.md §3) and makes NO model call in either of
-    # its values; `session_mode = "shadow"` governs whether a Cognition
-    # SESSION actually runs on each would-wake the evaluator records — real
-    # reads, a real model call, its note/event/Standing verbs in dry run
-    # (`nora.agent.cognition_dry_run`), its `remind` mirrored and held. Two
-    # switches rather than growing `mode` to a three-value enum: `mode`'s own
-    # docstring already promised "a `live` mode arrives with the Cognition
-    # adaptor", and folding session-running into the SAME field as the
-    # evaluator's would collapse two independently-flippable behaviours (the
-    # evaluator can run for a week with zero model spend before anyone turns
-    # sessions on) into one knob. **Ships OFF** (`session_mode = "off"`),
-    # the same "a new subsystem does not switch itself on" rule `mode`
-    # itself states — today's behaviour (no session ever runs, no model call
-    # this config did not already make) is exactly what `"off"` keeps.
-    # `session_mode = "shadow"` REQUIRES `mode = "shadow"` (the validator
-    # below): a session has nothing to run on without the evaluator's
-    # would-wakes.
-    session_mode: Literal["off", "shadow"] = "off"
     #: 30-cognition.md §1: "starting at 12".
     max_items: int = Field(default=12, ge=1)
     #: 30-cognition.md §2: "starting at 3".
@@ -3612,9 +3358,7 @@ class CognitionConfig(BaseModel):
     # being in flight and its stimuli are pending again. The session's own
     # wall clock (`AdaptorBudget.timeout_seconds`, 30 §5) must end at least
     # `nora.app.cognition_session.SESSION_TIMEOUT_MARGIN_SECONDS` before it
-    # (the runner refuses to start otherwise). Replaces the assumption
-    # `shadow_session_seconds` makes for a session hook that is wired;
-    # `shadow_session_seconds` stays for `session_mode = "off"`.
+    # (the runner refuses to start otherwise).
     session_timeout_seconds: float = Field(default=3900.0, gt=0)
     #: 20 §3: "at most `max_self_wakes` pending per unit (starting at 5)".
     max_self_wakes: int = Field(default=5, ge=1)
@@ -3628,7 +3372,7 @@ class CognitionConfig(BaseModel):
     #: 2 ** (n - 1)` (a `closed` session resets it), capped at
     #: `backoff_max_seconds` (6 h); after `max_consecutive_failures` the stimuli
     #: those sessions claimed are struck (reason `failed`) so an always-failing
-    #: agenda stops. Both are starting values a shadow week sizes.
+    #: agenda stops. Both are starting values the shadow week sized.
     backoff_max_seconds: float = Field(default=21600.0, gt=0)
     max_consecutive_failures: int = Field(default=5, ge=1)
     #: #637 review, major 2 (DEC-244 (8)): how much of a session's prompt the
@@ -3679,16 +3423,6 @@ class CognitionConfig(BaseModel):
             raise ValueError(f"unknown timezone {value!r}") from exc
         return value
 
-    @model_validator(mode="after")
-    def _session_mode_needs_the_evaluator_running(self) -> CognitionConfig:
-        if self.session_mode == "shadow" and self.mode != "shadow":
-            raise ValueError(
-                "[cognition] session_mode = \"shadow\" needs mode = \"shadow\": "
-                "a session runs on the wake evaluator's would-wakes, so the "
-                "evaluator must be recording them"
-            )
-        return self
-
 
 class AssessConfig(BaseModel):
     """The Assess adaptor (design/cognition-loop/30-cognition.md §6,
@@ -3706,7 +3440,7 @@ class AssessConfig(BaseModel):
 
     `mode = "on"` runs the deterministic checks (`nora.app.assess_dq`) and
     records `assess_report` rows and `nora_dq_failures_total{check}`. There
-    is no `"shadow"` here unlike `[cognition]`: a report is never live effect
+    is no `"shadow"` here (nor, since 2026-10-03, in `[cognition]`): a report is never live effect
     — nothing reads an `assess_report` row on a turn — so there is nothing a
     shadow mode would still be withholding.
 
@@ -4122,8 +3856,9 @@ class Config(BaseModel):
     # Optional and defaulted — see `NotesConfig`. Ships INERT
     # (`enabled = false`); off, composition wires `notes=None` into
     # `TranscriptInjection` and the `<notes>` block never renders. On, the
-    # index is read from `SqlNoteStore` on every tag — nothing writes a note
-    # yet, so it is empty until a curator lands.
+    # index is read from `SqlNoteStore` on every tag — the Cognition session
+    # writes notes (`note_create`/`note_update`/`note_retire`/`note_merge`), so it
+    # is empty until it has.
     notes: NotesConfig = NotesConfig()
     # Optional and defaulted — see `CultureConfig`. Ships INERT
     # (`enabled = false`): off, composition builds no adaptor, no schedule
@@ -4340,8 +4075,7 @@ class Config(BaseModel):
             DreamBudgetConfig().timeout_seconds,
             *(b.timeout_seconds for b in self.dreamer.budgets.values()),
         ])
-        max_samples = self.notes.candidate_samples
-        model_budget = max_samples * (max_timeout + DEFAULT_WRITE_TIMEOUT_SECONDS)
+        model_budget = max_timeout + DEFAULT_WRITE_TIMEOUT_SECONDS
         store_budget = (
             2 * DREAM_MAX_STORE_CALLS_PER_TICK * self.dreamer.store_timeout_seconds
         )
@@ -4558,13 +4292,12 @@ class Config(BaseModel):
     def _cognition_sessions_need_the_dreamer(self) -> Config:
         """A Cognition session borrows the Dreamer's model source, tool source
         and objective corpus (migration step 3a-iii), so `[cognition]
-        session_mode = "shadow"` with `[dreamer] enabled = false` would build
-        an evaluator whose hook has nothing to run on. Refused at load, where
-        the operator is looking, not discovered as a session that never
-        starts."""
-        if self.cognition.session_mode == "shadow" and not self.dreamer.enabled:
+        enabled = true` with `[dreamer] enabled = false` would build an
+        evaluator whose hook has nothing to run on. Refused at load, where the
+        operator is looking, not discovered as a session that never starts."""
+        if self.cognition.enabled and not self.dreamer.enabled:
             raise ValueError(
-                "[cognition] session_mode = \"shadow\" needs [dreamer] enabled = true: "
+                "[cognition] enabled = true needs [dreamer] enabled = true: "
                 "a session runs on the Dreamer's model, tools and objectives"
             )
         return self
@@ -4595,7 +4328,7 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _cognition_sessions_need_their_own_budget(self) -> Config:
-        """`[cognition] session_mode = "shadow"` REFUSES to load without an
+        """`[cognition] enabled = true` REFUSES to load without an
         explicit `[dreamer.budgets.cognition]` block (#637 review, minor 4).
         `budget_for` answers an adaptor with no block from the class defaults
         (6 turns, 40k tokens, 120 s), which is a budget nobody chose for a
@@ -4603,9 +4336,9 @@ class Config(BaseModel):
         review found a live config with no block, silently running on it. The
         block is in `config.example.toml`; a deployment that turns sessions on
         copies it, or sizes its own."""
-        if self.cognition.session_mode == "shadow" and "cognition" not in self.dreamer.budgets:
+        if self.cognition.enabled and "cognition" not in self.dreamer.budgets:
             raise ValueError(
-                "[cognition] session_mode = \"shadow\" needs an explicit "
+                "[cognition] enabled = true needs an explicit "
                 "[dreamer.budgets.cognition] block: without one the session silently "
                 "runs on the code defaults (200 turns, 10.24M tokens, 3600 s). Copy the block "
                 "from config.example.toml or size your own"

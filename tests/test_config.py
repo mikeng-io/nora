@@ -1059,157 +1059,6 @@ def test_a_partial_budget_block_fills_the_rest_from_the_default(toml_path):
     assert budget.timeout_seconds == DreamBudgetConfig().timeout_seconds == 120.0
 
 
-def test_every_budget_block_the_template_declares_is_pinned_with_its_reasoning(
-    toml_path,
-):
-    """**Stated rather than hidden: which adaptors got numbers somebody chose,
-    and which run on `DreamBudgetConfig`'s defaults.**
-
-    The template once declared five blocks — two room ones that named nothing
-    and three `fact-*` ones that were the only measured numbers in the section.
-    All five went with the knowledge and language tiers, leaving the section
-    empty. It refills only under this test, which is the point: `budget_for`
-    falls back SILENTLY for an unknown key (its own docstring concedes it), so
-    an adaptor with no block runs on numbers nobody chose — and that state must
-    not be confused with «somebody sized these».
-
-    `note-curation` still has no block and still runs on the defaults."""
-    budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"proactive", "culture", "note-candidates", "cognition"}, (
-        "a [dreamer.budgets.*] block arrived — pin it here with the reasoning "
-        "for its numbers, so the section cannot fill up unmeasured"
-    )
-    # CULTURE, pinned 2026-09-17, when the adaptor stopped being tool-free.
-    #
-    # `output_tokens` is DERIVED, not chosen: a length in CHARACTERS converted
-    # at the MEASURED `OUTPUT_TOKENS_PER_CHAR` (1.15). **The length it converts
-    # is `ACCOUNT_CHARS_OBSERVED_MAX` — what the model is seen to emit — and
-    # NOT `BODY_MAX_CHARS`, what we decline to record** (corrected 2026-09-18;
-    # this comment previously said "the account cap" and "one token per
-    # character, the CJK worst case", and both were wrong). The rule is that
-    # the loop must be able to emit a full account TWICE — the tool-call
-    # arguments it spends before it writes, then the account — so the floor is
-    # ~4,444 and 6,000 clears it with room for the research.
-    #
-    # `max_memory_calls` 4 -> 12 (operator, 2026-09-18), tripled together with
-    # `tool_calls.lookup_person`: that verb is one of the four in
-    # `MEMORY_TOOLS`, so this ceiling binds it before its per-tool one does and
-    # raising only the per-tool number would have been decoration.
-    #
-    # `turns`/`total_tokens` are the proactive block's own lesson applied one
-    # adaptor over and are NOT measurements: `[culture] batch_limit = 300` is
-    # ~7-9k tokens of context, every turn re-sends it, so the running total is
-    # roughly context x turns and the 40,000 default buys four. A loop cut
-    # before it writes emits no envelope, HOLDS its watermark and re-reads the
-    # same batch forever — the trap this whole pairing exists to keep shut.
-    culture = budgets["culture"]
-    assert (culture.turns, culture.total_tokens) == (10, 120_000)
-    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
-    assert culture.timeout_seconds == DreamBudgetConfig().timeout_seconds
-    # Its per-tool ceiling, pinned 2026-09-18. `lookup_person` is 4 on the
-    # NATIVE_TOOLS table, sized for a tag turn where "one message routinely
-    # names two people". This pass writes what a ROOM is, and the objective's
-    # own bar is a name whose ORIGIN can be explained — per-member work against
-    # the person index, not two lookups.
-    assert culture.tool_calls == {"lookup_person": 12}
-    # PROACTIVE, pinned 2026-09-10 with its reasoning, which is what the
-    # message above asks of anything that lands in this section.
-    #
-    # These are NOT measurements. They are room to take one, and the block is
-    # declared so that `proactive_decide` measures the configuration the
-    # deployment runs: it was measuring the field defaults (6 turns, 40,000
-    # tokens) while production ran these, and two of its three errors were
-    # `limit_total_tokens` on a budget nobody uses. A suite bound to the wrong
-    # configuration is not measuring the model.
-    #
-    # `turns` is the real bound. The context is ~10k and each turn re-sends it,
-    # so the running total is roughly context x turns; 40,000 bought four turns
-    # and the decide loop was still researching. `total_tokens` is the safety
-    # net, which is the opposite of how the defaults read.
-    proactive = budgets["proactive"]
-    assert (proactive.turns, proactive.total_tokens) == (24, 1_000_000)
-    assert (proactive.output_tokens, proactive.timeout_seconds) == (10_000, 240.0)
-    # `max_memory_calls` 2 -> 6 (operator, 2026-09-18) — the shared per-pass
-    # ceiling across `MEMORY_TOOLS`, tripled so that the `lookup_person` rise
-    # below reaches anything at all. A ceiling and not a reservation: the extra
-    # four are equally available to `about`, `ask_memory` and
-    # `search_memory_workspace`.
-    # 6 -> 16 (operator, 2026-09-24): 6 sat below `lookup_person` alone, so it
-    # was the number every memory verb ran under.
-    assert proactive.max_memory_calls == 16
-    # And its per-tool ceiling, pinned 2026-09-17. `note_read = 3` on the
-    # NATIVE_TOOLS table is a TAG TURN's number — a reply that reads a note or
-    # two before answering — while this pass is asked for one decision per
-    # note the group has open, so its need is the OPEN-NOTE COUNT.
-    #
-    # MEASURED, unlike the three numbers above: the 05:00 pass that day
-    # (Langfuse `8b3e6522`) held 5 open notes in one scope and 6 in the other,
-    # read three in each, was refused a FOURTH DISTINCT note in each, and then
-    # decided every note anyway — three grounded in a body, the rest in the
-    # index line. Status `ok`, watermark advanced, so the only tell was a veto
-    # counter that could not be told apart from a misspelled tool name.
-    #
-    # 8 and not 6 because this is a CEILING and not a reservation: the
-    # headroom costs nothing until a pass spends it, and one more note must
-    # not re-open the config. The instrument that says it is still too low is
-    # `nora_dream_guard_vetoes_total{rule="tool-budget"}`.
-    #
-    # `lookup_person` 4 -> 12 (operator, 2026-09-18). 4 is another TAG TURN's
-    # number; a decide pass resolves a whole roster's nicknames against the
-    # person index, which is the reason the verb was granted here (#145).
-    #
-    # 2026-09-24 (operator): `note_read` 8 -> 16; `ask_memory`,
-    # `search_memory_workspace`, `about` 4 -> 8; `note_search` 2 -> 4; `remind`
-    # 2 -> 6. `remind` because a refused call is still a spent one — Langfuse
-    # `42f7e8bd` spent both on origin refusals and was stopped at the third.
-    assert proactive.tool_calls == {
-        "note_read": 16, "lookup_person": 12, "ask_memory": 8,
-        "search_memory_workspace": 8, "about": 8, "note_search": 4, "remind": 6,
-    }
-    # COGNITION (DEC-247): bounded by rounds, tokens and time, each at least
-    # 10x the tag turn's, and by NO call ceiling. The template states the
-    # code's own defaults and carries none of the three call-ceiling keys.
-    from nora.config import (
-        COGNITION_OUTPUT_TOKENS,
-        COGNITION_TIMEOUT_SECONDS,
-        COGNITION_TOTAL_TOKENS,
-        COGNITION_TURNS,
-    )
-
-    cognition = budgets["cognition"]
-    assert (cognition.turns, cognition.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
-    assert (cognition.output_tokens, cognition.timeout_seconds) == (
-        COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
-    )
-    assert cognition.model_fields_set == {
-        "turns", "total_tokens", "output_tokens", "timeout_seconds",
-    }
-    # NOTE-CANDIDATES, pinned 2026-09-17 — declared in the template only
-    # because the DEPLOYMENT sets it (it was set live while chasing #291 and
-    # the template did not follow, which is the drift
-    # `tests/test_env_template.py` exists to catch).
-    #
-    # NOT measurements, and specifically not the ceiling #291 was about: that
-    # was `[dreamer] max_tokens`, the provider's limit on ONE completion,
-    # which raises. These two are the Strands LOOP budget and bind without
-    # raising. They are here for the other half of the same argument — a batch
-    # pass's output scales with the BATCH, so the field defaults (sized for a
-    # pass that makes one model call) are a tag turn's numbers on a job that
-    # is not one.
-    #
-    # A RESEARCH LOOP since design 43 §4 (2026-09-26): it holds read verbs, so
-    # `turns`/`timeout_seconds` bound its research, and `max_tool_calls` is
-    # the per-pass control. `max_memory_calls` equals it so the memory ration
-    # cannot bind first and make the pass cap decoration. UNMEASURED starting
-    # points; the first live read-back sizes them (43 §4).
-    candidates = budgets["note-candidates"]
-    assert (candidates.total_tokens, candidates.output_tokens) == (400_000, 36_000)
-    assert (candidates.turns, candidates.timeout_seconds) == (8, 240.0)
-    assert candidates.max_tool_calls == 5
-    assert candidates.max_memory_calls >= candidates.max_tool_calls, (
-        "a memory ration below the pass cap binds first and the cap is decoration"
-    )
-    assert candidates.tool_calls == {}
 
 
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):
@@ -1255,22 +1104,6 @@ def test_a_declared_budget_block_parses_into_a_bounded_budget(toml_path):
 
 # --- [standing] (design/dreamer-agent-loop/26-standing §4.0) ----------------
 
-def test_the_standing_section_is_optional_and_ships_inert(toml_path):
-    """A config.toml written before this section existed must keep loading
-    under `extra="forbid"`, and must load with the tier OFF. This tier has the
-    strongest version of that argument in the repo: it is the only optional one
-    whose work runs INSIDE the live reply slot, so switching it on lengthens a
-    hold real people wait behind."""
-    text = toml_path.read_text()
-    start = text.index("\n[standing]")
-    toml_path.write_text(text[:start] + text[text.index("\n[music]"):])
-    cfg = load(toml_path)
-    assert cfg.standing.enabled is False
-    assert cfg.standing.max_chars == 1200
-    assert cfg.standing.fold_batch == 200
-    assert cfg.standing.event_enabled is False
-    assert cfg.standing.rollup_max_folds == 5
-    assert cfg.standing.model == ""
 
 
 # --- [participation] (design/dreamer-agent-loop/35 §8) ----------------------
@@ -1515,22 +1348,6 @@ def _uncomment_and_set(text: str, key: str, value: str) -> str:
     return new
 
 
-def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
-    """`[dreamer] max_unit_hold_seconds` ships COMMENTED OUT (issue #191
-    independent review, BLOCKER). A fixed literal went stale against the
-    deployment's own `[dreamer.budgets.proactive] timeout_seconds = 720` —
-    not this file's `240` — the first time anyone checked it against real
-    numbers rather than the example: `Config.
-    dreamer_max_unit_hold_seconds` exists so the value tracks whatever this
-    config actually says instead."""
-    cfg = load(toml_path)
-    assert cfg.dreamer.max_unit_hold_seconds is None
-    known_minimum = cfg._dream_unit_hold_known_minimum()
-    derived = cfg.dreamer_max_unit_hold_seconds()
-    assert derived > known_minimum, (
-        "the derived default must always clear the known minimum by "
-        "construction — a positive margin added to it"
-    )
 
 
 def test_the_dream_unit_hold_refuses_an_explicit_budget_the_timeouts_do_not_fit(
@@ -1580,42 +1397,6 @@ def test_an_explicit_dream_unit_hold_above_the_minimum_is_accepted(toml_path):
     assert cfg.dreamer_max_unit_hold_seconds() == known_minimum + 1
 
 
-def test_a_deployment_style_proactive_timeout_still_derives_a_loadable_hold(
-    toml_path,
-):
-    """**The exact BLOCKER the independent review found**, reproduced: the
-    deployment's real `[dreamer.budgets.proactive] timeout_seconds` is 720,
-    not this file's 240, with `[dreamer] store_timeout_seconds` at its
-    default. The reviewer's own naive arithmetic — `1 x 720 + 2 x 20 x 15 =
-    1320` — is already above the first fixed default of `1200`, which would
-    have refused to boot the rebuilt image. The DERIVED default must clear
-    that number with room, and the config must LOAD at all, both without a
-    human raising a literal by hand."""
-    # `_set_key`'s `^timeout_seconds = .*$` is ambiguous across the file's
-    # ten-plus sections; scope the edit to `[dreamer.budgets.proactive]` by
-    # hand, the same surgery
-    # `test_the_slot_hold_does_not_count_the_llm_timeout` already uses for
-    # `[llm]`. The section HEADER, anchored at line-start with its own
-    # trailing newline — not a bare substring search — because this file's
-    # own `[dreamer] max_unit_hold_seconds` comment block (issue #191)
-    # mentions "[dreamer.budgets.proactive] timeout_seconds = 240" in PROSE,
-    # earlier in the file, which a substring search finds first.
-    original = toml_path.read_text()
-    start = original.index("\n[dreamer.budgets.proactive]\n") + 1
-    end = original.index("\n[", start + 1)
-    section = _set_key(original[start:end], "timeout_seconds", "720.0")
-    text = original[:start] + section + original[end:]
-    toml_path.write_text(text)
-
-    cfg = load(toml_path)  # must not raise ConfigError
-
-    assert cfg.dreamer.budgets["proactive"].timeout_seconds == 720.0
-    known_minimum = cfg._dream_unit_hold_known_minimum()
-    assert known_minimum > 1320, (
-        f"known_minimum={known_minimum:g} — the probe no longer reproduces "
-        "the reviewer's own arithmetic"
-    )
-    assert cfg.dreamer_max_unit_hold_seconds() > 1320
 
 
 def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
@@ -1886,7 +1667,7 @@ def test_no_sidecars_loads_and_fails_closed(toml_path):
     assert cfg.speech.tts.sidecars_by_guild == {}
 
 
-# ── [cognition] (design/cognition-loop/20-observe.md §3, migration step 1) ──
+# ── [cognition] (design/cognition-loop/) ─────────────────────────────────────
 
 
 def test_cognition_ships_off_with_20s_starting_values(toml_path):
@@ -1896,7 +1677,7 @@ def test_cognition_ships_off_with_20s_starting_values(toml_path):
     600); the other starting values are unchanged.
     """
     c = load(toml_path).cognition
-    assert c.mode == "off"
+    assert c.enabled is False
     assert (c.quiet_seconds, c.cue_quiet_seconds, c.rollup_delay_seconds,
             c.batch_max, c.max_age_seconds, c.cooldown_seconds,
             c.max_concurrent_sessions, c.reply_quiet_seconds) == (
@@ -1915,20 +1696,20 @@ def test_cognition_config_bare_default_is_1800():
 
 def test_the_cognition_section_is_optional(toml_path):
     text = toml_path.read_text()
-    start = text.index("[cognition]")
-    end = text.index("[obs.logging]")
+    start = text.index("\n[cognition]\n")
+    end = text.index("\n[obs.logging]")
     toml_path.write_text(text[:start] + text[end:])
-    assert load(toml_path).cognition.mode == "off"
+    assert load(toml_path).cognition.enabled is False
 
 
-def test_cognition_shadow_is_the_one_other_mode(toml_path):
-    text = toml_path.read_text().replace(
-        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"')
-    toml_path.write_text(text)
-    assert load(toml_path).cognition.mode == "shadow"
-    toml_path.write_text(text.replace('[cognition]\nmode = "shadow"', '[cognition]\nmode = "live"'))
-    with pytest.raises(ConfigError):
-        load(toml_path)
+def test_the_retired_cognition_modes_refuse_to_load(toml_path):
+    """`mode` and `session_mode` collapsed into `enabled` at the cut-over: a
+    config still naming either refuses to start rather than load half-read."""
+    for retired in ('mode = "shadow"', 'session_mode = "shadow"'):
+        toml_path.write_text(_cognition_on(toml_path.read_text()).replace(
+            "[cognition]\n", f"[cognition]\n{retired}\n", 1))
+        with pytest.raises(ConfigError):
+            load(toml_path)
 
 
 def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path):
@@ -1942,40 +1723,7 @@ def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path
         load(toml_path)
 
 
-# ── [cognition] session_mode (70-migration.md §2 row 3a, migration step 3a) ──
-
-
-def test_session_mode_ships_off_with_todays_behaviour(toml_path):
-    """A new subsystem does not switch itself on: the example file's default
-    is exactly the config a checkout had before this step existed — no
-    session ever runs, no model call this config did not already make."""
-    c = load(toml_path).cognition
-    assert c.session_mode == "off"
-    assert (c.max_items, c.max_strikes) == (12, 3)
-
-
-def test_session_mode_bare_default_is_off():
-    assert CognitionConfig().session_mode == "off"
-
-
-def test_session_mode_shadow_requires_the_evaluator_also_be_shadow(toml_path):
-    text = toml_path.read_text()
-    # mode stays "off", session_mode turns to "shadow": refused, a session
-    # has nothing to run on without the evaluator's would-wakes.
-    toml_path.write_text(_set_key(text, "session_mode", '"shadow"'))
-    with pytest.raises(ConfigError):
-        load(toml_path)
-
-
-def test_session_mode_shadow_is_accepted_once_the_evaluator_is_also_shadow(toml_path):
-    text = toml_path.read_text().replace(
-        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"',
-    )
-    text = _set_key(text, "session_mode", '"shadow"')
-    # A session rides the Dreamer's model, tools and objectives (step 3a-iii).
-    toml_path.write_text(_set_dreamer_enabled(text))
-    c = load(toml_path).cognition
-    assert (c.mode, c.session_mode) == ("shadow", "shadow")
+# ── [cognition] enabled: what it needs ──────────────────────────────────────
 
 
 def _set_dreamer_enabled(text: str) -> str:
@@ -1989,31 +1737,43 @@ def _set_dreamer_enabled(text: str) -> str:
     return head + sep + tail
 
 
-def test_session_mode_shadow_without_the_dreamer_is_refused_at_load(toml_path):
-    """A session borrows the Dreamer's model, tools and objectives: shadow
-    sessions with the Dreamer off would build a hook with nothing to run on,
-    so the config refuses to load rather than the runner failing at boot."""
-    text = toml_path.read_text().replace(
-        '[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"',
-    )
-    toml_path.write_text(_set_key(text, "session_mode", '"shadow"'))
-    with pytest.raises(ConfigError, match="needs \\[dreamer\\] enabled"):
+
+
+def _cognition_on(text: str) -> str:
+    """`[cognition] enabled = true` with the Dreamer on, the template's way."""
+    import re as _re
+
+    head, sep, tail = text.partition("\n[cognition]\n")
+    assert sep, "the template has no [cognition] section"
+    tail, n = _re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
+    assert n == 1, "the [cognition] section states no `enabled = false`"
+    return _set_dreamer_enabled(head + sep + tail)
+
+
+def test_cognition_on_without_the_dreamer_is_refused_at_load(toml_path):
+    import re as _re
+
+    text = _cognition_on(toml_path.read_text())
+    head, sep, tail = text.partition("\n[dreamer]\n")
+    tail = _re.sub(r"(?m)^enabled = true$", "enabled = false", tail, count=1)
+    toml_path.write_text(head + sep + tail)
+    with pytest.raises(ConfigError, match=r"\[cognition\] enabled = true needs \[dreamer\]"):
         load(toml_path)
 
 
-def _shadow_sessions(text: str) -> str:
-    text = text.replace('[cognition]\nmode = "off"', '[cognition]\nmode = "shadow"')
-    return _set_dreamer_enabled(_set_key(text, "session_mode", '"shadow"'))
+def test_cognition_on_with_the_dreamer_loads(toml_path):
+    toml_path.write_text(_cognition_on(toml_path.read_text()))
+    assert load(toml_path).cognition.enabled is True
 
 
-def test_session_mode_shadow_refuses_to_load_without_an_explicit_cognition_budget(toml_path):
+def test_cognition_on_refuses_to_load_without_an_explicit_cognition_budget(toml_path):
     """#637 review, minor 4: `budget_for` answers an adaptor with no block from
     the class defaults (6 turns, 40k tokens, 120 s), a budget nobody chose for a
     session that reads and writes across up to `max_items` items. The review
     found a live config with no block, silently running on it."""
     import re as _re
 
-    text = _shadow_sessions(toml_path.read_text())
+    text = _cognition_on(toml_path.read_text())
     assert "[dreamer.budgets.cognition]" in text, "positive control: the template carries it"
     load(_write(toml_path, text))                              # with the block: loads
     stripped, n = _re.subn(
@@ -2025,15 +1785,6 @@ def test_session_mode_shadow_refuses_to_load_without_an_explicit_cognition_budge
         load(toml_path)
 
 
-def test_a_config_without_shadow_sessions_needs_no_cognition_budget(toml_path):
-    import re as _re
-
-    text = _re.sub(
-        r"(?ms)^\[dreamer\.budgets\.cognition\]\n.*?(?:\n\n|\Z)", "", toml_path.read_text(),
-        count=1,
-    )
-    toml_path.write_text(text)
-    assert load(toml_path).cognition.session_mode == "off"
 
 
 def _write(path, text):
@@ -2049,11 +1800,6 @@ def test_the_failure_backoff_and_grounding_keys_load_with_their_documented_defau
         assert (c.model_window_tokens, c.overflow_window_fraction) == (None, 0.8)
 
 
-def test_session_mode_refuses_a_value_outside_off_and_shadow(toml_path):
-    text = toml_path.read_text()
-    toml_path.write_text(_set_key(text, "session_mode", '"live"'))
-    with pytest.raises(ConfigError):
-        load(toml_path)
 
 
 #: The tag turn's own loop bounds on the live deployment, read from norty's
@@ -2157,3 +1903,47 @@ def test_documents_public_url_accepts_an_origin_and_drops_a_trailing_slash(given
 def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> None:
     with pytest.raises(ValidationError):
         DocumentsConfig(public_url=bad)
+
+
+def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
+    """`budget_for` falls back SILENTLY for an unknown key, so an adaptor with no
+    block runs on numbers nobody chose. The template declares two: culture and
+    the Cognition session (DEC-247: rounds, tokens and time, no call ceiling)."""
+    from nora.config import (
+        COGNITION_OUTPUT_TOKENS,
+        COGNITION_TIMEOUT_SECONDS,
+        COGNITION_TOTAL_TOKENS,
+        COGNITION_TURNS,
+    )
+
+    budgets = load(toml_path).dreamer.budgets
+    assert set(budgets) == {"culture", "cognition"}
+    culture = budgets["culture"]
+    assert (culture.turns, culture.total_tokens) == (10, 120_000)
+    assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
+    assert culture.tool_calls == {"lookup_person": 12}
+    cognition = budgets["cognition"]
+    assert (cognition.turns, cognition.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
+    assert (cognition.output_tokens, cognition.timeout_seconds) == (
+        COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
+    )
+
+
+def test_the_standing_section_is_optional_and_ships_inert(toml_path):
+    """A config.toml written before this section existed keeps loading under
+    `extra="forbid"`, with the tier OFF."""
+    text = toml_path.read_text()
+    start = text.index("\n[standing]")
+    toml_path.write_text(text[:start] + text[text.index("\n[music]"):])
+    cfg = load(toml_path)
+    assert cfg.standing.enabled is False
+    assert (cfg.standing.max_chars, cfg.standing.fold_batch) == (1200, 200)
+    assert cfg.standing.model == ""
+
+
+def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
+    """`[dreamer] max_unit_hold_seconds` ships commented out (#191): the value
+    is derived from this config's own numbers, always above the known minimum."""
+    cfg = load(toml_path)
+    assert cfg.dreamer.max_unit_hold_seconds is None
+    assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()

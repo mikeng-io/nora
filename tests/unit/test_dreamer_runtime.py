@@ -43,7 +43,6 @@ from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
     parse_envelope,
-    proactive_grant,
     tool_call_faults,
     tool_subset_faults,
     verify_tool_subsets,
@@ -51,6 +50,11 @@ from nora.agent.dreamer import (
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.ports import Proposal
 from nora.obs.metrics import Metrics
+
+
+def _REMIND_GRANT() -> AdaptorGrant:
+    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
+    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
 
 BUDGET = AdaptorBudget(
     turns=4, total_tokens=10_000, output_tokens=1_000, timeout_seconds=5.0,
@@ -907,7 +911,7 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
     # The proactive grant: `remind` and only `remind` joins the read set.
     granted = _names(source.build(
         key="friends", names=asked, unit="friends", adaptor="proactive",
-        grant=proactive_grant(),
+        grant=_REMIND_GRANT(),
     ))
     assert granted == {"now", "remind"}
     assert "send_reply" not in granted and "computer_run" not in granted
@@ -959,7 +963,7 @@ def test_a_home_room_grant_builds_the_room_the_operator_named():
 
     source.build(
         key="friends", names=frozenset({"where_is"}), unit="friends",
-        adaptor="proactive", grant=proactive_grant(),
+        adaptor="proactive", grant=_REMIND_GRANT(),
     )
 
     (call,) = registry.calls
@@ -988,7 +992,7 @@ def test_a_home_room_grant_with_no_home_room_falls_back_closed():
 
     source.build(
         key="wedding", names=frozenset({"where_is", "remind"}), unit="wedding",
-        adaptor="proactive", grant=proactive_grant(),
+        adaptor="proactive", grant=_REMIND_GRANT(),
     )
 
     (call,) = registry.calls
@@ -1157,11 +1161,11 @@ def test_the_missing_home_room_is_counted_every_pass_and_logged_once(caplog):
         for _ in range(3):
             source.build(
                 key="wedding", names=frozenset({"where_is"}), unit="wedding",
-                adaptor="proactive", grant=proactive_grant(),
+                adaptor="proactive", grant=_REMIND_GRANT(),
             )
         source.build(
             key="friends", names=frozenset({"where_is"}), unit="friends",
-            adaptor="proactive", grant=proactive_grant(),
+            adaptor="proactive", grant=_REMIND_GRANT(),
         )
 
     assert metrics.get(
@@ -1334,13 +1338,13 @@ def test_a_grant_admits_exactly_the_act_verbs_it_names():
         verify_tool_subsets([adaptor], tools=source)
 
     verify_tool_subsets(
-        [adaptor], tools=source, grants={adaptor.name: proactive_grant()},
+        [adaptor], tools=source, grants={adaptor.name: _REMIND_GRANT()},
     )
 
     greedy = _Adaptor(sink=_Sink(), tools=frozenset({"now", "remind", "send_reply"}))
     with pytest.raises(AdaptorToolError, match="ceiling: send_reply"):
         verify_tool_subsets(
-            [greedy], tools=source, grants={greedy.name: proactive_grant()},
+            [greedy], tools=source, grants={greedy.name: _REMIND_GRANT()},
         )
 
 
@@ -1357,14 +1361,14 @@ async def test_the_per_run_check_honours_the_same_grant_the_startup_check_does(
     tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
     granted, _ = _runtime(
         monkeypatch, raw='{"observations": []}', tools=tools,
-        grants={adaptor.name: proactive_grant()},
+        grants={adaptor.name: _REMIND_GRANT()},
     )
 
     outcome = await granted.run(adaptor=adaptor, key="friends", batch=())
 
     assert outcome.status == "nothing_found"
     assert tools.built == [("friends", adaptor.tools, "friends")]
-    assert tools.grants == [(adaptor.name, proactive_grant())]
+    assert tools.grants == [(adaptor.name, _REMIND_GRANT())]
 
     tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
     ungranted, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)

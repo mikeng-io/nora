@@ -92,7 +92,7 @@ def build_assembler(
         # handed to the five other transcript builders.
         media_join=media_join,
         # `<presence>` (design/self-awareness/02). The SAME reader the fire
-        # path and the proactive pass hold, built once at the composition root
+        # path and the proactive act turn hold, built once at the composition root
         # over `policy.toml` and the live adapter map. `None` renders the
         # network alone — what `_where_line` said before it was replaced.
         presence=presence,

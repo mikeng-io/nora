@@ -12,26 +12,5 @@
     "old": "        [\n            \"workspace\", \"anchor_date\", \"anchor_entity_ids\",\n            sa.text(\"lower(btrim(title))\"),\n        ],\n        unique=True, postgresql_where=sa.text(\"kind = 'create'\"),\n    )\n\n\ndef downgrade",
     "new": "        [\"workspace\", \"anchor_date\", \"anchor_entity_ids\"],\n        unique=True, postgresql_where=sa.text(\"kind = 'create'\"),\n    )\n\n\ndef downgrade",
     "target": "tests/contract/test_note_store_contract.py -k test_record_create_candidate_separates_two_titles_on_one_anchor"
-  },
-  {
-    "name": "#235 the SQL upsert's conflict target names the title expression",
-    "file": "nora/infra/sql/notes.py",
-    "old": "                sa.text(\"lower(btrim(title))\"),\n            ],\n            index_where=sa.text(\"kind = 'create'\"),",
-    "new": "            ],\n            index_where=sa.text(\"kind = 'create'\"),",
-    "target": "tests/contract/test_note_store_contract.py -k test_record_create_candidate_separates_two_titles_on_one_anchor"
-  },
-  {
-    "name": "#235 the settled-row read-back matches on the FULL staging key",
-    "file": "nora/infra/sql/notes.py",
-    "old": "                        NOTE_CANDIDATE.c.anchor_entity_ids == entities,\n                        sa.func.lower(sa.func.btrim(NOTE_CANDIDATE.c.title))\n                        == title.strip().lower(),\n                    )\n                )).one()",
-    "new": "                        NOTE_CANDIDATE.c.anchor_entity_ids == entities,\n                    )\n                )).one()",
-    "target": "tests/contract/test_note_store_contract.py -k test_a_settled_row_is_read_back_past_a_sibling_on_the_same_anchor"
-  },
-  {
-    "name": "#235 the in-memory store mirrors the narrowed key",
-    "file": "nora/testing/note_store.py",
-    "old": "             and c.anchor_entity_ids == entities\n             and c.title.strip().casefold() == title.strip().casefold()),",
-    "new": "             and c.anchor_entity_ids == entities),",
-    "target": "tests/unit/test_note_candidates.py -k test_two_same_day_candidates_with_no_entities_are_kept_apart_by_title"
   }
 ]
