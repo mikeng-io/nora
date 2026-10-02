@@ -412,9 +412,7 @@ class DreamerInstructions:
         silently, which is the very text the prelude exists to replace."""
         by_objective: dict[str, ParsedDocument] = {}
         for prelude in self._named(_PRELUDES_SUBDIR, PRELUDE_KIND).values():
-            applies = prelude.meta.get("applies_to")
-            names = [applies] if isinstance(applies, str) else list(applies or ())
-            for name in names:
+            for name in _applies_to(prelude):
                 if name not in objectives:
                     # Lenient mode skipped a broken objective: it is absent, and
                     # `for_objective` already fails it loudly by name.
@@ -452,12 +450,32 @@ class DreamerInstructions:
                     f"{', '.join(CHANGE_POLICIES)}"
                 )
             _version(parsed)                      # int(), or an InstructionError
+            if kind == PRELUDE_KIND:
+                _applies_to(parsed)               # a list of names, or an InstructionError
         except InstructionError:
             if self._strict:
                 raise
             log.warning("skipping invalid Dreamer instruction file %s", path.name)
             return None
         return parsed
+
+
+def _applies_to(doc: ParsedDocument) -> list[str]:
+    """A prelude's `applies_to`: a list of objective names, and nothing else.
+
+    Anything else (a number, a bool, a bare string, a nested list, a mapping,
+    a null) is an `InstructionError`, because the reload watcher tolerates only
+    that error: a `TypeError` out of here would escape it and fail every
+    `for_objective` until the file was fixed, and at startup would crash-loop
+    the process. A list holding a non-string is refused for the same reason,
+    and so that an unhashable item never reaches a dict lookup."""
+    applies = doc.meta.get("applies_to")
+    if not isinstance(applies, list) or not all(isinstance(n, str) for n in applies):
+        raise InstructionError(
+            f"{doc.path.name}: applies_to must be a list of objective names, "
+            f"got {applies!r}"
+        )
+    return list(applies)
 
 
 def _version(doc: ParsedDocument) -> int:

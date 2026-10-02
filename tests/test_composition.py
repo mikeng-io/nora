@@ -2074,6 +2074,69 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert set(runner._home_rooms) == {"friends"}
 
 
+def _dreamer_tree(tmp_path: Path) -> Path:
+    """A copy of the shipped `nora/dreamer`, so a test can take a file out of it."""
+    import shutil
+
+    root = tmp_path / "dreamer-copy"
+    shutil.copytree(ROOT / "nora" / "dreamer", root)
+    return root
+
+
+@pytest.mark.parametrize("how", ["prelude deleted", "prelude applies to nothing",
+                                 "prelude applies elsewhere", "skill deleted"])
+async def test_a_session_whose_prelude_or_skill_is_missing_is_a_startup_error(
+    cfg, tmp_path, how,
+):
+    """Without its prelude, `cognition` silently reads the shared Dreamer doctrine («you
+    look; you do not act»), and a mapped skill that is not installed raised a raw
+    `LookupError` out of the composition. Both are a named `StartupError` now."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    root = _dreamer_tree(tmp_path)
+    prelude = root / "preludes" / "cognition-prelude.md"
+    if how == "prelude deleted":
+        prelude.unlink()
+    elif how == "skill deleted":
+        (root / "skills" / "cognition-register.md").unlink()
+    else:
+        applies = "[]" if how == "prelude applies to nothing" else "[note-merge]"
+        prelude.write_text(
+            prelude.read_text(encoding="utf-8").replace(
+                "applies_to: [cognition]", f"applies_to: {applies}",
+            ),
+            encoding="utf-8",
+        )
+    expect = "cognition-register" if how == "skill deleted" else "cognition-prelude"
+    with pytest.raises(StartupError, match=expect):
+        await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
+
+
+async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
+    """The positive control of the three refusals above: an untouched copy is accepted."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(
+        cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
+    ))
+    assert deps.cognition_runner is not None
+
+
+async def test_a_prelude_deleted_after_startup_is_refused_per_session(cfg, tmp_path):
+    """Hot reload: the file goes after a good start. The next session's instruction would
+    be the shared doctrine; it is refused by name instead."""
+    from nora.app.cognition_wiring import PreludeMissingError
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    root = _dreamer_tree(tmp_path)
+    deps = await build_dependencies(override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}))
+    runner = deps.cognition_runner
+    assert runner is not None and runner._doctrine()[0].startswith(
+        '<dreamer_doctrine name="cognition-prelude">',
+    )
+    (root / "preludes" / "cognition-prelude.md").unlink()
+    with pytest.raises(PreludeMissingError, match="cognition-prelude"):
+        runner._doctrine()
+
+
 async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(
     cfg, tmp_path,
 ):

@@ -213,12 +213,30 @@ def read_tools_for(
     return build
 
 
+class SkillNotInstalledError(LookupError):
+    """A skill the agenda table maps is not in the corpus. At startup the
+    composition turns it into a `StartupError`; on a live hot reload that deleted
+    or renamed the file, the session that needed it records a `failed` wake
+    (cause `infra`, so the unit backs off and no message is struck) and never
+    runs without it."""
+
+
+class PreludeMissingError(RuntimeError):
+    """The `cognition` objective resolved WITHOUT its prelude: the file is gone,
+    or its `applies_to` no longer names `cognition`. The loader serves the
+    shared Dreamer doctrine to an objective that has no prelude, and that text
+    says «Nobody is waiting for you… You look; you do not act», which is false
+    of a session whose verbs write the notebook. Raised at startup, and again at
+    the start of every session, so a hot reload cannot swap it in unseen."""
+
+
 @dataclass(frozen=True)
 class AgendaSkills:
     """Skills injected per agenda kind (30 §4): after the doctrine, in a fixed
     order, so the prefix stays cached and only the skills vary. `by_kind` maps
     an agenda kind to a skill name; `resolve` reads a skill by name (`Skill.
-    instructions`, `.sha256`). A kind with no entry injects nothing. The
+    instructions`, `.sha256`) and is NOT memoised, so an edit on the bind mount
+    is live at the next session. A kind with no entry injects nothing. The
     production table is `AGENDA_SKILLS`, built by `agenda_skills`."""
 
     by_kind: Mapping[str, str]
@@ -227,24 +245,32 @@ class AgendaSkills:
     def _names(self, kinds: Sequence[str]) -> list[str]:
         return sorted({self.by_kind[k] for k in kinds if k in self.by_kind})
 
-    def text_for(self, kinds: Sequence[str]) -> str:
-        parts = []
+    def resolved_for(self, kinds: Sequence[str]) -> tuple[str, dict[str, object]]:
+        """The text injected and the versions recorded for these kinds, from ONE
+        resolution of each skill: the hash a session row records is over the text
+        the model reads, even when the corpus hot-reloads while the session is
+        being set up."""
+        text: list[str] = []
+        versions: dict[str, object] = {}
         for name in self._names(kinds):
             skill = self.resolve(name)
             if skill is None:
-                raise LookupError(f"agenda skill {name!r} is not installed")
-            parts.append(f"\n\n# Skill: {name}\n\n{skill.instructions}\n")
-        return "".join(parts)
+                raise SkillNotInstalledError(f"agenda skill {name!r} is not installed")
+            text.append(f"\n\n# Skill: {name}\n\n{skill.instructions}\n")
+            versions[name] = skill.sha256
+        return "".join(text), versions
+
+    def text_for(self, kinds: Sequence[str]) -> str:
+        return self.resolved_for(kinds)[0]
 
     def versions_for(self, kinds: Sequence[str]) -> dict[str, object]:
-        out: dict[str, object] = {}
-        for name in self._names(kinds):
-            skill = self.resolve(name)
-            if skill is None:
-                raise LookupError(f"agenda skill {name!r} is not installed")
-            out[name] = skill.sha256
-        return out
+        return self.resolved_for(kinds)[1]
 
+
+#: The prelude `cognition` reads in place of the shared Dreamer doctrine
+#: (`nora/dreamer/preludes/`); the startup check and every session hold the
+#: objective's resolved versions to name it.
+COGNITION_PRELUDE = "cognition-prelude"
 
 #: The Register skill (step 4 PR-1): the note and event judgement the replaced
 #: note-candidates pass had (30 §4), in `nora/dreamer/skills/`.
@@ -417,13 +443,27 @@ def build_cognition_runner(
 
     def doctrine() -> tuple[str, str | None]:
         loaded = instructions.for_objective(COGNITION_OBJECTIVE)
+        # A prelude that is gone, or whose `applies_to` no longer names this
+        # objective, is NOT an error to the loader: the objective then reads the
+        # shared doctrine (a judge's «you look; you do not act»). Refused here,
+        # at startup and at the start of every session, with its name.
+        if COGNITION_PRELUDE not in loaded.versions:
+            raise PreludeMissingError(
+                f"the {COGNITION_OBJECTIVE!r} objective resolved without its prelude "
+                f"{COGNITION_PRELUDE!r} (resolved: {', '.join(sorted(loaded.versions))}): "
+                "it would read the shared Dreamer doctrine, which says a judge looks and "
+                "does not act"
+            )
         return loaded.text, loaded.sha256
 
-    # Read once here so a missing or malformed objective, or a mapped skill that
-    # is not installed, is a startup failure with its name, not the first wake's
-    # (`DreamerInstructions` raises; `AgendaSkills` raises `LookupError`).
+    # Read once here so a missing or malformed objective, a missing prelude, or a
+    # mapped skill that is not installed, is a startup failure with its name, not
+    # the first wake's (`DreamerInstructions` raises `InstructionError`,
+    # `doctrine` raises `PreludeMissingError`, `AgendaSkills` raises
+    # `SkillNotInstalledError`; the composition turns all three into a
+    # `StartupError`).
     text, sha = doctrine()
-    skills.text_for(sorted(skills.by_kind))
+    skills.resolved_for(sorted(skills.by_kind))
     home_rooms = _by_home_room(homes)
 
     async def pending_reminds(unit: str) -> Any:
@@ -446,7 +486,8 @@ def build_cognition_runner(
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
         skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
-        grounder=grounder, render_budget=render_budget, person_known=person_known,
+        skills_for=skills.resolved_for, grounder=grounder, render_budget=render_budget,
+        person_known=person_known,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
         prior_standing=prior, pending_self_wakes=self_wakes,
@@ -475,11 +516,14 @@ __all__ = [
     "AGENDA_SKILLS",
     "COGNITION_ADAPTOR_NAME",
     "COGNITION_OBJECTIVE",
+    "COGNITION_PRELUDE",
     "COGNITION_READ_CATALOGUE",
     "REGISTER_SKILL",
     "AgendaSkills",
     "CognitionShutdown",
+    "PreludeMissingError",
     "ReadSurface",
+    "SkillNotInstalledError",
     "build_cognition_runner",
     "cognition_budget",
     "read_surface",

@@ -256,13 +256,20 @@ restatement by construction, so this is a metric, never a refusal).
 
 ## 4. Skills, not one long prompt
 
-The base prompt is the Dreamer doctrine (what the runtime is), the situation
-and the agenda. What each kind of work asks for — how to judge a note, when a
-plan has moved, when to look again — lives in a **skill**. **Code
-injects the text of the skill for each agenda kind present**, after the
-doctrine and in a fixed order, so the doctrine prefix stays cached and only
-the skills vary. `create_dream_agent` (`nora/agent/factory.py`) has no
-`skills_dir`, by design, and ADR 0016 (the skill policy) is still proposed:
+The base prompt is Cognition's own **prelude**
+(`nora/dreamer/preludes/cognition-prelude.md`: what the runtime is, for a
+session whose verbs write), the objective, the situation and the agenda. It is
+NOT the shared Dreamer doctrine (`doctrine/dreamer.md`), which every other
+adaptor still reads and which tells a judge «nobody sees this… you look; you do
+not act»: false of a writer (operator decision D2, step 4 PR-1, 2026-10-02).
+The loader serves a prelude in place of the doctrine to the objectives its
+`applies_to` names, and startup refuses a `cognition` objective that resolved
+without it. What each kind of work asks for — how to judge a note, when a plan
+has moved, when to look again — lives in a **skill**. **Code injects the text
+of the skill for each agenda kind present**, after the prelude and the
+objective and in a fixed order, so the prefix stays cached and only the skills
+vary. `create_dream_agent` (`nora/agent/factory.py`) has no `skills_dir`, by
+design, and ADR 0016 (the skill policy) is still proposed:
 the injection is code, not SDK skill loading. The replaced adaptors'
 objectives (`note-candidates.md`, `note-curation.md`, `note-merge.md`,
 `proactive.md`) become Cognition's skills; `culture.md` becomes the Character

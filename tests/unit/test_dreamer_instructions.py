@@ -313,6 +313,74 @@ def test_a_prelude_naming_no_loaded_objective_is_a_startup_failure(tree):
         _store(tree).objective_names()
 
 
+#: Every `applies_to` that is not a list of objective names, as the YAML a prelude
+#: would carry. Each used to raise TypeError (an int or a bool is not iterable, a nested
+#: list is unhashable at the dict lookup) or be quietly misread (a mapping iterates its
+#: keys), none of it an `InstructionError`.
+BAD_APPLIES_TO = [
+    "5", "true", "3.5", "[[room-language]]", "[5]", "[true]", "{room-language: 1}",
+    "room-language", "~", "[~]", "[[]]",
+]
+
+
+def write_prelude_raw(root, applies_yaml, *, name="room-language-prelude"):
+    d = root / "preludes"
+    d.mkdir(exist_ok=True)
+    path = d / f"{name}.md"
+    path.write_text(
+        "---\n"
+        f"name: {name}\nkind: dreamer-prelude\nversion: 1\napplies_to: {applies_yaml}\n"
+        "description: d\nchange_policy: operator-only\n---\nPrelude body.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize("applies", BAD_APPLIES_TO)
+def test_a_prelude_applies_to_that_is_not_a_list_of_names_is_an_instruction_error_at_startup(
+    tree, applies,
+):
+    """The watcher tolerates only `InstructionError`; at startup anything else crash-loops
+    the process."""
+    write_prelude_raw(tree, applies)
+    with pytest.raises(InstructionError, match=r"room-language-prelude\.md: applies_to must be"):
+        _store(tree).objective_names()
+
+
+@pytest.mark.parametrize("applies", BAD_APPLIES_TO)
+def test_a_bad_prelude_applies_to_on_a_hot_reload_keeps_the_last_good_scan_and_counts_it(
+    tree, applies,
+):
+    """The takedown: a bad shape raised TypeError out of the reload, which the watcher does
+    not catch, so EVERY `for_objective` raised until the file was fixed."""
+    write_prelude(tree)
+    metrics = Metrics()
+    store = DreamerInstructions(tree, metrics=metrics)
+    good = store.for_objective("room-language")
+    assert good.versions == {"room-language-prelude": 1, "room-language": 1}
+
+    _touch_newer(tree / "preludes" / "room-language-prelude.md",
+                 write_prelude_raw(tree, applies).read_text(encoding="utf-8"))
+    still = store.for_objective("room-language")            # does not raise
+
+    assert still == good
+    assert store.reload_failures == 1
+    assert metrics.get("nora_dreamer_instruction_reload_failures_total") == 1
+    # and a fixed file is served again
+    _touch_newer(tree / "preludes" / "room-language-prelude.md",
+                 write_prelude(tree, version=2, body="Fixed.\n").read_text(encoding="utf-8"))
+    assert store.for_objective("room-language").versions["room-language-prelude"] == 2
+
+
+def test_lenient_mode_skips_a_prelude_whose_applies_to_is_not_a_list(tree):
+    """Like any broken instruction file: absent, and the objective then reads the doctrine."""
+    write_prelude_raw(tree, "5")
+    store = _store(tree, strict=False)
+    assert store.for_objective("room-language").versions == {
+        "dreamer": 1, "room-language": 1,
+    }
+
+
 def test_a_prelude_in_the_doctrine_directory_is_refused(tree):
     """A second file in `doctrine/` stops an older image at its next restart."""
     path = write_prelude(tree)

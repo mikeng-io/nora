@@ -93,8 +93,8 @@
  {
   "name": "session runner: skill versions are recorded on the session",
   "file": "nora/app/cognition_session.py",
-  "old": "                else dict(self._skill_versions_for(kinds))",
-  "new": "                else {}",
+  "old": "            {} if self._skill_versions_for is None else dict(self._skill_versions_for(kinds))",
+  "new": "            {}",
   "target": "tests/unit/test_cognition_wiring.py -k skills_injected_for_the_agenda_kinds"
  },
  {
