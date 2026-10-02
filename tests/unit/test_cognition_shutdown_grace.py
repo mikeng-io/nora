@@ -47,7 +47,7 @@ async def test_a_session_still_running_at_the_deadline_is_cancelled_as_a_restart
     assert agent.cancelled and rig.ends() == ["cancelled"]
     outcome = next(iter(rig.stimuli.outcomes.values()))
     assert outcome.cause == "none" and is_restart_detail(outcome.detail)
-    view = await rig.stimuli.view(unit="u1", mode="shadow", now_ms=rig.clock.ms, limit=10)
+    view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert [s.id for s in view.pending] == [1] and view.failures == 0
 
 

@@ -50,8 +50,9 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.language.cognition_render import render_agenda, speaker_of
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import StaticGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
+from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.unit.cognition_view import blocks, events, items, named, rows
 
@@ -151,9 +152,9 @@ def _grounding_of(names: tuple[str, ...]) -> tuple[list[Stimulus], Grounding]:
     return stimuli, Grounding(records=records, room_labels=LABELS)
 
 
-async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognitionDryRunStore]:
+async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognitionStore]:
     stimuli, grounding = _grounding_of(names)
-    store = InMemoryCognitionDryRunStore()
+    store = InMemoryCognitionStore()
     stimulus_store = InMemoryStimulusStore(ledger=store)
     stimulus_store.seed_wake("u", 1)
 
@@ -162,14 +163,15 @@ async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognition
 
     model = ReadingModel()
     runner = CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimulus_store, agent_runner=model,
+        store=store, stimulus_store=stimulus_store, agent_runner=model,
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
         skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
-        prior_standing=none, pending_self_wakes=none, pending_mirrored_reminds=none,
-        session_mode="shadow", budget=BUDGET, cooldown_seconds=300.0, max_items=12,
+        prior_standing=none,
+        budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
+        notes=InMemoryNoteStore(),
     )
     view = UnitView(unit="u", pending=tuple(stimuli), last_activity_ms=None, last_wake=None)
     await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
@@ -179,17 +181,6 @@ async def _wake(names: tuple[str, ...]) -> tuple[ReadingModel, InMemoryCognition
 # ---- the id shown is the id required ---------------------------------------------------
 
 
-async def test_every_id_and_name_the_prompt_shows_is_accepted_by_the_real_note_create():
-    """THE BUG. The model cites `[n]` and `(from)` exactly as the prompt shows
-    them, in both rooms, and none of it is refused."""
-    model, store = await _wake(NAMES)
-    assert len(model.cited) == 2 * len(NAMES)                       # a row per message, 2 rooms
-    assert [a["status"] for a in model.answers] == ["ok"] * (2 * len(NAMES)), model.answers
-    assert [w.outcome for _, w, _ in store.would_writes] == ["would_commit"] * (2 * len(NAMES))
-    # and what it cited is the real id (7000, 7013, ...), never a position
-    assert {n for n, _ in model.cited} == {
-        7000 + 1000 * r + 13 * k for r in range(2) for k in range(len(NAMES))
-    }
 
 
 async def test_the_prompt_shows_an_id_the_rows_hold_and_no_other_handle():
@@ -231,7 +222,7 @@ async def test_a_reaction_is_not_citable_from_its_own_row():
         ref=react.ref, kind="reaction", message_id=44, room=A, author="Ben", at_ms=NOW,
         text="see you there", emoji="👍",
     )}, room_labels=LABELS)
-    store = InMemoryCognitionDryRunStore()
+    store = InMemoryCognitionStore()
     stimulus_store = InMemoryStimulusStore(ledger=store)
     stimulus_store.seed_wake("u", 1)
     answers: list[dict[str, Any]] = []
@@ -248,13 +239,13 @@ async def test_a_reaction_is_not_citable_from_its_own_row():
         return ()
 
     runner = CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimulus_store, agent_runner=Citer(),
+        store=store, stimulus_store=stimulus_store, agent_runner=Citer(),
         units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
         read_tools_for=lambda unit, rooms: [], read_only_tools=frozenset(),
         skill_text_for=lambda kinds: "", grounder=StaticGrounder(grounding),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=none, open_events=none,
-        prior_standing=none, pending_self_wakes=none, pending_mirrored_reminds=none,
-        session_mode="shadow", budget=BUDGET, cooldown_seconds=300.0, max_items=12,
+        prior_standing=none,
+        budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         max_strikes=3, clock=lambda: NOW / 1000, nora_names=frozenset({"Nora"}), tz=HK,
     )
     view = UnitView(unit="u", pending=(react,), last_activity_ms=None, last_wake=None)

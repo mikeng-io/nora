@@ -1,24 +1,16 @@
-"""The wake evaluator — 20 §3's wake policy, run in SHADOW
-(design/cognition-loop/20-observe.md §3, migration step 1).
+"""The wake evaluator — 20 §3's wake policy (design/cognition-loop/20-observe.md
+§3).
 
-**It fires nothing.** Every ~30 s it reads each unit's pending stimuli (one
-read per unit, no model), applies the wake table and the brakes exactly as it
-would to start a Cognition session (`nora.domain.stimuli.decide`), and when a
-unit would wake it RECORDS the would-wake — its reason, the stimulus range it
-would consume, the counts — as a `cognition_wake` row in `mode = "shadow"`.
-That row is also the unit's shadow watermark, so the next tick sees those
-stimuli as consumed, exactly as a session would have left them. Nothing
-else: no session, no model call, no adaptor started, no message. The clocked
-Dreamer adaptors keep running as they did; nothing reads the stimulus table for
-a decision (70 §2 step 1: «the clocks still run everything»).
-
-The week of rows this writes is the step's gate: 20 §3's starting values are
-sized from it (`nora_cognition_wake_total{reason}` counts them live, the
-table holds the ranges).
+Every ~30 s it reads each unit's pending stimuli (one read per unit, no model),
+applies the wake table and the brakes (`nora.domain.stimuli.decide`), and when a
+unit wakes it RECORDS the wake — its reason, the stimulus range it consumes, the
+counts — as a `cognition_wake` row and hands it to the session hook
+(`nora.app.cognition_session.CognitionSessionRunner.on_wake`). That row is also
+the unit's watermark, so the next tick sees those stimuli as consumed.
 
 **The daily floors are raised here.** `time` stimuli are the only ones a
-clock raises (20 §1), and the two daily floors (proactive's 07:00 HK and the
-curator's 00:00 HK) are the only `time` producers at step 1. Each tick raises
+clock raises (20 §1), and the two daily floors (07:00 and 00:00 HK by default,
+`[cognition] time_floors`) are the only `time` producers. Each tick raises
 the floors whose instant has passed within `floor_grace_seconds`, once per
 unit per day (`uq_stimulus_time_ref` makes the repeat a no-op). The grace is
 what stops a deploy at 15:00 from raising that morning's 07:00 as if due now;
@@ -65,7 +57,7 @@ from nora.domain.stimuli import (
 log = logging.getLogger("nora.app.wake")
 
 #: How many pending stimuli one tick reads per unit. Well above `batch_max`
-#: (80): a would-wake consumes what it read, and anything past this bound is
+#: (80): a wake consumes what it read, and anything past this bound is
 #: consumed by the next one.
 DEFAULT_PENDING_LIMIT = 1000
 
@@ -101,7 +93,7 @@ class WakeEvaluator:
         floors: Sequence[Floor] = (),
         tz: dt.tzinfo = dt.UTC,
         floor_grace_seconds: float = 3600.0,
-        mode: WakeMode = "shadow",
+        mode: WakeMode = "live",
         store_timeout_seconds: float = 5.0,
         pending_limit: int = DEFAULT_PENDING_LIMIT,
         settle_seconds: float | None = None,
@@ -121,22 +113,21 @@ class WakeEvaluator:
         watermark's time bound — is that cutoff, so a stimulus recorded after
         it stays pending whatever its id.
 
-        `on_wake` (migration step 3a-ii, `[cognition] session_mode`): an
-        OPTIONAL extension point typed by ONE Protocol, `nora.domain.stimuli.
+        `on_wake`: the session hook, typed by ONE Protocol, `nora.domain.stimuli.
         WakeHook` (keyword-only: `unit`, `view`, `wake_id`, `now_ms`), which
         `nora.app.cognition_session.CognitionSessionRunner.wake_hook` also
         returns, so the two sides cannot drift apart (they did once: this
         module called it positionally, the runner took keywords). Called right
-        after a would-wake is recorded, awaited in a background task, and
+        after a wake is recorded, awaited in a background task, and
         never imported by name, so this module's own `nora` imports stay
         `{nora.domain.ports, nora.domain.stimuli}`
         (`tests/architecture/test_the_wake_evaluator_cannot_act.py`'s
         invariant: the evaluator still imports nothing that can act, it only
         offers a slot the composition root may fill with something that
-        does). `session_mode = "off"` is exactly "the composition root never
-        passes `on_wake`": `tick` then behaves as before this parameter
-        existed, including the SHADOW assumption that a would-wake occupies
-        its unit for `session_seconds`.
+        does). The composition root always passes it (`[cognition] enabled`
+        builds the evaluator only with a runner); without one, which only a
+        test builds, a wake is recorded and run by nothing, and it occupies its
+        unit for `session_seconds`.
 
         **With a hook the brakes count REAL sessions** (20 §3: single-flight
         and `max_concurrent_sessions`; `nora.domain.stimuli`'s state
@@ -153,13 +144,10 @@ class WakeEvaluator:
         logged, counted and contained: it never aborts the tick for another
         unit.
 
-        `floors_ready` (M8, DEC-245): False while no skill ships for the `time`
-        agenda kind (`AgendaSkills.by_kind`). A session woken by a daily floor
-        would be handed «a time stimulus is due: floor» and nothing to do about
-        it, and the item says nothing that grounds a judgement. So a unit whose
-        wakes start sessions raises NO floor while it is False; a unit that only
-        records would-wakes (no hook) still raises them, because sizing the floors
-        from a shadow week is what they are for."""
+        `floors_ready` (M8, DEC-245): whether a skill ships for the `time`
+        agenda kind (`AgendaSkills.by_kind`; it does since the cut-over, the
+        notebook review). False, a unit whose wakes start sessions raises NO
+        floor, because a session woken by one would have nothing to do."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -192,10 +180,9 @@ class WakeEvaluator:
 
     @property
     def has_wake_hook(self) -> bool:
-        """True when a session hook is wired (`session_mode = "shadow"`). The
-        composition root's boot check reads it: a session mode that asked for
-        sessions and built an evaluator with no hook would record would-wakes
-        forever and run nothing."""
+        """True when a session hook is wired. The composition root's boot check
+        reads it: `[cognition] enabled` with an evaluator that holds no hook
+        would record wakes forever and run nothing."""
         return self._on_wake is not None
 
     async def tick(self) -> list[int]:
@@ -249,7 +236,7 @@ class WakeEvaluator:
         except Exception:
             # A hook that raises WHILE BEING CALLED (not one that fails inside
             # its awaited body) must not abort the tick for the units after
-            # this one: their would-wakes are already decided.
+            # this one: their wakes are already decided.
             log.exception("cognition wake hook raised (unit=%s wake_id=%s)", unit, wake_id)
             self._metrics.inc("nora_errors_total", stage="cognition_session")
             return
@@ -518,7 +505,7 @@ class WakeEvaluator:
                 timeout=self._timeout,
             )
         except Exception:
-            log.exception("wake evaluator: could not record a would-wake for %s", view.unit)
+            log.exception("wake evaluator: could not record a wake for %s", view.unit)
             self._metrics.inc("nora_errors_total", stage="cognition_wake")
             return None
         if wake_id is None:
@@ -532,7 +519,7 @@ class WakeEvaluator:
             "nora_cognition_wake_total", reason=reason, mode=self._mode,
         )
         log.info(
-            "cognition would-wake (%s): unit=%s reason=%s stimuli=%d eligible=%d "
+            "cognition wake (%s): unit=%s reason=%s stimuli=%d eligible=%d "
             "through=%d cut_cooldown=%s",
             self._mode, view.unit, reason, verdict.stimulus_count,
             verdict.eligible_count, verdict.through_stimulus_id, verdict.cut_cooldown,
@@ -574,7 +561,7 @@ async def wake_loop(
     so that the series is ABSENT when cognition is off (an unlabelled gauge
     exports 0 from the moment it is declared, and a rule on `time() - 0` would
     page a deployment that has no wake loop)."""
-    log.info("cognition wake evaluator started (shadow): tick every %gs", tick_seconds)
+    log.info("cognition wake evaluator started: tick every %gs", tick_seconds)
     mode = evaluator.mode
     precreate_session_series(metrics)
     metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)

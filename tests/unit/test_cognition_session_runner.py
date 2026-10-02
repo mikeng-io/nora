@@ -25,8 +25,8 @@ from nora.app.cognition_session import (
 )
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -82,21 +82,20 @@ def _seeded(*wakes: tuple[str, int]) -> InMemoryStimulusStore:
 
 
 def _runner(
-    *, session_mode: str = "shadow", agent_runner: FakeCognitionAgentRunner | None = None,
-    dry_run_store: InMemoryCognitionDryRunStore | None = None,
+    *, agent_runner: FakeCognitionAgentRunner | None = None,
+    store: InMemoryCognitionStore | None = None,
     stimuli: InMemoryStimulusStore | None = None,
-) -> tuple[CognitionSessionRunner, InMemoryCognitionDryRunStore, FakeCognitionAgentRunner]:
-    store = dry_run_store or InMemoryCognitionDryRunStore()
+) -> tuple[CognitionSessionRunner, InMemoryCognitionStore, FakeCognitionAgentRunner]:
+    store = store or InMemoryCognitionStore()
     fake = agent_runner or FakeCognitionAgentRunner()
     runner = CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimuli or _seeded(),
+        store=store, stimulus_store=stimuli or _seeded(),
         agent_runner=fake, units=("unit-1",), session_timeout_seconds=900.0,
         home_rooms={"unit-1": HOME}, read_tools_for=lambda unit, rooms: [],
         skill_text_for=lambda kinds: "", grounder=EmptyGrounder(), doctrine_text="DOCTRINE",
         doctrine_sha256="sha", open_note_titles=_async_const(()),
         open_events=_async_const2(()), prior_standing=_async_const2(None),
-        pending_self_wakes=_async_const(()), pending_mirrored_reminds=_async_const(()),
-        session_mode=session_mode, budget=BUDGET, cooldown_seconds=300.0, max_items=12,
+        budget=BUDGET, cooldown_seconds=300.0, max_items=12,
         max_strikes=3, mint_ref=_counting_ref(), clock=lambda: NOW / 1000,
     )
     return runner, store, fake
@@ -127,18 +126,6 @@ def _counting_ref():
 # off / empty agenda: zero model calls
 # --------------------------------------------------------------------------
 
-async def test_session_mode_off_makes_no_model_call_and_releases_the_wake():
-    stimuli = _seeded()
-    runner, store, fake = _runner(session_mode="off", stimuli=stimuli)
-    view = UnitView(
-        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
-    )
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert outcome is None
-    assert fake.calls == 0
-    assert store.sessions == []
-    # Nothing ran, so nothing is consumed: the wake is recorded failed.
-    assert stimuli.outcomes[1].outcome == "failed"
 
 
 async def test_an_empty_agenda_makes_no_model_call():
@@ -180,7 +167,7 @@ async def test_a_session_with_a_nonempty_agenda_records_itself_and_calls_the_mod
     assert len(store.sessions) == 1
     session_id, session, _ = store.sessions[0]
     assert session.wake_id == 42
-    assert session.mode == "shadow"
+    assert session.mode == "live"
     assert session_id == outcome.session_id
 
 
@@ -220,19 +207,6 @@ async def test_the_tool_list_offers_every_write_pace_and_remind_verb():
     }
 
 
-async def test_a_would_write_call_is_recorded_against_this_sessions_id():
-    fake = FakeCognitionAgentRunner(script=[(
-        "standing_revise", {"where_it_stands": "dinner is on"},
-    )])
-    runner, store, fake = _runner(agent_runner=fake)
-    view = UnitView(
-        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
-    )
-    outcome = await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert len(store.would_writes) == 1
-    _, write, _ = store.would_writes[0]
-    assert write.session_id == outcome.session_id
-    assert write.outcome == "would_commit"
 
 
 async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
@@ -250,18 +224,3 @@ async def test_a_wake_at_call_is_recorded_with_a_minted_ref():
     assert pace.wake_ref == "ref1"
 
 
-async def test_a_remind_call_is_recorded_and_never_reaches_a_send_path():
-    fake = FakeCognitionAgentRunner(script=[(
-        "remind", {
-            "room": "signal:home-room",
-            "intent": "tell", "subject_rows": ["note:1"], "at": iso(NOW + 60_000),
-        },
-    )])
-    runner, store, fake = _runner(agent_runner=fake)
-    view = UnitView(
-        unit="unit-1", pending=_pending("unit-1"), last_activity_ms=None, last_wake=None,
-    )
-    await runner.on_wake(unit="unit-1", view=view, now_ms=NOW, wake_id=1)
-    assert len(store.remind_mirrors) == 1
-    _, mirror, _ = store.remind_mirrors[0]
-    assert mirror.outcome == "recorded"

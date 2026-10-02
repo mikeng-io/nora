@@ -8,13 +8,9 @@ invite a retry that stands a second wake beside the first. Each test injects a f
 at one step of one verb and asserts what the model reads is true, what stands is what
 the ledger and the stimulus store say, and a retry does not duplicate.
 
-**Concurrency.** Strands runs the tool calls of one turn together
-(`ConcurrentToolExecutor`). A check-then-record over the session's own earlier writes
-that is not atomic lets two conflicting calls both land, so each is gathered here
-against a ledger that yields.
-
-What each test catches if its fix is reverted is named in
-`scripts/mutations/cognition-measures.json`.
+A session's tier writes go to the tiers' own stores, whose compare-and-swap is
+what keeps two concurrent calls from both landing; those stores' contract suites
+hold it.
 """
 
 from __future__ import annotations
@@ -26,27 +22,18 @@ from typing import Any
 import pytest
 
 from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
-from nora.domain.gatherings import GatheringStatus
-from nora.domain.ports import NoteHead
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
-from tests.unit.test_cognition_session_events_d import _event
-from tests.unit.test_cognition_session_verbs_c import (
-    GOOD_BODY,
-    NOTE,
-    NOW,
-    _head,
-    _session,
-    iso,
-)
+from tests.unit.cognition_rig import NOW, Stores, iso
+from tests.unit.cognition_rig import session as _session
 
 AT = iso(NOW + 3_600_000)
 LATER = iso(NOW + 7_200_000)
 HEAD = "rev-2"
 
 
-class _Ledger(InMemoryCognitionDryRunStore):
+class _Ledger(InMemoryCognitionStore):
     """A ledger that can fail a method a set number of times, and that yields on
     every write the way a database does."""
 
@@ -59,11 +46,6 @@ class _Ledger(InMemoryCognitionDryRunStore):
             self.fail_times[method] -= 1
             raise RuntimeError(f"ledger unavailable ({method}): postgresql://nora:hunter2@db")
         super()._check(method)
-
-    async def record_would_write(self, **kw: Any) -> int:
-        await asyncio.sleep(0)
-        self._check("record_would_write")
-        return await super().record_would_write(**kw)
 
     async def record_pace(self, **kw: Any) -> int:
         self._check("record_pace")
@@ -92,22 +74,16 @@ async def _run(behave, *, ledger=None, metrics=None, **kw):
         return await ledger.pending_self_wakes(unit=unit, since_ms=since_ms)
 
     await _session(
-        behave, store=ledger, metrics=metrics, runner_kwargs={
-            "stimulus_store": stimuli, "pending_self_wakes": pending,
-            "pending_mirrored_reminds": ledger_pending(ledger), **kw.pop("runner", {}),
+        behave, stores=Stores(cognition=ledger), metrics=metrics, runner_kwargs={
+            "stimulus_store": stimuli,
+            **kw.pop("runner", {}),
         }, **kw,
     )
     return ledger, stimuli
 
 
-def ledger_pending(ledger: Any) -> Any:
-    async def pending(unit: str) -> Any:
-        return await ledger.pending_mirrored_reminds(unit=unit, now_ms=NOW)
-    return pending
-
-
 async def _live(stimuli: InMemoryStimulusStore) -> list[tuple[str, int | None]]:
-    view = await stimuli.view(unit="u", mode="shadow", now_ms=NOW + 99_000_000, limit=50)
+    view = await stimuli.view(unit="u", mode="live", now_ms=NOW + 99_000_000, limit=50)
     return [(s.item, s.due_ms) for s in view.pending if s.kind == "self"]
 
 
@@ -155,8 +131,8 @@ async def test_a_superseding_wake_at_whose_retract_fails_is_still_ok_and_one_row
     async def pending(unit: str, since_ms: int) -> Any:
         return await ledger.pending_self_wakes(unit=unit, since_ms=since_ms)
 
-    await _session(behave, store=ledger, runner_kwargs={
-        "stimulus_store": stimuli, "pending_self_wakes": pending,
+    await _session(behave, stores=Stores(cognition=ledger), runner_kwargs={
+        "stimulus_store": stimuli,
     })
     # The NEW wake exists (ledger row and stimulus), so the answer is ok: an error here
     # would have the model set it again. The displaced wake could not be retracted, which
@@ -261,36 +237,15 @@ async def test_a_pace_verb_that_fails_before_any_write_still_says_it_may_not_hav
     stimuli = InMemoryStimulusStore(ledger=ledger)
     stimuli.seed_wake("u", 1)
     stimuli_box.append(stimuli)
-    await _session(behave, store=ledger, runner_kwargs={"stimulus_store": stimuli})
+    await _session(
+        behave, stores=Stores(cognition=ledger), runner_kwargs={"stimulus_store": stimuli},
+    )
     _true_text(answers[0])
     assert await _live(stimuli) == []
 
 
-async def test_a_ledger_only_verb_that_fails_still_says_nothing_was_written():
-    answers: list[Any] = []
-    ledger = _Ledger()
-    ledger.fail_times["record_would_write"] = 1
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["standing_revise"](where_it_stands="fine"))
-
-    await _run(behave, ledger=ledger)
-    assert answers[0]["status"] == "unavailable"
-    assert "nothing was written" in answers[0]["detail"] and "hunter2" not in json.dumps(answers)
 
 
-async def test_a_counter_that_raises_after_a_write_never_turns_it_into_an_error():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["wake_at"](subject_rows=["event:1"], at=AT, why="look"))
-        answers.append(await by["standing_revise"](where_it_stands="fine"))
-        answers.append(await by["close"](item_index=0, reason="no_change"))
-
-    ledger, stimuli = await _run(behave, metrics=_Counting(broken=True))
-    assert [a["status"] for a in answers] == ["ok", "ok", "ok"]
-    assert len(await _live(stimuli)) == 1                           # one wake, however often
-    assert [p.outcome for _, p, _ in ledger.paces] == ["recorded"]   # and ledgered once
 
 
 # ---------------------------------------------------------------------------
@@ -301,156 +256,28 @@ def _statuses(answers: list[Any]) -> list[str]:
     return sorted(a.get("reason") or a["status"] for a in answers)
 
 
-async def test_two_note_creates_with_one_title_run_together_land_exactly_once():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.extend(await asyncio.gather(
-            by["note_create"](**NOTE, body=GOOD_BODY), by["note_create"](**NOTE, body=GOOD_BODY),
-        ))
-
-    await _run(behave)
-    assert _statuses(answers) == ["duplicate_title", "ok"]
 
 
-async def test_two_note_updates_on_one_parent_run_together_land_exactly_once():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        call = by["note_update"]
-        answers.extend(await asyncio.gather(
-            call(note_id="n1", body=GOOD_BODY, parent_revision_id=HEAD),
-            call(note_id="n1", body=GOOD_BODY, parent_revision_id=HEAD),
-        ))
-
-    async def head_of(unit: str, note_id: str) -> NoteHead:
-        return NoteHead(head_revision_id=HEAD)
-
-    await _run(behave, runner={"note_head": head_of})
-    assert _statuses(answers) == ["ok", "stale_head"]
 
 
-async def test_two_event_revisions_on_one_base_run_together_land_exactly_once():
-    event = _event(GatheringStatus.PROPOSED)
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        common = {"reasoning": "told", "confidence": "high", "cited_ids": ["101"],
-                  "base_revision_id": str(event.head_revision_id)}
-        answers.extend(await asyncio.gather(
-            by["event_revise"](event_id=str(event.id), venue_text="two", **common),
-            by["event_revise"](event_id=str(event.id), venue_text="three", **common),
-        ))
-
-    await _run(behave, events=(event,))
-    assert _statuses(answers) == ["ok", "stale_base"]
 
 
-async def test_two_event_status_moves_on_one_base_run_together_land_exactly_once():
-    event = _event(GatheringStatus.PROPOSED)
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        common = {"reasoning": "told", "confidence": "high", "cited_ids": ["101"],
-                  "base_revision_id": str(event.head_revision_id)}
-        answers.extend(await asyncio.gather(
-            by["event_set_status"](event_id=str(event.id), status="confirmed", **common),
-            by["event_set_status"](event_id=str(event.id), status="cancelled", **common),
-        ))
-
-    await _run(behave, events=(event,))
-    assert _statuses(answers) == ["ok", "stale_base"]
 
 
-async def test_two_standing_revisions_on_one_base_run_together_land_exactly_once():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.extend(await asyncio.gather(
-            by["standing_revise"](where_it_stands="one", base_revision_id="r1"),
-            by["standing_revise"](where_it_stands="two", base_revision_id="r1"),
-        ))
-
-    await _run(behave, head=_head("r1"))
-    assert _statuses(answers) == ["ok", "stale_base"]
 
 
-async def test_three_event_proposals_run_together_land_twice_and_the_third_is_ambiguous():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.extend(await asyncio.gather(*(
-            by["event_propose"](
-                title=f"dinner {n}", reasoning="told", confidence="high", cited_ids=["101"],
-            ) for n in range(3)
-        )))
-
-    await _run(behave)
-    assert _statuses(answers) == ["ambiguous_open_gatherings", "ok", "ok"]
 
 
 # ---------------------------------------------------------------------------
 # the overlay covers Standing and event_propose, one after the other
 # ---------------------------------------------------------------------------
 
-async def test_a_second_standing_revise_on_the_base_the_first_used_is_stale():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["standing_revise"](where_it_stands="one", base_revision_id="r1"))
-        answers.append(await by["standing_revise"](where_it_stands="two", base_revision_id="r1"))
-        answers.append(await by["standing_revise"](where_it_stands="three"))   # no base: lands
-
-    store, _ = await _session(behave, head=_head("r1"))
-    assert [a.get("reason") or a["status"] for a in answers] == ["ok", "stale_base", "ok"]
-    assert [w.outcome for _, w, _ in store.would_writes] == [
-        "would_commit", "refused", "would_commit",
-    ]
 
 
-async def test_a_refused_standing_revise_does_not_move_the_base():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["standing_revise"](where_it_stands="", base_revision_id="r1"))
-        answers.append(await by["standing_revise"](where_it_stands="fine", base_revision_id="r1"))
-
-    await _session(behave, head=_head("r1"))
-    assert [a["status"] for a in answers] == ["refused", "ok"]
 
 
-async def test_the_third_event_proposal_in_a_room_is_ambiguous_as_live_refuses_it():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        for n in range(3):
-            answers.append(await by["event_propose"](
-                title=f"dinner {n}", reasoning="told", confidence="high", cited_ids=["101"],
-            ))
-    store, _ = await _session(behave)
-    assert [a.get("reason") or a["status"] for a in answers] == [
-        "ok", "ok", "ambiguous_open_gatherings",
-    ]
-    assert [w.outcome for _, w, _ in store.would_writes] == [
-        "would_commit", "would_commit", "refused",
-    ]
 
 
-async def test_a_staged_proposal_of_the_session_does_not_count_toward_the_two():
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        for n in range(3):
-            answers.append(await by["event_propose"](
-                title=f"guess {n}", reasoning="told", confidence="high", cited_ids=["101"],
-                status="staged",
-            ))
-        answers.append(await by["event_propose"](
-            title="real", reasoning="told", confidence="high", cited_ids=["101"],
-        ))
-
-    await _session(behave)
-    assert [a["status"] for a in answers] == ["ok"] * 4
 
 
 # ---------------------------------------------------------------------------

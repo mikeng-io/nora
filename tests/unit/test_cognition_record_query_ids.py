@@ -34,7 +34,6 @@ from nora.persons import load_persons
 from nora.policy import load_policy
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from tests.fakes import SinkSender
-from tests.unit.test_cognition_session_verbs_c import NOTE, _session
 
 NOW = datetime(2026, 9, 29, 4, 0, tzinfo=UTC)
 ROOM = "room-a"
@@ -148,24 +147,3 @@ async def test_a_tag_turns_record_query_prints_no_ids(policy, persons):
     assert str(MESSAGE_ID) not in json.dumps(answer)
 
 
-async def test_a_note_citing_a_message_the_real_record_query_returned_is_checked_against_its_sender(
-    policy, persons,
-):
-    """The session end to end on the REAL tool (replacing a test that fed a
-    fabricated `n`): the number the tool printed is citable, its sender is
-    checked, and a wrong author is refused `misattributed`."""
-    tool = _cognition_tool(policy, persons)
-    by_ada = f"## Decided\n- on (Ada) [{MESSAGE_ID}]\n## Open\n- q [{MESSAGE_ID}]\n"
-    by_ben = f"## Decided\n- on (Ben) [{MESSAGE_ID}]\n## Open\n- q [{MESSAGE_ID}]\n"
-    answers: list[Any] = []
-
-    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
-        answers.append(await by["note_create"](**NOTE, body=by_ada))     # not read yet
-        await _stream(by["record_query"], start="2026-09-28")
-        answers.append(await by["note_create"](**NOTE, body=by_ada))
-        answers.append(await by["note_create"](**NOTE, body=by_ben))
-
-    await _session(behave, reads=[tool])
-    assert answers[0]["reason"] == "unknown_id"
-    assert answers[1]["status"] == "ok", answers[1]
-    assert answers[2]["reason"] == "misattributed"

@@ -9,7 +9,7 @@ rows and hands them in; the CLI prints the report and exits with `exit_code`.
 **Counts, ages and rule names only.** Nothing here carries a row's text, a person,
 a room id or a stimulus ref: a session's `detail` is reduced to a flag before it
 arrives, and a refusal is its rule NAME (a code constant). A unit is the operator's
-own policy.toml key, the same vocabulary `nora cognition compare --unit` takes.
+own policy.toml key, the same vocabulary `nora cognition health --unit` takes.
 
 **Three verdicts, never two** (AGENTS.md: an ERROR is never a PASS):
 
@@ -103,17 +103,6 @@ class TokenStats:
 
 
 @dataclass(frozen=True)
-class RefusalRule:
-    """How often the code refused a verb call for one rule, over every verb call the
-    sessions in the window made (`would_commit` + `refused`)."""
-
-    tier: str
-    rule: str
-    count: int
-    share: float
-
-
-@dataclass(frozen=True)
 class HealthReport:
     since_ms: int
     until_ms: int
@@ -128,14 +117,8 @@ class HealthReport:
     open_wakes: int = 0
     expired_open_wakes: int = 0
     tokens: TokenStats | None = None
-    verb_calls: int = 0
-    refusals: tuple[RefusalRule, ...] = ()
     process_starts: int = 0
     distinct_builds: int = 0
-    #: What the live ledger's reconcile (committed minus reverted) says, or why it
-    #: cannot: it needs tables a later step builds, and an absent ledger is
-    #: «unavailable», never a clean zero.
-    reconcile: str = "unavailable"
     #: `(section, exception class name)` for every read that failed. Never a message:
     #: a database error can quote a row.
     errors: tuple[tuple[str, str], ...] = ()
@@ -286,16 +269,10 @@ def render_text(report: HealthReport, *, iso: Mapping[str, str]) -> list[str]:
             f"cache-read mean {_num(t.cache_read_mean)} max {_num(t.cache_read_max)}"
             + ("" if t.cache_share is None else f"; cache share {t.cache_share:.0%}"),
         )
-    lines.append(f"  refusals by rule (of {report.verb_calls} verb call(s)):")
-    if not report.refusals:
-        lines.append("    none")
-    for r in sorted(report.refusals, key=lambda r: (-r.count, r.tier, r.rule)):
-        lines.append(f"    {r.tier}/{r.rule}: {r.count} ({r.share:.0%})")
     lines.append(
         f"  process starts in the window: {report.process_starts} "
         f"({report.distinct_builds} distinct build(s))",
     )
-    lines.append(f"  reconcile (committed - reverted): {report.reconcile}")
     return lines
 
 
@@ -331,13 +308,7 @@ def report_json(report: HealthReport, *, iso: Mapping[str, str]) -> dict[str, ob
             "cache_read_max": report.tokens.cache_read_max,
             "cache_share": report.tokens.cache_share,
         },
-        "verb_calls": report.verb_calls,
-        "refusals": [
-            {"tier": r.tier, "rule": r.rule, "count": r.count, "share": r.share}
-            for r in report.refusals
-        ],
         "process_starts": report.process_starts,
         "distinct_builds": report.distinct_builds,
-        "reconcile": report.reconcile,
         "errors": [{"section": s, "error": e} for s, e in report.errors],
     }

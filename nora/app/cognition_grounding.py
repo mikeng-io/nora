@@ -58,6 +58,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Collection, Sequence
+from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
@@ -75,7 +76,7 @@ from nora.domain.cognition_ground import (
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
-from nora.domain.notes import Note
+from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
@@ -204,6 +205,7 @@ def build_grounder(
     clock: Callable[[], float] = time.time,
     own_send_lookback_seconds: float = 1800.0,
     own_sends_max: int = 6,
+    tz: tzinfo = UTC,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -289,19 +291,33 @@ def build_grounder(
         enforced = lineage.mode == "on"
         withheld = {"notes": 0, "events": 0}
         notes_out: list[NoteLine] = []
-        for n in await note_index(unit):
-            # WITHDRAWN: dropped here too, in every mode (not a lineage
+        # The notebook review's facts (a `time` item): the anchor day passed or
+        # the revisit date came, and a title that shares most of its words with
+        # another open note's. Read off the rows the index already holds.
+        now_ms = int(clock() * 1000)
+        now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
+        today = now.year * 10_000 + now.month * 100 + now.day
+        indexed = [n for n in await note_index(unit) if n.unsupported_at is None]
+        twins = likely_duplicates(indexed)
+        for n in indexed:
+            # WITHDRAWN notes were dropped above, in every mode (not a lineage
             # question). LINEAGE: shown only where it passes for every room the
             # session reads.
-            if n.unsupported_at is not None:
-                continue
             if applies and not all(derived_view(
                 notes=(n,), standing=None, culture=None, target=t,
             ).notes for t in targets):
                 withheld["notes"] += 1
                 if enforced:
                     continue
-            notes_out.append(NoteLine(id=n.id, title=n.title, description=n.description))
+            review = (
+                "anchor_passed" if n.anchor_date is not None and n.anchor_date < today
+                else "revisit_due" if n.revisit_at is not None and n.revisit_at <= now_ms
+                else None
+            )
+            notes_out.append(NoteLine(
+                id=n.id, title=n.title, description=n.description, review=review,
+                may_duplicate=twins.get(n.id),
+            ))
         notes = tuple(notes_out)
         events: list[EventLine] = []
         for room in agenda_rooms:

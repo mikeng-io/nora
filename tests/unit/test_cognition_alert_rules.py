@@ -114,7 +114,7 @@ def test_the_new_series_carry_no_identifying_label_and_the_loop_gauge_is_labelle
     assert specs["nora_cognition_wake_last_tick_seconds"].labelnames == ("mode",)
     assert specs["nora_process_start_time_seconds"].labelnames == ()
     assert specs["nora_cognition_wake_reclaimed_total"].labelnames == ()
-    assert "shadow" in WAKE_MODES
+    assert WAKE_MODES == ("live",)
     for name in ("nora_cognition_wake_last_tick_seconds", "nora_process_start_time_seconds",
                  "nora_cognition_wake_reclaimed_total"):
         assert set(specs[name].labelnames) <= ALLOWED_LABELS, name

@@ -26,8 +26,7 @@ they write a signal, not a tier").
 This module makes no store call: every fact it needs (how many self-wakes
 are pending, which existing one shares a subject, whether a wake_ref is
 known and still pending) is a caller-supplied argument, the same "prior is a
-parameter" shape `nora.domain.standing_revise` and `nora.agent.
-cognition_dry_run` already use.
+parameter" shape `nora.domain.standing_revise` already uses.
 """
 
 from __future__ import annotations

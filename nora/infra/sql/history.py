@@ -183,18 +183,13 @@ APPEND_ONLY: dict[str, str] = {
     # per run, never rewritten — the next run is the next row
     # (`nora.domain.assess.AssessReport`).
     "assess_report": "recorded_at",
-    # Step 3a (0078_cognition_session): the Cognition adaptor's session and
-    # its dry-run write verbs. All three written once, never revised — a
-    # session is a replay input, a close and a would-write are each their
-    # own row.
+    # The Cognition session and its closes (0078): written once, never revised —
+    # a session is a replay input, a close is its own row.
     "cognition_session": "recorded_at",
     "cognition_session_close": "recorded_at",
-    "cognition_would_write": "recorded_at",
-    # Step 3a-ii (70-migration.md §2 row 3a-ii): the pace verbs
-    # (`wake_at`/`wake_move`/`wake_cancel`) and the mirrored, held `remind`
-    # family. Each transition is its own row, never revised.
+    # The pace verbs (`wake_at`/`wake_move`/`wake_cancel`): each transition is
+    # its own row, never revised.
     "cognition_self_wake": "recorded_at",
-    "cognition_remind_mirror": "recorded_at",
     # Step 3a-ii, the wake lifecycle: how a tracked wake ended (only `closed`
     # advances the watermark), what it returned to the next agenda, and the
     # `self` stimuli taken back.

@@ -87,7 +87,11 @@ def _everything() -> str:
     grounding = Grounding(
         records=records, rollups={roll.ref: roll}, room_labels=LABELS,
         own_sends={0: (_rec(50, "message", mid=50, text="noted", own=True, author="Nora"),)},
-        notes=tuple(NoteLine(id=f"n-{i}", title=f"Note {i}", description="d") for i in range(3)),
+        notes=(
+            *(NoteLine(id=f"n-{i}", title=f"Note {i}", description="d") for i in range(2)),
+            NoteLine(id="n-2", title="Note 2", description="d", review="anchor_passed",
+                     may_duplicate="n-1"),
+        ),
         events=(
             EventLine(id="e-1", room=A, title="Dinner", when_ms=NOW, venue="Ramen Ya",
                       status="proposed", revision="rev-1"),
@@ -142,7 +146,7 @@ def test_the_fixture_makes_every_element_carry_every_attribute_it_can():
         "earlier_range", "unreadable", "n", "at", "from", "edited", "reaction",
         "withdrawn", "deleted", "own", "cues",
     }
-    assert seen["note_index"] == {"n", "title", "not_listed"}
+    assert seen["note_index"] == {"n", "title", "not_listed", "review", "may_duplicate"}
     assert seen["events"] == {
         "room", "not_listed", "id", "status", "when", "venue", "revision",
     }

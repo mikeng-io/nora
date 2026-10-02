@@ -1,16 +1,13 @@
-"""Building the shadow Cognition session for the composition root (migration
-step 3a-iii, DEC-244). Everything the runner needs that is not itself the
-runner: which read tools it holds, what it is told, its budget, and how it is
-stopped.
+"""Building the Cognition session for the composition root (DEC-244).
+Everything the runner needs that is not itself the runner: which read tools it
+holds, what it is told, its budget, and how it is stopped.
 
-`[cognition] session_mode = "off"` (the shipped default) builds NOTHING here:
+`[cognition] enabled = false` (the shipped default) builds NOTHING here:
 `build_cognition_runner` is not called, the model source is not touched and
 `nora.app.cognition_agent_runner` is not imported (it is imported inside the
-function, so importing this module costs nothing). `"shadow"` builds exactly
-one `CognitionSessionRunner` whose hook the wake evaluator is handed, and
-`require_session_hook` refuses to boot if that did not happen: a session mode
-that asked for sessions and built an evaluator that runs none would record
-would-wakes for a week and look healthy.
+function, so importing this module costs nothing). `true` builds exactly one
+`CognitionSessionRunner` whose hook the wake evaluator is handed, and
+`require_session_hook` refuses to boot if that did not happen.
 
 **What she reads** (30-cognition.md §2, 15-map.md §4): the tools of the
 design's read catalogue that EXIST and are read-only, less what a flag
@@ -46,7 +43,7 @@ from nora.agent.dreamer import (
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
 from nora.domain.note_body import NORA_NAMES
-from nora.domain.ports import CognitionDryRunStore, NoteHead, StimulusStore
+from nora.domain.ports import CognitionStore, StimulusStore
 from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 
@@ -71,16 +68,11 @@ COGNITION_READ_CATALOGUE: frozenset[str] = frozenset({
     "about", "ask_memory", "search_memory", "search_memory_workspace",
 })
 
-#: The side-effect audit of every tool in the catalogue (#637 review, blocker;
-#: `tests/unit/test_cognition_wiring.py` holds its keys equal to
+#: The side-effect audit of every tool in the catalogue
+#: (`tests/unit/test_cognition_wiring.py` holds its keys equal to
 #: `COGNITION_READ_CATALOGUE`, so a tool added to the catalogue without an
-#: audited line fails the gate). «Shadow writes nothing live» is a claim about
-#: EVERY tool the session holds, not about the write verbs it was built with:
-#: the blocker was a READ tool (`note_search`) that upserted `note_candidate`
-#: and bumped `nora_note_candidates_total{trigger="miss"}` on a miss, the
-#: table the live note curator reads. `tests/infra/test_a_cognition_sessions_
-#: read_tools_write_nothing.py` runs every wired tool through the real registry
-#: against real Postgres and asserts no non-cognition table gained a row.
+#: audited line fails the gate): a READ tool writes nothing, so a session's
+#: writes are only its own verbs'.
 #:
 #: Counters (`nora_tool_calls_total`, `nora_recall_total`, `nora_room_lookups_
 #: total`) are observability, read by a person and never by a decision, and are
@@ -108,10 +100,7 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
     "routine_read": "SQL read of derived presence; counters only. No write.",
     "note_read": "SQL read of a note and its head; its CAS anchor is a closure "
                  "local to the build. No write.",
-    "note_search": "SQL read of note bodies. ON A MISS it upserted `note_candidate` "
-                   "and counted `nora_note_candidates_total{trigger=miss}`: "
-                   "NEUTRALISED under `dream_adaptor == cognition` (no write, no "
-                   "count).",
+    "note_search": "SQL read of note bodies; counters only. No write.",
     "about": "Honcho `peer_card` + `representation` reads; counters only.",
     "ask_memory": "Honcho `chat` (dialectic reasoning, server side): a read verb; "
                   "what Honcho does inside it is not observable from this repo. "
@@ -273,23 +262,19 @@ class AgendaSkills:
 #: objective's resolved versions to name it.
 COGNITION_PRELUDE = "cognition-prelude"
 
-#: The Register skill (step 4 PR-1): the note and event judgement the replaced
-#: note-candidates pass had (30 §4), in `nora/dreamer/skills/`.
+#: The Register skill: the note, event and reminder judgement (30 §4), in
+#: `nora/dreamer/skills/`.
 REGISTER_SKILL = "cognition-register"
 
 #: Agenda kind -> the skill injected for it. ONE skill for every mapped kind, so
 #: every session that has an agenda reads the same system prompt and its prefix
 #: stays cached whichever kinds its agenda holds
-#: (`tests/unit/test_cognition_agenda_skills.py`).
-#:
-#: **`time` is NOT mapped, on purpose.** A mapped `time` kind switches the
-#: 07:00/00:00 floors on for session units (`floors_ready` in the composition,
-#: `WakeEvaluator`, M8, DEC-245), and the floors are the curator's job: the
-#: session has no verb that retires a note, so a floor would wake it to work it
-#: cannot do. It is mapped with the curation skill (cut-over step D).
-#: `social` and `play` have no producer yet.
+#: (`tests/unit/test_cognition_agenda_skills.py`). `time` is mapped: the daily
+#: floors wake a session that reviews the notebook (`note_retire`, `note_merge`)
+#: and decides what to raise. `social` and `play` have no producer yet.
 AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
     "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
+    "time": REGISTER_SKILL,
 })
 
 
@@ -351,31 +336,26 @@ class CognitionShutdown:
 
 
 def require_session_hook(
-    *, session_mode: str, runner: object | None, evaluator: object | None,
+    *, enabled: bool, runner: object | None, evaluator: object | None,
     session_units: Collection[str] | None = None,
 ) -> None:
-    """The boot check (#627 review, minor 4; #637 review, minor 1):
-    `session_mode = "shadow"` built a runner AND an evaluator that holds its
-    hook AND at least one unit a session can run for (`session_units`, the
-    units with a home room; `None` skips that half). Raises `RuntimeError` (the
-    composition root turns it into its `StartupError`) rather than run a
-    shadow week that records would-wakes and starts no session."""
-    if session_mode != "shadow":
+    """The boot check: `[cognition] enabled` built a runner AND an evaluator
+    that holds its hook AND at least one unit a session can run for
+    (`session_units`, the units with a home room; `None` skips that half).
+    Raises `RuntimeError` (the composition root turns it into its
+    `StartupError`) rather than boot a loop that wakes and runs nothing."""
+    if not enabled:
         return
     if session_units is not None and not session_units:
         raise RuntimeError(
-            "[cognition] session_mode = \"shadow\" but no unit can run a session: "
-            "none names a `home_room = true` room in policy.toml, so every wake "
-            "would be recorded and no session run",
+            "[cognition] enabled but no unit can run a session: none names a "
+            "`home_room = true` room in policy.toml",
         )
     if runner is None:
-        raise RuntimeError(
-            "[cognition] session_mode = \"shadow\" but no session runner was built",
-        )
+        raise RuntimeError("[cognition] enabled but no session runner was built")
     if evaluator is None or not getattr(evaluator, "has_wake_hook", False):
         raise RuntimeError(
-            "[cognition] session_mode = \"shadow\" but the wake evaluator holds no "
-            "session hook, so would-wakes would be recorded and no session run",
+            "[cognition] enabled but the wake evaluator holds no session hook",
         )
 
 
@@ -390,11 +370,8 @@ def units_with_home_rooms(
     units: Sequence[str], homes: Mapping[str, Any],
 ) -> tuple[list[str], list[str]]:
     """`(can_run_sessions, cannot)`: a unit with no home room cannot start a
-    session (the runner refuses it at startup, `check_home_rooms`). It stays in
-    the wake evaluator, which keeps recording its would-wakes as it does with
-    sessions off (they are the shadow week's evidence for the unit), and is
-    named, loudly, at boot and on a gauge rather than failing every wake or
-    vanishing from the record."""
+    session (the runner refuses it at startup, `check_home_rooms`), so the
+    evaluator does not wake it; it is named, loudly, at boot and on a gauge."""
     wakeable = [u for u in units if u in homes]
     return wakeable, [u for u in units if u not in homes]
 
@@ -423,12 +400,15 @@ def build_cognition_runner(
     metrics: Any,
     tools: DreamToolSource,
     instructions: Any,
-    dry_run_store: CognitionDryRunStore,
+    store: CognitionStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
-    note_head: Callable[[str, str], Awaitable[NoteHead | None]],
+    notes: Any,
+    events: Any,
+    standing: Any,
+    reminders: Any,
+    ai_peer: str,
     room_proactive: Callable[[str, str], bool],
-    requester_pending: Callable[[], Awaitable[int]],
     reminder_caps: ReminderCaps,
     open_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
@@ -447,7 +427,7 @@ def build_cognition_runner(
     budget: Any,
     result_caps: Mapping[str, int],
 ) -> Any:
-    """The shadow runner. Imported lazily: `LiveCognitionAgentRunner` (and
+    """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
     from nora.app.cognition_agent_runner import LiveCognitionAgentRunner
     from nora.app.cognition_session import CognitionSessionRunner
@@ -493,22 +473,16 @@ def build_cognition_runner(
     skills.resolved_for(sorted(skills.by_kind))
     home_rooms = _by_home_room(homes)
 
-    async def pending_reminds(unit: str) -> Any:
-        return await dry_run_store.pending_mirrored_reminds(
-            unit=unit, now_ms=int(clock() * 1000),
-        )
-
     async def open_events(unit: str, conversation_id: str) -> Sequence[Gathering]:
         return await open_events_in(conversation_id)
 
     async def prior(platform: str, conversation_id: str) -> StandingHead | None:
         return await standing_of(platform, conversation_id)
 
-    async def self_wakes(unit: str, since_ms: int) -> Any:
-        return await dry_run_store.pending_self_wakes(unit=unit, since_ms=since_ms)
-
     return CognitionSessionRunner(
-        dry_run_store=dry_run_store, stimulus_store=stimulus_store,
+        store=store, stimulus_store=stimulus_store,
+        notes=notes, events=events, standing=standing, reminders=reminders,
+        ai_peer=ai_peer,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,
@@ -517,17 +491,15 @@ def build_cognition_runner(
         person_known=person_known,
         doctrine_text=text, doctrine_sha256=sha, doctrine_source=doctrine,
         open_note_titles=note_titles, open_events=open_events,
-        prior_standing=prior, pending_self_wakes=self_wakes,
-        pending_mirrored_reminds=pending_reminds, session_mode="shadow",
+        prior_standing=prior,
         budget=budget, cooldown_seconds=cfg.cognition.cooldown_seconds,
         units=list(units), session_timeout_seconds=cfg.cognition.session_timeout_seconds,
         max_items=cfg.cognition.max_items, max_strikes=cfg.cognition.max_strikes,
         max_self_wakes=cfg.cognition.max_self_wakes,
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
-        note_head=note_head, room_proactive=room_proactive,
-        # The LIVE `remind` tool's own limits (`ReminderCaps`, from `[reminders]`),
-        # never a second set: the shadow refuses what the live path would.
-        requester_pending=requester_pending,
+        room_proactive=room_proactive,
+        # The tag `remind` tool's own limits (`ReminderCaps`, from `[reminders]`),
+        # never a second set.
         max_pending_per_requester=reminder_caps.max_pending_per_requester,
         remind_min_lead_seconds=reminder_caps.min_lead_seconds,
         remind_max_horizon_days=reminder_caps.max_horizon_days,

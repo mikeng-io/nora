@@ -42,8 +42,8 @@ from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.language.cognition_render import RenderBudget, render_agenda
 from nora.persons import Persons
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.unit.cognition_view import blocks, events, ids, items, named, rows, words
 
@@ -293,18 +293,17 @@ async def _none(*a: Any, **k: Any) -> Any:
 
 def _runner(
     agent: _Agent, grounder: Any, **kw: Any,
-) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionDryRunStore]:
-    ledger = InMemoryCognitionDryRunStore()
+) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionStore]:
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     stimuli.seed_wake("u", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
+        store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=lambda unit, rooms: [],
         read_only_tools=frozenset(),                # NO record_query, no read tool at all
         skill_text_for=lambda kinds: "", grounder=grounder,
         doctrine_text="D", doctrine_sha256="sha",
         open_note_titles=_none, open_events=_none, prior_standing=_none,
-        pending_self_wakes=_none, pending_mirrored_reminds=_none, session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
         max_items=kw.pop("max_items", 12), max_strikes=3, clock=lambda: NOW / 1000, tz=HK,

@@ -70,13 +70,6 @@ async def test_the_exit_code_is_the_verdict_a_check_script_can_and_on(
     assert f"verdict: {verdict}" in out
 
 
-async def test_a_failure_says_which_threshold_and_an_error_says_which_section(
-    monkeypatch, capsys,
-):
-    _, out, _ = await _run(monkeypatch, capsys, kind="fail")
-    assert "FAIL stalled" in out and "5.6 h old" in out
-    _, out, _ = await _run(monkeypatch, capsys, kind="error")
-    assert "ERROR unreadable: refusals could not be read (ProgrammingError)" in out
 
 
 async def test_json_is_one_parseable_object_with_the_verdict_and_the_exit_code(
@@ -196,8 +189,16 @@ async def test_a_bad_window_names_the_flag_that_was_bad(monkeypatch, capsys, fla
 
 
 async def test_the_inert_kinds_reach_the_read(monkeypatch, capsys):
-    """Production ships no skill for `time`, so the command reads a `time` stimulus as
-    what the evaluator reads it as: one no wake can claim."""
+    """The command reads a stimulus kind as the evaluator reads it. Production now
+    ships a skill for `time` (`AGENDA_SKILLS`), so a `time` stimulus wakes a session
+    and NO kind is inert; with the skill gone the same read must name `time`."""
+    from nora.app import cognition_wiring
+
+    assert cognition_wiring.floors_ready() is True
+    _, _, seen = await _run(monkeypatch, capsys)
+    assert seen["inert_kinds"] == frozenset()
+
+    monkeypatch.setattr(cognition_wiring, "AGENDA_SKILLS", {})
     _, _, seen = await _run(monkeypatch, capsys)
     assert seen["inert_kinds"] == {"time"}
 

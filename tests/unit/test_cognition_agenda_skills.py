@@ -72,14 +72,14 @@ from nora.domain.note_body import (
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.instructions.dreamer import DreamerInstructions
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.objectives import SHIPPED_DREAMER, shipped_objectives
 from tests.unit.test_wake_evaluator import _floor_setup
 
 NOW = 1_800_000_000_000
-MAPPED = ("message", "rollup", "self")
+MAPPED = ("message", "rollup", "self", "time")
 #: The bound the skill is written to (the PR-1 spec): a few thousand characters of
 #: cached prefix, against a session's tens of thousands of input tokens.
 MAX_SKILL_CHARS = 7_000
@@ -112,23 +112,23 @@ def test_the_digest_is_over_exactly_the_text_injected():
     assert skill.instructions.startswith("## What belongs in the notebook")
 
 
-# -- (b) `time` stays unmapped and the floors stay off ---------------------------------
+# -- (b) `time` is mapped, so the daily floors wake a notebook review --------------------
 
-def test_time_injects_nothing():
+def test_time_injects_the_register_skill():
     skills = production_skills()
-    assert "time" not in skills.by_kind
-    assert skills.text_for(["time"]) == "" and skills.versions_for(["time"]) == {}
+    assert skills.by_kind["time"] == REGISTER_SKILL
+    assert set(skills.versions_for(["time"])) == {REGISTER_SKILL}
 
 
-async def test_the_floors_stay_off_for_a_session_unit_under_the_production_table():
+async def test_the_floors_are_raised_for_a_session_unit_under_the_production_table():
     """The composition hands the evaluator `"time" in agenda_skills.by_kind`; under
-    the production table that is False, and a session unit raises no floor."""
+    the production table that is True, and a session unit's floor is raised."""
     source = inspect.getsource(composition)
     assert "agenda_skills = cognition_agenda_skills(dreamer_instructions)" in source
     assert 'floors_ready="time" in agenda_skills.by_kind' in source
     ev, store, _clock = _floor_setup(floors_ready="time" in production_skills().by_kind)
-    assert await ev.tick() == []
-    assert store.stimuli == [] and store.wakes == []
+    await ev.tick()
+    assert [s.kind for s in store.stimuli] == ["time"]
 
 
 # -- (c) one system prompt for every agenda ---------------------------------------------
@@ -181,14 +181,13 @@ def build_runner(
 
     loaded = shipped_objectives().for_objective("cognition")
     return CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimuli, agent_runner=spy,
+        store=store, stimulus_store=stimuli, agent_runner=spy,
         home_rooms={"u": Room("signal", "room-a")}, read_tools_for=lambda u, r: [],
         skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
         skills_for=skills.resolved_for,
         grounder=grounder or EmptyGrounder(), doctrine_text=loaded.text,
         doctrine_sha256=loaded.sha256,
         open_note_titles=none, open_events=none, prior_standing=no_head,
-        pending_self_wakes=none, pending_mirrored_reminds=none, session_mode="shadow",
         budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
         cooldown_seconds=300, units=("u",), session_timeout_seconds=900.0, max_items=12,
         max_strikes=3,
@@ -217,7 +216,7 @@ async def run_one_session(store: Any) -> _Spy:
 
 
 async def test_the_session_row_records_the_skill_it_ran_with():
-    store = InMemoryCognitionDryRunStore()
+    store = InMemoryCognitionStore()
     spy = await run_one_session(store)
     skill = _skill()
     assert [s.skill_versions for _id, s, _at in store.sessions] == [
@@ -229,7 +228,7 @@ async def test_the_session_row_records_the_skill_it_ran_with():
 async def test_the_probe_an_eval_arm_drives_records_the_skill_it_injects():
     """`tool_selection_cognition` runs through `probe`, which injected the skill and
     recorded `skill_versions = {}`: an eval arm's rows would have named no skill."""
-    store, spy = InMemoryCognitionDryRunStore(), _Spy()
+    store, spy = InMemoryCognitionStore(), _Spy()
     await build_runner(store, spy, InMemoryStimulusStore()).probe(
         unit="u", summary="a plan is being made", now_ms=NOW,
     )
@@ -287,13 +286,19 @@ async def real_names() -> tuple[set[str], str, str]:
     and the skill exactly as the session's system prompt carried them."""
     from nora.domain.cognition_session import CLOSE_REASONS
 
-    spy = await run_one_session(InMemoryCognitionDryRunStore())
+    spy = await run_one_session(InMemoryCognitionStore())
     specs = {t.tool_name: t.tool_spec for t in as_strands_tools(spy.tools)}
     assert {"note_create", "event_revise", "standing_revise", "wake_at", "close"} <= set(specs), (
         "the verbs were built"
     )
     verbs = set(specs)
-    params = {p for spec in specs.values() for p in spec["inputSchema"]["json"]["properties"]}
+    props = [
+        (p, d) for spec in specs.values()
+        for p, d in spec["inputSchema"]["json"]["properties"].items()
+    ]
+    params = {p for p, _ in props} | {
+        v for _, d in props for v in d.get("enum", ()) if isinstance(v, str)
+    }
     names = (set(CLOSE_REASONS) - {"struck"}) | FIXED_TOKENS | verbs | params | set(
         COGNITION_READ_CATALOGUE,
     )
@@ -327,7 +332,7 @@ async def test_the_name_scan_flags_an_invented_verb_backticked_or_not():
     real, _prelude, _skill = await real_names()
     assert unreal_names("then event_delete the old one", real) == {"event_delete"}
     assert unreal_names("then `event_delete` the old one", real) == {"event_delete"}
-    assert unreal_names("closes `no_change` or `note_retire`", real) == {"note_retire"}
+    assert unreal_names("closes `no_change` or `note_delete`", real) == {"note_delete"}
     assert unreal_names("`note_create` and `anchor_date`", real) == set()
 
 
@@ -577,7 +582,7 @@ async def test_a_reload_during_grounding_leaves_the_digest_over_the_text_the_mod
 
     moving = _MovingSkills()
     skills = AgendaSkills(by_kind=AGENDA_SKILLS, resolve=moving.resolve)
-    store, spy, stimuli = InMemoryCognitionDryRunStore(), _Spy(), InMemoryStimulusStore()
+    store, spy, stimuli = InMemoryCognitionStore(), _Spy(), InMemoryStimulusStore()
     stimuli.seed_wake("u", 1)
     runner = build_runner(
         store, spy, stimuli, skills=skills, grounder=_ReloadingGrounder(moving),
@@ -595,7 +600,7 @@ async def test_a_mapped_skill_deleted_by_a_hot_reload_fails_the_wake_cleanly():
     wake (cause `infra`: the unit backs off, no message is struck), names the skill,
     and the model never runs without it."""
     skills = AgendaSkills(by_kind=AGENDA_SKILLS, resolve=lambda name: None)
-    store, spy, stimuli = InMemoryCognitionDryRunStore(), _Spy(), InMemoryStimulusStore()
+    store, spy, stimuli = InMemoryCognitionStore(), _Spy(), InMemoryStimulusStore()
     stimuli.seed_wake("u", 1)
     runner = build_runner(store, spy, stimuli, skills=skills)
     with pytest.raises(SkillNotInstalledError, match=REGISTER_SKILL):
@@ -650,8 +655,9 @@ def _build_with(instructions: Any, skills: AgendaSkills) -> Any:
     return build_cognition_runner(
         cfg=stub, models=stub, retry=stub, metrics=Metrics(),
         tools=SimpleNamespace(tool_param_names=lambda: {}),
-        instructions=instructions, dry_run_store=stub, stimulus_store=stub,
-        note_titles=stub, note_head=stub, room_proactive=stub, requester_pending=stub,
+        instructions=instructions, store=stub, stimulus_store=stub,
+        note_titles=stub, room_proactive=stub, notes=stub, events=stub, standing=stub,
+        reminders=stub, ai_peer="nora",
         reminder_caps=stub, open_events_in=stub, standing_of=stub, homes={}, units=(),
         skills=skills, grounder=stub, render_budget=stub,
         surface=SimpleNamespace(wired=frozenset()), clock=lambda: 0.0, model_id="m",
@@ -683,7 +689,7 @@ def _without_prelude(tmp_path: Path, how: str) -> DreamerInstructions:
         assert how == "elsewhere"            # an empty list is the loader's own refusal
         text = path.read_text(encoding="utf-8")
         assert "applies_to: [cognition]" in text
-        path.write_text(text.replace("applies_to: [cognition]", "applies_to: [note-merge]"),
+        path.write_text(text.replace("applies_to: [cognition]", "applies_to: [culture]"),
                         encoding="utf-8")
     return DreamerInstructions(root, metrics=Metrics())
 

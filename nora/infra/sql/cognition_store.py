@@ -1,6 +1,5 @@
-"""`CognitionDryRunStore` over SQLAlchemy Core: `cognition_session`,
-`cognition_session_close` and `cognition_would_write`
-(design/cognition-loop/70-migration.md step 3a).
+"""`CognitionStore` over SQLAlchemy Core: `cognition_session`,
+`cognition_session_close` and `cognition_self_wake`.
 
 All three tables are append-only (`nora.infra.sql.history.APPEND_ONLY`):
 every method here INSERTs once and never updates or deletes a row.
@@ -17,20 +16,15 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_pace import PaceRow, PendingSelfWake, fold_self_wakes
-from nora.domain.cognition_remind import MirrorRow, PendingMirroredRemind, fold_pending_reminds
 from nora.domain.ports import (
     NewCognitionPace,
-    NewCognitionRemindMirror,
     NewCognitionSession,
     NewCognitionSessionClose,
-    NewCognitionWouldWrite,
 )
 from nora.infra.sql.schema import (
-    COGNITION_REMIND_MIRROR,
     COGNITION_SELF_WAKE,
     COGNITION_SESSION,
     COGNITION_SESSION_CLOSE,
-    COGNITION_WOULD_WRITE,
 )
 from nora.infra.sql.stimuli import live_stimulus
 
@@ -57,8 +51,8 @@ def _json(value: dict[str, Any] | list[Any]) -> dict[str, Any] | list[Any]:
     return value
 
 
-class SqlCognitionDryRunStore:
-    """Satisfies `nora.domain.ports.CognitionDryRunStore`."""
+class SqlCognitionStore:
+    """Satisfies `nora.domain.ports.CognitionStore`."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -109,32 +103,6 @@ class SqlCognitionDryRunStore:
             row = (await conn.execute(stmt)).one()
         return int(row.id)
 
-    async def record_would_write(
-        self, *, write: NewCognitionWouldWrite, recorded_at_ms: int,
-    ) -> int:
-        stmt = (
-            sa.insert(COGNITION_WOULD_WRITE)
-            .values(
-                session_id=write.session_id,
-                unit=write.unit,
-                tier=write.tier,
-                verb=write.verb,
-                platform=write.platform,
-                conversation_id=write.conversation_id,
-                args=_json(write.args),
-                outcome=write.outcome,
-                refusal_reason=write.refusal_reason,
-                refusal_detail=write.refusal_detail,
-                candidate=None if write.candidate is None else _json(write.candidate),
-                base_revision_id=write.base_revision_id,
-                recorded_at=_at(recorded_at_ms),
-            )
-            .returning(COGNITION_WOULD_WRITE.c.id)
-        )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).one()
-        return int(row.id)
-
     async def record_pace(
         self, *, pace: NewCognitionPace, recorded_at_ms: int,
     ) -> int:
@@ -157,33 +125,6 @@ class SqlCognitionDryRunStore:
                 recorded_at=_at(recorded_at_ms),
             )
             .returning(COGNITION_SELF_WAKE.c.id)
-        )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).one()
-        return int(row.id)
-
-    async def record_remind_mirror(
-        self, *, mirror: NewCognitionRemindMirror, recorded_at_ms: int,
-    ) -> int:
-        stmt = (
-            sa.insert(COGNITION_REMIND_MIRROR)
-            .values(
-                session_id=mirror.session_id,
-                unit=mirror.unit,
-                verb=mirror.verb,
-                reminder_ref=mirror.reminder_ref,
-                platform=mirror.platform,
-                conversation_id=mirror.conversation_id,
-                intent=mirror.intent,
-                subject_rows=_json(list(mirror.subject_rows)),
-                at_ms=mirror.at_ms,
-                why=mirror.why,
-                outcome=mirror.outcome,
-                refusal_reason=mirror.refusal_reason,
-                refusal_detail=mirror.refusal_detail,
-                recorded_at=_at(recorded_at_ms),
-            )
-            .returning(COGNITION_REMIND_MIRROR.c.id)
         )
         async with self._engine.begin() as conn:
             row = (await conn.execute(stmt)).one()
@@ -227,33 +168,6 @@ class SqlCognitionDryRunStore:
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
-
-    async def pending_mirrored_reminds(
-        self, *, unit: str, now_ms: int,
-    ) -> Sequence[PendingMirroredRemind]:
-        t = COGNITION_REMIND_MIRROR
-        due = sa.select(t.c.reminder_ref).where(
-            t.c.unit == unit, t.c.outcome == "recorded",
-            t.c.verb.in_(("remind", "remind_move")), t.c.at_ms >= now_ms,
-            t.c.reminder_ref.isnot(None),
-        )
-        stmt = sa.select(
-            t.c.reminder_ref, t.c.verb, t.c.outcome, t.c.platform, t.c.conversation_id,
-            t.c.subject_rows, t.c.at_ms, t.c.session_id,
-        ).where(
-            t.c.unit == unit, t.c.outcome == "recorded", t.c.reminder_ref.in_(due),
-        ).order_by(t.c.id)
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return fold_pending_reminds([
-            MirrorRow(
-                reminder_ref=r.reminder_ref, verb=r.verb, outcome=r.outcome,
-                platform=r.platform, conversation_id=r.conversation_id,
-                subject_rows=tuple(_rows(r.subject_rows)), at_ms=r.at_ms,
-                session_id=r.session_id,
-            )
-            for r in rows
-        ], now_ms=now_ms)
 
     async def aclose(self) -> None:
         await self._engine.dispose()

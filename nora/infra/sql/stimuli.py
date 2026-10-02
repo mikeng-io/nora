@@ -117,7 +117,7 @@ def live_stimulus(stimulus_id: Any) -> Any:
     """THE retraction predicate: the stimulus `stimulus_id` names has not been
     taken back. Every read that can surface a stimulus applies it, from this
     one function: the pending read's three branches, the carry side door, and
-    the ledger's pending self-wakes (`nora.infra.sql.cognition_dry_run`). One
+    the ledger's pending self-wakes (`nora.infra.sql.cognition_store`). One
     probe of `uq_stimulus_retraction_stimulus`. The in-memory double's twin is
     `nora.testing.stimuli.live_stimulus`."""
     return ~sa.exists().where(STIMULUS_RETRACTION.c.stimulus_id == stimulus_id)

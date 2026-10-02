@@ -24,8 +24,8 @@ from nora.app.cognition_session import (
 )
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 
 NOW = 1_800_000_000_000
@@ -47,10 +47,21 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
     ),
     "note_update": (
         {"note_id": ("string", None), "body": ("string", None),
-         "parent_revision_id": ("string", None),
-         "entity_ids": ("array", {"type": "string"}), "room": ("string", None),
+         "parent_revision_id": ("string", None), "room": ("string", None),
          "item": ("integer", None)},
         {"note_id", "body", "parent_revision_id"},
+    ),
+    "note_retire": (
+        {"note_id": ("string", None),
+         "reason": ("string", ["settled", "anchor_passed"]),
+         "base_revision_id": ("string", None), "room": ("string", None),
+         "item": ("integer", None)},
+        {"note_id", "reason"},
+    ),
+    "note_merge": (
+        {"survivor_id": ("string", None), "duplicate_id": ("string", None),
+         "body": ("string", None), "room": ("string", None), "item": ("integer", None)},
+        {"survivor_id", "duplicate_id", "body"},
     ),
     "event_propose": (
         {"title": ("string", None),
@@ -104,10 +115,10 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
         {"wake_id": ("string", None), "why": ("string", None)}, {"wake_id", "why"},
     ),
     "remind": (
-        {"intent": ("string", ["tell", "ask"]),
+        {"intent": ("string", ["tell", "ask"]), "text": ("string", None),
          "subject_rows": ("array", {"type": "string"}), "at": ("string", None),
          "room": ("string", None)},
-        {"intent", "subject_rows", "at"},
+        {"intent", "text", "subject_rows", "at"},
     ),
     "remind_move": (
         {"reminder_id": ("string", None), "at": ("string", None),
@@ -144,18 +155,16 @@ def _const(value: Any) -> Any:
 @pytest.fixture
 async def specs() -> dict[str, dict[str, Any]]:
     spy = _Spy()
-    ledger = InMemoryCognitionDryRunStore()
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     stimuli.seed_wake("u", 1)
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli,
+        store=ledger, stimulus_store=stimuli,
         agent_runner=spy, home_rooms={"u": Room("signal", "home")},
         read_tools_for=lambda unit, rooms: [], skill_text_for=lambda kinds: "",
         grounder=EmptyGrounder(),
         doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
         open_events=_const(()), prior_standing=_const(None),
-        pending_self_wakes=_const(()), pending_mirrored_reminds=_const(()),
-        session_mode="shadow",
         budget=AdaptorBudget(turns=1, total_tokens=1, output_tokens=1, timeout_seconds=5),
         cooldown_seconds=300, units=("u",), session_timeout_seconds=900.0,
         max_items=12, max_strikes=3,

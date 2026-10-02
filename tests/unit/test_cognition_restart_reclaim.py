@@ -81,7 +81,7 @@ async def _say(store: InMemoryStimulusStore, clock: Clock, n: int = 1) -> list[i
 
 async def _view(store: InMemoryStimulusStore, clock: Clock) -> UnitView:
     view = await store.view(
-        unit="u1", mode="shadow", now_ms=clock.ms, limit=100,
+        unit="u1", mode="live", now_ms=clock.ms, limit=100,
         stale_before_ms=clock.ms - int(POLICY.session_timeout_seconds * 1000),
     )
     return replace(view, tracked=True)      # what the evaluator's own read sets

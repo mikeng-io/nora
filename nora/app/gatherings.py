@@ -29,12 +29,14 @@ from nora.domain.gatherings import (
     TERMINAL_STATUSES,
     EventCitation,
     EventEvidence,
+    FieldMeta,
     Gathering,
     GatheringStatus,
     GatheringStore,
     RSVPResponse,
     VenueCandidate,
     VenueSuggestions,
+    merge_field_meta,
     still_open_gatherings,
 )
 from nora.domain.gatherings import (
@@ -122,6 +124,22 @@ def _tag_evidence(
     )
 
 
+def _stated(
+    event: Gathering, reasoning: str | None, confidence: str | None,
+    field_meta: tuple[FieldMeta, ...],
+) -> Gathering:
+    """`event` with what a write states of how it was reached: the fields it
+    restates replace theirs (`merge_field_meta`), the rest keep what they
+    carried. Nothing stated (the tag path) leaves the row as it was."""
+    if not field_meta and reasoning is None and confidence is None:
+        return event
+    return replace(
+        event, reasoning=reasoning or event.reasoning,
+        confidence=confidence or event.confidence,
+        field_meta=merge_field_meta(event.field_meta, field_meta),
+    )
+
+
 class GatheringService:
     def __init__(
         self,
@@ -155,8 +173,16 @@ class GatheringService:
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
         unit_id: str = "", message_ids: Sequence[int] = (),
+        status: GatheringStatus = GatheringStatus.PROPOSED,
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
-        """Spec §3.1: the CALLER (the `create_event` tool) is expected to
+        """`status`, `reasoning`, `confidence` and `field_meta` are what a
+        Cognition session states with its write (40 §4: how each field was
+        reached, an abduced one rendered as a question); the tag path leaves
+        them at their defaults.
+
+        Spec §3.1: the CALLER (the `create_event` tool) is expected to
         have already checked `list_events(status=PROPOSED)` and decided a
         new event is genuinely wanted — this method does not silently
         merge or refuse on its behalf. It DOES still raise
@@ -194,10 +220,13 @@ class GatheringService:
             venue_price_level="",
             venue_maps_url=None,
             venue_resolved_at=None,
-            status=GatheringStatus.PROPOSED,
+            status=status,
             reminder_id=None,
             created_at=now,
             unit_id=unit_id,
+            reasoning=reasoning,
+            confidence=confidence,
+            field_meta=field_meta,
         )
         if when is not None:
             event = await self._link_reminder(
@@ -223,6 +252,8 @@ class GatheringService:
         when: datetime | None = None, venue_text: str | None = None,
         person_names: frozenset[str] | None = None, platform: str,
         base_revision_id: UUID | None = None, message_ids: Sequence[int] = (),
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
@@ -244,6 +275,7 @@ class GatheringService:
             updated = await self._resolve_venue(
                 updated, venue_text, now=self._now(), person_names=person_names,
             )
+        updated = _stated(updated, reasoning, confidence, field_meta)
         # 10-tiers.md §3: "a stale [base_revision_id] is refused `stale_base`,
         # with the current row" — `base_revision_id` (when the caller passes
         # one; internal callers that predate the event verbs do not) is
@@ -263,6 +295,8 @@ class GatheringService:
         self, *, event_id: UUID, conversation_id: str, status: GatheringStatus,
         base_revision_id: UUID | None = None, platform: str | None = None,
         message_ids: Sequence[int] = (),
+        reasoning: str | None = None, confidence: str | None = None,
+        field_meta: tuple[FieldMeta, ...] = (),
     ) -> Gathering:
         """The general lifecycle move `event_set_status` backs (40-register.md
         §3): `cancel_event` is `set_event_status(status=CANCELLED)` restated,
@@ -277,7 +311,7 @@ class GatheringService:
             await self._reminders.cancel(
                 current.reminder_id, conversation_id=current.conversation_id,
             )
-        updated = replace(current, status=status)
+        updated = _stated(replace(current, status=status), reasoning, confidence, field_meta)
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
             evidence=None if platform is None else _tag_evidence(

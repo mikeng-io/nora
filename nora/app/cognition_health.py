@@ -5,9 +5,8 @@ report, the thresholds and the verdict).
 **Read-only: plain SELECTs, nothing is written, no model is called.** It answers
 from durable rows because the Prometheus series that would answer are reset by
 every restart (2 to 24 a day) and a rare counter reads empty for ever. Counts,
-ages and rule names only: a session's `detail` is reduced to a restart flag IN SQL
-and never fetched, a refusal is its `refusal_reason` (a code constant) and never its
-`refusal_detail`, and no stimulus ref, room id or person id is selected.
+ages only: a session's `detail` is reduced to a restart flag IN SQL and never
+fetched, and no stimulus ref, room id or person id is selected.
 
 **Fail closed per section.** Each read is its own `_try`: a section that cannot be
 read lands in `HealthReport.errors` with the exception CLASS name, and the verdict
@@ -28,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.cognition_health import (
     HealthReport,
-    RefusalRule,
     SessionCount,
     TokenStats,
     UnitState,
@@ -38,7 +36,6 @@ from nora.infra.sql.schema import (
     COGNITION_SESSION,
     COGNITION_WAKE,
     COGNITION_WAKE_OUTCOME,
-    COGNITION_WOULD_WRITE,
     DEPLOY_REVISION,
     STIMULUS,
 )
@@ -148,7 +145,7 @@ async def read_units(
     out: list[UnitState] = []
     for name in sorted(n for n in names if unit is None or n == unit):
         view = await store.view(
-            unit=name, mode="shadow", now_ms=now_ms - int(SETTLE_SECONDS * 1000),
+            unit=name, mode="live", now_ms=now_ms - int(SETTLE_SECONDS * 1000),
             limit=PENDING_LIMIT,
             stale_before_ms=now_ms - int(session_timeout_seconds * 1000),
         )
@@ -211,29 +208,6 @@ async def read_tokens(
     )
 
 
-async def read_refusals(
-    engine: AsyncEngine, *, since_ms: int, until_ms: int, unit: str | None,
-) -> tuple[int, tuple[RefusalRule, ...]]:
-    """`(verb calls, refusals by (tier, rule))` in the window. Rule NAMES only."""
-    t = COGNITION_WOULD_WRITE
-    base = (t.c.recorded_at >= _at(since_ms), t.c.recorded_at < _at(until_ms))
-    calls = sa.select(sa.func.count()).where(*base)
-    refused = sa.select(t.c.tier, t.c.refusal_reason, sa.func.count().label("n")).where(
-        *base, t.c.outcome == "refused",
-    ).group_by(t.c.tier, t.c.refusal_reason)
-    if unit is not None:
-        calls = calls.where(t.c.unit == unit)
-        refused = refused.where(t.c.unit == unit)
-    async with engine.connect() as conn:
-        total = int((await conn.execute(calls)).scalar_one())
-        rows = (await conn.execute(refused)).all()
-    return total, tuple(
-        RefusalRule(tier=r.tier, rule=r.refusal_reason or "unnamed", count=int(r.n),
-                    share=int(r.n) / total if total else 0.0)
-        for r in rows
-    )
-
-
 async def read_process_starts(
     engine: AsyncEngine, *, since_ms: int, until_ms: int,
 ) -> tuple[int, int]:
@@ -245,19 +219,6 @@ async def read_process_starts(
     async with engine.connect() as conn:
         r = (await conn.execute(stmt)).one()
     return int(r.n), int(r.builds)
-
-
-async def read_reconcile(engine: AsyncEngine) -> str:
-    """The live ledger's reconcile needs `cognition_revert`, which the cut-over's
-    revert step builds. Until then it cannot be computed, and says so: an absent
-    ledger is «unavailable», never a clean zero, and it is not part of the verdict."""
-    async with engine.connect() as conn:
-        present = (await conn.execute(
-            sa.text("select to_regclass('public.cognition_revert') is not null"),
-        )).scalar_one()
-    if not present:
-        return "unavailable (no live ledger: nothing is committed live yet)"
-    return "unavailable (the ledger exists; its reconcile is read by `nora cognition revert`)"
 
 
 async def run_health(
@@ -281,19 +242,15 @@ async def run_health(
         inert_kinds=inert_kinds))
     tokens = await section("tokens", read_tokens(
         engine, since_ms=since_ms, until_ms=until_ms, unit=unit))
-    refusals = await section("refusals", read_refusals(
-        engine, since_ms=since_ms, until_ms=until_ms, unit=unit))
     starts = await section("process starts", read_process_starts(
         engine, since_ms=since_ms, until_ms=until_ms))
-    reconcile = await section("reconcile", read_reconcile(engine))
     return HealthReport(
         since_ms=since_ms, until_ms=until_ms, now_ms=now_ms, unit=unit,
         sessions=sessions or (), units=units or (),
         open_wakes=open_wakes[0] if open_wakes else 0,
         expired_open_wakes=open_wakes[1] if open_wakes else 0,
-        tokens=tokens, verb_calls=refusals[0] if refusals else 0,
-        refusals=refusals[1] if refusals else (),
+        tokens=tokens,
         process_starts=starts[0] if starts else 0,
         distinct_builds=starts[1] if starts else 0,
-        reconcile=reconcile or "unavailable (not read)", errors=tuple(errors),
+        errors=tuple(errors),
     )

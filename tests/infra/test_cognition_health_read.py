@@ -17,7 +17,6 @@ the report.
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -31,13 +30,11 @@ from nora.domain.cognition_health import (
     HealthReport,
     exit_code,
     judge,
-    render_text,
-    report_json,
 )
 from nora.domain.ports import NewWakeOutcome
 from nora.domain.stimuli import NewStimulus, NewWake, WakeGuard, restart_detail
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import COGNITION_SESSION, COGNITION_WOULD_WRITE
+from nora.infra.sql.schema import COGNITION_SESSION
 from nora.infra.sql.stimuli import SqlStimulusStore
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -79,10 +76,10 @@ async def _session(
     tokens: tuple[int, int, int] | None = None, tracked: bool = True,
 ) -> int:
     """A wake, its session row and (unless `outcome` is None) its outcome."""
-    view = await store.view(unit=unit, mode="shadow", now_ms=at, limit=10)
+    view = await store.view(unit=unit, mode="live", now_ms=at, limit=10)
     last = view.last_wake
     wake = await store.record_wake(wake=NewWake(
-        unit=unit, mode="shadow", reason="settled", from_stimulus_id=0,
+        unit=unit, mode="live", reason="settled", from_stimulus_id=0,
         through_stimulus_id=through, stimulus_count=1, eligible_count=1,
         oldest_pending_ms=at, cut_cooldown=False, at_ms=at, tracked=tracked,
     ), recorded_at_ms=at, guard=WakeGuard(
@@ -92,7 +89,7 @@ async def _session(
     assert wake is not None
     async with engine.begin() as conn:
         sid = (await conn.execute(sa.insert(COGNITION_SESSION).values(
-            unit=unit, mode="shadow", started_at_ms=at, from_stimulus_id=1,
+            unit=unit, mode="live", started_at_ms=at, from_stimulus_id=1,
             through_stimulus_id=through, situation={}, agenda={"items": []},
             wake_id=wake, recorded_at=datetime.fromtimestamp(at / 1000, tz=UTC),
         ).returning(COGNITION_SESSION.c.id))).scalar_one()
@@ -249,62 +246,11 @@ async def test_a_wake_with_no_outcome_past_the_session_timeout_is_a_defect(engin
 # ---- counts only ------------------------------------------------------------------------
 
 
-async def test_no_row_text_room_person_or_ref_reaches_the_report(engine):
-    store = SqlStimulusStore(engine)
-    await _stimulus(store, "alpha", NOW - HOUR)
-    await _session(engine, store, "alpha", NOW - 3 * HOUR, "failed", detail=f"Boom: {CANARY}")
-    sid = await _session(engine, store, "alpha", NOW - 2 * HOUR, "closed")
-    async with engine.begin() as conn:
-        await conn.execute(sa.insert(COGNITION_WOULD_WRITE).values(
-            session_id=sid, unit="alpha", tier="note", verb="note_create", platform="signal",
-            conversation_id=f"room-{CANARY}", args={"title": CANARY}, outcome="refused",
-            refusal_reason="cites_nora", refusal_detail=f"the body said {CANARY}",
-            recorded_at=_at(NOW - HOUR),
-        ))
-    report = await _health(engine)
-    text = "\n".join(render_text(report, iso=ISO)) + json.dumps(report_json(report, iso=ISO))
-    assert CANARY not in text
-    assert "cites_nora" in text and report.verb_calls == 1       # positive control: it read the row
 
 
 # ---- the sections -----------------------------------------------------------------------
 
 
-async def test_tokens_refusals_and_process_starts_are_read(engine):
-    store = SqlStimulusStore(engine)
-    await _session(
-        engine, store, "alpha", NOW - 5 * HOUR, "closed", tokens=(100_000, 2_000, 80_000),
-    )
-    sid = await _session(engine, store, "alpha", NOW - 4 * HOUR, "closed",
-                         tokens=(60_000, 1_000, 30_000))
-    await _session(engine, store, "alpha", NOW - 3 * HOUR, "cancelled",
-                   detail=restart_detail("x"))                      # no usage: unread, not zero
-    async with engine.begin() as conn:
-        for reason in ("cites_nora", "cites_nora", "stale_base"):
-            await conn.execute(sa.insert(COGNITION_WOULD_WRITE).values(
-                session_id=sid, unit="alpha", tier="note", verb="note_create", platform="signal",
-                conversation_id="r", args={}, outcome="refused", refusal_reason=reason,
-                recorded_at=_at(NOW - HOUR),
-            ))
-        await conn.execute(sa.insert(COGNITION_WOULD_WRITE).values(
-            session_id=sid, unit="alpha", tier="note", verb="note_create", platform="signal",
-            conversation_id="r", args={}, outcome="would_commit", candidate={"title": "t"},
-            recorded_at=_at(NOW - HOUR),
-        ))
-        for k, sha in enumerate(("a", "a", "b")):
-            await conn.execute(sa.text(
-                "insert into deploy_revision (started_at, manifest_status, git_sha) "
-                "values (:at, 'absent', :sha)"
-            ), {"at": datetime.fromtimestamp((NOW - (k + 1) * HOUR) / 1000, tz=UTC), "sha": sha})
-    report = await _health(engine)
-    tokens = report.tokens
-    assert tokens is not None and (tokens.with_usage, tokens.without_usage) == (2, 1)
-    assert (tokens.input_mean, tokens.input_max, tokens.output_max) == (80_000, 100_000, 2_000)
-    assert tokens.cache_read_max == 80_000 and tokens.cache_share == pytest.approx(110 / 160)
-    assert report.verb_calls == 4
-    assert {(r.rule, r.count) for r in report.refusals} == {("cites_nora", 2), ("stale_base", 1)}
-    assert (report.process_starts, report.distinct_builds) == (3, 2)
-    assert "unavailable" in report.reconcile
 
 
 async def test_pending_is_counted_per_unit_and_kind_by_the_evaluators_own_read(engine):
@@ -348,28 +294,8 @@ async def test_a_session_a_wake_claimed_does_not_leave_its_stimuli_pending(engin
     assert _verdict(report) == ("PASS", [])
 
 
-async def test_a_section_that_cannot_be_read_is_an_error_naming_only_its_class(engine):
-    store = SqlStimulusStore(engine)
-    await _session(engine, store, "alpha", NOW - HOUR, "closed")
-    async with engine.begin() as conn:
-        await conn.execute(sa.text("drop table cognition_would_write cascade"))
-    report = await _health(engine)
-    assert [s for s, _ in report.errors] == ["refusals"]
-    level, codes = _verdict(report)
-    assert (level, codes) == ("ERROR", ["unreadable"])
-    assert exit_code(level) == 2
-    assert "ProgrammingError" in "\n".join(render_text(report, iso=ISO))
-    assert "cognition_would_write" not in "\n".join(render_text(report, iso=ISO))
 
 
-async def test_a_fail_outranks_an_error(engine):
-    store = SqlStimulusStore(engine)
-    await _stimulus(store, "alpha", NOW - 6 * HOUR)
-    await _session(engine, store, "beta", NOW - HOUR, "closed")
-    async with engine.begin() as conn:
-        await conn.execute(sa.text("drop table cognition_would_write cascade"))
-    level, codes = _verdict(await _health(engine))
-    assert level == "FAIL" and codes[:1] == ["unreadable"] and "stalled" in codes
 
 
 async def test_days_are_counted_in_the_cognition_zone(engine):

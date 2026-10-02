@@ -2599,7 +2599,8 @@ NOTE_CANDIDATE = sa.Table(
     # (design/dreamer-agent-loop/33 §4, issue #98). `miss` is the negative
     # cache below, unchanged; `create` is a full note proposal the
     # `note-candidates` adaptor staged for the deterministic gate to decide
-    # create/update/refuse over (`nora.language.note_candidates`). Existing
+    # create/update/refuse over (`nora.language.note_candidates`; both deleted
+    # 2026-10-03, DEC-277 — the table is kept as data, nothing writes it). Existing
     # rows are all `miss`, via the column default — nothing to backfill.
     sa.Column("kind", sa.Text, nullable=False, server_default=sa.text("'miss'")),
     # The miss cache, `fact_candidate`'s shape and for its reason: the SECOND
@@ -2689,8 +2690,8 @@ NOTE_CANDIDATE = sa.Table(
 #: `(unit, anchor_date, anchor_entity_ids, lower(btrim(title)))` (#235).
 #: This is the STAGING key, not the create gate's match key, and the two have
 #: been fully independent since 2026-09-13 (#228): the gate
-#: (`nora.language.note_candidates`) resolves the title the MODEL names for an
-#: update and never reads this key at all, while this key decides only whether
+#: (`nora.language.note_candidates`, deleted 2026-10-03) resolved the title the
+#: MODEL named for an update and never read this key at all, while this key decides only whether
 #: a sighting is a re-observation of one already staged.
 #:
 #: **M10 — "a title is not an identity" — is UPHELD for the note and REVERSED
@@ -2699,7 +2700,7 @@ NOTE_CANDIDATE = sa.Table(
 #: (This said `note`'s own uniqueness «is still the title alone per unit»; NO
 #: such index exists — corrected 2026-09-24 in DEC-189's row, design 41 §7.0.
 #: Two open notes may share a title until design 41 §7.2 (3) adds the unique
-#: open-title index; `note-merge` is what folds the duplicates meanwhile.) A
+#: open-title index; `note_merge` is what folds the duplicates meanwhile.) A
 #: staging
 #: row is not an identity: it is a one-shot dedupe slot for one sighting, and
 #: the title is the only field that separates two arrangements the model wrote
@@ -3053,8 +3054,8 @@ STANDING_REVISION = sa.Table(
         name="standing_revision_fold_count_is_not_negative_check",
     ),
     sa.CheckConstraint(
-        "source IN ('fold', 'operator')",
-        name="standing_revision_source_is_fold_or_operator_check",
+        "source IN ('fold', 'operator', 'cognition')",
+        name="standing_revision_source_check",
     ),
     sa.CheckConstraint(
         f"jsonb_array_length(working_set) <= {WORKING_SET_CEILING_ITEMS} "
@@ -3207,7 +3208,7 @@ DECISION_LOG = sa.Table(
         name="decision_log_verdict_is_known_check",
     ),
     # The prompt budget, as DDL. `reason` rides into the participation turn's
-    # prompt and the proactive decide turn's, 20 rows at a time, so an
+    # prompt (and rode into the deleted proactive decide turn's), 20 rows at a time, so an
     # unbounded one is a per-turn token cost paid forever; capped in BOTH
     # places like every other injected text in this schema. (NOT the Relevance
     # Gate's prompt — an earlier draft of this comment said so and the gate was
@@ -3239,10 +3240,10 @@ IDX_DECISION_LOG_UNIT_TS = sa.Index(
 )
 
 
-#: What the `note-merge` pass considered folding, one row per (survivor,
-#: duplicate) pair (design 41 §7.8, DEC-202). In `shadow` it is the pass's
-#: whole output — the rows the operator labels before `on`; in `on` it is the
-#: audit of each fold and each refusal.
+#: What the (deleted 2026-10-03, DEC-277) `note-merge` pass considered folding,
+#: one row per (survivor, duplicate) pair (design 41 §7.8, DEC-202). In `shadow`
+#: it was the pass's whole output; in `on` the audit of each fold and each
+#: refusal. Kept as data; nothing writes it now.
 #:
 #: **Its own table, not `decision_log`**, which the design's wording pointed
 #: at: that table's rows render into the ambient deciders' prompts, its
@@ -3251,7 +3252,7 @@ IDX_DECISION_LOG_UNIT_TS = sa.Index(
 #: reason and no prompt ever reads it. `nora.domain.notes.NoteMergeDecision`
 #: says the same beside the type.
 #:
-#: Append-only: `SqlNoteStore.record_merge_decision` inserts and nothing
+#: Append-only: `SqlNoteStore.record_merge_decision` (deleted) inserted and nothing
 #: updates. Both note ids are foreign keys because a note is never deleted.
 NOTE_MERGE_DECISION = sa.Table(
     "note_merge_decision",
@@ -3755,9 +3756,9 @@ IDX_STIMULUS_UNIT_SELF_ITEM = sa.Index(
     postgresql_where=STIMULUS.c.kind == "self",
 )
 
-# `cognition_wake`: every wake, one row each — in step 1 every row is a SHADOW
-# would-wake (`mode = 'shadow'`): what the evaluator would have started, why,
-# and the stimulus range it would have consumed. Append-only; a unit's newest
+# `cognition_wake`: every wake, one row each: what the evaluator started, why,
+# and the stimulus range it consumed. `mode` is `'live'` (0091 relabelled the
+# shadow week's rows so the watermark carried over). Append-only; a unit's newest
 # row in a mode IS its watermark in that mode (`through_stimulus_id`, `at_ms`),
 # so the watermark survives a restart with no row ever rewritten.
 COGNITION_WAKE = sa.Table(
@@ -3783,7 +3784,7 @@ COGNITION_WAKE = sa.Table(
     # (read as failed) with none past `[cognition] session_timeout_seconds`.
     # 0 (every step-1 row): a plain watermark, as before.
     sa.Column("tracked", sa.Integer, nullable=False, server_default=sa.text("0")),
-    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_wake_mode"),
+    sa.CheckConstraint("mode IN ('live')", name="ck_cognition_wake_mode"),
     sa.CheckConstraint(
         "reason IN ('settled', 'strong_cue', 'rollup', 'batch', 'max_age', "
         "'time', 'self')",
@@ -3803,13 +3804,10 @@ IDX_COGNITION_WAKE_UNIT_MODE_ID = sa.Index(
 # Append-only. `scope` is the circle for a poll, "" for an adapter; `outcome`
 # is the poll's read status (`ok`, `challenge`, `empty_circle`, ...) or the
 # adapter's new state (`up`, `stale`, `degraded`, `down`, `unknown`).
-# `cognition_session` / `cognition_session_close` / `cognition_would_write`:
-# migration step 3a (design/cognition-loop/70-migration.md §2 row 3a). Every
-# row is written once and never updated — a session is replayable from its
-# own `situation`/`agenda` JSON (30-cognition.md §1) plus the stores as of
-# its start, so nothing here is a cache to keep current. `mode` is only ever
-# `'shadow'` at this step: a `live` value arrives with cut-over (step 4),
-# the same shape `cognition_wake`'s own `ck_cognition_wake_mode` takes today.
+# `cognition_session` / `cognition_session_close`: every row is written once
+# and never updated — a session is replayable from its own `situation`/`agenda`
+# JSON (30-cognition.md §1) plus the stores as of its start, so nothing here is
+# a cache to keep current. `mode` is `'live'` (0091).
 COGNITION_SESSION = sa.Table(
     "cognition_session",
     METADATA,
@@ -3835,7 +3833,7 @@ COGNITION_SESSION = sa.Table(
     sa.Column("model_id", sa.Text),
     sa.Column("model_route", sa.Text),
     _recorded_at(),
-    sa.CheckConstraint("mode IN ('shadow')", name="ck_cognition_session_mode"),
+    sa.CheckConstraint("mode IN ('live')", name="ck_cognition_session_mode"),
 )
 
 IDX_COGNITION_SESSION_UNIT_ID = sa.Index(
@@ -3848,8 +3846,8 @@ COGNITION_SESSION_CLOSE = sa.Table(
     "cognition_session_close",
     METADATA,
     sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    # Nullable, no foreign key — the same choice `cognition_would_write.
-    # session_id` makes next door: a close row constructed directly (a
+    # Nullable, no foreign key — the same choice the dropped `cognition_would_write.
+    # session_id` made next door: a close row constructed directly (a
     # test, or a future caller with no session row of its own) still has
     # somewhere to land, and this table's own snapshot-restore fixture
     # (tests/integration/test_snapshot_holds_what_was_held.py) appends each
@@ -3871,48 +3869,6 @@ COGNITION_SESSION_CLOSE = sa.Table(
 
 IDX_COGNITION_SESSION_CLOSE_SESSION = sa.Index(
     "idx_cognition_session_close_session", COGNITION_SESSION_CLOSE.c.session_id,
-)
-
-# One row per write-verb call in shadow (`nora.domain.cognition_write.
-# WouldWrite`, as recorded): what it would have done, never what it did.
-COGNITION_WOULD_WRITE = sa.Table(
-    "cognition_would_write",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column(
-        "session_id", sa.BigInteger, sa.ForeignKey("cognition_session.id"), nullable=True,
-    ),
-    sa.Column("unit", sa.Text, nullable=False),
-    sa.Column("tier", sa.Text, nullable=False),
-    sa.Column("verb", sa.Text, nullable=False),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("args", pg.JSONB, nullable=False),
-    sa.Column("outcome", sa.Text, nullable=False),
-    sa.Column("refusal_reason", sa.Text),
-    sa.Column("refusal_detail", sa.Text),
-    sa.Column("candidate", pg.JSONB),
-    sa.Column("base_revision_id", sa.Text),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "tier IN ('note', 'event', 'standing')", name="ck_cognition_would_write_tier",
-    ),
-    sa.CheckConstraint(
-        "outcome IN ('would_commit', 'refused')", name="ck_cognition_would_write_outcome",
-    ),
-    sa.CheckConstraint(
-        "(outcome = 'would_commit' AND candidate IS NOT NULL) "
-        "OR (outcome = 'refused' AND refusal_reason IS NOT NULL)",
-        name="ck_cognition_would_write_outcome_shape",
-    ),
-)
-
-IDX_COGNITION_WOULD_WRITE_SESSION = sa.Index(
-    "idx_cognition_would_write_session", COGNITION_WOULD_WRITE.c.session_id,
-)
-IDX_COGNITION_WOULD_WRITE_UNIT_RECORDED = sa.Index(
-    "idx_cognition_would_write_unit_recorded",
-    COGNITION_WOULD_WRITE.c.unit, COGNITION_WOULD_WRITE.c.recorded_at,
 )
 
 # Migration step 3a-ii (70-migration.md §2 row 3a-ii): one row per
@@ -3971,49 +3927,6 @@ IDX_COGNITION_SELF_WAKE_UNIT_REF = sa.Index(
 IDX_COGNITION_SELF_WAKE_UNIT_RECORDED = sa.Index(
     "idx_cognition_self_wake_unit_recorded",
     COGNITION_SELF_WAKE.c.unit, COGNITION_SELF_WAKE.c.recorded_at,
-)
-
-# Migration step 3a-ii: `remind`/`remind_move`/`remind_cancel`, mirrored and
-# held (30-cognition.md §2: "every reminder cognition writes is mirrored to
-# a review channel and held"). Never fired, never sent — see
-# `tests/architecture/test_cognition_shadow_cannot_write_or_send.py`.
-COGNITION_REMIND_MIRROR = sa.Table(
-    "cognition_remind_mirror",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column(
-        "session_id", sa.BigInteger,
-        sa.ForeignKey("cognition_session.id"), nullable=True,
-    ),
-    sa.Column("unit", sa.Text, nullable=False),
-    sa.Column("verb", sa.Text, nullable=False),
-    sa.Column("reminder_ref", sa.Text, nullable=True),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("intent", sa.Text),
-    sa.Column("subject_rows", pg.JSONB, nullable=False),
-    sa.Column("at_ms", sa.BigInteger),
-    sa.Column("why", sa.Text),
-    sa.Column("outcome", sa.Text, nullable=False),
-    sa.Column("refusal_reason", sa.Text),
-    sa.Column("refusal_detail", sa.Text),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "verb IN ('remind', 'remind_move', 'remind_cancel')",
-        name="ck_cognition_remind_mirror_verb",
-    ),
-    sa.CheckConstraint(
-        "outcome IN ('recorded', 'refused')", name="ck_cognition_remind_mirror_outcome",
-    ),
-    sa.CheckConstraint(
-        "(outcome = 'recorded') OR (refusal_reason IS NOT NULL)",
-        name="ck_cognition_remind_mirror_outcome_shape",
-    ),
-)
-
-IDX_COGNITION_REMIND_MIRROR_UNIT_REF = sa.Index(
-    "idx_cognition_remind_mirror_unit_ref",
-    COGNITION_REMIND_MIRROR.c.unit, COGNITION_REMIND_MIRROR.c.reminder_ref,
 )
 
 # Migration step 3a-ii (0079), the session LIFECYCLE and what a session hands

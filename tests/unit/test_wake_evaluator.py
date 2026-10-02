@@ -90,8 +90,8 @@ async def test_settled_fires_after_quiet_seconds_and_not_before():
     assert await ev.tick() == []
     clock.advance(1)
     assert len(await ev.tick()) == 1
-    assert store.wakes[0].reason == "settled" and store.wakes[0].mode == "shadow"
-    assert metrics.get("nora_cognition_wake_total", reason="settled", mode="shadow") == 1
+    assert store.wakes[0].reason == "settled" and store.wakes[0].mode == "live"
+    assert metrics.get("nora_cognition_wake_total", reason="settled", mode="live") == 1
 
 
 async def test_a_strong_cue_fires_after_cue_quiet_seconds():
@@ -300,7 +300,7 @@ async def test_a_shadow_tick_writes_a_would_wake_and_nothing_else():
     clock.advance(600)
     written = await ev.tick()
     assert len(written) == 1 and len(store.wakes) == 1
-    assert store.wakes[0].mode == "shadow"
+    assert store.wakes[0].mode == "live"
     assert store.stimuli == before
 
 
@@ -340,7 +340,7 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
     await lost_ev.tick()                         # sees only id 2
     lost.uncommitted.clear()                     # id 1 commits
     assert lost.wakes[0].stimulus_count == 1
-    view = await lost.view(unit="nora", mode="shadow", now_ms=clock.ms + 10**6, limit=100)
+    view = await lost.view(unit="nora", mode="live", now_ms=clock.ms + 10**6, limit=100)
     assert first not in [s.id for s in view.pending], "control: the race loses id 1"
 
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0), settle=5)
@@ -361,7 +361,7 @@ async def test_an_id_committed_after_a_higher_one_is_not_consumed_unseen():
 
 
 async def test_on_wake_is_never_called_when_none_the_off_wiring():
-    """`session_mode = "off"` is exactly "the composition root never passes
+    """`[cognition] enabled = false` is exactly "the composition root never passes
     `on_wake`" — this is the evaluator-level half of that property: with no
     hook, a tick behaves byte-identically to before the parameter existed."""
     ev, store, clock, _ = _setup(policy=WakePolicy(quiet_seconds=0))
@@ -426,7 +426,7 @@ async def test_on_wake_a_sync_hook_with_no_awaitable_return_is_a_no_op():
 
 
 async def _pending(store, unit="nora", *, now_ms=None, clock=None):
-    view = await store.view(unit=unit, mode="shadow", now_ms=now_ms or clock.ms, limit=1000)
+    view = await store.view(unit=unit, mode="live", now_ms=now_ms or clock.ms, limit=1000)
     return [(s.id, s.kind) for s in view.pending]
 
 
@@ -562,7 +562,7 @@ async def test_a_time_stimulus_already_pending_wakes_no_session_while_no_skill_s
     ), recorded_at_ms=clock.ms)
     assert await ev.tick() == []
     assert store.wakes == [] and seen == []
-    view = await store.view(unit="nora", mode="shadow", now_ms=clock.ms, limit=10)
+    view = await store.view(unit="nora", mode="live", now_ms=clock.ms, limit=10)
     assert [s.kind for s in view.pending] == ["time"]          # kept, not consumed
     ev._floors_ready = True
     assert len(await ev.tick()) == 1
@@ -590,7 +590,7 @@ async def test_a_pending_time_stimulus_does_not_ride_a_room_wake_when_its_kind_i
     assert len(await ev.tick()) == 1
     await ev.drain()
     assert seen == [["message"]]
-    view = await store.view(unit="nora", mode="shadow", now_ms=clock.ms, limit=10)
+    view = await store.view(unit="nora", mode="live", now_ms=clock.ms, limit=10)
     assert [s.kind for s in view.pending] == ["time"]          # listed unclaimed, still pending
 
 
@@ -643,7 +643,7 @@ def test_the_inert_kinds_are_time_only_while_tracked_and_no_skill_ships():
     assert inert_kinds_for(tracked=True, floors_ready=False) == {"time"}
     assert inert_kinds_for(tracked=True, floors_ready=True) == frozenset()
     assert inert_kinds_for(tracked=False, floors_ready=False) == frozenset()
-    assert "time" not in AGENDA_SKILLS and floors_ready() is False   # production: `time` is inert
+    assert "time" in AGENDA_SKILLS and floors_ready() is True   # production: the floors wake
 
 
 def test_an_unclaimed_id_is_not_consumed_by_the_range_that_covers_it():

@@ -44,7 +44,7 @@ RECORD_REF_TABLES: tuple[str, ...] = ("messages", "message_reaction", "message_d
 RecordKind = Literal["message", "edit", "reaction", "delete"]
 
 #: What a room with no label is called in a prompt. Never its conversation id
-#: (R-18, and `nora.language.proactive.UNNAMED_ROOM`'s own rule): a raw id on a
+#: (R-18, and the deleted proactive pass's `UNNAMED_ROOM` rule): a raw id on a
 #: model's wire is an identifier egress and reads as noise.
 UNNAMED_ROOM = "a room with no name"
 
@@ -173,11 +173,18 @@ class RollupLine:
 @dataclass(frozen=True, slots=True)
 class NoteLine:
     """An open note's index line: its id (what `note_update` takes), title and
-    one-line description, never its body."""
+    one-line description, never its body. `review` and `may_duplicate` are
+    code's facts for the notebook review a `time` item asks for: the anchor
+    day has passed or the revisit date has come (`anchor_passed`,
+    `revisit_due`), and the id of another open note whose title shares most of
+    its words. Facts to read, never a verdict: whether the note is settled or a
+    duplicate is the session's judgement."""
 
     id: str
     title: str
     description: str
+    review: str | None = None
+    may_duplicate: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

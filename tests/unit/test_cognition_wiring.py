@@ -44,8 +44,8 @@ from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import Room
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.obs.metrics import Metrics
-from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 from nora.testing.cognition_grounding import EmptyGrounder, StaticGrounder
+from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.stimuli import InMemoryStimulusStore
 from tests.unit.cognition_view import blocks, items, named
 
@@ -124,7 +124,10 @@ def test_every_tool_in_the_catalogue_has_an_audited_side_effect_line():
 
     assert set(READ_TOOL_AUDIT) == set(COGNITION_READ_CATALOGUE)
     assert all(text.strip() for text in READ_TOOL_AUDIT.values())
-    assert "NEUTRALISED" in READ_TOOL_AUDIT["note_search"]
+    # `note_search` no longer records a miss (DEC-277): its audit line says it
+    # writes nothing, and no longer names a neutralised write.
+    assert "No write" in READ_TOOL_AUDIT["note_search"]
+    assert "NEUTRALISED" not in READ_TOOL_AUDIT["note_search"]
 
 
 # ---- read tools for a room ---------------------------------------------------
@@ -197,8 +200,8 @@ def _stim(sid: int, room: Room, at: int = NOW - 90 * 60_000) -> Stimulus:
 def _runner(
     *, agent: _Agent, read_tools_for: Any = None, wake_ids: tuple[int, ...] = (1,),
     metrics: Any = None, grounder: Any = None, **kw: Any,
-) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionDryRunStore]:
-    ledger = InMemoryCognitionDryRunStore()
+) -> tuple[CognitionSessionRunner, InMemoryStimulusStore, InMemoryCognitionStore]:
+    ledger = InMemoryCognitionStore()
     stimuli = InMemoryStimulusStore(ledger=ledger)
     for wid in wake_ids:
         stimuli.seed_wake("u", wid)
@@ -207,15 +210,13 @@ def _runner(
         return kw.pop("_value", ())
 
     runner = CognitionSessionRunner(
-        dry_run_store=ledger, stimulus_store=stimuli, agent_runner=agent,
+        store=ledger, stimulus_store=stimuli, agent_runner=agent,
         home_rooms={"u": HOME}, read_tools_for=read_tools_for or (lambda unit, rooms: []),
         read_only_tools=frozenset({"note_read", "about"}),
         skill_text_for=kw.pop("skill_text_for", lambda kinds: ""),
         grounder=grounder or EmptyGrounder(),
         doctrine_text="FIXED", doctrine_sha256="fixed-sha",
         open_note_titles=const, open_events=const, prior_standing=const,
-        pending_self_wakes=const, pending_mirrored_reminds=const,
-        session_mode="shadow",
         budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100, timeout_seconds=30),
         cooldown_seconds=300.0, units=("u",), session_timeout_seconds=900.0,
         max_items=12, max_strikes=3, metrics=metrics, clock=lambda: NOW / 1000, **kw,
@@ -339,11 +340,6 @@ async def test_probe_runs_one_hand_written_item_and_writes_no_outcome():
     assert len(ledger.sessions) == 1 and stimuli.outcomes == {}
 
 
-async def test_probe_refuses_when_sessions_are_off():
-    runner, _s, _l = _runner(agent=_Agent())
-    runner._session_mode = "off"
-    with pytest.raises(RuntimeError, match="session_mode"):
-        await runner.probe(unit="u", summary="x", now_ms=NOW)
 
 
 async def test_a_closed_session_is_counted_by_outcome():
@@ -351,7 +347,7 @@ async def test_a_closed_session_is_counted_by_outcome():
     runner, _s, _l = _runner(agent=_Agent(), metrics=metrics)
     await _wake(runner, (_stim(1, HOME),))
     assert metrics.get("nora_cognition_session_ended_total", outcome="closed") == 1
-    assert metrics.get("nora_cognition_session_total", mode="shadow") == 1
+    assert metrics.get("nora_cognition_session_total", mode="live") == 1
 
 
 # ---- the agent runner: the guard and the trace -------------------------------
@@ -505,17 +501,17 @@ def test_units_without_a_home_room_are_named_not_woken():
     assert units_with_home_rooms(["friends", "wedding"], homes) == (["friends"], ["wedding"])
 
 
-def test_the_boot_check_refuses_a_session_mode_that_built_no_session():
+def test_the_boot_check_refuses_an_enabled_loop_that_built_no_session():
     hooked = SimpleNamespace(has_wake_hook=True)
     bare = SimpleNamespace(has_wake_hook=False)
-    require_session_hook(session_mode="off", runner=None, evaluator=None)     # off asks for none
-    require_session_hook(session_mode="shadow", runner=object(), evaluator=hooked)
+    require_session_hook(enabled=False, runner=None, evaluator=None)     # off asks for none
+    require_session_hook(enabled=True, runner=object(), evaluator=hooked)
     with pytest.raises(RuntimeError, match="no session runner"):
-        require_session_hook(session_mode="shadow", runner=None, evaluator=hooked)
+        require_session_hook(enabled=True, runner=None, evaluator=hooked)
     with pytest.raises(RuntimeError, match="no session hook"):
-        require_session_hook(session_mode="shadow", runner=object(), evaluator=bare)
+        require_session_hook(enabled=True, runner=object(), evaluator=bare)
     with pytest.raises(RuntimeError, match="no session hook"):
-        require_session_hook(session_mode="shadow", runner=object(), evaluator=None)
+        require_session_hook(enabled=True, runner=object(), evaluator=None)
 
 
 def test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session():
@@ -524,14 +520,14 @@ def test_the_boot_check_refuses_shadow_when_no_unit_can_run_a_session():
     shadow week would record would-wakes and run nothing, and look healthy."""
     hooked = SimpleNamespace(has_wake_hook=True)
     require_session_hook(
-        session_mode="shadow", runner=object(), evaluator=hooked, session_units={"friends"},
+        enabled=True, runner=object(), evaluator=hooked, session_units={"friends"},
     )
     with pytest.raises(RuntimeError, match="no unit can run a session"):
         require_session_hook(
-            session_mode="shadow", runner=object(), evaluator=hooked, session_units=frozenset(),
+            enabled=True, runner=object(), evaluator=hooked, session_units=frozenset(),
         )
     require_session_hook(                            # off asks for none
-        session_mode="off", runner=None, evaluator=None, session_units=frozenset(),
+        enabled=False, runner=None, evaluator=None, session_units=frozenset(),
     )
 
 
@@ -599,7 +595,7 @@ async def test_a_subject_with_no_session_runner_is_an_error_never_a_pass():
 
     subject = SimpleNamespace(deps=SimpleNamespace(cognition_runner=None), unit="friends")
     outcome = await _cognition_probe(subject, _case(), now_ms=NOW)
-    assert outcome.source == "fail_closed" and "session_mode is off" in (outcome.error or "")
+    assert outcome.source == "fail_closed" and "[cognition] is off" in (outcome.error or "")
 
 
 async def test_a_probe_that_raised_is_an_error_never_a_pass():

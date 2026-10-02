@@ -21,8 +21,8 @@ for, `note_create`, required the citation as a bare `[7998]` and the attribution
 as `(Ann)`: the input contradicted its own validator, and a live trace showed
 three refusals in four calls for exactly that. Every message is now
 `<m n="7998" from="Ann" ...>` through the shared row-id window
-(`nora.domain.blocks.render_row_window`), the way note-candidates and the
-curator show theirs: `n` is the real message id and `from` the name the validator
+(`nora.domain.blocks.render_row_window`), the way the deleted note-candidates and curator
+showed theirs: `n` is the real message id and `from` the name the validator
 compares a `(<names>)` slot to. `speaker_of` is that one name, read here for the
 render and by the session for the validator (`shown_for`), so the two cannot
 differ, and the block types say what each is for
@@ -129,8 +129,8 @@ _SEP = "\n\n"
 @dataclass(frozen=True, slots=True)
 class RenderBudget:
     """How much of the prompt the grounding may spend. Every value is a
-    STARTING guess like every number in this migration, sized from a shadow
-    week's sessions and set in `[cognition]`."""
+    STARTING guess like every number in this migration, sized from live
+    sessions and set in `[cognition]`."""
 
     #: All items' Record rows together, counted as rendered.
     record_chars: int = 8000
@@ -534,7 +534,10 @@ def _register(
             for n in grounding.notes
         ]
         rows = listed([
-            render_note_rows([n], ids=True) for n in notes[: budget.register_lines]
+            render_note_rows([n], ids=True, extra=lambda n: (
+                ("review", n.review), ("may_duplicate", n.may_duplicate),
+            ))
+            for n in notes[: budget.register_lines]
         ])
         left_out = len(notes) - len(rows)
         blocks.append(restamp(ContextBlock(

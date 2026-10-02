@@ -21,10 +21,10 @@ composition root, for the session row's own provenance column
 **Simplification, stated rather than hidden.** `ReasoningStripWatch`
 (`nora.agent.reasoning_strip`), which every OTHER Dreamer sample attaches,
 is not wired here: it exists to catch a `<think>` block leaking into a
-DELIVERED reply, and nothing this session writes is ever delivered — every
-write is a dry-run row (`30-cognition.md` §2, this migration step). Adding
-it is a clean follow-up once step 4 makes a write live and the leak
-actually reaches somewhere a person could read it.
+DELIVERED reply, and nothing this session writes is delivered as she wrote it:
+every write passes its tier's validator, and a reminder's text is read back by a
+fresh turn that writes the words. Ceiling: a `<think>` fragment that passed a
+validator would land in a record; no such write has been seen.
 """
 
 from __future__ import annotations

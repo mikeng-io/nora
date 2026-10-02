@@ -45,7 +45,7 @@ async def _wake(store: SqlStimulusStore, unit: str) -> int:
     ), recorded_at_ms=NOW)
     assert sid is not None
     wake = await store.record_wake(wake=NewWake(
-        unit=unit, mode="shadow", reason="settled", from_stimulus_id=0, through_stimulus_id=sid,
+        unit=unit, mode="live", reason="settled", from_stimulus_id=0, through_stimulus_id=sid,
         stimulus_count=1, eligible_count=1, oldest_pending_ms=NOW, cut_cooldown=False,
         at_ms=NOW, tracked=True,
     ), recorded_at_ms=NOW, guard=WakeGuard(last_wake_id=None, last_outcome=None))

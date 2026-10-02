@@ -6,12 +6,9 @@ cognition: `(unit, kind, ref, cues, at)`, one durable row per unit in the
 session. This module holds the types and the one pure function that decides a
 wake, so the rule is testable without a database or a clock.
 
-**Migration step 1 runs it in SHADOW.** `decide` is called exactly as it would
-be to start a Cognition session, every brake included, and its answer is
-recorded as a would-wake (`cognition_wake`, `mode = "shadow"`) with its reason
-and the stimulus range it would consume. Nothing is fired: there is no Cognition
-adaptor yet, and the clocked Dreamer adaptors keep running as they did. The
-week of would-wakes is how 20 §3's starting values get sized.
+`decide` starts a Cognition session, every brake included, and its answer is
+recorded as a wake (`cognition_wake`) with its reason and the stimulus range it
+consumes.
 
 **The watermark is the wake log.** Each unit's durable watermark is the
 `(through_stimulus_id, at_ms)` of its newest wake row in that mode, not a row
@@ -27,10 +24,10 @@ stimulus due at 19:40 pending across a wake at 15:00 (20 §3: «pending only fro
 its due time»).
 
 **Single-flight and cooldown are derived from durable rows.** With NO session
-hook (`[cognition] session_mode = "off"`) no session runs, so a would-wake is
+hook (only a test builds such an evaluator) no session runs, so a wake is
 treated as a session that lasts `session_seconds` (a stated assumption): the
 unit is in flight until `at + session_seconds`, then cools down for
-`cooldown_seconds`. With a hook (step 3a-ii, `UnitView.tracked`) the assumption
+`cooldown_seconds`. With a hook (production, `UnitView.tracked`) the assumption
 is gone, and a wake's fate is ONE durable fact (DEC-242, second review of #627).
 
 **The wake state machine (tracked wakes).** A wake written with a hook wired
@@ -91,8 +88,9 @@ WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
 WakeBrake = Literal["single_flight", "cooldown", "backoff", "concurrency"]
 WAKE_BRAKES: tuple[str, ...] = get_args(WakeBrake)
 
-#: How a wake row was produced. `live` arrives with the Cognition adaptor.
-WakeMode = Literal["shadow"]
+#: How a wake row was produced. One value since the cut-over (0091 relabelled
+#: the shadow week's rows), kept because the watermark is read per mode.
+WakeMode = Literal["live"]
 WAKE_MODES: tuple[str, ...] = get_args(WakeMode)
 
 #: The kinds raised by something a person or a source DID, as opposed to the
@@ -147,7 +145,7 @@ class Stimulus:
 
 @dataclass(frozen=True)
 class WakeRow:
-    """A recorded wake (in step 1, a would-wake). `through_stimulus_id` and
+    """A recorded wake. `through_stimulus_id` and
     `at_ms` ARE the unit's watermark once this is its newest row."""
 
     id: int
@@ -440,11 +438,10 @@ class Watermark:
 
 @dataclass(frozen=True)
 class WakePolicy:
-    """20 §3's numbers. Every value is a starting guess the shadow week sizes.
+    """20 §3's numbers. Every value is a starting guess.
 
-    `session_seconds` is not in 20 §3: it is how long a shadow would-wake is
-    treated as running, so single-flight and cooldown can be exercised while
-    nothing runs."""
+    `session_seconds` is not in 20 §3: it is how long a wake with no session
+    hook (a test's evaluator) is treated as running."""
 
     quiet_seconds: float = 1800.0  # operator 2026-09-29, was 600 ([cognition])
     cue_quiet_seconds: float = 120.0
@@ -670,7 +667,8 @@ def in_flight(last_wake: WakeRow | None, policy: WakePolicy, now_ms: int) -> boo
 
 
 def unit_in_flight(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
-    """Single-flight's question. Untracked (no hook): the shadow assumption.
+    """Single-flight's question. Untracked (no hook, a test's evaluator): the
+    `session_seconds` assumption.
     Tracked: the newest wake is OPEN (no outcome row, younger than
     `session_timeout_seconds`), or (`live`) its task is alive in this
     process."""
@@ -737,7 +735,7 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
     # said something, so they count observed items only. A pending `time`,
     # `self` or `rollup` stimulus has its own row in the table; letting it read
     # as `settled` in a quiet unit would record every 07:00 floor under the
-    # wrong reason and make the shadow week unreadable.
+    # wrong reason.
     observed = [s for s in eligible if s.kind in _OBSERVED]
     if observed and quiet_for(policy.quiet_seconds):
         return "settled"

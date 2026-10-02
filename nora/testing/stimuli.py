@@ -59,7 +59,7 @@ class OutcomeRow:
 
 class InMemoryStimulusStore:
     def __init__(self, ledger: Any = None) -> None:
-        """`ledger`: the `InMemoryCognitionDryRunStore` that shares this
+        """`ledger`: the `InMemoryCognitionStore` that shares this
         store's database, as the SQL twins share one: the retraction set is
         ONE set both read (`ledger.retracted`), so the ledger's pending
         self-wakes apply the same predicate the pending read does."""
@@ -312,7 +312,7 @@ class InMemoryStimulusStore:
         a test that drives a session hook directly: an outcome names a wake
         that exists (`record_outcome` refuses one that does not)."""
         self.wakes.append(WakeRow(
-            id=wake_id, unit=unit, mode="shadow", reason="settled", from_stimulus_id=0,
+            id=wake_id, unit=unit, mode="live", reason="settled", from_stimulus_id=0,
             through_stimulus_id=0, stimulus_count=0, eligible_count=0,
             oldest_pending_ms=None, cut_cooldown=False, at_ms=0, recorded_at_ms=0,
             tracked=tracked,

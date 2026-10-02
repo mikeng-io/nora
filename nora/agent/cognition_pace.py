@@ -1,6 +1,5 @@
-"""Cognition's pace verbs, in DRY RUN/shadow (design/cognition-loop/
-20-observe.md §3; migration step 3a-ii). The impure half of
-`nora.domain.cognition_pace`: validate, then record — and, on a successful
+"""Cognition's pace verbs (design/cognition-loop/20-observe.md §3). The impure
+half of `nora.domain.cognition_pace`: validate, then record — and, on a successful
 `wake_at`/`wake_move`, append the `self` stimulus the ALREADY-LIVE wake
 evaluator (`nora.app.wake.WakeEvaluator`, step 1) picks up with no change of
 its own, because `nora.domain.stimuli._trigger` already fires on any
@@ -23,9 +22,7 @@ row is recorded.
 
 **A self-wake is not an act.** Nothing here ever reaches a room: `wake_at`
 writes a `self` signal, `wake_move`/`wake_cancel` only ever touch that
-signal's own bookkeeping row. See `tests/architecture/
-test_cognition_shadow_cannot_write_or_send.py` for what importing this
-module is and is not allowed to reach.
+signal's own bookkeeping row.
 """
 
 from __future__ import annotations
@@ -42,14 +39,13 @@ from nora.domain.cognition_pace import (
     check_wake_cancel,
     check_wake_move,
 )
-from nora.domain.ports import CognitionDryRunStore, NewCognitionPace, StimulusStore
+from nora.domain.ports import CognitionStore, NewCognitionPace, StimulusStore
 from nora.domain.stimuli import NewStimulus
 
 log = logging.getLogger("nora.agent.cognition_pace")
 
 __all__ = [
-    "PartialPaceWriteError", "dry_run_wake_at", "dry_run_wake_cancel", "dry_run_wake_fire",
-    "dry_run_wake_move",
+    "PartialPaceWriteError", "wake_at", "wake_cancel", "wake_fire", "wake_move",
 ]
 
 
@@ -63,7 +59,7 @@ class PartialPaceWriteError(Exception):
 
 
 async def _record(
-    ledger: CognitionDryRunStore, *, session_id: int | None, unit: str, verb: str,
+    ledger: CognitionStore, *, session_id: int | None, unit: str, verb: str,
     wake_ref: str | None, transition: str, subject_rows: Sequence[str], why: str,
     at_ms: int | None, now_ms: int, outcome: str, refusal_reason: str | None = None,
     refusal_detail: str | None = None, stimulus_id: int | None = None,
@@ -81,7 +77,7 @@ async def _record(
     return PaceAnswer(row_id, refusal_reason, refusal_detail)
 
 
-async def _record_after_effect(ledger: CognitionDryRunStore, **record: Any) -> PaceAnswer:
+async def _record_after_effect(ledger: CognitionStore, **record: Any) -> PaceAnswer:
     """`_record` for a verb whose `self` stimulus has ALREADY been changed. One more
     try on a failure, then `PartialPaceWriteError`: the change stands whether or not the
     ledger knows, and what the model is told must not claim otherwise."""
@@ -113,7 +109,7 @@ async def _take_back(
 
 
 async def _record_or_take_back(
-    ledger: CognitionDryRunStore, stimuli: StimulusStore, *, new_stimulus_id: int | None,
+    ledger: CognitionStore, stimuli: StimulusStore, *, new_stimulus_id: int | None,
     **record: Any,
 ) -> PaceAnswer:
     """`_record` a transition that just appended `new_stimulus_id`; if the
@@ -131,8 +127,8 @@ async def _record_or_take_back(
         raise
 
 
-async def dry_run_wake_at(
-    *, ledger: CognitionDryRunStore, stimuli: StimulusStore, session_id: int | None,
+async def wake_at(
+    *, ledger: CognitionStore, stimuli: StimulusStore, session_id: int | None,
     unit: str, subject_rows: Sequence[str], at_ms: int, why: str, now_ms: int,
     wake_ref: str, cooldown_seconds: float, pending: Sequence[PendingSelfWake],
     max_self_wakes: int = 5, max_horizon_seconds: float = 7 * 24 * 3600.0,
@@ -140,8 +136,7 @@ async def dry_run_wake_at(
 ) -> PaceAnswer:
     """`wake_at(at, subject_rows, why)`. `wake_ref` is minted by the caller
     (a session wiring, never guessed here) BEFORE this call — this module
-    only validates and records against the id it is given, the same
-    "prior is a parameter" shape every dry-run wrapper in this tree uses."""
+    only validates and records against the id it is given."""
     refusal, supersedes = check_wake_at(
         subject_rows=subject_rows, at_ms=at_ms, now_ms=now_ms,
         cooldown_seconds=cooldown_seconds, pending=pending,
@@ -188,8 +183,8 @@ async def dry_run_wake_at(
     return answer
 
 
-async def dry_run_wake_move(
-    *, ledger: CognitionDryRunStore, stimuli: StimulusStore, session_id: int | None,
+async def wake_move(
+    *, ledger: CognitionStore, stimuli: StimulusStore, session_id: int | None,
     unit: str, wake_ref: str, at_ms: int, why: str, now_ms: int, cooldown_seconds: float,
     pending: Sequence[PendingSelfWake], created_by_session_id: int | None,
     subject_rows: Sequence[str] = (),
@@ -232,8 +227,8 @@ async def dry_run_wake_move(
     )
 
 
-async def dry_run_wake_cancel(
-    *, ledger: CognitionDryRunStore, stimuli: StimulusStore, session_id: int | None,
+async def wake_cancel(
+    *, ledger: CognitionStore, stimuli: StimulusStore, session_id: int | None,
     unit: str, wake_ref: str, why: str, now_ms: int, pending: Sequence[PendingSelfWake],
     created_by_session_id: int | None, subject_rows: Sequence[str] = (),
 ) -> PaceAnswer:
@@ -259,8 +254,8 @@ async def dry_run_wake_cancel(
     )
 
 
-async def dry_run_wake_fire(
-    *, ledger: CognitionDryRunStore, session_id: int | None, unit: str, wake_ref: str,
+async def wake_fire(
+    *, ledger: CognitionStore, session_id: int | None, unit: str, wake_ref: str,
     now_ms: int,
 ) -> PaceAnswer:
     """The `fired` transition: a session's agenda picked this self-wake up.

@@ -1,21 +1,11 @@
-"""`remind`/`remind_move`/`remind_cancel`, mirrored and held (pure checks;
-design/cognition-loop/30-cognition.md §2-§3; migration step 3a-ii).
-
-**Shadow before cut-over** (70-migration.md): every reminder Cognition would
-write is recorded here instead of reaching the fire path, and never fires.
-This module checks §3's "enforced by code on every act" rules that are code
-checks on state the CALLER reads and hands in (the "prior is a parameter"
-choice every dry-run module in this tree makes; this module reads nothing):
+"""`remind`'s pure checks (design/cognition-loop/30-cognition.md §2-§3): the
+code-side act guards a Cognition session's reminder is held to before it is
+written to the live reminder store. Each is a refusal with a named reason:
 non-empty citations, the dedupe rule ("one pending act per (subject rows,
-addressee)"), the room's `proactive` flag, "a value that is only abduced goes
-out as a question", the live tool's own lead, horizon and pending ceiling
-(`RemindContext`), and "cognition never cancels a reminder a person set" /
-"own misreads only" for `remind_move`/`remind_cancel`. Each is a REFUSAL with a
-named reason, so a would-commit is an act the live path would not have stopped.
-Not checked here, because it needs a read this module is never handed:
-disclosure at assembly (re-run when the reminder fires) and `dream_screen`. The
-design's «daily act cap per room and per person» has no live counterpart (the live
-`remind` has only the pending ceiling), so none is invented here.
+room)"), the room's `proactive` flag, "a value that is only abduced goes out as
+a question", and the tag `remind` tool's own lead, horizon and pending ceiling
+(`RemindContext`). The caller reads the state and hands it in; nothing here
+reads. Disclosure is re-run when the reminder fires, by the fire path.
 """
 
 from __future__ import annotations
@@ -28,82 +18,19 @@ INTENTS: tuple[str, ...] = ("tell", "ask")
 
 
 @dataclass(frozen=True, slots=True)
-class PendingMirroredRemind:
-    """What the caller already knows about one pending mirrored reminder."""
+class PendingRemind:
+    """One of Nora's own pending reminders, as the dedupe rule reads it."""
 
     reminder_ref: str
     platform: str
     conversation_id: str
     subject_rows: tuple[str, ...]
-    created_by_session_id: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class MirrorRow:
-    """One recorded `cognition_remind_mirror` row, as `fold_pending_reminds`
-    reads it (a refused row is passed too and ignored by the fold)."""
-
-    reminder_ref: str | None
-    verb: str
-    outcome: str
-    platform: str
-    conversation_id: str
-    subject_rows: tuple[str, ...]
-    at_ms: int | None
-    session_id: int | None
-
-
-def fold_pending_reminds(
-    rows: Sequence[MirrorRow], *, now_ms: int,
-) -> tuple[PendingMirroredRemind, ...]:
-    """The mirrored reminds still PENDING, from a unit's rows in recorded
-    order. A mirrored remind is a chain (`remind`, then `remind_move` and
-    `remind_cancel` on its ref); the latest recorded link decides. Cancelled
-    is not pending. **Due is not pending either**: nothing fires in shadow, so
-    a remind whose time has come is what would have been sent and is no
-    longer a pending act; without this the dedupe rule (one pending act per
-    subject rows and room) would refuse a second reminder on the same rows
-    forever. A refused row changes nothing; a move or cancel whose `remind` is
-    not among `rows` is ignored."""
-    live: dict[str, tuple[PendingMirroredRemind, int]] = {}
-    for row in rows:
-        if row.outcome != "recorded" or row.reminder_ref is None:
-            continue
-        ref = row.reminder_ref
-        if row.verb == "remind" and row.at_ms is not None:
-            live[ref] = (
-                PendingMirroredRemind(
-                    reminder_ref=ref, platform=row.platform,
-                    conversation_id=row.conversation_id, subject_rows=row.subject_rows,
-                    created_by_session_id=row.session_id,
-                ),
-                row.at_ms,
-            )
-        elif row.verb == "remind_move" and ref in live and row.at_ms is not None:
-            live[ref] = (live[ref][0], row.at_ms)
-        elif row.verb == "remind_cancel":
-            live.pop(ref, None)
-    return tuple(p for p, at in live.values() if at > now_ms)
 
 
 @dataclass(frozen=True, slots=True)
 class RemindRefusal:
     reason: str
     detail: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class RemindAnswer:
-    """What a mirrored remind call answers: the ledger row, and the refusal
-    when it was refused."""
-
-    row_id: int
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-
-    @property
-    def refused(self) -> bool:
-        return self.refusal_reason is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,10 +51,8 @@ class RemindContext:
     #: A cited row is a value that is only abduced: the act must be an `ask`.
     abduced_subject: bool = False
     #: The live ceiling (`ReminderCaps.max_pending_per_requester`, `None`: none)
-    #: and how many pending rows Nora's own requester id already holds in the
-    #: live store (`ReminderStore.count_pending`, a series counted as one). The
-    #: mirrored reminders pending in this unit are added by the check, since at
-    #: cut-over they are rows too.
+    #: and how many pending rows Nora's own requester id already holds
+    #: (`ReminderStore.count_pending`, a series counted as one).
     max_pending: int | None = None
     live_pending: int = 0
     #: The live lead and horizon, and the clock and the moment asked for, all in
@@ -139,9 +64,34 @@ class RemindContext:
     max_horizon_days: int | None = None
 
 
+def check_remind_time(ctx: RemindContext) -> RemindRefusal | None:
+    """The moment: ahead, no nearer than the lead, no further than the
+    horizon. The live tool's own order and wording, without its numbers."""
+    if ctx.now_ms is None or ctx.at_ms is None:
+        return None
+    if ctx.at_ms <= ctx.now_ms:
+        return RemindRefusal(
+            "past",
+            "That moment has already gone. Work out the date again and give one "
+            "exact moment ahead.",
+        )
+    if ctx.min_lead_seconds is not None and ctx.at_ms - ctx.now_ms < ctx.min_lead_seconds * 1000:
+        return RemindRefusal(
+            "too_soon", "That is near enough that it would be said now. Set it further out.",
+        )
+    if (
+        ctx.max_horizon_days is not None
+        and ctx.at_ms - ctx.now_ms > ctx.max_horizon_days * 86_400_000
+    ):
+        return RemindRefusal(
+            "too_far", "That is further out than anything is held. Set it nearer the time.",
+        )
+    return None
+
+
 def check_remind(
     *, subject_rows: Sequence[str], intent: str, platform: str, conversation_id: str,
-    pending: Sequence[PendingMirroredRemind], context: RemindContext | None = None,
+    pending: Sequence[PendingRemind], context: RemindContext | None = None,
 ) -> RemindRefusal | None:
     """`remind(at, room, brief)`. `brief` is `(intent, subject_rows)` — never
     prose (30-cognition.md §2). The refusal reasons are `no_citations`,
@@ -163,30 +113,9 @@ def check_remind(
             "a row you cite is only your best explanation, not something anyone said: "
             "ask the room about it, do not tell it",
         )
-    if ctx.now_ms is not None and ctx.at_ms is not None:
-        # The live tool's own order and wording, without its numbers.
-        if ctx.at_ms <= ctx.now_ms:
-            return RemindRefusal(
-                "past",
-                "That moment has already gone. Work out the date again and give one "
-                "exact moment ahead.",
-            )
-        if (
-            ctx.min_lead_seconds is not None
-            and ctx.at_ms - ctx.now_ms < ctx.min_lead_seconds * 1000
-        ):
-            return RemindRefusal(
-                "too_soon",
-                "That is near enough that it would be said now. Set it further out.",
-            )
-        if (
-            ctx.max_horizon_days is not None
-            and ctx.at_ms - ctx.now_ms > ctx.max_horizon_days * 86_400_000
-        ):
-            return RemindRefusal(
-                "too_far",
-                "That is further out than anything is held. Set it nearer the time.",
-            )
+    timing = check_remind_time(ctx)
+    if timing is not None:
+        return timing
     duplicate = any(
         p.platform == platform and p.conversation_id == conversation_id
         and set(p.subject_rows) == set(subject_rows)
@@ -196,40 +125,10 @@ def check_remind(
         return RemindRefusal(
             "duplicate_pending", "an identical reminder is already pending for this room",
         )
-    if ctx.max_pending is not None and ctx.live_pending + len(pending) >= ctx.max_pending:
+    if ctx.max_pending is not None and ctx.live_pending >= ctx.max_pending:
         return RemindRefusal(
             "pending_ceiling",
             "You already have enough of your own waiting. Let some fire before "
             "deciding more.",
         )
     return None
-
-
-def check_remind_move(
-    *, reminder_ref: str, pending: Sequence[PendingMirroredRemind],
-    created_by_session_id: int | None,
-) -> RemindRefusal | None:
-    row = next((p for p in pending if p.reminder_ref == reminder_ref), None)
-    if row is None:
-        return RemindRefusal("not_found", f"no pending reminder {reminder_ref!r}")
-    if (
-        created_by_session_id is not None
-        and row.created_by_session_id is not None
-        and row.created_by_session_id != created_by_session_id
-    ):
-        return RemindRefusal(
-            "not_own",
-            "you may only move or cancel a reminder you set yourself; a person's own "
-            "reminder is theirs to change",
-        )
-    return None
-
-
-def check_remind_cancel(
-    *, reminder_ref: str, pending: Sequence[PendingMirroredRemind],
-    created_by_session_id: int | None,
-) -> RemindRefusal | None:
-    return check_remind_move(
-        reminder_ref=reminder_ref, pending=pending,
-        created_by_session_id=created_by_session_id,
-    )
