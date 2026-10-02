@@ -201,6 +201,14 @@ async def forget_person(
         return report
     if candidate_ids:
         async with engine.begin() as conn:
+            # The rows locked in id order BEFORE the update takes them: a writer citing two
+            # or more of this person's messages (`citation.lock_cited_messages`, sorted)
+            # and this multi-row hide then acquire row locks in the same order and cannot
+            # wait on each other in a cycle.
+            await conn.execute(
+                sa.select(MESSAGES.c.id).where(MESSAGES.c.id.in_(candidate_ids))
+                .order_by(MESSAGES.c.id).with_for_update()
+            )
             result = await conn.execute(
                 sa.update(MESSAGES)
                 .where(MESSAGES.c.id.in_(candidate_ids))

@@ -45,6 +45,7 @@ from nora.domain.delete_authorship import (
     ORPHAN_CAP_GLOBAL,
     ORPHAN_CAP_PER_DELETER,
     ORPHAN_CAP_PER_ROOM,
+    ORPHAN_CAP_UNNAMED_PER_ROOM,
     ORPHAN_TTL_MS,
     orphan_names_message,
 )
@@ -79,6 +80,7 @@ from nora.domain.models import (
     EditTarget,
     NormalizedMessage,
     OrphanDelete,
+    OrphanRecord,
     RowEdit,
     Touch,
     TranscriptRow,
@@ -349,24 +351,39 @@ class FakeRecordStore:
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int | None:
-        """Mirrors `SqlRecordStore.record_orphan_delete`: the unique delivery key, the
-        three caps and the opportunistic purge."""
+    ) -> OrphanRecord:
+        """Mirrors `SqlRecordStore.record_orphan_delete`: the unique delivery key, eviction
+        of the oldest rows of a scope at its cap, and the opportunistic purge."""
         self.orphans = [o for o in self.orphans if o.recorded_at >= now_ms - ORPHAN_TTL_MS]
         ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
         key = (message.platform, message.conversation_id, touch.target.message_id,
                touch.target.sent_ts, message.sender_id)
         for o in self.orphans:
             if (o.platform, o.conversation_id, o.handle, o.sent_ts, o.deleter_id) == key:
-                return o.id
-        mine = [o for o in self.orphans if o.platform == message.platform]
-        if (
-            sum(o.conversation_id == message.conversation_id for o in mine)
-            >= ORPHAN_CAP_PER_ROOM
-            or sum(o.deleter_id == message.sender_id for o in mine) >= ORPHAN_CAP_PER_DELETER
-            or len(self.orphans) >= ORPHAN_CAP_GLOBAL
-        ):
-            return None
+                return OrphanRecord(id=o.id)
+
+        def room(o: OrphanDelete) -> bool:
+            return o.platform == message.platform and o.conversation_id == message.conversation_id
+
+        evicted = 0
+
+        def evict(scope: Any, cap: int) -> None:
+            nonlocal evicted
+            held = sorted((o for o in self.orphans if scope(o)),
+                          key=lambda o: (o.recorded_at, o.id))
+            if len(held) < cap:
+                return
+            gone = {o.id for o in held[: len(held) - cap + 1]}
+            self.orphans = [o for o in self.orphans if o.id not in gone]
+            evicted += len(gone)
+
+        if message.sender_id:
+            evict(lambda o: o.platform == message.platform and o.deleter_id == message.sender_id,
+                  ORPHAN_CAP_PER_DELETER)
+        else:
+            evict(lambda o: room(o) and o.deleter_id == "", ORPHAN_CAP_UNNAMED_PER_ROOM)
+        evict(room, ORPHAN_CAP_PER_ROOM)
+        evict(lambda o: True, ORPHAN_CAP_GLOBAL)
         self.orphans.append(OrphanDelete(
             id=(max((o.id for o in self.orphans), default=0) + 1),
             platform=message.platform, conversation_id=message.conversation_id,
@@ -374,7 +391,7 @@ class FakeRecordStore:
             deleter_id=message.sender_id, deleter_ids=ids, deleter_person_id=person_id,
             event_ts=message.timestamp, recorded_at=now_ms,
         ))
-        return self.orphans[-1].id
+        return OrphanRecord(id=self.orphans[-1].id, evicted=evicted)
 
     async def is_hidden(self, *, row_id: int) -> bool:
         """Mirrors `SqlRecordStore.is_hidden`: a row is hidden when `hide` marked it."""
@@ -382,13 +399,14 @@ class FakeRecordStore:
 
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
+        edit_timestamps: Sequence[int] = (),
     ) -> list[OrphanDelete]:
         """Mirrors `SqlRecordStore.match_orphan_deletes`: the same one rule."""
         return [
             o for o in self.orphans
             if orphan_names_message(
                 o, platform=message.platform, conversation_id=message.conversation_id,
-                handle=message.message_id, timestamps=(message.timestamp,),
+                handle=message.message_id, timestamps=(message.timestamp, *edit_timestamps),
                 sender_id=message.sender_id, person_id=person_id,
             )
         ]

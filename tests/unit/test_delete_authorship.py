@@ -13,6 +13,7 @@ from nora.domain.delete_authorship import (
     ORPHAN_CAP_GLOBAL,
     ORPHAN_CAP_PER_DELETER,
     ORPHAN_CAP_PER_ROOM,
+    ORPHAN_CAP_UNNAMED_PER_ROOM,
     ORPHAN_TTL_MS,
     deleter_is_author,
     orphan_names_message,
@@ -177,9 +178,22 @@ def test_an_orphans_other_id_forms_and_person_make_it_the_authors():
     assert _names(orphan, sender_id="zzz", person_id="ben") is False
 
 
-def test_a_held_delete_waits_three_days_at_most_and_the_caps_are_a_few_hundred():
+def test_a_held_delete_waits_three_days_at_most_and_the_caps_are_ordered_by_blast_radius():
     """The race lasts seconds to minutes (a bridge backlog after an outage, hours): a held
-    delete older than three days is purged, and the table is bounded per room, per deleter
-    and overall."""
+    delete older than three days is purged. The caps bound the table by EVICTION: one named
+    deleter is held well below the room, an unnamed one (Discord, Instagram) is held per
+    ROOM, and the room well below the global ceiling, so one party cannot starve another."""
     assert ORPHAN_TTL_MS == 3 * 24 * 3600 * 1000
-    assert (ORPHAN_CAP_PER_ROOM, ORPHAN_CAP_PER_DELETER, ORPHAN_CAP_GLOBAL) == (300, 300, 5000)
+    assert ORPHAN_CAP_PER_DELETER < ORPHAN_CAP_UNNAMED_PER_ROOM < ORPHAN_CAP_PER_ROOM
+    assert ORPHAN_CAP_PER_ROOM * 10 <= ORPHAN_CAP_GLOBAL
+    assert (ORPHAN_CAP_PER_DELETER, ORPHAN_CAP_UNNAMED_PER_ROOM, ORPHAN_CAP_PER_ROOM,
+            ORPHAN_CAP_GLOBAL) == (40, 100, 200, 5000)
+
+
+def test_whitespace_is_no_id_in_the_rule_itself():
+    assert _author(author_sender_id=" ", deleter_sender_id=" ") is False
+    assert _author(author_sender_id=" ", deleter_sender_id="x", deleter_ids=[" "]) is False
+    assert _author(author_sender_id="a", deleter_sender_id=" a ") is True
+    assert _author(author_sender_id=" a", deleter_sender_id="b", deleter_ids=["a "]) is True
+    assert _author(author_sender_id="x", deleter_sender_id="y",
+                   author_person_id=" ", deleter_person_id=" ") is False

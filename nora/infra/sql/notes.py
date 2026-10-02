@@ -1254,6 +1254,16 @@ class SqlNoteStore:
         # written — see the check below.
         declared: dict[str, str] = {}
         async with self._engine.begin() as conn:
+            # EVERY message the whole batch cites, locked ONCE, SORTED, before the first
+            # write (`citation.lock_cited_messages`). A lock taken per write meant the
+            # batch took message locks AFTER it already held an earlier note's row, the
+            # reverse of the delete's order (message, then the notes that cite it), and
+            # deadlocked with it: note A cites m3 and is revised to cite m9, note B is
+            # revised to cite m3, while a delete hides m3 and its cascade updates A. The
+            # per-write calls below find the same rows already locked and cost nothing.
+            await lock_cited_messages(
+                conn, {i for _, payload in typed for i in cited_ids_in(payload.body)},
+            )
             for p, payload in typed:
                 if isinstance(payload, NoteCreationProposal):
                     note, first = self._new_note(

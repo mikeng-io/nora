@@ -20,9 +20,11 @@ from nora.domain.models import OrphanDelete
 
 __all__ = [
     "AUTHOR_ONLY_DELETES",
+    "DELETER_IDS_KEY",
     "ORPHAN_CAP_GLOBAL",
     "ORPHAN_CAP_PER_DELETER",
     "ORPHAN_CAP_PER_ROOM",
+    "ORPHAN_CAP_UNNAMED_PER_ROOM",
     "ORPHAN_TTL_MS",
     "deleter_is_author",
     "orphan_names_message",
@@ -32,17 +34,42 @@ __all__ = [
 #: lasts seconds (a photo's custody fetch) to minutes, and a bridge backlog after an
 #: outage hours: three days covers every real case. A row older than this is purged, by
 #: the start-up sweep and opportunistically whenever one is written. A message that
-#: arrives later than this after its own delete is rare, and the drop is the safe
-#: direction (the message stays visible, never the reverse).
+#: arrives later than this after its own delete stays visible: there is nothing left to
+#: apply, and that is a LEAK-direction loss, which is why the window is generous and
+#: why a row is never refused for room (see the caps).
 ORPHAN_TTL_MS = 3 * 24 * 3600 * 1000
 
-#: Caps on held deletes, enforced when one is written (a drop is counted
-#: `orphan_dropped` and logged without text). Authorship can only be checked once a
-#: target exists, so any WhatsApp member can write rows by revoking ids that do not
-#: exist: the table is bounded per room, per deleter, and overall.
-ORPHAN_CAP_PER_ROOM = 300
-ORPHAN_CAP_PER_DELETER = 300
+#: Caps on held deletes, enforced when one is written, SOFT (counted before the insert
+#: under READ COMMITTED, so concurrent writers can overshoot by a few) and by EVICTION,
+#: never by refusal: a new held delete always lands, and a flood evicts the OLDEST rows of
+#: its own scope first (`orphan_evicted`, logged without text). Authorship can only be
+#: checked once a target exists, so any WhatsApp member can write rows by revoking ids that
+#: do not exist, and Discord and Instagram deletes name nobody at all.
+#:
+#: Ordered so that one party cannot starve another: a NAMED deleter is bounded well below
+#: the room (`PER_DELETER` < `PER_ROOM`), an UNNAMED deleter (Discord and Instagram name
+#: nobody, so every row has `deleter_id == ""`) is bounded per ROOM, never as one shared
+#: bucket for the platform, and the room is bounded well below the global ceiling.
+#:
+#: **Residual risk, stated plainly.** Eviction is a LEAK-direction event: an evicted held
+#: delete that a message then arrives for leaves that message VISIBLE and fed to memory. It
+#: needs a flood large enough to push a legitimate row out within its seconds-to-minutes
+#: race window (more than `PER_DELETER` revokes of ids that do not exist from one
+#: modified WhatsApp client for ITS OWN rows; more than `PER_ROOM` from many for a room's),
+#: and the flood is loud (`orphan_evicted` counts it). What bounds it is that evictions
+#: take the flooder's oldest rows first and that the table cannot grow without limit.
+ORPHAN_CAP_PER_DELETER = 40
+ORPHAN_CAP_UNNAMED_PER_ROOM = 100
+ORPHAN_CAP_PER_ROOM = 200
 ORPHAN_CAP_GLOBAL = 5000
+
+
+#: The key under which Nora stores the deleter's id forms in a `message_delete` record's
+#: event (`raw_json`). Written by the touch stage, by the pipeline's application of a held
+#: delete and by the sweep, OVERWRITING anything an event of that name carried, and the
+#: only key `genuine` trusts: a historic event that happens to contain an `actor_ids` (or
+#: any other) key is not read as the deleter's id forms.
+DELETER_IDS_KEY = "nora_deleter_ids"
 
 #: Platforms where only a message's author can delete it for everyone, so a
 #: delete naming someone else's message is not a member's action: Signal's remote
@@ -55,6 +82,11 @@ ORPHAN_CAP_GLOBAL = 5000
 #: deleter at all (`sender_id == ""`), so there is nothing to compare; both are
 #: server-authenticated events and are honoured as the platform reports them.
 AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({"signal", "whatsapp"})
+
+
+def _id(value: str | None) -> str:
+    """An id as the rule compares it: stripped, and a blank one is no id."""
+    return (value or "").strip()
 
 
 def deleter_is_author(
@@ -73,12 +105,14 @@ def deleter_is_author(
     raw JID, and the parser picks one; a message stored under the phone and revoked
     under the LID by an author nobody mapped is still the author's). A deleter that
     names nobody never matches."""
-    if author_sender_id and author_sender_id == deleter_sender_id:
+    author, deleter = _id(author_sender_id), _id(deleter_sender_id)
+    if author and author == deleter:
         return True
     # Two EMPTY person ids are not «the same person»: both sides unresolved.
-    if author_person_id and author_person_id == deleter_person_id:
+    person = _id(author_person_id)
+    if person and person == _id(deleter_person_id):
         return True
-    return bool(author_sender_id) and author_sender_id in {i for i in deleter_ids if i}
+    return bool(author) and author in {_id(i) for i in deleter_ids if _id(i)}
 
 
 def orphan_names_message(

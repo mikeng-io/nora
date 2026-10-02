@@ -5,12 +5,13 @@
     "Before this, an unsent message stayed visible to Nora in every transcript and in everything derived from it.",
     "On Signal and WhatsApp only the message's own author can unsend it for her; anyone else's request is refused, including old ones the first start after this change finds on record.",
     "A delete that reaches her before the message does, or while she was restarting, is kept and applied when the message arrives.",
-    "A message deleted in the instant it arrives is not read, fed to her memory or answered, whether it is text or a photo that is unsent within seconds (it is no longer read by the vision model either).",
+    "A message deleted in the instant it arrives is held back from her memory feed, her notes and her replies (and a photo unsent within seconds is no longer read by the vision model); a delete that lands after those steps have run is the ordinary after-the-fact case, and what was already passed on is not taken back.",
     "An operator command, `nora withdrawal reconcile-deletes`, applies the same to deletes that were already recorded, and it also runs every time she starts."
   ],
   "limitations": [
     "Honcho, her long-term memory, has no way to delete one message, so something it already learned from a deleted message may remain there.",
     "A deleted message stays hidden, and a note or event that rested on it stays withdrawn: nothing clears the mark when a note is rewritten, and an operator has to clear it. The room's overall position and culture are not withdrawn, so in a quiet room they can keep the deleted message's content until the next time they are rewritten.",
-    "On WhatsApp a group admin removing someone else's message is not recognised, and deleting one of Nora's own messages is only recognised on Signal."
+    "On WhatsApp a group admin removing someone else's message is not recognised, and deleting one of Nora's own messages is only recognised on Signal.",
+    "A very large flood of revokes of messages that do not exist, from a modified WhatsApp client, can push a legitimate early delete out of the table before its message arrives; that message then stays visible. It is counted and bounded, but it is not impossible."
   ]
 }

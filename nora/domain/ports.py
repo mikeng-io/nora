@@ -229,6 +229,7 @@ from nora.domain.models import (
     EditTarget,
     NormalizedMessage,
     OrphanDelete,
+    OrphanRecord,
     TagContext,
     Touch,
     TranscriptRow,
@@ -920,19 +921,21 @@ class RecordStore(Protocol):
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int | None:
+    ) -> OrphanRecord:
         """Keep a delete whose target is not on record (yet), in its own transaction;
-        returns the row's id. `touch.target` is the key (`handle`, or Signal's
-        `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`,
-        `person_id`). It is applied when the message is recorded
-        (`match_orphan_deletes`) or by the start-up sweep, and purged if it never is.
-        Ids and times only. See `OrphanDelete`.
+        returns the row that holds it. `touch.target` is the key (`handle`, or Signal's
+        `sent_ts`), `message` the deleter (`sender_id`, `touch.actor_ids`, `person_id`).
+        It is applied when the message is recorded (`match_orphan_deletes`) or by the
+        start-up sweep, and purged if it never is. Ids and times only. See `OrphanDelete`.
 
-        BOUNDED. The same delivery again returns the row it already has and adds none.
-        A write that would pass a cap (per room, per deleter, overall:
-        `nora.domain.delete_authorship.ORPHAN_CAP_*`) writes nothing and returns None
-        (the caller counts `orphan_dropped`): authorship is only checkable once a target
-        exists, so the table must not be growable by revoking ids that do not exist.
+        BOUNDED, by EVICTION and never by refusal. The same delivery again returns the row
+        it already has and adds (and evicts) nothing. A new one always lands: when its
+        scope already holds the cap (a NAMED deleter: `ORPHAN_CAP_PER_DELETER`; an
+        unnamed one, as Discord and Instagram deletes are: per room,
+        `ORPHAN_CAP_UNNAMED_PER_ROOM`; the room: `ORPHAN_CAP_PER_ROOM`; everything:
+        `ORPHAN_CAP_GLOBAL`, all in `nora.domain.delete_authorship`) the OLDEST rows of that
+        scope are evicted first, before the insert, and counted in `evicted`. Eviction is a
+        leak-direction loss if the evicted delete's message then arrives: see the constants.
         Expired rows (`ORPHAN_TTL_MS`) are purged in the same transaction, a bounded few."""
         ...
 
@@ -945,6 +948,7 @@ class RecordStore(Protocol):
 
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
+        edit_timestamps: Sequence[int] = (),
     ) -> list[OrphanDelete]:
         """The held deletes that name `message` (a message just recorded, or one a
         job asks about), by the one rule `nora.domain.delete_authorship.
@@ -953,7 +957,9 @@ class RecordStore(Protocol):
         only the author can delete, a deleter who IS its author. A non-author's is never
         returned. It removes nothing: the caller applies what it returns and then
         `discard_orphan_delete`s each, so a crash in between leaves the row for the
-        start-up sweep and nothing is lost."""
+        start-up sweep and nothing is lost. `edit_timestamps` are the timestamps of the
+        message's edits: a Signal delete may name an edit by its own (the edit path
+        asks about the original and the edit that just landed)."""
         ...
 
     async def discard_orphan_delete(self, *, orphan_id: int) -> bool:

@@ -34,6 +34,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
+from nora.domain.delete_authorship import DELETER_IDS_KEY
 from nora.domain.models import (
     EditedMessage,
     EditTarget,
@@ -115,10 +116,14 @@ IngestOutcome = Literal[
     "delete_refused",       # an author-only delete naming someone else's message
     # A message RECORDED and then stopped before any downstream stage (the central
     # guard, `_guard`): `withdrawn` when a delete hid it (or was applied to it from a
-    # held delete), `withdrawal_pending` when a delete named it and could not be
-    # applied or looked up yet (the start-up sweep applies it).
+    # held delete); `withdrawal_pending` when a held delete is KNOWN to name it and
+    # could not be applied (the start-up sweep applies it); `guard_read_failed` when the
+    # question «is a delete holding this message?» could not be answered twice running.
+    # That last one is a DELIBERATE stop, counted: no delete is known to exist, the
+    # database is failing, and a message fed on a guess is the worse way to be wrong.
     "withdrawn",
     "withdrawal_pending",
+    "guard_read_failed",
 ]
 
 _OUTCOMES: frozenset[str] = frozenset(get_args(IngestOutcome))
@@ -172,6 +177,13 @@ def _outcome(metrics: Any, message: NormalizedMessage, value: IngestOutcome) -> 
     except Exception:  # an observation must never stop an ingest
         log.debug("ingest outcome %r not counted", value, exc_info=True)
     annotate(**{"nora.outcome": value})
+
+
+def _held_outcome(held: str) -> IngestOutcome:
+    """The ending of a message a held delete stopped: see `IngestOutcome`."""
+    if held == "applied":
+        return "withdrawn"
+    return "guard_read_failed" if held == "unreadable" else "withdrawal_pending"
 
 
 @dataclass(frozen=True)
@@ -435,7 +447,7 @@ class IngestPipeline:
                 message, person.person_id if person else None, row_id,
             )
             if held != "none":
-                _outcome(m, message, "withdrawn" if held == "applied" else "withdrawal_pending")
+                _outcome(m, message, _held_outcome(held))
                 return IngestResult(message=None, decision=None)
         stopped = await self._guard(row_id, message)
         if stopped is not None:
@@ -554,6 +566,24 @@ class IngestPipeline:
         if recorded != "recorded":
             _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
             return IngestResult(message=None, decision=None)
+        # A held delete that names this message BY THIS EDIT (Signal names an edit by its
+        # own timestamp, and the delete may have arrived before the edit did) or the
+        # original: applied now, before anything reads or feeds the edit on. The same
+        # rule as the message path, asked about the original and the edit just recorded.
+        if self._delete_withdrawer is not None:
+            about_original = NormalizedMessage(
+                platform=message.platform, conversation_id=message.conversation_id,
+                conversation_type=message.conversation_type, sender_id=original.sender_id,
+                sender_name=None, timestamp=original.ts, body="", raw={},
+                message_id=original.platform_message_id,
+            )
+            held = await self._apply_orphans(
+                about_original, original.person_id, original.id,
+                edit_timestamps=(message.timestamp,),
+            )
+            if held != "none":
+                _outcome(m, message, _held_outcome(held))
+                return IngestResult(message=None, decision=None)
         # The one guard, for the edit path too: a delete may have hidden the original
         # since `edit_target` read it, and nothing below may feed or open a turn on it.
         stopped = await self._guard(original.id, message)
@@ -603,48 +633,68 @@ class IngestPipeline:
         return IngestResult(message=None, decision=None)
 
     async def _guard(self, row_id: int, message: NormalizedMessage) -> IngestOutcome | None:
-        """THE ONE FAIL-CLOSED POINT. Immediately before an audited message is handed
-        to any downstream consumer (the memory feed, the stimulus, the Standing and note
-        stages, the gate) its row is read again, one read by primary key, and a hidden
-        row stops the pipeline here. Every race between a message and its delete ends
-        in this read even if the specific fix for it is missed: a delete that hid the
-        row between the audit write and now, one whose orphan was discarded by the
-        delete's own second lookup, one applied by another task. A read that fails
-        stops it too (a skipped message is recoverable from the record; a fed one is
-        not). `None` when it may go on."""
-        try:
-            hidden = await self._audit.is_hidden(row_id=row_id)
-        except Exception:
-            log.exception("could not read whether message row %d is hidden; stopping it", row_id)
-            self._metrics.inc("nora_errors_total", stage="guard", platform=message.platform)
-            return "withdrawal_pending"
-        return "withdrawn" if hidden else None
+        """THE ONE FAIL-CLOSED POINT for the window between a message's audit write and the
+        stages that read it. Immediately before an audited message is handed to any
+        downstream consumer (the memory feed, the stimulus, the Standing and note stages,
+        the gate) its row is read again, one read by primary key, and a hidden row stops the
+        pipeline here: a delete that hid the row since the audit write, one whose orphan the
+        delete's own second lookup discarded, one applied by another task.
+
+        It closes THAT window and no other. A delete that arrives after this read is the
+        ordinary after-the-fact case: it hides the row for every later read, and what was
+        already fed or answered stays so (Honcho cannot forget what it was fed, design 04
+        §7 (A2)); no reply path re-checks the flag before sending.
+
+        A read that fails is asked ONCE more. If it fails again the message stops
+        (`guard_read_failed`, counted), deliberately: no delete is known to exist, but the
+        database is failing, and a message fed on a guess is the worse way to be wrong. A
+        single transient failure costs nothing. `None` when it may go on."""
+        for attempt in (1, 2):
+            try:
+                hidden = await self._audit.is_hidden(row_id=row_id)
+            except Exception:
+                log.exception(
+                    "could not read whether message row %d is hidden (attempt %d of 2)",
+                    row_id, attempt,
+                )
+                continue
+            return "withdrawn" if hidden else None
+        self._metrics.inc("nora_errors_total", stage="guard", platform=message.platform)
+        return "guard_read_failed"
 
     async def _apply_orphans(
         self, message: NormalizedMessage, person_id: str | None, row_id: int,
+        edit_timestamps: tuple[int, ...] = (),
     ) -> str:
         """Apply the held deletes that name the message just audited (`row_id`), by the
-        one rule every place a delete takes effect shares. `none` when nothing named
-        it; `applied` when every match was; `failed` when a match could not be read or
-        applied, and the message must NOT go on (the held delete stays for the
-        start-up sweep, counted `apply_failed`).
+        one rule every place a delete takes effect shares. `none` when nothing named it;
+        `applied` when every match was; `failed` when a KNOWN match could not be applied
+        (the held delete stays for the start-up sweep, counted `apply_failed`, the message
+        must NOT go on); `unreadable` when the held deletes could not be read twice
+        running (no delete is known to exist: a deliberate, counted stop,
+        `guard_read_failed`). A single failed read is asked again and costs nothing.
 
         DIRECTLY against `row_id`: no second lookup (a lookup that failed there
         used to leave the message flowing on and write a second orphan row for a delete
         already matched), no replay through the touch stage. The delete's own record is
         written first, then the hide and the cascade, and the held delete is discarded
         only AFTER (a crash in between leaves the row, and the sweep applies it
-        again, idempotently)."""
-        try:
-            orphans = await self._audit.match_orphan_deletes(
-                message=message, person_id=person_id,
-            )
-        except Exception:
-            log.exception("held deletes could not be read; the start-up sweep will")
+        again, idempotently). `edit_timestamps` are the timestamps of the message's edits
+        (the edit path: a Signal delete may name an edit by its own)."""
+        orphans = None
+        for attempt in (1, 2):
+            try:
+                orphans = await self._audit.match_orphan_deletes(
+                    message=message, person_id=person_id, edit_timestamps=edit_timestamps,
+                )
+                break
+            except Exception:
+                log.exception("held deletes could not be read (attempt %d of 2)", attempt)
+        if orphans is None:
             self._metrics.inc(
                 "nora_errors_total", stage="orphan_match", platform=message.platform,
             )
-            return "failed"
+            return "unreadable"
         verdict = "none"
         for orphan in orphans:
             ok = await self._apply_orphan(orphan, row_id, message)
@@ -663,7 +713,7 @@ class IngestPipeline:
             sender_name=None, timestamp=orphan.event_ts, body="",
             # The deleter's id forms ride in the stored event, as the touch stage's own
             # record does, so the authorship rule can read them back (`unforget`, the sweep).
-            raw={"actor_ids": list(orphan.deleter_ids), "from_orphan": orphan.id},
+            raw={DELETER_IDS_KEY: list(orphan.deleter_ids), "from_orphan": orphan.id},
         )
         try:
             await self._audit.append_delete(

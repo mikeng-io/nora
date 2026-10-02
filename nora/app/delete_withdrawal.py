@@ -90,6 +90,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.app.withdrawal import EVIDENCE_STORES, withdraw_message, withdraw_messages
 from nora.domain.delete_authorship import (
     AUTHOR_ONLY_DELETES,
+    DELETER_IDS_KEY,
     ORPHAN_TTL_MS,
     deleter_is_author,
     orphan_names_message,
@@ -193,10 +194,10 @@ class _Record:
                 event = None
             if isinstance(event, dict):
                 # The id forms the deleter had when the delete was recorded:
-                # `actor_ids` (written by the touch stage and by every orphan application
+                # `DELETER_IDS_KEY` (written by the touch stage and by every orphan application
                 # since the rule existed) and, for a WhatsApp record from before that, the
                 # phone, LID and JID of the raw event.
-                stored = event.get("actor_ids")
+                stored = event.get(DELETER_IDS_KEY)
                 ids = tuple(i for i in stored if isinstance(i, str)) if isinstance(
                     stored, list) else ()
                 if self.platform == "whatsapp":
@@ -469,13 +470,32 @@ async def _apply_orphan(
     """One held delete applied to the message it names: the delete's own record (with the
     deleter's id forms, so the authorship rule can read them back), the hide and the
     cascade, and the held row removed, in one transaction."""
-    await conn.execute(sa.insert(MESSAGE_DELETE).values(
-        message_id=message_id, sender_id=orphan.deleter_id,
-        person_id=orphan.deleter_person_id, ts=orphan.event_ts,
-        raw_json=json.dumps({"actor_ids": list(orphan.deleter_ids), "from_orphan": orphan.id}),
-    ))
+    # CLAIM the held row first: the DELETE takes its row lock, so a second sweep running
+    # at the same moment waits here, finds it gone and does nothing: one record, one hide,
+    # one count per held delete. (A rollback below puts the row back.)
+    claimed = (await conn.execute(
+        sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id)
+        .returning(ORPHAN_DELETE.c.id)
+    )).first()
+    if claimed is None:
+        return
+    # And one record per (message, deleter): not written again when the live path (or an
+    # earlier sweep) already wrote it for this very delete.
+    already = (await conn.execute(
+        sa.select(MESSAGE_DELETE.c.id).where(
+            MESSAGE_DELETE.c.message_id == message_id,
+            MESSAGE_DELETE.c.sender_id == orphan.deleter_id,
+            MESSAGE_DELETE.c.ts == orphan.event_ts,
+        ).limit(1)
+    )).first()
+    if already is None:
+        await conn.execute(sa.insert(MESSAGE_DELETE).values(
+            message_id=message_id, sender_id=orphan.deleter_id,
+            person_id=orphan.deleter_person_id, ts=orphan.event_ts,
+            raw_json=json.dumps(
+                {DELETER_IDS_KEY: list(orphan.deleter_ids), "from_orphan": orphan.id}),
+        ))
     _, marked = await _withdraw_in(conn, message_id=message_id, now_ms=now_ms)
-    await conn.execute(sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan.id))
     report.orphans_applied += 1
     for store, n in marked.items():
         report.marked[store] = report.marked.get(store, 0) + n

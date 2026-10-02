@@ -56,7 +56,11 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from nora.domain.delete_authorship import AUTHOR_ONLY_DELETES, deleter_is_author
+from nora.domain.delete_authorship import (
+    AUTHOR_ONLY_DELETES,
+    DELETER_IDS_KEY,
+    deleter_is_author,
+)
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import DeleteWithdrawal, DeleteWithdrawer, RecordStore
 from nora.persons import Persons
@@ -152,7 +156,7 @@ async def _record_orphan(
     if not touch.target.message_id and touch.target.sent_ts is None:
         return None             # it names nothing: nothing could ever match it
     try:
-        orphan_id = await audit.record_orphan_delete(
+        recorded = await audit.record_orphan_delete(
             message=message, touch=touch, person_id=person_id,
             now_ms=int(time.time() * 1000),
         )
@@ -161,17 +165,20 @@ async def _record_orphan(
         log.exception("an orphan delete could not be recorded; it is lost")
         metrics.inc("nora_errors_total", stage="touch_orphan", platform=message.platform)
         return None
-    if orphan_id is None:
-        # Over a cap (per room, per deleter, overall). Authorship is only checkable once a
-        # target exists, so the table must not be growable by revoking ids that do not
-        # exist. The drop is the safe direction: the race it serves lasts seconds, and a
-        # message that arrives hours later is rare; it stays visible, never the reverse.
-        log.warning("an orphan delete was dropped by a cap (%s)", message.platform)
-        metrics.inc(
-            "nora_delete_withdrawals_total",
-            platform=message.platform, outcome="orphan_dropped",
+    if recorded.evicted:
+        # A cap bound and the OLDEST held deletes of that scope went to make room: the new
+        # delete always lands. This is a LEAK-direction loss if an evicted delete's message
+        # then arrives (it stays visible and is fed to memory): it takes a flood big enough
+        # to push a legitimate row out within its seconds-to-minutes window, and the flood
+        # is loud (this counter). See `nora.domain.delete_authorship` for the caps.
+        log.warning(
+            "%d held deletes evicted to make room (%s)", recorded.evicted, message.platform,
         )
-    return orphan_id
+        metrics.inc(
+            "nora_delete_withdrawals_total", recorded.evicted,
+            platform=message.platform, outcome="orphan_evicted",
+        )
+    return recorded.id
 
 
 async def _discard_orphan(audit: RecordStore, orphan_id: int) -> None:
@@ -220,11 +227,12 @@ async def _record(
             row_id = await audit.append_delete(
                 message_id=target.id, person_id=person_id,
                 # The deleter's other id forms ride in the stored event
-                # (`actor_ids`): the authorship rule reads them back later (the
+                # (`DELETER_IDS_KEY`): the authorship rule reads them back later (the
                 # start-up sweep, `unforget`), so a record never depends on a
                 # reconstructed event.
                 message=dataclasses.replace(
-                    message, raw={**message.raw, "actor_ids": list(touch.actor_ids)},
+                    message,
+                    raw={**message.raw, DELETER_IDS_KEY: list(touch.actor_ids)},
                 ),
             )
     except Exception:

@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+from nora.domain.delete_authorship import ORPHAN_CAP_PER_DELETER, ORPHAN_CAP_UNNAMED_PER_ROOM
 from nora.domain.media import MediaBlob
 from nora.domain.models import (
     DeliveryStatus,
@@ -870,7 +871,7 @@ async def test_a_delete_is_recorded_and_the_message_still_reads(store):
 
 
 def _orphan(store, *, platform="whatsapp", room="g1", handle="H1", sent_ts=None,
-            deleter="w1", ids=(), person=None):
+            deleter="w1", ids=(), person=None, now=1000, whole=False):
     msg = NormalizedMessage(
         platform=platform, conversation_id=room, conversation_type="group",
         sender_id=deleter, sender_name=None, timestamp=50, body="", raw={},
@@ -878,7 +879,13 @@ def _orphan(store, *, platform="whatsapp", room="g1", handle="H1", sent_ts=None,
     touch = Touch(
         kind="delete", target=EditTarget(message_id=handle, sent_ts=sent_ts), actor_ids=ids,
     )
-    return store.record_orphan_delete(message=msg, touch=touch, person_id=person, now_ms=1000)
+    pending = store.record_orphan_delete(
+        message=msg, touch=touch, person_id=person, now_ms=now)
+    return pending if whole else _id_of(pending)
+
+
+async def _id_of(pending):
+    return (await pending).id
 
 
 def _arriving(*, platform="whatsapp", room="g1", handle="H1", ts=7, sender="w1"):
@@ -942,3 +949,59 @@ async def test_a_kept_whatsapp_delete_is_the_authors_by_id_by_person_or_by_any_i
         message=_arriving(handle="H2", sender="a-lid"), person_id="ada")] == [oid]
     assert await store.match_orphan_deletes(
         message=_arriving(handle="H2", sender="a-lid"), person_id="ben") == []
+
+
+# --- the held-delete table is bounded by EVICTION, never by refusal ------------
+
+
+async def _live(store, *, platform="whatsapp", room="g1", handle="H1", sender="w1"):
+    """Whether a held delete for `handle` still names a message just recorded."""
+    return bool(await store.match_orphan_deletes(
+        message=_arriving(platform=platform, room=room, handle=handle, sender=sender),
+        person_id=None))
+
+
+async def test_a_named_deleter_over_its_cap_evicts_its_own_oldest_and_a_new_one_always_lands(
+    store,
+):
+    cap = ORPHAN_CAP_PER_DELETER
+    for i in range(cap):
+        rec = await _orphan(store, handle=f"H{i}", deleter="hostile", now=1000 + i, whole=True)
+        assert rec.evicted == 0
+    other = await _orphan(store, room="g2", handle="OTHER", deleter="author", now=5000,
+                          whole=True)
+    over = await _orphan(store, handle="NEW", deleter="hostile", now=9000, whole=True)
+
+    assert over.evicted == 1, "the new one landed and pushed ONE older row out"
+    assert not await _live(store, handle="H0", sender="hostile"), "its oldest went first"
+    assert await _live(store, handle="H1", sender="hostile")
+    assert await _live(store, handle="NEW", sender="hostile")
+    assert await _live(store, room="g2", handle="OTHER", sender="author"), (
+        "a flood evicts only its own")
+    assert other.evicted == 0
+
+
+async def test_unnamed_deletes_are_bounded_per_room_not_as_one_bucket_for_the_platform(store):
+    """Discord and Instagram deletes name nobody (`deleter_id == ""`): the per-deleter cap
+    must not turn them into ONE shared bucket for the whole platform."""
+    for room in range(30):
+        for i in range(10):
+            rec = await _orphan(store, platform="discord", room=f"r{room}", handle=f"H{i}",
+                                deleter="", now=1000 + room * 10 + i, whole=True)
+            assert rec.evicted == 0, "300 unknown-target deletes over 30 rooms evict nothing"
+    fresh = await _orphan(store, platform="discord", room="fresh", handle="REAL", deleter="",
+                          now=9000, whole=True)
+    assert fresh.evicted == 0
+    assert await _live(store, platform="discord", room="fresh", handle="REAL", sender="d")
+    for i in range(ORPHAN_CAP_UNNAMED_PER_ROOM + 1):
+        await _orphan(store, platform="discord", room="busy", handle=f"B{i}", deleter="",
+                      now=20_000 + i)
+    assert not await _live(store, platform="discord", room="busy", handle="B0", sender="d")
+    assert await _live(store, platform="discord", room="busy", handle="B1", sender="d")
+
+
+async def test_a_redelivered_delete_evicts_nothing(store):
+    for i in range(ORPHAN_CAP_PER_DELETER):
+        await _orphan(store, handle=f"H{i}", deleter="hostile", now=1000 + i)
+    again = await _orphan(store, handle="H0", deleter="hostile", now=9999, whole=True)
+    assert again.evicted == 0 and await _live(store, handle="H0", sender="hostile")

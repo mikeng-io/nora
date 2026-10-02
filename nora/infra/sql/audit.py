@@ -21,6 +21,7 @@ is here in `append`: asyncpg has no `lastrowid`, so the new id comes back via
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
@@ -33,6 +34,7 @@ from nora.domain.delete_authorship import (
     ORPHAN_CAP_GLOBAL,
     ORPHAN_CAP_PER_DELETER,
     ORPHAN_CAP_PER_ROOM,
+    ORPHAN_CAP_UNNAMED_PER_ROOM,
     ORPHAN_TTL_MS,
     orphan_names_message,
 )
@@ -43,6 +45,7 @@ from nora.domain.models import (
     EditTarget,
     NormalizedMessage,
     OrphanDelete,
+    OrphanRecord,
     RowEdit,
     Touch,
     TranscriptRow,
@@ -114,16 +117,21 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     )
 
 
-def orphan_candidates_stmt(message: NormalizedMessage) -> Any | None:
+def orphan_candidates_stmt(
+    message: NormalizedMessage, also_timestamps: Sequence[int] = (),
+) -> Any | None:
     """The held deletes that MIGHT name `message`, narrowed through the handle and
-    sent-timestamp indexes of its room (`orphan_names_message` decides). `None` when the
-    message offers nothing to match on."""
+    sent-timestamp indexes of its room (`orphan_names_message` decides). `also_timestamps`
+    are the timestamps of its EDITS (Signal names an edit by its own): the edit path asks
+    about the original and the edit that just landed. `None` when the message offers
+    nothing to match on."""
     key = []
     if message.message_id:
         key.append(and_(ORPHAN_DELETE.c.handle != "",
                         ORPHAN_DELETE.c.handle == message.message_id))
-    if message.timestamp is not None:
-        key.append(ORPHAN_DELETE.c.sent_ts == message.timestamp)
+    stamps = [t for t in (message.timestamp, *also_timestamps) if t is not None]
+    if stamps:
+        key.append(ORPHAN_DELETE.c.sent_ts.in_(stamps))
     if not key:
         return None
     return (
@@ -569,12 +577,18 @@ class SqlRecordStore:
     async def record_orphan_delete(
         self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
         now_ms: int,
-    ) -> int | None:
-        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One transaction:
-        the opportunistic purge of a few expired rows, the three caps (per room, per
-        deleter, overall) and the INSERT, which is `ON CONFLICT DO NOTHING` on the
-        delivery's unique key, so a re-delivered event returns the row it already has and
-        adds nothing. `None` is a drop by a cap."""
+    ) -> OrphanRecord:
+        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One transaction: the
+        opportunistic purge of a few expired rows; the delivery's own row if it is
+        already held (a re-delivered event adds nothing and evicts nothing); EVICTION of
+        the oldest rows of whichever scope would pass its cap, BEFORE the insert (so the
+        table never holds a row only to remove it, and `row_history` grows by one insert
+        and at most a few evictions per new delivery, never a pair for a refusal); then
+        the INSERT. A new held delete always lands.
+
+        The caps are SOFT: they are counted before the insert under READ COMMITTED, so
+        writers racing each other can overshoot by the number racing. The table is
+        still bounded, by the TTL and by every later write evicting back under the cap."""
         ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
         values = {
             "platform": message.platform,
@@ -588,47 +602,68 @@ class SqlRecordStore:
             "recorded_at": now_ms,
         }
         orphan = ORPHAN_DELETE
+        same_delivery = sa.and_(
+            orphan.c.platform == message.platform,
+            orphan.c.conversation_id == message.conversation_id,
+            orphan.c.handle == values["handle"],
+            sa.func.coalesce(orphan.c.sent_ts, -1) == (
+                -1 if touch.target.sent_ts is None else touch.target.sent_ts
+            ),
+            orphan.c.deleter_id == message.sender_id,
+        )
+        in_room = sa.and_(
+            orphan.c.platform == message.platform,
+            orphan.c.conversation_id == message.conversation_id,
+        )
         async with self._engine.begin() as conn:
             await self._purge_orphans(conn, before_ms=now_ms - ORPHAN_TTL_MS, limit=100)
-            inserted = (await conn.execute(
-                pg_insert(orphan).values(**values).on_conflict_do_nothing().returning(orphan.c.id)
+            held = (await conn.execute(
+                sa.select(orphan.c.id).where(same_delivery).limit(1)
             )).scalar_one_or_none()
-            if inserted is not None:
-                # Counted AFTER the insert, in this transaction: over a cap rolls it back.
-                per_room = (await conn.execute(
-                    sa.select(sa.func.count()).select_from(orphan).where(
-                        orphan.c.platform == message.platform,
-                        orphan.c.conversation_id == message.conversation_id,
-                    )
+            if held is not None:
+                return OrphanRecord(id=int(held))
+            evicted = 0
+            if message.sender_id:
+                evicted += await self._evict_orphans(
+                    conn, sa.and_(orphan.c.platform == message.platform,
+                                  orphan.c.deleter_id == message.sender_id),
+                    ORPHAN_CAP_PER_DELETER,
+                )
+            else:
+                evicted += await self._evict_orphans(
+                    conn, sa.and_(in_room, orphan.c.deleter_id == ""),
+                    ORPHAN_CAP_UNNAMED_PER_ROOM,
+                )
+            evicted += await self._evict_orphans(conn, in_room, ORPHAN_CAP_PER_ROOM)
+            evicted += await self._evict_orphans(conn, sa.true(), ORPHAN_CAP_GLOBAL)
+            inserted = (await conn.execute(
+                pg_insert(orphan).values(**values).on_conflict_do_nothing()
+                .returning(orphan.c.id)
+            )).scalar_one_or_none()
+            if inserted is None:                    # a concurrent writer held it first
+                inserted = (await conn.execute(
+                    sa.select(orphan.c.id).where(same_delivery).limit(1)
                 )).scalar_one()
-                per_deleter = (await conn.execute(
-                    sa.select(sa.func.count()).select_from(orphan).where(
-                        orphan.c.platform == message.platform,
-                        orphan.c.deleter_id == message.sender_id,
-                    )
-                )).scalar_one()
-                total = (await conn.execute(
-                    sa.select(sa.func.count()).select_from(orphan)
-                )).scalar_one()
-                if (
-                    per_room > ORPHAN_CAP_PER_ROOM or per_deleter > ORPHAN_CAP_PER_DELETER
-                    or total > ORPHAN_CAP_GLOBAL
-                ):
-                    await conn.execute(sa.delete(ORPHAN_DELETE).where(orphan.c.id == inserted))
-                    return None
-                return int(inserted)
-            existing = (await conn.execute(
-                sa.select(orphan.c.id).where(
-                    orphan.c.platform == message.platform,
-                    orphan.c.conversation_id == message.conversation_id,
-                    orphan.c.handle == values["handle"],
-                    sa.func.coalesce(orphan.c.sent_ts, -1) == (
-                        -1 if touch.target.sent_ts is None else touch.target.sent_ts
-                    ),
-                    orphan.c.deleter_id == message.sender_id,
-                ).limit(1)
-            )).scalar_one()
-        return int(existing)
+        return OrphanRecord(id=int(inserted), evicted=evicted)
+
+    @staticmethod
+    async def _evict_orphans(conn: Any, scope: Any, cap: int) -> int:
+        """Make room for ONE more row in `scope`: when it already holds `cap`, delete its
+        oldest rows until it holds `cap - 1`. Returns how many went."""
+        held = (await conn.execute(
+            sa.select(sa.func.count()).select_from(ORPHAN_DELETE).where(scope)
+        )).scalar_one()
+        if held < cap:
+            return 0
+        doomed = (
+            sa.select(ORPHAN_DELETE.c.id).where(scope)
+            .order_by(ORPHAN_DELETE.c.recorded_at, ORPHAN_DELETE.c.id)
+            .limit(held - cap + 1)
+        )
+        result = await conn.execute(
+            sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id.in_(doomed))
+        )
+        return int(result.rowcount or 0)
 
     @staticmethod
     async def _purge_orphans(conn: Any, *, before_ms: int, limit: int) -> int:
@@ -645,12 +680,13 @@ class SqlRecordStore:
 
     async def match_orphan_deletes(
         self, *, message: NormalizedMessage, person_id: str | None,
+        edit_timestamps: Sequence[int] = (),
     ) -> list[OrphanDelete]:
         """See `nora.domain.ports.RecordStore.match_orphan_deletes`. SQL narrows the
         candidates through the handle and sent-timestamp indexes (per room); the rule
         that decides is the domain's, `orphan_names_message`, the same function the
         start-up sweep uses."""
-        stmt = orphan_candidates_stmt(message)
+        stmt = orphan_candidates_stmt(message, edit_timestamps)
         if stmt is None:
             return []
         async with self._engine.connect() as conn:
@@ -660,7 +696,7 @@ class SqlRecordStore:
             o for o in orphans
             if orphan_names_message(
                 o, platform=message.platform, conversation_id=message.conversation_id,
-                handle=message.message_id, timestamps=(message.timestamp,),
+                handle=message.message_id, timestamps=(message.timestamp, *edit_timestamps),
                 sender_id=message.sender_id, person_id=person_id,
             )
         ]

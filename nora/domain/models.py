@@ -350,6 +350,16 @@ class OrphanDelete:
 
 
 @dataclass(frozen=True)
+class OrphanRecord:
+    """What `RecordStore.record_orphan_delete` did: the row that now holds the delete
+    (a delivery already held returns its own) and how many OLDER held deletes were
+    evicted to make room for it (`nora.domain.delete_authorship.ORPHAN_CAP_*`)."""
+
+    id: int
+    evicted: int = 0
+
+
+@dataclass(frozen=True)
 class EditedMessage:
     """The recorded message an edit targets, as the edit path needs it
     (`RecordStore.find_edited`, design/message-edits/01 §2).

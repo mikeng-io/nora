@@ -566,6 +566,33 @@ async def _drive_guarded(metrics=None, *, read_fails=False):
     return await pipeline.run(message=_msg(body="just chatting"))
 
 
+async def _drive_pending(metrics=None):
+    """A held delete KNOWN to name the message that could not be applied: the message stops
+    as `withdrawal_pending` (the sweep applies it), never fed."""
+    from nora.domain.models import EditTarget, Touch
+    from nora.testing import FakeDeleteWithdrawer
+
+    store = FakeRecordStore()
+    delete = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name=None, timestamp=5, body="", raw={})
+    await store.record_orphan_delete(
+        message=delete, touch=Touch(kind="delete", target=EditTarget(sent_ts=1)),
+        person_id=None, now_ms=10)
+
+    async def _boom(**_k):
+        raise RuntimeError("db hiccup")
+
+    store.append_delete = _boom
+    pipeline = IngestPipeline(
+        audit=store, memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), allowlist=_policy_of(),
+        metrics=metrics if metrics is not None else Metrics(),
+        spawn=lambda c: c.close(), delete_withdrawer=FakeDeleteWithdrawer(store),
+    )
+    return await pipeline.run(message=_msg(body="just chatting"))
+
+
 async def _drive_engaged(metrics=None):
     pipeline = _pipeline(
         memory=FakeMemory(), persons=_known_persons(),
@@ -680,7 +707,8 @@ def _all_drivers(monkeypatch, metrics):
             metrics, edit_body="dinner at 8", original_is_nora=True,
         ),
         "withdrawn": lambda: _drive_guarded(metrics),
-        "withdrawal_pending": lambda: _drive_guarded(metrics, read_fails=True),
+        "guard_read_failed": lambda: _drive_guarded(metrics, read_fails=True),
+        "withdrawal_pending": lambda: _drive_pending(metrics),
         "reaction_recorded": lambda: _drive_touch(metrics, kind="reaction"),
         "reaction_orphaned": lambda: _drive_touch(metrics, kind="reaction", recorded=False),
         "delete_recorded": lambda: _drive_touch(metrics, kind="delete"),
