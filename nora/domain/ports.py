@@ -1076,14 +1076,6 @@ class NewWakeOutcome:
     #: FAILURE_CAUSES`, `classify_failure`); ignored for `closed`/`cancelled`.
     #: Defaults to `infra`, the side that never strikes a stimulus.
     cause: str = "infra"
-    #: What the session's model loop spent, as the runner could read it: None is
-    #: unread, never a zero (a session that failed before a model call, an
-    #: outcome a restart wrote, a provider that reported no usage).
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    #: The session's root trace, so a spend row can be opened in Langfuse.
-    trace_id: str | None = None
 
 
 @dataclass(frozen=True)

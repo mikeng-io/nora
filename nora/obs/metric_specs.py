@@ -17,7 +17,6 @@ from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
-from nora.domain.gatherings import HELD_REASONS
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
@@ -900,31 +899,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "failed_error (the fire turn raised, or a crash left the row FIRING); "
         "and the fire-time screens' outcomes. A kind=proactive row adds silent "
         "(DONE, the act turn declined) and cancelled_note_retired / "
-        "cancelled_note_moved (design 39 D11/D12); a kind=gathering row adds "
-        "expired_while_held (CANCELLED: its event lost its evidence and the mark "
-        "was still in place HOLD_GRACE past the reminder's time, so the moment "
-        "went; a mark cleared sooner lets it fire late instead, and a reminder "
-        "held inside the window is not resolved at all, see "
-        "nora_gathering_reminders_held_total).",
+        "cancelled_note_moved (design 39 D11/D12).",
         ("outcome",),
-    ),
-    # HELD is the gathering screen's third reading: a reminder whose event the
-    # withdrawal cascade marked unsupported is left PENDING, not fired and not
-    # cancelled (withdrawal is reversible, 10 §2 rule 7). `read_error` is the
-    # screen unable to read the event at all: also left PENDING, because a
-    # transient database error must not cost a reminder its life. Counted once
-    # per held row per tick, so a rate is a hold's duration in ticks and a
-    # count is not a number of reminders.
-    _CounterSpec(
-        "nora_gathering_reminders_held_total",
-        "Gathering reminders the heartbeat held (left PENDING) rather than "
-        "fired, per row per tick, by reason: "
-        + ", ".join(HELD_REASONS)
-        + " (unsupported: the event lost its evidence to a withdrawal, and "
-        "the hold ends when the mark is cleared or HOLD_GRACE past the reminder's "
-        "time; read_error: the event could not be read and the row is retried "
-        "next tick).",
-        ("reason",),
     ),
     # DEFERRALS are the third reading, and the one neither of the two above can
     # give. A tick that finds the conversation slot held leaves its rows PENDING

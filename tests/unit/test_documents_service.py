@@ -750,59 +750,9 @@ async def test_a_handle_shared_with_another_rooms_document_resolves_to_this_room
     assert (await store.get(document_id=theirs)).summary.state == "active"
 
 
-# ----------------------------------------------------------- forgotten stays forgotten
-FORGOTTEN_BY = "forget:ada"
-
-
-@pytest.mark.parametrize("state", ["active", "archived", "deleted"])
-async def test_a_forgotten_document_cannot_be_moved_and_answers_like_an_unknown_id(
-    state: str,
-) -> None:
-    """`nora person forget` (removed) deleted it; nothing Nora does brings it back or moves it, and
-    nothing she says confirms it exists. Only the operator, in the database, restores it."""
-    svc, store = _service()
-    made = await _publish(svc, _doc(title="Hers"))
-    assert await store.set_state(document_id=made.document_id, state="deleted", set_by=FORGOTTEN_BY)
-
-    out = await _set(svc, made.document_id, state)
-    unknown = await _set(svc, uuid4(), state)
-    assert out.status == "refused" and out == unknown
-    assert store._states[made.document_id] == [("deleted", FORGOTTEN_BY)], "nothing was written"
-    # By the handle its link carried, too.
-    from nora.domain.documents import handle_of
-
-    by_handle = await svc.set_state(
-        platform=ROOM[0], conversation_id=ROOM[1], person_id="ken", state=state,
-        handle=handle_of(made.document_id),
-    )
-    assert by_handle == unknown
-
-
-async def test_a_forgotten_document_is_not_revisable_and_does_not_say_to_restore_it() -> None:
-    svc, store = _service()
-    made = await _publish(svc, _doc(title="Hers"))
-    await store.set_state(document_id=made.document_id, state="deleted", set_by=FORGOTTEN_BY)
-    revised = await _publish(svc, _doc(title="v2"), document_id=made.document_id, base_revision=1)
-    unknown = await _publish(svc, _doc(title="v2"), document_id=uuid4(), base_revision=1)
-    assert [f.rule for f in revised.findings] == ["no_such_document"]
-    assert revised == unknown  # not "document_not_active: restore it first"
-    assert len(await store.history(document_id=made.document_id)) == 1
-
-
-async def test_the_operator_can_still_bring_a_forgotten_document_back_in_the_database() -> None:
-    """The one way back: a state row written by someone other than the forget. From then on
-    the document is an ordinary one again."""
-    svc, store = _service()
-    made = await _publish(svc, _doc(title="Hers"))
-    await store.set_state(document_id=made.document_id, state="deleted", set_by=FORGOTTEN_BY)
-    await store.set_state(document_id=made.document_id, state="active", set_by="operator")
-    read = await svc.read(platform=ROOM[0], conversation_id=ROOM[1], document_id=made.document_id)
-    assert read.status == "ok" and read.title == "Hers"
-    assert (await _set(svc, made.document_id, "archived")).status == "ok"
-
-
+# ----------------------------------------------------------- a delete keeps its way back
 async def test_a_document_a_person_deleted_by_hand_is_still_restorable() -> None:
-    """Only the forget's own rows are final: a person's own delete keeps its way back."""
+    """A person's own delete keeps its way back."""
     svc, _ = _service()
     made = await _publish(svc, _doc(title="Mine"))
     assert (await _set(svc, made.document_id, "deleted")).status == "ok"

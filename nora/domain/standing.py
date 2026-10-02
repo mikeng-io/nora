@@ -286,11 +286,6 @@ class Standing:
     # fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
-    # WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
-    # `0075_withdrawal`, step 2c): `None` (supported) unless the cascade
-    # marked this room's position unsupported; epoch ms when it did.
-    # `compare=False` for the same reason `lineage` is.
-    unsupported_at: int | None = field(default=None, compare=False)
     # THE SECTIONED SCHEMA (design/cognition-loop/12-schemas.md §5,
     # 50-character-and-standing.md §2; migration `0076_standing_sections`,
     # step 3 row 3b). Room Standing has four sections there: `Where it
@@ -303,9 +298,7 @@ class Standing:
     # read only through `standing_revise`
     # (`nora.infra.sql.standing_revise`), which enforces the schema (a
     # section given blank rather than omitted is refused) before either
-    # reaches this dataclass. LAST, after `unsupported_at`, for the same
-    # "a defaulted field cannot precede the ones above it" rule
-    # `working_set` follows.
+    # reaches this dataclass.
     hold_open: str | None = None
     i_owe: str | None = None
 

@@ -97,7 +97,6 @@ from nora.domain.notes import Note
 from nora.domain.ports import MemoryStore, Proposal
 from nora.domain.prompt import escape
 from nora.domain.standing import Standing
-from nora.domain.withdrawal import render_supported
 from nora.language.note_render import render_notes
 from nora.language.standing_render import render_standing
 from nora.obs.metrics import Metrics
@@ -649,11 +648,7 @@ class CultureAdaptor:
                             adaptor=self.name,
                         )
         parts: list[ContextBlock] = [self._room_block(key)]
-        # RAW, on purpose, and the ONE read here that is: the fold's own prior
-        # account is shown even when the cascade marked it `unsupported_at`, so
-        # that the fold can see what it wrote and supersede it
-        # (`nora.domain.withdrawal`; pinned by name in
-        # `tests/architecture/test_withdrawal_reaches_every_prompt.py`).
+        # The fold's own prior account, so it can see what it wrote and supersede it.
         previous = await self._culture.head(key=key)
         if previous is not None:
             account_order, account_key = _ROW["previous_account"]
@@ -674,13 +669,9 @@ class CultureAdaptor:
         standing_key = self._standing_key_for(key)
         if self._standing is not None and standing_key is not None:
             platform, conversation_id = standing_key
-            # WITHDRAWAL (`nora.domain.withdrawal`): a position the cascade
-            # marked `unsupported_at` is a room with no position, so the block
-            # is absent. Unlike the account above, this is not the fold's own
-            # prior: it is the debrief's, read as input.
-            block = render_standing(render_supported(await self._standing.read(
+            block = render_standing(await self._standing.read(
                 platform=platform, conversation_id=conversation_id,
-            )))
+            ))
             if block is not None:
                 # RESTAMPED: `render_standing` is shared with the tag path
                 # and builds an unstamped block.

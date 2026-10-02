@@ -70,13 +70,6 @@
     "target": "tests/unit/test_culture_adaptor.py -k uses_the_key_the_POLICY"
   },
   {
-    "name": "part 2b: the standing read becomes fail-soft",
-    "file": "nora/language/culture.py",
-    "old": "            block = render_standing(render_supported(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            )))",
-    "new": "            try:\n                block = render_standing(render_supported(await self._standing.read(\n                    platform=platform, conversation_id=conversation_id,\n                )))\n            except Exception:\n                block = None",
-    "target": "tests/unit/test_culture_adaptor.py -k RAISES_takes_the_fold"
-  },
-  {
     "name": "part 2b: the note index is read and never rendered",
     "file": "nora/language/culture.py",
     "old": "            if index is not None:\n                # RESTAMPED, like `render_standing` above: `render_notes` is\n                # shared with the tag path and builds an unstamped block.\n                parts.append(restamp(index, _ROW))",

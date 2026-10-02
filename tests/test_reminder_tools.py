@@ -451,63 +451,6 @@ async def test_list_reminders_is_scoped_to_this_conversation():
     assert [r["text"] for r in result["reminders"]] == ["洗衫"]
 
 
-async def test_list_reminders_leaves_out_the_reminder_a_withdrawn_event_owns():
-    """The cascade's hold (`nora.app.gathering_screen`): a reminder whose event
-    lost its evidence carries the event's title in its text, so it is not shown,
-    and it is shown again once the mark is cleared."""
-    from dataclasses import replace
-
-    from nora.app.gatherings import GatheringService
-    from nora.domain.gatherings import Gathering, GatheringStatus
-    from nora.domain.reminders import ReminderCaps
-    from nora.testing.gatherings import FakeGatheringStore
-
-    store = FakeReminderStore()
-    plain = _row(text="洗衫")
-    held = replace(_row(text="Event: secret dinner"), kind="gathering")
-    standing = replace(_row(text="Event: standing dinner"), kind="gathering")
-    for row in (plain, held, standing):
-        await store.create(row)
-    event_store = FakeGatheringStore()
-    made = {}
-    for name, row in (("secret dinner", held), ("standing dinner", standing)):
-        made[name] = await event_store.create(Gathering(
-            id=uuid.uuid4(), conversation_id=CONVERSATION, title=name, created_by="miles",
-            when=None, venue_text=None, venue_place_id=None, venue_name=None,
-            venue_address=None, venue_rating=None, venue_price_level="",
-            venue_maps_url=None, venue_resolved_at=None, status=GatheringStatus.PROPOSED,
-            reminder_id=row.id, created_at=T0, unit_id="u",
-        ))
-    events = GatheringService(
-        store=event_store, reminders=store, reminder_caps=ReminderCaps(),
-        route_source=None, honcho=None, ai_peer="nora",
-    )
-    tools = _tools(reminders=store, events=events)
-
-    shown = {r["text"] for r in (await tools["list_reminders"]())["reminders"]}
-    assert shown == {"洗衫", "Event: secret dinner", "Event: standing dinner"}
-    event_store.mark_unsupported(made["secret dinner"].id, 5)
-    result = await tools["list_reminders"]()
-    assert result["status"] == "ok"
-    assert {r["text"] for r in result["reminders"]} == {"洗衫", "Event: standing dinner"}
-    event_store.clear_unsupported(made["secret dinner"].id)
-    assert len((await tools["list_reminders"]())["reminders"]) == 3
-
-
-async def test_list_reminders_is_unavailable_not_complete_when_the_event_side_cannot_be_read():
-    from dataclasses import replace
-
-    store = FakeReminderStore()
-    await store.create(replace(_row(text="Event: dinner"), kind="gathering"))
-
-    class Broken:
-        async def held_reminder_ids(self, reminder_ids):
-            raise RuntimeError("down")
-
-    tools = _tools(reminders=store, events=Broken())
-    assert (await tools["list_reminders"]())["status"] == "unavailable"
-
-
 async def test_list_reminders_names_who_set_each_one():
     """§7.3's ownership rule made legible. A reminder is group-owned, so this
     listing shows everybody's and anyone here may cancel any of them — which is

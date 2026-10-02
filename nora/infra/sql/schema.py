@@ -1775,7 +1775,6 @@ EVENTS = sa.Table(
     sa.Column(
         "field_meta", pg.JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"),
     ),
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.Column(
         # No FK, deliberately, `note.head_revision_id`'s precedent exactly:
         # `create` mints and inserts `events` and `event_revision` in one
@@ -2523,10 +2522,6 @@ NOTE = sa.Table(
     # The union of its revisions' lineage (`0073_lineage`): the index line
     # this row renders rests on everything its body has ever cited.
     *_derived("note", per_row=True),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
-    # since 2026-10-03: the cascade that set it was removed, so a row marked before
-    # then stays out of its readers. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
 )
 
 NOTE_REVISION = sa.Table(
@@ -2947,10 +2942,6 @@ STANDING = sa.Table(
     ),
     # Sections `body` and `working_set` (`0073_lineage`).
     *_derived("standing", per_row=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
-    # since 2026-10-03: the cascade that set it was removed, so a row marked before
-    # then stays out of its readers. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     # THE SECTIONED SCHEMA (migration `0076_standing_sections`, step 3 row
     # 3b): `I hold open` and `I owe` (`design/cognition-loop/12-schemas.md`
     # §5), beside `body` (`Where it stands`) and `working_set` (`Found, not
@@ -3334,10 +3325,6 @@ CULTURE = sa.Table(
                             name="culture_head_revision_id_fkey"),
               nullable=False),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
-    # since 2026-10-03: the cascade that set it was removed, so a row marked before
-    # then stays out of its readers. NULL (supported) otherwise.
-    sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("length(btrim(key)) > 0", name="culture_has_a_key_check"),
 )
 
@@ -3425,53 +3412,6 @@ IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
     "idx_culture_revision_key_written",
     CULTURE_REVISION.c.culture_key, sa.text("written_at DESC"), sa.text("id DESC"),
 )
-
-#: The citation edge table (migration `0075_withdrawal`, step 2c;
-#: design/cognition-loop/10-tiers.md §2 rule 7, §5): what a `note`,
-#: `standing` or `culture` head, or an event, cites. WRITE-ONLY since 2026-10-03: the
-#: withdrawal cascade that walked it was removed, and nothing reads it. It stays
-#: because dropping it touches the Standing and culture stores' write paths (follow-up
-#: with the `unsupported_at` columns). See the migration's docstring.
-CITATION = sa.Table(
-    "citation",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("citing_store", sa.Text, nullable=False),
-    sa.Column("citing_key", sa.Text, nullable=False),
-    sa.Column("cited_store", sa.Text, nullable=False, server_default="message"),
-    sa.Column("cited_id", sa.Text, nullable=False),
-    # The field or section the edge supports (migration `0086_event_citations`):
-    # `NULL` for a whole-row edge (every note, Standing and culture edge), a
-    # field name (`what`, `start`, `end`, `place`, `people`, `status`) for an
-    # event's.
-    sa.Column("part", sa.Text, nullable=True),
-    _recorded_at(),
-    sa.CheckConstraint(
-        "citing_store in ('note', 'standing', 'culture', 'event')",
-        name="citation_citing_store_is_known_check",
-    ),
-    sa.CheckConstraint(
-        "cited_store in ('message', 'rollup')", name="citation_cited_store_is_known_check",
-    ),
-    sa.CheckConstraint(
-        "part is null or length(btrim(part)) > 0", name="citation_part_is_not_blank_check",
-    ),
-    sa.CheckConstraint(
-        "length(btrim(citing_key)) > 0", name="citation_has_a_citing_key_check",
-    ),
-    sa.CheckConstraint(
-        "length(btrim(cited_id)) > 0", name="citation_has_a_cited_id_check",
-    ),
-    sa.UniqueConstraint(
-        "citing_store", "citing_key", "cited_store", "cited_id", "part",
-        name="citation_edge_unique", postgresql_nulls_not_distinct=True,
-    ),
-)
-
-IDX_CITATION_CITED = sa.Index(
-    "idx_citation_cited", CITATION.c.cited_store, CITATION.c.cited_id,
-)
-
 
 # `participation_window_state` — where the participation trigger's per-room
 # watermarks live between processes (`nora.app.participation`). Two columns,
@@ -3956,16 +3896,6 @@ COGNITION_WAKE_OUTCOME = sa.Table(
     # WHY a `failed`/`timeout` wake failed (migration 0080, DEC-244): `infra`
     # backs the unit off and never strikes a stimulus; only `agenda` strikes.
     sa.Column("cause", sa.Text, nullable=False, server_default=sa.text("'infra'")),
-    # What the session's model loop spent, and its root trace (migration 0090):
-    # the durable half of the token counter, which a restart resets. Written
-    # with the outcome, the one row a session leaves at its end (the session
-    # row is written BEFORE the loop and is append-only). NULL is unread, never
-    # zero: a wake that ended before a model call, one a restart ended, or a
-    # provider that reported no usage.
-    sa.Column("input_tokens", sa.BigInteger),
-    sa.Column("output_tokens", sa.BigInteger),
-    sa.Column("cache_read_tokens", sa.BigInteger),
-    sa.Column("trace_id", sa.Text),
     _recorded_at(),
     sa.CheckConstraint(
         "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",

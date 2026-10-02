@@ -1,33 +1,5 @@
 [
   {
-    "name": "the notes index actually excludes an unsupported note, not just retired ones",
-    "file": "nora/infra/sql/notes.py",
-    "old": "                NOTE.c.unsupported_at.is_(None),\n            )\n            .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())",
-    "new": "            )\n            .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())",
-    "target": "tests/infra/test_withdrawal.py -k test_a_note_marked_unsupported"
-  },
-  {
-    "name": "note_search actually excludes an unsupported note",
-    "file": "nora/infra/sql/notes.py",
-    "old": "                NOTE.c.unsupported_at.is_(None),\n                NOTE_REVISION.c.body.icontains(query, autoescape=True),",
-    "new": "                NOTE_REVISION.c.body.icontains(query, autoescape=True),",
-    "target": "tests/infra/test_withdrawal.py -k test_a_note_marked_unsupported"
-  },
-  {
-    "name": "the standing block actually stops rendering an unsupported position",
-    "file": "nora/engagement/context.py",
-    "old": "        return render_supported(found)\n\n    async def _notes",
-    "new": "        return found\n\n    async def _notes",
-    "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_standing_position_does_not_render"
-  },
-  {
-    "name": "the culture block actually stops rendering an unsupported account (the tag turn's, through the one read)",
-    "file": "nora/language/culture_render.py",
-    "old": "    return render_supported(found)\n",
-    "new": "    return found\n",
-    "target": "tests/unit/test_engagement_context.py -k test_an_unsupported_culture_account_does_not_render"
-  },
-  {
     "name": "a hidden message actually stops reaching a transcript read",
     "file": "nora/infra/sql/audit.py",
     "old": "    ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(\n        MESSAGES.c.hidden_at.is_(None),\n    )",

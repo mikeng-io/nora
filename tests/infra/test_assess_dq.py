@@ -40,7 +40,7 @@ from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_OUTING
 pytestmark = pytest.mark.asyncio
 
 _TRUNCATE = (
-    "citation", "note_revision", "note", "event_revision", "events",
+    "note_revision", "note", "event_revision", "events",
     "rollup_outing", "rollup_build", "presence_stays", "messages",
     "row_history", "assess_report",
 )

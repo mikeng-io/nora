@@ -84,7 +84,6 @@ def _row_to_event(r: Row[Any]) -> Gathering:
             exclude_persons=tuple(r.exclude_persons or ()),
             head_revision_id=r.head_revision_id,
             field_meta=field_meta_from_json(r.field_meta),
-            unsupported_at=r.unsupported_at,
         )
     )
 
@@ -154,9 +153,6 @@ def _event_values(event: Gathering) -> dict[str, Any]:
         "exclude_persons": list(event.exclude_persons),
         "head_revision_id": event.head_revision_id,
         "field_meta": field_meta_to_json(event.field_meta),
-        # `unsupported_at` is deliberately NOT written: only the withdrawal
-        # cascade sets it, and an update built from a row read before a cascade
-        # must not put the mark back to NULL.
     }
 
 
@@ -241,28 +237,8 @@ class SqlGatheringStore:
             row = (await conn.execute(stmt)).one_or_none()
         return None if row is None else _row_to_event(row)
 
-    async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
-        stmt = sa.select(EVENTS).where(EVENTS.c.reminder_id == reminder_id)
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).first()
-        return None if row is None else _row_to_event(row)
-
-    async def unsupported_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]:
-        if not reminder_ids:
-            return frozenset()
-        stmt = sa.select(EVENTS.c.reminder_id).where(
-            EVENTS.c.reminder_id.in_(list(reminder_ids)),
-            EVENTS.c.unsupported_at.is_not(None),
-        )
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        return frozenset(r.reminder_id for r in rows)
-
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        include_unsupported: bool = False,
     ) -> Sequence[Gathering]:
         stmt = (
             sa.select(EVENTS)
@@ -271,14 +247,12 @@ class SqlGatheringStore:
         )
         if status is not None:
             stmt = stmt.where(EVENTS.c.status == status.value)
-        if not include_unsupported:
-            stmt = stmt.where(EVENTS.c.unsupported_at.is_(None))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
 
     async def list_for_person(
-        self, *, person_id: str, include_unsupported: bool = False,
+        self, *, person_id: str,
     ) -> Sequence[Gathering]:
         rsvpd = sa.select(EVENT_RSVPS.c.event_id).where(
             EVENT_RSVPS.c.person_id == person_id,
@@ -291,8 +265,6 @@ class SqlGatheringStore:
             ))
             .order_by(EVENTS.c.created_at)
         )
-        if not include_unsupported:
-            stmt = stmt.where(EVENTS.c.unsupported_at.is_(None))
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_event(r) for r in rows]
@@ -406,7 +378,7 @@ class SqlGatheringStore:
                     EVENTS.c.conversation_id.in_(room_ids),
                 ),
             )
-        stmt = sa.select(EVENTS).where(unit_clause, EVENTS.c.unsupported_at.is_(None))
+        stmt = sa.select(EVENTS).where(unit_clause)
         if place:
             needle = f"%{place}%"
             stmt = stmt.where(sa.or_(

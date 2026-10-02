@@ -57,7 +57,6 @@ from nora.domain.standing import (
     working_set_from_json,
     working_set_to_json,
 )
-from nora.infra.sql.citation import record_message_citation
 from nora.infra.sql.schema import MESSAGES, STANDING, STANDING_REVISION
 
 #: A Standing row's sections (`nora.domain.lineage`; `design/cognition-loop/
@@ -116,13 +115,7 @@ def _standing(row: sa.Row[Any]) -> Standing:
             row.lineage, origin=room_key(row.platform, row.conversation_id),
         ),
         exclude_persons=tuple(row.exclude_persons or ()),
-        # Only the HEAD (`standing.unsupported_at`) carries this;
-        # `standing_revision` has no such column, so `getattr` reads `None`
-        # (supported) for every revision-chain row this mapper also serves.
-        unsupported_at=getattr(row, "unsupported_at", None),
-        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b):
-        # both tables carry them, so this is a plain column read, not a
-        # `getattr` fallback like `unsupported_at` above.
+        # THE TWO NEW SECTIONS (`0076_standing_sections`, step 3 row 3b).
         hold_open=row.hold_open,
         i_owe=row.i_owe,
     )
@@ -358,13 +351,6 @@ class SqlStandingStore:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
             await conn.execute(revision)
-            # The citation edge table (migration `0075_withdrawal`, step
-            # 2c): the one message id the fold already tracks.
-            await record_message_citation(
-                conn, citing_store="standing",
-                citing_key=f"{standing.platform}:{standing.conversation_id}",
-                message_id=standing.last_folded_row_id,
-            )
 
     async def write_if_unchanged(
         self, *, expected: Standing, standing: Standing

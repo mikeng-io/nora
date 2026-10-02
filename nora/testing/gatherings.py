@@ -68,8 +68,8 @@ class FakeGatheringStore:
             rollup_lineages=self._rollup_lineages,
             origin=evidence.room or row.conversation_id,
         )
-        # The real store's rule (`record_event_citations`): a part the write
-        # restates has its edges REPLACED, the rest are kept.
+        # What the verbs handed the store, for a test to read: a part the write
+        # restates has its entries REPLACED, the rest are kept.
         restated = set(evidence.parts) | {c.part for c in evidence.citations}
         self.citations = [
             (k, c) for k, c in self.citations if k != str(row.id) or c.part not in restated
@@ -78,15 +78,6 @@ class FakeGatheringStore:
             if (str(row.id), c) not in self.citations:
                 self.citations.append((str(row.id), c))
         return replace(row, lineage=lineage)
-
-    def mark_unsupported(self, event_id: UUID, at_ms: int) -> None:
-        """A head marked before the cascade was removed (2026-10-03): no code marks one
-        now, so a test sets the mark to exercise the readers."""
-        self._events[event_id] = replace(self._events[event_id], unsupported_at=at_ms)
-
-    def clear_unsupported(self, event_id: UUID) -> None:
-        """What an operator's SQL `UPDATE ... SET unsupported_at = NULL` does."""
-        self._events[event_id] = replace(self._events[event_id], unsupported_at=None)
 
     async def create(
         self, event: Gathering, *, evidence: EventEvidence | None = None,
@@ -104,40 +95,23 @@ class FakeGatheringStore:
     async def get(self, event_id: UUID) -> Gathering | None:
         return self._events.get(event_id)
 
-    async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
-        return next(
-            (e for e in self._events.values() if e.reminder_id == reminder_id), None,
-        )
-
-    async def unsupported_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]:
-        wanted = set(reminder_ids)
-        return frozenset(
-            e.reminder_id for e in self._events.values()
-            if e.reminder_id in wanted and e.unsupported_at is not None
-        )
-
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        include_unsupported: bool = False,
     ) -> Sequence[Gathering]:
         out = [
             e for e in self._events.values()
             if e.conversation_id == conversation_id
             and (status is None or e.status == status)
-            and (include_unsupported or e.unsupported_at is None)
         ]
         return sorted(out, key=lambda e: e.created_at)
 
     async def list_for_person(
-        self, *, person_id: str, include_unsupported: bool = False,
+        self, *, person_id: str,
     ) -> Sequence[Gathering]:
         rsvpd_ids = {r.event_id for r in self._rsvps if r.person_id == person_id}
         out = [
             e for e in self._events.values()
-            if (e.created_by == person_id or e.id in rsvpd_ids)
-            and (include_unsupported or e.unsupported_at is None)
+            if e.created_by == person_id or e.id in rsvpd_ids
         ]
         return sorted(out, key=lambda e: e.created_at)
 
@@ -152,8 +126,6 @@ class FakeGatheringStore:
         if base_revision_id is not None and current.head_revision_id != base_revision_id:
             raise StaleEventRevisionError(row.id, current)
         row = self._with_evidence(row, current.lineage, evidence)
-        # Only the cascade sets the mark: a row read before it cannot undo it.
-        row = replace(row, unsupported_at=current.unsupported_at)
         revision = _revision_of(row, parent_revision_id=current.head_revision_id)
         stored = replace(row, head_revision_id=revision.id)
         self._events[row.id] = stored
@@ -187,8 +159,6 @@ class FakeGatheringStore:
         legacy_room_ids = frozenset(room_ids)
         out = []
         for e in self._events.values():
-            if e.unsupported_at is not None:
-                continue
             in_unit = e.unit_id == unit_id
             in_legacy_room = e.unit_id == "" and e.conversation_id in legacy_room_ids
             if not (in_unit or in_legacy_room):

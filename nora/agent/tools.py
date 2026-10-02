@@ -4176,10 +4176,6 @@ class EventsCollaborator(Protocol):
         self, *, conversation_id: str, status: GatheringStatus | None = None,
     ) -> Sequence[Gathering]: ...
 
-    async def held_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]: ...
-
     async def search_events(
         self, *, unit_id: str, conversation_id: str, place: str | None = None,
         person: str | None = None, start: datetime | None = None,
@@ -11684,26 +11680,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I couldn't check what's waiting. Say so: an empty list and "
                         "a failed look are different answers.",
             }
-        # A reminder HELD by the withdrawal cascade (its event's evidence is
-        # gone, `nora.app.gathering_screen`) is not listed: its text carries
-        # the event's title, and the listing is a read path like any other
-        # that must not show what the cascade took out. FAIL-CLOSED: if the
-        # event side cannot be read the listing is unavailable, never the full
-        # list that might show a withdrawn title.
-        if events is not None and any(r.kind == "gathering" for r in rows):
-            try:
-                held = await events.held_reminder_ids(
-                    [r.id for r in rows if r.kind == "gathering"],
-                )
-            except Exception:
-                log.exception("list_reminders could not check held gatherings")
-                _record(metrics, "list_reminders", "unavailable")
-                return {
-                    "status": "unavailable",
-                    "note": "I couldn't check what's waiting. Say so: an empty list and "
-                            "a failed look are different answers.",
-                }
-            rows = [r for r in rows if r.id not in held]
         _record(metrics, "list_reminders", "ok", count=len(rows))
         listed = [
             {

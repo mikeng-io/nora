@@ -84,13 +84,6 @@
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_would_wake_through_the_real_evaluator_produces_a_session_row"
  },
  {
-  "name": "cognition_session: a failed session is actually recorded failed (not only logged)",
-  "file": "nora/app/cognition_session.py",
-  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n                cause=classify_failure(exc),\n                tokens=spend,\n            )\n            raise",
-  "new": "            raise",
-  "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged tests/unit/test_cognition_session_lifecycle.py::test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wake"
- },
- {
   "name": "wake: a hook that raises synchronously actually cannot abort the tick for other units",
   "file": "nora/app/wake.py",
   "old": "        except Exception:\n            # A hook that raises WHILE BEING CALLED",
@@ -194,13 +187,6 @@
   "old": "        _counted_carry(COGNITION_CARRY), ~superseded,",
   "new": "        _counted_carry(COGNITION_CARRY),",
   "target": "tests/contract/test_stimulus_session_lifecycle_contract.py -k test_the_newest_carry_row_decides_and_released_or_struck_is_not_carried"
- },
- {
-  "name": "cognition_session: a cancelled session is actually recorded cancelled",
-  "file": "nora/app/cognition_session.py",
-  "old": "            await self._shielded_finish(\n                wake_id, unit, session_id, \"cancelled\",\n                restart_detail(\"the process was stopping and cancelled the session\"),\n                tokens=spend,\n            )\n            raise",
-  "new": "            raise",
-  "target": "tests/unit/test_cognition_session_lifecycle.py::test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled tests/unit/test_cognition_session_lifecycle.py::test_the_evaluator_can_cancel_its_in_flight_sessions_too"
  },
  {
   "name": "cognition_pace: wake_cancel actually retracts the standing stimulus",

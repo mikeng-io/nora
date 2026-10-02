@@ -14,7 +14,7 @@ import pytest
 from aiohttp import web
 
 from nora.documents.check import Checked
-from nora.domain.documents import FORGET_SET_BY_PREFIX, RevisionIn
+from nora.domain.documents import RevisionIn
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
@@ -299,25 +299,8 @@ async def test_history_carries_the_room_label_only_for_a_viewer_in_that_room(his
     assert "r1" not in str(sam) and "conversation" not in str(sam).lower()
 
 
-async def test_a_forgotten_document_has_no_history_no_revision_and_no_restore(history_client):
-    client, world = history_client
-    await world.store.set_state(
-        document_id=world.ids["a"], state="deleted", set_by=f"{FORGET_SET_BY_PREFIX}ken"
-    )
-    unknown = await client.get(f"/app/v1/documents/{uuid4()}/revisions?personId=mei")
-    for resp in (
-        await client.get(_h(world, "mei")),
-        await client.get(_h(world, "ken")),
-        await client.get(_one(world, 1)),
-        await _restore(client, world, 1, base=3),
-    ):
-        assert resp.status == 404
-        assert await resp.json() == await unknown.json()
-    assert len(await _numbers(world)) == 3
-
-
 async def test_a_restore_that_races_a_delete_is_a_404_never_a_reason(history_client):
-    # Readable when the restore read it, deleted (here: forgotten) before add_revision took
+    # Readable when the restore read it, deleted before add_revision took
     # its lock: the viewer gets the unreadable document's 404, not "archived".
     client, world = history_client
     store = world.store
@@ -325,7 +308,7 @@ async def test_a_restore_that_races_a_delete_is_a_404_never_a_reason(history_cli
 
     async def racing(**kwargs: Any):
         await store.set_state(
-            document_id=world.ids["a"], state="deleted", set_by=f"{FORGET_SET_BY_PREFIX}ken"
+            document_id=world.ids["a"], state="deleted", set_by="ken"
         )
         return await real(**kwargs)
 

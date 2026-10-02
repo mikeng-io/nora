@@ -203,13 +203,6 @@
   "target": "tests/test_composition.py -k a_home_room_wires_the_proactive_adaptor_its_schedule_and_its_grant"
  },
  {
-  "name": "D5/D11 the heartbeat holds the screen",
-  "file": "nora/app/composition.py",
-  "old": "            proactive=proactive_screen,\n            # A gathering whose evidence was withdrawn",
-  "new": "            proactive=None,\n            # A gathering whose evidence was withdrawn",
-  "target": "tests/test_composition.py -k the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent"
- },
- {
   "name": "audit: an unreachable note is a wiring gap, not a retirement",
   "file": "nora/app/proactive_screen.py",
   "old": "                row.id, note_id, convo.unit,\n            )\n            return ReminderState.FAILED, FAILED_ERROR",

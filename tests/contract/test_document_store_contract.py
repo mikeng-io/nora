@@ -794,36 +794,14 @@ async def test_a_search_pages_and_counts_its_matches(store):
     assert {d.id for d in page.items} <= set(made)
 
 
-# ------------------------------------------- who wrote the state, forgotten
-async def test_a_summary_says_who_wrote_the_latest_state_row_and_whether_it_is_forgotten(store):
+# ------------------------------------------- who wrote the state
+async def test_a_summary_says_who_wrote_the_latest_state_row(store):
     doc = await _make(store)
     assert (await store.get(document_id=doc)).summary.state_by == ""
-    assert not (await store.get(document_id=doc)).summary.forgotten
     await store.set_state(document_id=doc, state="deleted", set_by="mei")
     assert (await store.get(document_id=doc)).summary.state_by == "mei"
-    await store.set_state(document_id=doc, state="deleted", set_by="forget:ken")
-    summary = (await store.get(document_id=doc)).summary
-    assert summary.state_by == "forget:ken" and summary.forgotten
-    # The LATEST row decides: the operator's restore makes it an ordinary document again.
     await store.set_state(document_id=doc, state="active", set_by="operator")
-    assert not (await store.get(document_id=doc)).summary.forgotten
-
-
-async def test_the_room_list_can_leave_out_what_forget_deleted(store):
-    mine = await _make(store, title="by hand")
-    forgotten = await _make(store, title="forgotten")
-    await store.set_state(document_id=mine, state="deleted", set_by="ken")
-    await store.set_state(document_id=forgotten, state="deleted", set_by="forget:ken")
-    ids = frozenset({"room-1"})
-    both = await store.list_room(
-        platform="signal", conversation_ids=ids, limit=10, states=("deleted",)
-    )
-    assert {d.id for d in both} == {mine, forgotten}
-    shown = await store.list_room(
-        platform="signal", conversation_ids=ids, limit=10, states=("deleted",),
-        hide_forgotten=True,
-    )
-    assert [d.id for d in shown] == [mine]
+    assert (await store.get(document_id=doc)).summary.state_by == "operator"
 
 
 # ----------------------------------------------- search: folding and whitespace parity

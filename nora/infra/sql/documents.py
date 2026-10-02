@@ -29,7 +29,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.documents import (
-    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -361,7 +360,6 @@ class SqlDocumentStore:
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
-        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         limit = min(max(limit, 0), _MAX_LIMIT)
         if limit == 0 or not conversation_ids:
@@ -370,10 +368,6 @@ class SqlDocumentStore:
         in_room = sa.and_(
             _D.platform == platform, _D.conversation_id.in_(ids), _state().in_(states)
         )
-        if hide_forgotten:
-            in_room = sa.and_(
-                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)
-            )
         # The top-revision subquery is restricted to THIS room's documents first, so a turn's
         # read does not aggregate every revision of every document.
         top = (

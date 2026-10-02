@@ -383,7 +383,7 @@ def open_events_reader(
     before `happened` (`OPEN_STATUSES`: staged, proposed, confirmed), so a
     confirmed event can reach `happened` or `cancelled` (M4 of the 2026-09-30
     review: it read PROPOSED only, and a confirmed event stayed confirmed for
-    ever). A withdrawn one (`unsupported_at`) is left out by the store."""
+    ever)."""
     async def read(conversation_id: str) -> Sequence[Gathering]:
         return [
             e for e in await store.list_for_conversation(conversation_id=conversation_id)

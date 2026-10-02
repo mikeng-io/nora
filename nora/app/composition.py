@@ -228,7 +228,6 @@ from .fire import (
     relay_occasion,
     reminder_occasion,
 )
-from .gathering_screen import GatheringScreen
 from .gatherings import GatheringService
 from .heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from .participation import ParticipationTrigger
@@ -3196,10 +3195,6 @@ async def build_dependencies(
             # was switched off in between — and with no screen the loop
             # fails such a row rather than firing it unscreened.
             proactive=proactive_screen,
-            # A gathering whose evidence was withdrawn is not announced: the
-            # reminder carries the event's title and the fire turn never reads
-            # the event, so this is the read that makes the cascade reach it.
-            gatherings=GatheringScreen(events=event_store),
         )
         background.spawn(heartbeat.run())
     if announcing and fire_path is not None:

@@ -27,19 +27,15 @@ not the tool is on, and a session with the tool off still sees who said what.
   deleted; amended by DEC-276, whose cascade was removed 2026-10-03.
 - *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
   never pushed"). No Standing text, head or revision is rendered here:
-  `standing_store.read()` returns rows marked unsupported, so a pushed head could
-  carry a withdrawn person's words to the model. The session sees no Standing until
-  `standing_read` lands and applies the withdrawal and lineage predicates itself
-  (#637 second review, blocker).
-- *Every pushed index line honours withdrawal and lineage.* A note marked
-  `unsupported_at` is dropped here as well as in the store's read (the seam is
-  injected, so the rule is held where the line is built), and a note or an
+  a pushed head could carry words the lineage predicates would withhold. The
+  session reads Standing through `standing_read`, which applies them itself (#637
+  second review, blocker).
+- *Every pushed index line honours lineage.* A note or an
   event is shown only when lineage permits it for EVERY room on the agenda
   (`nora.agent.lineage`, the tag path's own predicates). `[lineage] mode` reads
   as it does on the tag path: `on` removes, `shadow` computes the same answer,
-  removes NOTHING and logs what it would have, `off` applies none. Withdrawal
-  (`unsupported_at`) is not a lineage question and applies in EVERY mode,
-  `off` and `shadow` included. `exclude_persons` follows the lineage mode: under
+  removes NOTHING and logs what it would have, `off` applies none.
+  `exclude_persons` follows the lineage mode: under
   `on` a row naming one is withheld (the session has no live roster to check it
   against, and unknown denies); under `shadow` it is logged, not removed; under
   `off` it is ignored.
@@ -296,12 +292,10 @@ def build_grounder(
         now_ms = int(clock() * 1000)
         now = datetime.fromtimestamp(now_ms / 1000, tz=tz)
         today = now.year * 10_000 + now.month * 100 + now.day
-        indexed = [n for n in await note_index(unit) if n.unsupported_at is None]
+        indexed = list(await note_index(unit))
         twins = likely_duplicates(indexed)
         for n in indexed:
-            # WITHDRAWN notes were dropped above, in every mode (not a lineage
-            # question). LINEAGE: shown only where it passes for every room the
-            # session reads.
+            # LINEAGE: shown only where it passes for every room the session reads.
             if applies and not all(derived_view(
                 notes=(n,), standing=None, culture=None, target=t,
             ).notes for t in targets):
@@ -326,11 +320,6 @@ def build_grounder(
                 platform=room.platform, conversation_id=room.conversation_id,
             )
             for e in await events_in(unit, room.conversation_id):
-                if e.unsupported_at is not None:
-                    # Withdrawn (no writer left), dropped here too and in
-                    # every mode, exactly as a note is: the composition's read
-                    # already leaves it out, and this is the seam's own guard.
-                    continue
                 if applies and not all(visible_sections(
                     e.lineage, _EVENT_SHOWN_FIELDS, target,
                     origin=room_key(room.platform, room.conversation_id),

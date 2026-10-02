@@ -382,19 +382,8 @@ class GatheringService:
         )
 
     async def get_event(self, *, event_id: UUID) -> Gathering | None:
-        """A reader: a withdrawn event (`unsupported_at`; nothing marks one any
-        more, but a mark written before 2026-10-03 stays) reads as absent, like an
-        id that does not exist."""
-        event = await self._store.get(event_id)
-        return None if event is None or event.unsupported_at is not None else event
-
-    async def held_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]:
-        """Of `reminder_ids`, those a withdrawn event owns: a reminder held
-        until its event's mark is cleared (`nora.app.gathering_screen`), which
-        no listing shows, since its text carries the event's title."""
-        return await self._store.unsupported_reminder_ids(reminder_ids)
+        """A reader: an id that does not exist reads as absent."""
+        return await self._store.get(event_id)
 
     async def list_events_for_person(self, *, person_id: str) -> Sequence[Gathering]:
         """The web app's ONLY read path (not conversation-scoped, unlike
@@ -414,9 +403,7 @@ class GatheringService:
         tools, applied here to event-level participation instead of
         conversation membership."""
         event = await self._store.get(event_id)
-        if event is None or event.unsupported_at is not None:
-            # A withdrawn event reads as unknown, the portal's 404: nothing
-            # the person sees distinguishes it from an id that never existed.
+        if event is None:
             return None
         if event.created_by == person_id:
             return event
@@ -498,13 +485,6 @@ class GatheringService:
         room" message that would confirm a stranger's event id is real."""
         event = await self._require(event_id)
         if event.conversation_id != conversation_id:
-            raise GatheringNotFoundError(event_id)
-        if event.unsupported_at is not None:
-            # Withdrawn (no writer left): the tag path's revise, status,
-            # RSVP and venue reads see it as it sees an unknown id. It cannot
-            # be revised into standing again by a model that was never shown it
-            # (`event_search` and the room's list leave it out); a room that
-            # still wants the gathering proposes it afresh.
             raise GatheringNotFoundError(event_id)
         return event
 

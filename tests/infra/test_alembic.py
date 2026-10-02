@@ -669,6 +669,8 @@ def test_0086_downgrade_drops_what_the_old_vocabulary_cannot_hold_and_reapplies(
     from alembic import command as alembic_command
 
     run_migrations(pg_url)
+    # 0093 dropped `citation`; going back down to 0092 recreates it, empty.
+    alembic_command.downgrade(alembic_config(pg_url), "0092_drop_orphan_delete")
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.begin() as conn:

@@ -129,7 +129,6 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
-from nora.infra.sql.citation import record_citations
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
@@ -162,7 +161,6 @@ def _row_to_note(r: Row[Any]) -> Note:
         reminder_id=r.reminder_id,
         lineage=Lineage.from_json(r.lineage, origin=r.established_in),
         exclude_persons=tuple(r.exclude_persons or ()),
-        unsupported_at=getattr(r, "unsupported_at", None),
     )
 
 
@@ -530,11 +528,6 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
-        # The citation edge table (migration `0075_withdrawal`, step 2c):
-        # keyed to the NOTE, not the revision — only the head renders.
-        await record_citations(
-            conn, citing_store="note", citing_key=str(note.id), body=revision.body,
-        )
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
@@ -559,13 +552,6 @@ class SqlNoteStore:
             .where(
                 NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
-                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): this IS
-                # the injected index's read, so an unsupported note stops
-                # rendering here — the one place that decides what a tag
-                # sees, per `note_read`'s own resolution through `_resolve`
-                # (`nora.agent.tools`), which only ever sees candidates this
-                # method returned.
-                NOTE.c.unsupported_at.is_(None),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())
         )
@@ -798,9 +784,6 @@ class SqlNoteStore:
             model=revision.model,
             **derived,
         ))
-        await record_citations(
-            conn, citing_store="note", citing_key=str(note_id), body=revision.body,
-        )
 
     async def search(
         self, *, unit: str, query: str, limit: int,
@@ -834,10 +817,6 @@ class SqlNoteStore:
             .where(
                 NOTE.c.unit == unit,
                 NOTE.c.retired_at.is_(None),
-                # WITHDRAWAL (migration `0075_withdrawal`, step 2c): `note_
-                # search` is a tool result, so an unsupported note must not
-                # be a hit either.
-                NOTE.c.unsupported_at.is_(None),
                 NOTE_REVISION.c.body.icontains(query, autoescape=True),
             )
             .order_by(NOTE.c.created_at.asc(), NOTE.c.id.asc())

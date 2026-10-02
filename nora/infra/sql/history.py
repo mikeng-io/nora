@@ -122,15 +122,6 @@ HISTORY_TABLES: dict[str, tuple[str, ...]] = {
     # Step 2b (0074_event_revision): the head is still the compare-and-swap
     # cache 10-tiers.md §8 allows over `event_revision` (APPEND_ONLY, below).
     "events": ("id",),
-    # 0086_event_citations: the citation edge table. An event's edges are
-    # REPLACED per field when a revision restates it (`nora.infra.sql.
-    # event_evidence.record_event_citations`: the value a revision states rests
-    # on the evidence THAT revision cites, so the cascade must follow current
-    # edges only), which is a DELETE; the trigger keeps the removed edge as a
-    # `delete` version, so what a past revision rested on stays re-derivable.
-    # Before 0086 it was APPEND_ONLY, an edge written once and never changed;
-    # the note, Standing and culture edges still are, in practice.
-    "citation": ("id",),
     # design/sandbox-runtime §15.2 (0082_computer_sessions): a session is
     # continued and expired in place; its versions are what it was at T.
     "computer_sessions": ("id",),

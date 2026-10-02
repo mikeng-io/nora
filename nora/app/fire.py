@@ -140,7 +140,6 @@ from nora.domain.standing import (
 )
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
-from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -1413,8 +1412,6 @@ class FirePath:
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
-        # WITHDRAWAL is `read_culture`'s, the one read every occasion shares
-        # (`nora.domain.withdrawal`): no copy of the rule here.
         return found
 
     async def _read_character(
@@ -1464,8 +1461,7 @@ class FirePath:
                 platform=occasion.platform,
             )
             return None
-        # WITHDRAWAL, the tag path's rule (`nora.domain.withdrawal`).
-        return render_supported(found)
+        return found
 
     async def run(self, rows: Sequence[Reminder]) -> str:
         """The heartbeat's `fire` collaborator: due rows in, §8.1 outcome out.

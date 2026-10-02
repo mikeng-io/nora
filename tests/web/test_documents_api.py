@@ -561,22 +561,3 @@ async def test_a_deleted_documents_pictures_are_404(media_client):
     await world.store.set_state(document_id=world.ids["m"], state="deleted", set_by="ken")
     resp = await client.get(_url(world, sha))
     assert resp.status == 404 and await resp.json() == {"status": "not_found"}
-
-
-async def test_a_forgotten_document_cannot_be_moved_from_the_portal_and_reads_as_unknown(
-    world_client,
-):
-    """`nora person forget` (removed) deleted it. The portal cannot restore or archive it, for the
-    creator or a room member, and every answer is the 404 an unknown id gets."""
-    client, world = world_client
-    doc = world.ids["a"]
-    await world.store.set_state(document_id=doc, state="deleted", set_by="forget:ken")
-    unknown = await client.get(f"/app/v1/documents/{uuid4()}?personId=mei")
-    for person in ("ken", "mei"):
-        for state in ("active", "archived", "deleted"):
-            resp = await _set_state(client, doc, state, person=person)
-            assert resp.status == 404 and await resp.json() == {"status": "not_found"}
-        read = await client.get(f"/app/v1/documents/{doc}?personId={person}")
-        assert read.status == 404 and await read.json() == await unknown.json()
-    assert world.store._states[doc] == [("deleted", "forget:ken")], "nothing was written"
-    assert await _titles(client, "mei") == []

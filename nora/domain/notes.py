@@ -382,11 +382,6 @@ class Note:
     # fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
-    # WITHDRAWAL (design/cognition-loop/10-tiers.md §2 rule 7, migration
-    # `0075_withdrawal`, step 2c): `None` (supported) unless the cascade
-    # marked this note unsupported; epoch ms when it did. `compare=False`
-    # for the same reason `lineage` is.
-    unsupported_at: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         _required(self.title, "title")

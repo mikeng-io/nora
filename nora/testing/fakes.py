@@ -42,7 +42,6 @@ from nora.domain.computer_sessions import (
     normalise_session,
 )
 from nora.domain.documents import (
-    FORGET_SET_BY_PREFIX,
     DocumentExistsError,
     DocumentState,
     DocumentSummary,
@@ -2471,7 +2470,7 @@ class FakeDocumentStore:
 
     async def list_room(
         self, *, platform: str, conversation_ids: frozenset[str], limit: int,
-        states: tuple[DocumentState, ...] = ("active",), hide_forgotten: bool = False,
+        states: tuple[DocumentState, ...] = ("active",),
     ) -> tuple[DocumentSummary, ...]:
         seen = [
             d.summary for doc_id in self._rooms
@@ -2479,7 +2478,6 @@ class FakeDocumentStore:
             and d.summary.platform == platform
             and d.summary.conversation_id in conversation_ids
             and d.summary.state in states
-            and not (hide_forgotten and d.summary.state_by.startswith(FORGET_SET_BY_PREFIX))
         ]
         seen.sort(key=lambda s: (-s.updated_at.timestamp(), str(s.id)))
         limit = min(max(limit, 0), 1_000)

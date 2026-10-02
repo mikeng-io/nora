@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
@@ -87,18 +87,6 @@ class RSVPResponse(StrEnum):
 _PRE_HAPPENED_STATUSES: frozenset[GatheringStatus] = frozenset({
     GatheringStatus.STAGED, GatheringStatus.PROPOSED, GatheringStatus.CONFIRMED,
 })
-#: How long a reminder whose event is marked unsupported waits past its
-#: `due_at` for the mark to be cleared before it expires
-#: (`nora.app.gathering_screen`): a gathering's reminder said late is still
-#: useful for a little while and misleading after it.
-HOLD_GRACE = timedelta(hours=2)
-
-#: Why the fire-time screen held a gathering's reminder
-#: (`nora_gathering_reminders_held_total{reason}`).
-HELD_UNSUPPORTED = "unsupported"
-HELD_READ_ERROR = "read_error"
-HELD_REASONS: tuple[str, ...] = (HELD_UNSUPPORTED, HELD_READ_ERROR)
-
 #: The statuses an event may still be revised out of (every one before
 #: `happened`): what a Cognition session may move, and what it is shown.
 OPEN_STATUSES: frozenset[GatheringStatus] = _PRE_HAPPENED_STATUSES
@@ -373,12 +361,6 @@ class Gathering:
     #: `reasoning`/`confidence` above stay for a write that states one for the
     #: whole row.
     field_meta: tuple[FieldMeta, ...] = ()
-    #: Epoch ms an event was marked withdrawn (10 §2 rule 7); `None` while it
-    #: stands. READ only since 2026-10-03: the cascade that set it was removed, so only
-    #: a row marked before then, or by an operator's SQL, carries it. A write never
-    #: carries it (`compare=False`, and the store's write never sets it, so a revision
-    #: read before a mark cannot overwrite it).
-    unsupported_at: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         validate_event_field_mode(self.reasoning)
@@ -535,40 +517,19 @@ class GatheringStore(Protocol):
         self, event: Gathering, *, evidence: EventEvidence | None = None,
     ) -> Gathering:
         """Mint the head and its first revision. `evidence`, when given, is
-        what the write rests on: the store leaves one `citation` edge per
-        `EventCitation` (citing store `event`, in the write's own transaction)
-        and computes the lineage of `evidence.parts` from them. None leaves
-        the row's own lineage."""
+        what the write rests on: the store computes the lineage of
+        `evidence.parts` from its `EventCitation`s. None leaves the row's own
+        lineage."""
 
     async def get(self, event_id: UUID) -> Gathering | None:
-        """The row as stored, withdrawn or not (`unsupported_at` says which):
-        a WRITER needs the real row to revise it. A reader that renders it
-        applies `unsupported_at` itself, or reads through a method below that
-        does."""
-
-    async def get_by_reminder(self, reminder_id: UUID) -> Gathering | None:
-        """The event whose `reminder_id` is this reminder, as stored (withdrawn
-        or not): what the fire-time screen reads
-        (`nora.app.gathering_screen`)."""
-
-    async def unsupported_reminder_ids(
-        self, reminder_ids: Sequence[UUID],
-    ) -> frozenset[UUID]:
-        """Of `reminder_ids`, the ones a withdrawn event owns (`unsupported_at`
-        set): reminders that are HELD and so not to be listed or announced
-        (`nora.app.gathering_screen`). A reminder no event owns is not in it."""
+        """The row as stored."""
 
     async def list_for_conversation(
         self, *, conversation_id: str, status: GatheringStatus | None = None,
-        include_unsupported: bool = False,
     ) -> Sequence[Gathering]:
-        """A room's events. Withdrawn ones (`unsupported_at`) are left out
-        unless `include_unsupported`, which only a caller that re-writes every
-        row (the units backfill) passes."""
+        """A room's events."""
 
-    async def list_for_person(
-        self, *, person_id: str, include_unsupported: bool = False,
-    ) -> Sequence[Gathering]: ...
+    async def list_for_person(self, *, person_id: str) -> Sequence[Gathering]: ...
 
     async def update(
         self, event: Gathering, *, base_revision_id: UUID | None = None,
@@ -594,8 +555,7 @@ class GatheringStore(Protocol):
         `room_ids=()` is the honest default: no legacy row is ever matched
         by accident when a caller has not resolved the unit's rooms. Never a
         cross-unit leak: a legacy row in another unit's room is never in
-        `room_ids`, so it is never returned. A withdrawn row
-        (`unsupported_at`) is never returned: this is a reader."""
+        `room_ids`, so it is never returned."""
 
     async def aclose(self) -> None: ...
 

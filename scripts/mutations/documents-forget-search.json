@@ -14,13 +14,6 @@
     "target": "tests/unit/test_document_tools.py::test_a_handle_two_documents_of_the_room_share_is_refused_never_picked"
   },
   {
-    "name": "service read: a deleted document is read",
-    "file": "nora/app/documents_service.py",
-    "old": "        if current is None or current.summary.state == \"deleted\" or current.summary.forgotten:",
-    "new": "        if current is None or current.summary.forgotten:",
-    "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
-  },
-  {
     "name": "sql search: the query filter is never applied",
     "file": "nora/infra/sql/documents.py",
     "old": "        if needle:\n            where = sa.and_(where, _matches(needle))\n",
@@ -82,48 +75,6 @@
     "old": "                if d.summary.platform == platform and d.summary.conversation_id in here\n            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        if (\n            current is None\n            or current.summary.platform != platform\n            or current.summary.conversation_id not in here\n        ):\n            return None\n        return current",
     "new": "            ]\n            current = mine[0] if len(mine) == 1 else None  # two is never picked\n        return current",
     "target": "tests/unit/test_document_tools.py::test_a_handle_from_another_room_a_deleted_one_or_none_reads_as_an_unknown_id"
-  },
-  {
-    "name": "service set_state: a forgotten document can be restored or archived",
-    "file": "nora/app/documents_service.py",
-    "old": "            if current is None or current.summary.forgotten:\n                return StateResult(",
-    "new": "            if current is None:\n                return StateResult(",
-    "target": "tests/unit/test_documents_service.py::test_a_forgotten_document_cannot_be_moved_and_answers_like_an_unknown_id"
-  },
-  {
-    "name": "tool document_set_status: a forgotten document can be restored through the tool (service guard gone)",
-    "file": "nora/app/documents_service.py",
-    "old": "            if current is None or current.summary.forgotten:\n                return StateResult(",
-    "new": "            if current is None:\n                return StateResult(",
-    "target": "tests/unit/test_document_tools.py::test_a_forgotten_document_is_not_restorable_or_readable_through_the_tools"
-  },
-  {
-    "name": "service publish: a forgotten document says 'restore it first' instead of answering as unknown",
-    "file": "nora/app/documents_service.py",
-    "old": "            if current.summary.forgotten:\n                return _no_such_document()  # forgotten: not even \"restore it first\"\n",
-    "new": "",
-    "target": "tests/unit/test_documents_service.py::test_a_forgotten_document_is_not_revisable_and_does_not_say_to_restore_it"
-  },
-  {
-    "name": "block: the reader no longer asks the store to hide forgotten documents",
-    "file": "nora/engagement/documents_context.py",
-    "old": "                        hide_forgotten=True,\n",
-    "new": "",
-    "target": "tests/unit/test_documents_block.py::test_a_forgotten_documents_title_never_reaches_her_context"
-  },
-  {
-    "name": "fake list_room: hide_forgotten is ignored",
-    "file": "nora/testing/fakes.py",
-    "old": "            and not (hide_forgotten and d.summary.state_by.startswith(FORGET_SET_BY_PREFIX))\n",
-    "new": "",
-    "target": "tests/contract/test_document_store_contract.py::test_the_room_list_can_leave_out_what_forget_deleted[fake]"
-  },
-  {
-    "name": "sql list_room: hide_forgotten is ignored",
-    "file": "nora/infra/sql/documents.py",
-    "old": "        if hide_forgotten:\n            in_room = sa.and_(\n                in_room, ~_state_by().startswith(FORGET_SET_BY_PREFIX, autoescape=True)\n            )",
-    "new": "",
-    "target": "tests/contract/test_document_store_contract.py::test_the_room_list_can_leave_out_what_forget_deleted[sql]"
   },
   {
     "name": "portal route: a deleted document (a forgotten one) is visible to the viewer's state write",

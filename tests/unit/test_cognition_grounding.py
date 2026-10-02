@@ -538,13 +538,13 @@ async def test_the_register_lines_are_built_from_the_units_rows():
     assert [n.id for n in g.notes] == ["n1"]
 
 
-# ---- every pushed index line honours withdrawal and lineage (#637 second review) -----------------
+# ---- every pushed index line honours lineage (#637 second review) -----------------
 
-def _note(nid: str, *, established_in: str = "room-a", unsupported_at: int | None = None,
+def _note(nid: str, *, established_in: str = "room-a",
           lineage: Lineage | None = None, exclude: tuple[str, ...] = ()) -> Note:
     return Note(id=nid, unit="u", title=f"title {nid}", description="d", uncertainty="u",
                 closing_condition="c", established_in=established_in, created_at=1,
-                head_revision_id="r1", anchor_date=20260930, unsupported_at=unsupported_at,
+                head_revision_id="r1", anchor_date=20260930,
                 lineage=lineage if lineage is not None else Lineage(),
                 exclude_persons=exclude)
 
@@ -589,31 +589,6 @@ _TWO_ROOMS = [_stim(1, A, ago=3, mid=1), _stim(2, B, ago=2, mid=2)]
 _OWN = Lineage.of({ROW: [LineageEntry("message", None, "room-a")]})
 
 
-async def test_a_note_the_withdrawal_cascade_marked_unsupported_is_not_pushed():
-    g = await _pushed(
-        [_note("live", lineage=_OWN), _note("withdrawn", lineage=_OWN, unsupported_at=5)],
-        [], mode="off", rooms=_ONE_ROOM,
-    )
-    assert [n.id for n in g.notes] == ["live"]
-    # ... in every lineage mode: withdrawal is not a lineage question
-    on = await _pushed([_note("withdrawn", lineage=_OWN, unsupported_at=5)], [], mode="on",
-                       rooms=_ONE_ROOM)
-    assert on.notes == ()
-
-
-async def test_an_event_the_withdrawal_cascade_marked_unsupported_is_not_shown():
-    """Withdrawal is not a lineage question: in every mode, including `off`, the
-    grounding drops a withdrawn event as it drops a withdrawn note, even when the
-    caller's own read let it through (the seam's guard, fix PR D)."""
-    import dataclasses
-
-    live = _event("live", origin="room-a")
-    gone = dataclasses.replace(_event("gone", origin="room-a"), unsupported_at=5)
-    for mode in ("off", "shadow", "on"):
-        g = await _pushed([], [live, gone], mode=mode, rooms=_ONE_ROOM)
-        assert [e.title for e in g.events] == ["event live"], mode
-
-
 async def test_a_note_is_pushed_only_where_lineage_permits_it_for_every_room_read():
     """A note resting on room A's words is shown in a session over room A, and
     is NOT shown when the same session also reads room B (no live roster to
@@ -643,10 +618,6 @@ async def test_lineage_shadow_reports_and_removes_nothing_only_on_removes(caplog
     assert on.notes == () and on.events == ()
     off = await _pushed([n], [foreign], mode="off", rooms=_TWO_ROOMS)
     assert [x.id for x in off.notes] == ["from-a"]
-    # withdrawal is not a lineage question: removed in shadow too
-    gone = await _pushed([_note("w", lineage=_OWN, unsupported_at=5)], [], mode="shadow",
-                         rooms=_ONE_ROOM)
-    assert gone.notes == ()
 
 
 async def test_a_note_naming_an_excluded_person_is_withheld_because_no_roster_can_clear_it():

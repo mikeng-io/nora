@@ -50,11 +50,6 @@ RoomKey = tuple[str, str]
 #: (`tests/contract/test_document_store_contract.py` reads it back).
 DocumentState = Literal["active", "archived", "deleted"]
 DOCUMENT_STATES: tuple[str, ...] = get_args(DocumentState)
-#: What `nora person forget` (removed) wrote in `document_state.set_by`, before the id. A
-#: document whose LATEST state row carries it is FORGOTTEN, and stays so: nothing a person
-#: or Nora does restores it (`DocumentService.set_state`), and every person-facing answer
-#: about it is the one an unknown id gets. Only the operator, in the database, can.
-FORGET_SET_BY_PREFIX = "forget:"
 #: What a person's list can be filtered to. `deleted` is never listed.
 ListedState = Literal["active", "archived"]
 
@@ -132,11 +127,6 @@ class DocumentSummary:
     state: DocumentState = "active"
     #: Who wrote the LATEST state row ("" when there is none: the document was never put away).
     state_by: str = ""
-
-    @property
-    def forgotten(self) -> bool:
-        """The latest state change was `nora person forget` (removed)'s."""
-        return self.state_by.startswith(FORGET_SET_BY_PREFIX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,14 +259,12 @@ class DocumentStore(Protocol):
         conversation_ids: frozenset[str],
         limit: int,
         states: tuple[DocumentState, ...] = ("active",),
-        hide_forgotten: bool = False,
     ) -> tuple[DocumentSummary, ...]:
         """The documents IN `states` (by default the active ones) made in ONE room
         (`platform` and any of the room's conversation ids), most recently revised first, at
         most `limit`. It is the room's own list, not a person's: no visibility check, because
         everyone the room names already reads these. It loads no spec and no text: the prompt
-        block reads this on every turn. `hide_forgotten` leaves out the documents `nora person
-        forget` deleted (`DocumentSummary.forgotten`): their titles must not reach her context."""
+        block reads this on every turn."""
         ...
 
     async def get_visible(
