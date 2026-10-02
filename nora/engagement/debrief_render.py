@@ -74,6 +74,7 @@ from nora.domain.blocks import (
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.prompt import age, escape
+from nora.domain.quote_window import first_by_ts
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.tag_trace import TagTrace
 from nora.language.culture_render import render_culture
@@ -323,7 +324,7 @@ def _transcript(
     go in there). Its content is the type's own `fields=` now (#314): the thing
     that renders `delivery` is the thing that says what `delivery` means.
     """
-    by_ts = {row.ts: row for row in rows}
+    by_ts = first_by_ts(rows)
 
     def _replying(row: TranscriptRow) -> str:
         """The reply relation, by the parent's own rendered CLOCK rather than by

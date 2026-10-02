@@ -21,7 +21,9 @@ what these tests are about is the composition above it.
 
 from __future__ import annotations
 
+from nora.domain.blocks import wrap_outside_text
 from nora.infra.vision import MediaComprehender, VisionResult
+from nora.infra.vision.comprehend import _SUMMARIZE_SOURCE
 from nora.infra.vision.preprocess import VideoCut, VideoWindow
 
 
@@ -145,7 +147,11 @@ async def test_a_videos_title_and_description_are_a_text_pass_over_the_chunks():
 
     assert got.title == "a race"
     assert got.text.startswith("cars going round a track")
-    assert client.completions == [got.content], "the text pass saw the chunk run"
+    # In its own `media_text` block (step 4c of design/context-assembly/04): the
+    # chunk run is a model's notes on somebody's video, framed as data.
+    assert client.completions == [
+        wrap_outside_text("media_text", _SUMMARIZE_SOURCE, got.content),
+    ], "the text pass saw the chunk run"
 
 
 async def test_a_whole_read_adds_no_caveat():

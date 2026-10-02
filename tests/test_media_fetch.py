@@ -33,6 +33,7 @@ from nora.agent.tools import (
     build_tools,
 )
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.blocks import wrap_outside_text
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import ConversationTarget, NormalizedMessage
@@ -43,6 +44,7 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.vision import MediaComprehender, VisionCache, VisionResult
+from nora.infra.vision.comprehend import _SUMMARIZE_SOURCE
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import (
@@ -1169,7 +1171,12 @@ async def test_summarize_is_a_text_call_and_never_a_second_listen():
 
     assert got.available is True
     assert client.calls == [], "no vision call for a transcript already held"
-    assert client.completions == ["喂你今日得唔得閒啊"]
+    # The words ride in a `media_text` block that says what they are (step 4c of
+    # design/context-assembly/04): the transcript is data, not the question's tail.
+    # Pinned to the byte, through the shared wrapper rather than a copy of it.
+    assert client.completions == [
+        wrap_outside_text("media_text", _SUMMARIZE_SOURCE, "喂你今日得唔得閒啊"),
+    ]
     assert got.content == "", "the caller already holds the words"
 
 

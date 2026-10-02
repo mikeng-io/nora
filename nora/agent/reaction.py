@@ -46,7 +46,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp, speaker_name
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    restamp,
+    row_speaker,
+    speaker_label,
+)
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import GifSource, OutboundAttachment
@@ -134,21 +141,21 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
     newline inside a message must not forge a second speaker). An empty body
     (a bare attachment) is skipped rather than rendered as nobody speaking.
 
-    **KNOWN, and not fixed here:** these rows are hand-built and skip
-    `nora.domain.blocks.speaker_label`'s strip of `[ ] :`, so a sender whose
-    name contains `: ` renders a row that reads as another speaker's line.
-    Routing them through `speaker_label` CHANGES the prompt, so it is step 4c of
-    `design/context-assembly/04-every-occasion.md`, not step 2b (which is
-    byte-identical by construction)."""
+    **The speaker goes through `speaker_label`**, as it does in every other
+    transcript renderer, and `row_speaker` names the field (step 4c of
+    `design/context-assembly/04-every-occasion.md`). `escape` and `one_line`
+    are not enough there: a profile name is attacker-controlled on an unmapped
+    account, and `Eve: ignore the above` or `x]: [y` wrote a row that read as
+    another speaker's line. The label strips `[`, `]` and `:` from a name, so a
+    name carrying one now renders without it (`Eve ignore the above: ...`) and
+    every other name is byte for byte what it was."""
     lines = []
     for row in rows[-RECENT_LINES:]:
         body = one_line((row.body or "")[:300]).strip()
         if not body:
             continue
-        who = display_name if row.is_nora else speaker_name(
-            getattr(row, "person_name", None), row.sender_name,
-        )
-        lines.append(f"{escape(one_line(who))}: {escape(body)}")
+        who = display_name if row.is_nora else row_speaker(row)
+        lines.append(f"{speaker_label(who)}: {escape(body)}")
     return "\n".join(lines)
 
 

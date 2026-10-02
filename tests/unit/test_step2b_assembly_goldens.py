@@ -32,6 +32,13 @@ each occasion sends, not a substring of it:
 Nothing here regenerates a golden. Changing one is a model-visible change and
 belongs in a step that says so.
 
+**One golden value was edited by step 4c, and only its two speaker fields**
+(`reaction-names-and-bodies-carrying-markup`, both prompts): `render_recent` now
+strips `[ ] :` from a speaker as every other transcript renderer does, so master's
+`Zoe [admin]: ...` and `Miles [owner]: Novak: c` read `Zoe admin ...` and `Miles
+owner Novak: c`. Every other byte of that case, and every other case here, is
+master's. `tests/unit/test_step4c_edge_goldens.py` states the difference.
+
 `test_the_empty_pairs_a_hand_join_kept_are_kept` pins the one thing the
 conversion could have changed and does not: `assemble` drops an empty body, and
 every one of these three occasions hand-joined its pieces, so a block that is

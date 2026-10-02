@@ -506,7 +506,12 @@ class VisionClient:
         rather than concatenated into it. The text is a transcript of what
         people said or a model's notes about somebody's video — untrusted, and
         an instruction inside it must read as data rather than as the tail of
-        the instruction it was appended to.
+        the instruction it was appended to. **The framing is the caller's, and
+        this method forwards `text` exactly as handed:** `MediaComprehender
+        .summarize` sends it as a `media_text` block that escapes it, so a
+        closing tag in a member's words cannot end the block (step 4c of
+        `design/context-assembly/04-every-occasion.md`). A message of its own
+        keeps it apart from the question; the block is what says it is data.
 
         Raises rather than returning a typed failure, unlike `describe`: the
         one caller (`MediaComprehender.summarize`) already owns a
