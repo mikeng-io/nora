@@ -3381,7 +3381,7 @@ class CognitionConfig(BaseModel):
     #: message; `register_lines` caps the index lines listed per kind. When an
     #: item's messages do not fit, the OLDEST are dropped and the prompt says
     #: how many. Starting values.
-    record_chars: int = Field(default=8000, ge=500)
+    record_chars: int = Field(default=40000, ge=500)
     message_chars: int = Field(default=400, ge=40)
     register_lines: int = Field(default=40, ge=1)
     #: D1 (DEC-245): Nora's own sends in each message item's window are shown,

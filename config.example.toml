@@ -2097,9 +2097,11 @@ overflow_window_fraction = 0.8
 # photo shows) and the Register index lines. `record_chars` is shared across the
 # items by what each needs; `message_chars` clips one message; `register_lines`
 # caps the index lines listed per kind. When an item's messages do not fit the
-# OLDEST are dropped and the prompt says how many. Starting values;
-# independent of `[record_query] enabled`.
-record_chars = 8000
+# OLDEST are dropped and the prompt says how many. 40000 since 2026-10-03: the
+# snapshot replay showed 8000 cut a week's 344 messages to the newest 11, and
+# with `record_query` off the session cannot read what was cut. Independent of
+# `[record_query] enabled`.
+record_chars = 40000
 message_chars = 400
 register_lines = 40
 # D1 (DEC-245): Nora's own sends inside each item's window are shown, marked as
