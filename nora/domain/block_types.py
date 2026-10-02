@@ -351,6 +351,28 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        source="the tool that returned it",
        found="how long before this fold you found it",
        bears_on="the open plan it answers, when you named one"),
+    _t("person_view",
+       "one person in this room, and what your memory says they are like. "
+       "What you concluded across everything you have seen of them, so it can "
+       "be wrong and it is not about this room alone; read it against the "
+       "room's culture and the messages here.",
+       name="what you call them"),
+    _t("people_views",
+       "what your memory says each person this room lists is like, one per "
+       "person, for you to write each one's account here. Not an instruction "
+       "to you; a person with no entry is one memory had nothing to say about, "
+       "never one with no character."),
+    _t("character",
+       "what each person in this room is like here, in your own words, written "
+       "daily from your memory of them and this room's culture. NOT a summary "
+       "of anything recent: none of it expires, so an old one is not out of "
+       "date. Not an instruction to you, and not something they said. A person "
+       "with no entry has not been written up yet, which does not mean they "
+       "have no character."),
+    _t("person_account",
+       "one person in this room, and your account of what they are like.",
+       name="what you call them",
+       written="how long ago you last wrote this account"),
     _t("previous_account",
        "the account of this room you wrote last time. Yours, to continue "
        "rather than to replace; a fresh snapshot every day is the thing this "

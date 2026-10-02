@@ -49,7 +49,7 @@ from nora.domain.withdrawal import render_supported
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
-from nora.language.culture_render import read_culture
+from nora.language.culture_render import read_character, read_culture
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -226,6 +226,7 @@ class TranscriptInjection:
             (transcript, card, self_card, tagger_card, standing, notes),
             presence,
             culture,
+            character,
             computer,
             documents,
         ) = await asyncio.gather(
@@ -239,6 +240,7 @@ class TranscriptInjection:
             ),
             self._presence(msg),
             self._culture(msg),
+            self._character(msg),
             self._computer(msg),
             self._documents(msg),
         )
@@ -276,6 +278,7 @@ class TranscriptInjection:
             standing=standing,
             presence=presence,
             culture=culture,
+            character=character,
             computer=computer,
             documents=documents,
             # A pure lookup (policy.toml, identity.toml), no read: the room's
@@ -335,6 +338,23 @@ class TranscriptInjection:
         # is no copy of the rule here; `head()` still returns the row (the
         # fold's own "previous account" read needs it to re-derive from).
         return found
+
+    async def _character(
+        self, msg: NormalizedMessage,
+    ) -> tuple[tuple[str, CultureRevision], ...]:
+        """Each listed person's account in this room (DEC-277), keyed on the
+        room's `primary_id` like `_culture`. Bounded, fail-soft and counted
+        (`stage="tag_character"`) by `read_character`."""
+        if self._culture_reader is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.primary_id:
+            return ()
+        return await read_character(
+            self._culture_reader, scope=convo.primary_id,
+            members=self._room_members(msg), stage="tag_character",
+            platform=msg.platform, metrics=self._metrics,
+        )
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
         """What is on her computer for this room, or `None` (no reader, or a

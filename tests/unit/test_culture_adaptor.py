@@ -27,8 +27,9 @@ from nora.domain.culture import (
     OUTPUT_TOKENS_PER_CHAR,
     CultureProposal,
     CultureRevision,
+    character_key,
 )
-from nora.domain.models import DeliveryStatus, TranscriptRow
+from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
 from nora.domain.standing import Standing
@@ -63,7 +64,8 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     """
     names = {name for name, _order, _key in _BLOCKS}
     assert names == {
-        "room", "previous_account", "standing", "notes", "room_messages",
+        "room", "previous_account", "standing", "notes", "people_views",
+        "person_view", "room_messages",
     }
 
 
@@ -805,5 +807,76 @@ def test_the_declared_store_calls_cover_the_three_inputs_and_the_two_writes():
     is a hold that is too wide — and a hold that is too wide looks exactly like
     a healthy one until something wedges. The architecture gate counts the
     awaits off the AST; this states what they ARE."""
-    assert STORE_CALLS_PER_TICK == 5
+    assert STORE_CALLS_PER_TICK == 6  # five reads/writes plus ONE `memory.chat` site
     assert CultureAdaptor.store_calls_per_tick == STORE_CALLS_PER_TICK
+
+
+# --- the Character tier (DEC-277) --------------------------------------------
+
+
+class _Memory:
+    """`MemoryStore.chat` and nothing else: what each person's view answers."""
+
+    def __init__(self, answers: dict[str, str | None]) -> None:
+        self.answers = answers
+        self.asked: list[tuple[str, str, str | None]] = []
+
+    async def chat(self, *, peer_id, query, target=None, unit=None, **_kw):
+        self.asked.append((target, query, unit))
+        return self.answers.get(target)
+
+
+_MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
+_ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+
+
+def _character_adaptor(store: _Store, memory: _Memory) -> CultureAdaptor:
+    return CultureAdaptor(
+        culture=store, unit_for=lambda _k: "friends",
+        standing_key_for=lambda _k: None, label_for=lambda _k: "Zone 42",
+        description_for=lambda _k: None,
+        members_for=lambda _k: (_MILES, _ADA), memory=memory, ai_peer="nora",
+        screen=lambda text: "id" if "+852" in text else None,
+    )
+
+
+async def test_the_people_views_are_asked_per_listed_person_and_screened():
+    """One question per listed person, routed by the unit; a person memory has
+    nothing for gets no entry, and an answer carrying an identifier (R-18) is
+    withheld whole."""
+    memory = _Memory({"miles": "dry, loyal, late to everything", "ada": "call +852 5555"})
+    out = await _character_adaptor(_Store(), memory).inputs(
+        key=KEY, batch=(_row("dinner?"),),
+    )
+    assert memory.asked == [
+        ("miles", "What is the character of Miles?", "friends"),
+        ("ada", "What is the character of Ada?", "friends"),
+    ]
+    assert "<person_view" in out and "dry, loyal, late to everything" in out
+    views = out.split("<room_messages")[0].split("<people_views")[1]
+    assert "+852" not in out and "Ada" not in views
+
+
+async def test_a_person_account_is_written_under_its_own_key():
+    """The model names a person from the roster; `accept` resolves the id, and
+    `commit` stores it in the same store under `character_key`, leaving the
+    room's own head alone."""
+    store = _Store()
+    adaptor = _character_adaptor(store, _Memory({}))
+    proposals = await adaptor.accept(key=KEY, items=[
+        {"body": "a games room"},
+        {"person": "Miles", "body": "dry and loyal"},
+        {"person": "Nobody", "body": "dropped"},
+    ])
+    assert [(p.person_id, p.body) for p in proposals] == [
+        (None, "a games room"), ("miles", "dry and loyal"),
+    ]
+    await adaptor.commit(
+        key=KEY,
+        proposals=[Proposal(payload=p, instruction_sha256="a" * 64,
+                            model="flash", established_by="culture-run-1")
+                   for p in proposals],
+        now_ms=T0,
+    )
+    assert (await store.head(key=KEY)).body == "a games room"
+    assert (await store.head(key=character_key(KEY, "miles"))).body == "dry and loyal"

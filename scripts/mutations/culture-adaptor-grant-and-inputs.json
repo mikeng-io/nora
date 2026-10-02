@@ -156,15 +156,15 @@
   {
     "name": "the declared store-call bound stops covering the two new reads",
     "file": "nora/language/culture.py",
-    "old": "STORE_CALLS_PER_TICK = 5",
+    "old": "STORE_CALLS_PER_TICK = 6",
     "new": "STORE_CALLS_PER_TICK = 3",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },
   {
     "name": "F1: the oversize account is discarded AND the batch is spent (the defect)",
     "file": "nora/language/culture.py",
-    "old": "            raise AccountNotRecordableError(\n                f\"culture account for scope={key} is {len(parsed.body)} chars, \"\n                f\"past the {BODY_MAX_CHARS} cap\"\n            )",
-    "new": "            return ()",
+    "old": "                raise AccountNotRecordableError(\n                    f\"culture account for scope={key} is {len(parsed.body)} chars, \"\n                    f\"past the {BODY_MAX_CHARS} cap\"\n                )",
+    "new": "                return ()",
     "target": "tests/unit/test_culture_adaptor.py -k oversize_account_RAISES"
   },
   {

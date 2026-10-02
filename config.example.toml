@@ -1648,8 +1648,16 @@ merge_mode = "off"
 # NOTHING IN IT RETIRES. No TTL, no closing condition, no supersede: a quiet
 # room's culture is not stale, it is accurate, and an old name does not become
 # false — it becomes history, which is part of what the current one means.
+#
+# CHARACTER (DEC-277). The same fold, on the same clock, also writes one short
+# account per person the room lists in policy.toml: it asks Nora's memory «what
+# is the character of X?» (Honcho's dialectic, which is NOT scoped to a room —
+# a unit is one circle), combines the answer with the room's culture and the
+# room's messages, and stores it in the same store under the person's own key.
+# Every tag and fire turn then carries a <character> block of the accounts of
+# the people in that room. No separate switch: `enabled` turns on both.
 enabled = false
-# Seconds between folds of one room. A model asked this question twice in a day
+# Seconds between folds of one room (and of each person in it). A model asked this question twice in a day
 # answers from nearly the same material, so the second answer differs by model
 # variance rather than by anything the room did — and variance is the one thing
 # the revision chain must not accumulate.

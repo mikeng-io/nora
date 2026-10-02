@@ -42,6 +42,7 @@ __all__ = [
     "Culture",
     "CultureProposal",
     "CultureRevision",
+    "character_key",
 ]
 
 #: **MEASURED, 2026-09-17** — what one character of a culture account costs in
@@ -284,3 +285,22 @@ class CultureProposal:
     """
 
     body: str
+    #: `None` is the ROOM's account. A `person_id` makes it that one person's
+    #: account in this room (`character_key`), written by the same fold from
+    #: Honcho's view of them and the room's culture. It comes from the roster
+    #: the prompt showed, never from an id the model typed.
+    person_id: str | None = None
+
+
+def character_key(scope: str, person_id: str) -> str:
+    """The `culture` key one person's account is stored under, in room `scope`.
+
+    The Character tier REUSES the culture store and its revision chain rather
+    than growing a parallel one: `culture.key` is free text, so a person's
+    account is one more key. It cannot collide with a room's key (a room's
+    `primary_id` carries no `#character:`), and nothing scans the table for
+    every key (`culture` is read by key, and the citation cascade joins on
+    keys it already holds). `scope` is the room's `primary_id`, so the account
+    is per person per room: it is combined with THAT room's culture.
+    """
+    return f"{scope}#character:{person_id}"
