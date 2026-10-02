@@ -845,43 +845,37 @@
       },
       "children": [
        {
-        "type": "Tabs",
-        "props": {},
+        "type": "Card",
+        "props": {
+         "title": "From the host"
+        },
         "children": [
          {
-          "type": "Tab",
+          "type": "Code",
           "props": {
-           "label": "From the host"
-          },
-          "children": [
-           {
-            "type": "Code",
-            "props": {
-             "language": "shell",
-             "text": "docker restart game"
-            }
-           },
-           {
-            "type": "Markdown",
-            "props": {
-             "text": "Wait about **40 seconds** for the world to load."
-            }
-           }
-          ]
+           "language": "shell",
+           "text": "docker restart game"
+          }
          },
          {
-          "type": "Tab",
+          "type": "Markdown",
           "props": {
-           "label": "From the portal"
-          },
-          "children": [
-           {
-            "type": "Markdown",
-            "props": {
-             "text": "Open the game's page and use the restart control. It saves first, then restarts."
-            }
-           }
-          ]
+           "text": "Wait about **40 seconds** for the world to load."
+          }
+         }
+        ]
+       },
+       {
+        "type": "Card",
+        "props": {
+         "title": "From the portal"
+        },
+        "children": [
+         {
+          "type": "Markdown",
+          "props": {
+           "text": "Open the game's page and use the restart control. It saves first, then restarts."
+          }
          }
         ]
        },
@@ -1040,37 +1034,6 @@
           ]
          }
         ]
-       }
-      ]
-     }
-    ]
-   }
-  },
-  "a Tabs with two Tab panels": {
-   "version": 1,
-   "root": {
-    "type": "Page",
-    "props": {
-     "title": "T"
-    },
-    "children": [
-     {
-      "type": "Tabs",
-      "props": {},
-      "children": [
-       {
-        "type": "Tab",
-        "props": {
-         "label": "a"
-        },
-        "children": []
-       },
-       {
-        "type": "Tab",
-        "props": {
-         "label": "b"
-        },
-        "children": []
        }
       ]
      }
@@ -1694,54 +1657,7 @@
    }
   },
   {
-   "label": "a Tab outside Tabs",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Tab",
-       "props": {
-        "label": "x"
-       },
-       "children": []
-      }
-     ]
-    }
-   }
-  },
-  {
-   "label": "a non-Tab child of Tabs",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Tabs",
-       "props": {},
-       "children": [
-        {
-         "type": "Markdown",
-         "props": {
-          "text": "x"
-         }
-        }
-       ]
-      }
-     ]
-    }
-   }
-  },
-  {
-   "label": "an empty Tabs",
+   "label": "a Tabs (removed: nothing used it and it needed three schema branches, design §42)",
    "doc": {
     "version": 1,
     "root": {
@@ -1754,31 +1670,6 @@
        "type": "Tabs",
        "props": {},
        "children": []
-      }
-     ]
-    }
-   }
-  },
-  {
-   "label": "a Tab without a label",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Tabs",
-       "props": {},
-       "children": [
-        {
-         "type": "Tab",
-         "props": {},
-         "children": []
-        }
-       ]
       }
      ]
     }
@@ -2888,89 +2779,6 @@
                        "props": {
                         "text": "x"
                        }
-                      }
-                     ]
-                    }
-                   ]
-                  }
-                 ]
-                }
-               ]
-              }
-             ]
-            }
-           ]
-          }
-         ]
-        }
-       ]
-      }
-     ]
-    }
-   }
-  },
-  {
-   "label": "a Tab one level past the cap (Tabs at 8, its Tab at 9)",
-   "doc": {
-    "version": 1,
-    "root": {
-     "type": "Page",
-     "props": {
-      "title": "T"
-     },
-     "children": [
-      {
-       "type": "Grid",
-       "props": {
-        "columns": 2
-       },
-       "children": [
-        {
-         "type": "Grid",
-         "props": {
-          "columns": 2
-         },
-         "children": [
-          {
-           "type": "Grid",
-           "props": {
-            "columns": 2
-           },
-           "children": [
-            {
-             "type": "Grid",
-             "props": {
-              "columns": 2
-             },
-             "children": [
-              {
-               "type": "Grid",
-               "props": {
-                "columns": 2
-               },
-               "children": [
-                {
-                 "type": "Grid",
-                 "props": {
-                  "columns": 2
-                 },
-                 "children": [
-                  {
-                   "type": "Grid",
-                   "props": {
-                    "columns": 2
-                   },
-                   "children": [
-                    {
-                     "type": "Tabs",
-                     "props": {},
-                     "children": [
-                      {
-                       "type": "Tab",
-                       "props": {
-                        "label": "a"
-                       },
-                       "children": []
                       }
                      ]
                     }

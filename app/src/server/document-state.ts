@@ -1,5 +1,5 @@
-// Archive, delete or restore one document: the portal's only write to Nora (ADR 0020,
-// design/artifact §5, document_state).
+// Archive, delete or restore one document: a portal write to Nora (ADR 0020, design/artifact
+// §5 and §34, document_state; restoring a revision is the other, document-history.ts).
 //
 // Its own route (src/app/api/v1/documents/[id]/state/route.ts), because the catch-all
 // proxy is GET only and should stay that way. This is that route's logic, kept apart so
