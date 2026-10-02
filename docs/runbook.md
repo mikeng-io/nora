@@ -34,8 +34,9 @@ is correct. To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
-   The proactive occasion (design/dreamer-agent-loop/39, DEC-162 — wired
-   when `policy.toml` names a `home_room`) is the fourth audience and has
+   The proactive occasion (design/dreamer-agent-loop/39, DEC-162; since
+   2026-10-03, DEC-277, its reminder rows are written by the Cognition
+   session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
    participation's exact shape: a `kind="proactive"` row's act turn that
    says nothing is the healthy outcome and counts on
    `nora_proactive_silence_total` (the row is DONE with `outcome="silent"`),
@@ -43,9 +44,9 @@ is correct. To tell "quiet" from "broken":
    here under `audience="proactive"`. Its budget expression is the same
    ratio over its own two series. The heartbeat's own fired counter gains
    three outcomes for this kind — `silent`, and the fire-time screen's
-   `cancelled_note_retired` / `cancelled_note_moved` — and the decide turn's
-   own reading is `nora_proactive_decisions_total{action}` beside the
-   Dreamer's `nora_dream_run_total{adaptor="proactive"}`.
+   `cancelled_note_retired` / `cancelled_note_moved`. The decide pass and its
+   `nora_proactive_decisions_total` / `nora_dream_run_total{adaptor="proactive"}`
+   are gone (DEC-277); read the deciding side in `nora cognition health`.
 
    **A reminder can also be hours late with all three of those reading healthy.**
    A tick that finds the conversation's slot held by a tag leaves the rows
@@ -558,7 +559,7 @@ docker compose exec -T nora /app/.venv/bin/python -m nora cognition health --sin
 (`/app/.venv/bin/python`, not `uv run`: `uv run` in the container installs the dev
 extras over the live venv.) It is READ-ONLY and prints counts, ages and rule names,
 never a message, a room id or a person. A unit is the `policy.toml` key you already
-pass to `nora cognition compare --unit`. **The exit code is the verdict**, so a
+pass to `nora cognition health --unit`. **The exit code is the verdict**, so a
 flip-day check script can `&&` it:
 
 | exit | verdict | meaning |
@@ -595,10 +596,9 @@ ended failed or timed out**, with at least 5 ended (CUTOVER-PLAN §5.1's stop si
 `[cognition] session_timeout_seconds`** (a session that was killed and recorded
 nothing, still holding its unit). It also reports sessions per day by outcome and
 cause, pending stimuli per unit and kind with the oldest age, the last wake recorded
-per unit, input / output / cache-read tokens per session (mean and max), refusals by
-rule, and process starts in the window (`deploy_revision`). **Reconcile (committed
-minus reverted) reads «unavailable» until the live ledger exists**; it is not part of
-the verdict and never prints as zero. The last wake TICK is not a row: it is the gauge
+per unit, input / output / cache-read tokens per session (mean and max), and process
+starts in the window (`deploy_revision`). Since 2026-10-03 (DEC-277) it no longer
+reports refusals or the ledger reconcile; the shadow comparison is gone. The last wake TICK is not a row: it is the gauge
 `nora_cognition_wake_last_tick_seconds`, read by `CognitionWakeStalled`.
 
 **What a restart does to a session (since the cut-over's PR-7).** Before it, nora had
@@ -929,7 +929,7 @@ is deliberate — an observability store must not be able to break CI.
 ALSO gone (`design/evaluation/10-the-scenario-map.md` §15/16, the corpus
 port) — the suite is now `python -m evals <name>` (a corpus NAME, not a file
 path; `--list` shows every one, `--class`/`--all` select more than one), and
-`make eval-participation` / `eval-note-candidates` / `eval-gate` /
+`make eval-participation` / `eval-note-candidates` (the pass is deleted, DEC-277, 2026-10-03) / `eval-gate` /
 `eval-adversarial-corpora` are the wrappers, updated to match. Read
 `design/evaluation/06-first-full-run.md` before quoting any number from it —
 four corpora are currently ungradable without a judge, and the judge is too

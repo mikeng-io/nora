@@ -1,5 +1,8 @@
 # The scenario map — what this suite must measure, derived from what has broken
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 `GOAL-2-backbone.md` Step 2. The thirteen corpora are **an accretion, not a
 decision**: they grew case by case out of incidents, and nobody ever wrote down
 what the suite must cover. This node is that decision, derived from her entry

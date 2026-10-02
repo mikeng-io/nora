@@ -82,7 +82,7 @@ path (Observe), the memory layer — notes, Standing, Honcho — (Orient), two
 deciders — participation and proactive — (Decide), and the fire path (Act),
 closed through a human. The tag path feeds the loop: its fold rewrites the
 room's Standing (it has proposed no notes since DEC-202; notes come from people
-and the `note-candidates` pass). `design/ambient-loop/` names the loop, the
+and the Cognition session, DEC-277). `design/ambient-loop/` names the loop, the
 contract on each seam between its stages, and the incident that showed why
 the seams matter (#199). The diagram below is the same picture drawn as code
 paths.
@@ -117,10 +117,10 @@ Signal / Discord / WhatsApp / Instagram room
    → reply → audit row → Honcho feed
 
 ④ THE DREAMER (background, [dreamer] enabled — never speaks, writes derived state)
-   five adaptors over the record, the notes and Standing: note-candidates
-   (stages notes), note-curation (retires them), note-merge (folds duplicates;
-   `[notes] merge_mode`), culture (one account per room of what it has become,
-   daily; `[culture]`), proactive (writes a reminder row for ③ to speak)
+   the `culture` adaptor (one account per room of what it has become, daily;
+   `[culture]`). Notes, events, Standing and Nora's own reminder rows (for ③
+   to speak) are written by the Cognition session (`[cognition] enabled`,
+   DEC-277)
 
 ⑤ PUBLIC SUMMONS (Instagram, [social.instagram.summons], ships off + dry-run)
    a mapped person tags her under a public post → one turn on the `summons`
@@ -144,8 +144,9 @@ compute job, a relay, and two that the operator grants per room:
   `[participation] cooldown_minutes`. Optionally in front of it, the
   **Relevance Gate** (design 36, `[relevance_gate]`) — a cheap model that
   decides whether the room is asking before a full turn is spent.
-- **proactive** (design/dreamer-agent-loop/39, DEC-162): the Dreamer's
-  proactive adaptor reads a unit's open notes, each room's standing and
+- **proactive** (design/dreamer-agent-loop/39, DEC-162; since 2026-10-03,
+  DEC-277, the Cognition session's `remind` writes the rows and the Dreamer's
+  proactive adaptor is deleted — the act turn below is unchanged): the adaptor read a unit's open notes, each room's standing and
   its own past decisions, and may set ITSELF a reminder for a chosen hour; at
   that hour a fire turn reads the room again and speaks — or declines, which
   is recorded as `silent`, a success. Two per-room flags in `policy.toml`:
@@ -166,7 +167,7 @@ the stores, pre-filled into each fresh agent's context:
 |---|---|---|
 | the words, verbatim | Postgres `messages` | the record (`load_transcript`, `search_memory`) |
 | conclusions about each person, and about herself | Honcho | memory (`about`, `ask_memory`, `<self_card>`) |
-| the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the `note-candidates` adaptor) |
+| the group's open questions — a dinner not yet placed, a trip not yet booked | Postgres `note` | the note tier (`<notes>`, `note_read`; written by people on a tag and by the Cognition session) |
 | her own position on where each room's conversation stands, plus a working set of options she found and has not yet given the room | Postgres `standing` | Standing (design 26; the room's compact, DEC-199; folded after each tag turn and, from ingest, whenever `[standing] fold_batch` new messages have piled up since the last fold; working set #445) |
 | her account of what each room has become — how they talk, how things get decided | Postgres, one chain per room | the culture tier (`<culture>`; written daily by the `culture` adaptor, read by every occasion in a room but the Relevance Gate, DEC-207) |
 
@@ -200,12 +201,10 @@ Notable knobs:
 - `obs.metrics.port` (9100) — serves both `/metrics` (Prometheus text) and `/health`.
 - The unprompted paths are each a section that ships `enabled = false`:
   `[heartbeat]` (reminders fire), `[participation]`, `[relevance_gate]`,
-  `[notes]` (the index and the read tools; `candidates_enabled` for the
-  background writer, `curator_enabled` for retirement, `merge_mode` for the
-  duplicate fold), `[standing]`, `[culture]`, `[social.instagram.summons]`,
-  `[dreamer]` (the background runtime all adaptors run on). The proactive
-  adaptor has no flag of its own: a `home_room = true` in `policy.toml` is
-  the opt-in, and it needs `[dreamer]` and `[notes]` on.
+  `[notes]` (the index and the read tools), `[standing]`, `[culture]`,
+  `[cognition]` (the session that writes notes, events, Standing and her
+  reminders), `[social.instagram.summons]`, `[dreamer]` (the background
+  runtime the adaptors run on).
 
 Who may talk to her, and where, lives in `policy.toml` (see
 `policy.example.toml`): deny-by-default, one `[[conversations]]` block per room,
@@ -256,8 +255,7 @@ may-speak half, and a summons never loads a `rooms/` file.
 
 The Dreamer has its own corpus under `nora/dreamer/` — `doctrine/dreamer.md`
 (who it is on every run) and `objectives/*.md`, one per adaptor
-(`note-candidates`, `note-curation`, `note-merge`, `culture`, `proactive`,
-plus the tag path's `standing-debrief`). Same hot-reload, same bind mount; none of the doctrine
+(`culture`, `cognition`, plus the tag path's `standing-debrief`). Same hot-reload, same bind mount; none of the doctrine
 loader's gates run on it.
 
 Each file has YAML frontmatter (`name`, `description`, `order`, `applies_to`, `version`,
@@ -302,7 +300,7 @@ operator playbook when a doctrine edit misbehaves.
   the ones an operator reads first are `nora_silent_failures_total{audience}`,
   `nora_tags_total`, `nora_replies_total`, `nora_errors_total{stage}`,
   `nora_dream_run_total{adaptor,status}`, `nora_reminders_fired_total{outcome}`,
-  `nora_participation_*` and `nora_proactive_*`, and the latency histograms.
+  `nora_participation_*` and `nora_proactive_*` (the fire path's; the DECIDE-pass series are gone), and the latency histograms.
 - **Something watches** (2026-09-09): Prometheus scrapes every process,
   Alertmanager routes, and alerts land in a Discord review channel through the
   alert bridge; exceptions go to Sentry. `docs/observability.md` is the map and

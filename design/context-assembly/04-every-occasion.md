@@ -11,6 +11,9 @@ edges:
 
 # Every occasion
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. The rule, and why it was not a rule
 
 **Operator, 2026-10-01: every agent in Nora must assemble through context
@@ -189,7 +192,7 @@ What the track did NOT do, collected from the steps' findings and the reviews (l
 
 **Graded prompts, to decide after the end-of-track eval.**
 
-- **Seven hand-rolled age functions in five modules.** `nora/domain/prompt.py` `age` (:75) and `ago` (:106), `nora/domain/summons.py` `age` (:476), `nora/domain/computer_sessions.py` `age` (:225), `nora/infra/social/render.py` `_age` (:708) and `_post_age` (:691) and `nora/language/proactive.py` `_age` (:1655) say different things at the same elapsed time (the summons' says «just now» under 60 seconds and `on YYYY-MM-DD` past 60 days, `prompt.age` says «just now» under 90 seconds and has no date form). Unifying them changes a graded prompt.
+- **Seven hand-rolled age functions in five modules.** `nora/domain/prompt.py` `age` (:75) and `ago` (:106), `nora/domain/summons.py` `age` (:476), `nora/domain/computer_sessions.py` `age` (:225), `nora/infra/social/render.py` `_age` (:708) and `_post_age` (:691) and `nora/language/proactive.py` (deleted 2026-10-03, DEC-277) `_age` (:1655) say different things at the same elapsed time (the summons' says «just now» under 60 seconds and `on YYYY-MM-DD` past 60 days, `prompt.age` says «just now» under 90 seconds and has no date form). Unifying them changes a graded prompt.
 - **The tool-result transcripts in `nora/agent/tools.py`** (their shape: `when`, `sender`, `reply_to`). Only their `ts` map moved (step 4c).
 
 **A model door the enforcer does not know.** Honcho's `chat` is a prompt to a memory service's own model (`nora/agent/tools.py:5785`, `nora/app/gatherings.py:412` with its fixed query `_VENUE_PREFERENCE_QUERY` at :76); whether «every agent» covers a dialectic query is the operator's call. Image generation is the same question. Neither is matched by the net.

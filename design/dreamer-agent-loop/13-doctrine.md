@@ -12,6 +12,9 @@ edges:
 
 # Doctrine — One Preamble for Jobs That Are Not the Same Shape
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. What the model is actually handed
 
 For the two migrated adaptors, the system prompt is the doctrine body and the

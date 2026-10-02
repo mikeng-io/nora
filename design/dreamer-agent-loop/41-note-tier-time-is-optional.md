@@ -17,6 +17,9 @@ version: 2
 
 # Time Is a Property of a Note, Not Its Axis
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 *§7 (2026-09-24, DEC-202) adds the duplicate bound this node declined in its first version: the Standing debrief stops creating notes, creation refuses exact duplicates, and a new `note-merge` adaptor folds what gets through. It reverses §3.4's «no merge verb», §6's «nothing here revives it», R-75's merge clauses and 27 §2's «never on topical similarity»; each is marked where it stands.*
 
 *DEC-194 — renumbered 2026-09-22. Drafted as DEC-190 at PR opening 2026-09-16; DEC-190 was taken by the presence place-identity decision (#336, merged 2026-09-17) while this PR sat open, and master now runs to DEC-193. Below its decision-index row.*
@@ -774,8 +777,8 @@ still decides when `shadow` becomes `on`, together with the eval (step 4).
 What landed: `merge_into` on both stores (one transaction, compare-and-swap
 on both heads and `retired_at IS NULL`), guard 3 (`supersede` takes an
 optional expected head and the curator passes the head it judged), the
-`note-merge` adaptor (`nora/language/note_merge.py`, objective
-`nora/dreamer/objectives/note-merge.md`), `[notes] merge_mode = "off" |
+`note-merge` adaptor (`nora/language/note_merge.py` (deleted 2026-10-03, DEC-277), objective
+`nora/dreamer/objectives/note-merge.md` (deleted 2026-10-03, DEC-277)), `[notes] merge_mode = "off" |
 "shadow" | "on"` defaulting to `"off"`, `nora_note_merge_total{outcome}`,
 `nora_note_merge_pass_total{reason}`, `nora_note_merge_prompt_chars`, and a
 fire-time screen that follows a `retired-merged` note's survivor. Where it

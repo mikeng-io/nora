@@ -1,5 +1,8 @@
 # 06 — Implementation plan for steps 1 and 2
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 Implements `05`'s steps 1 and 2 against `02-presence.md`. Written before the
 code, so it records what was decided and where, and the reading that would
 change each decision.

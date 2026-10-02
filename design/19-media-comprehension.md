@@ -11,6 +11,9 @@ edges:
 
 # Media comprehension
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 Issues **#116** (the three fields, the join, the two layers) and **#117** (the
 chunked video read). Both landed on one branch: video's `content` shape is part
 of the comprehension contract, and two branches cut from one alembic head would
@@ -184,9 +187,9 @@ consumer performs, five did not:
 | `nora/engagement/context.py` | the tag prompt |
 | `nora/app/fire.py` | reminders, announcements, heartbeat, participation |
 | `nora/engagement/stages/debrief.py` | the tag-path standing fold |
-| `nora/ingest/stages/standing_event.py` | the event-driven fold |
+| `nora/ingest/stages/standing_event.py` (deleted 2026-10-03, DEC-277) | the event-driven fold |
 | `nora/app/runtime.py` | the Dreamer's batch — both scope-keyed adaptors, including the note tier's candidates pass |
-| `nora/language/note_curator.py` | a note's evidence |
+| `nora/language/note_curator.py` (deleted 2026-10-03, DEC-277) | a note's evidence |
 | `nora/app/adoption.py` | lazy adoption's Honcho back-feed |
 | `nora/agent/tools.py` | `load_transcript`, the one builder inside a tool |
 

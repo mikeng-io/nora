@@ -1,5 +1,8 @@
 # The convention — what exists, written down
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 Written LAST, on purpose. Attempted first on 2026-09-17 (PR #307) and withdrawn
 the same day: a convention written before the code describes the variations that
 already exist and legitimises them.

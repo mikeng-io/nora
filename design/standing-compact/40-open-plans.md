@@ -22,6 +22,9 @@ edges:
 
 # Open plans
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## Where this picks up
 
 `design/group-situation/10-standing-drops-plans.md` measured production
@@ -122,7 +125,7 @@ An item with no `id` is new. The write path:
    ignored and counted.
 
 **Both folds write it.** The tag debrief and the watermark rollup
-(`nora/ingest/stages/standing_event.py`) share the validator, as they do for
+(`nora/ingest/stages/standing_event.py` (deleted 2026-10-03, DEC-277)) share the validator, as they do for
 the working set. Unlike the working set, the rollup may ADD plans, because
 most plans are stated in stretches nobody addressed Nora in (drop 3 of the
 study was one).

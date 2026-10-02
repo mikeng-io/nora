@@ -10,11 +10,14 @@ edges:
 
 # Changes
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. Deleted: the verdict, and both re-derivation triggers
 
 | deleted | where |
 |---|---|
-| the verdict call, its objective (`standing-verdict.md`), its parse, the deterministic room-scope claim that only fed it | tag path `nora/engagement/stages/debrief.py`, event path `nora/ingest/stages/standing_event.py` |
+| the verdict call, its objective (`standing-verdict.md`), its parse, the deterministic room-scope claim that only fed it | tag path `nora/engagement/stages/debrief.py`, event path `nora/ingest/stages/standing_event.py` (deleted 2026-10-03, DEC-277) |
 | `render_verdict_input`, `render_rollup_verdict_input` | `nora/engagement/debrief_render.py` |
 | `TurnVerdict`, `TurnVerdictStore`, `SqlTurnVerdictStore`, the fake and its contract suite | domain, port, infra, testing |
 | `_should_rebuild`, both triggers (`ungrounded`, `ceiling`), `[standing] rebuild_after_folds` | debrief stage, config |

@@ -59,8 +59,8 @@ are the same everywhere the codebase reasons, decides, or commits state.)
   breaching a safety bar. Rendering an age per row cut its error rate by two
   thirds over 40 labelled cases. The same omission was then found in
   `<standing>`, which asserted it was current while carrying no time, and in the
-  note curator, which is asked whether an anchor has passed and is given no
-  clock at all. The instruction is the first thing blamed and usually the wrong
+  note curator (deleted 2026-10-03, DEC-277), which was asked whether an anchor
+  had passed and was given no clock at all. The instruction is the first thing blamed and usually the wrong
   one.
 - **Serialize** — fix the result into **canonical, typed state with provenance**.
   Her reply is the one authored surface (strict-silence: only a `send_reply` tool
@@ -304,6 +304,10 @@ model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
 41 §7, designed 2026-09-24, built 2026-09-25 behind `[notes] merge_mode`,
 default `off`, first run in `shadow`, which writes no note); the curator
 stays retire-only.
+**2026-10-03 (DEC-277): `note_candidates`, the curator and `note-merge` are
+deleted; the Cognition session writes, retires (`note_retire`) and merges
+(`note_merge`) notes, and `[notes] enabled` is the only notes key left. The
+paragraph above is the history.**
 The create gate in `note_candidates` matched on anchor date alone from that
 day until **2026-09-13**, when two firings in production merged two unrelated
 occasions twice (#228); it now resolves the note title the MODEL names, and

@@ -11,6 +11,9 @@ edges:
 
 # Working set
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## Where this picks up
 
 00-intent's claim 3 — showing the fold the turn's tool results at a size that
@@ -163,7 +166,7 @@ gains a render for `<standing_working_set_prior>`, symmetric with
 re-deriving the set from zero every turn — the same reason the paragraph is
 "re-judge the prior", not "write a fresh one."
 
-**Proactive decide — deliberately not wired here.** `nora/language/proactive.py`
+**Proactive decide — deliberately not wired here.** `nora/language/proactive.py` (deleted 2026-10-03, DEC-277)
 reads `standing.body` collapsed to one line per room, across every room in a
 unit (`_standing_lines`). A structured, multi-item field does not fit a
 one-line-per-room digest without either truncating to uselessness or

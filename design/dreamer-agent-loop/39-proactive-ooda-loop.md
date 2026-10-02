@@ -17,6 +17,9 @@ version: 3
 
 # The Proactive Adaptor Is Nora's Other Half
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 0. What this node decides, and what it supersedes
 
 Node 38 was a fact sheet and decided nothing. This node decides. Every
@@ -686,7 +689,7 @@ Items 4 and 10 are the work. R-1b and its test do not change.
   indistinguishable from an unset value. `nora/app/composition.py` carries
   the reasoning and the reading that would move it.
 - Naming. «Proactive adaptor» is still provisional; nothing here depends on
-  it. The code calls it `proactive` everywhere (`nora/language/proactive.py`,
+  it. The code calls it `proactive` everywhere (`nora/language/proactive.py` (deleted 2026-10-03, DEC-277),
   the objective, the schedule and grant keys, the `dream_adaptor` provenance).
 - One stale Honcho session (`nora-conv-100000000000000203_100000000000000206`,
   a Ridgeline Discord channel not in `policy.toml`). Harmless; noted.

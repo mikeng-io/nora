@@ -18,6 +18,9 @@ edges:
 
 # Four Flows — How Each Tier Actually Runs
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 The rest of the bundle argues about seams. This node runs each tier top to
 bottom so the seams have somewhere to land. Three are background flows; the
 fourth, Standing, runs in-slot, and the contrast is the point.

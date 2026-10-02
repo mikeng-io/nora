@@ -11,6 +11,9 @@ edges:
 
 # 00 · Intent
 
+> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+
+
 ## 1. The loop is named and not built
 
 DEC-176 names Nora's ambient loop: observe, orient, decide, act, closed
@@ -20,7 +23,7 @@ the decision index). The parts that run it today:
 | step | who does it today | when |
 |---|---|---|
 | observe | ingest (`nora/ingest/pipeline.py`), the presence collector (`nora/presence/collector.py`), memory feed | per message / per fix |
-| orient | note-candidates, note-curation, note-merge, culture (Dreamer adaptors); the Standing debrief and the ingest-triggered Standing fold (`nora/ingest/stages/standing_event.py`) | each on its own clock or batch |
+| orient | note-candidates, note-curation, note-merge, culture (Dreamer adaptors); the Standing debrief and the ingest-triggered Standing fold (`nora/ingest/stages/standing_event.py` (deleted 2026-10-03, DEC-277)) | each on its own clock or batch |
 | decide | participation's gate and turn; the proactive adaptor's decide turn | quiescence window; hourly |
 | act | the fire path (`nora/app/fire.py`) via a reminder the proactive pass set; the participation turn | when a row comes due |
 

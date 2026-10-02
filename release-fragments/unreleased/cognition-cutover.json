@@ -1,0 +1,14 @@
+{
+  "type": "change",
+  "summary": "Nora's background notebook keeping is one Cognition session that writes for real: it creates, revises, closes and merges notes, records events and a room's position, and sets her own reminders, in place of the four separate passes that did those jobs before.",
+  "details": [
+    "Every write the session makes runs the same checks as a write on a tagged turn and is stamped as hers (cognition) in the note, event, Standing and reminder records.",
+    "Twice a day the session reviews the notebook: notes whose day has passed or whose revisit has come, and notes that may be duplicates, are marked for it to read before it closes or folds them.",
+    "A reminder she sets herself carries what she means to raise and fires through the ordinary reminder path, where she may still stay silent.",
+    "Removed: the note-candidates, note-curation, note-merge and proactive decide passes, the event-driven Standing fold, the shadow ledger and `nora cognition compare`."
+  ],
+  "limitations": [
+    "Config: `[cognition] mode`/`session_mode` are replaced by `[cognition] enabled`, and `[notes] candidates_enabled`, `curator_enabled`, `merge_mode`, `candidates_interval_seconds` (and the curator's tuning keys), `[standing] event_enabled`/`rollup_max_folds` and `[memory] roster_index_*` are gone; a config that still names one refuses to start.",
+    "Turning `[cognition] enabled` off leaves the notebook with no background writer until it is turned back on; the tag path's own note and reminder tools are unaffected."
+  ]
+}

@@ -14,6 +14,9 @@ edges:
 
 # 05 · Data model
 
+> 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
+
+
 **This node is canonical for the topology and the vocabulary** (operator
 2026-10-01, DEC-249: "we need clean topologies and hierarchies before we really
 start building"; "I prefer meaningful and accurate names"). Each name below is
@@ -256,7 +259,7 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 | the agenda's grounding | Cognition session | `nora/app/cognition_grounding.py`, with its own renderer | its own call into `nora/agent/lineage.py`; a row must pass for every room on the agenda | in every mode | a third assembler and renderer |
 | read tools | both | each tool: `note_read`/`note_search` (`nora/agent/tools.py`), `nora/agent/standing_read.py`, `nora/infra/sql/record_query.py`, `rollup_read` | each applies it itself | each applies it itself | one call site per tool |
 | `media_search`, `media_send` | tag turn | `nora/agent/tools.py` | none: not scoped to the room | — | a read of the Record that no room bounds |
-| the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief, the relevance gate | each module's own builder (`nora/language/note_candidates.py`, `nora/language/proactive.py`, `nora/language/culture.py`, `nora/ingest/stages/standing_event.py`, `nora/engagement/debrief_render.py`, `nora/ingest/relevance_gate.py`) | none: they read unit-wide and never speak | notes through the store's reads; culture through `read_culture` and Standing through `render_supported`; a fold's OWN prior is read raw on purpose (`tests/architecture/test_withdrawal_reaches_every_prompt.py`) | retired with the adaptors at step 4 |
+| the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief, the relevance gate | each module's own builder (`nora/language/note_candidates.py` (deleted 2026-10-03, DEC-277), `nora/language/proactive.py` (deleted 2026-10-03, DEC-277), `nora/language/culture.py`, `nora/ingest/stages/standing_event.py` (deleted 2026-10-03, DEC-277), `nora/engagement/debrief_render.py`, `nora/ingest/relevance_gate.py`) | none: they read unit-wide and never speak | notes through the store's reads; culture through `read_culture` and Standing through `render_supported`; a fold's OWN prior is read raw on purpose (`tests/architecture/test_withdrawal_reaches_every_prompt.py`) | retired with the adaptors at step 4 |
 | portal pages | a person | `nora/web/gatherings.py` (events they created or answered), `nora/web/documents.py` | none: participation-scoped | none: events are outside the cascade | no page for notes, memos, Character, Standing or lessons yet |
 
 ## 7. The Notebook's writers, and how the speaking turns hand off

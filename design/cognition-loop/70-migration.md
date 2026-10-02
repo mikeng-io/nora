@@ -22,7 +22,7 @@ kept, and what is replaced is how it is woken and how its work is divided.
 | `dream_loop`, `_dream_adaptor_once`, `seed_watermarks` (`nora/app/runtime.py`), `AdaptorSchedule`, per-adaptor clocks | **replaced** by the wake evaluator, the stimulus table and each adaptor's own watermark and wake rule ([20](20-observe.md) §3) |
 | `note_candidates`, `note_curator`, `note_merge` (`nora/language/`) | **replaced by the Cognition adaptor** after cut-over; their objectives become its skills ([30](30-cognition.md) §4) |
 | the proactive adaptor | **replaced by the Cognition adaptor**, whose act step it becomes; its writes to the shared decision log (DEC-179) become Cognition's |
-| the ingest-triggered Standing fold (`nora/ingest/stages/standing_event.py`) | **replaced by the Cognition adaptor**'s `standing_revise` (room case) |
+| the ingest-triggered Standing fold (`nora/ingest/stages/standing_event.py`, deleted 2026-10-03, DEC-277) | **replaced by the Cognition adaptor**'s `standing_revise` (room case) |
 | the `culture` adaptor (`nora/language/culture.py`) | **becomes the Character adaptor**, not retired: its room case at step 4, generalised to the unit, persons and Nora at step 8; its daily clock replaced by evidence thresholds and staleness |
 | — | **the Lessons adaptor** (new, step 8) and **the Assess adaptor** (new, step 3) |
 | each adaptor's envelope, `accept` and `commit` | **moved behind write verbs**: the validation survives, the per-adaptor envelope goes |
@@ -56,7 +56,7 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 3a | **Cognition session, shadow** | the Cognition adaptor's session and agenda; its note, event and Standing verbs in dry run (would-write rows recorded, nothing committed); the pace verbs and self-wakes in shadow; skills injected; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; `tool_selection` on the cognition catalogue | over a shadow week every clocked-adaptor write is matched or deliberately closed (a close the model wrote is not evidence: DEC-252, amended 2026-10-02); the act guards hold in shadow (the live pending ceiling and the dedupe rule; the live `remind` has no daily act cap, so none is checked) |
 | 3b | **`standing_revise`, live — BUILT 2026-09-29 (DEC-239)** | `standing_revise` and the room Standing schema, live: the debrief and the ingest fold both write through it from here, so the head has one shape. As built: two new optional sections, `I hold open` and `I owe` (migration `0076_standing_sections`, additive, existing heads keep every fact and gain two `NULL` sections); the write verb enforces the schema (`Where it stands` required, a given section never blank) and the mode (`deduced`/`abduced`/`said`) before either caller's own body/working-set/screen checks reach the store; `mode="deduced"` by default, since neither caller yet asserts a position resting only on her own words (`said`) or a guess going out as a question (`abduced`) — open below. **The two new sections carry no model-written content yet**: no objective asks for them, so `hold_open`/`i_owe` stay `None` on every row this step writes; turning the model on for them is a doctrine change with its own eval, not part of this migration step (open position below) | the render-parity case: an existing head's rendered block is unchanged; the debrief and rollup-fold test suites stay green under the shared verb |
 | 3c | **Assess, corpora** | the Assess adaptor, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6) | the truncated dinner case passes ([40](40-register.md) §5); the event and note corpora meet their gates |
-| 4 | **Cut over** | the Cognition adaptor commits; the clocks, note-candidates, note-curation, note-merge, the proactive adaptor and the ingest Standing fold retired (with `rollup_max_folds` and its metric); the culture adaptor becomes the Character adaptor's room case, on its wake rule, with culture migrated to the sectioned account and written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the room-Character corpus meets its gate; the latency falsifier ([00](00-intent.md) §6) |
+| 4 | **Cut over — BUILT 2026-10-03 in one change (DEC-277; the operator's ruling: all at once, no shadow week, undo is `[cognition] enabled = false` and a restart)** | the Cognition adaptor commits; the clocks, note-candidates, note-curation, note-merge, the proactive adaptor and the ingest Standing fold retired (with `rollup_max_folds` and its metric); the culture adaptor becomes the Character adaptor's room case, on its wake rule, with culture migrated to the sectioned account and written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the room-Character corpus meets its gate; the latency falsifier ([00](00-intent.md) §6) |
 | 5 | **Social and play** | the story poller (members only, rate-capped, per-person off switch), perceived through ingest comprehension under the per-unit cap; the story rule and its test rewritten; posts and reels as the bridge can list them; `social_items`; Steam polling and Discord rich presence and voice sampled; play session and play profile; daybook and tie rebuilt with the new inputs | poll outcomes and item counts read back; the login unharmed for a week; the dinner case with stories |
 | 6 | **Faces** | detector, embedder, templates keyed by workspace; labels by reference photos, the portal and `face_label`; face co-appearance; the custody and face checks | precision on the held-out labelled set ([60](60-faces.md) §6) |
 | 7 | **Memos** (moved: E1b, built right after step 3's shadow week as the first kind on the entry, gated on its corpus, written only by Cognition, DEC-249; the «記低» routing is a strong-cue hand-off, not a tag-path `memo_write`) | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
@@ -147,7 +147,7 @@ this revision; this bundle does not edit GLOSSARY):
 - **The 2026-09-24 story rule** (design/instagram-adoption/18-instagram-read-and-search.md):
   stories are read by ingestion.
 - **Design 43**: extended from three note passes to the whole loop, and its
-  `WITHHELD_TOOLS` list (`nora/language/note_candidates.py`) retired: every
+  `WITHHELD_TOOLS` list (`nora/language/note_candidates.py`, deleted 2026-10-03, DEC-277) retired: every
   read tool is granted except the live social reads, and the budget is the
   control.
 - **DEC-155's "spec §7.4"** (the Dreamer is not granted `where_been`) and its
@@ -382,8 +382,10 @@ Nothing is measured yet; each term is measured before the budget it sets.
 
 **Rollback.** Every step is a flag defaulting off, and turning it off restores
 the previous behaviour; migrations are additive. Step 2b's rename is a code
-revert. At step 4 the retired adaptors' code and clocks stay in the tree for
-one green week, and flipping the flag back re-enables them. Step 5's poller
+revert. Step 4, as built (DEC-277), deleted the retired writers outright
+rather than keeping them for a green week: undo is `[cognition] enabled =
+false` and a restart (the notebook then has no background writer until it is
+turned back on), or a database backup. Step 5's poller
 and step 6's matcher each have their own off switch.
 
 | failure | what happens |
@@ -617,3 +619,19 @@ injects no skill (`AgendaSkills(by_kind={})`, unchanged): the compare output say
 base-objective sessions is never read as the full design.
 
 Steps 4–8 remain design only.
+
+**Step 4 built 2026-10-03 (DEC-277), in one change.** The Cognition session commits: each
+write verb runs its validator (`parse_note_body`, the event tier's modes and citations,
+`standing_revise`'s checks) and commits through the tier's own store, stamped
+`cognition:<unit>` (a Standing revision `source = 'cognition'`); `remind` writes the
+`kind="proactive"` reminder row the one fire path fires; two verbs, `note_retire` and
+`note_merge` (`NoteStore.supersede`, `NoteStore.merge_into`), take the curator's and
+note-merge's jobs, and the `time` floors are mapped, so a daily item asks for the notebook
+review the note index now marks (`review="anchor_passed|revisit_due"`, `may_duplicate`).
+Deleted, not switched off: the dry-run ledger and its tables (0091), the remind mirror,
+`nora cognition compare`, `session_mode`/`mode` (now `[cognition] enabled`), and
+note-candidates, the note curator, note-merge, the proactive decide pass and the ingest
+Standing fold with their objectives, config keys, metrics and tests. Their judgement is in
+`cognition-register` v2. The culture adaptor is unchanged (still its own clocked pass, not
+yet the Character adaptor).
+

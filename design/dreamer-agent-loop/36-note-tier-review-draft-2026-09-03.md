@@ -6,6 +6,9 @@
 
 # Note Tier — Current State, Problems, Changes, and Target Effect
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 **Review draft — 2026-09-03.** For Miles's review before implementation scope is locked.
 Design detail lives in `design/dreamer-agent-loop/33-note-dreamer-schedule.md` (committed on `feat/note-dreamer-schedule`).
 
@@ -104,7 +107,7 @@ enlarged pattern (more turns, more tokens, longer timeout).
 ## 4. What gets built (implementation order)
 
 1. **Migration** — `note_candidate` shape change (kind=create columns).
-2. **`note-candidates` adaptor** — `nora/language/note_candidates.py`, objective `note-candidates.md`, deterministic create/update gate.
+2. **`note-candidates` adaptor** — `nora/language/note_candidates.py` (deleted 2026-10-03, DEC-277), objective `note-candidates.md`, deterministic create/update gate.
 3. **Revisitor → curator merge** (C8) — `note_curator.py` gains `due` read + `_covers`/strike logic; `note_revisitor.py` logic moves across; `note-revisit` adaptor retired.
 4. **Schedule wiring** — `AdaptorSchedule` entries in composition (depends on 32's impl landing or being carried here).
 5. **Doctrine recognition** — `conduct.md` line broadens.

@@ -16,6 +16,9 @@ edges:
 
 # The Note Dreamer, Consolidated — Revisitor into Curator
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 ## 1. The claim
 
 **The note tier runs three adaptors but does the work of one and a half.** The
@@ -29,7 +32,7 @@ records why that is now correct, and specifies exactly what moves across.
 
 ## 2. What each adaptor actually does today (verified against the code)
 
-### 2.1 The curator (`nora/language/note_curator.py`)
+### 2.1 The curator (`nora/language/note_curator.py` (deleted 2026-10-03, DEC-277))
 
 - **Selection** (`inputs`): SQL-only, zero tokens —
   - `merge_groups` — `GROUP BY` on the anchor key `(anchor_date, resolved

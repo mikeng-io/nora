@@ -1,5 +1,8 @@
 # The first full run — 13 corpora, 150 cases, one Nora
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 > **Every number on this page was produced by a harness that is being
 > replaced.** `07-sdk-native` (2026-09-18) measures that
 > `strands-agents-evals` already ships the runner, the outcome types and the

@@ -225,7 +225,7 @@ debugging session.
 
 **What a read-back actually looks like.** The 2026-09-07 note-tier read-back
 is the template: the checked-out commit, `docker compose ps`, the live
-`[notes]` block of `config.toml` (which showed `candidates_enabled` absent —
+`[notes]` block of `config.toml` (which showed `candidates_enabled` absent — a key deleted 2026-10-03, DEC-277 —
 the flag the worktree's stale copy could not have told you), the row counts,
 `dream_schedule_state`, and the `nora_dream_*` counters. That single pass
 settled in five minutes a question three design nodes had been arguing from
@@ -294,7 +294,7 @@ from a five-day-old one, which is what made 今晚 and 琴日 unanswerable even 
 a clock in the header». The fix was applied to the tag path's transcript and to
 nothing else. A CMS audit that night found the same omission in two more
 places: `<standing>` asserted it was current while carrying no time, and the
-note curator is asked whether an anchor has passed and given no clock at all.
+note curator (deleted 2026-10-03, DEC-277) was asked whether an anchor had passed and given no clock at all.
 
 **The cost of the wrong instinct was five hours and a shipped regression.** The
 instrument that settled it — 40 labelled windows, one command — already existed
@@ -318,7 +318,7 @@ carries the eight rules and the measurement behind each.
 
 `nora/ingest/pipeline.py` is the pattern. `run()` opens `span("ingest")` around
 `await self._run(...)`, and the stage spans — `ingest.scope`, `ingest.identity`,
-`ingest.media`, `ingest.audit`, `ingest.memory_feed`, `ingest.standing_event`,
+`ingest.media`, `ingest.audit`, `ingest.memory_feed`,
 `ingest.gate` — nest inside it (cited by name: the line numbers this paragraph
 once carried went stale within a week). Splitting the body out of `run` is
 what makes the root wrap EVERY exit including the early returns, which is why
@@ -487,7 +487,8 @@ instances landed in one night, each inside code written to honour it:
   carrying `evidence_state` as ONE value; the module's own comment records that
   the defect was «committed inside its own instrument»
   (`92eccc7`, then in `nora/language/note_revisitor.py`; that module merged
-  into `nora/language/note_curator.py::_gather_evidence` on 2026-09-06).
+  into `nora/language/note_curator.py::_gather_evidence` on 2026-09-06; that
+  module itself was deleted 2026-10-03, DEC-277).
 - **A tick that wrote nothing reporting `ok`.** `dream_screen` matches any
   hyphenated UUID (R-18/R-28) and note ids are `uuid4`, so every curator item
   was rejected: the tick fired, spent a model call, `accept` received nothing,
@@ -536,7 +537,7 @@ silent-failure finding had the silent failure's shape.
 
 It is now `EvidenceState = Literal[...]` with `EVIDENCE_STATES =
 get_args(EvidenceState)`, enforced TWICE — statically, and at runtime by
-`NoteCuratorAdaptor._inc`'s `_VOCABULARIES` check (every increment's label is
+`NoteCuratorAdaptor._inc`'s `_VOCABULARIES` check *(adaptor deleted 2026-10-03, DEC-277; the pattern stands)* (every increment's label is
 checked against the derived set before the counter is touched) — because
 `nora/language/` is outside `make gate`'s mypy scope (issue #61) and **a static-only guard in an unchecked package is a
 claim rather than a check** (`443bbca` F3).
@@ -545,7 +546,7 @@ Where mypy does reach, the derivation alone is enough: `nora/domain/facts.py`
 built five frozensets with `get_args` off five `Literal`s *(the five went with
 the knowledge tier on 2026-09-07, issue #115; the file survives as the two DDL
 ceilings the not-dropped `fact` tables read; the pattern is still the rule, and
-`nora/language/note_curator.py` still carries it)*. Where it
+`nora/language/note_curator.py` (deleted 2026-10-03, DEC-277) still carries it)*. Where it
 does not, the vocabulary is a frozenset the code increments AGAINST and a value
 outside it raises — a label typo forks a NEW series rather than erroring, and
 the old one silently goes flat (`nora/language/note_curator.py`,

@@ -15,6 +15,9 @@ edges:
 
 # Instrument Blindness — The Layers That Cannot Measure Themselves
 
+> 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
+
+
 CLAUDE.md carries this rule:
 
 > **Never read an instrument's output as evidence without first checking it can
