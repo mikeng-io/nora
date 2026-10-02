@@ -39,16 +39,6 @@ test("hostile markdown never reaches the page", async ({ page }) => {
   errors.expectNone();
 });
 
-test("tabs show one panel at a time and switch on click", async ({ page }) => {
-  await signIn(page);
-  await page.goto("/en/documents/spike?demo=runbook");
-  await expect(page.getByText("Wait about")).toBeVisible();
-  await expect(page.getByText("Open the game's page")).toBeHidden();
-  await page.getByRole("tab", { name: "From the portal" }).click();
-  await expect(page.getByText("Open the game's page")).toBeVisible();
-  await expect(page.getByText("Wait about")).toBeHidden();
-});
-
 test("an accordion opens and closes", async ({ page }) => {
   await signIn(page);
   await page.goto("/en/documents/spike?demo=trip");
@@ -125,7 +115,7 @@ test("a document the schema refuses is reported, not drawn", async ({ page }) =>
   // Next's route announcer is also role=alert, so scope to the fixture.
   const alert = page.locator("[data-testid=spike] [role=alert]");
   await expect(alert).toContainText("This document cannot be shown");
-  await expect(alert).toContainText("className");
+  await expect(alert).not.toContainText("className"); // the schema's reason is not shown to a reader (DEC-275)
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
 });
 
@@ -146,32 +136,6 @@ test("an image with a UUID asks for exactly its own media path, and falls back w
   await page.goto("/en/documents/spike?demo=image-uuid");
   await expect(page.getByText("This picture is no longer available.")).toBeVisible({ timeout: 10_000 });
   expect(requested).toEqual(["/api/v1/documents/0b9d9f6e-3c0a-4f57-9a43-0d6f3a1c2e11/media/a1b2c3d4e5f6"]);
-});
-
-test("tabs follow the ARIA pattern: the list is one tab stop, arrows move, panels are labelled", async ({ page }) => {
-  await signIn(page);
-  await page.goto("/en/documents/spike?demo=runbook");
-  const first = page.getByRole("tab", { name: "From the host" });
-  const second = page.getByRole("tab", { name: "From the portal" });
-  // Radix roving focus: Tab from the page enters the list on the SELECTED tab
-  // and the next Tab leaves it; the other tab is not a stop.
-  await page.getByRole("link", { name: "runbook" }).focus();
-  for (let i = 0; i < 40 && !(await first.evaluate((el) => el === document.activeElement)); i++) {
-    await page.keyboard.press("Tab");
-  }
-  await expect(first).toBeFocused();
-  await expect(first).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("ArrowRight");
-  await expect(second).toBeFocused();
-  await expect(second).toHaveAttribute("aria-selected", "true");
-  const controls = await second.getAttribute("aria-controls");
-  await expect(page.locator(`[id="${controls}"]`)).toHaveAttribute("role", "tabpanel");
-  await expect(page.locator(`[id="${controls}"]`)).toBeVisible();
-  await expect(page.locator(`[id="${controls}"]`)).toHaveAttribute("aria-labelledby", /.+/);
-  await page.keyboard.press("Home");
-  await expect(first).toBeFocused();
-  await page.keyboard.press("End");
-  await expect(second).toBeFocused();
 });
 
 test("a diagram that fails leaves nothing on the page and a dense one does not freeze it", async ({ page }) => {

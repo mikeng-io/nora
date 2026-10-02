@@ -1,6 +1,6 @@
 import type { DocumentSpec } from "../catalog";
 
-// A technical page: code, options in tabs, detail folded away.
+// A technical page: code, options side by side, detail folded away.
 export const runbook: DocumentSpec = {
   version: 1,
   root: {
@@ -21,24 +21,18 @@ export const runbook: DocumentSpec = {
         props: { title: "Restart", number: 2 },
         children: [
           {
-            type: "Tabs",
-            props: {},
+            type: "Card",
+            props: { title: "From the host" },
             children: [
-              {
-                type: "Tab",
-                props: { label: "From the host" },
-                children: [
-                  { type: "Code", props: { language: "shell", text: "docker restart game" } },
-                  { type: "Markdown", props: { text: "Wait about **40 seconds** for the world to load." } },
-                ],
-              },
-              {
-                type: "Tab",
-                props: { label: "From the portal" },
-                children: [
-                  { type: "Markdown", props: { text: "Open the game's page and use the restart control. It saves first, then restarts." } },
-                ],
-              },
+              { type: "Code", props: { language: "shell", text: "docker restart game" } },
+              { type: "Markdown", props: { text: "Wait about **40 seconds** for the world to load." } },
+            ],
+          },
+          {
+            type: "Card",
+            props: { title: "From the portal" },
+            children: [
+              { type: "Markdown", props: { text: "Open the game's page and use the restart control. It saves first, then restarts." } },
             ],
           },
           {

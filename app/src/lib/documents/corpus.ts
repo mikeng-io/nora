@@ -28,10 +28,6 @@ export const VALID: Record<string, unknown> = {
   "a Callout without its tone": page({ type: "Callout", props: { title: "x" } }),
   "a Stat without its tone": page({ type: "Stat", props: { label: "a", value: "1" } }),
   "nesting at the depth cap (8)": deep("Grid", 7),
-  "a Tabs with two Tab panels": page({
-    type: "Tabs", props: {},
-    children: [{ type: "Tab", props: { label: "a" }, children: [] }, { type: "Tab", props: { label: "b" }, children: [] }],
-  }),
   "a plain Mermaid flowchart": mermaid("flowchart LR\n  A-->|label| B"),
   "a Mermaid node whose name merely starts like a keyword": mermaid("flowchart LR\n  style1-->link1"),
   "a Mermaid flowchart with Cantonese labels": mermaid("flowchart LR\n  A[開始] -->|去機場| B[完成]"),
@@ -65,10 +61,7 @@ export const INVALID: Array<[string, unknown]> = [
   ["an empty Accordion", page({ type: "Accordion", props: { items: [] } })],
   ["a Stat with a className", page({ type: "Stat", props: { label: "a", value: "1", className: "x" } })],
   ["children on a Stat", page({ type: "Stat", props: { label: "a", value: "1" }, children: [] })],
-  ["a Tab outside Tabs", page({ type: "Tab", props: { label: "x" }, children: [] })],
-  ["a non-Tab child of Tabs", page({ type: "Tabs", props: {}, children: [{ type: "Markdown", props: { text: "x" } }] })],
-  ["an empty Tabs", page({ type: "Tabs", props: {}, children: [] })],
-  ["a Tab without a label", page({ type: "Tabs", props: {}, children: [{ type: "Tab", props: {}, children: [] }] })],
+  ["a Tabs (removed: nothing used it and it needed three schema branches, design §42)", page({ type: "Tabs", props: {}, children: [] })],
   ["a Code block with a className", page({ type: "Code", props: { text: "x", className: "y" } })],
   ["a one-point Chart (a single number is a Stat)", page({ type: "Chart", props: { kind: "bar", caption: "c", data: [{ label: "a", value: 1 }] } })],
   ["a Chart without a caption", page({ type: "Chart", props: { kind: "bar", data: [{ label: "a", value: 1 }, { label: "b", value: 2 }] } })],
@@ -116,9 +109,5 @@ export const INVALID: Array<[string, unknown]> = [
   ["an unknown prop", page({ type: "Markdown", props: { text: "x", html: "<b>" } })],
   ["a prototype key", JSON.parse('{"version":1,"root":{"type":"Page","props":{"title":"T"},"children":[],"__proto__":{"x":1}}}')],
   ["nesting one level past the cap (9)", deep("Grid", 8)],
-  [
-    "a Tab one level past the cap (Tabs at 8, its Tab at 9)",
-    page(nest("Grid", 7, { type: "Tabs", props: {}, children: [{ type: "Tab", props: { label: "a" }, children: [] }] })),
-  ],
   ["a Card chain far past the cap (12)", deep("Card", 12)],
 ];
