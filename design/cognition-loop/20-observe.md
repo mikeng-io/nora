@@ -329,6 +329,9 @@ these values.
 `nora_stimulus_pending_age_seconds`, `nora_social_items_total{kind}`,
 `nora_social_poll_total{outcome}`, `nora_play_samples_total{source}`,
 `nora_perception_total{source,outcome}`,
-`nora_cognition_unit_tokens_total{unit}`,
-`nora_self_wake_total{transition}` (requested, fired, moved, cancelled,
-superseded, refused).
+`nora_cognition_unit_tokens_total{unit_kind}`,
+`nora_self_wake_total{outcome}` (created, moved, cancelled, refused, fired; built
+2026-10-02, with `outcome` for `transition`, and no `requested` or `superseded`:
+a superseding `wake_at` counts as `created`; and `unit_kind` for `unit`, the
+agenda's kind or `mixed`, since a unit is a name and no label is one,
+[70](70-migration.md) §10).

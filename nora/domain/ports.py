@@ -1108,6 +1108,19 @@ class NewCognitionSessionClose:
 
 
 @dataclass(frozen=True)
+class NoteHead:
+    """A note's head as the live store's compare-and-swap would see it: the
+    revision id a revision must be written against, and whether the note is
+    retired (an append requires an open one). Read through the real read path
+    (`SqlNoteStore.note_by_id`) by the Cognition session's dry-run
+    `note_update`, so the same refusals the live store makes are made without a
+    write; `None` in its place is a note absent from the unit."""
+
+    head_revision_id: str
+    retired: bool = False
+
+
+@dataclass(frozen=True)
 class NewCognitionWouldWrite:
     """A `nora.domain.cognition_write.WouldWrite`, addressed to a session
     and a unit — the port's own copy of the same fields rather than an

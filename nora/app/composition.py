@@ -108,6 +108,7 @@ from nora.domain.ports import (
     DreamAdaptor,
     EngagePolicy,
     MemoryStore,
+    NoteHead,
     PlatformAdapter,
     RecordStore,
     ReverseGeocoder,
@@ -4479,6 +4480,23 @@ async def build_dependencies(
 
             _open_events = open_events_reader(event_store)
 
+            async def _note_head(unit: str, note_id: str) -> NoteHead | None:
+                """The note's head through the live store's own read
+                (`note_by_id`, a SELECT): what a dry-run `note_update` is held
+                to, so its refusals are the store's."""
+                if note_store is None:
+                    raise RuntimeError("no note store: a note's head cannot be read")
+                note = await note_store.note_by_id(unit=unit, note_id=note_id)
+                return None if note is None else NoteHead(
+                    head_revision_id=note.head_revision_id,
+                    retired=note.retired_at is not None,
+                )
+
+            async def _requester_pending() -> int:
+                if reminders is None:
+                    raise RuntimeError("no reminder store: pending rows cannot be counted")
+                return await reminders.count_pending(cfg.memory.ai_peer)
+
             # The unit -> its rooms' every id form, for the grounding read: a
             # stimulus naming a room outside its unit is never read (DEC-231).
             cognition_unit_rooms: dict[str, set[tuple[str, str]]] = {}
@@ -4517,6 +4535,14 @@ async def build_dependencies(
                 metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
                 dry_run_store=dry_run_store, stimulus_store=stimulus_store,
                 note_titles=_note_titles, open_events_in=_open_events,
+                note_head=_note_head,
+                # Nora's own pending rows in the LIVE reminder store: what the live
+                # `remind` tool counts against `max_pending_per_requester`.
+                requester_pending=_requester_pending,
+                reminder_caps=reminder_caps,
+                room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
+                    platform=platform, conversation_id=conversation_id,
+                ),
                 # The HEAD with its `standing_revision` id: the token a
                 # `standing_revise` base is checked against (M6, DEC-250).
                 standing_of=lambda platform, conversation_id: standing_store.read_head(

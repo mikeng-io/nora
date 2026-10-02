@@ -283,7 +283,7 @@ async def test_an_unknown_event_reads_not_found_and_a_finished_one_does_not_move
 
 
 async def test_a_move_to_lapsed_may_cite_nothing_but_no_other_may():
-    current = _event(GatheringStatus.PROPOSED)
+    current, other = _event(GatheringStatus.PROPOSED), _event(GatheringStatus.PROPOSED)
     answers: list[Any] = []
 
     async def behave(by: dict[str, Any], tools: list[Any]) -> None:
@@ -291,12 +291,14 @@ async def test_a_move_to_lapsed_may_cite_nothing_but_no_other_may():
             event_id=str(current.id), status="lapsed", reasoning="deduced",
             confidence="high", cited_ids=[],
         ))
+        # ANOTHER event: the first is lapsed now, and the session holds its own
+        # earlier write, so a second move of it is refused as terminal, not uncited.
         answers.append(await by["event_set_status"](
-            event_id=str(current.id), status="cancelled", reasoning="deduced",
+            event_id=str(other.id), status="cancelled", reasoning="deduced",
             confidence="high", cited_ids=[],
         ))
 
-    store, _ = await _session(behave, events=(current,))
+    store, _ = await _session(behave, events=(current, other))
     assert [a.get("reason") or a["status"] for a in answers] == ["ok", "uncited"]
     assert _candidates(store)[0]["status"] == "lapsed"
 

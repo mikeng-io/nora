@@ -191,14 +191,14 @@
  {
   "name": "one close explains at most one row",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "        self._used.add(best[3])",
+  "old": "        self._used.add(best[4])",
   "new": "        pass",
   "target": "tests/infra/test_cognition_shadow_compare_read.py -k one_waiting_close_does_not_close_three"
  },
  {
   "name": "one close is spent once (unit)",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "        self._used.add(best[3])",
+  "old": "        self._used.add(best[4])",
   "new": "        pass",
   "target": "tests/unit/test_cognition_shadow_compare.py -k one_close_explains_at_most_one"
  },
@@ -275,8 +275,8 @@
  {
   "name": "the tag path is not explained by a close",
   "file": "nora/domain/cognition_shadow_compare.py",
-  "old": "                if explainable and w.writer not in TAG_PATH_WRITERS else None",
-  "new": "                if explainable else None",
+  "old": "            if explainable and w.writer not in TAG_PATH_WRITERS else None",
+  "new": "            if explainable else None",
   "target": "tests/unit/test_cognition_shadow_compare.py -k live_tag_path_is_its_own_section"
  },
  {

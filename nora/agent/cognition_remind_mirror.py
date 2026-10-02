@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from nora.domain.cognition_remind import (
     PendingMirroredRemind,
     RemindAnswer,
+    RemindContext,
     check_remind,
     check_remind_cancel,
     check_remind_move,
@@ -43,14 +44,15 @@ async def dry_run_remind(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     reminder_ref: str, platform: str, conversation_id: str, intent: str,
     subject_rows: Sequence[str], at_ms: int, now_ms: int,
-    pending: Sequence[PendingMirroredRemind],
+    pending: Sequence[PendingMirroredRemind], context: RemindContext | None = None,
 ) -> RemindAnswer:
     """`remind(at, room, brief)`. `reminder_ref` is minted by the caller
     before this call, the same "prior is a parameter" shape `wake_at`'s
-    wrapper uses."""
+    wrapper uses; so is `context`, what the caller read for the code-side act
+    guards (`nora.domain.cognition_remind.RemindContext`)."""
     refusal = check_remind(
         subject_rows=subject_rows, intent=intent, platform=platform,
-        conversation_id=conversation_id, pending=pending,
+        conversation_id=conversation_id, pending=pending, context=context,
     )
     if refusal is not None:
         return await _record(

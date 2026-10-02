@@ -226,10 +226,6 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "or a restart. The operator's query, pinned by the contract suite; no "
         "daemon consumer is designed (a reaper or an alert is S2b-2's).",
     ),
-    ("notes.py", "note_by_id"): _Pin(
-        "read_back_affordance",
-        "Retired-note lookup; no consumer designed.",
-    ),
     ("notes.py", "revision_by_id"): _Pin(
         "read_back_affordance",
         "Revision-by-id read-back; no consumer designed.",

@@ -58,15 +58,15 @@
  {
   "name": "M4: a staged or confirmed event blocks a proposal",
   "file": "nora/app/cognition_session.py",
-  "old": "                if e.status is GatheringStatus.PROPOSED\n            ]\n            write = await dry_run_event_propose(",
-  "new": "                if True\n            ]\n            write = await dry_run_event_propose(",
+  "old": "                    if e.status is GatheringStatus.PROPOSED\n                ]\n                write = await dry_run_event_propose(",
+  "new": "                    if True\n                ]\n                write = await dry_run_event_propose(",
   "target": "tests/unit/test_cognition_session_events_d.py::test_a_staged_event_is_a_proposal_the_room_has_not_made_and_does_not_block_one"
  },
  {
   "name": "M4: a finished event can be moved",
   "file": "nora/agent/cognition_dry_run.py",
-  "old": "    if current.status in TERMINAL_STATUSES:\n        # 40 \u00a73",
-  "new": "    if False:\n        # 40 \u00a73",
+  "old": "    if current.status in TERMINAL_STATUSES:\n        # 40 §3",
+  "new": "    if False:\n        # 40 §3",
   "target": "tests/unit/test_cognition_session_events_d.py::test_an_unknown_event_reads_not_found_and_a_finished_one_does_not_move"
  },
  {

@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from nora.agent.cognition_pace import (
+    PartialPaceWriteError,
     dry_run_wake_at,
     dry_run_wake_cancel,
     dry_run_wake_fire,
@@ -362,12 +363,13 @@ async def test_a_move_whose_retract_fails_takes_the_new_time_back(ledger, stimul
 async def test_a_move_whose_record_fails_still_fires_once_at_the_new_time(ledger, stimuli):
     pending = await _set_w1(ledger, stimuli)
     ledger.fail_on.add("record_pace")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(PartialPaceWriteError) as caught:
         await dry_run_wake_move(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             at_ms=NOW + 7_200_000, why="later", now_ms=NOW, cooldown_seconds=COOLDOWN,
             pending=pending, created_by_session_id=None,
         )
+    assert isinstance(caught.value.__cause__, RuntimeError)   # the store's own failure
     assert await _due(stimuli) == [("w1", NOW + 7_200_000)]
 
 
@@ -403,11 +405,12 @@ async def test_a_cancel_whose_record_fails_still_never_fires_and_reads_not_pendi
 ):
     pending = await _set_w1(ledger, stimuli)
     ledger.fail_on.add("record_pace")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(PartialPaceWriteError) as caught:
         await dry_run_wake_cancel(
             ledger=ledger, stimuli=stimuli, session_id=2, unit="u", wake_ref="w1",
             why="done", now_ms=NOW, pending=pending, created_by_session_id=None,
         )
+    assert isinstance(caught.value.__cause__, RuntimeError)   # the store's own failure
     ledger.fail_on.clear()
     assert await _due(stimuli) == []
     assert await ledger.pending_self_wakes(unit="u", since_ms=0) == ()

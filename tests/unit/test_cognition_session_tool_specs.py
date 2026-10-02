@@ -199,3 +199,13 @@ def test_every_verb_carries_a_docstring_that_says_what_it_returns(specs, verb):
     assert len(description) > 40
     assert "status" in description
     assert not any(ch in description for ch in "—–"), "no dash (ADR 0015)"
+
+
+@pytest.mark.parametrize("verb", sorted(EXPECTED))
+def test_every_verb_says_it_can_come_back_unavailable(specs, verb):
+    """Every verb can answer `unavailable` (a store or a read failed: the wrapper turns
+    any failure into it), so its description must say `status` can be that, in the
+    live verbs' words; a description that says only «ok or refused» is false."""
+    description = specs[verb]["description"]
+    assert "unavailable" in description
+    assert "refused or unavailable" in " ".join(description.split())

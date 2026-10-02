@@ -45,7 +45,7 @@ DEFAULT_MAX_SELF_WAKES_PER_DAY = 12
 
 #: `wake_fire` is CODE's verb, never a model's: the session that picked a due
 #: self-wake up onto its agenda records that the wake fired (20 §3's
-#: `nora_self_wake_total{transition="fired"}`), which frees its pending slot.
+#: `nora_self_wake_total{outcome="fired"}`), which frees its pending slot.
 PACE_VERBS: tuple[str, ...] = ("wake_at", "wake_move", "wake_cancel", "wake_fire")
 PACE_TRANSITIONS: tuple[str, ...] = ("created", "moved", "cancelled", "fired")
 
@@ -169,9 +169,7 @@ def check_wake_at(
     if created_today >= max_self_wakes_per_day:
         return (
             PaceRefusal(
-                "daily_cap",
-                f"{max_self_wakes_per_day} self-wakes were already set for this unit "
-                "in the last 24 hours",
+                "daily_cap", "you have already asked for enough next looks lately",
             ),
             None,
         )
@@ -179,16 +177,14 @@ def check_wake_at(
     if horizon_seconds < cooldown_seconds:
         return (
             PaceRefusal(
-                "horizon_too_soon",
-                f"{horizon_seconds:.0f}s is inside the cooldown ({cooldown_seconds:.0f}s)",
+                "horizon_too_soon", "that time is too soon after now to wake you at",
             ),
             None,
         )
     if horizon_seconds > max_horizon_seconds:
         return (
             PaceRefusal(
-                "horizon_too_far",
-                f"{horizon_seconds:.0f}s exceeds the {max_horizon_seconds:.0f}s horizon",
+                "horizon_too_far", "that time is too far ahead to wake you at",
             ),
             None,
         )
@@ -201,8 +197,7 @@ def check_wake_at(
     if effective_count > max_self_wakes:
         return (
             PaceRefusal(
-                "too_many_pending",
-                f"{max_self_wakes} self-wakes are already pending for this unit",
+                "too_many_pending", "you already have enough next looks waiting",
             ),
             None,
         )
@@ -228,18 +223,12 @@ def check_wake_move(
         and row.created_by_session_id is not None
         and row.created_by_session_id != created_by_session_id
     ):
-        return PaceRefusal("not_own", "this self-wake was not created by this session")
+        return PaceRefusal("not_own", "you may only move or cancel a next look you set yourself")
     horizon_seconds = (at_ms - now_ms) / 1000.0
     if horizon_seconds < cooldown_seconds:
-        return PaceRefusal(
-            "horizon_too_soon",
-            f"{horizon_seconds:.0f}s is inside the cooldown ({cooldown_seconds:.0f}s)",
-        )
+        return PaceRefusal("horizon_too_soon", "that time is too soon after now to wake you at")
     if horizon_seconds > max_horizon_seconds:
-        return PaceRefusal(
-            "horizon_too_far",
-            f"{horizon_seconds:.0f}s exceeds the {max_horizon_seconds:.0f}s horizon",
-        )
+        return PaceRefusal("horizon_too_far", "that time is too far ahead to wake you at")
     return None
 
 
@@ -256,5 +245,5 @@ def check_wake_cancel(
         and row.created_by_session_id is not None
         and row.created_by_session_id != created_by_session_id
     ):
-        return PaceRefusal("not_own", "this self-wake was not created by this session")
+        return PaceRefusal("not_own", "you may only move or cancel a next look you set yourself")
     return None

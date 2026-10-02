@@ -104,3 +104,102 @@ async def test_a_loop_that_returns_hands_its_stop_reason_back_and_gets_strands_t
 def test_a_tool_that_is_already_a_strands_tool_passes_through_untouched():
     (adapted,) = as_strands_tools([_tool])
     assert as_strands_tools([adapted]) == [adapted]
+
+
+# -- tokens: the loop's own accounting, or nothing -----------------------------------------
+
+class _Result:
+    def __init__(self, usage: Any, stop_reason: str = "end_turn") -> None:
+        self.stop_reason = stop_reason
+        self.metrics = type("M", (), {"accumulated_usage": usage})()
+
+
+async def test_a_run_hands_up_the_tokens_the_loop_spent(monkeypatch):
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return _Result({"inputTokens": 900, "outputTokens": 100, "totalTokens": 1000})
+
+    _patch(monkeypatch, invoke)
+    result = await _run(_runner(Metrics()))
+    assert (result.stop_reason, result.total_tokens) == ("end_turn", 1000)
+
+
+@pytest.mark.parametrize("usage", [None, {}, {"totalTokens": None}, {"totalTokens": "9"},
+                                   {"totalTokens": True},
+                                   # a provider that reports no usage: Strands accumulates zeros,
+                                   # and a loop that made a call did not spend nothing
+                                   {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0}])
+async def test_a_result_with_no_readable_usage_is_none_never_zero(monkeypatch, usage):
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return _Result(usage)
+
+    _patch(monkeypatch, invoke)
+    assert (await _run(_runner(Metrics()))).total_tokens is None
+
+
+# -- the tokens a loop spent when it did NOT return --------------------------------------
+
+class _Agent:
+    def __init__(self, usage: Any) -> None:
+        self.event_loop_metrics = type("M", (), {"accumulated_usage": usage})()
+
+
+def _spend_patch(monkeypatch: pytest.MonkeyPatch, usage: Any, invoke: Any) -> None:
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: _Agent(usage))
+    monkeypatch.setattr(factory, "invoke", invoke)
+
+
+def _raises(exc: BaseException) -> Any:
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        raise exc
+    return invoke
+
+
+async def _spent_by(runner: LiveCognitionAgentRunner) -> tuple[Any, Any]:
+    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    spend = TokenSpend()
+    token = SESSION_TOKENS.set(spend)
+    try:
+        try:
+            result = await _run(runner)
+        except BaseException as exc:  # noqa: BLE001 - the point is what was left behind
+            return spend.total, exc
+        return spend.total, result
+    finally:
+        SESSION_TOKENS.reset(token)
+
+
+@pytest.mark.parametrize("exc", [
+    RuntimeError("the provider fell over"), TimeoutError(),
+    factory.PartialReplyError("half a reply"),
+])
+async def test_a_loop_that_failed_timed_out_or_was_cut_off_leaves_what_it_spent(
+    monkeypatch, exc,
+):
+    usage = {"inputTokens": 7000, "outputTokens": 500, "totalTokens": 7500}
+    _spend_patch(monkeypatch, usage, _raises(exc))
+    total, outcome = await _spent_by(_runner(Metrics()))
+    assert total == 7500 and isinstance(outcome, type(exc))      # raised, not swallowed
+
+
+async def test_a_loop_that_failed_with_no_usage_leaves_none_and_a_broken_reading_never_raises(
+    monkeypatch,
+):
+    _spend_patch(monkeypatch, {"totalTokens": 0}, _raises(RuntimeError("down")))
+    total, outcome = await _spent_by(_runner(Metrics()))
+    assert total is None and isinstance(outcome, RuntimeError)
+
+    class Broken:
+        @property
+        def event_loop_metrics(self) -> Any:
+            raise RuntimeError("no metrics")
+
+    monkeypatch.setattr(factory, "create_dream_agent", lambda **kw: Broken())
+    monkeypatch.setattr(factory, "invoke", _raises(RuntimeError("down")))
+    total, outcome = await _spent_by(_runner(Metrics()))
+    assert total is None and str(outcome) == "down"
+
+
+async def test_a_run_outside_a_session_leaves_nothing_anywhere(monkeypatch):
+    _spend_patch(monkeypatch, {"totalTokens": 5}, _raises(RuntimeError("down")))
+    with pytest.raises(RuntimeError):
+        await _run(_runner(Metrics()))
