@@ -60,7 +60,7 @@ The one contract between them (amended 2026-10-01, see the note at the top):
 > publishes a page.
 >
 > **As built (§26, §30):** `document_publish(spec, document_id?, base_revision?)`. There is no `path` form
-> (the audited helper, `WorkspaceReader`, exists from #649; nothing calls it for a document) and no `title`
+> (the audited helper, `WorkspaceReader`, existed from #649 and nothing called it for a document; deleted in §41) and no `title`
 > (the Page's title is the document's title). An edit names the revision it read. The result carries
 > `document_id`, `revision` and, when `[documents] public_url` is set, a `url` made from a 12-hex handle;
 > with it empty there is no `url` at all. Beside it: `document_read(document_id)` and
@@ -1580,3 +1580,46 @@ were 50 findings (10); Google's `could_be` candidates skipped the identifier scr
 wiring had no test. Left, stated: other coordinate notations (`N22.3 E114.2`, DMS, plus codes) pass the screen, as they already did for
 `place_info` and `route`; `restore_revision` re-stores a spec as it was, and no stored Map predates this change; the tool's wiring of
 the live-address set is covered by the service test and the signature, not by driving `reverse_geocode` and then a publish.
+
+## 41. Each rule has one home, and a turn that saved nothing says so (2026-10-02, DEC-274)
+
+**What was measured.** Two Signal turns (traces `c3619636`, `3ba6b39c`) ended the same way: she read the catalog,
+wrote the spec to a file on her computer, never sent it to `document_publish`, and told the room the document was made.
+The second turn tried to parse the file by hand, spent all twelve `computer_run` calls, and the ceiling sentence ("you
+have that context, answer from what you already have") ended the turn. R-100 (§39) had nothing to strip because the
+reply carried no link; its own commit names this case as not covered. Four read-only audits then read the model-facing
+surface, the backend, the web app and this record.
+
+**What the audits found, in the model-facing path.** Seventeen rules in seven places (the skill, the tool description,
+`_CATALOG_RULES`, the catalog, `conduct.md`, `computer-use`, the tool notes); "a document is never a file" and "exists
+only once `ok`" each stated four or five times; the skill sent her to her computer for numbers, and `computer-use` called
+"making a file people open" computer work, with nothing connecting that file to `document_publish`; the catalog read
+spent one of four calls, so a refusal left three tries, each a full resend; the write-tool ceiling told her to answer.
+
+**Decided.**
+1. The catalog `document_publish` returns is the one home of how to write a document: the components, the limits (500
+   nodes, depth 8, 200 children, 256 KB), the finished-reference rule, sources and figures, and pictures. It is generated
+   from `catalog.ts`, so it cannot drift from the checker. `_CATALOG_RULES` is deleted.
+2. The tool's description says once that the spec is a JSON object, never a file on her computer, and that a document
+   exists only once a call returns `ok`. The skill keeps the process (decide, read before changing, archive, tell the
+   room). `computer-use` says to compute on the computer and never to write the spec to a file.
+3. `document_publish` has a budget of 6 (a catalog read, the publish, three fixes, one edit).
+4. A write tool's R-7 ceiling says only an `ok` call did anything; the generic sentence stays for read tools.
+5. `LinkCarry` appends «(No document was saved.)» once to a reply when `document_publish` was called this turn and none
+   stored a document, with or without a public origin. It is true whatever she wrote, so it reads none of her words.
+   It goes on a message the turn ends on, or on any message after a publish that was tried and refused; a `send_reply`
+   after a catalog read alone may be a progress message, so it is left alone (review of #708, which found the false note).
+   Not caught: a turn that ends through `send_reply` after only a catalog read, and a failed edit in a turn that had
+   already saved a document.
+6. `WorkspaceReader` (§26 built it so `document_publish` could read a spec from a file; nothing ever called it) is
+   deleted. A `spec_path` argument is the next step only if she still publishes nothing after reading the catalog.
+
+**Review of #708 (independent).** Fixed before merge: the note on a progress message (above); the Map fallback, the
+location rule and "look for pictures" were lost with the skill's old sections and are back in the catalog; the tool's
+`unavailable` note, which replaced every service note, now carries the Map fallback; the budget comment.
+
+**Not done, and why.** The catalog is not in the tool's description: ADR 0015 caps a Level 3 description at 320 tokens and
+the catalog is about 2,000. The picture and Map refusal rounds are not merged: pictures refuse first on purpose, so the
+billed Map lookups are not spent on a document that will be refused. `conduct.md`'s one line about documents is
+doctrine, so changing it needs the eval suite and is left. DEC-270 (2) and (3) and DEC-271's skill sentence are amended
+in part: the rules moved, the decisions stand.

@@ -6,7 +6,7 @@ A document is a JSON spec over a closed catalog of components, defined once in
 that catalog by `npm run documents:emit`; do not edit them:
 
 - `document.schema.json`  the JSON Schema a document must satisfy.
-- `catalog-prompt.md`     the prompt fragment the document-creation skill embeds.
+- `catalog-prompt.md`     the prompt `document_publish` returns when it is called with no spec.
 - `corpus.json`           documents that must be accepted and refused, the same
                           verdicts in Zod, ajv and (`tests/unit/test_document_schema.py`)
                           Python.

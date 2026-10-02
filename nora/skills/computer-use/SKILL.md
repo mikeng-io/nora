@@ -21,7 +21,7 @@ The computer costs more turns than a direct tool. A sum or a percentage is
 `calculate`; reading a page is `web_fetch`; a picture is `generate_image`;
 what a photo shows is `media_fetch`. Reach for the computer when the answer
 needs code: statistics past a few sums, parsing or joining a file,
-transforming data, or making a file people open.
+transforming data, or making a file people open (never a document: see below).
 
 ## Keep each task in its own project folder
 
@@ -57,10 +57,10 @@ file: a picture, a chart, a PDF, a CSV or other data, never a web page. Use
 for your own record. `nora-render chart` and `mermaid` turn data into
 pictures; a PNG goes out as a link or into the chat, an SVG never as a link.
 
-## A document is not yours to write here
+## A document is not a file on your computer
 
-When somebody wants a document, your computer's part is the data and the
-charts, handed to the document path; the computer does not write the page.
+Compute the numbers here, then put them in the `spec` you send to
+`document_publish`. Never write the spec to a file: nothing publishes a file.
 
 ## Your computer has no internet
 

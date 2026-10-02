@@ -1588,15 +1588,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # web app renders. Withheld from every surface unless `[documents] enabled`
     # (`ToolRegistry._withheld`).
     #
-    # `document_publish` 4: one call with no spec to read the catalog, the
-    # publish, a fix after a refusal with findings, and one edit. Not
+    # `document_publish` 6: one call with no spec to read the catalog, the
+    # publish and four fixes, one for each layer a refusal can report in turn (shape,
+    # rules, pictures, places); an edit costs the same publish calls. A budget of 4
+    # left three tries once the catalog read had spent one (2026-10-02). Not
     # `read_only`: it commits a document. `confirmed`: the answer is the
     # store's own, a document id and revision, not a claim about a request.
     # `non_idempotent`: the same spec with no `document_id` is a second
     # document, and a revision advances the document's number. Never retried
     # by the harness: a retry after a timeout would file a duplicate.
     # Level 3: a status contract (what each answer means) and two MUSTs.
-    "document_publish": NativeTool(4, read_only=False,
+    "document_publish": NativeTool(6, read_only=False,
                                    side_effect_state="confirmed",
                                    idempotency="non_idempotent", retry="never",
                                    output_contract="three_state", level=3),
@@ -14549,14 +14551,15 @@ Args:
         """Publish a document to the web app, a plan, report or itinerary people
         open later. Call this when somebody asks for one. Returns where to open it.
 
-        MUST: a document is a JSON spec, never HTML, markup or a file. Load the
-        document-creation skill before you write one, then call with no `spec`
-        to read the component catalog, then send the spec.
+        MUST: send the document as a JSON object in `spec`, never HTML, markup
+        or a file on your computer. Call once with no `spec` to read the
+        component catalog first.
 
         MUST: to change a document, pass its `document_id` and the `revision`
         `document_read` gave you as `base_revision`.
 
-        It is not a public link: people open it in the web app, signed in.
+        It is not a public link: people open it in the web app, signed in. A
+        document exists only once a call returns `ok`.
 
         `status` is one of:
         - `ok`: stored; it carries `url` and `revision`.
@@ -14579,6 +14582,7 @@ Args:
                 "note": "I can't publish documents right now. Say so; do not invent "
                         "a link and do not say one was made.",
             }
+        link_carry.document_called()
         if spec is None or (isinstance(spec, str) and not spec.strip()):
             _record(metrics, tool, "bad_arguments", reason="no_spec")
             return {
@@ -14587,6 +14591,7 @@ Args:
                         "here: write the document against it and call again.",
                 "catalog": documents.catalog(),
             }
+        link_carry.document_tried()
         tagger = getattr(room, "tagger", None) if room is not None else None
         if document_actor != "tag" or tagger is None:
             _record(metrics, tool, "unavailable", reason="no_requester")
@@ -14622,6 +14627,7 @@ Args:
         rules = [f.rule for f in out.findings]
         if out.status == "ok":
             _record(metrics, tool, "ok", revision=out.revision)
+            link_carry.document_saved()
             if not out.url:
                 # No public origin is configured: there is no link, and she must not
                 # invent one (a path or a host she made up would point nowhere).
@@ -14683,7 +14689,8 @@ Args:
         _record(metrics, tool, "unavailable", reason=out.status)
         return {"status": "unavailable",
                 "note": "The document could not be checked or saved, so nothing was "
-                        "stored. Say you could not."}
+                        "stored. If it holds a Map, publish again with each place named in "
+                        "Markdown text instead; otherwise say it was not made."}
 
     async def document_read(document_id: str) -> dict:
         """Read a document made in this room: its current `revision` and `spec`.

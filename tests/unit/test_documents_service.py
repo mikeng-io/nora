@@ -17,6 +17,7 @@ import pytest
 
 from nora.app import documents_service as service_module
 from nora.app.documents_service import DocumentService, rooms_named
+from nora.documents import catalog_prompt
 from nora.documents.check import Checked, Finding
 from nora.domain.documents import RevisionIn, RevisionOutcome
 from nora.domain.media import MediaObject
@@ -808,12 +809,12 @@ async def test_a_document_a_person_deleted_by_hand_is_still_restorable() -> None
     assert (await _set(svc, made.document_id, "active")).status == "ok"
 
 
-def test_the_catalog_opens_with_the_rules_a_skipped_skill_would_have_given() -> None:
+def test_the_catalog_is_the_components_the_limits_and_the_rules_for_writing_one() -> None:
     svc, _ = _service()
     text = svc.catalog()
-    assert text.startswith("Write a finished reference, not notes")
-    assert "`media_fetch`" in text and "only once `document_publish` returns `ok`" in text
-    assert "Page" in text and "Mermaid" in text, "the catalog itself still follows"
+    assert text == catalog_prompt()
+    assert "Write a finished reference, not notes" in text and "`media_fetch`" in text
+    assert "Page" in text and "Mermaid" in text, "the components follow the rules"
 
 
 def test_the_service_says_which_origin_a_link_is_built_under() -> None:

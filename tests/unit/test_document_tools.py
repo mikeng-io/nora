@@ -239,6 +239,18 @@ async def test_a_store_that_is_down_is_unavailable_never_ok_or_missing() -> None
     assert (await tools["document_read"](document_id=str(uuid4())))["status"] == "unavailable"
 
 
+async def test_an_unavailable_publish_tells_her_the_map_fallback() -> None:
+    """Review of #708: the Map fallback (name each place in Markdown) was lost with the skill's
+    old sections. A publish that could not be saved says it, and that nothing was stored."""
+    class _Down(FakeDocumentStore):
+        async def create(self, **kw: Any):
+            raise RuntimeError("db down")
+
+    out = await _tools(_service(_Down()))["document_publish"](spec=_doc())
+    assert out["status"] == "unavailable"
+    assert "each place named in Markdown text instead" in out["note"]
+
+
 async def test_a_read_returns_the_spec_and_a_very_large_one_is_named_not_cut() -> None:
     tools = _tools(_service())
     made = await tools["document_publish"](spec=_doc())

@@ -1,114 +1,47 @@
 ---
 name: document-creation
 description: >-
-  How to write a document people open in the web app and keep: choosing
-  it over a chat answer or a file, composing the spec, choosing components,
-  placing pictures and numbers, changing one later, what to tell the room. Load before you
-  publish or change a document. Not for a quick answer, a data file or a
-  picture: reply, computer_export and generate_image do those without it.
+  When to make a document people open in the web app and keep, how to change,
+  archive or delete one, and what to tell the room. Load before you publish or
+  change a document. Not for a quick answer, a data file or a picture: reply,
+  computer_export and generate_image do those without it.
 ---
 
 # Making a document
 
-## Somebody who asks for a document gets one
+## Decide: a document, a chat answer or a file
 
-When somebody asks for a document by name, make it, however short it turns out. When nobody did, judge
-who will read it and when, without asking them. An answer they need now belongs in the chat. A file to hand on is made on
-your computer and sent with `computer_export`; a document is never a file, and your computer never
-publishes a page. A document
-is what people come back to, share with someone who was not here, or read on a bigger screen than a
-chat: a write-up, a plan, a comparison, a summary of what the room decided. When nobody asked for one
-and the honest answer is three sentences, send the three sentences.
+When somebody asks for a document by name, make it, however short. Otherwise judge who will
+read it and when. An answer they need now belongs in the chat; if it is three sentences, send
+three sentences. A file to hand on is made on your computer and sent with `computer_export`. A
+document is what people come back to, share with someone who was not here, or read on a bigger
+screen: a write-up, a plan, a comparison, a summary of what the room decided.
 
-## Read the catalog before you write a line
+## Write it
 
-Call `document_publish` with no `spec`: it returns the components you may use and an example. Never
-invent a component or a property: an unknown one is refused and nothing is stored. A document is JSON, never HTML, Markdown-with-tags or a screenshot.
+Call `document_publish` with no `spec` to read the catalog: the components, the limits and the
+rules for a finished reference. Compute any figure on your computer first and put the result in
+the spec; never write the spec itself to a file. When a tool refuses more calls, publish what you
+hold, with your assumptions stated inside it.
 
-## Write a finished reference, not notes
+A refusal lists the places in the spec that are wrong. Fix exactly those and publish again.
 
-A document is read later, kept, and opened by people who were not in the chat. Open with a short
-summary of what it covers and what to do with it. Then give every section the full substance the content
-has: the facts, and where there is a recommendation, the reasoning behind it, the alternatives you set aside
-and what could go wrong or change. Never pad a section with reasoning or risks you do not have. Write
-complete sentences and full names, in the room's language but in the register of a written report, not the
-register of chat. A list of fragments is a draft, and a draft is not published. One idea per top-level
-section, so each one reads on its own. Do not paste the chat in, and do not repeat one fact in three places.
+## Change one by reading it first
 
-Anything you looked up carries its source and the date you read it, in `Sources`. A number somebody
-in the room gave you is sourced to them: say whose. A number you did not compute, were not given and
-cannot source is left out, not rounded into something that looks certain.
-
-## Match each piece of content to the component built for it
-
-The catalog is the whole set, and it is there to be used. Things compared are a Table or Tabs. Things
-in order are a Timeline. One measured series is a Chart. A mechanism, or a route between steps, is a
-Mermaid diagram. Facts about one thing are KeyValue, a headline figure is a Stat, and a status or tag is a Badge. A
-deadline or a warning is a Callout. Code or terminal output is Code. Things to prepare are a Checklist. Detail a reader may skip is an Accordion.
-Pictures are Image, where something came from is Sources, and where things are is a Map. Markdown is for prose only: a document made of Markdown blocks where
-a component fits is a note, not a document.
-
-## Put places on a map by name
-
-A Map takes the names of public places, each unambiguous, and nothing else: never a coordinate or a
-route, because the service looks each name up. A person's home or position cannot
-be mapped, and a coordinate from `where_is`, `where_been` or `reverse_geocode` never goes in a document. Fix
-a refused name and publish again. If places cannot be looked up, say so and name each place in Markdown
-text with its `maps_url` from `place_info`.
-
-## Numbers and charts come from your computer, not from your head
-
-When a document needs a calculation, a simulation or a chart's data, run it on your computer first,
-read the result, and place that result in the spec. Never publish a figure that did not come out of a run, a source or the room.
-
-## Name the pictures that went in
-
-A picture comes from the `[image ...]` markers in the recent messages, from one you made in this room, or
-from a page you opened. `web_fetch` lists a page's picture links under `images`; look at one with
-`media_fetch(url=...)`, which keeps it and returns a `code`. Do not wait to be asked: when the subject is
-something people look at, look for pictures of it. Choose ones that show what the section is about, and
-skip logos, icons, avatars and adverts.
-
-Before you place one, read what it shows with `media_fetch` (its code, and an empty `question`), so the
-caption and `alt` describe the picture that is there. Put the code in the `Image`. Once it is in the
-document, everyone who can open the document sees it. A web picture is somebody else's: name the page it
-came from in `Sources` and in the caption. If `media_fetch` returns no `code`, it was not kept: leave it
-out, and never guess a code.
-
-A picture from more than 90 days back in the
-room is out of reach: say so, leave it out, and never guess its code.
-
-## Publish with what you have, and claim only what happened
-
-Do not hold a document for details nobody gave you: state your assumption inside it and say what would
-change it. When a tool refuses more calls, stop gathering and publish what you hold. A document exists
-only once `document_publish` returned `ok` in this turn, or `document_read` returned it. Until then say
-it was not made, and give no link.
-
-## Change a document by reading it first
-
-To change one, call `document_read` for its current `revision` and `spec`, edit that spec, and
-publish with the same `document_id` and `base_revision` set to the revision you read. Never publish
-from memory of what it said. If the answer is a conflict, someone changed it meanwhile: read it again,
-apply your change to that, and publish again.
+Call `document_read` for its current `revision` and `spec`, edit that spec, and publish with the
+same `document_id` and `base_revision` set to the revision you read. Never publish from memory of
+what it said. On a conflict, read it again and apply your change to that.
 
 ## Archive, delete or restore with the tool
 
-When somebody asks to archive, delete or bring back a whole document, call `document_set_status`
-with its id and the state; a put-away one is in your documents view, led by its state. Taking
-something out of a document is an edit, not a delete. Never publish an empty or "deleted" revision to
-stand in for it. An archived or deleted document cannot be changed until it is set `active` again.
+Call `document_set_status` with the id and the state. Taking something out of a document is an
+edit, not a delete; never publish an empty or "deleted" revision to stand in for it. An archived or
+deleted document cannot be changed until it is set `active` again.
 
-## A refusal is an instruction
+## Tell the room once
 
-The findings are plain sentences that name where the spec is wrong. Fix exactly those places and
-publish again. Do not argue with a finding. Send `spec` as an object, never as text.
-
-## Tell the room where it is, once
-
-After a publish that returned `ok`, say in one line that it is saved, by its title, in the web app for
-people who are signed in. The link is added to your reply for you: never write a path, a host or the
-document's id, and never make up a link. To give a link yourself, repeat a `url` exactly as a document
-tool returned it this turn: any other document link is removed. If the result carries no `url`, there is
-no link yet: say it is under Documents, by its title. Do not retell the document; do name which pictures
-went in.
+After a publish that returned `ok`, say in one line that it is saved, by its title, in the web app
+for people who are signed in. The link is added to your reply for you: never write a path, a host or
+the document's id. If the result carries no `url`, there is no link yet: say it is under Documents,
+by its title. Do not retell the document; do name which pictures went in. Until a call returns
+`ok` there is no document: say it was not made.
