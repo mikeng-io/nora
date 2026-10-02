@@ -554,6 +554,7 @@ class SqlNoteStore:
         # the withdrawal cascade marks the head.
         await record_citations(
             conn, citing_store="note", citing_key=str(note.id), body=revision.body,
+            now_ms=revision.written_at,
         )
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
@@ -820,6 +821,7 @@ class SqlNoteStore:
         ))
         await record_citations(
             conn, citing_store="note", citing_key=str(note_id), body=revision.body,
+            now_ms=revision.written_at,
         )
 
     async def search(

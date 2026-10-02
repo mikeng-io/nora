@@ -207,6 +207,11 @@ class App:
         # Nothing awaits it — a slow or failing backfill must not delay the
         # adapters coming up.
         deps.background.spawn(self._adopt_pending())
+        # The sweep for what a delete left visible: a withdrawal that failed and
+        # outlived its retries, or that no process was alive to retry. The delete's
+        # record is committed first (`touch.run`), so this finds it. Spawned like
+        # adoption, for the same reason (it writes, and must not delay the adapters).
+        deps.background.spawn(self._reconcile_deletes())
         # Conditional, unlike its neighbours: `store.prune_enabled = false` means
         # the record is kept in full, and the sweep is not merely widened but
         # never started — `prune_all` scans the whole `messages` table per tick,
@@ -375,6 +380,36 @@ class App:
             metrics=deps.metrics, media_join=deps.media_join,
             start_delay_seconds=ADOPTION_START_DELAY_SECONDS,
         )
+
+    async def _reconcile_deletes(self) -> None:
+        """Run the delete reconcile once at start. Never raises (a failing sweep is
+        logged and counted, like adoption): the next start tries again."""
+        reconcile = self.deps.reconcile_deletes
+        if reconcile is None:
+            return
+        try:
+            report = await reconcile()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("start-up delete reconcile failed")
+            self.deps.metrics.inc("nora_errors_total", stage="delete_reconcile")
+            return
+        # Counts only. A line even when it found nothing: «nothing to do» and
+        # «never ran» must not read the same.
+        log.info(
+            "delete reconcile: %d visible, %d hidden, %d already hidden, %d no "
+            "longer on record, %d failed, %d derived row(s) withdrawn",
+            report.visible, report.hidden, report.already_hidden, report.not_stored,
+            report.failed, report.total_marked,
+        )
+        for outcome, count in (
+            ("reconciled", report.hidden), ("cascade_failed", report.failed),
+        ):
+            if count:
+                self.deps.metrics.inc(
+                    "nora_delete_withdrawals_total", count, platform="all", outcome=outcome,
+                )
 
     async def _update_last_event_age(self) -> None:
         """Publish adapter liveness: the pinned Signal series, and one series

@@ -23,6 +23,7 @@ Each behaviour has a test that goes red when it is reverted; the PR names them.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -40,20 +41,27 @@ from nora.app.delete_withdrawal import (
     reconcile_deletes,
     render_reconcile,
 )
-from nora.app.person_forget import unforget_person
+from nora.app.person_forget import (
+    clear_unsupported,
+    forget_person,
+    render_unforget,
+    unforget_person,
+)
 from nora.domain.gatherings import (
     EventCitation,
     EventEvidence,
     Gathering,
     GatheringStatus,
 )
-from nora.domain.media import MediaBlob
+from nora.domain.media import MediaBlob, MediaRef
 from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage, PersonRef, Touch
 from nora.domain.record_query import RecordQuery
 from nora.domain.standing import Standing
 from nora.domain.withdrawal import render_supported
+from nora.engagement.debrief_render import render_rollup_input
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.migrations_runner import run_migrations
@@ -64,14 +72,18 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGES,
     NOTE,
+    NOTE_CANDIDATE,
 )
 from nora.infra.sql.standing import SqlStandingStore
+from nora.ingest.comprehension import MediaComprehension
 from nora.ingest.pipeline import IngestPipeline
 from nora.ingest.policy import TriggerTextPolicy
 from nora.language.culture_render import read_culture
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
+from nora.platform.registry import MediaSourceRegistry
 from nora.policy import permissive_policy
+from nora.testing import FakeBlobStore, FakeMediaInterpreter, FakeMediaObjectStore, FakeMediaSource
 
 pytestmark = pytest.mark.asyncio
 
@@ -114,7 +126,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             for table in (
                 "citation", "event_revision", "event_rsvps", "events", "note_revision",
                 "note", "standing_revision", "standing", "culture_revision", "culture",
-                "messages", "row_history",
+                "note_candidate", "messages", "row_history",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
@@ -194,10 +206,43 @@ class _Memory:
         return None
 
 
+class _GatedInterpreter(FakeMediaInterpreter):
+    """A vision model that can be held mid-read (`release` lets it answer)."""
+
+    def __init__(self) -> None:
+        super().__init__(text="a cartoon cat of the unsent kind", title="a cat")
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.release.set()
+
+    async def describe(self, *, data: bytes, media_type: str, label: str = ""):  # type: ignore[no-untyped-def]
+        self.entered.set()
+        await self.release.wait()
+        return await super().describe(data=data, media_type=media_type, label=label)
+
+
+class _GatedSource(FakeMediaSource):
+    """A custody fetch that can be held mid-fetch, as a slow attachment is."""
+
+    def __init__(self, blobs: dict[str, bytes]) -> None:
+        super().__init__(blobs)
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.release.set()
+
+    async def fetch(self, *, ref: MediaRef):  # type: ignore[no-untyped-def]
+        self.entered.set()
+        await self.release.wait()
+        return await super().fetch(ref=ref)
+
+
 class World:
     """The real pipeline over real Postgres, with a mapped author on every platform."""
 
-    def __init__(self, engine: Any, *, withdrawer: Any = "sql") -> None:
+    def __init__(
+        self, engine: Any, *, withdrawer: Any = "sql",
+        retry_delays: tuple[float, ...] = (0.0,), media: bool = False,
+    ) -> None:
         self.engine = engine
         self.audit = SqlRecordStore(engine)
         self.metrics = Metrics()
@@ -205,14 +250,35 @@ class World:
         self._tasks: list[asyncio.Task[None]] = []
         persons = Persons(
             by_person={"ada": PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")},
-            index={(s.platform, s.author): "ada" for s in SHAPES},
+            index={
+                **{(s.platform, s.author): "ada" for s in SHAPES},
+                # The same person under WhatsApp's other id form (phone and LID).
+                ("whatsapp", "w1-lid"): "ada",
+            },
         )
         self.persons = persons
+        self.interpreter = _GatedInterpreter()
+        self.source = _GatedSource({"att1": b"\xff\xd8\xff\xe0 pretend jpeg"})
+        wiring: dict[str, Any] = {}
+        if media:
+            blobs = FakeBlobStore()
+            store = FakeMediaObjectStore()
+            wiring = {
+                "media_sources": MediaSourceRegistry([self.source]), "blobs": blobs,
+                "media_store": store,
+                "comprehension": MediaComprehension(
+                    blobs=blobs, store=store, interpreter=self.interpreter,
+                    memory=self.memory,  # type: ignore[arg-type]
+                    metrics=self.metrics, spawn=self._spawn,
+                ),
+            }
         self.pipeline = IngestPipeline(
+            **wiring,
             audit=self.audit, memory=self.memory,  # type: ignore[arg-type]
             persons=persons, policy=TriggerTextPolicy("nora.000"),
             allowlist=permissive_policy(), metrics=self.metrics, spawn=self._spawn,
             delete_withdrawer=SqlDeleteWithdrawer(engine) if withdrawer == "sql" else withdrawer,
+            withdrawal_retry_delays=retry_delays,
         )
 
     def _spawn(self, coro: Any) -> None:
@@ -286,6 +352,24 @@ async def _cited_event(engine: Any, room: str, title: str, mid: int) -> UUID:
     return event.id
 
 
+async def _candidate(engine: Any, title: str, mid: int, *, status: str = "pending") -> str:
+    """A staged note proposal read off message `mid` (`note-candidates`)."""
+    async with engine.begin() as conn:
+        return str((await conn.execute(
+            sa.insert(NOTE_CANDIDATE).values(
+                unit="u", kind="create", title=title, description="d",
+                body=f"a staged claim {title} [{mid}]", closing_condition="c",
+                anchor_date=20260901, status=status, message_ids=[mid],
+                first_seen_at=1, last_seen_at=1,
+            ).returning(NOTE_CANDIDATE.c.id)
+        )).scalar_one())
+
+
+async def _candidates(engine: Any) -> set[str]:
+    async with engine.connect() as conn:
+        return {str(i) for i in (await conn.execute(sa.select(NOTE_CANDIDATE.c.id))).scalars()}
+
+
 @dataclass
 class Scene:
     """A room with a target `m`, a sibling `s` said before it, derived rows citing
@@ -300,6 +384,8 @@ class Scene:
     note_o: str
     event_m: UUID
     event_s: UUID
+    cand_m: str
+    cand_s: str
 
 
 M_TS, S_TS, O_TS = T0 + 2000, T0 + 1000, T0 + 3000
@@ -323,6 +409,8 @@ async def _scene(w: World, shape: Shape, *, edited: bool = False) -> Scene:
         note_o=await _note(e, cites=o, title="about-o", room=other, platform=shape.platform),
         event_m=await _cited_event(e, shape.room, "event on m", m),
         event_s=await _cited_event(e, shape.room, "event on s", s),
+        cand_m=await _candidate(e, "cand-m", m),
+        cand_s=await _candidate(e, "cand-s", s),
     )
     # The room's Standing and culture head cite its newest message (m), and the
     # other room's cite o.
@@ -366,7 +454,7 @@ async def test_a_delete_hides_the_message_and_withdraws_everything_derived_from_
         rows = (await conn.execute(sa.select(MESSAGE_DELETE.c.message_id))).scalars().all()
     assert rows == [sc.m]
 
-    # Derived rows citing it are unsupported, in every store; controls are not.
+    # Rows that cite it as EVIDENCE are unsupported; controls are not.
     assert await _note_unsupported(engine, sc.note_m) is not None
     assert await _note_unsupported(engine, sc.note_s) is None
     assert await _note_unsupported(engine, sc.note_o) is None
@@ -374,16 +462,16 @@ async def test_a_delete_hides_the_message_and_withdraws_everything_derived_from_
     assert {e.title for e in await events.list_for_conversation(conversation_id=shape.room)} == {
         "event on s",
     }
-    assert render_supported(await SqlStandingStore(engine).read(
-        platform=shape.platform, conversation_id=shape.room)) is None
-    assert render_supported(await SqlStandingStore(engine).read(
-        platform=shape.platform, conversation_id=other)) is not None
-    assert await read_culture(
-        SqlCultureStore(engine).head(key=shape.room), stage="t", platform=shape.platform,
-        metrics=None) is None
-    assert await read_culture(
-        SqlCultureStore(engine).head(key=other), stage="t", platform=shape.platform,
-        metrics=None) is not None
+    # Standing and culture cite a WATERMARK, not evidence (the orchestrator's
+    # decision): a delete does not mark them, in the room or anywhere.
+    for room in (shape.room, other):
+        assert render_supported(await SqlStandingStore(engine).read(
+            platform=shape.platform, conversation_id=room)) is not None
+        assert await read_culture(
+            SqlCultureStore(engine).head(key=room), stage="t", platform=shape.platform,
+            metrics=None) is not None
+    # The staged proposal read off it is gone; the sibling's stays.
+    assert await _candidates(engine) == {sc.cand_s}
     # …and the readers that feed a prompt leave the note out.
     notes = SqlNoteStore(engine)
     assert {n.id for n in await notes.standing(unit="u")} == {sc.note_s, sc.note_o}
@@ -635,7 +723,7 @@ async def test_a_cascade_that_fails_rolls_the_hide_back_and_the_reconcile_finish
     engine, monkeypatch,
 ):
     shape = SHAPES[1]
-    w = World(engine)
+    w = World(engine, retry_delays=())
     sc = await _scene(w, shape)
 
     async def boom(*_a: Any, **_k: Any) -> None:
@@ -665,7 +753,7 @@ async def test_a_withdrawer_that_raises_is_counted_and_never_stops_the_ingest(en
         async def withdraw(self, *, message_id: int, now_ms: int) -> Any:
             raise RuntimeError("down")
 
-    w = World(engine, withdrawer=Broken())
+    w = World(engine, withdrawer=Broken(), retry_delays=())
     await w.run(shape.said(M_TS, "words", "H-M"))
     mid = await w.row(shape.room, M_TS)
     await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
@@ -759,7 +847,7 @@ async def test_the_reconcile_lists_in_a_dry_run_and_fixes_on_apply(engine):
 
     dry = await reconcile_deletes(engine, apply=False, now_ms=T0 + 50_000)
     assert (dry.visible, dry.hidden, dry.failed, dry.applied) == (1, 1, 0, False)
-    assert dry.marked == {"note": 1, "standing": 1, "culture": 1, "event": 1}
+    assert dry.marked == {"note": 1, "event": 1, "note_candidate": 1}
     assert await w.hidden_at(sc.m) is None, "a dry run writes nothing"
     assert await _note_unsupported(engine, sc.note_m) is None
     text = "\n".join(render_reconcile(dry))
@@ -791,15 +879,43 @@ async def test_the_reconcile_leaves_a_message_that_was_never_deleted_alone(engin
         assert await w.hidden_at(mid) is None
 
 
-async def test_unforget_brings_a_deleted_message_back_and_the_reconcile_hides_it_again(engine):
-    """`nora person unforget` un-hides EVERY hidden message of a person, one a
-    delete hid included (not changed here). The delete record is still there, so
-    the reconcile restores the withdrawal."""
+async def test_unforget_leaves_a_deleted_message_hidden_and_the_marks_on_what_cited_it(engine):
+    """`nora person unforget` un-hides what `forget` hid, and NOT a message a platform
+    delete withdrew: its author took it back, which un-forgetting a person is not
+    entitled to undo. `--clear-unsupported` then has nothing to clear for a row that
+    cites it, because the message is still hidden."""
     shape = SHAPES[1]
     w = World(engine)
     sc = await _scene(w, shape)
     await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
-    await unforget_person(engine, person_id="ada", apply=True)
+    await forget_person(
+        engine, documents=SqlDocumentStore(engine), person_id="ada", apply=True,
+        now_ms=T0 + 10_000,
+    )
+    assert await w.visible(shape.room) == []
+
+    dry = await unforget_person(engine, person_id="ada", apply=False)
+    assert (dry.restored, dry.kept_deleted) == (2, 1)           # s and o; m was deleted
+    done = await unforget_person(engine, person_id="ada", apply=True)
+    assert done.kept_deleted == 1
+
+    assert sc.m not in await w.visible(shape.room)
+    assert sc.s in await w.visible(shape.room)
+    cleared = await clear_unsupported(engine, apply=True)
+    assert "note" not in cleared.cleared or sc.note_m not in cleared.cleared["note"]
+    assert await _note_unsupported(engine, sc.note_m) is not None
+    assert "1 message(s) stay hidden" in "\n".join(render_unforget(done))
+
+
+async def test_the_reconcile_hides_a_deleted_message_a_stray_unhide_brought_back(engine):
+    """Whatever un-hid it (an operator's SQL, a restore), the delete record is still
+    there and the reconcile hides it again."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == sc.m).values(hidden_at=None))
     assert sc.m in await w.visible(shape.room)
 
     report = await reconcile_deletes(engine, apply=True, now_ms=T0 + 70_000)
@@ -826,3 +942,497 @@ async def test_two_withdrawals_racing_one_message_hide_it_once(engine):
     assert await w.hidden_at(sc.m) in (T0 + 1, T0 + 2)
     assert (await withdrawer.withdraw(message_id=999_999, now_ms=T0)).outcome == "not_stored"
 
+
+
+# =============================================================================
+# a forged delete: authorship on every platform that can be checked
+# =============================================================================
+
+
+@pytest.mark.parametrize("shape", SHAPES[:2], ids=["signal", "whatsapp"])
+async def test_a_delete_from_someone_who_is_not_the_author_changes_nothing(engine, shape):
+    """Only the author can delete on Signal and on WhatsApp. WhatsApp is end to end
+    encrypted, so the server cannot refuse a forged REVOKE and the bridge forwards
+    any: the event names its REVOKER (`sender_*`), and a revoker who is not the
+    message's author, or the same person under another id, is refused. That covers
+    a group admin removing a member's message, which cannot be told from a forgery
+    without group metadata (the message stays visible)."""
+    w = World(engine)
+    sc = await _scene(w, shape)
+
+    await w.run(shape.deletion(M_TS, "H-M", sender="stranger-2", at=T0 + 9000))
+
+    assert await w.hidden_at(sc.m) is None
+    assert await w.visible(shape.room) == [sc.s, sc.m]
+    assert await _note_unsupported(engine, sc.note_m) is None
+    assert await _candidates(engine) == {sc.cand_m, sc.cand_s}
+    assert w.count("refused_not_author", shape.platform) == 1
+    assert w.count("hidden", shape.platform) == 0
+    async with engine.connect() as conn:
+        assert (await conn.execute(
+            sa.select(sa.func.count()).select_from(MESSAGE_DELETE))).scalar_one() == 0, (
+            "a refused delete leaves no record that could be replayed")
+
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9100))       # the author, now
+
+    assert await w.hidden_at(sc.m) is not None
+
+
+async def test_a_whatsapp_author_deleting_under_the_other_id_form_is_the_author(engine):
+    """The same person is one WhatsApp account in two id forms (phone, LID): both
+    resolve to one person in identity.toml, so the revoke is theirs."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+
+    await w.run(shape.deletion(M_TS, "H-M", sender="w1-lid", at=T0 + 9000))
+
+    assert await w.hidden_at(sc.m) is not None
+    assert w.count("refused_not_author", shape.platform) == 0
+
+
+@pytest.mark.parametrize("shape", SHAPES[2:], ids=["discord", "instagram"])
+async def test_a_delete_that_names_nobody_is_honoured_as_the_platform_reports_it(engine, shape):
+    """Discord's gateway and Instagram's unsend name no deleter (`sender_id == ""`):
+    a moderator's removal is a legitimate withdrawal from the room, and there is
+    nothing to compare. Both events are authenticated by the platform, not by the
+    sender, so this is the platform's word and is taken. (The parser sets the sender
+    to "" on both, so a non-author case cannot be built on these two.)"""
+    w = World(engine)
+    sc = await _scene(w, shape)
+    assert shape.deletion(M_TS, "H-M").sender_id == ""
+
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert await w.hidden_at(sc.m) is not None
+    assert w.count("refused_not_author", shape.platform) == 0
+
+
+# =============================================================================
+# Standing and culture are not marked by a delete; notes and events are
+# =============================================================================
+
+
+async def test_deleting_a_fold_boundary_message_leaves_standing_and_culture_standing(engine):
+    """A Standing write cites its fold's LAST message and a culture write the room's
+    newest: a watermark, not evidence. Citation edges pile up across revisions, so a
+    delete of any message that was ever a boundary would hide the CURRENT head for
+    good, and no later fold or `clear_unsupported` lifts it while the message stays
+    hidden. A delete therefore withdraws the evidence stores only. What cites the
+    boundary message AS EVIDENCE (a note, an event, a staged proposal) is withdrawn."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)                 # standing and culture cite `m`, the newest
+    # A later fold wrote the CURRENT head from a later message; `m`'s edge is still there.
+    later = await w.audit.append(
+        message=shape.said(T0 + 5000, "said after the boundary", "H-L"), person_id="ada",
+    )
+    await SqlStandingStore(engine).write(standing=Standing(
+        platform=shape.platform, conversation_id=shape.room, body="a newer position",
+        fold_count=2, updated_at=T0 + 5000, last_folded_row_id=later,
+    ))
+
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    standing = render_supported(await SqlStandingStore(engine).read(
+        platform=shape.platform, conversation_id=shape.room))
+    assert standing is not None and standing.body == "a newer position"
+    assert await read_culture(
+        SqlCultureStore(engine).head(key=shape.room), stage="t", platform=shape.platform,
+        metrics=None) is not None
+    assert await _note_unsupported(engine, sc.note_m) is not None
+    assert await _candidates(engine) == {sc.cand_s}
+    assert {e.title for e in await SqlGatheringStore(engine).list_for_conversation(
+        conversation_id=shape.room)} == {"event on s"}
+
+
+async def test_the_next_folds_input_does_not_hold_the_deleted_message(engine):
+    """The real fold input builders: the batch the Standing fold reads
+    (`since_including_nora` after its watermark) and the prompt text it renders
+    (`render_rollup_input`), with the culture head the fold reads beside it. The
+    deleted message's words are in neither; its neighbours' are."""
+    shape = SHAPES[1]
+    w = World(engine)
+    boundary = await w.audit.append(
+        message=shape.said(T0 + 100, "the boundary words", "H-B"), person_id="ada")
+    await SqlStandingStore(engine).write(standing=Standing(
+        platform=shape.platform, conversation_id=shape.room, body="the prior position",
+        fold_count=1, updated_at=T0 + 100, last_folded_row_id=boundary,
+    ))
+    await SqlCultureStore(engine).append(
+        key=shape.room, body="the prior account", written_at=T0 + 100, established_by="fold")
+    await w.run(shape.said(T0 + 200, "keepable neighbour words", "H-1"))
+    await w.run(shape.said(T0 + 300, "the unsent secret words", "H-2"))
+    await w.run(shape.said(T0 + 400, "another neighbour words", "H-3"))
+
+    await w.run(shape.deletion(T0 + 300, "H-2", at=T0 + 9000))
+
+    prior = await SqlStandingStore(engine).read(
+        platform=shape.platform, conversation_id=shape.room)
+    assert prior is not None and prior.last_folded_row_id == boundary
+    rows = await w.audit.since_including_nora(
+        conversation_id=shape.room, after_id=prior.last_folded_row_id or 0, limit=50)
+    rendered = render_rollup_input(
+        prior=prior, rows=rows, display_name="Nora", now_ms=T0 + 10_000,
+        culture=await read_culture(
+            SqlCultureStore(engine).head(key=shape.room), stage="t",
+            platform=shape.platform, metrics=None),
+    )
+    assert "unsent secret" not in rendered
+    assert "keepable neighbour" in rendered and "another neighbour" in rendered
+    assert "the prior position" in rendered and "the prior account" in rendered
+    # `render_rollup_input`'s transcript line for the deleted message is absent too.
+    assert [r.body for r in rows] == ["keepable neighbour words", "another neighbour words"]
+
+
+# =============================================================================
+# a row written AFTER the delete, and a second delete of a hidden row
+# =============================================================================
+
+
+async def test_a_note_and_an_event_written_after_the_delete_are_born_unsupported(engine):
+    """The cascade runs once, when the message is withdrawn. A note a session writes
+    afterwards, from a transcript it was handed before the delete, writes its edge
+    with `unsupported_at` NULL and nothing revisits it, so the one place edges are
+    written asks whether what they cite is hidden. Controls: a row citing a visible
+    message is supported."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    late_note = await _note(engine, cites=sc.m, title="late-note", room=shape.room,
+                            platform=shape.platform)
+    ok_note = await _note(engine, cites=sc.s, title="ok-note", room=shape.room,
+                          platform=shape.platform)
+    late_event = await _cited_event(engine, shape.room, "late event", sc.m)
+    ok_event = await _cited_event(engine, shape.room, "ok event", sc.s)
+
+    assert await _note_unsupported(engine, late_note) is not None
+    assert await _note_unsupported(engine, ok_note) is None
+    events = SqlGatheringStore(engine)
+    assert (await events.get(late_event)).unsupported_at is not None  # type: ignore[union-attr]
+    assert (await events.get(ok_event)).unsupported_at is None  # type: ignore[union-attr]
+    assert {n.id for n in await SqlNoteStore(engine).standing(unit="u")} >= {ok_note}
+    assert late_note not in {n.id for n in await SqlNoteStore(engine).standing(unit="u")}
+
+    # And a REVISION that cites it: the second place a note's edges are written.
+    notes = SqlNoteStore(engine)
+    head = (await notes.note_by_id(unit="u", note_id=ok_note)).head_revision_id  # type: ignore[union-attr]
+    await notes.append_revision(
+        unit="u", note_id=ok_note, parent_revision_id=head,
+        body=f"now resting on the deleted line [{sc.m}]", established_by="test",
+        now_ms=T0 + 20_000,
+    )
+    assert await _note_unsupported(engine, ok_note) == T0 + 20_000
+
+
+async def test_a_redelivered_delete_cascades_again_over_a_row_the_first_one_did_not_reach(
+    engine,
+):
+    """A delete event redelivered after something that cites the message was
+    written (or after a mark was cleared) must still cascade: the second delete of
+    an already hidden row is not a no-op."""
+    shape = SHAPES[1]
+    w = World(engine)
+    sc = await _scene(w, shape)
+    withdrawer = SqlDeleteWithdrawer(engine)
+    assert (await withdrawer.withdraw(message_id=sc.m, now_ms=T0 + 1)).marked == 3
+    async with engine.begin() as conn:       # the mark is cleared, as an operator might
+        await conn.execute(sa.update(NOTE).where(NOTE.c.id == sc.note_m)
+                           .values(unsupported_at=None))
+    sc_cand = await _candidate(engine, "cand-late", sc.m)
+
+    again = await withdrawer.withdraw(message_id=sc.m, now_ms=T0 + 2)
+
+    assert again.outcome == "already_hidden"
+    assert again.marked == 2                                    # the note and the candidate
+    assert await _note_unsupported(engine, sc.note_m) == T0 + 2
+    assert sc_cand not in await _candidates(engine)
+
+
+# =============================================================================
+# the record first, then the hide; a retry; the start-up sweep
+# =============================================================================
+
+
+async def test_the_delete_is_recorded_before_the_hide_is_attempted(engine, monkeypatch):
+    shape = SHAPES[1]
+    seen: list[int] = []
+    withdrawer = SqlDeleteWithdrawer(engine)
+    real = withdrawer.withdraw
+
+    async def spy(*, message_id: int, now_ms: int) -> Any:
+        async with engine.connect() as conn:
+            seen.append((await conn.execute(
+                sa.select(sa.func.count()).select_from(MESSAGE_DELETE))).scalar_one())
+        return await real(message_id=message_id, now_ms=now_ms)
+
+    monkeypatch.setattr(withdrawer, "withdraw", spy)
+    w = World(engine, withdrawer=withdrawer)
+    await w.run(shape.said(M_TS, "words", "H-M"))
+    mid = await w.row(shape.room, M_TS)
+
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert seen == [1], "the message_delete row was already committed when the hide began"
+    assert await w.hidden_at(mid) is not None
+
+
+async def test_a_record_that_cannot_be_written_does_not_stop_the_hide(engine, monkeypatch):
+    """If even the record fails the platform event leaves no row, but the hide, which is
+    what honours the delete, is still attempted."""
+    shape = SHAPES[1]
+    w = World(engine)
+    await w.run(shape.said(M_TS, "words", "H-M"))
+    mid = await w.row(shape.room, M_TS)
+
+    async def boom(**_k: Any) -> int:
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(w.audit, "append_delete", boom)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert await w.hidden_at(mid) is not None
+    assert w.metrics.get("nora_errors_total", stage="touch_record",
+                         platform=shape.platform) == 1
+
+
+async def test_a_withdrawal_that_failed_is_retried_and_then_counted_reconciled(
+    engine, monkeypatch,
+):
+    shape = SHAPES[1]
+    w = World(engine, retry_delays=(0.0, 0.0))
+    sc = await _scene(w, shape)
+    real = delete_withdrawal.withdraw_message
+    calls = {"n": 0}
+
+    async def flaky(*a: Any, **k: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("cascade down once")
+        return await real(*a, **k)
+
+    monkeypatch.setattr(delete_withdrawal, "withdraw_message", flaky)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert await w.hidden_at(sc.m) is not None
+    assert await _note_unsupported(engine, sc.note_m) is not None
+    assert w.count("cascade_failed", shape.platform) == 1
+    assert w.count("reconciled", shape.platform) == 1
+    assert calls["n"] == 2, "one failure, one retry that landed, no more attempts"
+
+
+async def test_a_withdrawal_that_keeps_failing_is_tried_a_bounded_number_of_times(
+    engine, monkeypatch,
+):
+    shape = SHAPES[1]
+    w = World(engine, retry_delays=(0.0, 0.0))
+    sc = await _scene(w, shape)
+
+    async def boom(*_a: Any, **_k: Any) -> None:
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(delete_withdrawal, "withdraw_message", boom)
+    await w.run(shape.deletion(M_TS, "H-M", at=T0 + 9000))
+
+    assert await w.hidden_at(sc.m) is None
+    assert w.count("cascade_failed", shape.platform) == 3       # the event and two retries
+    assert w.count("reconciled", shape.platform) == 0
+
+
+# =============================================================================
+# the hold: keyed to the message it names
+# =============================================================================
+
+
+async def test_a_held_signal_delete_is_not_consumed_by_another_members_message_in_the_same_ms(
+    engine,
+):
+    """Two members posting in one millisecond are two messages with one timestamp.
+    The hold is the author's: the other member's message must not consume it, and
+    the author's, when it lands, is the one withdrawn."""
+    shape = SHAPES[0]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "", at=T0 + 9000))          # +1's delete, held
+
+    other = await w.run(shape.said(M_TS, "someone else, same millisecond", "",
+                                   sender="+7777"))
+    assert other.message is not None, "an ordinary message from someone else"
+    mine = await w.run(shape.said(M_TS, "the author's own words", ""))
+
+    rows = {r.sender_id: r for r in await w.audit.recent(conversation_id=shape.room, limit=10)}
+    assert list(rows) == ["+7777"], "the author's message is the one hidden"
+    assert mine.message is None and mine.decision is None
+
+
+async def test_a_held_delete_does_not_match_a_message_that_has_no_handle(engine):
+    """Signal's delete names a timestamp and its hold carries an EMPTY handle; a
+    message of the same author with no handle at a different timestamp must not match
+    it on `"" == ""`."""
+    shape = SHAPES[0]
+    w = World(engine)
+    await w.run(shape.deletion(M_TS, "", at=T0 + 9000))
+
+    result = await w.run(shape.said(M_TS + 5, "a different message, same author", ""))
+
+    assert result.message is not None
+    assert await w.hidden_at(await w.row(shape.room, M_TS + 5)) is None
+
+
+async def test_a_held_delete_on_one_platform_does_not_withdraw_the_same_handle_on_another(
+    engine,
+):
+    """The hold is per platform AND room: a Discord delete for handle H must not hide a
+    WhatsApp message that carries H in a room with the same id."""
+    discord, whatsapp = SHAPES[2], SHAPES[1]
+    w = World(engine)
+    await w.run(dataclasses.replace(
+        discord.deletion(M_TS, "H-X", room="shared-room", at=T0 + 9000)))
+
+    result = await w.run(whatsapp.said(M_TS, "same handle, other platform", "H-X",
+                                       room="shared-room"))
+
+    assert result.message is not None
+    assert await w.hidden_at(await w.row("shared-room", M_TS)) is None
+
+
+async def test_a_held_delete_that_ran_out_is_counted_hold_expired_not_not_stored(engine):
+    shape = SHAPES[2]
+    w = World(engine)
+    now = [0.0]
+    w.pipeline._pending_deletes = type(w.pipeline._pending_deletes)(
+        ttl_seconds=10, clock=lambda: now[0], on_expired=w.pipeline._hold_expired)
+    await w.run(shape.deletion(M_TS, "H-NEVER", at=T0 + 9000))
+    assert w.count("not_stored", shape.platform) == 1
+    now[0] = 11.0
+
+    await w.run(shape.said(M_TS + 1, "an unrelated message", "H-OTHER"))
+
+    assert w.count("hold_expired", shape.platform) == 1
+    assert w.count("not_stored", shape.platform) == 1, "an expiry is not another not_stored"
+
+
+# =============================================================================
+# a photo deleted early is not read and not fed
+# =============================================================================
+
+
+def _photo(shape: Shape, ts: int, handle: str) -> NormalizedMessage:
+    return dataclasses.replace(
+        shape.said(ts, "[image]", handle),
+        media=(MediaRef(platform_id="att1", media_type="image/jpeg", filename="a.jpg"),),
+    )
+
+
+async def test_a_photo_with_no_delete_is_read_and_fed_which_is_what_the_next_two_prove_absent(
+    engine,
+):
+    """The control: the same photo, no delete, reaches the vision model and Honcho, so
+    a test that asserts both absent is able to see them."""
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+    await w.run(_photo(shape, M_TS, ""))
+    assert len(w.interpreter.calls) == 1
+    assert any("unsent kind" in t for t in w.memory.fed)
+
+
+async def test_a_photo_unsent_while_it_was_being_fetched_is_never_read_or_fed(engine):
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+    w.source.release.clear()
+    task = asyncio.create_task(w.pipeline.run(message=_photo(shape, M_TS, "")))
+    await w.source.entered.wait()
+    await w.pipeline.run(message=shape.deletion(M_TS, "", at=T0 + 9000))  # mid-custody: held
+    w.source.release.set()
+    await task
+    await w.settle()
+
+    mid = await w.row(shape.room, M_TS)
+    assert await w.hidden_at(mid) is not None
+    assert w.interpreter.calls == [], "the vision model was never asked about it"
+    assert w.memory.fed == [], "nothing of it, not even its marker, reached Honcho"
+
+
+async def test_a_clip_unsent_while_it_was_being_read_is_not_fed_afterwards(engine):
+    """The read is already in flight when the delete lands (a long clip is minutes of
+    model calls): the job asks again just before the Honcho feed."""
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+    w.interpreter.release.clear()
+    await w.pipeline.run(message=_photo(shape, M_TS, ""))
+    await w.interpreter.entered.wait()
+
+    # `pipeline.run`, not `w.run`: `run` settles every spawned task, which includes the
+    # read this test is holding in flight.
+    await w.pipeline.run(message=shape.deletion(M_TS, "", at=T0 + 9000))
+    w.interpreter.release.set()
+    await w.settle()
+
+    assert len(w.interpreter.calls) == 1, "the read was already under way"
+    assert not any("unsent kind" in t for t in w.memory.fed), "its reading was not fed to Honcho"
+    assert await w.hidden_at(await w.row(shape.room, M_TS)) is not None
+
+
+async def test_the_withdrawn_check_failing_skips_the_feed_rather_than_leaking_it(
+    engine, monkeypatch,
+):
+    shape = SHAPES[0]
+    w = World(engine, media=True)
+
+    async def boom(**_k: Any) -> Any:
+        raise RuntimeError("db down")
+
+    w.interpreter.release.clear()
+    await w.pipeline.run(message=_photo(shape, M_TS, ""))
+    await w.interpreter.entered.wait()
+    monkeypatch.setattr(w.audit, "find_edited", boom)
+    w.interpreter.release.set()
+    await w.settle()
+    assert not any("unsent kind" in t for t in w.memory.fed)
+
+
+async def test_the_reconcile_counts_a_message_hidden_in_the_meantime_as_already_hidden(
+    engine, monkeypatch,
+):
+    """Between the reconcile reading which messages are still visible and reaching
+    one, something else (the live path, another run) hid it: that one is
+    `already_hidden`, not a hide this run wrote."""
+    shape = SHAPES[1]
+    w = World(engine, withdrawer=None)
+    sc = await _scene(w, shape)
+    await _legacy_delete(w, shape, M_TS, "H-M")
+    real = delete_withdrawal._withdraw_in
+
+    async def hidden_first(conn: Any, *, message_id: int, now_ms: int) -> Any:
+        async with engine.begin() as other:
+            await other.execute(
+                sa.update(MESSAGES).where(MESSAGES.c.id == message_id).values(hidden_at=1))
+        return await real(conn, message_id=message_id, now_ms=now_ms)
+
+    monkeypatch.setattr(delete_withdrawal, "_withdraw_in", hidden_first)
+    report = await reconcile_deletes(engine, apply=True, now_ms=T0 + 50_000)
+
+    assert (report.visible, report.hidden, report.already_hidden) == (1, 0, 1)
+    assert await w.hidden_at(sc.m) == 1
+
+
+async def test_the_reconcile_dry_run_is_bounded_by_timeouts_inside_its_one_transaction(
+    engine, monkeypatch,
+):
+    shape = SHAPES[1]
+    w = World(engine, withdrawer=None)
+    await _scene(w, shape)
+    await _legacy_delete(w, shape, M_TS, "H-M")
+    seen: list[str] = []
+    real = delete_withdrawal._withdraw_in
+
+    async def spy(conn: Any, *, message_id: int, now_ms: int) -> Any:
+        for name in ("lock_timeout", "statement_timeout"):
+            seen.append((await conn.execute(sa.text(f"SHOW {name}"))).scalar_one())
+        return await real(conn, message_id=message_id, now_ms=now_ms)
+
+    monkeypatch.setattr(delete_withdrawal, "_withdraw_in", spy)
+    await reconcile_deletes(engine, apply=False, now_ms=T0 + 50_000)
+
+    assert seen == ["5s", "1min"], "a dry run never waits on a lock or a statement for long"

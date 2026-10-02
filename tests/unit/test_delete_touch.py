@@ -88,22 +88,49 @@ async def test_a_delete_of_nothing_on_record_is_not_stored_and_calls_nothing():
     assert w.calls == [] and _count(m, "not_stored") == 1
 
 
-async def test_a_signal_style_delete_by_someone_else_is_refused_and_withdraws_nothing():
-    audit = FakeRecordStore()
-    w, m = FakeDeleteWithdrawer(audit), Metrics()
-    await audit.append(message=NormalizedMessage(
-        "signal", ROOM, "group", "+1", "Ada", 1000, "words", {}))
-    msg = NormalizedMessage(
-        "signal", ROOM, "group", "+2", None, 5, "", {},
-        touch=Touch(kind="delete", target=EditTarget(sent_ts=1000)),
-    )
-    assert msg.touch is not None
-    done = await touch_stage.run(
-        message=msg, touch=msg.touch, audit=audit,
-        persons=Persons(by_person={}, index={}), metrics=m, withdrawer=w,
-    )
-    assert done.ending == "delete_refused"
-    assert w.calls == []
+async def test_a_delete_by_someone_else_is_refused_and_counted_where_only_authors_delete():
+    for platform, ts, target in (
+        ("signal", 1000, EditTarget(sent_ts=1000)),
+        ("whatsapp", 5, EditTarget(message_id="H9")),
+    ):
+        audit = FakeRecordStore()
+        w, m = FakeDeleteWithdrawer(audit), Metrics()
+        await audit.append(message=NormalizedMessage(
+            platform, ROOM, "group", "author", "Ada", ts, "words", {},
+            message_id=target.message_id))
+        msg = NormalizedMessage(
+            platform, ROOM, "group", "stranger", None, 5, "", {},
+            touch=Touch(kind="delete", target=target),
+        )
+        assert msg.touch is not None
+        done = await touch_stage.run(
+            message=msg, touch=msg.touch, audit=audit,
+            persons=Persons(by_person={}, index={}), metrics=m, withdrawer=w,
+        )
+        assert done.ending == "delete_refused", platform
+        assert w.calls == [], platform
+        assert m.get("nora_delete_withdrawals_total", platform=platform,
+                     outcome="refused_not_author") == 1
+        assert audit.deletes == [], "a refused delete leaves no record"
+
+
+async def test_discord_and_instagram_deletes_name_nobody_and_are_not_author_checked():
+    for platform in ("discord", "instagram"):
+        audit = FakeRecordStore()
+        w, m = FakeDeleteWithdrawer(audit), Metrics()
+        await audit.append(message=NormalizedMessage(
+            platform, ROOM, "group", "author", "Ada", 1, "words", {}, message_id="M1"))
+        msg = NormalizedMessage(
+            platform, ROOM, "group", "", None, 5, "", {},
+            touch=Touch(kind="delete", target=EditTarget(message_id="M1")),
+        )
+        assert msg.touch is not None
+        done = await touch_stage.run(
+            message=msg, touch=msg.touch, audit=audit,
+            persons=Persons(by_person={}, index={}), metrics=m, withdrawer=w,
+        )
+        assert done.ending == "delete_recorded", platform
+        assert len(w.calls) == 1
 
 
 async def test_a_withdrawer_that_raises_is_cascade_failed_and_the_delete_is_still_recorded():
@@ -126,31 +153,70 @@ async def test_no_withdrawer_changes_nothing_and_counts_nothing():
 # --- PendingDeletes ---------------------------------------------------------
 
 
+def _hold(held: PendingDeletes, delete: NormalizedMessage, *, person_id: str | None = None) -> int:
+    assert delete.touch is not None
+    return held.add(delete, delete.touch, person_id=person_id)
+
+
 def test_a_held_delete_matches_by_handle_or_by_signal_timestamp_in_its_own_room():
     held = PendingDeletes()
-    held.add(_delete("H1"), _delete("H1").touch)  # type: ignore[arg-type]
-    held.add(_delete(sent_ts=777), _delete(sent_ts=777).touch)  # type: ignore[arg-type]
-    assert held.take(_said(1, "H2")) == []
-    assert held.take(_said(1, "H1", room="other")) == []
-    assert len(held.take(_said(777, ""))) == 1          # by timestamp
-    assert len(held.take(_said(1, "H1"))) == 1          # by handle
-    assert held.take(_said(1, "H1")) == [], "taken once"
+    _hold(held, _delete("H1"))
+    _hold(held, _delete(sent_ts=777))
+    assert held.take(_said(1, "H2"), person_id=None) == []
+    assert held.take(_said(1, "H1", room="other"), person_id=None) == []
+    assert len(held.take(_said(777, ""), person_id=None)) == 1          # by timestamp
+    assert len(held.take(_said(1, "H1"), person_id=None)) == 1          # by handle
+    assert held.take(_said(1, "H1"), person_id=None) == [], "taken once"
 
 
-def test_a_held_delete_expires_and_the_hold_is_bounded():
+def test_a_held_delete_never_matches_on_an_empty_handle():
+    """A Signal delete names a timestamp, so its held target carries no handle; a
+    message with no handle must not match it on `"" == ""`."""
+    held = PendingDeletes()
+    _hold(held, _delete(sent_ts=777))
+    assert held.take(_said(5, ""), person_id=None) == []
+    assert held.matches(_said(5, ""), person_id=None) is False
+    assert held.matches(_said(777, ""), person_id=None) is True
+
+
+def test_a_held_delete_is_per_platform():
+    held = PendingDeletes()
+    _hold(held, _delete("H1"))                       # whatsapp
+    other = NormalizedMessage("discord", ROOM, "group", "w1", "Ada", 1, "x", {}, message_id="H1")
+    assert held.take(other, person_id=None) == []
+    assert len(held.take(_said(1, "H1"), person_id=None)) == 1
+
+
+def test_on_an_author_only_platform_the_arriving_message_must_be_the_deleters_own():
+    """Two members, one millisecond: only the deleter's message may take the hold, by
+    platform id or by the person both ids resolve to."""
+    held = PendingDeletes()
+    _hold(held, _delete(sent_ts=777, sender="w1"), person_id="ada")
+    assert held.take(_said(777, "", sender="w2"), person_id=None) == []
+    assert held.take(_said(777, "", sender="w2"), person_id="ben") == []
+    assert len(held.take(_said(777, "", sender="w1-lid"), person_id="ada")) == 1
+
+
+def test_a_held_delete_expires_and_the_hold_is_bounded_and_each_loss_is_reported():
     now = [0.0]
-    held = PendingDeletes(ttl_seconds=10, max_entries=2, clock=lambda: now[0])
+    lost: list[str] = []
+    held = PendingDeletes(
+        ttl_seconds=10, max_entries=2, clock=lambda: now[0],
+        on_expired=lambda m: lost.append(m.touch.target.message_id if m.touch else ""),
+    )
     for handle in ("A", "B", "C"):
-        held.add(_delete(handle), _delete(handle).touch)  # type: ignore[arg-type]
-    assert held.take(_said(1, "A")) == [], "the oldest was dropped past the bound"
-    assert len(held.take(_said(1, "B"))) == 1
+        _hold(held, _delete(handle))
+    assert lost == ["A"], "the oldest was pushed out past the bound"
+    assert held.take(_said(1, "A"), person_id=None) == []
+    assert len(held.take(_said(1, "B"), person_id=None)) == 1
     now[0] = 11.0
-    assert held.take(_said(1, "C")) == [], "expired"
+    assert held.take(_said(1, "C"), person_id=None) == [], "expired"
+    assert lost == ["A", "C"]
 
 
 def test_discarding_says_whether_it_was_still_held():
     held = PendingDeletes()
-    entry = held.add(_delete("H1"), _delete("H1").touch)  # type: ignore[arg-type]
+    entry = _hold(held, _delete("H1"))
     assert held.discard(entry) is True
     assert held.discard(entry) is False
 
@@ -167,9 +233,12 @@ async def test_a_delete_older_than_the_hold_does_not_withdraw_a_late_message():
         allowlist=permissive_policy(), metrics=m, spawn=lambda c: c.close(),
         delete_withdrawer=w,
     )
-    pipeline._pending_deletes = PendingDeletes(ttl_seconds=10, clock=lambda: now[0])
+    pipeline._pending_deletes = PendingDeletes(
+        ttl_seconds=10, clock=lambda: now[0], on_expired=pipeline._hold_expired,
+    )
     await pipeline.run(message=_delete("LATE"))
     now[0] = 11.0
     result = await pipeline.run(message=_said(9, "LATE"))
     assert result.message is not None, "an ordinary message: recorded and handled"
     assert w.calls == []
+    assert m.get("nora_delete_withdrawals_total", platform="whatsapp", outcome="hold_expired") == 1

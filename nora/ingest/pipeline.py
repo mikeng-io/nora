@@ -26,15 +26,18 @@ than propagating).
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
-from collections.abc import Callable, Coroutine
+import time
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
-from nora.domain.models import EditedMessage, NormalizedMessage, Touch
+from nora.domain.models import EditedMessage, EditTarget, NormalizedMessage, Touch
 from nora.domain.ports import (
     BlobStore,
+    DeleteWithdrawal,
     DeleteWithdrawer,
     EngageDecision,
     EngagePolicy,
@@ -186,6 +189,7 @@ class IngestPipeline:
         standing_event_wiring: Any | None = None,
         stimulus_wiring: stimulus_stage.Wiring | None = None,
         delete_withdrawer: DeleteWithdrawer | None = None,
+        withdrawal_retry_delays: tuple[float, ...] = (2.0, 15.0, 120.0),
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -242,6 +246,9 @@ class IngestPipeline:
         arrives before its message is held briefly so the message is withdrawn
         when it lands (`touch.PendingDeletes`). `None` — an offline or eval
         composition — records the delete and withdraws nothing, as before.
+        `withdrawal_retry_delays` is the bounded retry after a withdrawal that
+        failed (`cascade_failed`): one attempt per delay, then the start-up sweep
+        (`nora.app.delete_withdrawal.reconcile_deletes`) is what finishes it.
         """
         self._audit = audit
         self._memory = memory
@@ -260,7 +267,8 @@ class IngestPipeline:
         self._standing_event_wiring = standing_event_wiring
         self._stimulus_wiring = stimulus_wiring
         self._delete_withdrawer = delete_withdrawer
-        self._pending_deletes = touch_stage.PendingDeletes()
+        self._withdrawal_retry_delays = withdrawal_retry_delays
+        self._pending_deletes = touch_stage.PendingDeletes(on_expired=self._hold_expired)
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -386,6 +394,7 @@ class IngestPipeline:
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
+                withdrawn=self._withdrawn_gate(message, person),
                 # `person` is resolved above and rides in ONLY so a spawned
                 # comprehension can be fed to Honcho under the sender's own
                 # peer (D6, mapped senders only). The custody stage neither
@@ -409,9 +418,13 @@ class IngestPipeline:
         # A DELETE THAT OVERTOOK THIS MESSAGE (a photo unsent while its custody
         # fetch ran): withdrawn now, before anything reads it or feeds it on.
         if self._delete_withdrawer is not None:
-            for early, early_touch in self._pending_deletes.take(message):
+            for early, early_touch in self._pending_deletes.take(
+                message, person_id=person.person_id if person else None,
+            ):
                 done = await self._record_touch(message=early, touch=early_touch)
-                if done.ending == "delete_recorded":
+                if done.ending in ("delete_recorded", "audit_refused"):
+                    # Named by a delete: not read, not fed, not answered (a
+                    # withdrawal that failed is retried, `_retry_withdrawal`).
                     return IngestResult(message=None, decision=None)
         # The STIMULUS, right behind the Record row it names (20 §3). Inside the
         # guard for `standing_event`'s reason: a span for a stage that cannot
@@ -511,6 +524,7 @@ class IngestPipeline:
                 media_store=self._media_store, metrics=m,
                 stickers=self._stickers, transcriber=self._transcriber,
                 comprehension=self._comprehension,
+                withdrawn=self._withdrawn_gate(msg, person),
                 person=person, language=self._language,
             )
 
@@ -569,7 +583,13 @@ class IngestPipeline:
         if touch.kind == "delete" and self._delete_withdrawer is not None:
             # Held BEFORE the lookup, not after a miss: a message recorded
             # between the lookup and a later hold would find nothing to take.
-            held = self._pending_deletes.add(message, touch)
+            deleter = (
+                self._persons.resolve(message.platform, message.sender_id)
+                if message.sender_id else None
+            )
+            held = self._pending_deletes.add(
+                message, touch, person_id=deleter.person_id if deleter else None,
+            )
         done = await self._record_touch(message=message, touch=touch)
         if held is not None and done.ending != "delete_orphaned":
             self._pending_deletes.discard(held)
@@ -594,5 +614,88 @@ class IngestPipeline:
                     person_id=done.person_id, wiring=self._stimulus_wiring,
                     metrics=m, target=done.target,
                 )
+        if (
+            done.withdrawal is not None and done.withdrawal.outcome == "cascade_failed"
+            and done.target is not None
+        ):
+            self._spawn(self._retry_withdrawal(
+                message_id=done.target.id, platform=message.platform,
+            ))
         _outcome(m, message, done.ending)
         return done
+
+    async def _retry_withdrawal(self, *, message_id: int, platform: str) -> None:
+        """A withdrawal that failed is tried again, a bounded number of times
+        (`withdrawal_retry_delays`), off the listener's path. The delete's record
+        is already committed, so what is left after the last attempt is found by
+        the start-up sweep. Logs ids and counts only."""
+        withdrawer = self._delete_withdrawer
+        if withdrawer is None:
+            return
+        for delay in self._withdrawal_retry_delays:
+            await asyncio.sleep(delay)
+            try:
+                result = await withdrawer.withdraw(
+                    message_id=message_id, now_ms=int(time.time() * 1000),
+                )
+            except Exception:
+                log.exception("retry of the withdrawal of message %d raised", message_id)
+                result = DeleteWithdrawal(outcome="cascade_failed")
+            if result.outcome == "cascade_failed":
+                self._count_withdrawal(platform, "cascade_failed")
+                continue
+            self._count_withdrawal(platform, "reconciled")
+            return
+        log.error(
+            "withdrawal of message %d failed after %d retries; the start-up sweep "
+            "will try again", message_id, len(self._withdrawal_retry_delays),
+        )
+
+    def _hold_expired(self, message: NormalizedMessage) -> None:
+        """A held delete that matched nothing before its hold ran out (or was
+        pushed out by a newer one): its own outcome, not `not_stored`."""
+        self._count_withdrawal(message.platform, "hold_expired")
+
+    def _count_withdrawal(self, platform: str, outcome: str) -> None:
+        try:
+            self._metrics.inc(
+                "nora_delete_withdrawals_total", platform=platform, outcome=outcome,
+            )
+        except Exception:  # an observation must never stop an ingest
+            log.debug("delete withdrawal outcome %r not counted", outcome, exc_info=True)
+
+    def _withdrawn_gate(
+        self, message: NormalizedMessage, person: Any,
+    ) -> Callable[[], Awaitable[bool]] | None:
+        """Is this message withdrawn NOW? Asked by the spawned comprehension job
+        just before its vision call and again before its Honcho feed: that job is
+        scheduled by the custody stage before the row exists, so the delete can
+        land at any point after (held, then hidden, or already hidden). True when
+        a delete for it is held, or its row is hidden; a lookup that fails is
+        True too (fail closed: a skipped feed is cheaper than a leaked one).
+        `None` when no withdrawer is wired."""
+        if self._delete_withdrawer is None:
+            return None
+        person_id = person.person_id if person is not None else None
+        edit = message.edit_of
+        if edit is not None:
+            target = edit
+        elif message.message_id:
+            target = EditTarget(message_id=message.message_id)
+        else:
+            target = EditTarget(sent_ts=message.timestamp)
+
+        async def withdrawn() -> bool:
+            if edit is None and self._pending_deletes.matches(message, person_id=person_id):
+                return True
+            try:
+                found = await self._audit.find_edited(
+                    conversation_id=message.conversation_id, target=target,
+                    sender_id=message.sender_id,
+                )
+            except Exception:
+                log.exception("withdrawn check failed; treating the message as withdrawn")
+                return True
+            return found is not None and found.hidden
+
+        return withdrawn

@@ -75,7 +75,8 @@ from nora.app.cognition_wiring import (
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
-from nora.app.delete_withdrawal import SqlDeleteWithdrawer
+from nora.app.delete_withdrawal import ReconcileReport, SqlDeleteWithdrawer
+from nora.app.delete_withdrawal import reconcile_deletes as reconcile_deleted_messages
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
@@ -1223,6 +1224,12 @@ class Dependencies:
     # `runtime.computer_sweep_loop` on it every `sweep_seconds`.
     computer_sweeper: ComputerSessionSweeper | None = None
     computer_sweep_seconds: float = 300.0
+    # The sweep that finishes what a delete left visible
+    # (`nora.app.delete_withdrawal.reconcile_deletes`, `--apply`): run once at start
+    # by `nora/__main__.py`. A withdrawal that failed (`cascade_failed`) is retried
+    # inline a bounded number of times; this is what is left, and the process
+    # restarts several times a day. `None` only where there is no engine.
+    reconcile_deletes: Callable[[], Awaitable[ReconcileReport]] | None = None
     # The timed probe of computerd (`nora.infra.computer.probe`): `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
     # `runtime.computer_probe_loop` on it.
@@ -4597,6 +4604,7 @@ async def build_dependencies(
         skills_dir=cfg.doctrine.dir.parent / "skills",
         language_store=language_store,
         language_scopes=language_scopes,
+        reconcile_deletes=functools.partial(_reconcile_deletes_now, engine),
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
         dream_adaptors=dream_adaptors,
@@ -4953,6 +4961,13 @@ def _room_ids_of(policy: Policy) -> Callable[[str, str], frozenset[str]]:
         return convo.ids if convo is not None else frozenset({conversation_id})
 
     return room_ids
+
+
+async def _reconcile_deletes_now(engine: Any) -> ReconcileReport:
+    """`reconcile_deletes --apply`, stamped with the time it runs."""
+    return await reconcile_deleted_messages(
+        engine, apply=True, now_ms=int(datetime.now(UTC).timestamp() * 1000),
+    )
 
 
 def _voice_room_of(policy: Policy) -> Callable[[str], str | None]:

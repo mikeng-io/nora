@@ -126,7 +126,7 @@ And the words that name processes, never stores:
    or unsent, the PII scrub, a face label removed, a person leaving a unit,
    `nora person forget`), every derived row whose citation chain reaches it
    is marked `unsupported`, stops rendering, and goes to its writer's next
-   session for re-derivation. (Built today: a message a platform deletes or unsends and `nora person forget --apply` call the cascade, one transaction with the hide, and a re-derived head keeps its mark; the PII scrub and a person leaving a unit have no caller yet; [context-assembly/04](../context-assembly/04-every-occasion.md) §7.) Code walks a `citation` edge table; it never
+   session for re-derivation. (Built today: a message a platform deletes or unsends calls the cascade over its evidence rows only (notes, events, staged proposals; not the Standing and culture heads, whose citation is a fold watermark, DEC-276) and `nora person forget --apply` calls it over every store, each in one transaction with the hide, and a re-derived head keeps its mark; the PII scrub and a person leaving a unit have no caller yet; [context-assembly/04](../context-assembly/04-every-occasion.md) §7.) Code walks a `citation` edge table; it never
    parses bodies ([80](80-prior-art.md) §4). Two things are distinct: forget
    **hides** the rows authored by or about the person (§8); the cascade marks
    the rows that only **cite** them `unsupported`. Neither deletes. An

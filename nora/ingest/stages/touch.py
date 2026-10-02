@@ -64,8 +64,16 @@ TouchEnding = Literal[
 ]
 
 #: Platforms where only a message's author can delete it for everyone, so a
-#: delete naming someone else's message is not a member's action.
-_AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({"signal"})
+#: delete naming someone else's message is not a member's action: Signal's remote
+#: delete and WhatsApp's revoke. On WhatsApp the platform enforces nothing the
+#: server can refuse (end-to-end encrypted: the bridge forwards any REVOKE), and
+#: the event carries the REVOKER (`sender_*`, the envelope's sender), so the check
+#: is ours; a group admin revoking someone else's message cannot be verified
+#: without group metadata Python does not hold and is REFUSED (`refused_not_author`:
+#: the message stays visible). Discord's gateway and Instagram's unsend name no
+#: deleter at all (`sender_id == ""`), so there is nothing to compare; both are
+#: server-authenticated events and are honoured as the platform reports them.
+AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({"signal", "whatsapp"})
 
 
 @dataclass(frozen=True)
@@ -82,6 +90,16 @@ class TouchResult:
     withdrawal: DeleteWithdrawal | None = None
 
 
+@dataclass(frozen=True)
+class _Held:
+    until: float
+    message: NormalizedMessage
+    touch: Touch
+    #: Who the platform says deleted it, resolved when it arrived: the author
+    #: check on a platform where only the author can delete.
+    person_id: str | None
+
+
 class PendingDeletes:
     """Deletes whose target was not on record when they arrived, held for a
     short while so the message, when it IS recorded, is withdrawn at once.
@@ -91,57 +109,93 @@ class PendingDeletes:
     custody fetch, so a photo sent and unsent within seconds is deleted before it
     is stored. Without this the late row is recorded visible and nothing ever
     withdraws it. Bounded in size and in time and held in this process only: a
-    restart inside the window loses it, and a delete older than `ttl_seconds` is
-    the orphan it always was (`reconcile_deletes` does not see it: no
-    `message_delete` row exists to find).
+    restart inside the window loses the hold (nothing durable names it: a
+    `message_delete` row needs a target), and a delete that outlives `ttl_seconds`
+    unmatched is `hold_expired`, counted by `on_expired`, never `not_stored`.
 
-    Matching is the lookup's own: the platform handle, or Signal's sent-timestamp
-    (the author check is the touch stage's, on replay)."""
+    **A hold matches the message it names, and only it.** The same platform, the
+    same room, and the platform handle (never an empty one: a platform that gave
+    the message no handle must not match every message that has none) or Signal's
+    sent-timestamp. And on a platform where only the author can delete
+    (`AUTHOR_ONLY_DELETES`) the arriving message must be the deleter's own: two
+    members posting in one millisecond are two messages, and one of them must not
+    consume the other's delete."""
 
     def __init__(
         self, *, ttl_seconds: float = 300.0, max_entries: int = 256,
         clock: Callable[[], float] = time.monotonic,
+        on_expired: Callable[[NormalizedMessage], None] | None = None,
     ) -> None:
         self._ttl = ttl_seconds
         self._max = max_entries
         self._clock = clock
-        self._held: OrderedDict[int, tuple[float, NormalizedMessage, Touch]] = OrderedDict()
+        self._on_expired = on_expired
+        self._held: OrderedDict[int, _Held] = OrderedDict()
         self._next = 0
 
-    def add(self, message: NormalizedMessage, touch: Touch) -> int:
+    def add(self, message: NormalizedMessage, touch: Touch, *, person_id: str | None) -> int:
         self._expire()
         self._next += 1
-        self._held[self._next] = (self._clock() + self._ttl, message, touch)
+        self._held[self._next] = _Held(self._clock() + self._ttl, message, touch, person_id)
         while len(self._held) > self._max:
-            self._held.popitem(last=False)
+            _, dropped = self._held.popitem(last=False)
+            self._lost(dropped)
         return self._next
 
     def discard(self, entry: int) -> bool:
         """True when this call removed it (nobody had taken it)."""
         return self._held.pop(entry, None) is not None
 
-    def take(self, message: NormalizedMessage) -> list[tuple[NormalizedMessage, Touch]]:
+    def matches(self, message: NormalizedMessage, *, person_id: str | None) -> bool:
+        """Whether a held delete names `message`, without taking it."""
+        return bool(self._matching(message, person_id))
+
+    def take(
+        self, message: NormalizedMessage, *, person_id: str | None,
+    ) -> list[tuple[NormalizedMessage, Touch]]:
         """Every held delete that names `message`, removed."""
-        self._expire()
         out: list[tuple[NormalizedMessage, Touch]] = []
-        for entry, (_, delete, touch) in list(self._held.items()):
+        for entry in self._matching(message, person_id):
+            held = self._held.pop(entry)
+            out.append((held.message, held.touch))
+        return out
+
+    def _matching(self, message: NormalizedMessage, person_id: str | None) -> list[int]:
+        self._expire()
+        author_only = message.platform in AUTHOR_ONLY_DELETES
+        found: list[int] = []
+        for entry, held in self._held.items():
+            delete = held.message
             if delete.platform != message.platform or (
                 delete.conversation_id != message.conversation_id
             ):
                 continue
-            target = touch.target
-            by_handle = bool(target.message_id) and target.message_id == message.message_id
+            target = held.touch.target
+            by_handle = (
+                bool(target.message_id) and bool(message.message_id)
+                and target.message_id == message.message_id
+            )
             by_ts = target.sent_ts is not None and target.sent_ts == message.timestamp
-            if by_handle or by_ts:
-                del self._held[entry]
-                out.append((delete, touch))
-        return out
+            if not (by_handle or by_ts):
+                continue
+            if author_only and not (
+                (bool(delete.sender_id) and delete.sender_id == message.sender_id)
+                or (held.person_id is not None and held.person_id == person_id)
+            ):
+                continue
+            found.append(entry)
+        return found
 
     def _expire(self) -> None:
         now = self._clock()
-        for entry, (until, _, _) in list(self._held.items()):
-            if until <= now:
+        for entry, held in list(self._held.items()):
+            if held.until <= now:
                 del self._held[entry]
+                self._lost(held)
+
+    def _lost(self, held: _Held) -> None:
+        if self._on_expired is not None:
+            self._on_expired(held.message)
 
 
 async def run(
@@ -177,18 +231,25 @@ async def run(
     person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
     person_id = person.person_id if person is not None else None
     if (
-        touch.kind == "delete" and message.platform in _AUTHOR_ONLY_DELETES
+        touch.kind == "delete" and message.platform in AUTHOR_ONLY_DELETES
         and not _same_author(message.sender_id, person_id, target)
     ):
+        if withdrawer is not None:
+            metrics.inc(
+                "nora_delete_withdrawals_total",
+                platform=message.platform, outcome="refused_not_author",
+            )
         return TouchResult(ending="delete_refused", message=message, target=target)
-    withdrawal: DeleteWithdrawal | None = None
-    if touch.kind == "delete" and withdrawer is not None:
-        # BEFORE the record is written: the withdrawal is what honours the
-        # delete, the record is only evidence of it, and a failed record write
-        # must not leave the message visible.
-        withdrawal = await _withdraw(
-            withdrawer, target=target, platform=message.platform, metrics=metrics,
-        )
+    # THE RECORD FIRST, in its own transaction, then the hide. Whatever the hide
+    # does (a cascade that raises rolls it back), the `message_delete` row is
+    # already committed, so a withdrawal that failed is always findable: the
+    # retry (`IngestPipeline._retry_withdrawal`) and the start-up sweep
+    # (`delete_withdrawal.reconcile_deletes`) read it. If this write fails too,
+    # the platform event is dropped (counted, logged without a word of the
+    # message) and the hide below is still attempted: the withdrawal is what
+    # honours the delete, the record is only evidence of it.
+    row_id: int | None = None
+    ending: TouchEnding = "reaction_recorded" if touch.kind == "reaction" else "delete_recorded"
     try:
         if touch.kind == "reaction":
             row_id = await audit.append_reaction(
@@ -201,11 +262,15 @@ async def run(
     except Exception:
         log.exception("%s append failed; dropping it", touch.kind)
         metrics.inc("nora_errors_total", stage="touch_record", platform=message.platform)
-        return TouchResult(ending="audit_refused", message=message, target=target)
+        ending = "audit_refused"
+    withdrawal: DeleteWithdrawal | None = None
+    if touch.kind == "delete" and withdrawer is not None:
+        withdrawal = await _withdraw(
+            withdrawer, target=target, platform=message.platform, metrics=metrics,
+        )
     return TouchResult(
-        ending="reaction_recorded" if touch.kind == "reaction" else "delete_recorded",
-        message=message, target=target, row_id=row_id, person_id=person_id,
-        withdrawal=withdrawal,
+        ending=ending, message=message, target=target, row_id=row_id,
+        person_id=person_id, withdrawal=withdrawal,
     )
 
 

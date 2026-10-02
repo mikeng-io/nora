@@ -496,6 +496,45 @@ async def test_app_run_spawns_the_lazy_adoption_backfill(env, monkeypatch):
         await app.shutdown()
 
 
+async def test_app_run_reconciles_a_delete_whose_withdrawal_never_landed(env):
+    """The wiring, not the sweep: a delete whose record is committed and whose hide never
+    landed (a failed cascade that outlived its retries, or a process that died first) is
+    finished by the sweep `App.run()` spawns at start."""
+    import asyncio
+    import contextlib
+
+    from nora.domain.models import EditTarget, NormalizedMessage, Touch
+
+    app = await build_app(env)
+    try:
+        msg = NormalizedMessage("signal", "Z3JvdXA=", "group", "+852111", "Miles", 7, "oops", {})
+        row_id = await app.deps.audit.append(message=msg)
+        await app.deps.audit.append_delete(
+            message_id=row_id, person_id=None,
+            message=NormalizedMessage(
+                "signal", "Z3JvdXA=", "group", "+852111", None, 8, "", {},
+                touch=Touch(kind="delete", target=EditTarget(sent_ts=7)),
+            ),
+        )
+        assert [r.id for r in await app.deps.audit.recent(
+            conversation_id="Z3JvdXA=", limit=5)] == [row_id]
+
+        task = asyncio.create_task(app.run())
+        for _ in range(100):
+            await asyncio.sleep(0.02)
+            if not await app.deps.audit.recent(conversation_id="Z3JvdXA=", limit=5):
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        assert await app.deps.audit.recent(conversation_id="Z3JvdXA=", limit=5) == [], (
+            "App.run() must spawn the start-up delete reconcile"
+        )
+    finally:
+        await app.shutdown()
+
+
 async def test_app_run_starts_a_listener_for_every_adapter_not_just_signal(env, monkeypatch):
     """`App.run` used to build a single-element `SupervisedAdapter` list out of
     `deps.adapter`, so a second enabled platform was built and identity-resolved

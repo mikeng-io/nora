@@ -2,7 +2,7 @@
   {
     "name": "a delete hides the row but never runs the cascade, so what cites it keeps rendering",
     "file": "nora/app/delete_withdrawal.py",
-    "old": "    report = await withdraw_message(conn, message_id=message_id, now_ms=now_ms)\n    marked = {store: len(keys) for store, keys in report.marked.items()}\n    return (\n        DeleteWithdrawal(\n            outcome=\"hidden\" if newly is not None else \"already_hidden\",\n            marked=report.total_marked,\n        ),\n        marked,\n    )",
+    "old": "    report = await withdraw_message(\n        conn, message_id=message_id, now_ms=now_ms, stores=EVIDENCE_STORES,\n    )\n    marked = {store: len(keys) for store, keys in report.marked.items()}\n    return (\n        DeleteWithdrawal(\n            outcome=\"hidden\" if newly is not None else \"already_hidden\",\n            marked=report.total_marked,\n        ),\n        marked,\n    )",
     "new": "    return (\n        DeleteWithdrawal(\n            outcome=\"hidden\" if newly is not None else \"already_hidden\",\n            marked=0,\n        ),\n        {},\n    )",
     "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_hides_the_message_and_withdraws_everything"
   },
@@ -21,6 +21,13 @@
     "target": "tests/infra/test_delete_withdraws.py -k test_a_second_delete_of_the_same_message_changes_nothing"
   },
   {
+    "name": "a second delete of an already hidden row skips the cascade, so a redelivered delete reaches nothing written since",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "    report = await withdraw_message(\n        conn, message_id=message_id, now_ms=now_ms, stores=EVIDENCE_STORES,\n    )\n",
+    "new": "    if newly is None:\n        return DeleteWithdrawal(outcome=\"already_hidden\"), {}\n    report = await withdraw_message(\n        conn, message_id=message_id, now_ms=now_ms, stores=EVIDENCE_STORES,\n    )\n",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_redelivered_delete_cascades_again"
+  },
+  {
     "name": "the hide and the cascade are two transactions, so a failed cascade leaves the message hidden with its derived rows standing",
     "file": "nora/app/delete_withdrawal.py",
     "old": "            async with self._engine.begin() as conn:\n                result, _ = await _withdraw_in(conn, message_id=message_id, now_ms=now_ms)",
@@ -33,6 +40,20 @@
     "old": "            finally:\n                await trans.rollback()",
     "new": "            finally:\n                await trans.commit()",
     "target": "tests/infra/test_delete_withdraws.py -k test_the_reconcile_lists_in_a_dry_run"
+  },
+  {
+    "name": "the reconcile dry run has no statement timeout, so it can hold its row locks for as long as it likes",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "                await conn.execute(sa.text(\"SET LOCAL statement_timeout = '60s'\"))\n",
+    "new": "                pass\n",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_reconcile_dry_run_is_bounded"
+  },
+  {
+    "name": "the reconcile counts a message something else already hid as a hide it wrote",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "    elif result.outcome == \"already_hidden\":\n        report.already_hidden += 1",
+    "new": "    elif result.outcome == \"already_hidden\":\n        report.hidden += 1",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_reconcile_counts_a_message_hidden_in_the_meantime"
   },
   {
     "name": "an edit of a withdrawn message is folded onto the hidden row and fed to memory",
@@ -58,23 +79,16 @@
   {
     "name": "a delete that overtakes its message is not held, so the late message is recorded visible",
     "file": "nora/ingest/pipeline.py",
-    "old": "            held = self._pending_deletes.add(message, touch)",
+    "old": "            held = self._pending_deletes.add(\n                message, touch, person_id=deleter.person_id if deleter else None,\n            )",
     "new": "            held = None",
     "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_that_overtakes_its_message"
   },
   {
-    "name": "a held delete withdraws the late message even when the touch stage refused it",
-    "file": "nora/ingest/pipeline.py",
-    "old": "                if done.ending == \"delete_recorded\":",
-    "new": "                if True:",
-    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_signal_delete_from_someone_else"
-  },
-  {
     "name": "the touch stage never hands a found delete to the withdrawer",
     "file": "nora/ingest/stages/touch.py",
-    "old": "    if touch.kind == \"delete\" and withdrawer is not None:\n        # BEFORE",
-    "new": "    if False and touch.kind == \"delete\" and withdrawer is not None:\n        # BEFORE",
-    "target": "tests/unit/test_delete_touch.py -k test_a_found_delete_is_withdrawn_once"
+    "old": "    withdrawal: DeleteWithdrawal | None = None\n    if touch.kind == \"delete\" and withdrawer is not None:\n        withdrawal = await _withdraw(",
+    "new": "    withdrawal: DeleteWithdrawal | None = None\n    if False and touch.kind == \"delete\" and withdrawer is not None:\n        withdrawal = await _withdraw(",
+    "target": "tests/unit/test_delete_touch.py -k test_a_found_delete_is_withdrawn_and_counted"
   },
   {
     "name": "the composition root builds the ingest pipeline with no withdrawer",
@@ -82,5 +96,117 @@
     "old": "        delete_withdrawer=SqlDeleteWithdrawer(engine),",
     "new": "        delete_withdrawer=None,",
     "target": "tests/test_composition.py -k test_the_composed_ingest_withdraws_a_deleted_message"
+  },
+  {
+    "name": "a forged WhatsApp delete is honoured: WhatsApp is not an author-only platform",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({\"signal\", \"whatsapp\"})",
+    "new": "AUTHOR_ONLY_DELETES: frozenset[str] = frozenset({\"signal\"})",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_from_someone_who_is_not_the_author_changes_nothing"
+  },
+  {
+    "name": "a refused delete is counted as a delete of nothing, not as refused_not_author",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "platform=message.platform, outcome=\"refused_not_author\",",
+    "new": "platform=message.platform, outcome=\"not_stored\",",
+    "target": "tests/unit/test_delete_touch.py -k test_a_delete_by_someone_else_is_refused_and_counted"
+  },
+  {
+    "name": "a delete marks the Standing and culture heads too, so one member delete hides the room's position for good",
+    "file": "nora/app/withdrawal.py",
+    "old": "EVIDENCE_STORES: tuple[str, ...] = (\"note\", \"event\", \"note_candidate\")",
+    "new": "EVIDENCE_STORES: tuple[str, ...] = (\"note\", \"event\", \"note_candidate\", \"standing\", \"culture\")",
+    "target": "tests/infra/test_delete_withdraws.py -k test_deleting_a_fold_boundary_message_leaves_standing_and_culture_standing"
+  },
+  {
+    "name": "a delete leaves the staged note proposals read off the message holding its words",
+    "file": "nora/app/withdrawal.py",
+    "old": "    if \"note_candidate\" in stores:",
+    "new": "    if False:",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_hides_the_message_and_withdraws_everything"
+  },
+  {
+    "name": "a note written after the delete citing it comes out supported (no write-time mark)",
+    "file": "nora/infra/sql/citation.py",
+    "old": "    if now_ms is not None and ids:",
+    "new": "    if False:",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_note_and_an_event_written_after_the_delete"
+  },
+  {
+    "name": "an event written after the delete citing it comes out supported (no write-time mark)",
+    "file": "nora/infra/sql/gatherings.py",
+    "old": "                if evidence is not None and await _cites_hidden(conn, row.id, evidence):\n                    row_with_head",
+    "new": "                if False and await _cites_hidden(conn, row.id, evidence):\n                    row_with_head",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_note_and_an_event_written_after_the_delete"
+  },
+  {
+    "name": "a photo deleted before it was recorded is still read by the vision model",
+    "file": "nora/ingest/comprehension.py",
+    "old": "        if await self._is_withdrawn(withdrawn):\n            # BEFORE the model is paid for it: the message was deleted.",
+    "new": "        if False:\n            # BEFORE the model is paid for it: the message was deleted.",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_photo_unsent_while_it_was_being_fetched"
+  },
+  {
+    "name": "a clip deleted while it was being read is still fed to Honcho",
+    "file": "nora/ingest/comprehension.py",
+    "old": "        if await self._is_withdrawn(withdrawn):\n            # AFTER the read, BEFORE the feed",
+    "new": "        if False:\n            # AFTER the read, BEFORE the feed",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_clip_unsent_while_it_was_being_read"
+  },
+  {
+    "name": "the hide is attempted before the delete is recorded, so a failed hide can leave nothing to find",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "    row_id: int | None = None\n    ending: TouchEnding = ",
+    "new": "    if touch.kind == \"delete\" and withdrawer is not None:\n        await _withdraw(withdrawer, target=target, platform=message.platform, metrics=metrics)\n    row_id: int | None = None\n    ending: TouchEnding = ",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_delete_is_recorded_before_the_hide_is_attempted"
+  },
+  {
+    "name": "a failed withdrawal is never retried",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            done.withdrawal is not None and done.withdrawal.outcome == \"cascade_failed\"",
+    "new": "            False and done.withdrawal is not None and done.withdrawal.outcome == \"cascade_failed\"",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_withdrawal_that_failed_is_retried"
+  },
+  {
+    "name": "a held delete that ran out is counted as not_stored",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        self._count_withdrawal(message.platform, \"hold_expired\")",
+    "new": "        self._count_withdrawal(message.platform, \"not_stored\")",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_delete_that_ran_out"
+  },
+  {
+    "name": "the start-up delete reconcile is never spawned",
+    "file": "nora/__main__.py",
+    "old": "        deps.background.spawn(self._reconcile_deletes())\n",
+    "new": "        pass\n",
+    "target": "tests/test_main.py -k test_app_run_reconciles_a_delete"
+  },
+  {
+    "name": "unforget brings a deleted message back",
+    "file": "nora/app/person_forget.py",
+    "old": "            .where(*hidden_of_person, ~_was_deleted())\n            .values(hidden_at=None)",
+    "new": "            .where(*hidden_of_person)\n            .values(hidden_at=None)",
+    "target": "tests/infra/test_delete_withdraws.py -k test_unforget_leaves_a_deleted_message_hidden"
+  },
+  {
+    "name": "a held Signal delete is consumed by another member's message in the same millisecond",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "            if author_only and not (",
+    "new": "            if False and not (",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_signal_delete_is_not_consumed"
+  },
+  {
+    "name": "a held delete matches a message with no handle on an empty string",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "                bool(target.message_id) and bool(message.message_id)\n                and target.message_id == message.message_id",
+    "new": "                target.message_id == message.message_id",
+    "target": "tests/unit/test_delete_touch.py -k test_a_held_delete_never_matches_on_an_empty_handle"
+  },
+  {
+    "name": "a held delete on one platform withdraws the same handle on another",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "            if delete.platform != message.platform or (\n                delete.conversation_id != message.conversation_id\n            ):",
+    "new": "            if delete.conversation_id != message.conversation_id:",
+    "target": "tests/unit/test_delete_touch.py -k test_a_held_delete_is_per_platform"
   }
 ]

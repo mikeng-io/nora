@@ -330,18 +330,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("platform", "conversation_type", "outcome"),
     ),
     # A delete or unsend of a message, by how it was HONOURED
-    # (`nora.app.delete_withdrawal`): `hidden` (newly hidden and the cascade
-    # run), `already_hidden` (a redelivered or second delete), `not_stored` (its
-    # target was not on record when it arrived: it may still be withdrawn when
-    # the message lands, `touch.PendingDeletes`, and then counts `hidden`), and
-    # `cascade_failed` (the hide was rolled back; the message is still visible
-    # until `nora withdrawal reconcile-deletes`). Rare by nature, so an empty
-    # series after a restart means nothing was deleted since, never that
-    # nothing can fail; read a failure from the log and the reconcile dry run.
+    # (`nora.app.delete_withdrawal`): `hidden` (newly hidden, the cascade run),
+    # `already_hidden` (a redelivered or second delete), `not_stored` (its target
+    # was not on record when it arrived: it is held, and counts `hidden` if the
+    # message lands inside the hold), `hold_expired` (a held delete that matched
+    # nothing before its hold ran out), `refused_not_author` (Signal or WhatsApp,
+    # the deleter is not the message's author: nothing changes), `cascade_failed`
+    # (the hide was rolled back; the message is still visible, and is retried and
+    # then swept at the next start), `reconciled` (a failed withdrawal that a retry
+    # or the start-up sweep finished; the sweep counts under platform="all"). Rare
+    # by nature, so an empty series after a restart means nothing was deleted
+    # since, never that nothing can fail.
     _CounterSpec(
         "nora_delete_withdrawals_total",
         "Deletes or unsends of a message, by how they were honoured (hidden, "
-        "already_hidden, not_stored, cascade_failed).",
+        "already_hidden, not_stored, hold_expired, refused_not_author, "
+        "cascade_failed, reconciled).",
         ("platform", "outcome"),
     ),
     _CounterSpec(
