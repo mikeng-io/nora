@@ -107,15 +107,15 @@
  {
   "name": "(1a) applies_to type check removed",
   "file": "nora/instructions/dreamer.py",
-  "old": "    if not isinstance(applies, list) or not all(isinstance(n, str) for n in applies):",
+  "old": "    if not applies or not isinstance(applies, list) or not all(\n        isinstance(n, str) for n in applies\n    ):",
   "new": "    if False:",
   "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
  },
  {
   "name": "(1b) applies_to items not checked",
   "file": "nora/instructions/dreamer.py",
-  "old": "not all(isinstance(n, str) for n in applies)",
-  "new": "False",
+  "old": "not isinstance(applies, list) or not all(\n        isinstance(n, str) for n in applies\n    ):",
+  "new": "not isinstance(applies, list):",
   "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
  },
  {
@@ -289,7 +289,7 @@
  {
   "name": "(11b) no weekday from the clock and at",
   "file": "nora/dreamer/skills/cognition-register.md",
-  "old": "from the clock and the message's `at`, which carries the weekday",
+  "old": "from the clock line, which gives today's date and weekday, and the message's `at`, which\ngives the weekday and the day when it was not sent today.",
   "new": "from the message",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_note_candidates_teaching_the_review_found_dropped_is_back"
  },
@@ -334,5 +334,26 @@
   "old": "Something a member asked to keep from someone, a surprise or a confidence, is not written\ninto the notebook.",
   "new": "",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_prelude_keeps_a_surprise_and_a_confidence_out"
+ },
+ {
+  "name": "(1d) an empty applies_to is accepted again",
+  "file": "nora/instructions/dreamer.py",
+  "old": "    if not applies or not isinstance(applies, list) or not all(",
+  "new": "    if not isinstance(applies, list) or not all(",
+  "target": "tests/unit/test_dreamer_instructions.py -k applies_to"
+ },
+ {
+  "name": "(2) the weekday is again said to be on every `at`",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "from the clock line, which gives today's date and weekday, and the message's `at`, which\ngives the weekday and the day when it was not sent today.",
+  "new": "from the message's `at`, which\ncarries the weekday.",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_the_note_candidates_teaching_the_review_found_dropped_is_back"
+ },
+ {
+  "name": "(X23) the Owed rule is reworded as a refusal",
+  "file": "nora/dreamer/skills/cognition-register.md",
+  "old": "An Owed line is\nfor someone who took it on",
+  "new": "An Owed line is refused\nfor someone who did not take it on, and is\nfor someone who took it on",
+  "target": "tests/unit/test_cognition_agenda_skills.py -k test_what_the_validator_does_not_check_is_a_request"
  }
 ]

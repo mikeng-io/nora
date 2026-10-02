@@ -319,7 +319,7 @@ def test_a_prelude_naming_no_loaded_objective_is_a_startup_failure(tree):
 #: keys), none of it an `InstructionError`.
 BAD_APPLIES_TO = [
     "5", "true", "3.5", "[[room-language]]", "[5]", "[true]", "{room-language: 1}",
-    "room-language", "~", "[~]", "[[]]",
+    "room-language", "~", "[~]", "[[]]", "[]",
 ]
 
 

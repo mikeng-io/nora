@@ -52,7 +52,8 @@ plan often has both: the event holds when and where, and the note holds the corn
 being decided.
 
 A note's `anchor_date` is the day the thing happens, never the day it was said: work it out
-from the clock and the message's `at`, which carries the weekday. Two entries on one day are
+from the clock line, which gives today's date and weekday, and the message's `at`, which
+gives the weekday and the day when it was not sent today. Two entries on one day are
 told apart by the people in `anchor_entities`, so name them. A `closing_condition` is
 concrete: a decision made, a date arriving, one person's answer; «it gets sorted out» is none.
 

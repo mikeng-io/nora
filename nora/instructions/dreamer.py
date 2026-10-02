@@ -461,18 +461,22 @@ class DreamerInstructions:
 
 
 def _applies_to(doc: ParsedDocument) -> list[str]:
-    """A prelude's `applies_to`: a list of objective names, and nothing else.
+    """A prelude's `applies_to`: a non-empty list of objective names, and nothing else.
 
     Anything else (a number, a bool, a bare string, a nested list, a mapping,
     a null) is an `InstructionError`, because the reload watcher tolerates only
     that error: a `TypeError` out of here would escape it and fail every
     `for_objective` until the file was fixed, and at startup would crash-loop
     the process. A list holding a non-string is refused for the same reason,
-    and so that an unhashable item never reaches a dict lookup."""
+    and so that an unhashable item never reaches a dict lookup. An EMPTY list is
+    refused for `_preludes`'s own reason: a prelude that applies to nothing is
+    the same silent fallback to the shared doctrine as a typo in a name."""
     applies = doc.meta.get("applies_to")
-    if not isinstance(applies, list) or not all(isinstance(n, str) for n in applies):
+    if not applies or not isinstance(applies, list) or not all(
+        isinstance(n, str) for n in applies
+    ):
         raise InstructionError(
-            f"{doc.path.name}: applies_to must be a list of objective names, "
+            f"{doc.path.name}: applies_to must be a non-empty list of objective names, "
             f"got {applies!r}"
         )
     return list(applies)

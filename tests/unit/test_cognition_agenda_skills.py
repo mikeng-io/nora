@@ -410,7 +410,8 @@ def test_the_note_candidates_teaching_the_review_found_dropped_is_back():
     text = " ".join(_skill().instructions.split())
     for phrase in (
         "`anchor_date` is the day the thing happens, never the day it was said",
-        "the clock and the message's `at`, which carries the weekday",
+        "the clock line, which gives today's date and weekday, and the message's `at`",
+        "which gives the weekday and the day when it was not sent today",
         "told apart by the people in `anchor_entities`",
         "A `closing_condition` is concrete",
         "if the person who owes has written nothing there, the thing owed is an Open line",
@@ -419,16 +420,62 @@ def test_the_note_candidates_teaching_the_review_found_dropped_is_back():
         assert phrase in text, phrase
 
 
+#: A sentence that says a thing is turned away.
+REFUSAL = re.compile(
+    r"\brefus|\breject|will fail|not accepted|is not allowed|\binvalid|\bbounced?\b",
+    re.IGNORECASE,
+)
+
+#: Each rule the skill states, as a pattern that finds the sentences about it, and whether
+#: the validator or the verbs REALLY turn a breach away. Only an enforced rule may sit in a
+#: sentence with a refusal word; the rest are requests.
+RULES: dict[str, tuple[str, bool]] = {
+    "Decided and Open both empty": (r"under Decided|under Open", True),
+    "a line with no cited message": (r"point to a message", True),
+    "an Owed line's owner": (r"\bOwed\b|who owes", False),
+    "the closing condition": (r"closing_condition|closing condition", False),
+    "the anchor date and its weekday": (r"anchor_date|weekday", False),
+    "a day word in a line": (r"this Saturday|as the date", False),
+    "the ids an update keeps": (r"\bids?\b", False),
+    "where people were in a line": (r"where people were|whereabouts", False),
+    "reasoning modes": (r"\btold\b|\bdeduced\b|\babduced\b", False),
+}
+
+
+def requests_stated_as_refusals(text: str) -> list[str]:
+    """Sentences that put a refusal word next to a rule the code does not enforce."""
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(text.split()))
+    return [
+        s for s in sentences if REFUSAL.search(s)
+        and any(not enforced and re.search(pat, s) for pat, enforced in RULES.values())
+    ]
+
+
 def test_what_the_validator_does_not_check_is_a_request_and_never_a_refusal():
     """The review: «every line keeps its ids», «a rollup fact never puts words in a
-    line» and a day word in a line are not refused by the validator, so the skill
-    must not say they are."""
-    text = " ".join(_skill().instructions.split())
-    assert "never put words in a line" not in text
-    assert "every line it had keeps the ids" not in text
-    assert "keeping the ids each line cites" in text
-    # what it does enforce IS stated as a refusal
-    assert "is refused" in text
+    line», a day word in a line, and the Owed rule are not refused by the validator, so
+    no sentence of the skill may say they are. Structural: any sentence with a refusal
+    word that is about an unenforced rule fails (the review's survivor X23 reworded the
+    Owed rule as a refusal and a few fixed phrases did not see it)."""
+    text = _skill().instructions
+    assert requests_stated_as_refusals(text) == []
+    # the one enforced rule IS stated as a refusal, so the scan sees refusals at all
+    assert any(REFUSAL.search(s) for s in re.split(r"(?<=[.!?])\s+", " ".join(text.split())))
+    normal = " ".join(text.split())
+    assert "keeping the ids each line cites" in normal
+    assert "never put words in a line" not in normal
+    # the scan flags each unenforced rule worded as a refusal
+    for bad in (
+        "An Owed line is refused for someone who did not take it on.",
+        "A closing condition that is vague is rejected.",
+        "A date without its weekday will fail.",
+        "An update that drops an id is not accepted.",
+        "A line that says this Saturday is refused.",
+        "A fact about where people were in a line is invalid.",
+    ):
+        assert requests_stated_as_refusals(bad), bad
+    enforced = "A body with nothing under Decided or Open is refused."
+    assert requests_stated_as_refusals(enforced) == []
 
 
 # -- the prelude --------------------------------------------------------------------------
@@ -633,15 +680,15 @@ def _without_prelude(tmp_path: Path, how: str) -> DreamerInstructions:
     if how == "deleted":
         path.unlink()
     else:
-        applies = {"empty": "[]", "elsewhere": "[note-merge]"}[how]
+        assert how == "elsewhere"            # an empty list is the loader's own refusal
         text = path.read_text(encoding="utf-8")
         assert "applies_to: [cognition]" in text
-        path.write_text(text.replace("applies_to: [cognition]", f"applies_to: {applies}"),
+        path.write_text(text.replace("applies_to: [cognition]", "applies_to: [note-merge]"),
                         encoding="utf-8")
     return DreamerInstructions(root, metrics=Metrics())
 
 
-@pytest.mark.parametrize("how", ["deleted", "empty", "elsewhere"])
+@pytest.mark.parametrize("how", ["deleted", "elsewhere"])
 def test_a_cognition_objective_with_no_prelude_stops_the_runner_at_startup(tmp_path, how):
     """The silent fallback: the loader serves the shared doctrine to an objective that
     has no prelude, with no error and no counter."""
