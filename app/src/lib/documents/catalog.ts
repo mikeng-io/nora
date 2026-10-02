@@ -126,15 +126,6 @@ export const components = {
     props: z.strictObject({ language: text(30).optional(), text: text(20000) }),
     description: "A block of code or terminal output, shown monospaced. No highlighting.",
   },
-  Tabs: {
-    props: z.strictObject({}),
-    description:
-      "Switchable panels. Its children are Tab nodes and nothing else; use it to compare options or split one topic by audience, not to hide the main content.",
-  },
-  Tab: {
-    props: z.strictObject({ label: text(60) }),
-    description: "One panel of a Tabs: a label and the blocks inside it. Only valid directly inside Tabs.",
-  },
   Chart: {
     props: z.strictObject({
       kind: z.enum(["bar", "line"]),
@@ -231,11 +222,7 @@ export const COMPONENT_NAMES = Object.keys(components) as ComponentName[];
 
 // Only these take children. Everything else is a leaf, and a child on a leaf
 // is a rejection rather than something silently dropped.
-export const CONTAINERS: ReadonlySet<ComponentName> = new Set(["Page", "Section", "Card", "Grid", "Tabs", "Tab"]);
-
-// Where a container's children may come from. `Tab` exists only inside `Tabs`, and
-// `Tabs` holds nothing but `Tab`; everything else takes the general blocks.
-export const CHILDREN: Record<string, string> = { Tabs: "Tab nodes only", Tab: "blocks; only valid inside Tabs" };
+export const CONTAINERS: ReadonlySet<ComponentName> = new Set(["Page", "Section", "Card", "Grid"]);
 
 // json-render's own catalog. Used for the React registry and the spec it
 // renders. Its `jsonSchema()` and `prompt()` are NOT used for validation or for
@@ -257,7 +244,7 @@ export interface DocumentNode {
 }
 
 export const MAX_CHILDREN = 200;
-/** Page is depth 0; the deepest node is at this depth. A Tab counts as a level. */
+/** Page is depth 0; the deepest node is at this depth. */
 export const MAX_DEPTH = 8;
 export const MAX_NODES = 500;
 
@@ -270,25 +257,9 @@ const block = (name: ComponentName): z.ZodType =>
       })
     : z.strictObject({ type: z.literal(name), props: components[name].props });
 
-// `Tab` is a block of its own kind, allowed only as a child of `Tabs`.
-const tab = z.strictObject({
-  type: z.literal("Tab"),
-  props: components.Tab.props,
-  children: z.array(z.lazy(() => node)).max(MAX_CHILDREN),
-});
-
-const tabs = z.strictObject({
-  type: z.literal("Tabs"),
-  props: components.Tabs.props,
-  children: z.array(tab).min(1).max(12),
-});
-
 const node: z.ZodType<DocumentNode> = z.lazy(() =>
   z.union(
-    [
-      tabs,
-      ...COMPONENT_NAMES.filter((n) => n !== "Page" && n !== "Tab" && n !== "Tabs").map(block),
-    ] as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],
+    COMPONENT_NAMES.filter((n) => n !== "Page").map(block) as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],
   ),
 ) as z.ZodType<DocumentNode>;
 

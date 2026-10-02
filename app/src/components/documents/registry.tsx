@@ -6,7 +6,7 @@
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
 // on this theme (design/artifact/00-design.md §13). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
-import { Children, createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { nestedToFlat } from "@json-render/core";
@@ -14,7 +14,6 @@ import ReactMarkdown from "react-markdown";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
-import { TabList, TabPanel, Tabs as PortalTabs } from "@/components/ui/tabs";
 import { ChartBlock, DocumentIdContext, ImageBlock, MapBlock, MermaidBlock } from "./blocks";
 import { cn } from "@/lib/cn";
 import { catalog, parseDocument, type DocumentSpec, type components } from "@/lib/documents/catalog";
@@ -229,29 +228,6 @@ const { registry } = defineRegistry(catalog, {
       </div>
     ),
     Code: CodeBlock,
-    // The portal's own Radix tabs (ui/tabs.tsx): roving tabindex, arrow keys,
-    // Home and End, `aria-controls` and `aria-labelledby` come from Radix, where
-    // a first version of this block hand-wrote them. The labels are derived from
-    // the Tab children in toFlatSpec, so the stored form has one source for them.
-    Tabs: function DocumentTabs({ props, children }: { props: { labels?: string[] }; children?: ReactNode }) {
-      const labels = props.labels ?? [];
-      const panels = Children.toArray(children);
-      return (
-        <PortalTabs defaultValue="t0" className="flex flex-col gap-4">
-          <TabList
-            label={labels.join(" / ")}
-            className="mx-0 px-0"
-            items={labels.map((label, i) => ({ value: `t${i}`, label }))}
-          />
-          {panels.map((panel, i) => (
-            <TabPanel key={i} value={`t${i}`}>
-              {panel}
-            </TabPanel>
-          ))}
-        </PortalTabs>
-      );
-    },
-    Tab: ({ children }: { children?: ReactNode }) => <div className="flex flex-col gap-4">{children}</div>,
     Chart: ({ props }: Render<"Chart">) => <ChartBlock {...props} />,
     Mermaid: ({ props }: Render<"Mermaid">) => <MermaidBlock {...props} />,
     Map: ({ props }: Render<"Map">) => <MapBlock {...props} />,
@@ -294,13 +270,7 @@ const { registry } = defineRegistry(catalog, {
 
 /** The stored nested tree, as json-render's flat spec. Already checked. */
 export function toFlatSpec(doc: DocumentSpec) {
-  const spec = nestedToFlat(doc.root as unknown as Record<string, unknown>);
-  for (const el of Object.values(spec.elements)) {
-    if (el.type !== "Tabs") continue;
-    const labels = (el.children ?? []).map((k) => String((spec.elements[k]?.props as { label?: string })?.label ?? ""));
-    el.props = { ...el.props, labels };
-  }
-  return spec;
+  return nestedToFlat(doc.root as unknown as Record<string, unknown>);
 }
 
 /** Renders a stored document. It validates first, every time: the renderer is
@@ -325,7 +295,6 @@ export function DocumentView({
       <div className="flex flex-col gap-4">
         <div role="alert" className="rounded-panel border border-hairline border-l-4 border-l-danger bg-surface px-4 py-3">
           <p className="text-title font-semibold text-ink">{t("cannotShow")}</p>
-          <p className="mt-0.5 text-body text-ink-soft">{parsed.reason}</p>
         </div>
         {chrome}
       </div>
