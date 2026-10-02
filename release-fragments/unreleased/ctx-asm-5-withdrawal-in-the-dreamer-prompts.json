@@ -1,6 +1,6 @@
 {
   "type": "none",
-  "reason": "Internal: a room position or room culture the withdrawal cascade marked unsupported stops reaching the background passes' prompts (the relevance gate, proactive, the culture fold, note-candidates, the note curator and the standing event fold), as it already did on the tag and fire turns. A pass reads the room as if it had no position or account there; a fold's own prior is still shown to it. No user sees a difference, and only a forgotten person's or an unsent message's derived rows are affected.",
+  "reason": "Internal: a room position or room culture the withdrawal cascade marked unsupported stops reaching the background passes' prompts (the relevance gate, proactive, the culture fold, note-candidates, the note curator and the standing event fold), as it already did on the tag and fire turns. A pass reads the room as if it had no position or account there; a fold's own prior is still shown to it. No user sees a difference, and only rows derived from a forgotten person's messages are affected.",
   "details": [],
   "limitations": []
 }
