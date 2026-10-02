@@ -60,26 +60,26 @@ grep -E '^affected_tests:|passed|failed|error' "$LOG/gate.log" | tail -n 5
 ```
 
 `make gate`: static steps in full, then the tests the diff against `origin/master`
-reaches (all when unmapped). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per PR,
+reaches (all when unmapped or the selector fails; only `NONE` runs nothing). PASS: `GATE_RC=0`, 3 steps, no `failed`. ONCE per PR,
 on the final head; fix rounds run their own tests. `make full-gate` = whole suite.
 
 - Never `make gate | tail`: the rc is tail's (2026-09-22, merged a red master).
 - In the background read `$LOG/gate.rc`, not the notice (last command's rc).
   Kill only a PID you recorded, never `pkill -f`: it kills other sessions' gates.
 
-**Docs-only** (every path is `.md` outside `nora/doctrine` and `nora/dreamer`,
-or under `docs/`, `design/`, `release-fragments/`):
+**Docs-only** (every path a `.md` outside `nora/`, `evals/`, `scripts/`, or data under
+`docs/`, `design/`, `release-fragments/`): the gate's selector, without the static steps:
 
 ```bash
 git add <paths>    # the doc gate scans `git ls-files`: an unstaged new doc is never read (#391)
-uv run pytest -q tests/architecture/test_doc_references_resolve.py tests/test_release_notes.py \
-  tests/architecture/test_agent_skills.py > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
+make test-affected BASE=origin/master INCLUDE_WORKTREE=--include-worktree \
+  > "$LOG/docs.log" 2>&1; echo "GATE_RC=$?" > "$LOG/gate.rc"
 ```
 
-`design/09-decision-index.md` changed: add `tests/architecture/test_decision_index_tests_exist.py`
-and `tests/architecture/test_decision_index_ids_are_unique.py`. This IS the gate
-for a docs-only diff, merge included; no `make gate` (operator, 2026-09-26). The
-2026-09-22 red master was a doc reference this command now checks.
+The selector scans `tests/` for each doc's readers and runs everything for an
+unmapped path. Never hand-pick test files: a hand-picked list omitted real readers
+until 2026-10-02. PASS is `GATE_RC=0` with a `passed` count, or `NONE`. Other
+paths: `make gate`.
 
 ## 4. Commit
 

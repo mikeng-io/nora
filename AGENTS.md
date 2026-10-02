@@ -355,7 +355,8 @@ make test-fast         # the whole suite, -n 8
 
 **Before claiming a PR is done**, run `make gate` once, on the final head: ruff,
 mypy and lint-imports in full, then the tests the branch's diff against
-`origin/master` can reach (the whole suite when it cannot map the diff). While
+`origin/master` can reach (the whole suite when it cannot map the diff, or when
+the selector itself fails: only an explicit `NONE` runs nothing). While
 iterating, run the tests you touched or `make test-affected`; never a gate per
 fix round. `make full-gate` runs all four in full, serially:
 

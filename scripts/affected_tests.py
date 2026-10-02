@@ -1,5 +1,5 @@
-"""Change-aware test selection (fast-test-pass spec §3,
-docs/superpowers/specs/2026-08-21-fast-test-pass-design.md).
+"""Change-aware test selection (the fast-test-pass design, spec §3; its release
+note is release-fragments/released/V4/fast-test-pass.json).
 
 Takes a base ref, reads the changed paths from git, and decides which pytest
 targets are worth running for *that diff*. This backs BOTH `make test-affected`
@@ -13,159 +13,162 @@ The loop's default base is `HEAD~1` — the latest commit only, not
 `origin/master`. Diffing the whole branch was the original design and it has a
 real cost: a branch that touches `nora/dreamer/**` or `nora/doctrine/**` once
 stays pinned to `ALL` for every commit for the rest of its life, because that
-path never leaves the cumulative diff — even a bare `config.toml` commit on
-top gets `ALL`. `make gate` runs on `origin/master` deliberately (it must
-judge everything the branch changed, once, before it lands); the loop's
-`HEAD~1` default is what avoids re-flagging an already-judged commit on every
-later diff. Found and confirmed independently by three sessions on 2026-08-21.
+path never leaves the cumulative diff. `make gate` runs on `origin/master`
+deliberately (it must judge everything the branch changed, once, before it
+lands); the loop's `HEAD~1` default is what avoids re-flagging an
+already-judged commit on every later diff.
 
-Fails closed by construction: any diff this script cannot map to a narrow rule
-with confidence gets the literal string `ALL`, meaning "run everything." A
-confident wrong subset is the one failure mode this script must never have
-(spec §1) — a slow correct answer beats a fast wrong one. `make gate` inherits
-that fail-closed property directly: an unmapped or broad diff runs the whole
-suite through `make gate` exactly as it would have before this script existed,
-so `gate` is never weaker than `full-gate` on a change it cannot scope.
+THE OUTPUT CONTRACT (one line on stdout, three shapes). `ALL` means run the
+whole suite; `NONE` means a narrow rule found that nothing reads the diff, so
+nothing runs; anything else is a space-separated list of pytest targets. The
+EMPTY string is none of these: it means the script died before it could say,
+and the Makefile treats it, and any nonzero exit status, as `ALL`. Until
+2026-10-02 empty meant "docs-only, run nothing" and the Makefile ignored the
+script's exit status, so any exception other than the two `main` caught (git
+missing, an import error, a bug in a rule) printed a traceback, left the
+captured output empty, and `make gate` reported "docs-only change" and passed
+with zero tests run. `main` now turns ANY exception into `ALL` on stdout and
+the reason on stderr.
 
-The rule that matters most: `nora/doctrine/**` and `nora/dreamer/**` are
-markdown, but the running application LOADS and HASHES them at startup/reload
-— they are not documentation for selection purposes. That check runs first,
-before the generic "changed paths are all markdown" rule, so a doctrine edit
-can never be mistaken for a docs-only change and skip the doctrine tests.
+Fails closed by construction: `select` classifies EACH changed path, the
+default for a path no rule names is `ALL`, and one `ALL` anywhere in the diff
+makes the whole answer `ALL`. A confident wrong subset is the one failure mode
+this script must never have (spec §1) — a slow correct answer beats a fast
+wrong one. The classes, in order:
 
-A second, quieter version of the same mistake lives in the tests-only rule:
-not every path under `tests/` is a file pytest collects tests from —
-`conftest.py`, `builders.py`, `fakes.py`, `objectives.py` are imported by
-dozens of test modules but contain none themselves. Running the changed path
-verbatim for a shared fixture edit would select a target that collects zero
-tests and exits green — a SILENT confident-wrong-subset, worse than the
-doctrine case, which at least runs the wrong tests rather than none. So the
-tests-only rule additionally requires every changed path to look like a file
-pytest would actually collect from; one helper in the diff sends the whole
-selection to `ALL`.
+* `nora/**`, any extension: `ALL`. The application loads `nora/doctrine`,
+  `nora/dreamer`, `nora/skills` and `nora/documents/catalog-prompt.md` at
+  runtime, and every `.py` is imported by dozens of tests. A hand-kept reader
+  list for these rotted twice (2026-09-25: `nora/skills` was missing
+  `tests/test_factory.py` and `tests/unit/test_generate_image_description.py`).
+* `tests/**`: a collectible `test_*.py` that still exists selects itself, the
+  whole of `tests/architecture/` (the meta tests: they read `tests/` itself, so
+  an added, edited or deleted test can redden them — a new `tests/test_zz.py`
+  reddens `test_tests_root_takes_no_new_files`, a new test that reads
+  `config.example.toml` reddens `test_config_comes_from_the_template`), every
+  test module that IMPORTS it (`tests/unit/test_cognition_failure_backoff.py`
+  imports `test_cognition_session_lifecycle`), and the tests the reader scan
+  below finds reading it. Any other path (`conftest.py`, `builders.py`,
+  fixtures, a deleted or renamed-away test) is `ALL`: a helper is imported by
+  many modules and collects nothing itself, and a deleted test can break the
+  tests that enumerate tests. This was measured, not guessed: a full-suite run
+  with an audit hook on `open`/`listdir`/`scandir` lists which test modules
+  touch other `tests/` files (2026-10-02).
+* documentation and data files outside the code trees (`.md` anywhere but
+  `nora/`, `evals/`, `scripts/`; any `.md/.txt/.json/.toml/.yaml/.yml` under
+  `docs/`, `design/`, `release-fragments/`): the tests that READ them, found by
+  scanning `tests/` at select time (`_readers`), plus the universal
+  doc-reference scan for a `.md`, plus `tests/test_release_notes.py` under
+  `release-fragments/`. A file read by a shared test helper is `ALL`.
+* ANY path named in the `file` field of a `scripts/mutations/*.json` entry also
+  selects `tests/architecture/test_mutation_tables_anchor_to_their_source.py`
+  (read from the tables at select time, so a new table is covered with no edit
+  here): the anchor test reads those files by a name held in data, which no
+  literal in a test module shows the scan.
+* everything else (`scripts/`, `evals/`, `app/` code, `deploy/` non-markdown,
+  `pyproject.toml`, `uv.lock`, `Makefile`, `Dockerfile`, `docker-compose.yml`,
+  `config.example.toml`, `policy.example.toml`, `identity.example.toml`,
+  `.github/workflows/**`, `scripts/mutations/*.json`): `ALL`.
 
-A third version of the same mistake lived in the docs rule until 2026-09-25:
-"every `.md` outside doctrine/dreamer is docs-only, run nothing" is false —
-tests DO read specific docs (`tests/architecture/test_agent_skills.py` loads
-`AGENTS.md` and `.agents/skills/**`, `tests/architecture/test_doc_references_
-resolve.py` scans literally every tracked `.md` file for dangling path
-citations). Mapping every markdown path to the empty selection meant `make
-gate` — which now runs through this script — would pass on a broken doc these
-tests would have caught. `_markdown_targets` below carries the known specific
-readers (found by grepping `tests/` for each path, not guessed) and, for any
-`.md` this script cannot name a narrower reader for, falls back to
-`test_doc_references_resolve.py` rather than the empty list — never "no tests
-at all" for a change to a file something in `tests/` demonstrably reads.
-`config.example.toml` got the same correction: `tests/builders.py` copies it
-for the whole config-fixture layer (~29 test modules), so a change to it alone
-is `ALL`, not the two narrow config tests — those stay mapped from `config.toml`.
+WHY A SCAN, NOT A TABLE. This file used to keep a table of which tests read
+which `.md`. It listed AGENTS.md, CONTRIBUTING.md and the decision index and
+missed README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md, the deploy
+READMEs and release-fragments/README.md: a table is updated by whoever
+remembers, and a test added later that reads a doc leaves it silently stale. A
+cross-check test for the table would only run when selected, and a new test
+file selects only itself. The scan recomputes the answer from the tests as they
+stand, so a new reader is found without anyone editing this file.
 
-`nora/skills/**` went through the same mistake TWICE. The first cut of this
-table (2026-09-25) mapped it to a hand-picked pair of readers
-(`tests/test_skill_content.py`, `tests/unit/test_canonical_self_reference.py`)
-— found by grepping `tests/`, but not exhaustively enough: re-review the same
-day found `tests/test_factory.py` (`SKILLS_DIR` = the real `nora/skills`,
-asserts the wiring against real skill names/descriptions) and `tests/unit/
-test_generate_image_description.py` (`SkillStore(SKILLS_DIR).resolve(...)`)
-both read the same real tree and were missing from the list. A hand-kept
-reader list for a tree this many things read rots — each addition is a
-plausible-looking green diff with a real gap in it, and nothing catches the
-NEXT omission either. `nora/skills/**` now goes straight to `ALL`, the same
-shape as the doctrine/dreamer rule above and for the same kind of reason:
-skill content is runtime-loaded (`SkillStore`) and changes rarely, so the
-fail-closed cost of never narrowing it is low and the cost of a silently
-incomplete reader list is not.
+What the scan reads (`_TestFacts`): every string literal in a test module
+(docstrings excluded; literals over 200 characters excluded), what it imports,
+and whether the module traverses a directory (`glob`/`rglob`/`iglob`/`iterdir`/
+`walk`/`listdir`/`scandir` or `git ls-files`). A module reads path P if a
+literal is P, ends P (`computer/README.md`), equals P's basename, is a glob P
+matches (`*.md`), is P's extension (`.md`, always: it catches
+`f"{name}.md"`), or, only when the module traverses, is a directory containing
+P. A shared helper or conftest (collects nothing, imported by an unknown set of
+modules) that matches by ANY of those makes the answer `ALL`; so a deploy
+README is `ALL` while `tests/unit/nora_computer_harness.py` walks
+`deploy/computer`. It over-selects on purpose.
+
+What the scan CANNOT see, stated because the omission is the whole risk:
+- a path built with no literal naming the file, directory, glob or extension
+  (`ROOT / name` with `name` read from a data file or computed). The mutation
+  tables are the one such case found and have their own rule above;
+- a read made by code a test calls (a `nora/` function that opens a file): the
+  file must then sit under `nora/`, which is `ALL`, or be named by the test;
+- an import of a test module through `importlib` or a string.
+That residual is why the doc classes only ever NARROW within docs trees and the
+code trees are `ALL`.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
+import fnmatch
+import json
+import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The output contract (module docstring): ALL = run everything, NONE = a rule
+# found nothing reads this diff, otherwise a list of targets. EMPTY is none of
+# them and means failure.
 ALL = "ALL"
+NONE = "NONE"
 
-# Markdown that the application loads and hashes at runtime — NOT docs for
-# selection purposes. Checked before the generic docs-only rule (see module
-# docstring); getting this ordering backwards is exactly the failure this
-# feature must not have.
-_LOADED_MARKDOWN_PREFIXES = ("nora/doctrine/", "nora/dreamer/")
+# Code trees whose `.md` is not documentation for selection purposes. `nora/`
+# is loaded or imported by the application, so every file in it, any extension,
+# falls through every class below to the ALL default; naming it here is what
+# keeps its `.md` (doctrine, dreamer, skills, documents/catalog-prompt.md) out
+# of the doc classes.
+_CODE_TREE_PREFIXES = ("nora/", "evals/", "scripts/")
 
-# The on-demand skill layer (SkillStore), runtime-loaded like doctrine/
-# dreamer above and changes rarely — checked with the same priority, for the
-# same reason: a re-review on 2026-09-25 found two more readers
-# (tests/test_factory.py, tests/unit/test_generate_image_description.py)
-# beyond the ones a hand-picked reader list had already named, so the list
-# itself was the defect. Rather than keep auditing `tests/` for the next
-# missed reader, any change under this prefix goes straight to ALL.
-_ALWAYS_ALL_PREFIXES = ("nora/skills/",)
+# Whole-directory docs trees: a data file under them is looked up in the scan.
+_DOCS_TREE_PREFIXES = ("docs/", "release-fragments/", "design/")
+_DATA_EXTENSIONS = frozenset({".md", ".txt", ".json", ".toml", ".yaml", ".yml"})
 
-# Whole-directory docs trees, any extension: no reader was found by grepping
-# `tests/` for any non-.md file under these (design/*.toml, design/*.yaml,
-# _index.yaml — checked 2026-09-25). A `.md` file under any of these is NOT
-# covered by this set — see `_markdown_targets`, which runs first for `.md`
-# paths and never returns "no tests" for one.
-_DOCS_ONLY_PREFIXES = ("docs/", "release-fragments/", "design/")
-
-_CONFIG_TARGETS = ["tests/test_config.py", "tests/test_env_template.py"]
-
-# The universal fallback for any tracked `.md` this table doesn't name a
-# narrower reader for: this test scans EVERY tracked `.md` file for dangling
-# path citations (`git ls-files "*.md"` — tests/architecture/
-# test_doc_references_resolve.py's own docstring), so it is a real reader of
-# any doc, not a guess.
+# tests/architecture/test_doc_references_resolve.py scans every tracked `.md`
+# (`git ls-files "*.md"`), so it reads any doc. The scan finds it too; naming
+# it keeps the floor if that test ever changes how it enumerates.
 _ANY_MD_READER = "tests/architecture/test_doc_references_resolve.py"
 
-# Specific markdown readers, found by grepping `tests/` for each path (never
-# guessed — a docstring MENTION of a path is not a read of it; only a
-# `.read_text()` / `Path(...)` construction on the real repo path counts).
-# Prefix entries match any path starting with the prefix; exact entries match
-# only that literal path. First matching entry per changed path wins; a path
-# matching none of these still gets `_ANY_MD_READER` if it ends in `.md`
-# (see `_markdown_targets`).
-_MD_PREFIX_READERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    # nora/skills/**/*.md is NOT listed here — it is handled by
-    # `_ALWAYS_ALL_PREFIXES` above, before this table is ever consulted.
-    (".agents/skills/", ("tests/architecture/test_agent_skills.py",)),
-)
-_MD_EXACT_READERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    # AGENTS_MD = ROOT / "AGENTS.md" in test_agent_skills.py (lists every
-    # skill + the operational constraints table); test_architecture_doc.py
-    # separately asserts specific phrases are present in it.
-    ("AGENTS.md", ("tests/architecture/test_agent_skills.py",
-                    "tests/test_architecture_doc.py")),
-    (".github/pull_request_template.md",
-     ("tests/architecture/test_contribution_conventions.py",)),
-    ("CONTRIBUTING.md", ("tests/architecture/test_contribution_conventions.py",)),
-    # design/09-decision-index.md: ids-are-unique + tests-exist parse the
-    # table rows; test_architecture_doc.py separately asserts specific
-    # decision ids are present in the file's text.
-    ("design/09-decision-index.md",
-     ("tests/architecture/test_decision_index_ids_are_unique.py",
-      "tests/architecture/test_decision_index_tests_exist.py",
-      "tests/test_architecture_doc.py")),
-)
-
-# release-fragments/**: JSON fragments (not markdown) are loaded whole by
-# `load_fragments` (tests/test_release_notes.py). Any extension under this
-# prefix maps here; a `.md` file under it (release-fragments/README.md,
-# release-fragments/released/V2/NOTES.md) ALSO gets `_ANY_MD_READER` via the
-# markdown rule, since both apply independently.
+# release-fragments/**: JSON fragments are loaded whole by `load_fragments`.
 _RELEASE_FRAGMENTS_PREFIX = "release-fragments/"
 _RELEASE_FRAGMENTS_TARGET = "tests/test_release_notes.py"
 
+_TRAVERSAL_CALLS = frozenset(
+    {"glob", "rglob", "iglob", "iterdir", "walk", "listdir", "scandir"},
+)
+_MAX_LITERAL = 200
 
-def _git(repo: Path, *args: str) -> list[str]:
+# scripts/mutations/*.json entries name the source they mutate in a `file`
+# field; tests/architecture/test_mutation_tables_anchor_to_their_source.py
+# opens each of those paths by that data. A change to any of them selects it.
+_MUTATION_TABLES = "scripts/mutations"
+_MUTATION_ANCHOR_TEST = (
+    "tests/architecture/test_mutation_tables_anchor_to_their_source.py"
+)
+
+# Every test under here reads `tests/` itself or the tree around it (the
+# fitness functions); a change to any test selects the whole directory.
+_META_TESTS = "tests/architecture"
+
+
+def _git(repo: Path, *args: str, nul: bool = False) -> list[str]:
     result = subprocess.run(  # noqa: S603 - fixed argv, repo-local git only
         ["git", *args],  # noqa: S607
         cwd=repo, capture_output=True, text=True, check=False,
     )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "git command failed")
-    return [line for line in result.stdout.splitlines() if line]
+    sep = "\0" if nul else "\n"
+    return [part for part in result.stdout.split(sep) if part]
 
 
 def git_changed_paths(
@@ -179,66 +182,204 @@ def git_changed_paths(
     check on a PR, and an edit that hasn't been committed yet is still
     untested if the gate silently skips it (it must judge the working tree,
     not a stale commit). The loop's `make test-affected` (default base
-    `HEAD~1`) does NOT set this — it keeps judging committed history only,
-    unchanged from before this flag existed.
+    `HEAD~1`) does NOT set this — it keeps judging committed history only.
+
+    `--no-renames` lists BOTH sides of a rename: by default git reports only
+    the new path, and the old one (a deleted test, a moved doc) is a change
+    too. `-z` keeps a non-ASCII name unquoted and so recognisable.
     """
     merge_base = _git(repo, "merge-base", base, "HEAD")[0]
     if include_worktree:
         # One ref vs none compares that commit to the working tree, which
         # covers the index (staged) and the unstaged edits on top of it, as
         # well as every commit between merge_base and HEAD.
-        tracked = _git(repo, "diff", "--name-only", merge_base)
-        untracked = _git(repo, "ls-files", "--others", "--exclude-standard")
+        tracked = _git(repo, "diff", "-z", "--name-only", "--no-renames",
+                       merge_base, nul=True)
+        untracked = _git(repo, "ls-files", "-z", "--others",
+                         "--exclude-standard", nul=True)
         return sorted(set(tracked) | set(untracked))
-    return _git(repo, "diff", "--name-only", f"{merge_base}...HEAD")
+    return _git(repo, "diff", "-z", "--name-only", "--no-renames",
+                f"{merge_base}...HEAD", nul=True)
 
 
-def _is_loaded_markdown(path: str) -> bool:
-    return path.startswith(_LOADED_MARKDOWN_PREFIXES)
+# --- the reader scan --------------------------------------------------------
 
 
-def _is_always_all(path: str) -> bool:
-    return path.startswith(_ALWAYS_ALL_PREFIXES)
+@dataclass(frozen=True)
+class _TestFacts:
+    literals: frozenset[str]
+    traverses: bool
+    imports: frozenset[str] = frozenset()   # dotted module names, relative ones resolved
 
 
-def _markdown_targets(path: str) -> list[str]:
-    """The pytest targets that actually read this `.md` file's content.
+def _docstring_ids(tree: ast.AST) -> set[int]:
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                ids.add(id(first.value))
+    return ids
 
-    Never empty: a path this table can't name a narrower reader for still
-    gets `_ANY_MD_READER`, which is a real, grepped-for reader of every
-    tracked `.md` file (see module docstring). Only call this for a path that
-    `path.endswith(".md")`.
+
+def _imported_names(node: ast.AST, package: list[str]) -> set[str]:
+    """Dotted module names an import statement can bind, relative ones resolved
+    against `package` (the importing file's directory as dotted parts)."""
+    names: set[str] = set()
+    if isinstance(node, ast.Import):
+        names.update(alias.name for alias in node.names)
+    elif isinstance(node, ast.ImportFrom):
+        if node.level:
+            base = package[: len(package) - (node.level - 1)] if node.level > 1 else package
+            prefix = ".".join([*base, node.module] if node.module else base)
+        else:
+            prefix = node.module or ""
+        if prefix:
+            names.add(prefix)
+            # `from tests.unit import test_x` imports a submodule
+            names.update(f"{prefix}.{alias.name}" for alias in node.names)
+    return names
+
+
+def _facts_of(source: str, rel: str = "") -> _TestFacts:
+    tree = ast.parse(source)
+    docstrings = _docstring_ids(tree)
+    package = rel.split("/")[:-1]
+    literals: set[str] = set()
+    imports: set[str] = set()
+    traverses = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            imports |= _imported_names(node, package)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in docstrings:
+                continue
+            value = node.value
+            if "ls-files" in value:
+                traverses = True
+            if len(value) <= _MAX_LITERAL:
+                literals.add(value)
+        elif (isinstance(node, ast.Attribute) and node.attr in _TRAVERSAL_CALLS) or (
+            isinstance(node, ast.Name) and node.id in _TRAVERSAL_CALLS
+        ):
+            traverses = True
+    return _TestFacts(frozenset(literals), traverses, frozenset(imports))
+
+
+def _scan_tests(repo: Path) -> dict[str, _TestFacts]:
+    """Every `.py` under `tests/`, keyed by its repo-relative path.
+
+    A module that cannot be parsed is treated as reading everything (the
+    marker facts below): a file this scan cannot see into is a reader this
+    scan cannot rule out.
     """
-    targets = {_ANY_MD_READER}
-    for prefix, readers in _MD_PREFIX_READERS:
-        if path.startswith(prefix):
-            targets.update(readers)
-    for exact, readers in _MD_EXACT_READERS:
-        if path == exact:
-            targets.update(readers)
-    return sorted(targets)
+    facts: dict[str, _TestFacts] = {}
+    for file in sorted((repo / "tests").rglob("*.py")):
+        rel = file.relative_to(repo).as_posix()
+        try:
+            facts[rel] = _facts_of(file.read_text(encoding="utf-8"), rel)
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            facts[rel] = _TestFacts(frozenset({"*.md", "*.json", "*.toml"}), True)
+    return facts
 
 
-def _is_docs_only_non_markdown(path: str) -> bool:
-    """A non-`.md` file under a whole-directory docs tree, with no reader
-    found in `tests/` (design/*.toml, design/*.yaml, ...). `.md` files are
-    handled separately by `_markdown_targets`, never by this function."""
-    return path.startswith(_DOCS_ONLY_PREFIXES)
+def _normalise_literal(value: str) -> str:
+    value = value.replace("\\", "/")
+    while value.startswith(("./", "../")):
+        value = value.split("/", 1)[1]
+    return value.strip("/")
 
 
-def _is_release_fragment(path: str) -> bool:
-    return path.startswith(_RELEASE_FRAGMENTS_PREFIX)
+def _reads(facts: _TestFacts, path: str, *, loose: bool = True) -> bool:
+    """Could a module with these facts open `path`? Over-approximate.
+
+    `loose=False` keeps only the rules that NAME the file (the literal path,
+    its basename, a trailing part of it) and drops the glob, traversed-directory
+    and bare-extension rules. Used for a path under `tests/`: `*.py` and `.py`
+    sit in a hundred modules that scan `nora/`, and counting them would select a
+    dozen unrelated tests for every test edit; the tests that really scan
+    `tests/` are `tests/architecture/`, selected whole.
+    """
+    name = path.rsplit("/", 1)[-1]
+    suffix = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+    for raw in facts.literals:
+        lit = _normalise_literal(raw)
+        if not lit:
+            continue
+        if lit in (path, name) or path.endswith("/" + lit):
+            return True
+        if not loose:
+            continue
+        if any(c in lit for c in "*?["):
+            # a bare `*` or `**` names nothing: it matches every path
+            if not re.sub(r"[*?\[\]/]", "", lit):
+                continue
+            if (fnmatch.fnmatch(name, lit) or fnmatch.fnmatch(path, lit)
+                    or fnmatch.fnmatch(path, lit.removeprefix("**/"))):
+                return True
+        elif (facts.traverses and path.startswith(lit + "/")) or lit == suffix:
+            return True
+    return False
 
 
-def _is_config_only(path: str) -> bool:
-    # config.example.toml is deliberately NOT here: tests/builders.py copies
-    # it for the whole config-fixture layer, so a change to it alone must be
-    # ALL, not this narrow pair. See module docstring.
-    return path == "config.toml"
+def _readers(
+    path: str, scan: dict[str, _TestFacts], *, loose: bool = True,
+) -> tuple[set[str], bool]:
+    """(collectible test files that read `path`, a shared helper reads it)."""
+    tests: set[str] = set()
+    helper = False
+    for rel, facts in scan.items():
+        if rel == path:
+            continue
+        if not _reads(facts, path, loose=loose):
+            continue
+        if _is_collectible_test_file(rel):
+            tests.add(rel)
+        else:
+            helper = True
+    return tests, helper
 
 
-def _is_test_path(path: str) -> bool:
-    return path.startswith("tests/")
+def _dotted(path: str) -> str:
+    return path.removesuffix(".py").replace("/", ".")
+
+
+def _importers(path: str, scan: dict[str, _TestFacts]) -> tuple[set[str], bool]:
+    """(collectible test modules that import `path`, directly or through other
+    test modules; a shared helper imports one of them). A test that imports
+    another test module runs it as part of itself."""
+    importers: set[str] = set()
+    helper = False
+    frontier = {_dotted(path)}
+    while frontier:
+        nxt: set[str] = set()
+        for rel, facts in scan.items():
+            if rel == path or rel in importers or not (facts.imports & frontier):
+                continue
+            if _is_collectible_test_file(rel):
+                importers.add(rel)
+                nxt.add(_dotted(rel))
+            else:
+                helper = True
+        frontier = nxt
+    return importers, helper
+
+
+def _mutation_files(repo: Path) -> set[str]:
+    """Every path named by a `file` field in `scripts/mutations/*.json`. A table
+    that cannot be read raises, and `main` turns that into ALL."""
+    files: set[str] = set()
+    for table in sorted((repo / _MUTATION_TABLES).glob("*.json")):
+        entries = json.loads(table.read_text(encoding="utf-8"))
+        files.update(
+            entry["file"] for entry in entries
+            if isinstance(entry, dict) and isinstance(entry.get("file"), str)
+        )
+    return files
+
+
+# --- classification ---------------------------------------------------------
 
 
 def _is_collectible_test_file(path: str) -> bool:
@@ -247,77 +388,80 @@ def _is_collectible_test_file(path: str) -> bool:
     Decided by pytest's own default collection convention — basename starts
     with `test_` and ends in `.py` — rather than a hand-maintained list of
     known helper filenames. A filename list goes stale the moment someone adds
-    a new helper (that is the failure this rule exists to avoid repeating).
+    a new helper.
 
     This assumes the repo never overrides `python_files` in
-    `[tool.pytest.ini_options]` (it doesn't, as of this writing — testpaths is
-    set, python_files is not, so pytest's default applies). It will MISS a
-    collectible module named outside that convention if such an override is
-    ever added; the fix then is to update this rule, not to special-case
-    filenames here.
+    `[tool.pytest.ini_options]` (it doesn't: testpaths is set, python_files is
+    not). It will MISS a collectible module named outside that convention if
+    such an override is ever added; the fix then is to update this rule.
     """
     name = Path(path).name
     return name.startswith("test_") and name.endswith(".py")
 
 
-def select(changed: list[str]) -> list[str] | str:
+def _is_doc_or_data(path: str) -> bool:
+    """A documentation or data file outside the code trees, so one that the
+    reader scan can answer for."""
+    if path.startswith("tests/") or path.startswith(_CODE_TREE_PREFIXES):
+        return False
+    if path.endswith(".md"):
+        return True
+    ext = "." + path.rsplit(".", 1)[-1] if "." in path.rsplit("/", 1)[-1] else ""
+    return path.startswith(_DOCS_TREE_PREFIXES) and ext in _DATA_EXTENSIONS
+
+
+def select(changed: list[str], repo: Path = ROOT) -> list[str] | str:
     """Decide the pytest targets for a changed-path list.
 
-    Returns either a list of pytest targets (possibly empty — meaning nothing
-    needs to run) or the literal string `ALL`. Rules apply in the order below;
-    a changed path can match more than one rule (a `.md` under `design/` gets
-    both the markdown targets and nothing else, since `design/` itself maps
-    non-`.md` files only). Anything left over after every rule below has had
-    its say falls through to `ALL` — the fail-closed default.
+    Returns either a list of pytest targets (possibly empty — meaning a rule
+    found that nothing reads this diff) or the literal string `ALL`. Each path
+    is classified on its own (module docstring); the answer is the union, and
+    one `ALL` anywhere makes it `ALL`. A path no class names is `ALL`.
     """
     if not changed:
         return []
 
-    # Rule 0 — highest priority, checked before every other rule: loaded-at-
-    # runtime markdown anywhere in the diff forces the full suite, no matter
-    # what else changed alongside it. nora/skills/** joins it here for the
-    # same reason (see _ALWAYS_ALL_PREFIXES): runtime-loaded, rarely changed,
-    # and a hand-kept reader list for it already rotted once.
-    if any(_is_loaded_markdown(p) or _is_always_all(p) for p in changed):
-        return ALL
+    targets: set[str] = set()
+    scan: dict[str, _TestFacts] | None = None
+    mutated = _mutation_files(repo)
 
-    # config.example.toml is deliberately NOT recognised by `_is_config_only`
-    # (tests/builders.py copies it broadly; see module docstring), so a diff
-    # containing it alone or mixed with anything else falls through every
-    # rule below to the fail-closed `ALL` at the bottom, same as any other
-    # unmapped path — no special case needed.
-
-    if all(_is_config_only(p) for p in changed):
-        return _CONFIG_TARGETS
-
-    if all(_is_test_path(p) for p in changed):
-        # Not every path under tests/ is collectible (conftest.py, builders.py,
-        # fakes.py, ...) — a shared-helper edit must not narrow to a target
-        # that silently collects and runs nothing. See module docstring.
-        if all(_is_collectible_test_file(p) for p in changed):
-            return changed
-        return ALL
-
-    # Rule for markdown + docs/design/release-fragments: every remaining path
-    # must be one of (a) a `.md` file (mapped to its real readers, never
-    # empty), (b) a release-fragments/** path of any extension, or (c) a
-    # non-`.md` file under a whole-directory docs tree with no known reader.
-    # Anything outside those three shapes falls through to ALL below.
-    if all(
-        p.endswith(".md") or _is_release_fragment(p) or _is_docs_only_non_markdown(p)
-        for p in changed
-    ):
-        targets: set[str] = set()
-        for p in changed:
-            if p.endswith(".md"):
-                targets.update(_markdown_targets(p))
-            if _is_release_fragment(p):
+    for path in changed:
+        if path in mutated:
+            targets.add(_MUTATION_ANCHOR_TEST)
+        if path.startswith("tests/"):
+            # Not every path under tests/ is collectible (conftest.py,
+            # builders.py, fixtures, ...) and a deleted or renamed-away test
+            # cannot be run: both are ALL, never a target that collects nothing.
+            if not (_is_collectible_test_file(path) and (repo / path).is_file()):
+                return ALL
+            # An existing test: itself, the meta tests (they read tests/
+            # itself), and whatever reads or imports it.
+            if scan is None:
+                scan = _scan_tests(repo)
+            readers, helper_reads = _readers(path, scan, loose=False)
+            importers, helper_imports = _importers(path, scan)
+            if helper_reads or helper_imports:
+                return ALL
+            targets.update({path, _META_TESTS, *readers, *importers})
+            continue
+        if _is_doc_or_data(path):
+            if scan is None:
+                scan = _scan_tests(repo)
+            readers, helper_reads = _readers(path, scan)
+            if helper_reads:
+                return ALL
+            targets.update(readers)
+            if path.endswith(".md"):
+                targets.add(_ANY_MD_READER)
+            if path.startswith(_RELEASE_FRAGMENTS_PREFIX):
                 targets.add(_RELEASE_FRAGMENTS_TARGET)
-            # a non-.md docs-only path (design/*.toml, ...) contributes
-            # nothing — it has no known reader.
-        return sorted(targets)
+            continue
+        return ALL
 
-    return ALL
+    if _META_TESTS in targets:
+        # the directory target already runs every file in it
+        targets = {t for t in targets if not t.startswith(_META_TESTS + "/")}
+    return sorted(targets)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -342,16 +486,18 @@ def main(argv: list[str] | None = None) -> int:
         changed = git_changed_paths(
             args.repo, args.base, include_worktree=args.include_worktree,
         )
-    except (RuntimeError, IndexError) as exc:
-        # Can't determine the diff at all — fail closed, run everything, but
-        # say why on stderr so it isn't a silent full run.
-        print(f"affected_tests: cannot determine changed paths ({exc}); "
-              f"falling back to ALL", file=sys.stderr)
+        result = select(changed, args.repo)
+    except Exception as exc:  # noqa: BLE001 - fail closed on ANY failure
+        # Whatever went wrong (no git, no diff base, a bug in a rule), the
+        # honest answer is "I cannot scope this": run everything, and say why
+        # on stderr so it is not a silent full run.
+        print(f"affected_tests: cannot select targets "
+              f"({type(exc).__name__}: {exc}); falling back to ALL",
+              file=sys.stderr)
         print(ALL)
         return 0
 
-    result = select(changed)
-    print(ALL if result == ALL else " ".join(result))
+    print(ALL if result == ALL else " ".join(result) or NONE)
     return 0
 
 
