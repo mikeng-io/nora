@@ -545,6 +545,94 @@ token, the log reads `access token rejected — replace LIFE360_AUTH_TOKEN` and
 backs off rather than falling back to the password, so repeat steps 1–4. Unset
 the variable to go back to password mode.
 
+## 4d. "The cognition loop is not healthy"
+
+One command answers it, from durable rows (a Prometheus series is reset by every
+restart, and nora restarts 2 to 24 times a day):
+
+```bash
+docker compose exec -T nora /app/.venv/bin/python -m nora cognition health            # last 24 h
+docker compose exec -T nora /app/.venv/bin/python -m nora cognition health --since 2026-10-02T09:00:00+08:00 --unit <unit> --json
+```
+
+(`/app/.venv/bin/python`, not `uv run`: `uv run` in the container installs the dev
+extras over the live venv.) It is READ-ONLY and prints counts, ages and rule names,
+never a message, a room id or a person. A unit is the `policy.toml` key you already
+pass to `nora cognition compare --unit`. **The exit code is the verdict**, so a
+flip-day check script can `&&` it:
+
+| exit | verdict | meaning |
+|---|---|---|
+| 0 | PASS | every threshold held, and there was something to judge |
+| 1 | FAIL | a threshold was breached; the line names which |
+| 2 | ERROR | it could not judge: a section failed to read, or no session ran and nothing waits (zero sessions is unknown, not healthy). A FAIL outranks an ERROR |
+
+The thresholds (`nora/domain/cognition_health.py`): **no session in the window while a
+stimulus waits** (FAIL); **a stimulus that could wake a unit has waited over 4 h**
+(`stalled`, the same number as `StimulusBacklog`); **over 10% of the sessions that
+ended failed or timed out**, with at least 5 ended (CUTOVER-PLAN §5.1's stop sign; a
+`cancelled` restart is in neither count); **a wake with no outcome and older than
+`[cognition] session_timeout_seconds`** (a session that was killed and recorded
+nothing, still holding its unit). It also reports sessions per day by outcome and
+cause, pending stimuli per unit and kind with the oldest age, the last wake recorded
+per unit, input / output / cache-read tokens per session (mean and max), refusals by
+rule, and process starts in the window (`deploy_revision`). **Reconcile (committed
+minus reverted) reads «unavailable» until the live ledger exists**; it is not part of
+the verdict and never prints as zero. The last wake TICK is not a row: it is the gauge
+`nora_cognition_wake_last_tick_seconds`, read by `CognitionWakeStalled`.
+
+**What a restart does to a session (since the cut-over's PR-7).** Before it, nora had
+no SIGTERM handler: `docker stop` killed the process on the spot, `App.shutdown` never
+ran, and a session in flight left its wake open, holding its unit for the rest of
+`[cognition] session_timeout_seconds` (3,900 s) and then counting as a failed session.
+Now `nora.__main__.run_until_stopped` handles SIGTERM and SIGINT: the adapters and
+loops stop (no new wake starts), a session already running gets 30 s
+(`SESSION_SHUTDOWN_GRACE_SECONDS`) to finish, then it is cancelled and records its
+wake `cancelled` with a `restart` detail, which frees its unit and returns its stimuli
+to pending; the model client and the store close. Compose gives the `nora` service
+`stop_grace_period: 75s` for that. A **second** signal ends the process at once. If
+the process was killed anyway (SIGKILL after the grace, the host rebooting), the next
+process **reclaims at boot**: every wake with no outcome that was recorded before it
+started is recorded `cancelled` / `restart` (`nora_cognition_wake_reclaimed_total`).
+A `cancelled` outcome neither counts toward the failure backoff nor strikes a
+stimulus, so a restart never penalises a unit. Read the cause in
+`cognition_wake_outcome`: `outcome = 'cancelled' AND detail LIKE 'restart%'`. **Not
+covered:** a tag turn or a Dreamer pass in flight at the stop ends with the process, as
+before; the stop does not wait out a 360 s turn.
+
+**The five alerts and the first move for each** (`docs/observability.md` has the
+incident behind each):
+
+| alert | first move |
+|---|---|
+| `CognitionWakeStalled` | `nora cognition health` (pending, last wake), then `docker compose logs nora --since 1h \| grep -i "wake tick"` for why the loop stopped; a restart restarts the loop |
+| `StimulusBacklog` | `nora cognition health`: which unit, and its failure streak; a unit backing off behind failing sessions is `CognitionSessionsFailing`'s story |
+| `CognitionSessionsFailing` | `nora cognition health`: failures by cause and unit; `infra` is the provider or the store (the unit backs off, nothing is struck), `agenda` is the input |
+| `NoraRestartLoop` | capture `docker logs nora --since 1h` BEFORE the next restart destroys it; `docker inspect nora` for `OOMKilled` and `ExitCode`; `deploy_revision` for the pattern |
+| `NoraErrorsRising` | the `stage` label names the code path; `docker compose logs nora --since 30m \| grep -i <stage>` |
+
+**Putting a rule change live.** The rules are bind-mounted
+(`./deploy/prometheus/rules:/etc/prometheus/rules`) and Prometheus runs with
+`--web.enable-lifecycle`, so after the deploy checkout has the new file:
+
+```bash
+docker compose exec -T prometheus promtool check rules /etc/prometheus/rules/nora.yml
+curl -fsS -X POST http://127.0.0.1:9190/-/reload
+curl -fsS http://127.0.0.1:9190/api/v1/rules | jq -r '[.data.groups[].rules[].name] | length'   # 21
+```
+
+**Tightening `NoraErrorsRising`.** Its threshold (10 in 15 minutes per stage) was
+not sized from a measured baseline. Read 14 days before changing it:
+`quantile_over_time(0.99, sum by (stage) (increase(nora_errors_total[15m]))[14d:15m])`
+(about 15 days of data exist at the 30-day retention flag, and every restart resets a
+series that is created lazily).
+
+**Known limits.** There is no dead-man switch (`docs/observability.md`, «What this
+pipeline cannot say»): nothing says so if Prometheus, Alertmanager or the bridge
+stops, and the bridge answers 202 to Alertmanager when its Discord POST fails.
+`NoraRestartLoop` cannot see a process that dies before it serves (that is
+`TargetDown`).
+
 ## 5. "Which doctrine produced this reply?"
 
 Every reply's log line and trace carry `doctrine_sha256` — the sha256 of the doctrine version

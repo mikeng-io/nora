@@ -51,6 +51,10 @@ class OutcomeRow:
     detail: str
     session_id: int | None
     cause: str = "infra"
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    trace_id: str | None = None
 
 
 class InMemoryStimulusStore:
@@ -225,11 +229,24 @@ class InMemoryStimulusStore:
         self.outcomes[outcome.wake_id] = OutcomeRow(
             wake_id=outcome.wake_id, unit=outcome.unit, outcome=value,
             at_ms=outcome.at_ms, detail=detail, session_id=outcome.session_id,
+            input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,
+            cache_read_tokens=outcome.cache_read_tokens, trace_id=outcome.trace_id,
             cause=stored_cause(value, cause),
         )
         for carry in rows:
             self.carries.append((len(self.carries) + 1, outcome.wake_id, carry))
         return RecordedOutcome(outcome=value, written=True)
+
+    async def open_wakes(self, *, recorded_before_ms: int) -> Sequence[WakeRow]:
+        self._check("open_wakes")
+        return sorted(
+            (
+                w for w in self.wakes
+                if w.tracked and w.id not in self.outcomes
+                and w.recorded_at_ms < recorded_before_ms
+            ),
+            key=lambda w: w.id,
+        )
 
     async def count_rollup(
         self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,

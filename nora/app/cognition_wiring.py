@@ -248,16 +248,33 @@ class AgendaSkills:
         return out
 
 
+#: How long a stopping process lets a session that is already running finish
+#: before it cancels it. A session is a model loop of minutes to an hour, so the
+#: grace is for one in its last moments, not for waiting out one that is not:
+#: whatever is still running at the deadline is cancelled, records its wake
+#: `cancelled` (a restart) and releases its unit. `docker-compose.yml`'s
+#: `stop_grace_period` for the `nora` service must exceed this by the time the
+#: rest of shutdown needs (adapters, the cancel's own database write, closing
+#: the client and the store): `tests/architecture/test_the_stop_grace_covers_the_shutdown.py`
+#: holds the margin.
+SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
+
+
 class CognitionShutdown:
     """Stops the sessions at shutdown, once. The evaluator's background tasks
     ARE the sessions' tasks, so `cancel_in_flight` and the runner's `shutdown`
     both cancel the same tasks: each is called (the design's open choice (a))
     and the second call of the whole thing is a no-op, so a process that
-    reaches shutdown twice does not cancel twice."""
+    reaches shutdown twice does not cancel twice.
 
-    def __init__(self, *, evaluator: Any, runner: Any) -> None:
+    The wake loop is already stopped by the time this runs (`App.run` cancels
+    every background task before `App.shutdown`), so no NEW wake starts while
+    the sessions already running are given `grace_seconds` to finish."""
+
+    def __init__(self, *, evaluator: Any, runner: Any, grace_seconds: float = 0.0) -> None:
         self._evaluator = evaluator
         self._runner = runner
+        self._grace = grace_seconds
         self._done = False
 
     @property
@@ -268,6 +285,7 @@ class CognitionShutdown:
         if self._done:
             return
         self._done = True
+        await self._evaluator.wait_in_flight(self._grace)
         await self._evaluator.cancel_in_flight()
         await self._runner.shutdown()
 

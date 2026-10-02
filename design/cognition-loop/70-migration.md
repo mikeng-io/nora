@@ -394,6 +394,7 @@ and step 6's matcher each have their own off switch.
 | analytics process down | no Rollup stimuli; the recorded polls show the gap, so no deviation is raised |
 | bridge or login down | poll outcomes counted; no social stimuli; nothing inferred from the absence |
 | perception cap reached | items recorded unperceived |
+| process restart or `docker stop` | the process handles SIGTERM and SIGINT (`nora.__main__.run_until_stopped`, built 2026-10-02 as the Cognition cut-over's PR-7; before it a SIGTERM killed the process with no unwind, and a session in flight left its wake open for the rest of `session_timeout_seconds` and then counted as a failed session). New wakes stop; a session already running gets `SESSION_SHUTDOWN_GRACE_SECONDS` (30 s) to finish, then it is cancelled and records its wake `cancelled` with a `restart` detail, freeing its unit and returning its stimuli to pending. If the process was killed anyway, the next one releases every wake left open before it started, the same way, at boot (`WakeEvaluator.reclaim_orphans`). `cancelled` neither counts toward the failure backoff nor strikes a stimulus, so a restart never penalises a unit (DEC-244) |
 
 ## 8. Tag-path changes
 
@@ -454,6 +455,17 @@ step's PR:
   `nora_lesson_total{result}` (written, retired, refused by rule, rolled
   back).
 - One Langfuse root per session, its model calls and tool calls as children.
+- The operational floor (built 2026-10-02, PR-7 of the cut-over):
+  `nora_cognition_wake_last_tick_seconds{mode}` (the wake loop's pulse, written from
+  inside the loop; absent while `[cognition] mode` is off), `nora_process_start_time_seconds`
+  (what a restart-loop alert counts changes of), `nora_cognition_wake_reclaimed_total`
+  (wakes a previous process left open, released at boot). A session's input, output and
+  cache-read tokens and its root trace id are durable on `cognition_wake_outcome`
+  (migration 0090), because the token counter above is reset by every restart.
+  `nora cognition health` reads the rows (sessions by day and outcome, pending
+  stimuli, failure causes, tokens per session, refusals by rule, process starts) and
+  exits 0 / 1 / 2 for PASS / FAIL / ERROR; five alerts read the series
+  (`docs/observability.md`, `docs/runbook.md` «The cognition loop is not healthy»).
 
 ## Status / Checkpoint
 

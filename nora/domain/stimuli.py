@@ -221,6 +221,26 @@ NO_CAUSE = "none"
 OUTCOME_CAUSES: tuple[str, ...] = (*FAILURE_CAUSES, NO_CAUSE)
 
 
+#: What a `cancelled` outcome's `detail` starts with when a PROCESS RESTART ended
+#: the wake: the session was cancelled as the process stopped
+#: (`CognitionSessionRunner`), or the next process found the wake open with no
+#: process left to own it (`WakeEvaluator.reclaim_orphans`). A restart is not a
+#: failure of the session, the agenda or the world, so it takes no cause of its
+#: own: `cancelled` already neither counts toward the failure backoff nor strikes
+#: (`failure_streak`), and the detail is what tells an operator why
+#: (`nora cognition health` reads it).
+RESTART_DETAIL = "restart"
+
+
+def restart_detail(why: str) -> str:
+    """The `detail` of a `cancelled` outcome a restart caused."""
+    return f"{RESTART_DETAIL}: {why}"
+
+
+def is_restart_detail(detail: str) -> bool:
+    return detail == RESTART_DETAIL or detail.startswith(f"{RESTART_DETAIL}:")
+
+
 def stored_cause(outcome: str, cause: str) -> str:
     """The cause an outcome row is written with: `none` for `closed` and
     `cancelled`, the classified one otherwise. The ONE rule both stores apply."""

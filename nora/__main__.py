@@ -14,10 +14,13 @@ import asyncio
 import functools
 import logging
 import os
+import signal
 import sys
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
 from . import config
 from .agent.telemetry import setup_agent_tracing
@@ -49,7 +52,11 @@ ADOPTION_START_DELAY_SECONDS = adoption.DEFAULT_START_DELAY_SECONDS
 
 log = logging.getLogger("nora.__main__")
 
-__all__ = ["App", "StartupError", "build_app", "build_parser", "main"]
+__all__ = ["App", "StartupError", "build_app", "build_parser", "main", "run_until_stopped"]
+
+#: The signals that stop the process gracefully. `docker stop` (and so a compose
+#: recreate) sends SIGTERM; a terminal's Ctrl-C sends SIGINT.
+STOP_SIGNALS: tuple[signal.Signals, ...] = (signal.SIGTERM, signal.SIGINT)
 
 
 async def build_app(config_path: Path) -> App:
@@ -140,6 +147,9 @@ class App:
         # /app/v1/status's uptime never disagree about when this process
         # started.
         started_at = time.time()
+        # Before anything that can take time: the series that says «this process
+        # started» is what `NoraRestartLoop` counts changes of.
+        deps.metrics.gauge("nora_process_start_time_seconds", started_at)
         health_app = build_health_app(
             adapter=deps.adapter, adapters=deps.registry.adapters,
             store=deps.audit, honcho=deps.memory,
@@ -304,6 +314,14 @@ class App:
         # the Dreamer's clock above keeps running everything. `None` under
         # `[cognition] mode = "off"`, the shipped default.
         if deps.wake_evaluator is not None:
+            # BEFORE the loop starts, and awaited, for the reason the watermarks
+            # above are: whatever a previous process left open is released before
+            # a tick reads it, so a restart never holds a unit for the rest of a
+            # session timeout. Never raises (it counts and logs); a wake it could
+            # not release expires on its own clock, as it did before.
+            await deps.wake_evaluator.reclaim_orphans(
+                process_started_ms=int(started_at * 1000),
+            )
             deps.background.spawn(wake.wake_loop(
                 deps.wake_evaluator, deps.metrics,
                 tick_seconds=deps.wake_tick_seconds,
@@ -458,6 +476,57 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _Serving(Protocol):
+    async def run(self) -> None: ...
+
+    async def shutdown(self) -> None: ...
+
+
+async def run_until_stopped(
+    app: _Serving, *, signals: Sequence[signal.Signals] = STOP_SIGNALS,
+) -> None:
+    """Run `app` until it ends or a stop signal arrives, then shut it down.
+
+    **No handler existed before this.** A Python process with no SIGTERM handler
+    dies on the signal without unwinding: `finally` never ran, so `App.shutdown`
+    (and with it `CognitionShutdown`, which cancels the sessions and records their
+    wakes) was reachable only by SIGINT. `docker stop` sends SIGTERM, and nora
+    starts 2 to 24 times a day, so every restart killed its sessions mid-flight and
+    left their wakes open to hold their units for the rest of the session timeout.
+    (`uv run`, the image's entrypoint, forwards SIGTERM to the process it spawns:
+    read back with uv 0.11.7; the image pins 0.11.18.)
+
+    The first signal cancels `app.run()`, which stops the adapters and every
+    background loop (so no NEW wake starts) and returns to `finally:
+    app.shutdown()`. The handlers are removed on the first signal, so a SECOND one
+    takes the default action and ends the process at once: an operator who
+    cannot wait for the grace can still stop it, and `docker stop`'s SIGKILL after
+    `stop_grace_period` is the backstop for a shutdown that hangs."""
+    loop = asyncio.get_running_loop()
+    serving = asyncio.ensure_future(app.run())
+    stopping: list[signal.Signals] = []
+
+    def _stop(received: signal.Signals) -> None:
+        stopping.append(received)
+        log.warning("received %s: stopping (a second signal ends the process at once)",
+                    received.name)
+        for sig in signals:
+            loop.remove_signal_handler(sig)
+        serving.cancel()
+
+    for sig in signals:
+        loop.add_signal_handler(sig, _stop, sig)
+    try:
+        await serving
+    except asyncio.CancelledError:
+        if not stopping:
+            raise
+    finally:
+        for sig in signals:
+            loop.remove_signal_handler(sig)
+        await app.shutdown()
+
+
 def main() -> int:
     args = build_parser().parse_args()
     if getattr(args, "func", None) is not None:
@@ -465,10 +534,7 @@ def main() -> int:
 
     async def _run() -> None:
         app = await build_app(Path(args.config))
-        try:
-            await app.run()
-        finally:
-            await app.shutdown()
+        await run_until_stopped(app)
 
     try:
         asyncio.run(_run())

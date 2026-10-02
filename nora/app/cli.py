@@ -44,7 +44,7 @@ import contextlib
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,7 @@ from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.cognition_compare import CompareWindow
 from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
+from nora.app.cognition_health import run_health as cognition_run_health
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -84,6 +85,10 @@ from nora.app.person_forget import (
     unforget_person,
 )
 from nora.config import Config, ConfigError, load
+from nora.domain.cognition_health import exit_code as health_exit_code
+from nora.domain.cognition_health import judge as health_judge
+from nora.domain.cognition_health import render_text as health_render_text
+from nora.domain.cognition_health import report_json as health_report_json
 from nora.domain.cognition_shadow_compare import (
     DEFAULT_TOLERANCE_MINUTES,
     RoomDirectory,
@@ -441,6 +446,25 @@ def add_subcommands(
         "--json", action="store_true", help="the machine-readable report, one JSON object",
     )
     compare.set_defaults(func=cmd_cognition_compare)
+    health = cognition_sub.add_parser(
+        "health", parents=[parent],
+        help="is the cognition loop healthy now: sessions, pending stimuli, failures, "
+             "tokens and refusals from durable rows; exits 0 PASS, 1 FAIL, 2 ERROR",
+    )
+    health.add_argument(
+        "--since", default=None,
+        help="ISO 8601, timezone-aware; defaults to 24 hours before --until",
+    )
+    health.add_argument(
+        "--until", default=None, help="ISO 8601, timezone-aware; defaults to now",
+    )
+    health.add_argument(
+        "--unit", default=None, help="only this unit (a policy.toml unit)",
+    )
+    health.add_argument(
+        "--json", action="store_true", help="the machine-readable report, one JSON object",
+    )
+    health.set_defaults(func=cmd_cognition_health)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -945,6 +969,38 @@ def _room_directory(cfg: Config, unit: str | None) -> RoomDirectory:
     return RoomDirectory(
         labels=labels, unit_rooms={u: frozenset(r) for u, r in unit_rooms.items()},
     )
+
+
+async def cmd_cognition_health(args: argparse.Namespace) -> int:
+    """`nora cognition health [--since ISO] [--until ISO] [--unit U] [--json]`: is
+    the cognition loop healthy now, from durable rows (the Cognition cut-over's
+    flip-day instrument; a Prometheus series is reset by every restart). READ-ONLY,
+    counts and rule names only. Exit 0 PASS, 1 FAIL (a threshold breached), 2 ERROR
+    (a read failed, or nothing ran and nothing waits: unknown, never healthy), so a
+    check script can `&&` it."""
+    cfg = _config(args)
+    now = datetime.now(UTC)
+    until = _cutover(args.until) if args.until else now
+    since = _cutover(args.since) if args.since else until - timedelta(hours=24)
+    if until <= since:
+        raise CliError("--until must be later than --since")
+    tz = ZoneInfo(cfg.cognition.timezone)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        report = await cognition_run_health(
+            engine, since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
+            now_ms=int(now.timestamp() * 1000), unit=args.unit, tz=tz,
+            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
+        )
+    finally:
+        await engine.dispose()
+    iso = {"since": since.astimezone(tz).isoformat(), "until": until.astimezone(tz).isoformat()}
+    if args.json:
+        print(json.dumps(health_report_json(report, iso=iso), indent=2, sort_keys=True))
+    else:
+        for line in health_render_text(report, iso=iso):
+            print(line)
+    return health_exit_code(health_judge(report)[0])
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

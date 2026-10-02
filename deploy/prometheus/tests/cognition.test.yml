@@ -1,0 +1,285 @@
+# `promtool test rules deploy/prometheus/tests/cognition.test.yml`, from the repo
+# root (or the docker form in tests/test_deploy_assets.py). The cognition loop's
+# operational floor (the Cognition cut-over's PR-7): NoraRestartLoop, NoraErrorsRising,
+# CognitionWakeStalled, StimulusBacklog, CognitionSessionsFailing. Each case states what
+# a WRONG rule would do. No expected alert carries a unit, room or person label: the
+# series that have one (`nora_stimulus_pending_age_seconds{unit}`) are aggregated away.
+rule_files:
+  - ../rules/nora.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- NoraRestartLoop ------------------------------------------------------
+
+  # A loop: a new process every 2 minutes. Fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 101 101 102 102 103 103 104 104 105 105 106 106 107 107 108 108 109 109 110 110 111 111 112 112 113 113 114 114 114 114 114 114 114'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: NoraRestartLoop
+        exp_alerts:
+          - exp_labels: { severity: critical, job: nora }
+            exp_annotations:
+              summary: "nora restarted 14 times in 30 minutes"
+              description: >-
+                Not a deploy: deploys are minutes apart. Capture the previous container's
+                log BEFORE the next restart destroys it (`docker logs nora --since 1h`),
+                then read `deploy_revision` for the pattern and `docker inspect nora`
+                for OOMKilled and ExitCode. `nora cognition health` counts the starts.
+
+  # A bad deploy day: three restarts in half an hour (a deploy every ten minutes is
+  # already faster than a build). Never fires. This is the case a rule on
+  # `up == 0`, or a threshold of 3, gets wrong: restarts are 2 to 24 a day here.
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 100 100 101 101 101 101 101 101 101 101 101 101 102 102 102 102 102 102 102 102 102 102 103 103 103 103 103 103 103 103 103 103 103'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: NoraRestartLoop
+        exp_alerts: []
+
+  # THE THRESHOLD: five restarts in the window do not fire, six do. One a minute for
+  # a day of deploys would, and so would a crash loop; five does not.
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 100 101 101 101 101 101 102 102 102 102 102 103 103 103 103 103 104 104 104 104 104 105 105 105 105 105 105 105 105 105 105 105 105'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: NoraRestartLoop
+        exp_alerts: []
+    promql_expr_test:
+      - expr: changes(nora_process_start_time_seconds{job="nora"}[30m])
+        eval_time: 29m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 5 }
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 100 101 101 101 101 101 102 102 102 102 102 103 103 103 103 103 104 104 104 104 104 105 105 105 105 105 106 106 106 106 106 106 106'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: NoraRestartLoop
+        exp_alerts:
+          - exp_labels: { severity: critical, job: nora }
+            exp_annotations:
+              summary: "nora restarted 6 times in 30 minutes"
+              description: >-
+                Not a deploy: deploys are minutes apart. Capture the previous container's
+                log BEFORE the next restart destroys it (`docker logs nora --since 1h`),
+                then read `deploy_revision` for the pattern and `docker inspect nora`
+                for OOMKilled and ExitCode. `nora cognition health` counts the starts.
+
+  # A process that never restarts, however long it runs. Never fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: NoraRestartLoop
+        exp_alerts: []
+
+  # --- NoraErrorsRising -----------------------------------------------------
+
+  # A stage failing every 30 s for 20 minutes (a wake loop whose tick raises). Fires,
+  # by stage, with no other label.
+  - interval: 1m
+    input_series:
+      - series: 'nora_errors_total{job="nora",stage="cognition_wake",platform=""}'
+        values: '0 0 0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34 36 38 40 42 44'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: NoraErrorsRising
+        exp_alerts:
+          - exp_labels: { severity: warning, stage: cognition_wake }
+            exp_annotations:
+              summary: "nora counted 30 errors in 15 minutes (stage cognition_wake)"
+              description: >-
+                Read the stage's log lines: `docker logs nora --since 30m | grep -i
+                <stage>`. A wake loop (`cognition_wake`), a session (`cognition_session`) or
+                a boot reclaim (`cognition_reclaim`) failing is the cognition loop; see
+                docs/runbook.md "The cognition loop is not healthy".
+
+  # A stage that errors now and then (3 in 15 minutes) never fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_errors_total{job="nora",stage="peer_card",platform=""}'
+        values: '0x5 1x4 2x4 3x20'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: NoraErrorsRising
+        exp_alerts: []
+
+  # The counter reset a restart causes is not an error burst: `increase` reads it as a
+  # reset, not as a negative or a jump.
+  - interval: 1m
+    input_series:
+      - series: 'nora_errors_total{job="nora",stage="peer_card",platform=""}'
+        values: '40x10 0x3 1x15'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: NoraErrorsRising
+        exp_alerts: []
+
+  # --- CognitionWakeStalled -------------------------------------------------
+
+  # The loop ticks every minute (the value is the unix time of its last tick, here the
+  # simulated clock itself). Never fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="shadow"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: CognitionWakeStalled
+        exp_alerts: []
+
+  # The loop stops at minute 5 and the process keeps answering. 600 s past its last
+  # tick (minute 15), pending for the 2m `for`, then fires. Not at 16m (pending).
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_wake_last_tick_seconds{job="nora",mode="shadow"}'
+        values: '0+60x5 300x55'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CognitionWakeStalled
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CognitionWakeStalled
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "the cognition wake loop has not ticked for 15m 0s"
+              description: >-
+                No unit is being woken and no stimulus consumed. `nora cognition health` says
+                what is pending; the log says why the tick stopped
+                (`docker logs nora --since 1h | grep -i "wake tick"`).
+
+  # NOT APPLICABLE: `[cognition] mode = off` exports no sample, while the target is
+  # alive. An absence-based rule would page a deployment that has no wake loop.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="nora"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: CognitionWakeStalled
+        exp_alerts: []
+
+  # --- StimulusBacklog ------------------------------------------------------
+
+  # One unit's oldest stimulus is 5.5 hours old. The unit label is aggregated away:
+  # the alert says something waits, `nora cognition health` says where.
+  - interval: 1m
+    input_series:
+      - series: 'nora_stimulus_pending_age_seconds{job="nora",unit="a"}'
+        values: '20000x40'
+      - series: 'nora_stimulus_pending_age_seconds{job="nora",unit="b"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StimulusBacklog
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: StimulusBacklog
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "a stimulus has waited 5h 33m 20s to wake a unit"
+              description: >-
+                Either the wake loop stopped (see `CognitionWakeStalled`), a unit is backing off
+                behind failing sessions, or a session holds it. `nora cognition health`.
+
+  # Three hours is a unit on its backoff, not a stall. Never fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_stimulus_pending_age_seconds{job="nora",unit="a"}'
+        values: '10800x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: StimulusBacklog
+        exp_alerts: []
+
+  # --- CognitionSessionsFailing ---------------------------------------------
+
+  # Six of twelve sessions that ended failed or timed out. Fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '0x5 1 2 3 4 5 6 6x20'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0x5 1 2 3 4 4 4 4x20'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="timeout"}'
+        values: '0x10 1 2 2x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CognitionSessionsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "50% of cognition sessions failed or timed out in 3 hours"
+              description: >-
+                A provider outage backs a unit off and never strikes a stimulus (DEC-244), so this
+                is the model or the store, not lost messages. `nora cognition health` splits the
+                failures by cause and unit.
+
+  # One failure in ten is a session going wrong, not a failing loop. Never fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '0x5 1 2 3 4 5 6 7 8 9 9x20'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0x5 0 0 0 0 0 0 0 1 1 1 1x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: CognitionSessionsFailing
+        exp_alerts: []
+
+  # Restarts are not failures. 100 sessions cancelled by restarts beside three that
+  # failed and three that closed: the ratio is over what ENDED, so 50% fires. Counting
+  # `cancelled` in the denominator would read 3% and stay silent through a real
+  # failure.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="cancelled"}'
+        values: '0x5 20 40 60 80 100 100x20'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '0x5 1 2 3 3 3 3 3x20'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0x5 1 2 3 3 3 3 3x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CognitionSessionsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "50% of cognition sessions failed or timed out in 3 hours"
+              description: >-
+                A provider outage backs a unit off and never strikes a stimulus (DEC-244), so this
+                is the model or the store, not lost messages. `nora cognition health` splits the
+                failures by cause and unit.
+
+  # Two failed sessions and nothing else is 100% of two: under the floor of three.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0x5 1 2 2x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CognitionSessionsFailing
+        exp_alerts: []
+
+  # No sessions at all (cognition off): division by nothing is no answer, never an alert.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="nora"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CognitionSessionsFailing
+        exp_alerts: []

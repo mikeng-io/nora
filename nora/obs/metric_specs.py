@@ -2415,6 +2415,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("reason", "mode"),
     ),
     _CounterSpec(
+        "nora_cognition_wake_reclaimed_total",
+        "Wakes a previous process left open (a tracked wake with no outcome row, "
+        "recorded before this process started) that this process released at "
+        "boot, recorded `cancelled` with a restart detail. Each one is a session "
+        "a restart killed that would otherwise have held its unit single-flight "
+        "for the rest of session_timeout_seconds and then counted as a failure. "
+        "Written once at start, so a value above 0 reads «the previous process "
+        "ended with sessions in flight».",
+    ),
+    _CounterSpec(
         "nora_cognition_session_total",
         "Cognition sessions started in shadow (migration step 3a-ii): one "
         "per would-wake whose agenda was non-empty, session row recorded "
@@ -2835,6 +2845,27 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "1 when the last public summons write was refused writes_blocked "
         "(the bridge latched comment writes off after an action block; an "
         "operator must clear it), 0 after a write published.",
+    ),
+    _GaugeSpec(
+        "nora_cognition_wake_last_tick_seconds",
+        "Unix time the wake evaluator's loop last FINISHED a tick (one that "
+        "raised counts: nora_errors_total{stage=cognition_wake} says it failed), "
+        "by the evaluator's mode (" + " / ".join(WAKE_MODES) + "). Written from "
+        "inside the loop, so a loop that is gone or hung stops moving it; read "
+        "`time() - this` against a few ticks (30 s each). ABSENT while "
+        "[cognition] mode is off: not applicable, never 0.",
+        ("mode",),
+    ),
+    # The process's own start. `prometheus_client`'s default `process_start_time_seconds`
+    # is exported only by the GLOBAL registry's collector, and `Metrics` owns a
+    # registry of its own (DEC-13), so no such series exists on :9100. Unlabelled and
+    # set at the start of `App.run`: it is 0 for the instants before that, which no
+    # rule reads, because the one that does (`NoraRestartLoop`) counts CHANGES.
+    _GaugeSpec(
+        "nora_process_start_time_seconds",
+        "Unix time this nora process started serving (App.run). It changes when "
+        "the process restarts and at no other time, so `changes()` over it counts "
+        "restarts that were scraped.",
     ),
     _GaugeSpec(
         "nora_stimulus_pending_age_seconds",

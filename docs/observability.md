@@ -485,13 +485,44 @@ Sentry rather than instead of it — see "what counts as an error" below.
 |---|---|---|
 | `TargetDown` | `up == 0` for 3m | `nora-egress.service` sat `failed` for sixteen days |
 | `HeartbeatStalled` | tick age > 300s | a stalled loop in a process that still answers HTTP |
+| `NoraRestartLoop` | 6+ restarts of the nora process in 30m (`changes()` over `nora_process_start_time_seconds`) | `TargetDown` needs 3 continuous minutes of `up == 0` and a process that comes straight back never gives it; nora starts 2 to 24 times a day, almost all deploys, so the rule is sized to a loop (one restart in five minutes), not to a bad deploy day |
+| `NoraErrorsRising` | more than 10 `nora_errors_total` in 15m for one stage | this codebase counts errors instead of raising them; a failing stage shows as this counter and nothing else. Not sized from a measured baseline: loose, to be tightened from 14 days of data |
+| `CognitionWakeStalled` | the wake loop has not finished a tick for 600s | `HeartbeatStalled` watches the reminders loop only; a wake evaluator that stopped, or hung in a store call, was invisible in a process that still answered HTTP |
+| `StimulusBacklog` | a stimulus that could wake a unit has waited over 4h (`max()` of `nora_stimulus_pending_age_seconds`) | the gauge existed and nothing read it; four hours is past what one failed session and its backoff explain |
+| `CognitionSessionsFailing` | 3+ sessions failed or timed out in 3h AND over 30% of the sessions that ended (a `cancelled` restart is in neither count) | a failing session loop is a counter label moving, not an exception |
 | `PlatformSilent` | adapter event age > 900s (keep-alives and heartbeats count, so it is a silent socket, not a quiet room) | the one condition the old shell watchdog checked — on no timer, into no channel |
+| `PresenceCollectionStalled` | a circle's last successful collection is over 1800s old | 2026-09-24: Life360 stopped accepting the collector's login and the container stayed healthy while nothing recorded |
+| `PresenceNotRecording` | no location fix written for anyone in 2h, restarts included | the restart-proof twin of the rule above: a gauge that counts from boot is reset by every recreate |
+| `PresenceAuthRefused` | Life360 refused the login (`auth_403`, `banned`, `challenge`) | a refused login does not heal on its own and a restart does not fix it |
+| `Life360TokenRejected` | the `LIFE360_AUTH_TOKEN` was rejected | token mode never falls back to the password, so a dead token stays dead until a person copies a new one |
+| `MusicWedged` | nora believes a track is playing and the audio controller reports no sound | the divergence is the failure; a wedged controller sat green for days |
+| `MusicControllerUnreadable` | 5+ unreadable controller polls in 10m | «I do not know» is not «not playing», and needs different hands |
+| `MusicStreamFailing` | 3+ music streams failed in 15m | the loud failure the silent one hides behind: a track that keeps failing burns the queue |
 | `UnavailableOutcomes` | any `*_total{status="unavailable"}` increasing | R-27's third state — the thing this codebase produces *instead of* raising |
 | `MediaCustodyNotConfigured` | attachments arriving with custody off | the silent degrade `media.py` counts rather than raises |
 | `ComputerDown` | `nora_computer_up == 0` for 5m | the 2026-10-01 audit of Nora's computer found no series at all that said computerd was down, hung, stopped by a lapsed Docker login, or answering 401 after a token rotation |
 | `ComputerCallsFailing` | 5+ computer calls answered `unavailable` in 15m | computerd answering and failing (a full disk, an OS error) keeps `nora_computer_up` at 1 |
 | `ComputerAuditFailing` | any computer audit write failing, by stage | `nora_computer_audit_failures_total` was never seen live: its series did not exist until the first failure |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
+
+**What this pipeline cannot say, stated rather than discovered.** There is **no
+dead-man switch**: if Prometheus, Alertmanager or the bridge stops, nothing says so
+(`PrometheusNotIngesting` is evaluated BY Prometheus, so it cannot report its own
+death). A dead-man switch needs a receiver OUTSIDE this pipeline that alerts on
+the absence of a regular ping (an external heartbeat service); the repo carries
+none and a second path inside the same compose project would fail with it, so none
+was added. And the bridge answers 202 to Alertmanager even when its Discord POST
+fails (`deploy/alert-bridge/bridge.py`), so a transient Discord failure loses an
+alert for the 12 h `repeat_interval`. **The durable source of truth for the cognition
+loop is `nora cognition health` (`docs/runbook.md` «The cognition loop is not
+healthy»), which reads rows, not series: the alerts are the prompt.**
+
+**`NoraRestartLoop` is blind to a process that dies before it serves.** The series
+is exposed only once `App.run` has started the metrics server, so a startup failure
+(a bad config, a failed migration) never moves it; `TargetDown` is the rule for that,
+three minutes later. `process_start_time_seconds`, which a stock client exports, is
+NOT on :9100 (`Metrics` owns its own registry, DEC-13), hence
+`nora_process_start_time_seconds`.
 
 `UnavailableOutcomes` is written generically over every `*_total` carrying the
 label, so a counter added next month is covered the day it ships — the same

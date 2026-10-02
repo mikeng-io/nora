@@ -235,7 +235,7 @@ from nora.domain.models import (
 )
 from nora.domain.parking import StreetParking as StreetParking
 from nora.domain.standing import Standing as Standing
-from nora.domain.stimuli import NewStimulus, NewWake, UnitView, WakeGuard
+from nora.domain.stimuli import NewStimulus, NewWake, UnitView, WakeGuard, WakeRow
 from nora.domain.utf16 import utf16_len
 
 # `PlatformIdentity` is re-exported, not declared here — it moved next to
@@ -997,6 +997,16 @@ class StimulusStore(Protocol):
         with any outcome but `closed` are refused (ValueError)."""
         ...
 
+    async def open_wakes(self, *, recorded_before_ms: int) -> Sequence[WakeRow]:
+        """Every TRACKED wake recorded before `recorded_before_ms` that has no
+        outcome row, oldest first, whatever its age: a wake no session of the
+        asking process can own because the asking process started after it
+        (`WakeEvaluator.reclaim_orphans` passes its own start). Expired ones are
+        included: reading them as failed is the clock's rule, and a process that
+        no longer exists failed nothing. Untracked wakes never have an outcome,
+        so they are never listed."""
+        ...
+
     async def count_rollup(
         self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
     ) -> int:
@@ -1061,6 +1071,14 @@ class NewWakeOutcome:
     #: FAILURE_CAUSES`, `classify_failure`); ignored for `closed`/`cancelled`.
     #: Defaults to `infra`, the side that never strikes a stimulus.
     cause: str = "infra"
+    #: What the session's model loop spent, as the runner could read it: None is
+    #: unread, never a zero (a session that failed before a model call, an
+    #: outcome a restart wrote, a provider that reported no usage).
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    #: The session's root trace, so a spend row can be opened in Langfuse.
+    trace_id: str | None = None
 
 
 @dataclass(frozen=True)

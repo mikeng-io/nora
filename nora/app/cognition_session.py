@@ -133,6 +133,7 @@ from nora.domain.stimuli import (
     estimate_tokens_lower_bound,
     is_context_overflow,
     prove_overflow_is_the_agenda,
+    restart_detail,
 )
 from nora.language.cognition_render import (
     RenderBudget,
@@ -357,6 +358,15 @@ class TokenSpend:
     not in a result that never came). `None`: unread, never a zero."""
 
     total: int | None = None
+    #: The split the provider reported, when it did: what the durable ledger
+    #: (`cognition_wake_outcome`) keeps. `cache_read` is the part of the input a
+    #: provider served from its prompt cache, as the provider counts it.
+    input: int | None = None
+    output: int | None = None
+    cache_read: int | None = None
+    #: The session's root trace (`dream:cognition`), left by the runner inside
+    #: the span, so a spend row opens in Langfuse.
+    trace_id: str | None = None
 
 
 #: The session's `TokenSpend`, set around the model loop. A context variable and
@@ -778,6 +788,10 @@ class CognitionSessionRunner:
         if task is not None:
             self._tasks[wake_id] = task
         session_id: int | None = None
+        #: Offered to the model loop (`SESSION_TOKENS`) and read by EVERY path
+        #: that records this wake's outcome, so a failed, timed-out or cancelled
+        #: session's spend is as durable as a closed one's.
+        spend = TokenSpend()
         try:
             home_room = self._home_rooms.get(unit)
             if home_room is None:
@@ -881,23 +895,30 @@ class CognitionSessionRunner:
             return await self._run_session(
                 unit=unit, view=view, situation=situation, session_id=session_id,
                 wake_id=wake_id, now_ms=now_ms, doctrine_text=doctrine_text,
-                grounding=grounding, retained=sorted(retained),
+                grounding=grounding, retained=sorted(retained), spend=spend,
             )
         except asyncio.CancelledError:
+            # Only a process shutdown cancels a session (`shutdown`,
+            # `WakeEvaluator.cancel_in_flight`; the wall clock raises
+            # `SessionTimeoutError` instead), so this is a RESTART: recorded as
+            # one, and `cancelled` neither backs the unit off nor strikes.
             await self._shielded_finish(
-                wake_id, unit, session_id, "cancelled", "the session task was cancelled",
+                wake_id, unit, session_id, "cancelled",
+                restart_detail("the process was stopping and cancelled the session"),
+                tokens=spend,
             )
             raise
         except SessionExpiredError:
             raise
         except SessionTimeoutError as exc:
-            await self._finish(wake_id, unit, session_id, "timeout", str(exc))
+            await self._finish(wake_id, unit, session_id, "timeout", str(exc), tokens=spend)
             raise
         except Exception as exc:
             log.exception("cognition session failed (unit=%s wake=%s)", unit, wake_id)
             await self._finish(
                 wake_id, unit, session_id, "failed", f"{type(exc).__name__}: {exc}"[:500],
                 cause=classify_failure(exc),
+                tokens=spend,
             )
             raise
         finally:
@@ -973,11 +994,14 @@ class CognitionSessionRunner:
 
     async def _shielded_finish(
         self, wake_id: int, unit: str, session_id: int | None, outcome: str, detail: str,
+        tokens: TokenSpend | None = None,
     ) -> None:
         """`_finish`, shielded: a SECOND cancel (a `shutdown` and the
         evaluator's `cancel_in_flight` both cancelling this task) interrupts
         the wait, never the write."""
-        write = asyncio.ensure_future(self._finish(wake_id, unit, session_id, outcome, detail))
+        write = asyncio.ensure_future(
+            self._finish(wake_id, unit, session_id, outcome, detail, tokens=tokens),
+        )
         self._finishing.add(write)
         write.add_done_callback(self._finishing.discard)
         await asyncio.shield(write)
@@ -985,6 +1009,7 @@ class CognitionSessionRunner:
     async def _finish(
         self, wake_id: int, unit: str, session_id: int | None, outcome: str, detail: str,
         carries: Sequence[NewCarry] = (), cause: str = "infra",
+        tokens: TokenSpend | None = None,
     ) -> RecordedOutcome | None:
         """Record the wake's outcome, at the REAL clock: the cooldown runs
         from here, not from the wake, so a long session is not already
@@ -1001,6 +1026,10 @@ class CognitionSessionRunner:
                     # A session that closed or was cancelled did not FAIL: it has
                     # no cause (m2), never `infra`.
                     cause=cause if outcome in ("failed", "timeout") else NO_CAUSE,
+                    input_tokens=None if tokens is None else tokens.input,
+                    output_tokens=None if tokens is None else tokens.output,
+                    cache_read_tokens=None if tokens is None else tokens.cache_read,
+                    trace_id=None if tokens is None else tokens.trace_id,
                 ),
                 carries=carries, recorded_at_ms=ended_ms,
             )
@@ -1017,7 +1046,7 @@ class CognitionSessionRunner:
     async def _run_session(
         self, *, unit: str, view: UnitView, situation: Situation, session_id: int,
         wake_id: int, now_ms: int, doctrine_text: str, grounding: Grounding,
-        retained: Sequence[int] = (),
+        spend: TokenSpend, retained: Sequence[int] = (),
     ) -> CognitionSessionOutcome:
         items = situation.agenda.items
         state = _RunState(
@@ -1042,7 +1071,6 @@ class CognitionSessionRunner:
             last_session_ms=situation.last_session_ms, tz=self._tz,
             budget=self._render_budget,
         )
-        spend = TokenSpend()
         token = SESSION_TOKENS.set(spend)
         result: CognitionRunResult | None = None
         try:
@@ -1102,6 +1130,7 @@ class CognitionSessionRunner:
         )
         recorded = await self._finish(
             wake_id, unit, session_id, "closed", result.stop_reason or "", carries=carries,
+            tokens=spend,
         )
         if recorded is None or recorded.outcome != "closed":
             raise SessionExpiredError(

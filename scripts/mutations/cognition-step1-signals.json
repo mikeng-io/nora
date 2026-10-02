@@ -44,8 +44,8 @@
   {
     "name": "shadow evaluator: gains an import that can act (the fire path)",
     "file": "nora/app/wake.py",
-    "old": "from nora.domain.ports import StimulusStore\n",
-    "new": "from nora.app.fire import FirePath  # noqa: F401\nfrom nora.domain.ports import StimulusStore\n",
+    "old": "from nora.domain.ports import NewWakeOutcome, StimulusStore\n",
+    "new": "from nora.app.fire import FirePath  # noqa: F401\nfrom nora.domain.ports import NewWakeOutcome, StimulusStore\n",
     "target": "tests/architecture/test_the_wake_evaluator_cannot_act.py::test_the_evaluator_imports_nothing_that_acts"
   },
   {

@@ -36,6 +36,50 @@ groups:
         annotations:
           summary: "Nora's heartbeat has not ticked for {{ $value | humanizeDuration }}"
 
+      # A restart LOOP, which `TargetDown` cannot see: it needs 3 continuous minutes of
+      # `up == 0`, and a process that comes back within a scrape or two never gives it
+      # that. Nora starts 2 to 24 times a day (47 starts in 3.3 days, 2026-09-29 to
+      # 10-02, read from `deploy_revision`; median gap 45 min, shortest 1 min), almost
+      # all of them deploys, so the rule must fire on a LOOP and stay quiet on a bad
+      # deploy day. `nora_process_start_time_seconds` changes only when the process
+      # restarts (`prometheus_client`'s own `process_start_time_seconds` is not exported:
+      # `Metrics` owns its registry), so `changes()` counts the restarts a scrape saw.
+      # 6 in 30 minutes is one every 5: faster than any sequence of deploys (a build
+      # alone takes minutes) and well under a crash loop's one a minute. Blind by
+      # construction to a process that dies BEFORE it serves (a startup failure never
+      # exposes the series): that is `TargetDown`, 3 minutes later.
+      - alert: NoraRestartLoop
+        expr: changes(nora_process_start_time_seconds{job="nora"}[30m]) >= 6
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "nora restarted {{ $value | humanize }} times in 30 minutes"
+          description: >-
+            Not a deploy: deploys are minutes apart. Capture the previous container's
+            log BEFORE the next restart destroys it (`docker logs nora --since 1h`),
+            then read `deploy_revision` for the pattern and `docker inspect nora`
+            for OOMKilled and ExitCode. `nora cognition health` counts the starts.
+
+      # Errors the code counted instead of raising. This codebase is built not to
+      # raise (the file's first comment), so a burst of `nora_errors_total` is how a
+      # failing stage shows: the provider, a store, a loop. By STAGE (a code
+      # constant), never by room or person. 10 in 15 minutes: a wake loop whose tick
+      # fails every 30 s adds 30, a stage that errors once an hour never reaches it.
+      # NOT sized from a measured baseline (none was available when this was written):
+      # loose on purpose, and `increase()` cannot see the first error of a stage whose
+      # series is created by it. Tighten it from `quantile_over_time` on 14 days.
+      - alert: NoraErrorsRising
+        expr: sum by (stage) (increase(nora_errors_total{job="nora"}[15m])) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "nora counted {{ $value | humanize }} errors in 15 minutes (stage {{ $labels.stage }})"
+          description: >-
+            Read the stage's log lines: `docker logs nora --since 30m | grep -i
+            <stage>`. A wake loop (`cognition_wake`), a session (`cognition_session`) or
+            a boot reclaim (`cognition_reclaim`) failing is the cognition loop; see
+            docs/runbook.md "The cognition loop is not healthy".
+
       # SSE silence — what `deploy/watchdog.sh` checked, and never ran to check.
       # That script is deleted; this rule is what replaced it.
       # 900s, not the script's 300s: a genuinely quiet night in one room is
@@ -125,6 +169,66 @@ groups:
             nora/.env on norty. Then run `docker compose up -d --force-recreate
             presence` (a restart keeps the old environment). The full steps are
             in docs/runbook.md §4c.
+
+  - name: cognition
+    rules:
+      # The wake evaluator's loop stopped, in a process that still answers HTTP and
+      # whose `HeartbeatStalled` (the reminders loop) is fine. `nora_cognition_wake_
+      # last_tick_seconds` is the unix time the loop last FINISHED a tick, written from
+      # inside the loop, so a loop that is gone or hung in a store call stops moving it.
+      # 600 s is 20 ticks (30 s each) and several times the 5 s store timeout, so a slow
+      # tick is not a stall. ABSENT while `[cognition] mode = off`: not applicable, and
+      # a rule on `time() - x` over an absent series is empty, never firing.
+      - alert: CognitionWakeStalled
+        expr: time() - max(nora_cognition_wake_last_tick_seconds{job="nora"}) > 600
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "the cognition wake loop has not ticked for {{ $value | humanizeDuration }}"
+          description: >-
+            No unit is being woken and no stimulus consumed. `nora cognition health` says
+            what is pending; the log says why the tick stopped
+            (`docker logs nora --since 1h | grep -i "wake tick"`).
+
+      # A stimulus that could wake a unit has waited four hours. The wake table fires at
+      # `max_age_seconds` (1 h) and a failing unit backs off to at most 6 h, so four hours
+      # is past what one failed session explains. `max()` drops the unit: the alert names
+      # that something is stuck, `nora cognition health` names where. The gauge is 0 for a
+      # unit with nothing pending and absent until its first tick.
+      - alert: StimulusBacklog
+        expr: max(nora_stimulus_pending_age_seconds{job="nora"}) > 14400
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "a stimulus has waited {{ $value | humanizeDuration }} to wake a unit"
+          description: >-
+            Either the wake loop stopped (see `CognitionWakeStalled`), a unit is backing off
+            behind failing sessions, or a session holds it. `nora cognition health`.
+
+      # Sessions that END badly, as a RATIO and with a floor: 3 or more failed or timed out
+      # in 3 hours AND over 30% of the sessions that ended. `cancelled` is in neither side:
+      # it is a restart, and a restart is not a verdict on a session. CUTOVER-PLAN §5.1
+      # stops a flip at 10% failed; this alerts at 30% because it runs unattended, where
+      # a unit on its cooldown produces few sessions and a ratio over a few is noise.
+      # `increase` survives the counter reset a restart causes.
+      - alert: CognitionSessionsFailing
+        expr: >-
+          (
+            sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h]))
+            /
+            sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"closed|failed|timeout"}[3h]))
+            > 0.3
+          )
+          and
+          (sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h])) >= 3)
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of cognition sessions failed or timed out in 3 hours"
+          description: >-
+            A provider outage backs a unit off and never strikes a stimulus (DEC-244), so this
+            is the model or the store, not lost messages. `nora cognition health` splits the
+            failures by cause and unit.
 
   - name: nora-r27
     rules:

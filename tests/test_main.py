@@ -553,3 +553,97 @@ async def test_app_run_starts_a_listener_for_every_adapter_not_just_signal(env, 
         assert second.listened, "the second platform's listen() must actually be called"
     finally:
         await app.shutdown()
+
+
+# ---- the restart floor (the Cognition cut-over's PR-7) -----------------------
+
+async def _run_briefly(app, *, until, polls: int = 100) -> None:
+    import asyncio
+    import contextlib
+
+    task = asyncio.create_task(app.run())
+    try:
+        for _ in range(polls):
+            await asyncio.sleep(0.02)
+            if until():
+                break
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def test_app_run_publishes_the_process_start_time(env):
+    """`NoraRestartLoop` counts changes of `nora_process_start_time_seconds`, and the
+    stock `process_start_time_seconds` is not exported (`Metrics` owns its registry).
+    Unset it is 0 (an unlabelled gauge): the positive control is the value after `run`."""
+    import time
+
+    app = await build_app(env)
+    try:
+        assert app.deps.metrics.get("nora_process_start_time_seconds") == 0.0
+        before = time.time()
+        await _run_briefly(
+            app, until=lambda: app.deps.metrics.get("nora_process_start_time_seconds") > 0,
+        )
+        started = app.deps.metrics.get("nora_process_start_time_seconds")
+        assert before <= started <= time.time()
+        # The premise the new name rests on: the stock series is not on :9100.
+        assert not [
+            line for line in app.deps.metrics.render().splitlines()
+            if line.startswith("process_")
+        ]
+    finally:
+        await app.shutdown()
+
+
+async def test_app_run_releases_what_a_previous_process_left_before_the_wake_loop_starts(
+    env, monkeypatch,
+):
+    """The ORDER is the claim: a tick that read the unit before the release would see
+    it held. The reclaim is awaited, then the loop is spawned, and it is handed THIS
+    process's start (so a wake this process records is never released)."""
+    import time
+
+    import nora.__main__ as main_module
+
+    cfg = tomllib.loads(env.read_text())
+    cfg["cognition"] = {"mode": "shadow"}
+    env.write_text(tomli_w.dumps(cfg))
+    order: list[str] = []
+    started: list[int] = []
+
+    async def _never(*args, **kwargs) -> None:
+        import asyncio
+        await asyncio.sleep(3600)
+
+    def _loop_spy(*args, **kwargs):
+        order.append("wake_loop")
+        return _never()
+
+    monkeypatch.setattr(main_module.wake, "wake_loop", _loop_spy)
+    app = await build_app(env)
+    assert app.deps.wake_evaluator is not None
+
+    async def _reclaim(*, process_started_ms: int) -> int:
+        order.append("reclaim")
+        started.append(process_started_ms)
+        return 0
+
+    monkeypatch.setattr(app.deps.wake_evaluator, "reclaim_orphans", _reclaim)
+    try:
+        before = int(time.time() * 1000)
+        await _run_briefly(app, until=lambda: "wake_loop" in order)
+    finally:
+        await app.shutdown()
+    assert order == ["reclaim", "wake_loop"]
+    assert before <= started[0] <= int(time.time() * 1000)
+
+
+async def test_no_reclaim_and_no_wake_loop_when_cognition_is_off(env, monkeypatch):
+    """The control: with `[cognition] mode = off` there is no evaluator to ask."""
+    app = await build_app(env)
+    try:
+        assert app.deps.wake_evaluator is None
+    finally:
+        await app.shutdown()

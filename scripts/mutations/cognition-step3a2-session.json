@@ -170,7 +170,7 @@
  {
   "name": "cognition_session: a failed session is actually recorded failed (not only logged)",
   "file": "nora/app/cognition_session.py",
-  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n                cause=classify_failure(exc),\n            )\n            raise",
+  "old": "            await self._finish(\n                wake_id, unit, session_id, \"failed\", f\"{type(exc).__name__}: {exc}\"[:500],\n                cause=classify_failure(exc),\n                tokens=spend,\n            )\n            raise",
   "new": "            raise",
   "target": "tests/unit/test_cognition_session_lifecycle.py::test_a_hook_failure_is_recorded_on_the_session_and_counted_not_only_logged tests/unit/test_cognition_session_lifecycle.py::test_record_session_raising_keeps_the_stimuli_pending_for_the_next_wake"
  },
@@ -282,7 +282,7 @@
  {
   "name": "cognition_session: a cancelled session is actually recorded cancelled",
   "file": "nora/app/cognition_session.py",
-  "old": "            await self._shielded_finish(\n                wake_id, unit, session_id, \"cancelled\", \"the session task was cancelled\",\n            )\n            raise",
+  "old": "            await self._shielded_finish(\n                wake_id, unit, session_id, \"cancelled\",\n                restart_detail(\"the process was stopping and cancelled the session\"),\n                tokens=spend,\n            )\n            raise",
   "new": "            raise",
   "target": "tests/unit/test_cognition_session_lifecycle.py::test_shutdown_cancels_an_in_flight_session_and_records_it_cancelled tests/unit/test_cognition_session_lifecycle.py::test_the_evaluator_can_cancel_its_in_flight_sessions_too"
  },

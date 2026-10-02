@@ -219,6 +219,16 @@ services:
     image: nora:latest
     container_name: nora
     restart: unless-stopped
+    # How long `docker stop` (a compose recreate included) waits between SIGTERM and
+    # SIGKILL. The default is 10 s. Nora now stops on SIGTERM (`nora.__main__.
+    # run_until_stopped`): the adapters and loops stop, a Cognition session already
+    # running gets `SESSION_SHUTDOWN_GRACE_SECONDS` (30 s) to finish, then it is
+    # cancelled and records its wake `cancelled` (a restart) so its unit is free, and
+    # the model client and the store close. 75 s is that 30 plus the time the rest
+    # needs; `tests/architecture/test_the_stop_grace_covers_the_shutdown.py` holds the margin. It does NOT wait out a
+    # tag turn (360 s timeout) or a Dreamer pass: they end with the process, as before.
+    # A recreate takes up to this long only when a session is running.
+    stop_grace_period: 75s
     # On the private `nora` network (cutover 2026-08-07, Option 2): reaches
     # db and signal-cli BY NAME (db:5432, signal-cli:18080), and the
     # host-side externals — OmniRoute :20128, Langfuse :3100 — via
