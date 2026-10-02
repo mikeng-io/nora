@@ -7,25 +7,11 @@
     "target": "tests/unit/test_dreamer_runtime.py -k SCOPE_keyed_grant_resolves"
   },
   {
-    "name": "part 1: the widened online_now domain reaches a scope-keyed build",
-    "file": "nora/agent/dreamer.py",
-    "old": "            if home is not None\n            and online_scope_for is not None\n            and unit is not None\n            else None",
-    "new": "            if home is not None\n            and online_scope_for is not None\n            else None",
-    "target": "tests/unit/test_dreamer_runtime.py -k scope_keyed_build_never_gets"
-  },
-  {
     "name": "part 1: every broken scope collapses onto one log line",
     "file": "nora/agent/dreamer.py",
     "old": "            seen = (adaptor, unit if unit is not None else key)",
     "new": "            seen = (adaptor, unit or \"\")",
     "target": "tests/unit/test_dreamer_runtime.py -k two_broken_scopes"
-  },
-  {
-    "name": "part 1: the composition passes no scope_rooms at all",
-    "file": "nora/app/composition.py",
-    "old": "                for conv in allowlist.conversations\n                for cid in conv.ids\n            },\n            # Proactive destination map",
-    "new": "                for conv in ()\n                for cid in conv.ids\n            },\n            # Proactive destination map",
-    "target": "tests/test_composition.py -k culture"
   },
   {
     "name": "part 1: the culture grant is keyed under a name nothing reads",

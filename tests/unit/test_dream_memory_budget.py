@@ -49,7 +49,7 @@ from tests.unit.test_dreamer_runtime import _Sink
 
 def _REMIND_GRANT() -> AdaptorGrant:
     """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
-    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
+    return AdaptorGrant(home_room=True)
 
 #: Two reads per pass — the shipped default, and `d11`'s grading budget.
 BUDGET = AdaptorBudget(

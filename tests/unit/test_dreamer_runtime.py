@@ -53,8 +53,8 @@ from nora.obs.metrics import Metrics
 
 
 def _REMIND_GRANT() -> AdaptorGrant:
-    """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
-    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
+    """An adaptor built from a real room."""
+    return AdaptorGrant(home_room=True)
 
 BUDGET = AdaptorBudget(
     turns=4, total_tokens=10_000, output_tokens=1_000, timeout_seconds=5.0,
@@ -119,7 +119,7 @@ class _ToolSource:
         adaptor: str = "", grant: Any = None,
     ) -> list[Any]:
         self.built.append((key, names, unit))
-        if grant is not None and (grant.acts or grant.home_room):
+        if grant is not None and grant.home_room:
             self.grants.append((adaptor, grant))
         return []
 
@@ -883,12 +883,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
 
 
 def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
-    """The name-level guard, and — since DEC-162 — its ONE named exception.
-
-    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3): the original pin
-    said no act verb is ever built. What is true now is that no act verb is
-    built WITHOUT A GRANT, and that a grant admits exactly the verbs it
-    names — `remind` for the proactive adaptor — and nothing beside them.
+    """The name-level guard: no act verb is ever built, with a home-room grant or
+    without one (design/dreamer-agent-loop/39 D3; the `acts` allowance that once
+    admitted `remind` was deleted with the proactive adaptor, DEC-277).
     Asserted against the REAL registry rather than a stub, because the
     thing under test is the intersection with a set the registry derives.
     """
@@ -903,18 +900,14 @@ def test_the_tool_source_never_builds_a_tool_outside_the_ceiling():
     )
     asked = frozenset({"send_reply", "computer_run", "remind", "now"})
 
-    # No grant: the whole pre-DEC-162 ceiling. `now` is read-only and builds;
-    # the three act verbs do not, `remind` included.
     ungranted = _names(source.build(key="friends", names=asked, unit="friends"))
     assert ungranted == {"now"}
 
-    # The proactive grant: `remind` and only `remind` joins the read set.
     granted = _names(source.build(
-        key="friends", names=asked, unit="friends", adaptor="proactive",
+        key="friends", names=asked, unit="friends", adaptor="culture",
         grant=_REMIND_GRANT(),
     ))
-    assert granted == {"now", "remind"}
-    assert "send_reply" not in granted and "computer_run" not in granted
+    assert granted == {"now"}
 
 
 def _names(built: list[Any]) -> set[str]:
@@ -1044,32 +1037,6 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
     assert room.platform == "discord"
     assert room._roster_source is roster
     assert room._self_ids == frozenset({"+85200000000"})
-
-
-def test_a_scope_keyed_build_never_gets_the_widened_online_domain():
-    """`online_now`'s input domain is the decide turn's own (design/online-
-    status/03): the home roster UNIONED with the note subjects, which is the
-    one occasion Nora may answer about people outside the room she stands in.
-    A background scope-keyed pass keeps the TAG-PATH domain — its own room's
-    roster — so the union can never leak into one. The resolver is keyed by
-    unit and a scope-keyed build has none, so passing `""` would have
-    resolved a domain for no unit at all."""
-    registry = _RecordingRegistry()
-    source = RegistryToolSource(
-        registry=registry, store=None, persons=None, honcho=None,
-        metrics=Metrics(),
-        scope_rooms={"g1": HomeRoom(
-            unit="friends", platform="discord", conversation_id="g1",
-        )},
-        online_scope_for=lambda _ws: None,  # type: ignore[arg-type,return-value]
-    )
-
-    source.build(
-        key="g1", names=frozenset({"where_is"}), unit=None,
-        adaptor="culture", grant=AdaptorGrant(home_room=True),
-    )
-
-    assert registry.calls[0]["online_scope"] is None
 
 
 def test_a_scope_keyed_grant_for_an_unknown_room_falls_back_closed_and_says_so(
@@ -1325,58 +1292,6 @@ def test_a_unit_keyed_adaptor_is_refused_a_room_scoped_tool():
     assert tool_subset_faults(
         adaptor, ceiling=source.read_only(), grant=AdaptorGrant(home_room=True),
     ) == ()
-
-
-def test_a_grant_admits_exactly_the_act_verbs_it_names():
-    """Axis 1 with the allowance (39 D3): an act verb in `grant.acts` clears
-    the ceiling for THIS adaptor; any other act verb — and the same verb on
-    an adaptor with no grant — is still refused."""
-    adaptor = _Adaptor(sink=_Sink(), tools=frozenset({"now", "remind"}))
-    source = _ToolSource(ceiling=frozenset({"now"}))
-
-    with pytest.raises(AdaptorToolError, match="outside the read-only ceiling: remind"):
-        verify_tool_subsets([adaptor], tools=source)
-
-    verify_tool_subsets(
-        [adaptor], tools=source, grants={adaptor.name: _REMIND_GRANT()},
-    )
-
-    greedy = _Adaptor(sink=_Sink(), tools=frozenset({"now", "remind", "send_reply"}))
-    with pytest.raises(AdaptorToolError, match="ceiling: send_reply"):
-        verify_tool_subsets(
-            [greedy], tools=source, grants={greedy.name: _REMIND_GRANT()},
-        )
-
-
-async def test_the_per_run_check_honours_the_same_grant_the_startup_check_does(
-    monkeypatch,
-):
-    """One rule, two call sites, one grant (39 D3's three places). A runtime
-    handed the grant runs the granted adaptor; the same runtime without it
-    refuses the run `unavailable` — and the grant reaches `build`, which is
-    the third place."""
-    sink = _Sink()
-    adaptor = _Adaptor(sink=sink, tools=frozenset({"remind", "load_transcript"}))
-    adaptor.key_kind = "unit"
-    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
-    granted, _ = _runtime(
-        monkeypatch, raw='{"observations": []}', tools=tools,
-        grants={adaptor.name: _REMIND_GRANT()},
-    )
-
-    outcome = await granted.run(adaptor=adaptor, key="friends", batch=())
-
-    assert outcome.status == "nothing_found"
-    assert tools.built == [("friends", adaptor.tools, "friends")]
-    assert tools.grants == [(adaptor.name, _REMIND_GRANT())]
-
-    tools = _ToolSource(ceiling=frozenset({"load_transcript", "now"}))
-    ungranted, _ = _runtime(monkeypatch, raw='{"observations": []}', tools=tools)
-
-    outcome = await ungranted.run(adaptor=adaptor, key="friends", batch=())
-
-    assert outcome.status == "unavailable"
-    assert tools.built == []
 
 
 def test_a_scope_keyed_adaptor_may_hold_a_room_scoped_tool():

@@ -80,11 +80,11 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
-from ..domain.models import PersonRef, TranscriptRow
+from ..domain.models import TranscriptRow
 from ..domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DreamAdaptor,
@@ -101,7 +101,6 @@ from .dream_screen import screen
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .surface import DREAMER_LOOP_TOOLS
-from .tools import OriginRoom
 
 log = logging.getLogger("nora.dreamer")
 
@@ -438,11 +437,6 @@ class AdaptorGrant:
     `AdaptorGrant()` — no act verbs, no home room — which is the whole
     pre-DEC-162 ceiling, by omission.
 
-    `acts` are act-verb NAMES admitted past `read_only_tools()` for this
-    adaptor and no other. The three enforcement points all read it —
-    `tool_subset_faults` (startup and per run) and `RegistryToolSource.build`
-    — so an allowance is never a fourth list that can drift from the three.
-
     `home_room` says the adaptor's `Room` is built from a REAL room — a real
     roster source, `self_ids` and `location_trusted` — rather than from the
     empty one, and that `UNIT_SAFE_TOOLS` does not apply to it.
@@ -465,7 +459,6 @@ class AdaptorGrant:
     cases. This is a widening for adaptors that ASK, never a default.
     """
 
-    acts: frozenset[str] = frozenset()
     home_room: bool = False
 
 
@@ -480,10 +473,8 @@ def culture_grant() -> AdaptorGrant:
     is the difference between a declared tool set and a reachable one
     (`design/dreamer-agent-loop/03-no-agent-loop §7.4`).
 
-    **`acts` is deliberately empty and stays so.** The culture pass writes
-    one row through its own store and speaks to nobody; the read-only
-    ceiling already refuses every act verb, and an empty `acts` is that
-    refusal said twice rather than relied on once.
+    The culture pass writes one row through its own store and speaks to nobody;
+    the read-only ceiling refuses every act verb.
 
     A function rather than a module-level constant (DEC-13): the composition
     root hands the SAME object to the runtime and the startup check.
@@ -496,8 +487,7 @@ def cognition_grant() -> AdaptorGrant:
     room, and NO act verb. Its write, pace and act verbs are not registry
     tools at all: the session holds them as its own closures
     (`nora.app.cognition_session`), so nothing here widens the
-    read-only ceiling and `acts` stays empty, said twice rather than relied on
-    once. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
+    read-only ceiling. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
     item's room as the key), so lineage and the roster's disclosure guard are
     the room's own. A function, for `culture_grant`'s reason (DEC-13)."""
     return AdaptorGrant(home_room=True)
@@ -712,9 +702,7 @@ def tool_subset_faults(
     unusable by this adaptor:
 
     1. **read vs act.** Outside `read_only_tools()` is an act verb, and no
-       background loop may hold one — except the verbs `grant.acts` names
-       for THIS adaptor (39 D3: the proactive adaptor's `remind`, and
-       nothing else today).
+       background loop may hold one.
     2. **room-scoped vs unit-safe.** A UNIT-keyed adaptor gets a
        unit name as its `key`, which is not a conversation id. Every
        room-scoped read tool is bound to one — `load_transcript` reads one
@@ -741,7 +729,7 @@ def tool_subset_faults(
     allowance = grant if grant is not None else AdaptorGrant()
     faults: list[str] = []
     declared = frozenset(adaptor.tools)
-    escaped = declared - ceiling - allowance.acts
+    escaped = declared - ceiling
     if escaped:
         faults.append(
             f"Dreamer adaptor {adaptor.name!r} declares tools outside the "
@@ -968,9 +956,8 @@ class RegistryToolSource:
     that room — the real roster source for its platform, Nora's own
     `self_ids` so her account is skipped rather than counted `unnamed`, and
     `location_trusted` from the room's `location` flag — so `where_is` and
-    its siblings run the disclosure guard exactly as on a tag; and its
-    `grant.acts` are admitted past `read_only()`. Everything about the
-    build that is not the room or the acts is unchanged: `deliverer=None`,
+    its siblings run the disclosure guard exactly as on a tag. Everything
+    about the build that is not the room is unchanged: `deliverer=None`,
     and the unit is still SUPPLIED. A home-room grant that resolves no
     room falls back to the closed shape above and says so — never a guessed
     room.
@@ -998,10 +985,8 @@ class RegistryToolSource:
         metrics: Metrics, ai_peer: str = "nora",
         home_rooms: Mapping[str, HomeRoom] | None = None,
         scope_rooms: Mapping[str, HomeRoom] | None = None,
-        origin_rooms: Mapping[str, OriginRoom] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: frozenset[str] = frozenset(),
-        online_scope_for: Callable[[str], Awaitable[tuple[PersonRef, ...]]] | None = None,
     ) -> None:
         self._registry = registry
         self._store = store
@@ -1024,11 +1009,6 @@ class RegistryToolSource:
         # names none, which leaves the scope-keyed build exactly as closed as
         # it was before this map existed.
         self._scope_rooms = dict(scope_rooms or {})
-        # Conversation id -> origin room (design/dreamer-agent-loop/40, #248).
-        # Built by the composition root from `Policy.conversations`; empty for
-        # every composition that names none, which keeps the home-room
-        # destination unchanged for tag paths and unwired units.
-        self._origin_rooms = dict(origin_rooms or {})
         # Platform -> roster source, the same map `FirePath` holds: a home
         # room on a platform with no roster answers `available=False`, the
         # honest state, never an empty room.
@@ -1042,15 +1022,6 @@ class RegistryToolSource:
         # units). The COUNTER carries the ongoing reading; the log carries
         # the news.
         self._home_room_reported: set[tuple[str, str]] = set()
-        # `online_now`'s input-domain resolver (design/online-status/03):
-        # unit -> the home roster unioned with the note subjects. Bound
-        # per BUILD below, and ONLY when a home-room grant resolved — the
-        # the proactive decide turn (deleted 2026-10-03, DEC-277) was the one occasion that may
-        # answer about people
-        # outside the room it stands in, and a background loop never gets
-        # it. `None` (every composition that did not wire one) leaves
-        # `online_now` on its tag-path domain: the room's own roster.
-        self._online_scope_for = online_scope_for
 
     def read_only(self) -> frozenset[str]:
         return self._registry.read_only_tools()
@@ -1082,9 +1053,7 @@ class RegistryToolSource:
             # Loud, and CLOSED: the grant said «stand in a real room» and
             # none resolved. Building the room-scoped tools against a
             # synthetic room would answer «nobody is here» (`available=
-            # False`) and `remind` would write into a conversation that does
-            # not exist, so neither is built — the acts are withheld along
-            # with the room.
+            # False`), which is why the room is withheld, not faked.
             self._metrics.inc(
                 "nora_dream_home_room_missing_total",
                 adaptor=adaptor, unit=unit or "",
@@ -1104,42 +1073,17 @@ class RegistryToolSource:
                     log.error(
                         "dream adaptor %r is granted a home room but scope %r "
                         "is not a conversation in policy.toml; building "
-                        "without acts or a room", adaptor, key,
+                        "without a room", adaptor, key,
                     )
                 else:
                     log.error(
                         "dream adaptor %r is granted a home room but unit "
-                        "%r names none in policy.toml; building without acts "
-                        "or a room", adaptor, unit,
+                        "%r names none in policy.toml; building without a "
+                        "room", adaptor, unit,
                     )
-        acts = allowance.acts if home is not None else frozenset()
-        wanted = frozenset(names) & (self.read_only() | acts)
+        wanted = frozenset(names) & self.read_only()
         if not wanted:
             return []
-        # `online_now`'s input-domain resolver (design/online-status/03),
-        # bound to exactly one home-room build: only when the home-room grant
-        # resolved — a background loop (home is None) keeps the tag-path
-        # domain, so the union scope can never leak into one. The resolver
-        # raising is the tool's `unavailable`, never a narrowed guess. A
-        # LOCAL, not the attribute: mypy does not narrow `self._x is not
-        # None` into a closure, and the guard above it is what makes the
-        # call safe.
-        online_scope_for = self._online_scope_for
-        online_scope = (
-            (lambda: online_scope_for(unit))
-            # `unit is not None` is the third clause and it is not
-            # tidiness: the resolver is keyed by UNIT, and a scope-keyed
-            # home-room build has none. Passing `""` would resolve the union
-            # for no unit — an empty domain at best, and at worst the
-            # widened decide-turn domain reaching a background pass it was
-            # never meant to. A scope-keyed adaptor keeps the tag-path
-            # domain: `online_now` answers about ITS OWN room's roster, which
-            # is the only question it has.
-            if home is not None
-            and online_scope_for is not None
-            and unit is not None
-            else None
-        )
         if home is not None:
             room = Room(
                 platform=home.platform, conversation_id=home.conversation_id,
@@ -1196,12 +1140,6 @@ class RegistryToolSource:
             # whose tools resolve through the room — the EMPTY room without a
             # home-room grant, and the room the key names with one.
             supplied_unit=unit,
-            # Bound above, where the home-room grant was resolved.
-            online_scope=online_scope,
-            # Proactive destination map (design/dreamer-agent-loop/40, #248):
-            # conversation ids -> OriginRoom, threaded to `remind` so a
-            # note-linked proactive row is stamped into the note's own room.
-            origin_rooms=self._origin_rooms,
             # The rows the transcript reads return, for an adaptor that
             # grounds on what it loaded (design 43 §3); `None` otherwise.
             on_rows=on_rows,

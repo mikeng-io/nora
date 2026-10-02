@@ -288,32 +288,19 @@ def test_the_key_kind_is_one_the_loop_can_enumerate(adaptor):
 
 
 def test_the_tool_subset_narrows_the_read_only_ceiling(adaptor, impl):
-    """The hard line, asserted at the port rather than trusted — and, since
-    DEC-162, its one named allowance.
+    """The hard line, asserted at the port rather than trusted.
 
     An adaptor declares tool NAMES because `nora.language` may not import
     `nora.agent`; the consequence is that nothing about the declaration itself
     stops it naming `send_reply`. `read_only_tools()` is the ceiling and this
     is where an adaptor is measured against it — a subset naming an act verb,
     or a tool that does not exist at all, fails HERE rather than handing a
-    background loop a write.
-
-    REWRITTEN ON PURPOSE (design/dreamer-agent-loop/39 D3): the ceiling is
-    the read-only set PLUS the act verbs this implementation's `AdaptorGrant`
-    names, and nothing else. The fake has no grant and is measured exactly
-    as before; the proactive adaptor's `remind` clears it only through
-    `proactive_grant()`, the same object the composition root hands the
-    runtime — so a verb added to `PROACTIVE_TOOLS` without a grant behind it
-    is red here."""
-    ceiling = ToolRegistry().read_only_tools() | impl.grant.acts
+    background loop a write."""
+    ceiling = ToolRegistry().read_only_tools()
     assert adaptor.tools <= ceiling, (
-        f"{adaptor.name} asks for tools outside the read-only ceiling and its "
-        f"grant: {sorted(adaptor.tools - ceiling)}"
+        f"{adaptor.name} asks for tools outside the read-only ceiling: "
+        f"{sorted(adaptor.tools - ceiling)}"
     )
-    # The allowance is measured too: nothing in the registry's ACT set is in
-    # the subset unless the grant names it by name.
-    acts = adaptor.tools - ToolRegistry().read_only_tools()
-    assert acts == (adaptor.tools & impl.grant.acts)
 
 
 def test_the_objective_names_a_file_that_exists(adaptor):

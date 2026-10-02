@@ -57,16 +57,14 @@ test seam.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from nora.domain.notes import (
     MERGE_FORWARD_HOPS,
     Note,
-    NoteCreationProposal,
     NoteRevision,
-    NoteRevisionProposal,
     NoteSupersedeReason,
     RetiredNoteError,
     StaleNoteHeadError,
@@ -74,7 +72,6 @@ from nora.domain.notes import (
     proactive_row_forwarded_is_moved,
     tag_path_progressed_since_wake,
 )
-from nora.domain.ports import Proposal
 from nora.domain.reminders import (
     CANCELLED_DUPLICATE_NOTE,
     CANCELLED_NOTE_MOVED,
@@ -200,8 +197,8 @@ class InMemoryNoteStore:
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
         # Passed through to the FIRST revision, and `None` from the tag path.
-        # `note_create` has no `Proposal` and no instruction digest; the
-        # debrief, arriving through `DreamSink.propose`, has both. See
+        # `note_create` has no instruction digest; the Cognition session's
+        # writes may. See
         # `0036_note_revision_provenance` for why the columns are nullable.
         instruction_sha256: str | None = None,
         model: str | None = None,
@@ -367,152 +364,7 @@ class InMemoryNoteStore:
         chain.sort(key=lambda r: (r.written_at, r.id))
         return tuple(chain)
 
-    # ---- DreamSink -------------------------------------------------------
-    #
-    # **This double must refuse what Postgres refuses, and it does not get that
-    # for free.** A double whose only refusals come from the domain constructor
-    # is more permissive than the store it stands in for the moment a caller
-    # reaches around the type — which is CLAUDE.md's "a fake that answers every
-    # request the same way", and a contract suite cannot see it unless a test
-    # constructs the illegal state directly. So the checks below are written
-    # HERE rather than relied upon from `NoteRevisionProposal.__post_init__`.
-
-    async def propose(
-        self, *, key: str, proposals: Sequence[Proposal], now_ms: int,
-    ) -> Sequence[str]:
-        """`SqlNoteStore.propose`'s behaviour, including its refusals and its
-        ORDER OF OPERATIONS.
-
-        **RESOLVE THE WHOLE BATCH, THEN APPLY IT.** This double has no
-        transaction, so it cannot roll back — what it CAN do is decide every
-        refusal before performing any mutation, which is where the SQL store's
-        atomicity is observable from outside.
-
-        **This docstring claimed exactly that on 2026-08-27 while the code did
-        not do it**, because only the `isinstance` loop had been hoisted:
-        `append_revision`'s CAS and `create`'s domain refusals still fired
-        inside the write loop, so a batch of (valid, stale) left the valid one
-        applied where Postgres rolls it back. Found by a reviewer executing it,
-        one fix after the same file's docstring was corrected for the same
-        class of mistake. Recorded rather than quietly repaired: **a claim
-        about a double is a claim about the real store**, and this one was
-        wrong twice in the same file in one day.
-
-        Resolving first also removes the SQL-only exemption the contract suite
-        needed for the rollback assertion — and that exemption was the tell
-        that the two implementations were never being compared on this.
-        """
-        typed: list[tuple[Proposal, NoteCreationProposal | NoteRevisionProposal]] = []
-        for p in proposals:
-            payload = p.payload
-            if not isinstance(
-                payload, NoteCreationProposal | NoteRevisionProposal
-            ):
-                raise TypeError(
-                    f"InMemoryNoteStore.propose accepts a "
-                    f"NoteRevisionProposal or a NoteCreationProposal, got "
-                    f"{type(payload).__name__}"
-                )
-            typed.append((p, payload))
-
-        # --- resolve: build every object and check every CAS, writing nothing
-        #
-        # `heads` simulates the batch's effect on each note's head, seeded from
-        # the store as it stands. `declared` is what each note's FIRST proposal
-        # claimed to be written against — the same distinction the SQL store
-        # draws, and for the same reason: the tracked head must be a CHECK, not
-        # a silent override, or two proposals parented on one read both land
-        # and the second buries the first.
-        pending: list[tuple[Note | None, NoteRevision]] = []  # (new note | None, revision)
-        ids: list[str] = []
-        heads: dict[str, str] = {}
-        declared: dict[str, str] = {}
-        for p, payload in typed:
-            if isinstance(payload, NoteCreationProposal):
-                note_id = self._shaped_id(next(self._ids), "note")
-                revision_id = self._shaped_id(next(self._ids), "rev")
-                note = Note(
-                    id=note_id, unit=key, title=payload.title,
-                    description=payload.description,
-                    uncertainty=payload.uncertainty,
-                    closing_condition=payload.closing_condition,
-                    established_in=payload.established_in, created_at=now_ms,
-                    head_revision_id=revision_id,
-                    anchor_date=payload.anchor_date,
-                    anchor_entity_ids=tuple(payload.anchor_entity_ids),
-                    # `SqlNoteStore.propose`'s own `_new_note` sets this from
-                    # the same field — the note-curator merge's §5.3
-                    # resolution (c); `default_revisit_at` is now called by `note_create`.
-                    revisit_at=payload.revisit_at,
-                )
-                revision = NoteRevision(
-                    id=revision_id, note_id=note_id, body=payload.body,
-                    parent_revision_id=None, written_at=now_ms,
-                    established_by=p.established_by,
-                    instruction_sha256=p.instruction_sha256, model=p.model,
-                )
-                pending.append((note, revision))
-                heads[note_id] = revision_id
-                ids.append(note_id)
-                continue
-
-            if payload.note_id in declared:
-                if payload.parent_revision_id != declared[payload.note_id]:
-                    raise StaleNoteHeadError(
-                        f"note {payload.note_id} was already revised in this "
-                        f"batch against {declared[payload.note_id]}; this "
-                        f"proposal names {payload.parent_revision_id} — read "
-                        f"it again",
-                        observed_head=heads.get(payload.note_id),
-                    )
-            else:
-                declared[payload.note_id] = payload.parent_revision_id
-
-            existing = self.notes.get(payload.note_id)
-            reachable = existing is not None and existing.unit == key
-            head_now = existing.head_revision_id if existing is not None else None
-            # The CAS runs only for a note this batch has NOT already revised.
-            # For a later proposal the declared-parent check above has already
-            # established that it names the same parent the first one did, and
-            # the chain below supplies the real predecessor — so re-running the
-            # comparison against the STORED head would refuse every legitimate
-            # chained write.
-            first_touch = payload.note_id not in heads
-            stale = first_touch and (
-                not reachable
-                or head_now != payload.parent_revision_id
-            )
-            if reachable and existing is not None:
-                _refuse_if_retired(existing)
-            if not reachable or stale:
-                raise StaleNoteHeadError(
-                    f"note {payload.note_id} changed under you or is not in "
-                    f"unit {key!r} — read it again",
-                    observed_head=head_now if reachable else None,
-                )
-            revision = NoteRevision(
-                id=self._shaped_id(next(self._ids), "rev"), note_id=payload.note_id,
-                body=payload.body,
-                parent_revision_id=heads.get(
-                    payload.note_id, payload.parent_revision_id,
-                ),
-                written_at=now_ms, established_by=p.established_by,
-                instruction_sha256=p.instruction_sha256, model=p.model,
-            )
-            pending.append((None, revision))
-            heads[payload.note_id] = revision.id
-            ids.append(payload.note_id)
-
-        # --- apply: nothing above this line mutated anything
-        for created, revision in pending:
-            if created is not None:
-                self.notes[created.id] = created
-            else:
-                self.notes[revision.note_id] = replace(
-                    self.notes[revision.note_id], head_revision_id=revision.id,
-                )
-            self.revisions[revision.id] = revision
-        return tuple(ids)
+    # ---- retirement ------------------------------------------------------
 
     async def supersede(
         self,

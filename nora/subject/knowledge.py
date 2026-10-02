@@ -583,12 +583,9 @@ async def _seed_note_with_id(
     never has one to give it. A note seeded FROM a real snapshot (`nora.
     subject.sandbox._note_seed`) already has one — the id every reminder
     seeded alongside keeps in its payload (`_reminder_seed` copies `payload`
-    verbatim) and the id `evals.backbone`'s title -> id resolution is built
-    from (`nora.subject.sandbox._note_ids_by_title`, over the SAME source
-    snapshot). Assigning a different id here would leave the sandbox
-    internally inconsistent — three readings of "this note's id" that agree
-    with each other but not with what got inserted (issue #158, found by
-    review).
+    verbatim). Assigning a different id here would leave the sandbox
+    internally inconsistent: the reminder and the note would disagree about
+    what got inserted (issue #158, found by review).
 
     Same two inserts, same columns, as `SqlNoteStore._create_on_conn` (there
     is one schema; this does not invent a second one) — kept as an

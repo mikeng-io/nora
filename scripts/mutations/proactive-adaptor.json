@@ -1,31 +1,10 @@
 [
  {
-  "name": "D3 axis 1 admits exactly the grant's acts (startup + per run)",
-  "file": "nora/agent/dreamer.py",
-  "old": "    escaped = declared - ceiling - allowance.acts",
-  "new": "    escaped = declared - ceiling",
-  "target": "tests/unit/test_dreamer_runtime.py -k a_grant_admits_exactly_the_act_verbs_it_names"
- },
- {
-  "name": "D3 axis 1 allowance reaches the wired adaptors at the root",
-  "file": "nora/agent/dreamer.py",
-  "old": "    escaped = declared - ceiling - allowance.acts",
-  "new": "    escaped = declared - ceiling",
-  "target": "tests/test_composition.py -k every_wired_adaptor_stays_inside_the_read_only_ceiling"
- },
- {
   "name": "D2 axis 2 exempts a home-room grant",
   "file": "nora/agent/dreamer.py",
   "old": "    if adaptor.key_kind == \"unit\" and not allowance.home_room:",
   "new": "    if adaptor.key_kind == \"unit\":",
   "target": "tests/unit/test_dreamer_runtime.py -k a_unit_keyed_adaptor_is_refused_a_room_scoped_tool"
- },
- {
-  "name": "D3 build admits the granted act verb past read_only()",
-  "file": "nora/agent/dreamer.py",
-  "old": "        wanted = frozenset(names) & (self.read_only() | acts)",
-  "new": "        wanted = frozenset(names) & self.read_only()",
-  "target": "tests/unit/test_dreamer_runtime.py -k the_tool_source_never_builds_a_tool_outside_the_ceiling"
  },
  {
   "name": "D3 the per-run re-check reads the same grant",
@@ -54,41 +33,6 @@
   "old": "            conversation_id=home.conversation_id if home is not None else key,",
   "new": "            conversation_id=key,",
   "target": "tests/unit/test_dreamer_runtime.py -k a_home_room_grant_builds_the_room_the_operator_named"
- },
- {
-  "name": "D3 kind is stamped from code",
-  "file": "nora/agent/tools.py",
-  "old": "                kind=\"proactive\" if proactive else \"reminder\",",
-  "new": "                kind=\"reminder\",",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_provenance_stamps_the_row_in_code"
- },
- {
-  "name": "D5 the owner is the ai_peer, never a person",
-  "file": "nora/agent/tools.py",
-  "old": "        owner = ai_peer if proactive else tagger.person_id  # type: ignore[union-attr]",
-  "new": "        owner = \"miles\" if proactive else tagger.person_id  # type: ignore[union-attr]",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_provenance_stamps_the_row_in_code"
- },
- {
-  "name": "D3 the text is screened before create",
-  "file": "nora/agent/tools.py",
-  "old": "            if rejected:\n                _record_created(metrics, \"screened\")",
-  "new": "            if False:\n                _record_created(metrics, \"screened\")",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_is_screened_before_it_is_written"
- },
- {
-  "name": "D4 a proactive row never repeats",
-  "file": "nora/agent/tools.py",
-  "old": "        if proactive and repeat != \"none\":",
-  "new": "        if False:",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_never_repeats"
- },
- {
-  "name": "D3 no home room is unavailable, not a row bound to nowhere",
-  "file": "nora/agent/tools.py",
-  "old": "        if proactive and not room.platform:",
-  "new": "        if False:",
-  "target": "tests/test_reminder_tools.py -k a_dreamer_row_without_a_home_room_is_unavailable"
  },
  {
   "name": "D12 silent is DONE",

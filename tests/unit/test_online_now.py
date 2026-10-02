@@ -91,7 +91,7 @@ def _room(persons, *, members, fail=False, tagger=None, roster=None):
 
 def _online_now(
     persons, *, members=(MILES, BLAKE), online_source=None, voice_source=None,
-    presence=None, online_scope=None, fail=False, tagger=None, metrics=None,
+    presence=None, fail=False, tagger=None, metrics=None,
     roster=None,
 ):
     """The built `online_now` closure, through `build_tool_specs` — the same
@@ -105,7 +105,6 @@ def _online_now(
         transit_source=None,
         online_source=online_source, voice_source=voice_source,
         presence=presence,
-        online_scope=online_scope,
     )
     return next(s for s in specs if s.name == "online_now").call
 
@@ -473,59 +472,6 @@ async def test_online_arm_voice_only_composition(persons):
     assert people["Blake Lindqvist"]["in_voice"] is False
 
 
-# ---- the proactive input-domain override (03-guards) ----
-
-
-async def test_online_scope_wins_and_the_roster_is_never_queried(persons):
-    """The decide turn's supplied union is the whole input domain: a person
-    OUTSIDE the room roster is answerable through it (a note born in
-    another room, checked from the home room), and `room.scope()` never
-    runs — a roster that would fail the read proves it."""
-    steam = FakeSteamPresenceProvider(players={"333": OUTSIDER_ONLINE})
-    roster = FakeRosterSource(groups={GROUP: (MILES,)}, fail=True)
-    outsider = persons.by_person["outsider"]
-
-    async def scope():
-        return (outsider,)
-
-    tool = _online_now(
-        persons, online_source=steam, online_scope=scope, roster=roster,
-    )
-    out = await tool("online")
-    assert out["status"] == "ok"
-    assert set(_by_person(out)) == {"Sam Outsider"}
-    assert roster.calls == []  # the override WINS; the room is never read
-
-
-async def test_online_scope_raising_is_unavailable(persons):
-    """A resolver that fails is «I couldn't check», never a narrowed guess
-    at whoever happens to be in the room."""
-    steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE})
-
-    async def scope():
-        raise RuntimeError("note store wedged")
-
-    tool = _online_now(persons, online_source=steam, online_scope=scope)
-    assert (await tool("online"))["status"] == "unavailable"
-    assert steam.calls == []
-
-
-async def test_online_scope_still_filters_names(persons):
-    """The override widens the DOMAIN, not the question: a `names` filter
-    still narrows to the people actually on topic within that domain."""
-    steam = FakeSteamPresenceProvider(players={
-        "111": MILES_ONLINE, "333": OUTSIDER_ONLINE,
-    })
-
-    async def scope():
-        return (persons.by_person["miles_novak"], persons.by_person["outsider"])
-
-    tool = _online_now(persons, online_source=steam, online_scope=scope)
-    out = await tool("online", names=["Sam"])
-    assert out["status"] == "ok"
-    assert set(_by_person(out)) == {"Sam Outsider"}
-
-
 # ---- ADR 0015 §3: how to report a status rides in the result ----
 
 
@@ -536,16 +482,9 @@ async def test_every_non_ok_status_carries_a_note(persons):
     steam = FakeSteamPresenceProvider(players={"111": MILES_ONLINE})
     tagger = persons.resolve("signal", "+85290000101")
 
-    async def broken_scope():
-        raise RuntimeError("note store wedged")
-
     cases = {
         "unavailable/what": (_online_now(persons, online_source=steam), ("gaming",), {}),
         "unavailable/unwired": (_online_now(persons), ("playing",), {}),
-        "unavailable/scope": (
-            _online_now(persons, online_source=steam, online_scope=broken_scope),
-            ("online",), {},
-        ),
         "unavailable/room": (
             _online_now(persons, online_source=steam, fail=True, tagger=tagger),
             ("online",), {},

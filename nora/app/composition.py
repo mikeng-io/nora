@@ -57,7 +57,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX, OriginRoom
+from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
@@ -3695,8 +3695,8 @@ async def build_dependencies(
             # `home_room = true` to read: the grant resolves the adaptor's own
             # room, and this map is what carries the platform (the roster
             # source), the id to bind and the `location` flag DEC-74 threads.
-            # Read off the SAME allowlist as `home_rooms` and `origin_rooms`
-            # above so the three cannot disagree about which room an id names.
+            # Read off the SAME allowlist as `home_rooms` above so the two cannot
+            # disagree about which room an id names.
             # Inert for an adaptor with no home-room grant, exactly as
             # `home_rooms` is.
             scope_rooms={
@@ -3704,23 +3704,6 @@ async def build_dependencies(
                     unit=conv.unit, platform=conv.platform,
                     conversation_id=conv.primary_id, conversation_type="group",
                     location_trusted=conv.location,
-                )
-                for conv in allowlist.conversations
-                for cid in conv.ids
-            },
-            # Proactive destination map (design/dreamer-agent-loop/40, #248):
-            # every policy conversation id -> its `OriginRoom`, so a
-            # note-linked proactive row can be stamped into the room the note
-            # was born in instead of the home room. Passed whether or not the
-            # proactive adaptor is wired: the map is inert for tag paths, and
-            # `remind` refuses (never falls back) when the id is not here.
-            origin_rooms={
-                cid: OriginRoom(
-                    platform=conv.platform,
-                    conversation_id=conv.primary_id,
-                    conversation_type="group",
-                    proactive=conv.proactive,
-                    unit=conv.unit,
                 )
                 for conv in allowlist.conversations
                 for cid in conv.ids

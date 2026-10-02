@@ -41,7 +41,7 @@ from tests.unit.test_dream_memory_budget import (
 
 def _REMIND_GRANT() -> AdaptorGrant:
     """An adaptor that may hold `remind` past the read-only ceiling, in a real room."""
-    return AdaptorGrant(acts=frozenset({"remind"}), home_room=True)
+    return AdaptorGrant(home_room=True)
 
 BUDGET = AdaptorBudget(
     turns=8, total_tokens=100_000, output_tokens=4_000, timeout_seconds=10.0,

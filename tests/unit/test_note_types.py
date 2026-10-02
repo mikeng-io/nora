@@ -41,9 +41,7 @@ from nora.domain.notes import (
     TAG_PATH_PREFIX,
     TITLE_MAX_CHARS,
     Note,
-    NoteCreationProposal,
     NoteRevision,
-    NoteRevisionProposal,
 )
 
 NOW = 1_755_100_000_000
@@ -284,22 +282,6 @@ def test_a_body_exactly_at_the_cap_is_accepted():
     )
 
     assert len(revision.body) == BODY_MAX_CHARS
-
-
-def test_both_proposal_shapes_carry_the_same_cap():
-    """A cap the tag path honours and a background pass does not is not a cap.
-    Both payload types reach the same table through the same store."""
-    with pytest.raises(ValueError, match="at most 8000"):
-        NoteRevisionProposal(
-            note_id="n1", body="x" * (BODY_MAX_CHARS + 1),
-            parent_revision_id="r1",
-        )
-    with pytest.raises(ValueError, match="at most 8000"):
-        NoteCreationProposal(
-            title="t", description="d", uncertainty="u",
-            closing_condition="c", established_in="conv-1",
-            body="x" * (BODY_MAX_CHARS + 1), anchor_date=20261011,
-        )
 
 
 def test_the_tag_path_prefix_has_no_second_copy_in_its_producer():

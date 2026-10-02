@@ -167,7 +167,6 @@ def test_read_tools_are_built_for_the_agenda_room_under_the_cognition_grant():
     assert call["key"] == "g1" and call["unit"] is None       # scope-resolved: the room's own
     assert call["adaptor"] == "cognition"
     assert call["grant"] == cognition_grant() == AdaptorGrant(home_room=True)
-    assert call["grant"].acts == frozenset()                   # no act verb, ever
 
 
 # ---- what the runner does with them ------------------------------------------

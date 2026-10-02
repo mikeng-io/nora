@@ -21,13 +21,6 @@
     "target": "tests/web/test_document_history_api.py::test_restore_by_a_person_who_may_not_read_it_is_404_and_writes_nothing"
   },
   {
-    "name": "a forgotten document has no history, revision or restore (the read gate as a whole)",
-    "file": "nora/web/document_history.py",
-    "old": "    stored = await store.get_visible(\n        document_id=document_id, person_id=person_id, rooms=rooms_of(person_id)\n    )\n    if stored is None or stored.summary.forgotten:",
-    "new": "    stored = await store.get(document_id=document_id)\n    if stored is None:",
-    "target": "tests/web/test_document_history_api.py::test_a_forgotten_document_has_no_history_no_revision_and_no_restore"
-  },
-  {
     "name": "one revision is that revision's spec, not the current one (read-only view)",
     "file": "nora/web/document_history.py",
     "old": "        \"document\": found.spec,",
@@ -89,13 +82,6 @@
     "old": "            written_by=f\"{PORTAL_WRITER}{person_id}\",",
     "new": "            written_by=old.written_by,",
     "target": "tests/web/test_document_history_api.py::test_restore_publishes_the_old_spec_as_a_new_revision_and_keeps_every_old_one"
-  },
-  {
-    "name": "a restore that races a delete or a forget is the unreadable 404, not a reason",
-    "file": "nora/web/document_history.py",
-    "old": "        if again is None or again.summary.state == \"deleted\" or again.summary.forgotten:\n            return RestoreResult(\"not_found\")",
-    "new": "",
-    "target": "tests/web/test_document_history_api.py::test_a_restore_that_races_a_delete_is_a_404_never_a_reason"
   },
   {
     "name": "a picture only an earlier revision names is served",

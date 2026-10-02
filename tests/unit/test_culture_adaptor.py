@@ -653,13 +653,11 @@ def test_the_situational_verbs_and_a_second_read_of_its_own_room_stay_OUT():
 
 
 def test_the_grant_names_NO_act_verb():
-    """The read-only ceiling already refuses every act verb; an empty `acts` is
-    that refusal said twice rather than relied on once. The Dreamer does not
+    """The read-only ceiling refuses every act verb. The Dreamer does not
     speak, and this tier writes through its own store."""
     from nora.agent.dreamer import culture_grant
 
     grant = culture_grant()
-    assert grant.acts == frozenset()
     assert grant.home_room is True
 
 

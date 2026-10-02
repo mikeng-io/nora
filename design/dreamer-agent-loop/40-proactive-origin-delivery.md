@@ -75,7 +75,7 @@ shape, different fix path (`remind` destination stamping).
 | deliverer readiness | deployment | fire path selects the deliverer by `occasion.platform` (`fire.py:1765`) — Discord Zone 42 already has one; no code change |
 | `proactive = true` | `policy.toml` (deploy-time edit — policy.toml is untracked) | Zone 42; the `ProactiveScreen` fire-time check (`proactive_screen.py:102`) enforces it on the row's own room |
 | `proactive` semantics doc | `nora/policy.py` `Conversation.proactive` docstring (already exists:112) | extend one line: the flag now also gates where a note-linked proactive row may land |
-| tests | `tests/unit/test_remind_destination.py` (new) | note born in same-unit proactive room → origin; born in untrusted room → refused, home is NOT used; unresolvable id → refused; no note → home preserved; `also_ids` match resolves |
+| tests | the remind-destination tests (new; deleted 2026-10-03 with the Dreamer `remind` branch, DEC-277) | note born in same-unit proactive room → origin; born in untrusted room → refused, home is NOT used; unresolvable id → refused; no note → home preserved; `also_ids` match resolves |
 
 ## Fail-closed behaviour, said plainly
 

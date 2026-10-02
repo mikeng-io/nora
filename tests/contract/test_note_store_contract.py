@@ -14,7 +14,7 @@ per-implementation rather than hard-coded.** This is
 `tests/contract/test_dream_sink_contract.py`'s rule applied again:
 
 1. **Retiring a note.** `standing` must exclude retired notes, and the store has
-   no `retire` verb — retirement arrives later as `DreamSink.supersede`
+   no `retire` verb — retirement arrives later as `supersede`
    (DEC-130), owned by the adaptor, not by this store. Rather than inventing a
    seventh method so a test can reach a state, `_Harness` carries a `retire`
    callable that reaches each implementation the way that implementation
@@ -41,14 +41,11 @@ import sqlalchemy as sa
 
 from nora.domain.notes import (
     Note,
-    NoteCreationProposal,
     NoteRevision,
-    NoteRevisionProposal,
     NoteSupersedeReason,
     RetiredNoteError,
     StaleNoteHeadError,
 )
-from nora.domain.ports import Proposal
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.notes import SqlNoteStore
@@ -591,75 +588,19 @@ async def test_search_clamps_a_non_positive_limit(notes: _Harness) -> None:
     assert await notes.store.search(unit=WS, query="hotel", limit=-1) == ()
 
 
-# --- DreamSink: both implementations, and the refusals in particular --------
+# --- supersede: both implementations, and the refusals in particular -------
 #
-# `InMemoryNoteStore` does NOT join `tests/contract/test_dream_sink_contract.py`
-# — that file's own docstring records why the doubles mirroring SQL stores stay
-# out of `IMPLEMENTATIONS`. So this is where the double's `propose`/`supersede`
-# get exercised against the same assertions the real store faces, and the
-# emphasis is on the REFUSALS, because that is where a double drifts first: it
-# passes the happy path for free and refuses only what something else refuses
-# for it.
-
-
-async def test_propose_writes_a_revision_and_returns_the_note_id(
-    notes: _Harness,
-) -> None:
-    """The NOTE id, not the revision's — `supersede` is the only other verb and
-    it retires a note, so returning revision ids would hand the caller handles
-    its counterpart cannot accept."""
-    note = await _make(notes.store)
-    ids = await notes.store.propose(
-        key=WS,
-        proposals=(
-            Proposal(
-                payload=NoteRevisionProposal(
-                    note_id=note.id, body="the curator's tidier arrangement",
-                    parent_revision_id=note.head_revision_id,
-                ),
-                instruction_sha256="c" * 64, model="curator-model",
-                established_by="run-curator-1",
-            ),
-        ),
-        now_ms=NOW + 5,
-    )
-
-    assert ids == (note.id,)
-    found = await notes.store.read(unit=WS, note_id=note.id)
-    assert found is not None
-    assert found[1].body == "the curator's tidier arrangement"
-    # The provenance the tag path cannot supply, on the one writer that can.
-    assert found[1].instruction_sha256 == "c" * 64
-    assert found[1].model == "curator-model"
-
-
-async def test_propose_refuses_a_foreign_payload_rather_than_duck_typing_it(
-    notes: _Harness,
-) -> None:
-    """`Proposal.payload` is `object` at the port so the runtime never names an
-    adaptor's value type. The price of that opacity is that a wrong value
-    travels a long way quietly, and `isinstance` at the sink is where it is
-    paid — for the DOUBLE as much as for the store, or the two are not
-    interchangeable."""
-    with pytest.raises(TypeError):
-        await notes.store.propose(
-            key=WS,
-            proposals=(
-                Proposal(
-                    payload="a string, which is the fact tier's shape",
-                    instruction_sha256="d" * 64, model="m",
-                    established_by="run-1",
-                ),
-            ),
-            now_ms=NOW,
-        )
+# The double's `supersede` is exercised against the same assertions the real
+# store faces, and the emphasis is on the REFUSALS, because that is where a
+# double drifts first: it passes the happy path for free and refuses only what
+# something else refuses for it.
 
 
 async def test_supersede_accepts_a_retirement_with_no_successor(
     notes: _Harness,
 ) -> None:
     """The case `SqlFactStore.supersede` RAISES on, and the entire reason
-    `DreamSink.supersede` types `replaced_by` as `str | None`. An anchor date
+    `supersede` types `replaced_by` as `str | None`. An anchor date
     passed and the dinner happened; it is replaced by nothing."""
     note = await _make(notes.store)
 
@@ -756,319 +697,6 @@ async def test_supersede_cannot_reach_another_units_note(
         because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW,
     ) == 0
     assert [n.id for n in await notes.store.standing(unit=WS)] == [note.id]
-
-
-async def test_two_proposals_against_one_note_chain_within_the_tick(
-    notes: _Harness,
-) -> None:
-    """**This test asserted the opposite until 2026-08-27, and that is the
-    finding.** It pinned `propose` as non-atomic — "the FIRST one landed and is
-    not rolled back" — while `propose`'s own docstring required the reverse.
-    Both were mine. A test that encodes the defect as the spec is worse than no
-    test: it defends the behaviour and every later reader takes it as intent.
-
-    What the tier actually needs: `DreamSink.propose` takes a SEQUENCE and one
-    tick may write many, so two proposals naming the same note is ordinary
-    rather than exceptional — the curator's merge is exactly «revise the
-    survivor, then retire the duplicate». The batch therefore carries the head
-    each proposal moved, and the next against that note compares against it.
-
-    The CAS is not weakened by this. It still refuses anything the batch did
-    not itself write, which is the case it exists for: the tag path revising
-    mid-tick."""
-    note = await _make(notes.store)
-
-    def _p(body: str) -> Proposal:
-        return Proposal(
-            payload=NoteRevisionProposal(
-                note_id=note.id, body=body,
-                parent_revision_id=note.head_revision_id,
-            ),
-            instruction_sha256="e" * 64, model="curator-model",
-            established_by="run-curator-1",
-        )
-
-    ids = await notes.store.propose(
-        key=WS, proposals=(_p("first"), _p("second")), now_ms=NOW + 5,
-    )
-
-    assert ids == (note.id, note.id), (
-        "both proposals revised the same note, so both return its id — the "
-        "port says 'in order', not 'distinct'"
-    )
-    found = await notes.store.read(unit=WS, note_id=note.id)
-    assert found is not None
-    assert found[1].body == "second", "the second revision is the head"
-    assert found[1].parent_revision_id != note.head_revision_id, (
-        "the second must be parented on what the FIRST wrote, not on the head "
-        "the caller read — otherwise the chain is a lie and the CAS passed by "
-        "accident"
-    )
-
-
-async def test_a_stale_head_writes_nothing_at_all(notes: _Harness) -> None:
-    """The atomicity requirement, stated as the case it exists for.
-
-    A batch whose SECOND proposal loses the CAS — because the tag path revised
-    that note mid-tick — must leave the notebook untouched. The curator's merge
-    is «append the merged body to the survivor, then retire the originals»; if
-    the append commits and the retirement does not, the notebook holds a
-    survivor carrying merged text beside a duplicate nobody retired, and the
-    caller was told nothing happened. **A partially applied cross-note edit is
-    the one outcome worse than not running**, because it is invisible: no
-    error, no count, and an index that looks ordinary.
-
-    **The exemption that used to be here is gone, and it was the tell.** This
-    test read `if isinstance(notes.store, SqlNoteStore)` before the final
-    assertion, on the reasoning that a double cannot roll back — which is true
-    and was the wrong conclusion. A double cannot roll back, but it CAN decide
-    every refusal before mutating anything, and that is the same observable
-    behaviour from outside. While the exemption stood, the two implementations
-    were not being compared on the one case the transaction exists for; the
-    double wrote the first proposal and kept it."""
-    good = await _make(notes.store, title="Dinner, 9 Sept")
-    stale = await _make(notes.store, title="Grant wedding")
-
-    with pytest.raises(StaleNoteHeadError):
-        await notes.store.propose(
-            key=WS,
-            proposals=(
-                Proposal(
-                    payload=NoteRevisionProposal(
-                        note_id=good.id, body="a revision that must not survive",
-                        parent_revision_id=good.head_revision_id,
-                    ),
-                    instruction_sha256="e" * 64, model="m",
-                    established_by="run-1",
-                ),
-                Proposal(
-                    payload=NoteRevisionProposal(
-                        note_id=stale.id, body="doomed",
-                        parent_revision_id="00000000-0000-0000-0000-0000000000ff",
-                    ),
-                    instruction_sha256="e" * 64, model="m",
-                    established_by="run-1",
-                ),
-            ),
-            now_ms=NOW + 5,
-        )
-
-    found = await notes.store.read(unit=WS, note_id=good.id)
-    assert found is not None
-    assert found[1].body != "a revision that must not survive", (
-        "a failed batch leaves nothing behind — Postgres by rollback, the "
-        "double by refusing before it writes"
-    )
-
-
-async def test_a_foreign_payload_is_refused_before_anything_is_written(
-    notes: _Harness,
-) -> None:
-    """Validation runs over the WHOLE batch before the first write. A bad
-    payload at index 1 used to land after index 0 had already committed, which
-    is the accept-and-discard failure one verb over: the call reports one thing
-    and the store holds another."""
-    note = await _make(notes.store)
-
-    with pytest.raises(TypeError):
-        await notes.store.propose(
-            key=WS,
-            proposals=(
-                Proposal(
-                    payload=NoteRevisionProposal(
-                        note_id=note.id, body="must not be written",
-                        parent_revision_id=note.head_revision_id,
-                    ),
-                    instruction_sha256="e" * 64, model="m",
-                    established_by="run-1",
-                ),
-                Proposal(
-                    payload="the fact tier's shape", instruction_sha256="e" * 64,
-                    model="m", established_by="run-1",
-                ),
-            ),
-            now_ms=NOW,
-        )
-
-    found = await notes.store.read(unit=WS, note_id=note.id)
-    assert found is not None
-    assert found[1].body != "must not be written"
-
-
-# --- the SECOND payload shape: create, for the debrief ----------------------
-
-
-def _creation(**over: object) -> Proposal:
-    kw: dict = {
-        "title": "Dinner, 9 Sept",
-        "description": "Three places proposed, nobody has picked one.",
-        "uncertainty": "where, and whether it is still the 9th",
-        "closing_condition": "somebody books a table",
-        "established_in": "conv-1",
-        "body": "Ada suggested Sai Kung. Ben wants the buffet. Nobody called.",
-        "anchor_date": 20260909,
-    }
-    kw.update(over)
-    return Proposal(
-        payload=NoteCreationProposal(**kw),
-        instruction_sha256="f" * 64, model="debrief-model",
-        established_by="run-debrief-1",
-    )
-
-
-async def test_propose_can_start_a_note_that_does_not_exist_yet(
-    notes: _Harness,
-) -> None:
-    """The debrief's half. Its value is an uncertainty NOBODY tracked, which is
-    by definition a note that is not there — the opposite of the curator's job,
-    which acts across notes that already exist."""
-    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
-
-    assert len(ids) == 1
-    found = await notes.store.read(unit=WS, note_id=ids[0])
-    assert found is not None
-    note, head = found
-    assert note.title == "Dinner, 9 Sept"
-    assert note.anchor_date == 20260909
-    # Provenance reaches the FIRST revision, which the tag path cannot supply.
-    assert head.instruction_sha256 == "f" * 64
-    assert head.model == "debrief-model"
-
-
-
-
-async def test_propose_leaves_revisit_at_null_when_the_payload_does_not_carry_one(
-    notes: _Harness,
-) -> None:
-    """`revisit_at` is optional on `NoteCreationProposal` — a caller that does
-    not supply one (there is none today besides note-candidates, but the type
-    does not require it) must not have a value invented for it."""
-    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
-
-    found = await notes.store.read(unit=WS, note_id=ids[0])
-    assert found is not None
-    assert found[0].revisit_at is None
-
-
-async def test_the_two_payload_shapes_are_discriminated_not_coerced(
-    notes: _Harness,
-) -> None:
-    """§7: two shapes with a discriminant, never one with optional fields. One
-    call carrying both must do the right thing with each — if the sink
-    collapsed them it would either create twice or revise twice, and both read
-    as success."""
-    ids = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
-    created = ids[0]
-    note = await notes.store.read(unit=WS, note_id=created)
-    assert note is not None
-
-    both = await notes.store.propose(
-        key=WS,
-        proposals=(
-            _creation(title="Grant wedding", anchor_date=20261011,
-                            anchor_entity_ids=("grant",)),
-            Proposal(
-                payload=NoteRevisionProposal(
-                    note_id=created, body="Ada called Sai Kung. Still no table.",
-                    parent_revision_id=note[0].head_revision_id,
-                ),
-                instruction_sha256="a" * 64, model="curator-model",
-                established_by="run-curator-1",
-            ),
-        ),
-        now_ms=NOW + 1,
-    )
-
-    assert both[1] == created, "the revision must return the note it revised"
-    assert both[0] != created, "the creation must be a different note"
-    revised = await notes.store.read(unit=WS, note_id=created)
-    assert revised is not None
-    assert revised[1].body == "Ada called Sai Kung. Still no table."
-
-
-async def test_a_creation_naming_an_existing_occasion_is_not_silently_merged(
-    notes: _Harness,
-) -> None:
-    """The decision, written down rather than discovered: the sink does not look
-    for a similar note and does not reinterpret a create as a revision.
-
-    Deduplication is anchor-keyed and belongs to the curator (§7.1), the only
-    thing permitted to act across notes. A sink matching on a plausible
-    collision would be doing cross-note reasoning at the storage boundary,
-    silently, on a guess. Two notes about one occasion is a state the curator
-    is built to resolve; one note silently absorbing another's content is not
-    recoverable in the direction that matters."""
-    first = await notes.store.propose(key=WS, proposals=(_creation(),), now_ms=NOW)
-    second = await notes.store.propose(
-        key=WS, proposals=(_creation(),), now_ms=NOW + 1,
-    )
-
-    assert first[0] != second[0]
-    assert len(await notes.store.standing(unit=WS)) == 2
-
-
-async def test_a_creation_with_no_anchor_is_refused_at_the_type(
-    notes: _Harness,
-) -> None:
-    """`anchor_entity_ids` is free text nothing resolves, so in practice a
-    debrief note anchors on a DATE. A type accepting only entity anchors would
-    be a shape the clock can never retire; a type accepting NEITHER would push
-    the refusal into `Note`'s constructor, inside a background tick, as a
-    raise rather than a refusal."""
-    with pytest.raises(ValueError):
-        NoteCreationProposal(
-            title="t", description="d", uncertainty="u",
-            closing_condition="c", established_in="conv-1", body="b",
-        )
-
-
-async def test_a_second_proposal_may_not_redeclare_a_different_parent(
-    notes: _Harness,
-) -> None:
-    """The tracked head is a CHECK, not a silent override.
-
-    Head chaining made two proposals against one note legal. It also made the
-    declared `parent_revision_id` of the second one ignorable — until
-    2026-08-27 a bogus parent landed as long as the batch had already touched
-    that note.
-
-    The scenario is the likely one, not an exotic one: a curator emitting two
-    proposals BOTH parented on the head it read, with different bodies, which
-    is what a model duplicating its own output produces. Silently chained, both
-    land, the second body wins, the first is buried, and the caller is told
-    both succeeded — a silent overwrite on the one verb whose docstring is
-    about not half-applying.
-
-    A caller cannot name the intermediate revision, because it does not exist
-    until this batch writes it. So re-declaring the SAME parent is the only
-    legitimate thing a second proposal can do, and anything else is a stale
-    read."""
-    note = await _make(notes.store)
-
-    def _p(body: str, parent: str) -> Proposal:
-        return Proposal(
-            payload=NoteRevisionProposal(
-                note_id=note.id, body=body, parent_revision_id=parent,
-            ),
-            instruction_sha256="e" * 64, model="curator-model",
-            established_by="run-curator-1",
-        )
-
-    with pytest.raises(StaleNoteHeadError):
-        await notes.store.propose(
-            key=WS,
-            proposals=(
-                _p("first", note.head_revision_id),
-                _p("second", "00000000-0000-0000-0000-0000000000ff"),
-            ),
-            now_ms=NOW + 5,
-        )
-
-    found = await notes.store.read(unit=WS, note_id=note.id)
-    assert found is not None
-    assert found[1].body not in {"first", "second"}, (
-        "the refusal is decided before anything is written"
-    )
 
 
 # --- the CHECK, proven against a real migrated database --------------------
@@ -1228,33 +856,6 @@ async def test_an_append_to_a_retired_note_raises_retired_note_error(
     assert got is not None and got[1].id == duplicate.head_revision_id, (
         "nothing was written"
     )
-
-
-async def test_a_proposed_revision_to_a_retired_note_raises_retired_note_error(
-    notes: _Harness,
-) -> None:
-    """The same guard through `propose`, the path note-candidates writes by."""
-    note = await _make(notes.store)
-    await notes.store.supersede(
-        key=WS, target=note.id, replaced_by=None,
-        because=NoteSupersedeReason.RETIRED_EXPIRED, source=None, now_ms=NOW + 9,
-    )
-
-    with pytest.raises(RetiredNoteError) as excinfo:
-        await notes.store.propose(
-            key=WS, proposals=[Proposal(
-                payload=NoteRevisionProposal(
-                    note_id=note.id, body="appended after it retired",
-                    parent_revision_id=note.head_revision_id,
-                ),
-                instruction_sha256=None, model=None,
-                established_by="dream:note-candidates:conv-1:1",
-            )],
-            now_ms=NOW + 10,
-        )
-
-    assert excinfo.value.retire_reason == NoteSupersedeReason.RETIRED_EXPIRED
-    assert excinfo.value.replaced_by is None
 
 
 async def test_successor_follows_a_merged_chain_to_the_open_note(
