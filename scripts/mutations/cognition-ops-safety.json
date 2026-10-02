@@ -1,0 +1,352 @@
+[
+  {
+    "name": "no signal handlers installed",
+    "file": "nora/__main__.py",
+    "old": "    for sig in signals:\n        loop.add_signal_handler(sig, _stop, sig)\n    try:\n        await serving",
+    "new": "    try:\n        await serving",
+    "target": "tests/integration/test_sigterm_releases_the_claim.py"
+  },
+  {
+    "name": "main() awaits app.run() bare",
+    "file": "nora/__main__.py",
+    "old": "        await run_until_stopped(app)\n",
+    "new": "        try:\n            await app.run()\n        finally:\n            await app.shutdown()\n",
+    "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "grace ignored (wait_in_flight no-op)",
+    "file": "nora/app/wake.py",
+    "old": "        tasks = tuple(self._background)\n        if tasks and timeout_seconds > 0:\n            await asyncio.wait(tasks, timeout=timeout_seconds)",
+    "new": "        return",
+    "target": "tests/unit/test_cognition_shutdown_grace.py tests/integration/test_sigterm_releases_the_claim.py"
+  },
+  {
+    "name": "stop_grace_period removed",
+    "file": "docker-compose.yml",
+    "old": "    stop_grace_period: 75s\n",
+    "new": "",
+    "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "shutdown cancel records a plain cancelled (no restart detail)",
+    "file": "nora/app/cognition_session.py",
+    "old": "restart_detail(\"the process was stopping and cancelled the session\")",
+    "new": "\"the session task was cancelled\"",
+    "target": "tests/integration/test_sigterm_releases_the_claim.py tests/unit/test_cognition_shutdown_grace.py tests/unit/test_cognition_token_ledger.py"
+  },
+  {
+    "name": "reclaim_orphans releases nothing",
+    "file": "nora/app/wake.py",
+    "old": "        try:\n            orphans = await asyncio.wait_for(\n                self._store.open_wakes(recorded_before_ms=process_started_ms),",
+    "new": "        return 0\n        try:\n            orphans = await asyncio.wait_for(\n                self._store.open_wakes(recorded_before_ms=process_started_ms),",
+    "target": "tests/unit/test_cognition_restart_reclaim.py"
+  },
+  {
+    "name": "App.run never calls the reclaim",
+    "file": "nora/__main__.py",
+    "old": "            await deps.wake_evaluator.reclaim_orphans(\n                process_started_ms=int(started_at * 1000),\n            )\n",
+    "new": "",
+    "target": "tests/test_main.py::test_app_run_releases_what_a_previous_process_left_before_the_wake_loop_starts"
+  },
+  {
+    "name": "reclaim records a FAILED (infra) wake: a restart penalises the unit",
+    "file": "nora/app/wake.py",
+    "old": "outcome=\"cancelled\", at_ms=now_ms,\n                            detail=restart_detail(\n                                \"no process owns this wake: the one that ran it ended\",\n                            ),\n                            cause=NO_CAUSE,",
+    "new": "outcome=\"failed\", at_ms=now_ms,\n                            detail=restart_detail(\n                                \"no process owns this wake: the one that ran it ended\",\n                            ),\n                            cause=\"infra\",",
+    "target": "tests/unit/test_cognition_restart_reclaim.py"
+  },
+  {
+    "name": "reclaim records CLOSED: the watermark advances past unseen stimuli",
+    "file": "nora/app/wake.py",
+    "old": "outcome=\"cancelled\", at_ms=now_ms,",
+    "new": "outcome=\"closed\", at_ms=now_ms,",
+    "target": "tests/unit/test_cognition_restart_reclaim.py"
+  },
+  {
+    "name": "wake loop never moves its gauge after a tick",
+    "file": "nora/app/wake.py",
+    "old": "            metrics.inc(\"nora_errors_total\", stage=\"cognition_wake\")\n        metrics.gauge(\"nora_cognition_wake_last_tick_seconds\", clock(), mode=mode)",
+    "new": "            metrics.inc(\"nora_errors_total\", stage=\"cognition_wake\")",
+    "target": "tests/unit/test_wake_loop_heartbeat.py"
+  },
+  {
+    "name": "process start gauge not published",
+    "file": "nora/__main__.py",
+    "old": "        deps.metrics.gauge(\"nora_process_start_time_seconds\", started_at)\n",
+    "new": "",
+    "target": "tests/test_main.py::test_app_run_publishes_the_process_start_time"
+  },
+  {
+    "name": "failed session drops its tokens",
+    "file": "nora/app/cognition_session.py",
+    "old": "                cause=classify_failure(exc),\n                tokens=spend,\n",
+    "new": "                cause=classify_failure(exc),\n",
+    "target": "tests/unit/test_cognition_token_ledger.py"
+  },
+  {
+    "name": "closed session drops its tokens",
+    "file": "nora/app/cognition_session.py",
+    "old": "\"closed\", result.stop_reason or \"\", carries=carries,\n            tokens=spend,",
+    "new": "\"closed\", result.stop_reason or \"\", carries=carries,",
+    "target": "tests/unit/test_cognition_token_ledger.py"
+  },
+  {
+    "name": "SQL store drops the token columns",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,\n                cache_read_tokens=outcome.cache_read_tokens, trace_id=outcome.trace_id,\n",
+    "new": "",
+    "target": "tests/infra/test_cognition_health_read.py tests/infra/test_cognition_outcome_ledger.py"
+  },
+  {
+    "name": "live runner leaves no cache-read split",
+    "file": "nora/app/cognition_agent_runner.py",
+    "old": "        spend.cache_read = _count(usage, \"cacheReadInputTokens\")\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_token_ledger.py"
+  },
+  {
+    "name": "stalled threshold disabled",
+    "file": "nora/domain/cognition_health.py",
+    "old": "STALLED_PENDING_SECONDS = 14_400.0",
+    "new": "STALLED_PENDING_SECONDS = 1e12",
+    "target": "tests/infra/test_cognition_health_read.py tests/unit/test_cognition_health_cli.py"
+  },
+  {
+    "name": "failure ratio never judged",
+    "file": "nora/domain/cognition_health.py",
+    "old": "    if ended >= FAILURE_RATIO_MIN_ENDED and broke / ended > FAILURE_RATIO:",
+    "new": "    if False:",
+    "target": "tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "restart cancels not told apart",
+    "file": "nora/app/cognition_health.py",
+    "old": "    return sa.or_(detail == RESTART_DETAIL, detail.like(f\"{RESTART_DETAIL}:%\"))",
+    "new": "    return sa.false()",
+    "target": "tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "a report's pending read applies the expiry the evaluator applies",
+    "file": "nora/app/cognition_health.py",
+    "old": "stale_before_ms=now_ms - int(session_timeout_seconds * 1000),\n        )\n        eligible",
+    "new": "stale_before_ms=None,\n        )\n        eligible",
+    "target": "tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "exit code of FAIL is 0",
+    "file": "nora/domain/cognition_health.py",
+    "old": "EXIT_CODES: Mapping[str, int] = {\"PASS\": 0, \"FAIL\": 1, \"ERROR\": 2}",
+    "new": "EXIT_CODES: Mapping[str, int] = {\"PASS\": 0, \"FAIL\": 0, \"ERROR\": 2}",
+    "target": "tests/unit/test_cognition_health_cli.py tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "restart-loop threshold 6 -> 7",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "[30m]) >= 6",
+    "new": "[30m]) >= 7",
+    "target": "tests/unit/test_cognition_alert_rules.py::test_the_cognition_rules_pass_their_promtool_cases"
+  },
+  {
+    "name": "failing ratio counts cancelled in the denominator",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "outcome=~\"closed|failed|timeout\"}[3h]))\n            >",
+    "new": "outcome=~\"closed|failed|timeout|cancelled\"}[3h]))\n            >",
+    "target": "tests/unit/test_cognition_alert_rules.py"
+  },
+  {
+    "name": "backlog keeps the unit label",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "expr: max(nora_stimulus_pending_age_seconds",
+    "new": "expr: max by (unit) (nora_stimulus_pending_age_seconds",
+    "target": "tests/unit/test_cognition_alert_rules.py"
+  },
+  {
+    "name": "wake gauge unlabelled in the spec (exports 0 when off)",
+    "file": "nora/obs/metric_specs.py",
+    "old": "\"`time() - this` against a few ticks (30 s each). ABSENT while \"\n        \"[cognition] mode is off: not applicable, never 0.\",\n        (\"mode\",),",
+    "new": "\"`time() - this` against a few ticks (30 s each). ABSENT while \"\n        \"[cognition] mode is off: not applicable, never 0.\",",
+    "target": "tests/unit/test_wake_loop_heartbeat.py tests/unit/test_cognition_alert_rules.py"
+  },
+  {
+    "name": "open_wakes lists untracked wakes too",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                COGNITION_WAKE.c.tracked == 1,\n                COGNITION_WAKE.c.recorded_at < _at(recorded_before_ms),",
+    "new": "                COGNITION_WAKE.c.recorded_at < _at(recorded_before_ms),",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py"
+  },
+  {
+    "name": "open_wakes ignores outcomes",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "                ~sa.exists().where(COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id),\n            )\n            .order_by(COGNITION_WAKE.c.id)",
+    "new": "            )\n            .order_by(COGNITION_WAKE.c.id)",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py"
+  },
+  {
+    "name": "in-memory open_wakes lists expired/other-process wakes wrongly (ignores the cut)",
+    "file": "nora/testing/stimuli.py",
+    "old": "                and w.recorded_at_ms < recorded_before_ms\n",
+    "new": "\n",
+    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py tests/unit/test_cognition_restart_reclaim.py"
+  },
+  {
+    "name": "zero sessions with nothing pending reports nothing",
+    "file": "nora/domain/cognition_health.py",
+    "old": "        else:\n            findings.append(Finding(\n                \"ERROR\", \"no_sessions\",\n                \"no session ran in the window and nothing is pending: there is \"\n                \"nothing to judge, and zero sessions is not a clean loop\",\n            ))",
+    "new": "        else:\n            pass",
+    "target": "tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "a failed session's detail text reaches the report",
+    "file": "nora/app/cognition_health.py",
+    "old": "    stmt = sa.select(\n        s.c.started_at_ms, s.c.unit, o.c.outcome, o.c.cause,\n        _is_restart(o.c.detail).label(\"restart\"),",
+    "new": "    stmt = sa.select(\n        s.c.started_at_ms, s.c.unit, o.c.outcome, o.c.detail.label(\"cause\"),\n        _is_restart(o.c.detail).label(\"restart\"),",
+    "target": "tests/infra/test_cognition_health_read.py"
+  },
+  {
+    "name": "backlog gauge counts an inert time stimulus",
+    "file": "nora/app/wake.py",
+    "old": "            if not s.waits and s.kind not in view.inert_kinds\n        ]",
+    "new": "            if not s.waits\n        ]",
+    "target": "tests/unit/test_wake_evaluator.py -k backlog_gauge"
+  },
+  {
+    "name": "inert kinds are never inert (the shared rule returns an empty set)",
+    "file": "nora/domain/stimuli.py",
+    "old": "    return frozenset({\"time\"}) if tracked and not floors_ready else frozenset()",
+    "new": "    return frozenset()",
+    "target": "tests/unit/test_wake_evaluator.py"
+  },
+  {
+    "name": "health read counts an inert time stimulus as eligible",
+    "file": "nora/app/cognition_health.py",
+    "old": "if not x.waits and x.kind not in inert_kinds]",
+    "new": "if not x.waits]",
+    "target": "tests/infra/test_cognition_health_read.py -k inert"
+  },
+  {
+    "name": "health command passes no inert kinds to the read",
+    "file": "nora/app/cli.py",
+    "old": "            inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_health_cli.py -k inert_kinds_reach"
+  },
+  {
+    "name": "session outcome children are not created at loop start",
+    "file": "nora/app/wake.py",
+    "old": "    mode = evaluator.mode\n    precreate_session_series(metrics)\n",
+    "new": "    mode = evaluator.mode\n",
+    "target": "tests/unit/test_wake_loop_heartbeat.py -k child_exists_at_zero"
+  },
+  {
+    "name": "only the failed child is created (closed/timeout/cancelled lazy)",
+    "file": "nora/app/wake.py",
+    "old": "    for outcome in WAKE_OUTCOMES:\n        metrics.inc(",
+    "new": "    for outcome in (\"failed\",):\n        metrics.inc(",
+    "target": "tests/unit/test_wake_loop_heartbeat.py -k child"
+  },
+  {
+    "name": "heartbeat not written before the first sleep",
+    "file": "nora/app/wake.py",
+    "old": "    precreate_session_series(metrics)\n    metrics.gauge(\"nora_cognition_wake_last_tick_seconds\", clock(), mode=mode)\n    while True:",
+    "new": "    precreate_session_series(metrics)\n    while True:",
+    "target": "tests/unit/test_wake_loop_heartbeat.py -k before_the_first_sleep"
+  },
+  {
+    "name": "a tick that raises leaves the heartbeat frozen",
+    "file": "nora/app/wake.py",
+    "old": "            metrics.inc(\"nora_errors_total\", stage=\"cognition_wake\")\n        metrics.gauge(\"nora_cognition_wake_last_tick_seconds\", clock(), mode=mode)",
+    "new": "            metrics.inc(\"nora_errors_total\", stage=\"cognition_wake\")\n            continue\n        metrics.gauge(\"nora_cognition_wake_last_tick_seconds\", clock(), mode=mode)",
+    "target": "tests/unit/test_wake_loop_heartbeat.py -k raises"
+  },
+  {
+    "name": "session grace constant zeroed",
+    "file": "nora/app/cognition_wiring.py",
+    "old": "SESSION_SHUTDOWN_GRACE_SECONDS = 30.0",
+    "new": "SESSION_SHUTDOWN_GRACE_SECONDS = 0.0",
+    "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "stop_grace_period cut to 55s (only 25 s over the pinned grace)",
+    "file": "docker-compose.yml",
+    "old": "stop_grace_period: 75s",
+    "new": "stop_grace_period: 55s",
+    "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "restart-loop window 30m -> 60m",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "changes(nora_process_start_time_seconds{job=\"nora\"}[30m]) >= 6",
+    "new": "changes(nora_process_start_time_seconds{job=\"nora\"}[60m]) >= 6",
+    "target": "tests/unit/test_cognition_alert_rules.py::test_the_cognition_rules_pass_their_promtool_cases"
+  },
+  {
+    "name": "restart-loop window 30m -> 20m",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "changes(nora_process_start_time_seconds{job=\"nora\"}[30m]) >= 6",
+    "new": "changes(nora_process_start_time_seconds{job=\"nora\"}[20m]) >= 6",
+    "target": "tests/unit/test_cognition_alert_rules.py::test_the_cognition_rules_pass_their_promtool_cases"
+  },
+  {
+    "name": "SQL outcome insert drops trace_id",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "cache_read_tokens=outcome.cache_read_tokens, trace_id=outcome.trace_id,",
+    "new": "cache_read_tokens=outcome.cache_read_tokens,",
+    "target": "tests/infra/test_cognition_outcome_ledger.py"
+  },
+  {
+    "name": "SQL outcome insert drops cache_read_tokens",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "cache_read_tokens=outcome.cache_read_tokens, trace_id=outcome.trace_id,",
+    "new": "trace_id=outcome.trace_id,",
+    "target": "tests/infra/test_cognition_outcome_ledger.py"
+  },
+  {
+    "name": "SQL outcome insert drops input_tokens",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,",
+    "new": "output_tokens=outcome.output_tokens,",
+    "target": "tests/infra/test_cognition_outcome_ledger.py"
+  },
+  {
+    "name": "health command exits 1 for a run that could not happen",
+    "file": "nora/app/cli.py",
+    "old": "    return health_exit_code(\"ERROR\")",
+    "new": "    return health_exit_code(\"FAIL\")",
+    "target": "tests/unit/test_cognition_health_cli.py"
+  },
+  {
+    "name": "health command lets an unexpected exception through to the shared executor",
+    "file": "nora/app/cli.py",
+    "old": "    except Exception as exc:  # noqa: BLE001 - unknown is not healthy, whatever raised",
+    "new": "    except ZeroDivisionError as exc:  # noqa: BLE001 - mutant",
+    "target": "tests/unit/test_cognition_health_cli.py"
+  },
+  {
+    "name": "health command re-raises a CliError (the shared executor makes it 1)",
+    "file": "nora/app/cli.py",
+    "old": "    try:\n        return await _cognition_health(args)\n    except CliError as exc:\n        print(f\"error: {exc}\", file=sys.stderr)\n",
+    "new": "    try:\n        return await _cognition_health(args)\n    except CliError:\n        raise\n",
+    "target": "tests/unit/test_cognition_health_cli.py"
+  },
+  {
+    "name": "health command hard-codes floors_ready=False (ignores the agenda table)",
+    "file": "nora/app/cli.py",
+    "old": "inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),",
+    "new": "inert_kinds=inert_kinds_for(tracked=True, floors_ready=False),",
+    "target": "tests/unit/test_cognition_health_cli.py -k follow_the_agenda_table"
+  },
+  {
+    "name": "composition hard-codes floors_ready=False (ignores the agenda table)",
+    "file": "nora/app/composition.py",
+    "old": "floors_ready=\"time\" in agenda_skills.by_kind,",
+    "new": "floors_ready=False,",
+    "target": "tests/test_composition.py -k floors_ready_follows"
+  },
+  {
+    "name": "_cutover names --before for every flag",
+    "file": "nora/app/cli.py",
+    "old": "raise CliError(f\"{flag} must be ISO 8601; got {text!r}\") from exc",
+    "new": "raise CliError(f\"--before must be ISO 8601; got {text!r}\") from exc",
+    "target": "tests/unit/test_cognition_health_cli.py -k names_the_flag"
+  }
+]

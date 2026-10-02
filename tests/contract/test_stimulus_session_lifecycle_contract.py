@@ -781,3 +781,42 @@ async def test_a_failure_cannot_be_written_with_no_cause(stores, outcome):
     with pytest.raises(ValueError, match="names its cause"):
         await _close(stimuli, wake, outcome, cause="none")
 
+
+
+# ---- the restart reclaim's read (the Cognition cut-over's PR-7) -------------
+
+async def test_open_wakes_lists_tracked_wakes_with_no_outcome_recorded_before_the_cut(stores):
+    """`open_wakes(recorded_before_ms)`: the wakes a process that started at that
+    instant cannot own. Tracked only (an untracked wake never has an outcome, so it is
+    never «open»), no outcome row, oldest first, and expired ones INCLUDED (a process
+    that no longer exists failed nothing, whatever the clock says)."""
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 4)
+    closed = await _wake(stimuli, through=1, at=NOW)
+    await _close(stimuli, closed)
+    open_old = await _wake(stimuli, through=2, at=NOW + 10)
+    untracked = await _wake(stimuli, through=3, at=NOW + 20, tracked=False)
+    open_new = await _wake(stimuli, through=4, at=NOW + 30)
+
+    listed = await stimuli.open_wakes(recorded_before_ms=NOW + 25)
+    assert [w.id for w in listed] == [open_old]
+    assert untracked not in [w.id for w in listed] and closed not in [w.id for w in listed]
+    assert [w.id for w in await stimuli.open_wakes(recorded_before_ms=NOW + 31)] == [
+        open_old, open_new,
+    ]
+    assert await stimuli.open_wakes(recorded_before_ms=NOW + 10) == []      # the cut is exclusive
+    assert [w.unit for w in await stimuli.open_wakes(recorded_before_ms=NOW + 31)] == [UNIT] * 2
+
+
+async def test_a_cancelled_outcome_closes_the_open_list_and_returns_the_range(stores):
+    stimuli, _ledger = stores
+    await _msgs(stimuli, 2)
+    wake = await _wake(stimuli, through=2, at=NOW)
+    assert [w.id for w in await stimuli.open_wakes(recorded_before_ms=NOW + 1)] == [wake]
+    recorded = await _close(stimuli, wake, "cancelled", at=NOW + 5)
+    assert (recorded.outcome, recorded.written) == ("cancelled", True)
+    assert await stimuli.open_wakes(recorded_before_ms=NOW + 1) == []
+    view = await _view(stimuli, stale_before_ms=NOW + 1)
+    assert [s.id for s in view.pending] == [1, 2]
+    assert view.mark.through_stimulus_id == 0
+    assert view.failures == 0                       # a cancelled wake neither counts nor strikes

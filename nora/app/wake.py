@@ -43,8 +43,10 @@ from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
-from nora.domain.ports import StimulusStore
+from nora.domain.ports import NewWakeOutcome, StimulusStore
 from nora.domain.stimuli import (
+    NO_CAUSE,
+    WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
     UnitView,
@@ -55,6 +57,8 @@ from nora.domain.stimuli import (
     WakePolicy,
     WakeReason,
     decide,
+    inert_kinds_for,
+    restart_detail,
     unit_in_flight,
 )
 
@@ -183,6 +187,10 @@ class WakeEvaluator:
         self._live: dict[str, asyncio.Task[None]] = {}
 
     @property
+    def mode(self) -> WakeMode:
+        return self._mode
+
+    @property
     def has_wake_hook(self) -> bool:
         """True when a session hook is wired (`session_mode = "shadow"`). The
         composition root's boot check reads it: a session mode that asked for
@@ -266,6 +274,78 @@ class WakeEvaluator:
 
         task.add_done_callback(_done)
 
+    async def reclaim_orphans(self, *, process_started_ms: int) -> int:
+        """Release every wake a PREVIOUS process left open, at this process's
+        start, and return how many. A tracked wake with no outcome row that was
+        recorded before this process started has no session left to own it: the
+        process that ran it was killed or stopped, and nothing in this one knows
+        it. Left alone it holds its unit single-flight (`unit_in_flight`) for the
+        rest of `session_timeout_seconds` (3,900 s by default) and then expires,
+        which reads as a FAILED session and doubles the unit's backoff: a restart
+        would cost the unit an hour and a strike toward the failure backoff.
+
+        Each is recorded `cancelled` with a `restart` detail. `cancelled` is the
+        outcome a shutdown already writes: the watermark skips it, so the wake's
+        stimuli are pending again and none is consumed unseen, and it neither counts
+        toward the failure streak nor resets it (`failure_streak`), so a restart is
+        never a strike (DEC-244: an outage never strikes). The cooldown then runs
+        from now, as it does after any ended session.
+
+        Never raises. A store that cannot be read or written leaves the wake open,
+        which is exactly today's behaviour: it expires on its own clock. The write
+        is `record_outcome`, first-write-wins under the unit's lock, so a wake that
+        was meanwhile closed (a second process, a late write) keeps its outcome."""
+        try:
+            orphans = await asyncio.wait_for(
+                self._store.open_wakes(recorded_before_ms=process_started_ms),
+                timeout=self._timeout,
+            )
+        except Exception:
+            log.exception("wake evaluator: could not list the wakes a restart left open")
+            self._metrics.inc("nora_errors_total", stage="cognition_reclaim")
+            return 0
+        released = 0
+        for wake in orphans:
+            now_ms = int(self._clock() * 1000)
+            try:
+                recorded = await asyncio.wait_for(
+                    self._store.record_outcome(
+                        outcome=NewWakeOutcome(
+                            wake_id=wake.id, unit=wake.unit, outcome="cancelled", at_ms=now_ms,
+                            detail=restart_detail(
+                                "no process owns this wake: the one that ran it ended",
+                            ),
+                            cause=NO_CAUSE,
+                        ),
+                        recorded_at_ms=now_ms,
+                    ),
+                    timeout=self._timeout,
+                )
+            except Exception:
+                log.exception("wake evaluator: could not release orphaned wake %s", wake.id)
+                self._metrics.inc("nora_errors_total", stage="cognition_reclaim")
+                continue
+            if recorded.written:
+                released += 1
+                self._metrics.inc("nora_cognition_wake_reclaimed_total")
+        if released:
+            log.warning(
+                "cognition: released %d wake(s) a previous process left open (cancelled, "
+                "restart): their stimuli are pending again and no unit is held",
+                released,
+            )
+        return released
+
+    async def wait_in_flight(self, timeout_seconds: float) -> None:
+        """Wait up to `timeout_seconds` for the sessions this evaluator started
+        to finish on their own. Cancels nothing: a session still running at the
+        deadline is left to `cancel_in_flight`. The shutdown's grace: a session
+        in its last seconds is allowed to close, one that is not is cancelled
+        and releases its wake."""
+        tasks = tuple(self._background)
+        if tasks and timeout_seconds > 0:
+            await asyncio.wait(tasks, timeout=timeout_seconds)
+
     async def cancel_in_flight(self) -> None:
         """Cancel every session task this evaluator started and wait for them
         to unwind (shutdown). The hook records its wake `cancelled` while it
@@ -335,7 +415,7 @@ class WakeEvaluator:
             # M8: no skill for `time` yet, so a `time` stimulus that is ALREADY
             # pending (raised before the gate, or by the previous deploy) must
             # not wake a session either: not raising a floor is half of it.
-            inert = frozenset({"time"}) if tracked and not self._floors_ready else frozenset()
+            inert = inert_kinds_for(tracked=tracked, floors_ready=self._floors_ready)
             return await self._strike_failed(
                 replace(view, tracked=tracked, live=live, inert_kinds=inert), now_ms,
             )
@@ -383,8 +463,14 @@ class WakeEvaluator:
 
     def _publish_age(self, view: UnitView, now_ms: int) -> None:
         """`nora_stimulus_pending_age_seconds{unit}`: the oldest stimulus that
-        could wake the unit, 0 when none is pending."""
-        eligible = [s.pending_since_ms for s in view.pending if not s.waits]
+        could wake the unit, 0 when none is pending. A stimulus that waits, or
+        whose kind is inert (a `time` floor while no skill ships for it), can
+        never wake the unit: counting it would hold `StimulusBacklog` firing on
+        a unit that is not stuck."""
+        eligible = [
+            s.pending_since_ms for s in view.pending
+            if not s.waits and s.kind not in view.inert_kinds
+        ]
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
@@ -454,12 +540,44 @@ class WakeEvaluator:
         return wake_id
 
 
+def precreate_session_series(metrics: Any) -> None:
+    """Create every `nora_cognition_session_ended_total{outcome}` child at 0.
+
+    A labelled prometheus counter has no child until its first `inc`, so a series
+    appears at its FIRST increment already at 1 and `increase()` has no earlier
+    sample to subtract: that first session is invisible. Nora restarts 2 to 24
+    times a day (the 2026-10-02 audit), each process starts with no children, so
+    `CognitionSessionsFailing` read 3 failures in one fresh process as an increase
+    of 2.05 (under its floor of 3) and 5 failures over 5 processes as 0 (each new
+    process re-shows `1`, which is no change). A child created at 0 gives every
+    process a baseline. Every outcome the code can write is created, not only the
+    ones the rule reads: a series the rule leaves out (`cancelled`) is the same
+    hole the day a rule reads it. ONE place, called when the wake loop starts."""
+    for outcome in WAKE_OUTCOMES:
+        metrics.inc("nora_cognition_session_ended_total", 0.0, outcome=outcome)
+
+
 async def wake_loop(
     evaluator: WakeEvaluator, metrics: Any, *, tick_seconds: float,
+    clock: Callable[[], float] = time.time,
 ) -> None:
     """The evaluator's clock: `tick` every `tick_seconds`, forever. A failing
-    tick is logged and counted and never takes the loop down."""
+    tick is logged and counted and never takes the loop down.
+
+    `nora_cognition_wake_last_tick_seconds{mode}` is the loop's pulse: the wall
+    time of the last tick this loop FINISHED (a tick that raised finished, and
+    `nora_errors_total{stage="cognition_wake"}` says it failed). It is written
+    after the tick and from inside the loop, so a loop that is gone or hung in a
+    tick stops moving it and `CognitionWakeStalled` reads `time()` minus it. It is
+    also written once before the first sleep, so a loop that dies before its
+    first tick is not mistaken for one that was never started. Labelled by `mode`
+    so that the series is ABSENT when cognition is off (an unlabelled gauge
+    exports 0 from the moment it is declared, and a rule on `time() - 0` would
+    page a deployment that has no wake loop)."""
     log.info("cognition wake evaluator started (shadow): tick every %gs", tick_seconds)
+    mode = evaluator.mode
+    precreate_session_series(metrics)
+    metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)
     while True:
         await asyncio.sleep(tick_seconds)
         try:
@@ -467,3 +585,4 @@ async def wake_loop(
         except Exception:
             log.exception("cognition wake tick failed")
             metrics.inc("nora_errors_total", stage="cognition_wake")
+        metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)

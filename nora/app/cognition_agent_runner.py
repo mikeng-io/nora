@@ -40,7 +40,7 @@ from nora.agent.ports import ToolSpec, adapt
 from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
 from nora.domain.turn_deadline import turn_deadline
 from nora.obs.metrics import Metrics
-from nora.obs.tracing import TRACE_KIND, annotate, span
+from nora.obs.tracing import TRACE_KIND, annotate, current_trace_id, span
 
 log = logging.getLogger("nora.app.cognition_agent_runner")
 
@@ -89,6 +89,15 @@ def _total_tokens(result: Any) -> int | None:
     return _spent(getattr(getattr(result, "metrics", None), "accumulated_usage", None))
 
 
+def _count(usage: Any, key: str) -> int | None:
+    """One counter of a Strands accounting mapping, or None when it is absent,
+    not a number or ZERO (the same reading as `_spent`: an unread count is
+    never a zero)."""
+    value = usage.get(key) if isinstance(usage, Mapping) else None
+    ok = isinstance(value, int) and not isinstance(value, bool) and value > 0
+    return value if ok else None
+
+
 def _leave_spend(agent: Any) -> None:
     """Leave what the agent has spent where the session can read it, whatever
     happened to the loop (it returned, raised, timed out or was cancelled): a
@@ -100,6 +109,12 @@ def _leave_spend(agent: Any) -> None:
     try:
         usage = getattr(getattr(agent, "event_loop_metrics", None), "accumulated_usage", None)
         spend.total = _spent(usage)
+        spend.input = _count(usage, "inputTokens")
+        spend.output = _count(usage, "outputTokens")
+        spend.cache_read = _count(usage, "cacheReadInputTokens")
+        # Inside the `dream:cognition` span (this runs in `_invoke`'s `finally`), so the
+        # root's id, whether the loop returned, raised or was cancelled.
+        spend.trace_id = current_trace_id()
     except Exception:
         log.exception("could not read the tokens a cognition session spent")
 

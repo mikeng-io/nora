@@ -2,14 +2,14 @@
  {
   "name": "(a) mapping reverted to {}",
   "file": "nora/app/cognition_wiring.py",
-  "old": "AGENDA_SKILLS: Mapping[str, str] = {\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n}",
+  "old": "AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n})",
   "new": "AGENDA_SKILLS: Mapping[str, str] = {}",
   "target": "tests/unit/test_cognition_agenda_skills.py"
  },
  {
   "name": "(a-pg) mapping reverted, Postgres row",
   "file": "nora/app/cognition_wiring.py",
-  "old": "AGENDA_SKILLS: Mapping[str, str] = {\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n}",
+  "old": "AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({\n    \"message\": REGISTER_SKILL, \"rollup\": REGISTER_SKILL, \"self\": REGISTER_SKILL,\n})",
   "new": "AGENDA_SKILLS: Mapping[str, str] = {}",
   "target": "tests/infra/test_cognition_session_records_its_skill.py"
  },

@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -287,9 +288,17 @@ REGISTER_SKILL = "cognition-register"
 #: session has no verb that retires a note, so a floor would wake it to work it
 #: cannot do. It is mapped with the curation skill (cut-over step D).
 #: `social` and `play` have no producer yet.
-AGENDA_SKILLS: Mapping[str, str] = {
+AGENDA_SKILLS: Mapping[str, str] = MappingProxyType({
     "message": REGISTER_SKILL, "rollup": REGISTER_SKILL, "self": REGISTER_SKILL,
-}
+})
+
+
+def floors_ready() -> bool:
+    """True once a skill ships for the `time` agenda kind: a floor then wakes a
+    session. Read at CALL time over `AGENDA_SKILLS`, so the composition root (through
+    the `AgendaSkills` it builds), the wake evaluator's age gauge and `nora cognition
+    health` all follow the ONE table, and a test that replaces it reaches all three."""
+    return "time" in AGENDA_SKILLS
 
 
 def agenda_skills(instructions: Any) -> AgendaSkills:
@@ -299,16 +308,33 @@ def agenda_skills(instructions: Any) -> AgendaSkills:
     return AgendaSkills(by_kind=AGENDA_SKILLS, resolve=instructions.skill)
 
 
+#: How long a stopping process lets a session that is already running finish
+#: before it cancels it. A session is a model loop of minutes to an hour, so the
+#: grace is for one in its last moments, not for waiting out one that is not:
+#: whatever is still running at the deadline is cancelled, records its wake
+#: `cancelled` (a restart) and releases its unit. `docker-compose.yml`'s
+#: `stop_grace_period` for the `nora` service must exceed this by the time the
+#: rest of shutdown needs (adapters, the cancel's own database write, closing
+#: the client and the store): `tests/architecture/test_the_stop_grace_covers_the_shutdown.py`
+#: holds the margin.
+SESSION_SHUTDOWN_GRACE_SECONDS = 30.0
+
+
 class CognitionShutdown:
     """Stops the sessions at shutdown, once. The evaluator's background tasks
     ARE the sessions' tasks, so `cancel_in_flight` and the runner's `shutdown`
     both cancel the same tasks: each is called (the design's open choice (a))
     and the second call of the whole thing is a no-op, so a process that
-    reaches shutdown twice does not cancel twice."""
+    reaches shutdown twice does not cancel twice.
 
-    def __init__(self, *, evaluator: Any, runner: Any) -> None:
+    The wake loop is already stopped by the time this runs (`App.run` cancels
+    every background task before `App.shutdown`), so no NEW wake starts while
+    the sessions already running are given `grace_seconds` to finish."""
+
+    def __init__(self, *, evaluator: Any, runner: Any, grace_seconds: float = 0.0) -> None:
         self._evaluator = evaluator
         self._runner = runner
+        self._grace = grace_seconds
         self._done = False
 
     @property
@@ -319,6 +345,7 @@ class CognitionShutdown:
         if self._done:
             return
         self._done = True
+        await self._evaluator.wait_in_flight(self._grace)
         await self._evaluator.cancel_in_flight()
         await self._runner.shutdown()
 
@@ -526,6 +553,7 @@ __all__ = [
     "SkillNotInstalledError",
     "build_cognition_runner",
     "cognition_budget",
+    "floors_ready",
     "read_surface",
     "read_tools_for",
     "require_session_hook",

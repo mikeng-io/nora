@@ -483,6 +483,9 @@ async def test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_onl
     order: list[str] = []
 
     class Evaluator:
+        async def wait_in_flight(self, timeout_seconds: float) -> None:
+            order.append(f"grace {timeout_seconds:g}")
+
         async def cancel_in_flight(self) -> None:
             order.append("evaluator")
 
@@ -490,10 +493,11 @@ async def test_shutdown_cancels_the_evaluators_sessions_then_the_runners_and_onl
         async def shutdown(self) -> None:
             order.append("runner")
 
-    stop = CognitionShutdown(evaluator=Evaluator(), runner=Runner())
+    stop = CognitionShutdown(evaluator=Evaluator(), runner=Runner(), grace_seconds=30.0)
     await stop()
     await stop()                                   # a second shutdown is a no-op
-    assert order == ["evaluator", "runner"] and stop.done
+    # The grace comes FIRST: sessions already running may finish before they are cancelled.
+    assert order == ["grace 30", "evaluator", "runner"] and stop.done
 
 
 def test_units_without_a_home_room_are_named_not_woken():

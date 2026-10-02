@@ -4043,6 +4043,16 @@ COGNITION_WAKE_OUTCOME = sa.Table(
     # WHY a `failed`/`timeout` wake failed (migration 0080, DEC-244): `infra`
     # backs the unit off and never strikes a stimulus; only `agenda` strikes.
     sa.Column("cause", sa.Text, nullable=False, server_default=sa.text("'infra'")),
+    # What the session's model loop spent, and its root trace (migration 0090):
+    # the durable half of the token counter, which a restart resets. Written
+    # with the outcome, the one row a session leaves at its end (the session
+    # row is written BEFORE the loop and is append-only). NULL is unread, never
+    # zero: a wake that ended before a model call, one a restart ended, or a
+    # provider that reported no usage.
+    sa.Column("input_tokens", sa.BigInteger),
+    sa.Column("output_tokens", sa.BigInteger),
+    sa.Column("cache_read_tokens", sa.BigInteger),
+    sa.Column("trace_id", sa.Text),
     _recorded_at(),
     sa.CheckConstraint(
         "outcome IN ('closed', 'failed', 'timeout', 'cancelled')",

@@ -594,6 +594,58 @@ async def test_a_pending_time_stimulus_does_not_ride_a_room_wake_when_its_kind_i
     assert [s.kind for s in view.pending] == ["time"]          # listed unclaimed, still pending
 
 
+AGE = "nora_stimulus_pending_age_seconds"
+
+
+async def _time_floor(store, clock, *, hours_old):
+    at = clock.ms - hours_old * 3_600_000
+    await store.append(stimulus=NewStimulus(
+        unit="nora", kind="time", item="floor", ref="floor:07:00@2026-09-28",
+        at_ms=at, due_ms=at,
+    ), recorded_at_ms=clock.ms)
+
+
+async def test_an_inert_time_stimulus_does_not_age_the_backlog_gauge():
+    """`StimulusBacklog` reads this gauge as «the oldest stimulus that COULD wake the
+    unit». A `time` floor while no skill ships for it never can (`inert_kinds`), so
+    five hours of it is not a stuck unit: the gauge counted it and the alert would
+    have fired on deploy and stayed (review of #714, probe: one tick set 18000)."""
+    ev, store, clock = _floor_setup(floors_ready=False)
+    await _time_floor(store, clock, hours_old=5)
+    assert await ev.tick() == []                          # nothing woke: it IS inert
+    assert ev._metrics.get(AGE, unit="nora") == 0.0
+
+
+async def test_the_backlog_gauge_still_counts_a_time_stimulus_once_its_kind_is_ready():
+    """The control: the same floor, the kind ready, IS the oldest thing that could wake
+    the unit, so the gauge carries its age. Only the inert kind is skipped."""
+    ev, store, clock = _floor_setup(floors_ready=True)
+    await _time_floor(store, clock, hours_old=5)
+    await ev.tick()
+    assert ev._metrics.get(AGE, unit="nora") == 5 * 3600
+
+
+async def test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest():
+    ev, store, clock = _floor_setup(floors_ready=False)
+    await _time_floor(store, clock, hours_old=5)
+    await store.append(stimulus=NewStimulus(
+        unit="nora", kind="message", item="message", ref="messages:1",
+        at_ms=clock.ms - 3_600_000, platform="signal", conversation_id="g1",
+    ), recorded_at_ms=clock.ms - 3_600_000)
+    await ev.tick()
+    assert ev._metrics.get(AGE, unit="nora") == 3600
+
+
+def test_the_inert_kinds_are_time_only_while_tracked_and_no_skill_ships():
+    from nora.app.cognition_wiring import AGENDA_SKILLS, floors_ready
+    from nora.domain.stimuli import inert_kinds_for
+
+    assert inert_kinds_for(tracked=True, floors_ready=False) == {"time"}
+    assert inert_kinds_for(tracked=True, floors_ready=True) == frozenset()
+    assert inert_kinds_for(tracked=False, floors_ready=False) == frozenset()
+    assert "time" not in AGENDA_SKILLS and floors_ready() is False   # production: `time` is inert
+
+
 def test_an_unclaimed_id_is_not_consumed_by_the_range_that_covers_it():
     from nora.domain.stimuli import Stimulus, Watermark
 

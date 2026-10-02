@@ -261,7 +261,7 @@
   {
     "name": "evaluator: a time stimulus already pending wakes no session while no skill ships",
     "file": "nora/app/wake.py",
-    "old": "            inert = frozenset({\"time\"}) if tracked and not self._floors_ready else frozenset()",
+    "old": "            inert = inert_kinds_for(tracked=tracked, floors_ready=self._floors_ready)",
     "new": "            inert = frozenset()",
     "target": "tests/unit/test_wake_evaluator.py -k already_pending"
   },

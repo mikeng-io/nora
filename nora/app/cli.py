@@ -44,7 +44,7 @@ import contextlib
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,8 @@ from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.cognition_compare import CompareWindow
 from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
+from nora.app.cognition_health import run_health as cognition_run_health
+from nora.app.cognition_wiring import floors_ready
 from nora.app.delete_withdrawal import reconcile_deletes, render_reconcile
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
@@ -85,6 +87,10 @@ from nora.app.person_forget import (
     unforget_person,
 )
 from nora.config import Config, ConfigError, load
+from nora.domain.cognition_health import exit_code as health_exit_code
+from nora.domain.cognition_health import judge as health_judge
+from nora.domain.cognition_health import render_text as health_render_text
+from nora.domain.cognition_health import report_json as health_report_json
 from nora.domain.cognition_shadow_compare import (
     DEFAULT_TOLERANCE_MINUTES,
     RoomDirectory,
@@ -95,6 +101,7 @@ from nora.domain.cognition_shadow_compare import report_json as shadow_report_js
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
+from nora.domain.stimuli import inert_kinds_for
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
@@ -464,6 +471,25 @@ def add_subcommands(
         "--json", action="store_true", help="the machine-readable report, one JSON object",
     )
     compare.set_defaults(func=cmd_cognition_compare)
+    health = cognition_sub.add_parser(
+        "health", parents=[parent],
+        help="is the cognition loop healthy now: sessions, pending stimuli, failures, "
+             "tokens and refusals from durable rows; exits 0 PASS, 1 FAIL, 2 ERROR",
+    )
+    health.add_argument(
+        "--since", default=None,
+        help="ISO 8601, timezone-aware; defaults to 24 hours before --until",
+    )
+    health.add_argument(
+        "--until", default=None, help="ISO 8601, timezone-aware; defaults to now",
+    )
+    health.add_argument(
+        "--unit", default=None, help="only this unit (a policy.toml unit)",
+    )
+    health.add_argument(
+        "--json", action="store_true", help="the machine-readable report, one JSON object",
+    )
+    health.set_defaults(func=cmd_cognition_health)
 
     # `config` — the operator's safe config mutation surface (deploy
     # convention §4.5). See config_cli.py for the atomic-write and
@@ -755,13 +781,15 @@ async def cmd_memory_detach(args: argparse.Namespace) -> int:
     return 1 if result.failed else 0
 
 
-def _cutover(text: str) -> datetime:
+def _cutover(text: str, flag: str = "--before") -> datetime:
+    """A timezone-aware ISO 8601 instant. `flag` names the option in the error, so a
+    bad `--since` says `--since` (it said `--before` for every caller)."""
     try:
         stamp = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise CliError(f"--before must be ISO 8601; got {text!r}") from exc
+        raise CliError(f"{flag} must be ISO 8601; got {text!r}") from exc
     if stamp.tzinfo is None:
-        raise CliError(f"--before needs a timezone (e.g. +08:00); got {text!r}")
+        raise CliError(f"{flag} needs a timezone (e.g. +08:00); got {text!r}")
     return stamp
 
 
@@ -937,8 +965,8 @@ async def cmd_cognition_compare(args: argparse.Namespace) -> int:
     finding, so it is not a failure; exit 1 only when a tier could not be read
     (ERROR, never zero). It prints counts and does not decide the gate."""
     cfg = _config(args)
-    since = _cutover(args.since)
-    until = _cutover(args.until) if args.until else datetime.now(UTC)
+    since = _cutover(args.since, "--since")
+    until = _cutover(args.until, "--until") if args.until else datetime.now(UTC)
     if until <= since:
         raise CliError("--until must be after --since")
     if args.tolerance_minutes < 0:
@@ -986,6 +1014,63 @@ def _room_directory(cfg: Config, unit: str | None) -> RoomDirectory:
     return RoomDirectory(
         labels=labels, unit_rooms={u: frozenset(r) for u, r in unit_rooms.items()},
     )
+
+
+async def cmd_cognition_health(args: argparse.Namespace) -> int:
+    """`nora cognition health [--since ISO] [--until ISO] [--unit U] [--json]`: is
+    the cognition loop healthy now, from durable rows (the Cognition cut-over's
+    flip-day instrument; a Prometheus series is reset by every restart). READ-ONLY,
+    counts and rule names only.
+
+    Exit 0 PASS, 1 FAIL, 2 ERROR, so a check script can `&&` it. **1 means one
+    thing: a measured threshold was breached.** Anything that stopped the command
+    from reaching a verdict (an unreadable config, a bad `--since`, a database that
+    cannot be reached, any exception) is 2: unknown is not healthy, and a broken
+    invocation must never read as «the loop is failing». `execute` turns a
+    `CliError` into 1 for every other command; this one answers for itself."""
+    try:
+        return await _cognition_health(args)
+    except CliError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - unknown is not healthy, whatever raised
+        # The class name only: a message can quote a row or a connection string.
+        print(
+            f"error: the health check could not run ({type(exc).__name__}); "
+            "no verdict: unknown is not healthy",
+            file=sys.stderr,
+        )
+    return health_exit_code("ERROR")
+
+
+async def _cognition_health(args: argparse.Namespace) -> int:
+    cfg = _config(args)
+    now = datetime.now(UTC)
+    until = _cutover(args.until, "--until") if args.until else now
+    since = _cutover(args.since, "--since") if args.since else until - timedelta(hours=24)
+    if until <= since:
+        raise CliError("--until must be later than --since")
+    tz = ZoneInfo(cfg.cognition.timezone)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        report = await cognition_run_health(
+            engine, since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
+            now_ms=int(now.timestamp() * 1000), unit=args.unit, tz=tz,
+            session_timeout_seconds=cfg.cognition.session_timeout_seconds,
+            # The rule is the evaluator's (`inert_kinds_for`) over the composition root's
+            # own table (`floors_ready()`). `tracked=True` always: this judges SESSIONS and
+            # cannot know which units have a home room, so a stalled `time` stimulus on a
+            # unit that cannot start a session is seen by the age gauge and ignored here.
+            inert_kinds=inert_kinds_for(tracked=True, floors_ready=floors_ready()),
+        )
+    finally:
+        await engine.dispose()
+    iso = {"since": since.astimezone(tz).isoformat(), "until": until.astimezone(tz).isoformat()}
+    if args.json:
+        print(json.dumps(health_report_json(report, iso=iso), indent=2, sort_keys=True))
+    else:
+        for line in health_render_text(report, iso=iso):
+            print(line)
+    return health_exit_code(health_judge(report)[0])
 
 
 async def cmd_measure_participation(args: argparse.Namespace) -> int:

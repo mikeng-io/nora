@@ -64,6 +64,7 @@ from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
+    SESSION_SHUTDOWN_GRACE_SECONDS,
     CognitionShutdown,
     PreludeMissingError,
     SkillNotInstalledError,
@@ -4608,6 +4609,7 @@ async def build_dependencies(
         if cognition_runner is not None:
             cognition_shutdown = CognitionShutdown(
                 evaluator=wake_evaluator, runner=cognition_runner,
+                grace_seconds=SESSION_SHUTDOWN_GRACE_SECONDS,
             )
     try:
         require_session_hook(

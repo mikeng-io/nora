@@ -1,0 +1,20 @@
+{
+  "type": "change",
+  "summary": "Nora now stops cleanly when Docker stops her: a Cognition session in flight releases its unit instead of holding it for an hour, and five new alerts and a health command watch the cognition loop.",
+  "details": [
+    "SIGTERM and SIGINT now stop the process through its normal shutdown. Before, `docker stop` killed it on the spot, and a session in flight left its wake open, which held its unit for up to 3,900 s and then counted as a failed session. Now a running session gets 30 s to finish, then it is cancelled and recorded as a restart, and compose gives the service a 75 s stop grace. A second signal ends the process at once.",
+    "At boot, any wake a previous process left open is released the same way, so a kill that the grace did not cover no longer costs the unit its next hour or a failure count. A restart never strikes a stimulus.",
+    "New alerts: NoraRestartLoop, NoraErrorsRising, CognitionWakeStalled, StimulusBacklog and CognitionSessionsFailing, none of which carry a unit, room or person. The alert table in the observability doc now lists all 21 rules, not 9.",
+    "`nora cognition health` reads sessions by day and outcome, pending stimuli, failure causes, tokens per session, refusals by rule and process starts from durable rows, and exits 0 (PASS), 1 (FAIL: a measured threshold was breached) or 2 (ERROR: no verdict, including a config, argument or database failure of the command itself).",
+    "A session's input, output and cache-read tokens and its trace id are now stored on its outcome row (migration 0090), so spend survives a restart.",
+    "The session-failure alert and the stimulus-age alert now count correctly: the session counter's outcome series are created at zero when the wake loop starts, so the first failure of a fresh process is visible, and a floor stimulus no skill can claim no longer reads as a backlog."
+  ],
+  "limitations": [
+    "Prometheus must reload its rules and nora must be recreated for the alerts and the stop grace to take effect.",
+    "The alert thresholds for errors and the backlog are not sized from a measured baseline.",
+    "There is still no dead-man switch: nothing says so if Prometheus, Alertmanager or the Discord bridge stops.",
+    "A tag turn in flight at a stop still ends with the process.",
+    "`nora cognition health` exits 2 on a quiet day (no sessions and nothing pending): unknown is not healthy.",
+    "Nothing enforces one nora process per database apart from the fixed container name: a dev run pointed at the production database would cancel the live process's open wakes."
+  ]
+}

@@ -2040,6 +2040,27 @@ async def test_session_mode_off_builds_nothing_model_related(cfg, tmp_path, monk
     assert "nora.app.cognition_agent_runner" not in sys.modules
 
 
+async def test_the_evaluators_floors_ready_follows_the_one_agenda_table(
+    cfg, tmp_path, monkeypatch,
+):
+    """`nora.app.cognition_wiring.AGENDA_SKILLS` is the table the evaluator, the age gauge
+    and `nora cognition health` all read. Production maps no `time` skill, so floors are
+    not ready; the day the table has one the composition-built evaluator must follow it
+    (a root that hard-coded the answer would keep every floor inert)."""
+    from types import MappingProxyType
+
+    import nora.app.cognition_wiring as wiring
+
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    shipped = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert shipped.wake_evaluator is not None and shipped.wake_evaluator._floors_ready is False
+    monkeypatch.setattr(wiring, "AGENDA_SKILLS", MappingProxyType(
+        {**wiring.AGENDA_SKILLS, "time": wiring.REGISTER_SKILL},      # a skill that resolves
+    ))
+    patched = await build_dependencies(override_config(cfg, _SESSION_ON))
+    assert patched.wake_evaluator is not None and patched.wake_evaluator._floors_ready is True
+
+
 async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator(
     cfg, tmp_path,
 ):
@@ -2050,6 +2071,11 @@ async def test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_e
     assert evaluator.has_wake_hook
     assert evaluator._on_wake == runner.wake_hook          # the SAME hook, not a copy
     assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
+    # A stopping process lets a running session finish for this long before it cancels it
+    # (the PR-7 grace; `docker-compose.yml`'s `stop_grace_period` is sized above it).
+    from nora.app.cognition_wiring import SESSION_SHUTDOWN_GRACE_SECONDS
+
+    assert deps.cognition_shutdown._grace == SESSION_SHUTDOWN_GRACE_SECONDS > 0
     # The Dreamer's own budget entry, converted: rounds, tokens and the clock,
     # and no call ceiling (DEC-247); the clock ends before the wake's.
     assert (runner._budget.turns, runner._budget.timeout_seconds) == (200, 3600.0)
