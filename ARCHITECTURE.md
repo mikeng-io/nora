@@ -554,8 +554,9 @@ both against a GitHub issue, which records a candidate rather than a decision.
 `make gate` is the release gate, run once per PR on the final head: ruff, mypy
 (strict, scoped) and import-linter in full, then only the tests
 `scripts/affected_tests.py` maps from the branch's diff against
-`origin/master` — the whole suite when it can't map the diff with confidence,
-so it is never weaker than the full run on a change it can't scope. `make
+`origin/master` — the whole suite when it can't map the diff with confidence or
+when the selector fails (only an explicit `NONE` runs nothing), so it is never
+weaker than the full run on a change it can't scope. `make
 full-gate` is the previous behaviour, pytest/ruff/mypy/import-linter run
 serially and unconditionally. Either way it is the final check rather than the
 iteration check (`make test-affected` is the fast loop). `evals/` is the layer
