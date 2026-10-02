@@ -124,7 +124,7 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.speech_markup import normalise as normalise_for_speech
-from nora.domain.stimuli import WakeHook, WakePolicy
+from nora.domain.stimuli import AGENDA_SKILL_KINDS, WakeHook, WakePolicy
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -3669,7 +3669,7 @@ async def build_dependencies(
     #: Skills injected per agenda kind. No skill ships for any kind in this step: the
     #: table is where each lands (`AgendaSkills`). A `time` floor wakes a session only
     #: once the table has its kind (M8, DEC-245).
-    agenda_skills = AgendaSkills(by_kind={}, resolve=lambda name: None)
+    agenda_skills = AgendaSkills(by_kind=AGENDA_SKILL_KINDS, resolve=lambda name: None)
     cognition_runner: CognitionSessionRunner | None = None
     # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
     # no home room keeps recording its would-wakes, it only cannot start a

@@ -485,11 +485,11 @@ Sentry rather than instead of it — see "what counts as an error" below.
 |---|---|---|
 | `TargetDown` | `up == 0` for 3m | `nora-egress.service` sat `failed` for sixteen days |
 | `HeartbeatStalled` | tick age > 300s | a stalled loop in a process that still answers HTTP |
-| `NoraRestartLoop` | 6+ restarts of the nora process in 30m (`changes()` over `nora_process_start_time_seconds`) | `TargetDown` needs 3 continuous minutes of `up == 0` and a process that comes straight back never gives it; nora starts 2 to 24 times a day, almost all deploys, so the rule is sized to a loop (one restart in five minutes), not to a bad deploy day |
+| `NoraRestartLoop` | 6+ restarts of the nora process in 30m (`changes()` over `nora_process_start_time_seconds`) | `TargetDown` needs 3 continuous minutes of `up == 0` and a process that comes straight back never gives it; nora starts 2 to 24 times a day (the 2026-10-02 audit: 47 starts in 4.5 days, 17 of them same-sha restarts, not deploys), so the rule is sized to a loop (one restart in five minutes), not to a bad day of them |
 | `NoraErrorsRising` | more than 10 `nora_errors_total` in 15m for one stage | this codebase counts errors instead of raising them; a failing stage shows as this counter and nothing else. Not sized from a measured baseline: loose, to be tightened from 14 days of data |
 | `CognitionWakeStalled` | the wake loop has not finished a tick for 600s | `HeartbeatStalled` watches the reminders loop only; a wake evaluator that stopped, or hung in a store call, was invisible in a process that still answered HTTP |
-| `StimulusBacklog` | a stimulus that could wake a unit has waited over 4h (`max()` of `nora_stimulus_pending_age_seconds`) | the gauge existed and nothing read it; four hours is past what one failed session and its backoff explain |
-| `CognitionSessionsFailing` | 3+ sessions failed or timed out in 3h AND over 30% of the sessions that ended (a `cancelled` restart is in neither count) | a failing session loop is a counter label moving, not an exception |
+| `StimulusBacklog` | a stimulus that could wake a unit has waited over 4h (`max()` of `nora_stimulus_pending_age_seconds`, which skips `waits` stimuli and any `inert_kinds`: a `time` floor no skill can claim never wakes a unit, so it is not a backlog) | the gauge existed and nothing read it; four hours is past what one failed session and its backoff explain |
+| `CognitionSessionsFailing` | 3+ sessions failed or timed out in 3h AND over 30% of the sessions that ended (a `cancelled` restart is in neither count); its counter's `outcome` children are created at 0 when the wake loop starts (`nora.app.wake.precreate_session_series`) | a failing session loop is a counter label moving, not an exception |
 | `PlatformSilent` | adapter event age > 900s (keep-alives and heartbeats count, so it is a silent socket, not a quiet room) | the one condition the old shell watchdog checked — on no timer, into no channel |
 | `PresenceCollectionStalled` | a circle's last successful collection is over 1800s old | 2026-09-24: Life360 stopped accepting the collector's login and the container stayed healthy while nothing recorded |
 | `PresenceNotRecording` | no location fix written for anyone in 2h, restarts included | the restart-proof twin of the rule above: a gauge that counts from boot is reset by every recreate |
@@ -517,6 +517,20 @@ alert for the 12 h `repeat_interval`. **The durable source of truth for the cogn
 loop is `nora cognition health` (`docs/runbook.md` «The cognition loop is not
 healthy»), which reads rows, not series: the alerts are the prompt.**
 
+**`CognitionSessionsFailing` needs its series created at zero.** `outcome` is a label,
+and a labelled counter has no child until its first increment, so the series is born
+already at 1 and `increase()` has no earlier sample to subtract: the first failure of
+every process is invisible. Nora restarts 2 to 24 times a day (the 2026-10-02 audit), so
+this is the common case, not an edge: measured with promtool (v3.7.3), three failures in
+one fresh process read as an increase of 2.025 (the floor is 3), and five failures over
+five processes in three hours read as 0. `nora.app.wake.precreate_session_series`
+creates every `outcome` (`closed`, `failed`, `timeout`, `cancelled`) at 0 when the wake
+loop starts; `deploy/prometheus/tests/cognition.test.yml` has the firing cases (series
+start at 0, with `stale` gaps between processes) and, beside each, the same failures with
+the series born at 1, which stay silent: that is the miss, kept as the reason.
+`NoraErrorsRising` reads `nora_errors_total{stage}`, created lazily by the error it
+counts, and has the same blind spot for the first error of a stage in a process.
+
 **`NoraRestartLoop` is blind to a process that dies before it serves.** The series
 is exposed only once `App.run` has started the metrics server, so a startup failure
 (a bad config, a failed migration) never moves it; `TargetDown` is the rule for that,
@@ -542,7 +556,7 @@ absence-free rule is that a dead Nora exports nothing either, and `TargetDown` i
 the rule for that. The two computer counters are created at zero at start
 (`nora.app.computer_metrics.ComputerMetrics.prime`), because `increase()` over a
 series whose first sample is already 1 reads 0 and a rare failure after one of
-nora's two or three daily restarts would be invisible to the rule written for it.
+nora's 2 to 24 daily restarts (the 2026-10-02 audit: 47 starts in 4.5 days) would be invisible to the rule written for it.
 Read back: `ssh norty 'curl -s localhost:9100/metrics | grep ^nora_computer_'` shows
 `nora_computer_up` (1 when healthy) and the zero-valued counters; with the computer
 off it shows neither.

@@ -38,12 +38,14 @@ groups:
 
       # A restart LOOP, which `TargetDown` cannot see: it needs 3 continuous minutes of
       # `up == 0`, and a process that comes back within a scrape or two never gives it
-      # that. Nora starts 2 to 24 times a day (47 starts in 3.3 days, 2026-09-29 to
-      # 10-02, read from `deploy_revision`; median gap 45 min, shortest 1 min), almost
-      # all of them deploys, so the rule must fire on a LOOP and stay quiet on a bad
-      # deploy day. `nora_process_start_time_seconds` changes only when the process
-      # restarts (`prometheus_client`'s own `process_start_time_seconds` is not exported:
-      # `Metrics` owns its registry), so `changes()` counts the restarts a scrape saw.
+      # that. Nora starts 2 to 24 times a day (the 2026-10-02 audit: 47 starts in 4.5
+      # days, read from `deploy_revision`; median gap 45 min, shortest 1 min). 17 of
+      # the 47 were same-sha restarts, NOT deploys (cause unverified: a recreate
+      # discards the previous container's log), so a restart is not a deploy and a day
+      # of 24 is real. The rule must fire on a LOOP and stay quiet on a bad day of them.
+      # `nora_process_start_time_seconds` changes only when the process restarts
+      # (`prometheus_client`'s own `process_start_time_seconds` is not exported: `Metrics`
+      # owns its registry), so `changes()` counts the restarts a scrape saw.
       # 6 in 30 minutes is one every 5: faster than any sequence of deploys (a build
       # alone takes minutes) and well under a crash loop's one a minute. Blind by
       # construction to a process that dies BEFORE it serves (a startup failure never

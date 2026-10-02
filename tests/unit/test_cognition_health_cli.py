@@ -106,10 +106,68 @@ async def test_the_window_defaults_to_the_last_24_hours_and_the_unit_reaches_the
 @pytest.mark.parametrize(("since", "until"), [
     ("2026-10-01T00:00:00", None),                                    # naive
     ("2026-10-02T00:00:00+08:00", "2026-10-01T00:00:00+08:00"),       # until before since
+    ("not-a-date", None),                                             # unparseable
 ])
-async def test_a_bad_window_is_refused(monkeypatch, capsys, since, until):
-    with pytest.raises(cli.CliError):
-        await _run(monkeypatch, capsys, since=since, until=until)
+async def test_a_bad_window_is_an_error_not_a_failed_loop(monkeypatch, capsys, since, until):
+    """Exit 1 means ONE thing: a measured threshold was breached. A window the command
+    could not read is no measurement, so it is 2 (ERROR), the same code argparse gives a
+    bad flag; a check script that reads 1 as «the loop is failing» must not read a typo
+    as one."""
+    rc, out, seen = await _run(monkeypatch, capsys, since=since, until=until)
+    assert rc == 2 and out == "" and seen == {}             # no read ran, nothing printed
+
+
+async def test_an_unreadable_config_is_an_error_not_a_failed_loop(tmp_path, capsys):
+    """Unmocked: the real `_config` on a path that is not there (the review's probe:
+    `--config /nonexistent.toml` exited 1)."""
+    args = Namespace(
+        config=str(tmp_path / "nonexistent.toml"), since=None, until=None, unit=None,
+        json=False,
+    )
+    assert await cli.cmd_cognition_health(args) == 2
+    assert "error:" in capsys.readouterr().err
+
+
+async def test_the_shared_executor_gives_the_same_two_for_a_config_error(tmp_path, capsys):
+    """`execute` is where every other command's CliError becomes 1; this one must come
+    back from it as 2, not be rewritten."""
+    args = Namespace(
+        config=str(tmp_path / "nonexistent.toml"), since=None, until=None, unit=None,
+        json=False, func=cli.cmd_cognition_health,
+    )
+    assert await cli.execute(args) == 2
+
+
+@pytest.mark.parametrize("raised", [
+    RuntimeError("boom"), ConnectionRefusedError("postgresql://u:SECRET@db/x"), OSError("disk"),
+])
+async def test_a_database_or_any_other_exception_is_an_error_and_leaks_no_message(
+    monkeypatch, capsys, raised,
+):
+    monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace(
+        cognition=SimpleNamespace(timezone="Asia/Hong_Kong", session_timeout_seconds=3900.0),
+    ))
+    monkeypatch.setattr(cli, "_database_url", lambda cfg: "postgresql://unused")
+    monkeypatch.setattr(cli, "create_sql_engine", lambda url: _FakeEngine())
+
+    async def _boom(engine, **kwargs):
+        raise raised
+
+    monkeypatch.setattr(cli, "cognition_run_health", _boom)
+    rc = await cli.cmd_cognition_health(
+        Namespace(config="unused.toml", since=None, until=None, unit=None, json=False),
+    )
+    captured = capsys.readouterr()
+    assert rc == 2 and captured.out == ""
+    assert type(raised).__name__ in captured.err and "SECRET" not in captured.err
+    assert "no verdict" in captured.err
+
+
+async def test_the_inert_kinds_reach_the_read(monkeypatch, capsys):
+    """Production ships no skill for `time`, so the command reads a `time` stimulus as
+    what the evaluator reads it as: one no wake can claim."""
+    _, _, seen = await _run(monkeypatch, capsys)
+    assert seen["inert_kinds"] == {"time"}
 
 
 def test_the_subcommand_is_registered_with_a_since_that_may_be_left_out():

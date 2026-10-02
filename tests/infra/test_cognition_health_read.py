@@ -153,6 +153,41 @@ async def test_a_stimulus_a_wake_waits_on_is_not_stale_just_because_it_is_old(en
     assert _verdict(await _health(engine)) == ("PASS", [])
 
 
+INERT = frozenset({"time"})
+
+
+async def test_a_time_stimulus_no_wake_can_claim_is_not_a_stalled_loop(engine):
+    """`inert_kinds_for`: while no skill ships for `time`, a `time` stimulus is never
+    claimed by a wake, so five hours of it is not a loop that stopped consuming.
+    Production is in this state, and without it `nora cognition health` reported
+    `stalled` and exited 1 on every flip day (review of #714). The control reads the
+    same rows without the inert set and DOES report the stall."""
+    store = SqlStimulusStore(engine)
+    await _stimulus(store, "alpha", NOW - 5 * HOUR, kind="time")
+    await _session(engine, store, "beta", NOW - 2 * HOUR, "closed")
+    report = await _health(engine, inert_kinds=INERT)
+    assert _verdict(report) == ("PASS", [])
+    assert report.eligible_pending == 0
+    assert _verdict(await _health(engine)) == ("FAIL", ["stalled"])
+
+
+async def test_the_inert_set_skips_only_its_kind(engine):
+    store = SqlStimulusStore(engine)
+    await _stimulus(store, "alpha", NOW - 5 * HOUR, kind="time")
+    await _stimulus(store, "alpha", NOW - 6 * HOUR, kind="message")
+    await _session(engine, store, "beta", NOW - 2 * HOUR, "closed")
+    report = await _health(engine, inert_kinds=INERT)
+    assert _verdict(report) == ("FAIL", ["stalled"])
+    assert report.eligible_pending == 1                   # the message, not the floor
+
+
+async def test_zero_sessions_and_only_an_inert_stimulus_is_unknown_not_pending_work(engine):
+    store = SqlStimulusStore(engine)
+    await _stimulus(store, "alpha", NOW - HOUR, kind="time")
+    assert _verdict(await _health(engine, inert_kinds=INERT)) == ("ERROR", ["no_sessions"])
+    assert _verdict(await _health(engine)) == ("FAIL", ["no_sessions_with_pending"])
+
+
 async def test_zero_sessions_while_a_stimulus_waits_fails(engine):
     store = SqlStimulusStore(engine)
     await _stimulus(store, "alpha", NOW - HOUR)

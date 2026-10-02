@@ -84,6 +84,49 @@ tests:
         alertname: NoraRestartLoop
         exp_alerts: []
 
+  # THE WINDOW IS 30 MINUTES, not 60: six restarts spread over an hour (three in each
+  # half) are an hour of bad deploys, not a loop. A `[60m]` window reads 6 and pages;
+  # `[30m]` reads 3. (Mutant `[30m]` -> `[60m]` of the review of #714 survived because
+  # every fixture above packs its restarts into 30 minutes.)
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 100 100 100 101 101 101 101 101 101 101 101 101 101 102 102 102 102 102 102 102 102 102 102 103 103 103 103 103 103 103 103 103 103 104 104 104 104 104 104 104 104 104 104 105 105 105 105 105 105 105 105 105 105 106 106 106 106 106'
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: NoraRestartLoop
+        exp_alerts: []
+    promql_expr_test:
+      - expr: changes(nora_process_start_time_seconds{job="nora"}[30m])
+        eval_time: 59m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 3 }
+      - expr: changes(nora_process_start_time_seconds{job="nora"}[60m])
+        eval_time: 59m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 6 }
+
+  # The other direction, and the same fact from the slow side: six restarts nine minutes
+  # apart (a 45-minute span) do not fire either. Any window of 31 to 60 minutes would (the
+  # `[50m]` read below is 6).
+  - interval: 1m
+    input_series:
+      - series: 'nora_process_start_time_seconds{job="nora"}'
+        values: '100 100 100 100 100 101 101 101 101 101 101 101 101 101 102 102 102 102 102 102 102 102 102 103 103 103 103 103 103 103 103 103 104 104 104 104 104 104 104 104 104 105 105 105 105 105 105 105 105 105 106 106 106 106 106 106 106 106 106 106'
+    alert_rule_test:
+      - eval_time: 51m
+        alertname: NoraRestartLoop
+        exp_alerts: []
+    promql_expr_test:
+      - expr: changes(nora_process_start_time_seconds{job="nora"}[30m])
+        eval_time: 51m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 4 }
+      - expr: changes(nora_process_start_time_seconds{job="nora"}[50m])
+        eval_time: 51m
+        exp_samples:
+          - { labels: '{job="nora"}', value: 6 }
+
   # --- NoraErrorsRising -----------------------------------------------------
 
   # A stage failing every 30 s for 20 minutes (a wake loop whose tick raises). Fires,
@@ -273,6 +316,119 @@ tests:
       - eval_time: 15m
         alertname: CognitionSessionsFailing
         exp_alerts: []
+
+  # --- CognitionSessionsFailing: the series are created at 0 (wake_loop start) ----
+  #
+  # WHY THE ZEROS. `outcome` is a label, and a labelled prometheus counter has no child
+  # until its first `inc`: the series is BORN at its first increment, already at 1, so
+  # `increase()` has no earlier sample to subtract and that first failure is invisible.
+  # Nora restarts 2 to 24 times a day (the 2026-10-02 audit), so every process is a fresh
+  # one. Measured with promtool (v3.7.3) on the shapes below: three failures in one fresh
+  # process read as an increase of 2.025 (the floor is 3), and five failures over five
+  # processes in three hours read as 0 (each process re-shows `1`, which is no change).
+  # `precreate_session_series` (nora/app/wake.py) creates every outcome child at 0 when the
+  # wake loop starts. The cases that START AT 0 model that and fire; their twins that start
+  # with `_` (no sample until the first increment) model the series without it and stay
+  # SILENT through the same failures: the documented miss, kept as the measurement of why.
+  # A promtool fixture cannot see the code, so `tests/unit/test_wake_loop_heartbeat.py`
+  # (the children exist at 0 right after the loop starts) is what holds the code to the
+  # shape the firing cases assume. The older cases above start at 0 for the same reason.
+
+  # Three failures in ONE fresh process, the series created at 0. Fires: the increase is 3.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '0x60'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0x10 1 2 3 3x47'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="timeout"}'
+        values: '0x60'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="cancelled"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: CognitionSessionsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "100% of cognition sessions failed or timed out in 3 hours"
+              description: >-
+                A provider outage backs a unit off and never strikes a stimulus (DEC-244), so this
+                is the model or the store, not lost messages. `nora cognition health` splits the
+                failures by cause and unit.
+    promql_expr_test:
+      - expr: sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h]))
+        eval_time: 50m
+        exp_samples:
+          - { labels: '{}', value: 3 }
+
+  # The same three failures with the series born at its first increment (the old shape,
+  # no zero): the failed series reads 1 2 3, an increase under the floor. SILENT. This is
+  # the miss the pre-creation closes; it is here as the measurement of why.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '_x10 1 2 3 3x47'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: CognitionSessionsFailing
+        exp_alerts: []
+    promql_expr_test:
+      - expr: sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h]))
+        eval_time: 50m
+        exp_samples:
+          - { labels: '{}', value: 2.025 }
+
+  # Five failures (each beside a closed session) over FIVE processes in 150 minutes, the
+  # series created at 0 in each; the target is down for two scrapes between processes, so
+  # the series carries `stale` gaps. A counter reset to 0 is read as a reset, so the
+  # increase is 5 and the ratio 50%. Fires.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="timeout"}'
+        values: '0x150'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="cancelled"}'
+        values: '0x150'
+    alert_rule_test:
+      - eval_time: 148m
+        alertname: CognitionSessionsFailing
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "50% of cognition sessions failed or timed out in 3 hours"
+              description: >-
+                A provider outage backs a unit off and never strikes a stimulus (DEC-244), so this
+                is the model or the store, not lost messages. `nora cognition health` splits the
+                failures by cause and unit.
+
+    promql_expr_test:
+      - expr: sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h])) >= 3
+        eval_time: 148m
+        exp_samples:
+          - { labels: '{}', value: 5 }
+
+  # The same five failures over five processes with the series BORN at 1 in each (no zero,
+  # `stale` gaps between): value 1 then 1 again, so the increase is 0. SILENT, five real
+  # failures: the miss. Without the pre-creation this is what production reads.
+  - interval: 1m
+    input_series:
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="closed"}'
+        values: '_ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'nora_cognition_session_ended_total{job="nora",outcome="failed"}'
+        values: '_ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 stale stale _ _ _ _ _ 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 148m
+        alertname: CognitionSessionsFailing
+        exp_alerts: []
+    promql_expr_test:
+      - expr: sum(increase(nora_cognition_session_ended_total{job="nora", outcome=~"failed|timeout"}[3h]))
+        eval_time: 148m
+        exp_samples:
+          - { labels: '{}', value: 0 }
 
   # No sessions at all (cognition off): division by nothing is no answer, never an alert.
   - interval: 1m

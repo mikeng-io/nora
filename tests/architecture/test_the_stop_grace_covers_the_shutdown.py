@@ -53,6 +53,22 @@ def test_the_stop_grace_period_covers_the_session_grace_and_the_rest_of_shutdown
     assert _nora_grace() >= SESSION_SHUTDOWN_GRACE_SECONDS + REST_OF_SHUTDOWN_SECONDS
 
 
+def test_the_session_grace_is_pinned_to_its_production_value():
+    """Every test of `CognitionShutdown` injects its OWN grace, and the margin test
+    above only checks `grace + 30 <= stop_grace_period`, which a grace of 0.0 satisfies
+    with room to spare: the constant could be zeroed (every running session cancelled
+    at once, never given its last moments) and nothing here would notice. The number is
+    pinned to a literal on purpose, so changing it is a decision made in this file and
+    in `docker-compose.yml` together (review of #714, mutant 4a)."""
+    assert SESSION_SHUTDOWN_GRACE_SECONDS == 30.0
+
+
+def test_the_stop_grace_period_exceeds_the_pinned_session_grace_by_the_rest_of_shutdown():
+    """The compose figure read from the file (75 s) against the PINNED grace, not the
+    imported one: a constant that moves cannot drag its own margin with it."""
+    assert _nora_grace() - 30.0 >= REST_OF_SHUTDOWN_SECONDS
+
+
 def test_the_stop_grace_period_is_longer_than_dockers_default():
     assert _nora_grace() > DOCKER_DEFAULT_GRACE_SECONDS
 

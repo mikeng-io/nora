@@ -403,6 +403,22 @@ def prove_overflow_is_the_agenda(
 WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
 
 
+#: Agenda kind -> the skill injected for it (30 §4). No skill ships for any kind
+#: yet, so the table is empty and a `time` floor wakes nothing (M8, DEC-245). ONE
+#: place: the composition root builds `AgendaSkills` from it, and `inert_kinds_for`
+#: reads it, so the wake evaluator, the stimulus-age gauge and `nora cognition
+#: health` agree on which pending stimuli can never wake a unit.
+AGENDA_SKILL_KINDS: Mapping[str, str] = {}
+
+
+def inert_kinds_for(*, tracked: bool, floors_ready: bool) -> frozenset[str]:
+    """Stimulus kinds that stay pending but neither wake the unit nor are claimed
+    by any wake: `time`, while sessions are tracked and no skill ships for the
+    `time` agenda kind (M8, DEC-245). Every reader of «what could wake this unit»
+    (`decide`, the age gauge, the health command) takes the set from here."""
+    return frozenset({"time"}) if tracked and not floors_ready else frozenset()
+
+
 @dataclass(frozen=True)
 class Watermark:
     """`(through_stimulus_id, through_ms)`: every stimulus with `id <=

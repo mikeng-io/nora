@@ -99,6 +99,7 @@ from nora.domain.cognition_shadow_compare import report_json as shadow_report_js
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
+from nora.domain.stimuli import AGENDA_SKILL_KINDS, inert_kinds_for
 from nora.infra.honcho import HonchoClient, WorkspaceRouter
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
@@ -975,9 +976,29 @@ async def cmd_cognition_health(args: argparse.Namespace) -> int:
     """`nora cognition health [--since ISO] [--until ISO] [--unit U] [--json]`: is
     the cognition loop healthy now, from durable rows (the Cognition cut-over's
     flip-day instrument; a Prometheus series is reset by every restart). READ-ONLY,
-    counts and rule names only. Exit 0 PASS, 1 FAIL (a threshold breached), 2 ERROR
-    (a read failed, or nothing ran and nothing waits: unknown, never healthy), so a
-    check script can `&&` it."""
+    counts and rule names only.
+
+    Exit 0 PASS, 1 FAIL, 2 ERROR, so a check script can `&&` it. **1 means one
+    thing: a measured threshold was breached.** Anything that stopped the command
+    from reaching a verdict (an unreadable config, a bad `--since`, a database that
+    cannot be reached, any exception) is 2: unknown is not healthy, and a broken
+    invocation must never read as «the loop is failing». `execute` turns a
+    `CliError` into 1 for every other command; this one answers for itself."""
+    try:
+        return await _cognition_health(args)
+    except CliError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - unknown is not healthy, whatever raised
+        # The class name only: a message can quote a row or a connection string.
+        print(
+            f"error: the health check could not run ({type(exc).__name__}); "
+            "no verdict: unknown is not healthy",
+            file=sys.stderr,
+        )
+    return health_exit_code("ERROR")
+
+
+async def _cognition_health(args: argparse.Namespace) -> int:
     cfg = _config(args)
     now = datetime.now(UTC)
     until = _cutover(args.until) if args.until else now
@@ -991,6 +1012,9 @@ async def cmd_cognition_health(args: argparse.Namespace) -> int:
             engine, since_ms=int(since.timestamp() * 1000), until_ms=int(until.timestamp() * 1000),
             now_ms=int(now.timestamp() * 1000), unit=args.unit, tz=tz,
             session_timeout_seconds=cfg.cognition.session_timeout_seconds,
+            # Sessions are what this judges, so the unit is tracked; the table is the
+            # composition root's own (`AGENDA_SKILL_KINDS`).
+            inert_kinds=inert_kinds_for(tracked=True, floors_ready="time" in AGENDA_SKILL_KINDS),
         )
     finally:
         await engine.dispose()

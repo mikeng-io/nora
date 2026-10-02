@@ -564,12 +564,16 @@ flip-day check script can `&&` it:
 | exit | verdict | meaning |
 |---|---|---|
 | 0 | PASS | every threshold held, and there was something to judge |
-| 1 | FAIL | a threshold was breached; the line names which |
-| 2 | ERROR | it could not judge: a section failed to read, or no session ran and nothing waits (zero sessions is unknown, not healthy). A FAIL outranks an ERROR |
+| 1 | FAIL | **a measured threshold was breached**, and nothing else: the line names which |
+| 2 | ERROR | no verdict: a section failed to read, no session ran and nothing waits (zero sessions is unknown, not healthy: a quiet day exits 2 by design), **or the command itself could not run** (an unreadable `--config`, a bad `--since`/`--until`, a database it cannot reach, any exception; argparse already exits 2 for a bad flag). A FAIL outranks an ERROR |
+
+So `1` is only ever «the loop is failing»; a mistyped path or a down database is `2`
+with a one-line `error:` on stderr (the exception class name for anything unexpected,
+never its message). `nora-db` down and a failing loop must not read the same.
 
 The thresholds (`nora/domain/cognition_health.py`): **no session in the window while a
 stimulus waits** (FAIL); **a stimulus that could wake a unit has waited over 4 h**
-(`stalled`, the same number as `StimulusBacklog`); **over 10% of the sessions that
+(`stalled`, the same number as `StimulusBacklog`; a `time` stimulus counts while no skill ships for the `time` agenda kind NEITHER here NOR in that gauge, because no wake can claim it, `nora.domain.stimuli.inert_kinds_for`); **over 10% of the sessions that
 ended failed or timed out**, with at least 5 ended (CUTOVER-PLAN §5.1's stop sign; a
 `cancelled` restart is in neither count); **a wake with no outcome and older than
 `[cognition] session_timeout_seconds`** (a session that was killed and recorded

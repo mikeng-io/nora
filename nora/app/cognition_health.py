@@ -126,8 +126,13 @@ async def read_open_wakes(
 
 async def read_units(
     engine: AsyncEngine, *, now_ms: int, session_timeout_seconds: float, unit: str | None,
+    inert_kinds: frozenset[str] = frozenset(),
 ) -> tuple[UnitState, ...]:
-    """Each unit with a stimulus: what waits, how old, and when it last woke."""
+    """Each unit with a stimulus: what waits, how old, and when it last woke.
+    `inert_kinds` (`inert_kinds_for`) are pending stimuli no wake can ever claim
+    (a `time` floor while no skill ships for it): neither eligible nor waiting,
+    exactly as the evaluator's own `decide` and its age gauge read them, so a
+    unit holding only those is not reported stalled."""
     store = SqlStimulusStore(engine)
     async with engine.connect() as conn:
         names = (await conn.execute(sa.select(STIMULUS.c.unit).distinct())).scalars().all()
@@ -147,14 +152,14 @@ async def read_units(
             limit=PENDING_LIMIT,
             stale_before_ms=now_ms - int(session_timeout_seconds * 1000),
         )
-        eligible = [x for x in view.pending if not x.waits]
+        eligible = [x for x in view.pending if not x.waits and x.kind not in inert_kinds]
         kinds: dict[str, int] = {}
         for x in eligible:
             kinds[x.kind] = kinds.get(x.kind, 0) + 1
         oldest = min((x.pending_since_ms for x in eligible), default=None)
         woke = last_wake.get(name)
         out.append(UnitState(
-            unit=name, eligible=len(eligible), waiting=len(view.pending) - len(eligible),
+            unit=name, eligible=len(eligible), waiting=sum(1 for x in view.pending if x.waits),
             oldest_eligible_age_seconds=_age_s(now_ms, oldest),
             by_kind=kinds, truncated=len(view.pending) >= PENDING_LIMIT,
             last_wake_age_seconds=_age_s(now_ms, woke), failure_streak=view.failures,
@@ -257,7 +262,7 @@ async def read_reconcile(engine: AsyncEngine) -> str:
 
 async def run_health(
     engine: AsyncEngine, *, since_ms: int, until_ms: int, now_ms: int, unit: str | None,
-    tz: tzinfo, session_timeout_seconds: float,
+    tz: tzinfo, session_timeout_seconds: float, inert_kinds: frozenset[str] = frozenset(),
 ) -> HealthReport:
     errors: list[tuple[str, str]] = []
 
@@ -272,7 +277,8 @@ async def run_health(
     open_wakes = await section("open wakes", read_open_wakes(
         engine, now_ms=now_ms, session_timeout_seconds=session_timeout_seconds, unit=unit))
     units = await section("pending", read_units(
-        engine, now_ms=now_ms, session_timeout_seconds=session_timeout_seconds, unit=unit))
+        engine, now_ms=now_ms, session_timeout_seconds=session_timeout_seconds, unit=unit,
+        inert_kinds=inert_kinds))
     tokens = await section("tokens", read_tokens(
         engine, since_ms=since_ms, until_ms=until_ms, unit=unit))
     refusals = await section("refusals", read_refusals(

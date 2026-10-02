@@ -46,6 +46,7 @@ from typing import Any
 from nora.domain.ports import NewWakeOutcome, StimulusStore
 from nora.domain.stimuli import (
     NO_CAUSE,
+    WAKE_OUTCOMES,
     NewStimulus,
     NewWake,
     UnitView,
@@ -56,6 +57,7 @@ from nora.domain.stimuli import (
     WakePolicy,
     WakeReason,
     decide,
+    inert_kinds_for,
     restart_detail,
     unit_in_flight,
 )
@@ -413,7 +415,7 @@ class WakeEvaluator:
             # M8: no skill for `time` yet, so a `time` stimulus that is ALREADY
             # pending (raised before the gate, or by the previous deploy) must
             # not wake a session either: not raising a floor is half of it.
-            inert = frozenset({"time"}) if tracked and not self._floors_ready else frozenset()
+            inert = inert_kinds_for(tracked=tracked, floors_ready=self._floors_ready)
             return await self._strike_failed(
                 replace(view, tracked=tracked, live=live, inert_kinds=inert), now_ms,
             )
@@ -461,8 +463,14 @@ class WakeEvaluator:
 
     def _publish_age(self, view: UnitView, now_ms: int) -> None:
         """`nora_stimulus_pending_age_seconds{unit}`: the oldest stimulus that
-        could wake the unit, 0 when none is pending."""
-        eligible = [s.pending_since_ms for s in view.pending if not s.waits]
+        could wake the unit, 0 when none is pending. A stimulus that waits, or
+        whose kind is inert (a `time` floor while no skill ships for it), can
+        never wake the unit: counting it would hold `StimulusBacklog` firing on
+        a unit that is not stuck."""
+        eligible = [
+            s.pending_since_ms for s in view.pending
+            if not s.waits and s.kind not in view.inert_kinds
+        ]
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 
@@ -532,6 +540,23 @@ class WakeEvaluator:
         return wake_id
 
 
+def precreate_session_series(metrics: Any) -> None:
+    """Create every `nora_cognition_session_ended_total{outcome}` child at 0.
+
+    A labelled prometheus counter has no child until its first `inc`, so a series
+    appears at its FIRST increment already at 1 and `increase()` has no earlier
+    sample to subtract: that first session is invisible. Nora restarts 2 to 24
+    times a day (the 2026-10-02 audit), each process starts with no children, so
+    `CognitionSessionsFailing` read 3 failures in one fresh process as an increase
+    of 2.05 (under its floor of 3) and 5 failures over 5 processes as 0 (each new
+    process re-shows `1`, which is no change). A child created at 0 gives every
+    process a baseline. Every outcome the code can write is created, not only the
+    ones the rule reads: a series the rule leaves out (`cancelled`) is the same
+    hole the day a rule reads it. ONE place, called when the wake loop starts."""
+    for outcome in WAKE_OUTCOMES:
+        metrics.inc("nora_cognition_session_ended_total", 0.0, outcome=outcome)
+
+
 async def wake_loop(
     evaluator: WakeEvaluator, metrics: Any, *, tick_seconds: float,
     clock: Callable[[], float] = time.time,
@@ -551,6 +576,7 @@ async def wake_loop(
     page a deployment that has no wake loop)."""
     log.info("cognition wake evaluator started (shadow): tick every %gs", tick_seconds)
     mode = evaluator.mode
+    precreate_session_series(metrics)
     metrics.gauge("nora_cognition_wake_last_tick_seconds", clock(), mode=mode)
     while True:
         await asyncio.sleep(tick_seconds)
