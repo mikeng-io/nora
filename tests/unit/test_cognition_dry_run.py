@@ -26,6 +26,7 @@ from nora.agent.cognition_dry_run import (
 from nora.domain.cognition_write import WouldWrite
 from nora.domain.gatherings import Gathering, GatheringStatus
 from nora.domain.note_body import Shown, ShownMessage
+from nora.domain.ports import NoteHead
 from nora.domain.standing import Standing
 from nora.testing.cognition_dry_run_store import InMemoryCognitionDryRunStore
 
@@ -101,10 +102,53 @@ async def test_note_update_would_commit_a_well_formed_revision():
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", note_id="note-1", body=CONFORMANT_BODY,
         parent_revision_id="rev-1", established_by="cognition", now_ms=1000,
-        shown=SHOWN,
+        shown=SHOWN, head=NoteHead(head_revision_id="rev-1"),
     )
     assert write.outcome == "would_commit"
     assert write.base_revision_id == "rev-1"
+
+
+async def _update(head: NoteHead | None, parent: str = "rev-1"):
+    ledger = InMemoryCognitionDryRunStore()
+    write = await dry_run_note_update(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", note_id="note-1", body=CONFORMANT_BODY,
+        parent_revision_id=parent, established_by="cognition", now_ms=1000,
+        shown=SHOWN, head=head,
+    )
+    return write, ledger
+
+
+async def test_note_update_against_a_head_that_moved_is_refused_stale_base_and_recorded():
+    # The tool text promises «A stale one is refused» and the live store refuses
+    # (`SqlNoteStore._append_on_conn`'s compare-and-swap); the dry run used to
+    # record it `would_commit`, which overstated what the live path would write.
+    write, ledger = await _update(NoteHead(head_revision_id="rev-2"))
+    assert (write.outcome, write.refusal_reason) == ("refused", "stale_base")
+    assert "rev-2" not in (write.refusal_detail or "")     # the head's id is not shown
+    assert write.base_revision_id == "rev-1"
+    assert [w.outcome for _, w, _ in ledger.would_writes] == ["refused"]
+
+
+async def test_note_update_of_a_note_the_unit_does_not_hold_is_refused_not_found():
+    write, _ = await _update(None)
+    assert (write.outcome, write.refusal_reason) == ("refused", "not_found")
+
+
+async def test_note_update_of_a_retired_note_is_refused_even_at_its_head():
+    write, _ = await _update(NoteHead(head_revision_id="rev-1", retired=True))
+    assert (write.outcome, write.refusal_reason) == ("refused", "note_retired")
+
+
+async def test_a_note_update_whose_body_is_bad_is_refused_on_the_body_first():
+    ledger = InMemoryCognitionDryRunStore()
+    write = await dry_run_note_update(
+        ledger=ledger, session_id=1, unit="unit-1", platform="signal",
+        conversation_id="room-a", note_id="note-1", body="no sections at all",
+        parent_revision_id="rev-1", established_by="cognition", now_ms=1000,
+        shown=SHOWN, head=NoteHead(head_revision_id="rev-2"),
+    )
+    assert write.outcome == "refused" and write.refusal_reason != "stale_base"
 
 
 async def test_note_update_without_a_parent_revision_is_refused():
@@ -113,7 +157,7 @@ async def test_note_update_without_a_parent_revision_is_refused():
         ledger=ledger, session_id=1, unit="unit-1", platform="signal",
         conversation_id="room-a", note_id="note-1", body=CONFORMANT_BODY,
         parent_revision_id="", established_by="cognition", now_ms=1000,
-        shown=SHOWN,
+        shown=SHOWN, head=NoteHead(head_revision_id="rev-1"),
     )
     assert write.outcome == "refused"
     assert write.refusal_reason == "invalid_revision"

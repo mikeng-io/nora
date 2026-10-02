@@ -3,14 +3,19 @@ design/cognition-loop/30-cognition.md §2-§3; migration step 3a-ii).
 
 **Shadow before cut-over** (70-migration.md): every reminder Cognition would
 write is recorded here instead of reaching the fire path, and never fires.
-This module checks the subset of §3's "enforced by code on every act" rules
-that do NOT need a live room read (disclosure at assembly, rate caps and
-`dream_screen` all need state this module is never handed, by the "prior is
-a parameter" choice every dry-run module in this tree makes — those stay the
-caller's job at cut-over, and are out of scope for a call that is never
-delivered): non-empty citations, and the dedupe rule ("one pending act per
-(subject rows, addressee)"), and "cognition never cancels a reminder a
-person set" / "own misreads only" for `remind_move`/`remind_cancel`.
+This module checks §3's "enforced by code on every act" rules that are code
+checks on state the CALLER reads and hands in (the "prior is a parameter"
+choice every dry-run module in this tree makes; this module reads nothing):
+non-empty citations, the dedupe rule ("one pending act per (subject rows,
+addressee)"), the room's `proactive` flag, "a value that is only abduced goes
+out as a question", the live tool's own lead, horizon and pending ceiling
+(`RemindContext`), and "cognition never cancels a reminder a person set" /
+"own misreads only" for `remind_move`/`remind_cancel`. Each is a REFUSAL with a
+named reason, so a would-commit is an act the live path would not have stopped.
+Not checked here, because it needs a read this module is never handed:
+disclosure at assembly (re-run when the reminder fires) and `dream_screen`. The
+design's «daily act cap per room and per person» has no live counterpart (the live
+`remind` has only the pending ceiling), so none is invented here.
 """
 
 from __future__ import annotations
@@ -101,16 +106,87 @@ class RemindAnswer:
         return self.refusal_reason is not None
 
 
+@dataclass(frozen=True, slots=True)
+class RemindContext:
+    """What the caller read for one `remind`, beyond the pending rows: the checks
+    the LIVE `remind` tool makes (`nora.agent.tools`: the moment must be ahead, no
+    nearer than `min_lead_seconds`, no further than `max_horizon_days`; Nora's own
+    pending rows under `max_pending_per_requester`), from the same constants, plus
+    two of 30 §3's act guards (the room's `proactive` flag, an abduced value goes
+    out as a question). Every field's default is the permissive reading, so a
+    caller that reads none of it is unchanged; the composition reads all of it.
+    No number here is ever shown to the model, and no cap is invented: the live
+    path has no daily act cap, so none is checked."""
+
+    #: The room's `proactive` flag (`Policy.proactive_allowed`): may Nora reach
+    #: this room unasked at all.
+    room_proactive: bool = True
+    #: A cited row is a value that is only abduced: the act must be an `ask`.
+    abduced_subject: bool = False
+    #: The live ceiling (`ReminderCaps.max_pending_per_requester`, `None`: none)
+    #: and how many pending rows Nora's own requester id already holds in the
+    #: live store (`ReminderStore.count_pending`, a series counted as one). The
+    #: mirrored reminders pending in this unit are added by the check, since at
+    #: cut-over they are rows too.
+    max_pending: int | None = None
+    live_pending: int = 0
+    #: The live lead and horizon, and the clock and the moment asked for, all in
+    #: epoch milliseconds / seconds / days; any left `None` leaves the three time
+    #: checks out.
+    now_ms: int | None = None
+    at_ms: int | None = None
+    min_lead_seconds: int | None = None
+    max_horizon_days: int | None = None
+
+
 def check_remind(
     *, subject_rows: Sequence[str], intent: str, platform: str, conversation_id: str,
-    pending: Sequence[PendingMirroredRemind],
+    pending: Sequence[PendingMirroredRemind], context: RemindContext | None = None,
 ) -> RemindRefusal | None:
     """`remind(at, room, brief)`. `brief` is `(intent, subject_rows)` — never
-    prose (30-cognition.md §2)."""
+    prose (30-cognition.md §2). The refusal reasons are `no_citations`,
+    `bad_intent`, `room_not_proactive`, `abduced_must_ask`, `past`, `too_soon`,
+    `too_far`, `duplicate_pending` and `pending_ceiling`; none of the details
+    states a number (a model told of a cap declines the work)."""
     if not subject_rows:
         return RemindRefusal("no_citations", "a reminder must cite at least one row")
     if intent not in INTENTS:
         return RemindRefusal("bad_intent", f"intent must be one of {INTENTS}")
+    ctx = context or RemindContext()
+    if not ctx.room_proactive:
+        return RemindRefusal(
+            "room_not_proactive", "you may not reach that room unasked",
+        )
+    if ctx.abduced_subject and intent != "ask":
+        return RemindRefusal(
+            "abduced_must_ask",
+            "a row you cite is only your best explanation, not something anyone said: "
+            "ask the room about it, do not tell it",
+        )
+    if ctx.now_ms is not None and ctx.at_ms is not None:
+        # The live tool's own order and wording, without its numbers.
+        if ctx.at_ms <= ctx.now_ms:
+            return RemindRefusal(
+                "past",
+                "That moment has already gone. Work out the date again and give one "
+                "exact moment ahead.",
+            )
+        if (
+            ctx.min_lead_seconds is not None
+            and ctx.at_ms - ctx.now_ms < ctx.min_lead_seconds * 1000
+        ):
+            return RemindRefusal(
+                "too_soon",
+                "That is near enough that it would be said now. Set it further out.",
+            )
+        if (
+            ctx.max_horizon_days is not None
+            and ctx.at_ms - ctx.now_ms > ctx.max_horizon_days * 86_400_000
+        ):
+            return RemindRefusal(
+                "too_far",
+                "That is further out than anything is held. Set it nearer the time.",
+            )
     duplicate = any(
         p.platform == platform and p.conversation_id == conversation_id
         and set(p.subject_rows) == set(subject_rows)
@@ -119,6 +195,12 @@ def check_remind(
     if duplicate:
         return RemindRefusal(
             "duplicate_pending", "an identical reminder is already pending for this room",
+        )
+    if ctx.max_pending is not None and ctx.live_pending + len(pending) >= ctx.max_pending:
+        return RemindRefusal(
+            "pending_ceiling",
+            "You already have enough of your own waiting. Let some fire before "
+            "deciding more.",
         )
     return None
 
@@ -129,7 +211,7 @@ def check_remind_move(
 ) -> RemindRefusal | None:
     row = next((p for p in pending if p.reminder_ref == reminder_ref), None)
     if row is None:
-        return RemindRefusal("not_found", f"no pending mirrored reminder {reminder_ref!r}")
+        return RemindRefusal("not_found", f"no pending reminder {reminder_ref!r}")
     if (
         created_by_session_id is not None
         and row.created_by_session_id is not None
@@ -137,9 +219,8 @@ def check_remind_move(
     ):
         return RemindRefusal(
             "not_own",
-            "cognition never moves a reminder it did not write itself "
-            "(30-cognition.md §3 rule 12; a person's own reminder is the "
-            "tag path's to cancel, never cognition's)",
+            "you may only move or cancel a reminder you set yourself; a person's own "
+            "reminder is theirs to change",
         )
     return None
 

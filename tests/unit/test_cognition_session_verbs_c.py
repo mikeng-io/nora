@@ -89,6 +89,7 @@ class Script:
 
     behave: Callable[[dict[str, Any], list[Any]], Awaitable[None]]
     answers: list[Any] = field(default_factory=list)
+    total_tokens: int | None = None
 
     async def run(
         self, *, system_prompt: str, prompt: str, tools: list[Any],
@@ -96,7 +97,7 @@ class Script:
     ) -> CognitionRunResult:
         by = {getattr(t, "tool_name", None) or t.__name__: t for t in tools}
         await self.behave(by, tools)
-        return CognitionRunResult(stop_reason="end_turn")
+        return CognitionRunResult(stop_reason="end_turn", total_tokens=self.total_tokens)
 
 
 async def _stream(tool: Any, **arguments: Any) -> dict[str, Any]:
@@ -128,8 +129,16 @@ async def _session(
     extra: tuple[Stimulus, ...] = (),
     pending_reminds: tuple[PendingMirroredRemind, ...] = (),
     events: tuple[Any, ...] = (),
+    store: InMemoryCognitionDryRunStore | None = None,
+    metrics: Any = None, tokens: int | None = None,
+    runner_kwargs: Mapping[str, Any] | None = None,
 ) -> tuple[InMemoryCognitionDryRunStore, Any]:
-    store = InMemoryCognitionDryRunStore()
+    """`store`, `metrics`, `tokens` and `runner_kwargs` are for the tests that
+    measure the session itself (`test_cognition_measures.py`): a store already
+    holding rows, a `Metrics` to read back, the tokens the scripted run reports,
+    and the constructor's own checks (`note_head`, `room_proactive`, the remind
+    caps)."""
+    store = store or InMemoryCognitionDryRunStore()
     stimuli = InMemoryStimulusStore(ledger=store)
     stimuli.seed_wake("u", 1)
     # One stimulus per room, the ids the RECORDS table keys the rows by.
@@ -141,26 +150,28 @@ async def _session(
             return ROSTER
         return roster  # type: ignore[return-value]
 
-    runner = CognitionSessionRunner(
-        dry_run_store=store, stimulus_store=stimuli, agent_runner=Script(behave),
-        units=("u",), session_timeout_seconds=900.0, home_rooms={"u": A},
-        read_tools_for=lambda unit, rs: (
+    wiring: dict[str, Any] = {
+        "dry_run_store": store, "stimulus_store": stimuli,
+        "agent_runner": Script(behave, total_tokens=tokens),
+        "units": ("u",), "session_timeout_seconds": 900.0, "home_rooms": {"u": A},
+        "read_tools_for": lambda unit, rs: (
             route_reads({f"{r.platform}:{r.conversation_id}": list(reads or []) for r in rs})
             if len(rs) > 1 else list(reads or [])
         ),
-        read_only_tools=frozenset(t.tool_name for t in (reads or [])),
-        skill_text_for=lambda kinds: "",
-        grounder=StaticGrounder(Grounding(
+        "read_only_tools": frozenset(t.tool_name for t in (reads or [])),
+        "skill_text_for": lambda kinds: "",
+        "grounder": StaticGrounder(Grounding(
             records=dict(records or RECORDS), own_sends=dict(own_sends or {}),
         )) if records != {}
         else EmptyGrounder(),
-        doctrine_text="D", doctrine_sha256=None, open_note_titles=_const(()),
-        open_events=_const(events), prior_standing=_const(head),
-        pending_self_wakes=_const(()), pending_mirrored_reminds=_const(pending_reminds),
-        session_mode="shadow", budget=BUDGET, cooldown_seconds=cooldown, max_items=12,
-        max_strikes=3, clock=lambda: NOW / 1000, roster_of=roster_of,
-        nora_names=frozenset({"Nora"}),
-    )
+        "doctrine_text": "D", "doctrine_sha256": None, "open_note_titles": _const(()),
+        "open_events": _const(events), "prior_standing": _const(head),
+        "pending_self_wakes": _const(()), "pending_mirrored_reminds": _const(pending_reminds),
+        "session_mode": "shadow", "budget": BUDGET, "cooldown_seconds": cooldown, "max_items": 12,
+        "max_strikes": 3, "clock": lambda: NOW / 1000, "roster_of": roster_of,
+        "nora_names": frozenset({"Nora"}), "metrics": metrics,
+    }
+    runner = CognitionSessionRunner(**{**wiring, **(runner_kwargs or {})})
     view = UnitView(unit="u", pending=pending, last_activity_ms=None, last_wake=None)
     outcome = await runner.on_wake(unit="u", view=view, now_ms=NOW, wake_id=1)
     return store, outcome

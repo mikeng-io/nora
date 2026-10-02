@@ -2503,6 +2503,50 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "measures how long brakes hold, not how many wakes they stopped.",
         ("brake",),
     ),
+    # The shadow session's own outcomes (design/cognition-loop/70-migration.md
+    # §10, the metrics the design named and 3a-iii had not shipped). None of the
+    # four carries a room, a person, a unit or any text as a label: each label is
+    # a closed vocabulary the code owns.
+    _CounterSpec(
+        "nora_cognition_item_total",
+        "Agenda items a Cognition session closed, by the item's kind and by how "
+        "it closed (written / no_change / covered / waiting / struck / unclosed). "
+        "written, no_change, covered and waiting are what the MODEL said, "
+        "self-attested, and none is evidence the item was handled; struck is code "
+        "closing an item at max_strikes; unclosed is code closing an item the "
+        "model never closed (the same `waiting` row as a model's, counted apart "
+        "here so the two are not one number).",
+        ("kind", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_cognition_refused_total",
+        "Cognition verb calls the code refused (or could not check: an "
+        "`unavailable_<reason>` rule), by verb and by the rule that refused it. "
+        "The rule is the refusal reason the model was told, a code constant "
+        "(`stale_base`, `duplicate_title`, `pending_ceiling`, `past`, `daily_cap` "
+        "of a self-wake, a note-body rule, ...). A note head that moved reads to the "
+        "model as `unavailable` and counts as `unavailable_stale_head`. "
+        "Counted at the verb, so an early return cannot refuse unseen.",
+        ("verb", "rule"),
+    ),
+    _CounterSpec(
+        "nora_cognition_unit_tokens_total",
+        "Tokens a Cognition session spent over its whole loop (the model's "
+        "accumulated usage), by what the unit's agenda was made of: one item "
+        "kind (message / time / rollup / self / social / play), or `mixed` when "
+        "it held several. NOT by unit, room or person. A session whose runner "
+        "could not read its usage adds nothing, so the series is absent for it "
+        "rather than zero.",
+        ("unit_kind",),
+    ),
+    _CounterSpec(
+        "nora_self_wake_total",
+        "Self-wake calls and firings, by outcome: created / moved / cancelled "
+        "(a `wake_at`, `wake_move` or `wake_cancel` the code accepted), refused "
+        "(it did not), and fired (a closed session picked a due self-wake up "
+        "onto its agenda).",
+        ("outcome",),
+    ),
     # The Assess adaptor's nightly data-quality checks (design/cognition-loop/
     # 30-cognition.md §6, 70-migration.md §10, migration step 3). ONE
     # INCREMENT PER (run, check) when a check's status is `fail` — never per

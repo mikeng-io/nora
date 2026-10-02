@@ -173,7 +173,9 @@ The objections the first draft raised, and where each is answered now:
   ([40](40-register.md) §5).
 - **Nothing lost in the switch.** For a shadow week, every row the clocked
   adaptors wrote is also written, or deliberately closed as not needed, by a
-  cognition session on the same messages.
+  cognition session on the same messages. A close the model wrote is its own
+  word and does not count as evidence (DEC-252, amended 2026-10-02): only a
+  matched write, or a close code proves, is.
 - **Latency.** For a change carrying a strong cue (a date or time, a keep
   instruction, an RSVP, or a place link — [20](20-observe.md) §3's list):
   median time from a settling message to the row that records it stays

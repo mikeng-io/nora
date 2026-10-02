@@ -1024,6 +1024,10 @@ async def test_a_moved_self_wake_fires_once_at_the_new_time_and_never_at_the_old
     assert rig.stimuli.wakes[-1].reason == "self"
     fired = [p for _, p, _ in rig.ledger.paces if p.transition == "fired"]
     assert [p.wake_ref for p in fired] == ["ref1"]
+    # and it is counted (`nora_self_wake_total`), once per move/create/fire it saw
+    assert rig.metrics.get("nora_self_wake_total", outcome="fired") == 1
+    assert rig.metrics.get("nora_self_wake_total", outcome="created") == 1
+    assert rig.metrics.get("nora_self_wake_total", outcome="moved") == 1
 
     after_self = len(rig.stimuli.wakes)
     rig.clock.advance(3600)

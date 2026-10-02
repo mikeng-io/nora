@@ -54,7 +54,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
-from nora.domain.cognition_write import WouldWrite, stale_event_base
+from nora.domain.cognition_write import WouldWrite, note_base_refusal, stale_event_base
 from nora.domain.gatherings import (
     TERMINAL_STATUSES,
     FieldMeta,
@@ -70,7 +70,7 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     has_duplicate_open_title,
 )
-from nora.domain.ports import CognitionDryRunStore, NewCognitionWouldWrite
+from nora.domain.ports import CognitionDryRunStore, NewCognitionWouldWrite, NoteHead
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_revise import check_mode, check_schema, check_stale_base
 
@@ -184,9 +184,16 @@ async def dry_run_note_update(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     platform: str, conversation_id: str, note_id: str, body: str,
     parent_revision_id: str, established_by: str, now_ms: int,
-    shown: Shown, entity_ids: tuple[str, ...] = (),
+    shown: Shown, head: NoteHead | None, entity_ids: tuple[str, ...] = (),
 ) -> WouldWrite:
-    """`note_update`/`append_revision` in shadow."""
+    """`note_update`/`append_revision` in shadow. `head` is the note's head as
+    the caller read it through the real read path (the same "prior is a
+    parameter" shape `event_revise` and `standing_revise` use: this function
+    reads nothing), `None` for a note the unit does not hold. The live store
+    refuses an append to a missing note, a retired one, or against a head that
+    moved (`SqlNoteStore._append_on_conn`); `note_base_refusal` makes those
+    three refusals here, after the body's own checks as the live verb orders
+    them, so a would-commit is a write the store would accept."""
     args: dict[str, object] = {
         "note_id": note_id, "body": body, "parent_revision_id": parent_revision_id,
         "established_by": established_by, "entity_ids": list(entity_ids),
@@ -210,6 +217,20 @@ async def dry_run_note_update(
             tier="note", verb="note_update", platform=platform,
             conversation_id=conversation_id, args=args, outcome="refused",
             refusal_reason="invalid_revision", refusal_detail=str(exc),
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+    base_refusal = note_base_refusal(
+        parent_revision_id=parent_revision_id,
+        head_revision_id=None if head is None else head.head_revision_id,
+        retired=head is not None and head.retired,
+    )
+    if base_refusal is not None:
+        reason, detail = base_refusal
+        write = WouldWrite(
+            tier="note", verb="note_update", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason=reason, refusal_detail=detail,
+            base_revision_id=parent_revision_id,
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     candidate = {
@@ -278,7 +299,8 @@ async def dry_run_event_propose(
     platform: str, conversation_id: str, now_ms: int, shown: Shown,
     reasoning: str, confidence: str, cited_ids: Sequence[str],
     build: type[Gathering] = Gathering, open_proposed_events: Sequence[Gathering] = (),
-    now: datetime | None = None, **event_kwargs: object,
+    now: datetime | None = None, session_proposed: Sequence[datetime | None] = (),
+    **event_kwargs: object,
 ) -> WouldWrite:
     """`event_propose` in shadow. `event_kwargs` are `Gathering`'s own
     constructor arguments (`id`, `title`, `created_by`, `when`, `status`,
@@ -300,6 +322,9 @@ async def dry_run_event_propose(
     every reader render it as a question (`nora.domain.gatherings.render_field`)
     and what no later assent changes: only a write that restates the field, on
     its own citations, can.
+
+    `session_proposed`: the `when` of each `proposed` event THIS session already
+    would have created in the room, which the live store would hold by now.
 
     `open_proposed_events` (review follow-up on #625's step 3a-i): the
     conversation's already-`PROPOSED` events, READ-ONLY input the caller
@@ -325,10 +350,13 @@ async def dry_run_event_propose(
 
     clock = now if now is not None else datetime.fromtimestamp(now_ms / 1000, tz=UTC)
     still_open = still_open_gatherings(open_proposed_events, now=clock)
-    if len(still_open) >= 2:
+    # THIS session's own earlier proposals (`when` per proposal, None: no time yet)
+    # are open events the live store would hold, counted by the same rule.
+    own_open = [w for w in session_proposed if w is None or w >= clock]
+    if len(still_open) + len(own_open) >= 2:
         return await refuse(
             "ambiguous_open_gatherings",
-            f"{len(still_open)} open proposed events for {conversation_id}",
+            f"{len(still_open) + len(own_open)} open proposed events for {conversation_id}",
         )
     if event_kwargs.get("status") not in (GatheringStatus.STAGED, GatheringStatus.PROPOSED):
         return await refuse("bad_status", "an event is proposed or staged, nothing later")
@@ -400,9 +428,12 @@ async def dry_run_event_revise(
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
 
     if current is None:
-        return await refuse("not_found")
+        return await refuse("not_found", "there is no open event by that id in this room")
     if stale_event_base(base_revision_id=base_revision_id, current_head_revision_id=current_head):
-        return await refuse("stale_base", f"current head is {current_head!r}")
+        return await refuse(
+            "stale_base", "the event changed since you read it; read it again and redo "
+            "your change against what it says now",
+        )
     if current.status in TERMINAL_STATUSES:
         # 40 §3: only a status BEFORE `happened` may be revised.
         return await refuse(

@@ -46,6 +46,7 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -950,7 +951,7 @@ async def cmd_cognition_compare(args: argparse.Namespace) -> int:
     try:
         report = await cognition_run_shadow_compare(
             engine, window, tolerance_ms=args.tolerance_minutes * 60_000,
-            unit=args.unit, directory=directory,
+            unit=args.unit, directory=directory, tz=ZoneInfo(cfg.cognition.timezone),
         )
     finally:
         await engine.dispose()

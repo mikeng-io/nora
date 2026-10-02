@@ -53,7 +53,7 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 2b | **Events unit-wide** | the event migration (§5); `event_revision`, the lifecycle statuses, per-field modes; the event verbs with `base_revision_id`; the tag path's five event tools renamed everywhere (§8); `event_search` | existing `Gathering` tests and the tag path's event cases green; `tool_selection` no worse |
 | 2c | **Withdrawal cascade** | `unsupported` marking over the citation table, fed by step 1's deletes (a platform delete or unsend hides the message and runs the cascade over its EVIDENCE rows, notes, events and staged note proposals but not Standing or culture, which cite a watermark, in one transaction, `nora.app.delete_withdrawal`, DEC-276; `nora withdrawal reconcile-deletes` applies the same to the deletes recorded before that and runs at every start, 2026-10-02), by `nora person forget --apply`, and, when they exist, the PII scrub and a person leaving a unit (no caller yet); `nora person forget` and `unforget` (soft, §9) for the stores that exist | a cascade test withdraws one Record item and finds every row citing it `unsupported`, in every store; a forget followed by a snapshot before it restores everything |
 | 3 | **Cognition, shadow** — split into three rows below because the row was too large for one PR to review or gate honestly: **3a** (the session, agenda and dry-run machinery), **3b** (the one live write path this step actually turns on), **3c** (measurement, off every live path). None depends on the others' code, so they ship in any order; each still gates on 3's own row above wherever this table is cited before the split. | — | — |
-| 3a | **Cognition session, shadow** | the Cognition adaptor's session and agenda; its note, event and Standing verbs in dry run (would-write rows recorded, nothing committed); the pace verbs and self-wakes in shadow; skills injected; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; `tool_selection` on the cognition catalogue | over a shadow week every clocked-adaptor write is matched or deliberately closed; the act caps and dedupe hold in shadow |
+| 3a | **Cognition session, shadow** | the Cognition adaptor's session and agenda; its note, event and Standing verbs in dry run (would-write rows recorded, nothing committed); the pace verbs and self-wakes in shadow; skills injected; the act verb mirrored and held ([30](30-cognition.md) §2), read against the live proactive pass's decisions; `tool_selection` on the cognition catalogue | over a shadow week every clocked-adaptor write is matched or deliberately closed (a close the model wrote is not evidence: DEC-252, amended 2026-10-02); the act guards hold in shadow (the live pending ceiling and the dedupe rule; the live `remind` has no daily act cap, so none is checked) |
 | 3b | **`standing_revise`, live — BUILT 2026-09-29 (DEC-239)** | `standing_revise` and the room Standing schema, live: the debrief and the ingest fold both write through it from here, so the head has one shape. As built: two new optional sections, `I hold open` and `I owe` (migration `0076_standing_sections`, additive, existing heads keep every fact and gain two `NULL` sections); the write verb enforces the schema (`Where it stands` required, a given section never blank) and the mode (`deduced`/`abduced`/`said`) before either caller's own body/working-set/screen checks reach the store; `mode="deduced"` by default, since neither caller yet asserts a position resting only on her own words (`said`) or a guess going out as a question (`abduced`) — open below. **The two new sections carry no model-written content yet**: no objective asks for them, so `hold_open`/`i_owe` stay `None` on every row this step writes; turning the model on for them is a doctrine change with its own eval, not part of this migration step (open position below) | the render-parity case: an existing head's rendered block is unchanged; the debrief and rollup-fold test suites stay green under the shared verb |
 | 3c | **Assess, corpora** | the Assess adaptor, nightly data-quality checks and labelled corpora ([30](30-cognition.md) §6) | the truncated dinner case passes ([40](40-register.md) §5); the event and note corpora meet their gates |
 | 4 | **Cut over** | the Cognition adaptor commits; the clocks, note-candidates, note-curation, note-merge, the proactive adaptor and the ingest Standing fold retired (with `rollup_max_folds` and its metric); the culture adaptor becomes the Character adaptor's room case, on its wake rule, with culture migrated to the sectioned account and written by `character_revise` | the re-pointed adaptor eval suites green, master vs branch; the room-Character corpus meets its gate; the latency falsifier ([00](00-intent.md) §6) |
@@ -441,13 +441,16 @@ step's PR:
 
 ## 10. Observability
 
-- `nora_cognition_item_total{kind,reason}`;
+- `nora_cognition_item_total{kind,outcome}`;
   `nora_cognition_corrected_total{tier}`; refusals by rule,
   `nora_cognition_refused_total{verb,rule}`; acts by result;
-  `nora_cognition_unit_tokens_total{unit}`; the stimulus metrics of
-  [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
+  `nora_cognition_unit_tokens_total{unit_kind}` (built 2026-10-02 with `outcome`
+  for `reason` and `unit_kind`, the agenda's kind or `mixed`, for `unit`: a unit
+  is a name, and no metric label is a room, a person or a unit); the stimulus
+  metrics of [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
   `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
-  `nora_self_wake_total{transition}`; per-adaptor wakes and sessions;
+  `nora_self_wake_total{outcome}` (created, moved, cancelled, refused, fired:
+  built 2026-10-02, with `outcome` for `transition`); per-adaptor wakes and sessions;
   `nora_lesson_total{result}` (written, retired, refused by rule, rolled
   back).
 - One Langfuse root per session, its model calls and tool calls as children.
@@ -553,12 +556,52 @@ first.
 --since ISO [--until ISO] [--unit U] [--tolerance-minutes N] [--json]` reports, per tier and per
 clocked writer (`note-candidates`, `note-curation`, `note-merge`, `event:tag`, `standing-debrief`,
 `standing-ingest-fold`, `culture`, `proactive`, `proactive-decide`), matched / cognition-only /
-clocked-only, with a clocked-only row `closed` only when a `no_change`, `waiting` or `covered` close
-explains it (same room, same tier, names the row's id, after the write, one close per row;
-DEC-252). The default tolerance is 65 minutes, derived from the hourly writers' cadence;
+clocked-only, with a clocked-only row EXPLAINED when a `no_change`, `waiting` or `covered` close
+names it (same room, same tier, names the row's id, after the write, one close per row;
+DEC-252), and since 2026-10-02 (below) that explanation is counted as `closed by code` only when the
+store proves it (a row with a note or event id, a `covered` close, and a write of the same session
+for that id; a row with no id is never closed by code), and otherwise as `closed self-attested`,
+which is not evidence and stays in `open`; the JSON is `schema` 2 and has no `closed` key. The default tolerance is 65 minutes, derived from the hourly writers' cadence;
 `event:tag` is the live tag path and is reported apart, in no verdict; a Standing pair is
 `coincident`, not matched. An unreadable source is ERROR, never zero. It prints counts and does not
 decide the gate; step 4 retires a writer only on its own line. Matching rules: the module
 docstring of `nora.domain.cognition_shadow_compare`.
+
+**Step 3a measurability fixes built 2026-10-02** (branch `mikeng-io/fix-shadow-measures`; an
+independent audit of the live shadow data found it could not yet produce evidence the step 4
+cut-over could be judged on). None of it changes a live behaviour; the session is still
+shadow-only. (1) The measured model is no longer told it is measured: the objective's section
+«Everything you write here is recorded and not committed» and every «in this run the write is
+recorded, not committed» in a verb's text are gone (objective version 5), and a refusal detail names
+no dry run and no number; a test scans every string the model can read (the instruction, the
+prompt, each verb's description, each result, each refusal detail). (2) Caps stay in code: `wake_at`
+no longer says «too many pending or too many today», the cooldown or seven days, and no refusal
+detail states a limit. (3) The dry-run verbs make the live store's own refusals: a `note_update`
+against a moved head, a retired note or one the unit does not hold is refused in the ledger (`stale_base`,
+`note_retired`, `not_found`) and no longer recorded `would_commit`, and the model reads a moved head
+as the live verb says it (`unavailable`, with no head id); a session's own earlier writes count (a
+second note under the first's title is `duplicate_title`, a second revision on the same parent or
+event head is stale, a move out of a terminal event status is refused); the event verbs already
+checked existence and the base. `remind` makes the live tool's own checks from the same constants (a
+moment that is past, nearer than `min_lead_seconds` or further than `max_horizon_days`, and Nora's
+own pending rows against `max_pending_per_requester`, counted in the live store plus the mirrored
+ones; the mirrored count is per UNIT while the live one is per requester, so across several units the
+shadow can undercount by the other units' mirrored reminders, which is the conservative direction), and two of §3's act guards: the room's `proactive` flag and `abduced_must_ask` (by
+`field_mode`, the field's own mode over the row's). There is NO daily act cap: the live `remind` has
+none, so none is invented (a first build of this paragraph added two `[cognition]` keys for caps; the
+review found they matched nothing live, and they are gone). A verb whose store or read fails answers
+`unavailable` and never shows the exception.
+(4) `nora cognition compare` is an ERROR, with no
+tiers, for a window with no session; every report carries a coverage line (sessions, units, per day
+in the `[cognition]` zone, wakes that never became a session, sessions with no skill injected); a close the model wrote is never
+summed into `closed`: `closed by code` is a `covered` close whose own session recorded a
+`would_commit` write of the same tier, room and id (and only for a row that has one), and every
+other explaining close is `closed self-attested`, which the report says is not evidence; and every report says what `matched` does and
+does not establish (the same kind and subject; not that the two say the same thing). (5) The metrics of §10 that
+3a-iii had not shipped now exist: `nora_cognition_item_total{kind,outcome}`,
+`nora_cognition_refused_total{verb,rule}`, `nora_cognition_unit_tokens_total{unit_kind}` and
+`nora_self_wake_total{outcome}`, none with a room, person or unit as a label. (6) The shadow week still
+injects no skill (`AgendaSkills(by_kind={})`, unchanged): the compare output says so, so a week of
+base-objective sessions is never read as the full design.
 
 Steps 4–8 remain design only.

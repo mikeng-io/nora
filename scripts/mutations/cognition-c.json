@@ -135,8 +135,8 @@
  {
   "name": "M5: remind takes a bad time as zero",
   "file": "nora/app/cognition_session.py",
-  "old": "            if at_ms is None:\n                return _bad_time(\"at\")\n            async with self._lock(unit):\n                pending = await self._pending_mirrored_reminds(unit)\n                ref = self._mint_ref()",
-  "new": "            if at_ms is None:\n                at_ms = 0\n            async with self._lock(unit):\n                pending = await self._pending_mirrored_reminds(unit)\n                ref = self._mint_ref()",
+  "old": "            if at_ms is None:\n                return _bad_time(\"at\")\n            async with self._lock(unit):\n                try:\n                    pending = await self._pending_mirrored_reminds(unit)",
+  "new": "            if at_ms is None:\n                at_ms = 0\n            async with self._lock(unit):\n                try:\n                    pending = await self._pending_mirrored_reminds(unit)",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_time_with_no_offset_or_no_meaning_is_refused_on_every_verb"
  },
  {
@@ -170,7 +170,7 @@
  {
   "name": "M6: the session hands the store no revision id",
   "file": "nora/app/cognition_session.py",
-  "old": "prior_revision_id=None if head is None else head.revision_id,",
+  "old": "prior_revision_id=current_revision,",
   "new": "prior_revision_id=None,",
   "target": "tests/unit/test_cognition_session_verbs_c.py::test_a_standing_revise_against_a_stale_revision_id_is_refused_and_a_fresh_one_passes"
  },

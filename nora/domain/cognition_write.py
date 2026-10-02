@@ -90,3 +90,24 @@ def stale_event_base(
     if base_revision_id is None:
         return False
     return base_revision_id != current_head_revision_id
+
+
+def note_base_refusal(
+    *, parent_revision_id: str, head_revision_id: str | None, retired: bool,
+) -> tuple[str, str] | None:
+    """The refusal the live note store makes on an append, as `(reason, detail)`,
+    or `None` when the append would land (`nora.infra.sql.notes.SqlNoteStore.
+    _append_on_conn`'s compare-and-swap: the note must exist in the unit, be
+    open, and have `parent_revision_id` as its head). `head_revision_id` is
+    `None` for a note the unit does not hold. The order is the store's own: a
+    missing note, then a retired one, then a head that moved. The reasons are
+    this tier's names for what the store raises (`StaleNoteHeadError` with no
+    observed head, `RetiredNoteError`, `StaleNoteHeadError`), spelled as the
+    event and Standing tiers spell theirs (`not_found`, `stale_base`)."""
+    if head_revision_id is None:
+        return "not_found", "there is no note by that id to revise"
+    if retired:
+        return "note_retired", "the note was retired; read the notebook again"
+    if parent_revision_id != head_revision_id:
+        return "stale_base", "the note changed since you read it; read it again"
+    return None

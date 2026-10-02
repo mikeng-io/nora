@@ -47,7 +47,19 @@ from nora.domain.stimuli import NewStimulus
 
 log = logging.getLogger("nora.agent.cognition_pace")
 
-__all__ = ["dry_run_wake_at", "dry_run_wake_cancel", "dry_run_wake_fire", "dry_run_wake_move"]
+__all__ = [
+    "PartialPaceWriteError", "dry_run_wake_at", "dry_run_wake_cancel", "dry_run_wake_fire",
+    "dry_run_wake_move",
+]
+
+
+class PartialPaceWriteError(Exception):
+    """A pace verb changed the `self` stimulus and could not record that in the
+    ledger (twice). The change STANDS (a cancelled wake no longer fires, a moved one
+    fires at its new time), so the caller must not tell the model that nothing was
+    written, and a retry must not be invited to do it again. `fold_self_wakes` reads a
+    stimulus retracted without its ledger row as not pending, which is the state a
+    retry then finds (`not_found`), so a retry cannot duplicate it."""
 
 
 async def _record(
@@ -67,6 +79,21 @@ async def _record(
         recorded_at_ms=now_ms,
     )
     return PaceAnswer(row_id, refusal_reason, refusal_detail)
+
+
+async def _record_after_effect(ledger: CognitionDryRunStore, **record: Any) -> PaceAnswer:
+    """`_record` for a verb whose `self` stimulus has ALREADY been changed. One more
+    try on a failure, then `PartialPaceWriteError`: the change stands whether or not the
+    ledger knows, and what the model is told must not claim otherwise."""
+    try:
+        return await _record(ledger, **record)
+    except Exception:
+        log.exception("could not record %s of %s; trying once more", record["verb"],
+                      record["wake_ref"])
+    try:
+        return await _record(ledger, **record)
+    except Exception as exc:
+        raise PartialPaceWriteError(f"{record['verb']} of {record['wake_ref']}") from exc
 
 
 async def _take_back(
@@ -144,11 +171,20 @@ async def dry_run_wake_at(
         # The displaced self-wake's stimulus is retracted (20 §3: a new
         # self-wake sharing a subject row SUPERSEDES the pending one), or it
         # would still fire beside its replacement. After the record: a failed
-        # record must not take the old one away with the new.
-        await stimuli.retract_self(
-            unit=unit, wake_ref=supersedes, keep=None, reason="superseded",
-            recorded_at_ms=now_ms,
-        )
+        # record must not take the old one away with the new. And AFTER the record
+        # the new wake is a fact: a failure here must not turn a created wake into
+        # an error (the model would retry it and a second one would stand), so it is
+        # logged, and the worst it leaves is the superseded wake firing once more.
+        try:
+            await stimuli.retract_self(
+                unit=unit, wake_ref=supersedes, keep=None, reason="superseded",
+                recorded_at_ms=now_ms,
+            )
+        except Exception:
+            log.exception(
+                "could not retract superseded self-wake %s; it may fire beside %s",
+                supersedes, wake_ref,
+            )
     return answer
 
 
@@ -189,7 +225,7 @@ async def dry_run_wake_move(
     except Exception:
         await _take_back(stimuli, unit=unit, stimulus_id=stimulus_id, now_ms=now_ms)
         raise
-    return await _record(
+    return await _record_after_effect(
         ledger, session_id=session_id, unit=unit, verb="wake_move", wake_ref=wake_ref,
         transition="moved", subject_rows=subject_rows, why=why, at_ms=at_ms,
         now_ms=now_ms, outcome="recorded", stimulus_id=stimulus_id,
@@ -213,7 +249,8 @@ async def dry_run_wake_cancel(
             unit=unit, wake_ref=wake_ref, keep=None, reason="cancelled",
             recorded_at_ms=now_ms,
         )
-    return await _record(
+    record = _record if refusal is not None else _record_after_effect
+    return await record(
         ledger, session_id=session_id, unit=unit, verb="wake_cancel", wake_ref=wake_ref,
         transition="cancelled", subject_rows=subject_rows, why=why, at_ms=None,
         now_ms=now_ms, outcome=outcome,

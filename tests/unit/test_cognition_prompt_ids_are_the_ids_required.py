@@ -116,8 +116,12 @@ class ReadingModel:
                     f"## Decided\n- going ahead ({name}) [{n}]\n"
                     f"## Open\n- which place [{n}]\n"
                 )
+                # One title per note: a second note under the title of the first is
+                # refused `duplicate_title` (the session now holds its own earlier
+                # writes), and this test is about the ids and names, not titles.
                 self.answers.append(await by["note_create"](
-                    **NOTE, body=body, room=room_of[item.attrib["room"].strip("«»")],
+                    **{**NOTE, "title": f"dinner {n}"}, body=body,
+                    room=room_of[item.attrib["room"].strip("«»")],
                     item=int(item.attrib["index"]),
                 ))
         return CognitionRunResult(stop_reason="end_turn")
