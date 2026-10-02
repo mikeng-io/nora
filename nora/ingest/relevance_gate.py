@@ -96,6 +96,7 @@ from nora.domain.ports import RecordStore
 from nora.domain.prompt import age as _age
 from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
+from nora.domain.withdrawal import render_supported
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
 from nora.persons import Persons
@@ -912,6 +913,13 @@ class RelevanceGate:
         #
         # The prefill's renderer closed the identical gap on 2026-09-10; this
         # is the same block, one call site over.
+        #
+        # WITHDRAWAL (`nora.domain.withdrawal`): a position the cascade marked
+        # `unsupported_at` is the same «no position» a room never folded gets,
+        # which this block already renders as `(none)`. The gate's verdict
+        # feeds a participation decision that goes on to write, and a
+        # retracted message must not steer it.
+        row = render_supported(row)
         return (row.body, row.updated_at) if row is not None else None
 
     def _count(self, verdict: GateVerdict, platform: str, conversation_id: str) -> None:

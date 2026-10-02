@@ -251,12 +251,12 @@ from the tree on 2026-10-01; each departure is a migration item, §9):
 | View | reader | assembled by | lineage | withdrawal | departure |
 |---|---|---|---|---|---|
 | the tag turn's blocks | tag turn | `nora/engagement/context.py` with `build_prefill` (`nora/agent/prefill.py`) | per room, behind `[lineage] mode` (shipped `off`) | notes in the note store's reads; culture and Standing in `nora/engagement/context.py` | the reference path; no `<events>`, `<memos>`, `self` or `lessons` block yet |
-| the fire turn's blocks | fire turn | its own `build_context` in `nora/app/fire.py`, sharing `build_prefill` | the same `LineagePolicy` | **none for culture and Standing**: `nora/app/fire.py` never checks `unsupported_at`, so a withdrawn head renders in every fire turn | a second assembler; the withdrawal gap is a code bug, fixed separately, before any parity baseline |
+| the fire turn's blocks | fire turn | its own `build_context` in `nora/app/fire.py`, sharing `build_prefill` | the same `LineagePolicy` | culture through `read_culture`, Standing through `render_supported` (`nora.domain.withdrawal`), as the tag turn | a second assembler |
 | `<loop_decisions>` | fire turn | `nora/app/fire.py` | none | — | skips lineage |
 | the agenda's grounding | Cognition session | `nora/app/cognition_grounding.py`, with its own renderer | its own call into `nora/agent/lineage.py`; a row must pass for every room on the agenda | in every mode | a third assembler and renderer |
 | read tools | both | each tool: `note_read`/`note_search` (`nora/agent/tools.py`), `nora/agent/standing_read.py`, `nora/infra/sql/record_query.py`, `rollup_read` | each applies it itself | each applies it itself | one call site per tool |
 | `media_search`, `media_send` | tag turn | `nora/agent/tools.py` | none: not scoped to the room | — | a read of the Record that no room bounds |
-| the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief | each module's own builder (`nora/language/note_candidates.py`, `nora/language/proactive.py`, `nora/language/culture.py`, `nora/ingest/stages/standing_event.py`, `nora/engagement/debrief_render.py`) | none: they read unit-wide and never speak | notes through the store's reads | retired with the adaptors at step 4 |
+| the clocked adaptors' prompts | note-candidates, the curator, note-merge, proactive, culture, the ingest Standing fold, the debrief, the relevance gate | each module's own builder (`nora/language/note_candidates.py`, `nora/language/proactive.py`, `nora/language/culture.py`, `nora/ingest/stages/standing_event.py`, `nora/engagement/debrief_render.py`, `nora/ingest/relevance_gate.py`) | none: they read unit-wide and never speak | notes through the store's reads; culture through `read_culture` and Standing through `render_supported`; a fold's OWN prior is read raw on purpose (`tests/architecture/test_withdrawal_reaches_every_prompt.py`) | retired with the adaptors at step 4 |
 | portal pages | a person | `nora/web/gatherings.py` (events they created or answered), `nora/web/documents.py` | none: participation-scoped | none: events are outside the cascade | no page for notes, memos, Character, Standing or lessons yet |
 
 ## 7. The Notebook's writers, and how the speaking turns hand off
@@ -371,8 +371,9 @@ the debrief through `standing_revise` (DEC-239), and the operator through
   bodies rest on;
 - her tool calls are logged only when cacheable and `ok`; her Instagram
   comment replies are not Record (§1a);
-- the fire turn does not apply withdrawal to culture and Standing (a code
-  fix, separate, before any parity baseline);
+- a head the fold re-derives keeps its `unsupported_at` (neither upsert clears
+  it), so it stays hidden until `unforget --clear-unsupported`
+  ([context-assembly/04](../context-assembly/04-every-occasion.md) §6);
 - `<loop_decisions>` and `media_search`/`media_send` skip lineage (§6);
 - Views depart from one path in the other ways §6 lists.
 

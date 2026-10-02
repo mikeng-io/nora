@@ -1,0 +1,198 @@
+[
+  {
+    "name": "5: the relevance gate's standing read stops dropping a withdrawn position (golden)",
+    "file": "nora/ingest/relevance_gate.py",
+    "old": "        row = render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "new": "        return (row.body, row.updated_at) if row is not None else None",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k gate-standing-withdrawn"
+  },
+  {
+    "name": "5: the same revert, read by the architecture test (an unguarded Standing read in `_read_standing`)",
+    "file": "nora/ingest/relevance_gate.py",
+    "old": "        row = render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "new": "        return (row.body, row.updated_at) if row is not None else None",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: proactive's `<rooms>` line stops dropping a withdrawn position (golden)",
+    "file": "nora/language/proactive.py",
+    "old": "                position = render_supported(await self._standing.read(\n                    platform=room.platform, conversation_id=room.conversation_id,\n                ))",
+    "new": "                position = await self._standing.read(\n                    platform=room.platform, conversation_id=room.conversation_id,\n                )",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k proactive-standing-withdrawn"
+  },
+  {
+    "name": "5: the same revert, read by the architecture test",
+    "file": "nora/language/proactive.py",
+    "old": "                position = render_supported(await self._standing.read(\n                    platform=room.platform, conversation_id=room.conversation_id,\n                ))",
+    "new": "                position = await self._standing.read(\n                    platform=room.platform, conversation_id=room.conversation_id,\n                )",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: proactive's `<culture>` stops going through the one culture read (a withdrawn account renders) (golden)",
+    "file": "nora/language/proactive.py",
+    "old": "                await read_culture(\n                    self._culture.head(key=room.conversation_id)\n                    if self._culture is not None else None,\n                    stage=\"proactive_culture\", platform=room.platform,\n                    metrics=self._metrics,\n                    timeout_seconds=self._read_timeout_seconds,\n                ),",
+    "new": "                (await self._culture.head(key=room.conversation_id))\n                if self._culture is not None else None,",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k proactive-standing-live-culture-withdrawn"
+  },
+  {
+    "name": "5: the same bypass, read by the architecture test",
+    "file": "nora/language/proactive.py",
+    "old": "                await read_culture(\n                    self._culture.head(key=room.conversation_id)\n                    if self._culture is not None else None,\n                    stage=\"proactive_culture\", platform=room.platform,\n                    metrics=self._metrics,\n                    timeout_seconds=self._read_timeout_seconds,\n                ),",
+    "new": "                (await self._culture.head(key=room.conversation_id))\n                if self._culture is not None else None,",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: the culture fold's `<standing>` stops dropping a withdrawn position (golden)",
+    "file": "nora/language/culture.py",
+    "old": "            block = render_standing(render_supported(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            )))",
+    "new": "            block = render_standing(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            ))",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k culture-fold-standing-withdrawn"
+  },
+  {
+    "name": "5: the same revert, read by the architecture test",
+    "file": "nora/language/culture.py",
+    "old": "            block = render_standing(render_supported(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            )))",
+    "new": "            block = render_standing(await self._standing.read(\n                platform=platform, conversation_id=conversation_id,\n            ))",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: note-candidates' `<culture>` stops going through the one culture read (golden)",
+    "file": "nora/language/note_candidates.py",
+    "old": "            await read_culture(\n                self._culture.head(key=key) if self._culture is not None\n                else None,\n                stage=\"note_candidates_culture\", platform=\"dreamer\",\n                metrics=self._metrics,\n            ),",
+    "new": "            (await self._culture.head(key=key)) if self._culture is not None\n            else None,",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k candidates-culture-withdrawn"
+  },
+  {
+    "name": "5: the same bypass, read by the architecture test",
+    "file": "nora/language/note_candidates.py",
+    "old": "            await read_culture(\n                self._culture.head(key=key) if self._culture is not None\n                else None,\n                stage=\"note_candidates_culture\", platform=\"dreamer\",\n                metrics=self._metrics,\n            ),",
+    "new": "            (await self._culture.head(key=key)) if self._culture is not None\n            else None,",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: the note curator's `<culture>` stops going through the one culture read (golden)",
+    "file": "nora/language/note_curator.py",
+    "old": "                await read_culture(\n                    self._culture.head(key=primary_id),\n                    stage=\"note_curator_culture\", platform=\"dreamer\",\n                    metrics=self._metrics,\n                ),",
+    "new": "                await self._culture.head(key=primary_id),",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k curator-one-culture-withdrawn"
+  },
+  {
+    "name": "5: the same bypass, read by the architecture test",
+    "file": "nora/language/note_curator.py",
+    "old": "                await read_culture(\n                    self._culture.head(key=primary_id),\n                    stage=\"note_curator_culture\", platform=\"dreamer\",\n                    metrics=self._metrics,\n                ),",
+    "new": "                await self._culture.head(key=primary_id),",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: the event fold's `<culture>` stops going through the one culture read (golden)",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "        culture=await read_culture(\n            _culture_head(wiring, platform, conversation_id),\n            stage=\"standing_event_culture\", platform=platform, metrics=metrics,\n            timeout_seconds=wiring.store_timeout_seconds,\n        ),",
+    "new": "        culture=await h if (h := _culture_head(wiring, platform, conversation_id)) is not None else None,",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k event-fold-culture-withdrawn"
+  },
+  {
+    "name": "5: the same bypass, read by the architecture test",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "        culture=await read_culture(\n            _culture_head(wiring, platform, conversation_id),\n            stage=\"standing_event_culture\", platform=platform, metrics=metrics,\n            timeout_seconds=wiring.store_timeout_seconds,\n        ),",
+    "new": "        culture=await h if (h := _culture_head(wiring, platform, conversation_id)) is not None else None,",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5: the one culture read stops dropping a withdrawn account: every occasion at once (goldens)",
+    "file": "nora/language/culture_render.py",
+    "old": "    return render_supported(found)\n",
+    "new": "    return found\n",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k withdrawn"
+  },
+  {
+    "name": "5: the same revert, read by the architecture test (`read_culture` no longer applies the rule)",
+    "file": "nora/language/culture_render.py",
+    "old": "    return render_supported(found)\n",
+    "new": "    return found\n",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_the_guard_is_the_one_function"
+  },
+  {
+    "name": "5: the shared rule drops a live head too (the held goldens)",
+    "file": "nora/domain/withdrawal.py",
+    "old": "    if found is not None and found.unsupported_at is not None:",
+    "new": "    if found is not None:",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k not_withdrawn"
+  },
+  {
+    "name": "5: a fold's own prior is no longer shown when it is withdrawn (the culture fold's previous_account)",
+    "file": "nora/language/culture.py",
+    "old": "        previous = await self._culture.head(key=key)\n        if previous is not None:\n            account_order",
+    "new": "        previous = (lambda p: None if p is not None and p.unsupported_at is not None else p)(await self._culture.head(key=key))\n        if previous is not None:\n            account_order",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k culture-fold-own-previous"
+  },
+  {
+    "name": "5: the event fold's own prior is no longer shown when it is withdrawn",
+    "file": "nora/ingest/stages/standing_event.py",
+    "old": "                    prior = await asyncio.wait_for(\n                        wiring.store.read(platform=platform, conversation_id=conversation_id),\n                        timeout=wiring.store_timeout_seconds,\n                    )",
+    "new": "                    prior = (lambda p: None if p is not None and p.unsupported_at is not None else p)(await asyncio.wait_for(\n                        wiring.store.read(platform=platform, conversation_id=conversation_id),\n                        timeout=wiring.store_timeout_seconds,\n                    ))",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k event-fold-own-prior"
+  },
+  {
+    "name": "5: the tag fold's own prior is no longer shown when it is withdrawn",
+    "file": "nora/engagement/stages/debrief.py",
+    "old": "            prior: Standing | None = await asyncio.wait_for(\n                store.read(\n                    platform=platform, conversation_id=trace.conversation_id,\n                ),\n                timeout=store_timeout_seconds,\n            )",
+    "new": "            prior: Standing | None = (lambda p: None if p is not None and p.unsupported_at is not None else p)(await asyncio.wait_for(\n                store.read(\n                    platform=platform, conversation_id=trace.conversation_id,\n                ),\n                timeout=store_timeout_seconds,\n            ))",
+    "target": "tests/unit/test_withdrawal_assembly_goldens.py -k tag-fold-own-prior"
+  },
+  {
+    "name": "5 review: a second raw `.read` in a pinned function (proactive `_changed_since`) is caught by the count",
+    "file": "nora/language/proactive.py",
+    "old": "                    position = await self._standing.read(\n                        platform=room.platform, conversation_id=room.conversation_id,\n                    )\n                except Exception:  # noqa: BLE001, S112",
+    "new": "                    position = await self._standing.read(\n                        platform=room.platform, conversation_id=room.conversation_id,\n                    )\n                    position = await self._standing.read(\n                        platform=room.platform, conversation_id=room.conversation_id,\n                    )\n                except Exception:  # noqa: BLE001, S112",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5 review: a second raw `.head(key=)` in a pinned function (the culture fold's `inputs`) is caught by the count",
+    "file": "nora/language/culture.py",
+    "old": "        previous = await self._culture.head(key=key)\n        if previous is not None:\n            account_order",
+    "new": "        previous = await self._culture.head(key=key)\n        other = await self._culture.head(key=\"another-room\")\n        if previous is not None:\n            account_order",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5 review: a second raw read in the infra store's history walk is caught (infra is scanned)",
+    "file": "nora/infra/sql/culture.py",
+    "old": "        current = await self.head(key=key)\n        seen: set[str] = set()",
+    "new": "        current = await self.head(key=key)\n        spare = await self.head(key=key)\n        seen: set[str] = set()",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5 review: a guard whose result is discarded is no guard (the gate)",
+    "file": "nora/ingest/relevance_gate.py",
+    "old": "        row = render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "new": "        render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5 review: the guarded value is assigned and the raw one is used after it (the gate)",
+    "file": "nora/ingest/relevance_gate.py",
+    "old": "        row = render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "new": "        kept = render_supported(row)\n        return (row.body, row.updated_at) if row is not None else None",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_every_read_of_a_head_is_guarded_or_pinned_raw_with_its_reason"
+  },
+  {
+    "name": "5 review: `read_culture` calls the rule and returns the raw head",
+    "file": "nora/language/culture_render.py",
+    "old": "    return render_supported(found)\n",
+    "new": "    render_supported(found)\n    return found\n",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_the_guard_is_the_one_function"
+  },
+  {
+    "name": "5 review: a module defines its own `render_supported` that guards nothing (proactive)",
+    "file": "nora/language/proactive.py",
+    "old": "from nora.domain.withdrawal import render_supported\n",
+    "new": "def render_supported(found):\n    return found\n\n\n",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_no_module_defines_rebinds_or_imports_a_guard_from_elsewhere"
+  },
+  {
+    "name": "5 review: a module imports a guard's name from somewhere else (proactive)",
+    "file": "nora/language/proactive.py",
+    "old": "from nora.domain.withdrawal import render_supported\n",
+    "new": "from nora.domain.prompt import render_supported\n",
+    "target": "tests/architecture/test_withdrawal_reaches_every_prompt.py -k test_no_module_defines_rebinds_or_imports_a_guard_from_elsewhere"
+  }
+]

@@ -330,10 +330,11 @@ class TranscriptInjection:
         # `0075_withdrawal`, step 2c): an unsupported account stops
         # rendering into the `culture` block — the same "no account yet"
         # `None` this method already returns for a room outside the policy,
-        # never a partial or stale one. `head()` still returns it (other
-        # callers, e.g. the fold's own "previous account" read, need the
-        # real row to re-derive from); only the render path filters here.
-        return render_supported(found)
+        # never a partial or stale one. `read_culture` applies it
+        # (`nora.language.culture_render`: every occasion's one read), so there
+        # is no copy of the rule here; `head()` still returns the row (the
+        # fold's own "previous account" read needs it to re-derive from).
+        return found
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
         """What is on her computer for this room, or `None` (no reader, or a

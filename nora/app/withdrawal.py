@@ -2,7 +2,8 @@
 70-migration.md §2 row 2c; migration `0075_withdrawal`, DEC-238).
 
 **What it does.** Given one or more withdrawn Record item ids (a message
-deleted or unsent, the PII scrub, a person leaving a unit — 70 §9), it walks
+deleted or unsent, the PII scrub, a person leaving a unit — 70 §9; today its only
+caller is `forget_person`, and a delete is recorded without calling it), it walks
 the `citation` edge table (`nora.infra.sql.schema.CITATION`) to find every
 `note`, `standing`, `culture` and `events` HEAD row whose citation chain reaches
 one of them, and marks it `unsupported_at` (epoch ms) — **it never parses a body**
