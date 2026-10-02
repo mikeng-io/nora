@@ -48,6 +48,18 @@ so it was asked for a join and handed one table: §7.1's tautology, which passes
 every gate the runtime owns because a restated input leaves a row and a row is
 what success looks like ([17-failure-classes §11]).
 
+**It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
+the same daily clock, the same fold asks Nora's memory «what is the character of
+X?» for each person the room lists (`memory.chat`, the dialectic verb
+`ask_memory` calls), hands those answers to the model beside the room's own
+account, and stores one short account per person under `character_key` in this
+same store and chain. **That supersedes DEC-182's narrowing, for this use
+only:** Honcho's `chat` is not scoped to a room, which is what closed #237, and
+the operator accepted that here, because a unit is one circle of friends. The
+cache shape (ask once, store the answer verbatim) is still not what this is:
+the model combines memory's view with the room's culture and the fold is the
+author. Rendered as `<character>` by `nora.language.culture_render`.
+
 **Nothing here retires (DEC-183)** and **`body` is prose with no section schema
 (DEC-184)** — both are stated where they bite, in `nora.domain.culture`.
 
@@ -59,6 +71,7 @@ one thing it does not contribute.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
@@ -72,11 +85,16 @@ from nora.domain.blocks import (
     restamp,
     speaker_name,
 )
-from nora.domain.culture import BODY_MAX_CHARS, CultureProposal, CultureRevision
+from nora.domain.culture import (
+    BODY_MAX_CHARS,
+    CultureProposal,
+    CultureRevision,
+    character_key,
+)
 from nora.domain.errors import NoraError
-from nora.domain.models import TranscriptRow
+from nora.domain.models import PersonRef, TranscriptRow
 from nora.domain.notes import Note
-from nora.domain.ports import Proposal
+from nora.domain.ports import MemoryStore, Proposal
 from nora.domain.prompt import escape
 from nora.domain.standing import Standing
 from nora.domain.withdrawal import render_supported
@@ -164,7 +182,8 @@ CULTURE_ADAPTOR_NAME = "culture"
 #: added without this number moving.
 #:
 #: 3 -> 5 on 2026-09-17, when `standing` and the notes joined the inputs.
-STORE_CALLS_PER_TICK = 5
+#: 5 -> 6 for the Character tier: ONE site, `memory.chat`, fanned out per person.
+STORE_CALLS_PER_TICK = 6
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
 #: hand-copied into the metric's help text — the deleted `note_candidates`' own precedent,
@@ -408,6 +427,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_account", 20, "turn"),
     ("standing", 30, "turn"),
     ("notes", 40, "turn"),
+    ("people_views", 45, "turn"),
+    ("person_view", 46, "turn"),
     ("room_messages", 50, "turn"),
 )
 
@@ -498,7 +519,28 @@ class CultureAdaptor:
         resolve_names: (
             Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
         ) = None,
+        # THE CHARACTER TIER (DEC-278): the room's listed persons, Nora's
+        # memory (the existing Honcho port, never a new client), her observer
+        # peer id, and R-18's screen on what memory answers. `memory=None` is
+        # the pre-Character fold, byte for byte: no people block, no person
+        # accounts. The screen is INJECTED (`language` may not import
+        # `agent`), and required with `memory` rather than defaulted, because
+        # a missing screen would pass an identifier into a prompt silently.
+        members_for: Callable[[str], Sequence[PersonRef] | None] | None = None,
+        memory: MemoryStore | None = None,
+        ai_peer: str = "",
+        screen: Callable[[str], object] | None = None,
     ) -> None:
+        if memory is not None and (screen is None or members_for is None or not ai_peer):
+            raise ValueError(
+                "CultureAdaptor: memory needs members_for, ai_peer and screen "
+                "(R-18) together; a Character fold missing any of them would "
+                "ask about nobody or pass an identifier into a prompt"
+            )
+        self._members_for = members_for
+        self._memory = memory
+        self._ai_peer = ai_peer
+        self._screen = screen
         self._culture = culture
         self._standing = standing
         self._notes = notes
@@ -693,6 +735,12 @@ class CultureAdaptor:
                 "(unit=%r standing_key=%r); folding without those inputs",
                 key, unit, standing_key,
             )
+        # HONCHO'S VIEW OF EACH LISTED PERSON, asked once here (comprehend
+        # once) so the model computes on a fixed answer instead of deciding
+        # whether to ask. Absent when no person answered.
+        people = await self._people_views(key, unit)
+        if people is not None:
+            parts.append(people)
         # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained
         # batch let a member's message write free text at prompt top level,
@@ -713,6 +761,64 @@ class CultureAdaptor:
             )
         )
         return assemble(parts, sep="\n\n")
+
+    def _roster(self, key: str) -> tuple[PersonRef, ...]:
+        """This room's listed persons, or `()` when Character is not wired."""
+        if self._memory is None or self._members_for is None:
+            return ()
+        return tuple(self._members_for(key) or ())
+
+    async def _people_views(self, key: str, unit: str | None) -> ContextBlock | None:
+        """`<people_views>`: what Nora's memory says each listed person is
+        like, one `<person>` per answer (the Character tier, DEC-278).
+
+        **The operator's design, and nothing more:** ask the memory system
+        «what is the character of X?», combine the answer with the room's
+        culture, write it down. `chat` is the dialectic verb `ask_memory`
+        already calls, with Nora as observer and the person observed. It
+        blends across the unit, which DEC-182's narrowing refused for the
+        cache shape; the operator ruled 2026-10-03 that a unit is one circle,
+        so that is accepted here (DEC-278).
+
+        **FAIL-SOFT PER PERSON, and the gap is stated:** `chat` returns `None`
+        for unreachable and for nothing-to-say alike, so a person with no
+        answer gets no account this fold rather than a guessed one; the room's
+        own fold is unaffected. An answer carrying an identifier is withheld
+        whole (R-18), as `ask_memory` does.
+        """
+        roster = self._roster(key)
+        if not roster or self._memory is None or self._screen is None or unit is None:
+            return None
+        screen = self._screen
+        # ponytail: one dialectic call per listed person, no cap; rooms here
+        # are a handful of friends. Add a cap key to `[culture]` if one grows.
+        answers = await asyncio.gather(
+            *(
+                self._memory.chat(
+                    peer_id=self._ai_peer, target=ref.honcho_peer_id,
+                    query=f"What is the character of {ref.name}?", unit=unit,
+                )
+                for ref in roster
+            ),
+            return_exceptions=True,
+        )
+        rows: list[str] = []
+        for ref, answer in zip(roster, answers, strict=True):
+            if isinstance(answer, BaseException) or not answer or not answer.strip():
+                log.warning("character: no view of %s for scope=%s", ref.person_id, key)
+                continue
+            if screen(answer) is not None:
+                log.warning("character: view of %s withheld (R-18)", ref.person_id)
+                continue
+            rows.append(ContextBlock(
+                name="person_view", attrs=(("name", ref.name),), body=escape(answer.strip()),
+            ).render())
+        if not rows:
+            return None
+        order, bkey = _ROW["people_views"]
+        return ContextBlock(
+            name="people_views", order=order, key=bkey, body="\n".join(rows),
+        )
 
     def _room_block(self, key: str) -> ContextBlock:
         """What this room is CALLED and what the operator says it IS.
@@ -806,33 +912,48 @@ class CultureAdaptor:
         back into chronicle, and refusing 13%-over prose was never the thing
         that would have.
         """
-        if not items:
-            self._inc("empty")
-            return ()
-        if len(items) > 1:
+        # A person's item carries a `person` NAME from the roster the prompt
+        # showed; the id is resolved HERE, so a model never supplies one. An
+        # unknown name, a repeat and a malformed item are dropped.
+        by_name = {ref.name: ref.person_id for ref in self._roster(key)}
+        room_items = [i for i in items if "person" not in i]
+        if len(room_items) > 1:
             log.warning(
                 "culture: %d accounts proposed for scope=%s; a room has one, "
-                "so the whole reply is discarded", len(items), key,
+                "so the whole reply is discarded", len(room_items), key,
             )
             self._inc("too_many")
             return ()
-        parsed = _parse(items[0])
-        if parsed is None:
+        out: list[CultureProposal] = []
+        seen: set[str] = set()
+        for item in items:
+            parsed = _parse(item)
+            if parsed is None:
+                continue
+            if "person" in item:
+                person_id = by_name.get(str(item["person"]))
+                if person_id is None or person_id in seen:
+                    log.warning("character: dropped an account for %r in scope=%s",
+                                item["person"], key)
+                    continue
+                seen.add(person_id)
+                parsed = CultureProposal(body=parsed.body, person_id=person_id)
+            if len(parsed.body) > BODY_MAX_CHARS:
+                log.warning(
+                    "culture: account for scope=%s is %d chars, past the %d cap — "
+                    "almost certainly drifted back into chronicle; HOLDING the "
+                    "watermark, this batch is folded again rather than spent",
+                    key, len(parsed.body), BODY_MAX_CHARS,
+                )
+                self._inc("oversize")
+                raise AccountNotRecordableError(
+                    f"culture account for scope={key} is {len(parsed.body)} chars, "
+                    f"past the {BODY_MAX_CHARS} cap"
+                )
+            out.append(parsed)
+        if not out:
             self._inc("empty")
-            return ()
-        if len(parsed.body) > BODY_MAX_CHARS:
-            log.warning(
-                "culture: account for scope=%s is %d chars, past the %d cap — "
-                "almost certainly drifted back into chronicle; HOLDING the "
-                "watermark, this batch is folded again rather than spent",
-                key, len(parsed.body), BODY_MAX_CHARS,
-            )
-            self._inc("oversize")
-            raise AccountNotRecordableError(
-                f"culture account for scope={key} is {len(parsed.body)} chars, "
-                f"past the {BODY_MAX_CHARS} cap"
-            )
-        return (parsed,)
+        return tuple(out)
 
     # -- commit ---------------------------------------------------------
 
@@ -874,12 +995,17 @@ class CultureAdaptor:
                     f"CultureAdaptor.commit only accepts a CultureProposal "
                     f"payload, got {type(payload).__name__}"
                 )
-            previous = await self._culture.head(key=key)
+            # A person's account is one more key in the same store and chain.
+            store_key = (
+                character_key(key, payload.person_id)
+                if payload.person_id is not None else key
+            )
+            previous = await self._culture.head(key=store_key)
             if previous is not None and previous.body == payload.body:
                 self._inc("unchanged")
                 continue
             await self._culture.append(
-                key=key,
+                key=store_key,
                 body=payload.body,
                 written_at=now_ms,
                 established_by=proposal.established_by,

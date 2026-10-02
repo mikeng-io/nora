@@ -149,7 +149,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
-from nora.language.culture_render import read_culture
+from nora.language.culture_render import read_character, read_culture
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -940,6 +940,7 @@ class FirePath:
         (
             (standing, culture, notes, decisions, presence, computer),
             documents,
+            character,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -950,6 +951,7 @@ class FirePath:
                 self._read_computer(occasion),
             ),
             self._read_documents(occasion),
+            self._read_character(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -962,6 +964,7 @@ class FirePath:
             people_in_window=people,
             standing=standing,
             culture=culture,
+            character=character,
             notes=notes,
             decisions=decisions,
             presence=presence,
@@ -1413,6 +1416,24 @@ class FirePath:
         # WITHDRAWAL is `read_culture`'s, the one read every occasion shares
         # (`nora.domain.withdrawal`): no copy of the rule here.
         return found
+
+    async def _read_character(
+        self, occasion: Event,
+    ) -> tuple[tuple[str, CultureRevision], ...]:
+        """Each listed person's account in this room (DEC-278): `_read_culture`'s
+        key and bounds, one head per person. `()` when the tier is off."""
+        if self._culture is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(
+            occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.primary_id:
+            return ()
+        return await read_character(
+            self._culture, scope=convo.primary_id,
+            members=self._room_members(occasion), stage="fire_character",
+            platform=occasion.platform, metrics=self._metrics,
+            timeout_seconds=self._standing_store_timeout_seconds,
+        )
 
     async def _read_standing(self, occasion: Event) -> Standing | None:
         """This conversation's position, or `None` (S5).

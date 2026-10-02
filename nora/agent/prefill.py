@@ -29,7 +29,7 @@ from ..domain.prompt import escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.computer_render import render_computer
-from ..language.culture_render import render_culture
+from ..language.culture_render import render_character, render_culture
 from ..language.documents_render import render_documents
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
@@ -154,6 +154,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # that varied per turn would end the cached prefix's hit rate for
     # everything after it.
     ("culture", 55, "room"),
+    # CHARACTER (DEC-278): one account per listed person, beside the room's
+    # own. `room`, like `culture`: it varies by room (its members), and the
+    # row is unconditional while the block renders only where
+    # `TagContext.character` is filled.
+    ("character", 56, "room"),
     # design/sandbox-runtime §15.3: what is on her computer for this room,
     # read fresh at turn start. `turn`: its ages move every turn. Before
     # `standing` because it is the state of the machine, and `standing` +
@@ -1036,6 +1041,7 @@ def build_prefill(
             _restamp(_notes_block(ctx, now=clock, view=view)),
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
+            _restamp(render_character(ctx.character, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(_standing_block(ctx, view)),

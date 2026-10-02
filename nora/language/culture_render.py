@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from datetime import datetime
+from typing import Protocol
 
 from ..domain.blocks import ContextBlock
-from ..domain.culture import CultureRevision
+from ..domain.culture import CultureRevision, character_key
+from ..domain.models import PersonRef
 from ..domain.prompt import age as _age
 from ..domain.prompt import escape
 from ..domain.withdrawal import render_supported
@@ -142,3 +144,60 @@ def render_culture(
         name="culture", attrs=attrs,
         body=escape(culture.body),
     )
+
+
+class _HeadReader(Protocol):
+    def head(self, *, key: str) -> Awaitable[CultureRevision | None]: ...
+
+
+async def read_character(
+    reader: _HeadReader | None,
+    *,
+    scope: str,
+    members: Sequence[PersonRef],
+    stage: str,
+    platform: str,
+    metrics: Metrics | None,
+    timeout_seconds: float = DEFAULT_CULTURE_READ_TIMEOUT_SECONDS,
+) -> tuple[tuple[str, CultureRevision], ...]:
+    """`(name, account)` for each listed person who has one, in roster order.
+
+    The Character tier's read (DEC-278): one `read_culture` per person, so each
+    keeps its bound, its count and the withdrawal rule, and a person whose read
+    failed or who has no account yet is simply absent. `scope` is the room's
+    `primary_id`, the key the fold wrote under.
+    """
+    if reader is None or not members:
+        return ()
+    found = await asyncio.gather(*(
+        read_culture(
+            reader.head(key=character_key(scope, ref.person_id)),
+            stage=stage, platform=platform, metrics=metrics,
+            timeout_seconds=timeout_seconds,
+        )
+        for ref in members
+    ))
+    return tuple((ref.name, rev) for ref, rev in zip(members, found, strict=True) if rev)
+
+
+def render_character(
+    accounts: Sequence[tuple[str, CultureRevision]], *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """The `<character>` block: one `<person_account>` per person who has one.
+
+    `None` when nobody has an account yet, for `render_culture`'s reason: an
+    empty block would say she looked and found them featureless. Each account
+    carries its own `written` age, because nothing here retires and a head may
+    be weeks old and still right.
+    """
+    clock = now or datetime.now().astimezone()
+    rows = "\n".join(
+        ContextBlock(
+            name="person_account",
+            attrs=(("name", name), ("written", _age(rev.written_at, clock))),
+            body=escape(rev.body),
+        ).render()
+        for name, rev in accounts
+        if rev.body.strip()
+    )
+    return ContextBlock(name="character", body=rows) if rows else None

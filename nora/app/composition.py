@@ -3616,6 +3616,18 @@ async def build_dependencies(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
                     ),
+                    # THE CHARACTER TIER (DEC-278): the room's listed persons
+                    # (the same `persons.room_members` the tag prompt's
+                    # `<room_members>` uses), Nora's memory and observer peer,
+                    # and R-18's screen on what memory answers.
+                    members_for={
+                        conv.primary_id: persons.room_members(conv.persons)
+                        for conv in allowlist.conversations
+                        if conv.primary_id
+                    }.get,
+                    memory=memory,
+                    ai_peer=cfg.memory.ai_peer,
+                    screen=scan_identifiers,
                 ),
             )
 

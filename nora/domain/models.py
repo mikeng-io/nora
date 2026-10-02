@@ -590,6 +590,10 @@ class TagContext:
     # a while after the tier is switched on: a fold needs new messages and a
     # day.
     culture: CultureRevision | None = None
+    # What each person in this room is like, `(name, account)` per person who
+    # has one (the Character tier, DEC-278), read through `read_character` on
+    # the same occasions and under the same `[culture] enabled` as `culture`.
+    character: tuple[tuple[str, CultureRevision], ...] = ()
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
