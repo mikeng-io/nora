@@ -8,6 +8,13 @@ item attached to the message it touches (`message_reaction`,
 `message_delete`), because the withdrawal cascade (step 2c), the
 cited-message cues and the tie need them.
 
+A delete of a message on record also WITHDRAWS it: the touch stage hands the
+target to the `DeleteWithdrawer` (`nora.app.delete_withdrawal`), which hides the
+row and marks everything derived from it `unsupported` in one transaction, and
+counts how that ended on `nora_delete_withdrawals_total`. The withdrawer is
+optional wiring (`None` in an offline or eval composition, which then records the
+delete and withdraws nothing, as before). A reaction withdraws nothing.
+
 Four endings, each counted on `nora_ingest_outcomes_total`:
 
 * **`<kind>_recorded`** — the target is on record and the row is written.
@@ -39,11 +46,13 @@ from __future__ import annotations
 import dataclasses
 import logging
 import time
+from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
-from nora.domain.ports import RecordStore
+from nora.domain.ports import DeleteWithdrawal, DeleteWithdrawer, RecordStore
 from nora.persons import Persons
 
 log = logging.getLogger("nora.ingest.touch")
@@ -69,11 +78,75 @@ class TouchResult:
     target: EditedMessage | None = None
     row_id: int | None = None
     person_id: str | None = None
+    #: Set for a delete whose target was found and a withdrawer is wired.
+    withdrawal: DeleteWithdrawal | None = None
+
+
+class PendingDeletes:
+    """Deletes whose target was not on record when they arrived, held for a
+    short while so the message, when it IS recorded, is withdrawn at once.
+
+    A delete can overtake the message it names: Discord dispatches each event as
+    its own task, and a message with an attachment is only recorded after its
+    custody fetch, so a photo sent and unsent within seconds is deleted before it
+    is stored. Without this the late row is recorded visible and nothing ever
+    withdraws it. Bounded in size and in time and held in this process only: a
+    restart inside the window loses it, and a delete older than `ttl_seconds` is
+    the orphan it always was (`reconcile_deletes` does not see it: no
+    `message_delete` row exists to find).
+
+    Matching is the lookup's own: the platform handle, or Signal's sent-timestamp
+    (the author check is the touch stage's, on replay)."""
+
+    def __init__(
+        self, *, ttl_seconds: float = 300.0, max_entries: int = 256,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._ttl = ttl_seconds
+        self._max = max_entries
+        self._clock = clock
+        self._held: OrderedDict[int, tuple[float, NormalizedMessage, Touch]] = OrderedDict()
+        self._next = 0
+
+    def add(self, message: NormalizedMessage, touch: Touch) -> int:
+        self._expire()
+        self._next += 1
+        self._held[self._next] = (self._clock() + self._ttl, message, touch)
+        while len(self._held) > self._max:
+            self._held.popitem(last=False)
+        return self._next
+
+    def discard(self, entry: int) -> bool:
+        """True when this call removed it (nobody had taken it)."""
+        return self._held.pop(entry, None) is not None
+
+    def take(self, message: NormalizedMessage) -> list[tuple[NormalizedMessage, Touch]]:
+        """Every held delete that names `message`, removed."""
+        self._expire()
+        out: list[tuple[NormalizedMessage, Touch]] = []
+        for entry, (_, delete, touch) in list(self._held.items()):
+            if delete.platform != message.platform or (
+                delete.conversation_id != message.conversation_id
+            ):
+                continue
+            target = touch.target
+            by_handle = bool(target.message_id) and target.message_id == message.message_id
+            by_ts = target.sent_ts is not None and target.sent_ts == message.timestamp
+            if by_handle or by_ts:
+                del self._held[entry]
+                out.append((delete, touch))
+        return out
+
+    def _expire(self) -> None:
+        now = self._clock()
+        for entry, (until, _, _) in list(self._held.items()):
+            if until <= now:
+                del self._held[entry]
 
 
 async def run(
     *, message: NormalizedMessage, touch: Touch, audit: RecordStore,
-    persons: Persons, metrics: Any,
+    persons: Persons, metrics: Any, withdrawer: DeleteWithdrawer | None = None,
 ) -> TouchResult:
     """`touch` is `message.touch`, passed on its own so its presence is a
     type rather than a runtime check."""
@@ -94,6 +167,11 @@ async def run(
         metrics.inc("nora_errors_total", stage="touch_target", platform=message.platform)
         return TouchResult(ending=orphaned, message=message)
     if target is None:
+        if touch.kind == "delete" and withdrawer is not None:
+            metrics.inc(
+                "nora_delete_withdrawals_total",
+                platform=message.platform, outcome="not_stored",
+            )
         return TouchResult(ending=orphaned, message=message)
 
     person = persons.resolve(message.platform, message.sender_id) if message.sender_id else None
@@ -103,6 +181,14 @@ async def run(
         and not _same_author(message.sender_id, person_id, target)
     ):
         return TouchResult(ending="delete_refused", message=message, target=target)
+    withdrawal: DeleteWithdrawal | None = None
+    if touch.kind == "delete" and withdrawer is not None:
+        # BEFORE the record is written: the withdrawal is what honours the
+        # delete, the record is only evidence of it, and a failed record write
+        # must not leave the message visible.
+        withdrawal = await _withdraw(
+            withdrawer, target=target, platform=message.platform, metrics=metrics,
+        )
     try:
         if touch.kind == "reaction":
             row_id = await audit.append_reaction(
@@ -119,7 +205,27 @@ async def run(
     return TouchResult(
         ending="reaction_recorded" if touch.kind == "reaction" else "delete_recorded",
         message=message, target=target, row_id=row_id, person_id=person_id,
+        withdrawal=withdrawal,
     )
+
+
+async def _withdraw(
+    withdrawer: DeleteWithdrawer, *, target: EditedMessage, platform: str, metrics: Any,
+) -> DeleteWithdrawal:
+    """Never raises (it runs on the listener's await path): a withdrawer that
+    broke its own promise is `cascade_failed`, counted, and logged without a
+    word of the message."""
+    try:
+        withdrawal = await withdrawer.withdraw(
+            message_id=target.id, now_ms=int(time.time() * 1000),
+        )
+    except Exception:
+        log.exception("delete withdrawal of message %d raised", target.id)
+        withdrawal = DeleteWithdrawal(outcome="cascade_failed")
+    metrics.inc(
+        "nora_delete_withdrawals_total", platform=platform, outcome=withdrawal.outcome,
+    )
+    return withdrawal
 
 
 def _same_author(sender_id: str, person_id: str | None, target: EditedMessage) -> bool:

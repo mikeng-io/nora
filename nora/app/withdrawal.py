@@ -2,8 +2,7 @@
 70-migration.md §2 row 2c; migration `0075_withdrawal`, DEC-238).
 
 **What it does.** Given one or more withdrawn Record item ids (a message
-deleted or unsent, the PII scrub, a person leaving a unit — 70 §9; today its only
-caller is `forget_person`, and a delete is recorded without calling it), it walks
+deleted or unsent, the PII scrub, a person leaving a unit — 70 §9), it walks
 the `citation` edge table (`nora.infra.sql.schema.CITATION`) to find every
 `note`, `standing`, `culture` and `events` HEAD row whose citation chain reaches
 one of them, and marks it `unsupported_at` (epoch ms) — **it never parses a body**
@@ -27,6 +26,12 @@ the same withdrawn id marks nothing twice, and `Report.marked` only ever
 lists what THIS call newly marked — the property a caller needs to log "N
 rows went unsupported just now" rather than "N rows are unsupported in
 total".
+
+**Callers.** `forget_person` (`nora.app.person_forget`, a person's whole history
+at once) and `nora.app.delete_withdrawal` (one message a platform deleted or
+unsent: the touch stage's live path, and `nora withdrawal reconcile-deletes` for
+the deletes recorded before it existed). The PII scrub and a person leaving a
+unit have no caller: there is no such action yet.
 
 **Must run in the caller's own transaction.** Every function here takes an
 `AsyncConnection`, never an `AsyncEngine`: the row that withdrew the message

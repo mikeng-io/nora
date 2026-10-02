@@ -57,6 +57,7 @@ from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
 from nora.app.cognition_compare import CompareWindow
 from nora.app.cognition_compare import run_shadow_compare as cognition_run_shadow_compare
+from nora.app.delete_withdrawal import reconcile_deletes, render_reconcile
 from nora.app.events_backfill import backfill_unit_ids
 from nora.app.events_backfill import render as render_events_backfill
 from nora.app.memory_backfill import BackfillRefusedError, backfill_unit
@@ -383,6 +384,28 @@ def add_subcommands(
              "accidentally cascaded row; a dry run unless --apply)",
     )
     unforget.set_defaults(func=cmd_person_unforget)
+
+    # `withdrawal reconcile-deletes`: the FIFTH command here that WRITES, a
+    # WRITABLE engine like `person forget`. Hides every message that has a
+    # `message_delete` record and is still visible, and runs the cascade over it
+    # (`nora.app.delete_withdrawal`): the deletes recorded before a delete
+    # withdrew its message, a hide that was rolled back, a message `person
+    # unforget` un-hid. Dry run by default, with exactly the counts `--apply`
+    # would write; it prints numbers only.
+    withdrawal = subparsers.add_parser(
+        "withdrawal", parents=[parent],
+        help="withdraw what a platform delete left visible (operator only, writes)",
+    )
+    withdrawal_sub = withdrawal.add_subparsers(dest="withdrawal_command", required=True)
+    reconcile = withdrawal_sub.add_parser(
+        "reconcile-deletes", parents=[parent],
+        help="hide every deleted message that is still visible and mark what cites "
+             "it unsupported (a dry run unless --apply)",
+    )
+    reconcile.add_argument(
+        "--apply", action="store_true", help="write; without it nothing is changed",
+    )
+    reconcile.set_defaults(func=cmd_withdrawal_reconcile_deletes)
 
     # `assess run-nightly` (design/cognition-loop/30-cognition.md §6,
     # 70-migration.md §2 row 3, DEC-240): the Assess adaptor's deterministic
@@ -858,6 +881,24 @@ async def cmd_person_unforget(args: argparse.Namespace) -> int:
     finally:
         await engine.dispose()
     return 0
+
+
+async def cmd_withdrawal_reconcile_deletes(args: argparse.Namespace) -> int:
+    """`nora withdrawal reconcile-deletes [--apply]`. Opens a WRITABLE engine,
+    same reason `cmd_person_forget` does. Exit 1 when any message failed (it
+    stays visible and a re-run retries it). See `nora.app.delete_withdrawal`."""
+    cfg = _config(args)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await reconcile_deletes(
+            engine, apply=bool(args.apply),
+            now_ms=int(datetime.now(UTC).timestamp() * 1000),
+        )
+    finally:
+        await engine.dispose()
+    for line in render_reconcile(result):
+        print(line)
+    return 1 if result.failed else 0
 
 
 async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:

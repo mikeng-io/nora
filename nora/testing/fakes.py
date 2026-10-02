@@ -80,6 +80,7 @@ from nora.domain.models import (
 from nora.domain.ports import (
     AdapterHealth,
     ArtifactRegistration,
+    DeleteWithdrawal,
     JobResult,
     JobStatus,
     LinkPreview,
@@ -507,6 +508,33 @@ class FakeRecordStore:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class FakeDeleteWithdrawer:
+    """In-memory `DeleteWithdrawer`, mirroring `SqlDeleteWithdrawer`'s outcome
+    rules (`tests/contract/test_delete_withdrawer_contract.py` pins both): the
+    first withdrawal of a stored message is `hidden`, any later one
+    `already_hidden`, and a message the store does not hold is `not_stored`.
+
+    `records` is the `FakeRecordStore` the messages live in; without one every
+    id counts as stored. It hides nothing in that store (`FakeRecordStore` has no
+    hide); `hidden` maps a message id to the time it was withdrawn."""
+
+    def __init__(self, records: FakeRecordStore | None = None) -> None:
+        self._records = records
+        self.hidden: dict[int, int] = {}
+        self.calls: list[int] = []
+
+    async def withdraw(self, *, message_id: int, now_ms: int) -> DeleteWithdrawal:
+        self.calls.append(message_id)
+        if self._records is not None and not any(
+            r["id"] == message_id for r in self._records.rows
+        ):
+            return DeleteWithdrawal(outcome="not_stored")
+        if message_id in self.hidden:
+            return DeleteWithdrawal(outcome="already_hidden")
+        self.hidden[message_id] = now_ms
+        return DeleteWithdrawal(outcome="hidden")
 
 
 class FakeMemoryStore:

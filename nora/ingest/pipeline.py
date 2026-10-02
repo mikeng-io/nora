@@ -35,6 +35,7 @@ from typing import Any, Literal, get_args
 from nora.domain.models import EditedMessage, NormalizedMessage, Touch
 from nora.domain.ports import (
     BlobStore,
+    DeleteWithdrawer,
     EngageDecision,
     EngagePolicy,
     MediaObjectStore,
@@ -184,6 +185,7 @@ class IngestPipeline:
         language: str = "",
         standing_event_wiring: Any | None = None,
         stimulus_wiring: stimulus_stage.Wiring | None = None,
+        delete_withdrawer: DeleteWithdrawer | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -233,6 +235,13 @@ class IngestPipeline:
         eval composition — writes no stimulus. Present, every recorded
         person-authored item (a message, a changed edit, a reaction, a delete)
         appends one stimulus row with its cues.
+
+        `delete_withdrawer` is what honours a delete or unsend
+        (`nora.app.delete_withdrawal`): present, a delete of a recorded message
+        hides it and marks what cites it `unsupported`, and a delete that
+        arrives before its message is held briefly so the message is withdrawn
+        when it lands (`touch.PendingDeletes`). `None` — an offline or eval
+        composition — records the delete and withdraws nothing, as before.
         """
         self._audit = audit
         self._memory = memory
@@ -250,6 +259,8 @@ class IngestPipeline:
         self._language = language
         self._standing_event_wiring = standing_event_wiring
         self._stimulus_wiring = stimulus_wiring
+        self._delete_withdrawer = delete_withdrawer
+        self._pending_deletes = touch_stage.PendingDeletes()
 
     async def run(self, *, message: NormalizedMessage) -> IngestResult:
         """`message` is already normalized — the caller (the adapter's `listen()`
@@ -395,6 +406,13 @@ class IngestPipeline:
         if row_id is None:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None)
+        # A DELETE THAT OVERTOOK THIS MESSAGE (a photo unsent while its custody
+        # fetch ran): withdrawn now, before anything reads it or feeds it on.
+        if self._delete_withdrawer is not None:
+            for early, early_touch in self._pending_deletes.take(message):
+                done = await self._record_touch(message=early, touch=early_touch)
+                if done.ending == "delete_recorded":
+                    return IngestResult(message=None, decision=None)
         # The STIMULUS, right behind the Record row it names (20 §3). Inside the
         # guard for `standing_event`'s reason: a span for a stage that cannot
         # run would claim work that never happened.
@@ -543,13 +561,31 @@ class IngestPipeline:
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
         """A reaction or a delete/unsend (design/cognition-loop/20 §1):
         found, recorded beside its target, raising a stimulus — never a turn,
-        never fed to Honcho, never a transcript line. `touch` decides and
-        records; this only sequences."""
+        never fed to Honcho, never a transcript line. A delete also withdraws
+        its target (`touch_stage.run`). `touch` decides and records; this only
+        sequences, and holds a delete that found nothing for the message it
+        may be racing."""
+        held: int | None = None
+        if touch.kind == "delete" and self._delete_withdrawer is not None:
+            # Held BEFORE the lookup, not after a miss: a message recorded
+            # between the lookup and a later hold would find nothing to take.
+            held = self._pending_deletes.add(message, touch)
+        done = await self._record_touch(message=message, touch=touch)
+        if held is not None and done.ending != "delete_orphaned":
+            self._pending_deletes.discard(held)
+        return IngestResult(message=None, decision=None)
+
+    async def _record_touch(
+        self, *, message: NormalizedMessage, touch: Touch,
+    ) -> touch_stage.TouchResult:
+        """One touch, found, recorded and (a delete) withdrawn; the stimulus rides
+        behind it. The ending is the caller's to read."""
         m = self._metrics
         with span("ingest.touch"):
             done = await touch_stage.run(
                 message=message, touch=touch, audit=self._audit,
                 persons=self._persons, metrics=m,
+                withdrawer=self._delete_withdrawer,
             )
         if done.row_id is not None and self._stimulus_wiring is not None:
             with span("ingest.stimulus"):
@@ -559,4 +595,4 @@ class IngestPipeline:
                     metrics=m, target=done.target,
                 )
         _outcome(m, message, done.ending)
-        return IngestResult(message=None, decision=None)
+        return done

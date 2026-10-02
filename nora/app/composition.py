@@ -75,6 +75,7 @@ from nora.app.cognition_wiring import (
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
+from nora.app.delete_withdrawal import SqlDeleteWithdrawer
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
     MemoryRoutingError,
@@ -2437,6 +2438,9 @@ async def build_dependencies(
         language=cfg.speech.stt.language,
         standing_event_wiring=standing_event_wiring,
         stimulus_wiring=stimulus_wiring,
+        # A delete or unsend withdraws its message (hide + cascade, one
+        # transaction): wired unconditionally, a privacy action and no feature.
+        delete_withdrawer=SqlDeleteWithdrawer(engine),
     )
     # `web_search`/`web_fetch` (DEC-73/DEC-116) are wired ONLY when `[search]
     # enabled` AND the SELECTED backend's key is present — the `route`-keyless

@@ -105,6 +105,15 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
+async def test_the_composed_ingest_withdraws_a_deleted_message(cfg):
+    """A privacy action, not a feature: no config turns it off, so a composition
+    that built the pipeline without one would record deletes and honour none."""
+    from nora.app.delete_withdrawal import SqlDeleteWithdrawer
+
+    deps = await build_dependencies(cfg)
+    assert isinstance(deps.ingest._delete_withdrawer, SqlDeleteWithdrawer)
+
+
 async def test_the_trigger_phrase_engages_by_default(cfg):
     """`[engagement.trigger].enabled` defaults to True — the trigger phrase
     already engaged her on every deployment before this flag existed, so the

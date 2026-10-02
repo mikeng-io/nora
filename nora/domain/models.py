@@ -363,6 +363,11 @@ class EditedMessage:
     # attachment placeholders are given back, instead of re-fetching bytes
     # Nora already holds (`nora.ingest.stages.edit_media`).
     media_json: str | None = None
+    # `messages.hidden_at IS NOT NULL`: withdrawn (a delete or unsend, or
+    # `nora person forget`). The row is still on record, so a lookup still
+    # finds it; a stage that would attach or fold something onto it must not
+    # (`nora.ingest.stages.edit_target`).
+    hidden: bool = False
 
 
 def mentions_json(mentions: frozenset[str]) -> str:

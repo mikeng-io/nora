@@ -368,6 +368,11 @@ class SqlRecordStore:
     ) -> EditedMessage | None:
         """See `nora.domain.ports.RecordStore.find_edited`.
 
+        A HIDDEN row is found too, and says so (`EditedMessage.hidden`): a
+        second delete of it is `already_hidden`, not unknown, and an edit of it
+        must be refused rather than orphaned silently. This is the one read of
+        `messages` that is not a transcript read.
+
         The handle is an index read on `idx_messages_conv_platform_message_id`.
         Signal's timestamp is matched against the message AND its edits, which
         is a scan of one conversation (0.8 ms over 2,099 rows on norty,
@@ -411,6 +416,7 @@ class SqlRecordStore:
                 MESSAGES.c.person_id, MESSAGES.c.is_nora, MESSAGES.c.body,
                 MESSAGES.c.mentions_json, MESSAGES.c.platform_message_id,
                 MESSAGES.c.media_json,
+                MESSAGES.c.hidden_at.is_not(None).label("hidden"),
                 latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
                 latest.c.mentions_json.label("edit_mentions_json"),
                 replies_to_nora.label("replies_to_nora"),
@@ -441,6 +447,7 @@ class SqlRecordStore:
             edited_ts=r.edit_ts,
             media_json=r.media_json,
             edit_timestamps=frozenset(int(t) for t in (r.edit_timestamps or ())),
+            hidden=bool(r.hidden),
         )
 
     async def quoted_ts_of(self, *, conversation_id: str, ts: int) -> int:
@@ -576,6 +583,11 @@ class SqlRecordStore:
                 MESSAGES.c.media_json,
             )
             .where(MESSAGES.c.person_id.is_(None), MESSAGES.c.is_nora == 0)
+            # A withdrawn message is never replayed into memory: adoption FEEDS
+            # these rows to Honcho (`nora.app.adoption`), so a message its author
+            # deleted would otherwise reach memory the day its sender is first
+            # mapped.
+            .where(MESSAGES.c.hidden_at.is_(None))
             .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())
             .limit(limit)
         )

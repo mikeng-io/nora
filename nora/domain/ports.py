@@ -908,10 +908,11 @@ class RecordStore(Protocol):
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
     ) -> int:
         """Record that the `messages` row `message_id` was deleted or unsent
-        on its platform; returns the new row's id. The row itself is NOT
-        touched and still renders: hiding it, and marking what cites it
-        `unsupported`, is the withdrawal cascade (migration step 2c). This is
-        the Record item that cascade will be fed from."""
+        on its platform; returns the new row's id. This write does NOT hide
+        the row: hiding it and marking what cites it `unsupported` is
+        `DeleteWithdrawer.withdraw`, one transaction of its own, which the
+        touch stage runs beside this write and `nora withdrawal
+        reconcile-deletes` re-runs for a record whose hide never landed."""
         ...
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]: ...
@@ -929,6 +930,38 @@ class RecordStore(Protocol):
     async def stats(self) -> dict[str, Any]: ...
 
     async def aclose(self) -> None: ...
+
+
+#: How one delete of a stored message ended (`nora_delete_withdrawals_total`'s
+#: `outcome` label). `not_stored` is a delete whose target is not on record;
+#: `cascade_failed` is a hide that was ROLLED BACK because the cascade raised
+#: (the message is still visible until `nora withdrawal reconcile-deletes`).
+DeleteOutcome = Literal["hidden", "already_hidden", "not_stored", "cascade_failed"]
+
+
+@dataclass(frozen=True)
+class DeleteWithdrawal:
+    """What `DeleteWithdrawer.withdraw` did. `marked` is how many derived rows
+    THIS call newly marked `unsupported` (never rows already unsupported)."""
+
+    outcome: DeleteOutcome
+    marked: int = 0
+
+
+@runtime_checkable
+class DeleteWithdrawer(Protocol):
+    """Withdraw one message a platform deleted or unsent: hide the `messages`
+    row (`hidden_at`) and run the withdrawal cascade over it, in ONE
+    transaction (`nora.app.withdrawal`'s docstring on why one), idempotently.
+
+    Implemented by `nora.app.delete_withdrawal.SqlDeleteWithdrawer`; it lives
+    above `nora.ingest` because the cascade does, so the touch stage is handed
+    it rather than importing it. Never raises: a failure is the
+    `cascade_failed` outcome, counted by the caller. Never writes Honcho, which
+    has no per-message delete (`design/context-assembly/04-every-occasion.md`
+    §7)."""
+
+    async def withdraw(self, *, message_id: int, now_ms: int) -> DeleteWithdrawal: ...
 
 
 @runtime_checkable

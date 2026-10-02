@@ -1,0 +1,86 @@
+[
+  {
+    "name": "a delete hides the row but never runs the cascade, so what cites it keeps rendering",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "    report = await withdraw_message(conn, message_id=message_id, now_ms=now_ms)\n    marked = {store: len(keys) for store, keys in report.marked.items()}\n    return (\n        DeleteWithdrawal(\n            outcome=\"hidden\" if newly is not None else \"already_hidden\",\n            marked=report.total_marked,\n        ),\n        marked,\n    )",
+    "new": "    return (\n        DeleteWithdrawal(\n            outcome=\"hidden\" if newly is not None else \"already_hidden\",\n            marked=0,\n        ),\n        {},\n    )",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_hides_the_message_and_withdraws_everything"
+  },
+  {
+    "name": "a delete runs the cascade but never hides the row, so it still renders in every transcript",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "        .values(hidden_at=now_ms)\n        .returning(MESSAGES.c.id)\n    )).first()\n    if newly is None:",
+    "new": "        .values(hidden_at=MESSAGES.c.hidden_at)\n        .returning(MESSAGES.c.id)\n    )).first()\n    if newly is None:",
+    "target": "tests/infra/test_delete_withdraws.py -k test_no_transcript_read_returns_a_deleted_message"
+  },
+  {
+    "name": "a second delete overwrites the hide time instead of keeping the first",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": ".where(MESSAGES.c.id == message_id, MESSAGES.c.hidden_at.is_(None))\n        .values(hidden_at=now_ms)",
+    "new": ".where(MESSAGES.c.id == message_id)\n        .values(hidden_at=now_ms)",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_second_delete_of_the_same_message_changes_nothing"
+  },
+  {
+    "name": "the hide and the cascade are two transactions, so a failed cascade leaves the message hidden with its derived rows standing",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "            async with self._engine.begin() as conn:\n                result, _ = await _withdraw_in(conn, message_id=message_id, now_ms=now_ms)",
+    "new": "            async with self._engine.begin() as conn:\n                await conn.execute(sa.update(MESSAGES).where(MESSAGES.c.id == message_id).values(hidden_at=now_ms))\n            async with self._engine.begin() as conn:\n                result, _ = await _withdraw_in(conn, message_id=message_id, now_ms=now_ms)",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_cascade_that_fails_rolls_the_hide_back"
+  },
+  {
+    "name": "the reconcile dry run commits what it only meant to count",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "            finally:\n                await trans.rollback()",
+    "new": "            finally:\n                await trans.commit()",
+    "target": "tests/infra/test_delete_withdraws.py -k test_the_reconcile_lists_in_a_dry_run"
+  },
+  {
+    "name": "an edit of a withdrawn message is folded onto the hidden row and fed to memory",
+    "file": "nora/ingest/stages/edit_target.py",
+    "old": "    if original is None or original.hidden:",
+    "new": "    if original is None:",
+    "target": "tests/infra/test_delete_withdraws.py -k test_an_edit_after_the_delete"
+  },
+  {
+    "name": "find_edited stops reporting a row as hidden, so an edit after a delete is accepted",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            hidden=bool(r.hidden),",
+    "new": "            hidden=False,",
+    "target": "tests/infra/test_delete_withdraws.py -k test_an_edit_after_the_delete"
+  },
+  {
+    "name": "adoption replays a deleted message into memory: unattributed no longer excludes a hidden row",
+    "file": "nora/infra/sql/audit.py",
+    "old": "            .where(MESSAGES.c.hidden_at.is_(None))\n            .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())",
+    "new": "            .order_by(MESSAGES.c.ts.asc(), MESSAGES.c.id.asc())",
+    "target": "tests/infra/test_delete_withdraws.py -k test_adoption_never_replays_a_deleted_message"
+  },
+  {
+    "name": "a delete that overtakes its message is not held, so the late message is recorded visible",
+    "file": "nora/ingest/pipeline.py",
+    "old": "            held = self._pending_deletes.add(message, touch)",
+    "new": "            held = None",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_delete_that_overtakes_its_message"
+  },
+  {
+    "name": "a held delete withdraws the late message even when the touch stage refused it",
+    "file": "nora/ingest/pipeline.py",
+    "old": "                if done.ending == \"delete_recorded\":",
+    "new": "                if True:",
+    "target": "tests/infra/test_delete_withdraws.py -k test_a_held_signal_delete_from_someone_else"
+  },
+  {
+    "name": "the touch stage never hands a found delete to the withdrawer",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "    if touch.kind == \"delete\" and withdrawer is not None:\n        # BEFORE",
+    "new": "    if False and touch.kind == \"delete\" and withdrawer is not None:\n        # BEFORE",
+    "target": "tests/unit/test_delete_touch.py -k test_a_found_delete_is_withdrawn_once"
+  },
+  {
+    "name": "the composition root builds the ingest pipeline with no withdrawer",
+    "file": "nora/app/composition.py",
+    "old": "        delete_withdrawer=SqlDeleteWithdrawer(engine),",
+    "new": "        delete_withdrawer=None,",
+    "target": "tests/test_composition.py -k test_the_composed_ingest_withdraws_a_deleted_message"
+  }
+]
