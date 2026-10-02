@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 19 components (21 until §42 removed Tabs) (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are planned and not built. The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
+description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 19 components (21 until §42 removed Tabs) (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are built (§33, §34). The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
 tags: [nora, documents, artifact, json-render, react, portal, drop, skill]
 timestamp: '2026-10-01'
 status: partly-built
@@ -801,7 +801,7 @@ rooms they came from.** Recorded as an open decision below.
 **Open decision 9.** Render Mermaid in the sandbox instead of the page? Recommend not yet, for the
 reasons above, and revisit at the W4 visibility work, when the audience becomes real.
 
-## 23. No checker in the VM; Tabs on the portal's Radix tabs (2026-10-01)
+## 23. No checker in the VM; Tabs on the portal's Radix tabs (2026-10-01; Tabs removed, §42)
 
 **No VM-side checker.** §10 had the skill run a local check (`nora-artifact-check`) before export.
 Dropped. The authoritative check has to run in Nora's container, because the VM is untrusted, so a
@@ -1636,7 +1636,7 @@ in part: the rules moved, the decisions stand.
 `Stat`, `Chart` or `Code`. Four documents on one day say nothing about the rarely used components, so none of those
 was cut on usage. `Tabs` was cut on cost: the one component with a rule of its own (`Tab` valid only inside `Tabs`,
 `Tabs` holding nothing else), which took three extra schema branches in `emit.ts`, a `toFlatSpec` pass to derive the
-tab strip, a `Tab` case in the checker's text extraction, nine corpus cases and a Radix-backed e2e pair. A document
+tab strip, a `Tab` case in the checker's text extraction, six corpus cases and a Radix-backed e2e pair. A document
 that wants options side by side uses two `Card`s, and one that wants them folded uses an `Accordion`.
 
 **Decided.** The catalog has 19 components; `Tabs` and `Tab` are refused like any unknown type (corpus case "a Tabs").

@@ -115,7 +115,7 @@ test("a document the schema refuses is reported, not drawn", async ({ page }) =>
   // Next's route announcer is also role=alert, so scope to the fixture.
   const alert = page.locator("[data-testid=spike] [role=alert]");
   await expect(alert).toContainText("This document cannot be shown");
-  await expect(alert).toContainText("className");
+  await expect(alert).not.toContainText("className"); // the schema's reason is not shown to a reader (DEC-275)
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
 });
 
