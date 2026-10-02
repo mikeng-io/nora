@@ -293,3 +293,46 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "Prometheus is not scraping itself — the rule engine may be dead"
+
+  # --- Delete withdrawal (PR #711, DEC-276) ---------------------------------
+  # Appended at the END of the file in its own block (another change edits this file).
+  # A platform delete of a message that is not on record YET is held in `orphan_delete`
+  # and applied when the message arrives. Two ways a held delete is lost leave a deleted
+  # message VISIBLE and fed to memory if the message then arrives, and neither was
+  # alerted on: a write that failed after every attempt (`orphan_lost`: a counter and ONE
+  # log line with no ids) and a flood that evicted held deletes at a cap
+  # (`orphan_evicted`). Both counters are created at ZERO at start
+  # (`nora.app.delete_withdrawal.prime_delete_metrics`): `increase()` cannot see a
+  # series' first increment, and nora restarts several times a day.
+  - name: delete-withdrawal
+    rules:
+      - alert: OrphanDeleteLost
+        expr: sum by (job, platform) (increase(nora_delete_withdrawals_total{outcome="orphan_lost"}[1h])) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "a held delete was lost on {{ $labels.platform }}: its message will stay visible if it arrives"
+          description: >-
+            The touch stage could not write a delete whose message was not on record
+            yet, after four attempts (a deadlock that did not pass, or the database
+            down). Check the `nora` log for "it is lost" and the database. The delete
+            is gone: if its message arrives it is visible and fed to memory. The sender
+            deleting it again, once the message is on record, withdraws it.
+
+      # 50 evictions in an hour is a PICK, not a measurement: the caps (40 per named
+      # deleter, 500 unnamed per room, 1000 per room) are far above ordinary traffic, so
+      # any eviction at all means a flood, and 50 separates one noisy room from a single
+      # stray. Tune it from `nora_delete_withdrawals_total{outcome="orphan_evicted"}`
+      # once there is a week of data.
+      - alert: OrphanDeleteEvicted
+        expr: sum by (job, platform) (increase(nora_delete_withdrawals_total{outcome="orphan_evicted"}[1h])) > 50
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "more than 50 held deletes evicted on {{ $labels.platform }} in an hour"
+          description: >-
+            A flood of deletes of messages that are not on record (Discord and Instagram
+            name nobody, a modified WhatsApp client revokes ids that do not exist) is
+            pushing held deletes out at a cap. An evicted delete whose message then
+            arrives leaves that message visible. Read `orphan_stale_target` beside it, and
+            the room with the most `orphan_delete` rows.

@@ -345,3 +345,32 @@ async def test_a_stale_discord_target_is_not_held_and_a_failed_lookup_is_never_t
         withdrawer=FakeDeleteWithdrawer(audit),
     )
     assert len(audit.orphans) == 1
+
+
+async def test_a_lost_held_delete_is_logged_without_ids_and_counted_as_an_error(
+    monkeypatch, caplog,
+):
+    """The two signals besides the `orphan_lost` outcome: the last log record (no handle,
+    no sender, no room in it) and `nora_errors_total{stage="touch_orphan"}`."""
+    import logging
+
+    monkeypatch.setattr(touch_stage, "ORPHAN_RETRY_BASE_S", 0.0)
+    audit = FakeRecordStore()
+
+    async def down(**_kw: Any) -> Any:
+        raise RuntimeError("deadlock detected")
+
+    monkeypatch.setattr(audit, "record_orphan_delete", down)
+    m = Metrics()
+
+    with caplog.at_level(logging.ERROR, logger="nora.ingest.touch"):
+        await _run(_delete("H-SECRET-HANDLE", sender="w-secret-sender", room="r-secret"),
+                   audit, FakeDeleteWithdrawer(audit), m)
+
+    lost = [r for r in caplog.records if "it is lost" in r.getMessage()]
+    assert len(lost) == 1 and lost[0].levelno == logging.ERROR
+    for record in caplog.records:
+        text = record.getMessage()
+        assert "H-SECRET-HANDLE" not in text and "w-secret-sender" not in text
+        assert "r-secret" not in text
+    assert m.get("nora_errors_total", stage="touch_orphan", platform="whatsapp") == 1

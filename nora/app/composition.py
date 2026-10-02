@@ -75,7 +75,7 @@ from nora.app.cognition_wiring import (
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
-from nora.app.delete_withdrawal import ReconcileReport, SqlDeleteWithdrawer
+from nora.app.delete_withdrawal import ReconcileReport, SqlDeleteWithdrawer, prime_delete_metrics
 from nora.app.delete_withdrawal import reconcile_deletes as reconcile_deleted_messages
 from nora.app.documents_service import DocumentService, room_label, rooms_named
 from nora.app.memory_routing import (
@@ -1318,6 +1318,9 @@ async def build_dependencies(
     except Exception as exc:
         raise StartupError(f"migration error: {exc}") from exc
     metrics = Metrics()
+    # The alerted delete outcomes exist at zero from the start (`increase()` cannot see a
+    # series' first increment, and nora restarts several times a day).
+    prime_delete_metrics(metrics)
     # ONE engine (one pool) shared by the record store and the presence reader —
     # the shape `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose`

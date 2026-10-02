@@ -686,13 +686,6 @@
     "target": "tests/infra/test_delete_withdraws.py -k the_room_cap_spares_a_lone_deleters_row"
   },
   {
-    "name": "round 6: the heaviest contributor's oldest is not preferred when it is locked-free (fallback always taken)",
-    "file": "nora/infra/sql/audit.py",
-    "old": "            for where in (pick, scope):           # the heaviest's rows, else any in scope",
-    "new": "            for where in (scope,):                # always any in scope",
-    "target": "tests/infra/test_delete_withdraws.py -k the_room_cap_spares_a_lone_deleters_row"
-  },
-  {
     "name": "round 6: eviction waits on a locked row instead of skipping it",
     "file": "nora/infra/sql/audit.py",
     "old": ".limit(1).with_for_update(skip_locked=True)\n                )).scalar_one_or_none()",
@@ -754,5 +747,103 @@
     "old": ".order_by(MESSAGES.c.id).with_for_update()",
     "new": ".order_by(MESSAGES.c.id.desc()).with_for_update()",
     "target": "tests/infra/test_delete_withdraws.py -k person_forget_and_a_batch"
+  },
+  {
+    "name": "round 7: R4 the window edge is stale (> becomes >=)",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "return age is not None and age > ORPHAN_RACE_WINDOW_MS",
+    "new": "return age is not None and age >= ORPHAN_RACE_WINDOW_MS",
+    "target": "tests/unit/test_delete_authorship.py -k window_edge"
+  },
+  {
+    "name": "round 7: the window edge is one millisecond too wide",
+    "file": "nora/domain/delete_authorship.py",
+    "old": "return age is not None and age > ORPHAN_RACE_WINDOW_MS",
+    "new": "return age is not None and age > ORPHAN_RACE_WINDOW_MS + 1",
+    "target": "tests/unit/test_delete_authorship.py -k window_edge"
+  },
+  {
+    "name": "round 7: P3 a locked heaviest deleter falls back to the oldest row in the room",
+    "file": "nora/infra/sql/audit.py",
+    "old": "                wheres = [sa.and_(scope, orphan.c.deleter_id == d) for d in ranked]\n",
+    "new": "                wheres = [sa.and_(scope, orphan.c.deleter_id == d) for d in ranked[:1]] + [scope]\n",
+    "target": "tests/infra/test_delete_withdraws.py -k passed_over_for_the_next_heaviest"
+  },
+  {
+    "name": "round 7: the next-heaviest is not ranked by row count (lightest first)",
+    "file": "nora/infra/sql/audit.py",
+    "old": ".order_by(sa.func.count().desc(), orphan.c.deleter_id)\n                )).scalars().all()",
+    "new": ".order_by(sa.func.count(), orphan.c.deleter_id)\n                )).scalars().all()",
+    "target": "tests/infra/test_delete_withdraws.py -k passed_over_for_the_next_heaviest"
+  },
+  {
+    "name": "round 7: R15 the lost held delete is not logged",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        log.error(\"an orphan delete could not be recorded after %d attempts; it is lost\",\n                  ORPHAN_WRITE_ATTEMPTS)",
+    "new": "        pass",
+    "target": "tests/unit/test_delete_touch.py -k lost_held_delete_is_logged"
+  },
+  {
+    "name": "round 7: R15 the lost held delete is not counted as an error",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        metrics.inc(\"nora_errors_total\", stage=\"touch_orphan\", platform=message.platform)\n        metrics.inc(",
+    "new": "        metrics.inc(",
+    "target": "tests/unit/test_delete_touch.py -k lost_held_delete_is_logged"
+  },
+  {
+    "name": "round 7: the lost held delete logs the handle",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        log.error(\"an orphan delete could not be recorded after %d attempts; it is lost\",\n                  ORPHAN_WRITE_ATTEMPTS)",
+    "new": "        log.error(\"an orphan delete could not be recorded after %d attempts; it is lost %s\",\n                  ORPHAN_WRITE_ATTEMPTS, touch.target.message_id)",
+    "target": "tests/unit/test_delete_touch.py -k lost_held_delete_is_logged"
+  },
+  {
+    "name": "round 7: the alerted delete counters are not primed at start",
+    "file": "nora/app/composition.py",
+    "old": "    prime_delete_metrics(metrics)\n",
+    "new": "    pass\n",
+    "target": "tests/test_composition.py -k alerted_delete_outcomes_at_zero"
+  },
+  {
+    "name": "round 7: priming covers one platform only",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "    for platform in DELETE_PLATFORMS:\n        for outcome in PRIMED_OUTCOMES:",
+    "new": "    for platform in DELETE_PLATFORMS[:1]:\n        for outcome in PRIMED_OUTCOMES:",
+    "target": "tests/unit/test_delete_metrics_primed.py -k every_platform_at_zero"
+  },
+  {
+    "name": "round 7: priming leaves out orphan_evicted",
+    "file": "nora/app/delete_withdrawal.py",
+    "old": "PRIMED_OUTCOMES = (\"orphan_lost\", \"orphan_evicted\")",
+    "new": "PRIMED_OUTCOMES = (\"orphan_lost\",)",
+    "target": "tests/unit/test_delete_metrics_primed.py -k every_platform_at_zero"
+  },
+  {
+    "name": "round 7: OrphanDeleteLost reads a one-minute window (blind to a steady loss)",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "increase(nora_delete_withdrawals_total{outcome=\"orphan_lost\"}[1h])",
+    "new": "increase(nora_delete_withdrawals_total{outcome=\"orphan_lost\"}[1m])",
+    "target": "tests/unit/test_computer_alert_rules.py -k delete_withdrawal_rules"
+  },
+  {
+    "name": "round 7: OrphanDeleteLost needs more than one loss",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "{outcome=\"orphan_lost\"}[1h])) > 0",
+    "new": "{outcome=\"orphan_lost\"}[1h])) > 3",
+    "target": "tests/unit/test_computer_alert_rules.py -k delete_withdrawal_rules"
+  },
+  {
+    "name": "round 7: OrphanDeleteEvicted threshold is a thousand",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "{outcome=\"orphan_evicted\"}[1h])) > 50",
+    "new": "{outcome=\"orphan_evicted\"}[1h])) > 1000",
+    "target": "tests/unit/test_computer_alert_rules.py -k delete_withdrawal_rules"
+  },
+  {
+    "name": "round 7: OrphanDeleteEvicted fires on any eviction",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "{outcome=\"orphan_evicted\"}[1h])) > 50",
+    "new": "{outcome=\"orphan_evicted\"}[1h])) > 0",
+    "target": "tests/unit/test_computer_alert_rules.py -k delete_withdrawal_rules"
   }
 ]

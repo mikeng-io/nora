@@ -344,9 +344,10 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # message then arrives, so a rising count is a flood worth reading) and `apply_failed`
     # (a matched kept delete could not be applied; left for the sweep, the message
     # stopped), `orphan_stale_target` (a delete whose target is not on record and is older
-    # than the overtaking race lasts, `ORPHAN_RACE_WINDOW_MS`, read from a Discord
-    # snowflake or a Signal sent-timestamp: NOT held, since it can never be that race;
-    # a LEAK-direction loss only if the message is recorded late after all) and
+    # than `ORPHAN_RACE_WINDOW_MS`, read from a Discord snowflake or a Signal
+    # sent-timestamp: DROPPED, on the assumption that a message reaches Nora within
+    # seconds; a LEAK-direction loss if it arrives late after all, e.g. a Discord RESUME
+    # replay or a skewed Signal clock) and
     # `orphan_lost` (the held-delete write failed after every retry, a deadlock that did
     # not pass or a store that was down: the delete is gone, and the message stays visible
     # if it then arrives). The start-up sweep counts under platform="all".

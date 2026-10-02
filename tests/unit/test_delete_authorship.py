@@ -239,6 +239,22 @@ def test_a_targets_age_is_read_from_a_snowflake_or_a_signal_timestamp_only():
     assert target_is_stale(platform="signal", handle="", sent_ts=now + 10**9, **kw) is False
 
 
+def test_the_window_edge_exactly_thirty_minutes_is_held_and_one_millisecond_more_is_stale():
+    """Literal values, not the constant: 1_800_000 ms is held, 1_800_001 ms is stale. A `>=`
+    would drop a delete exactly at the edge; a `>` shifted by one would hold one too many."""
+    now = 1_900_000_000_000
+    edge = 1_800_000
+    assert target_age_ms(platform="signal", handle="", sent_ts=now - edge, event_ts=now) == edge
+    assert target_is_stale(platform="signal", handle="", sent_ts=now - 1_800_000,
+                           event_ts=now) is False
+    assert target_is_stale(platform="signal", handle="", sent_ts=now - 1_800_001,
+                           event_ts=now) is True
+    assert target_is_stale(platform="discord", handle=_snowflake(now - 1_800_000),
+                           sent_ts=None, event_ts=now) is False
+    assert target_is_stale(platform="discord", handle=_snowflake(now - 1_800_001),
+                           sent_ts=None, event_ts=now) is True
+
+
 def test_whitespace_is_no_id_in_the_rule_itself():
     assert _author(author_sender_id=" ", deleter_sender_id=" ") is False
     assert _author(author_sender_id=" ", deleter_sender_id="x", deleter_ids=[" "]) is False

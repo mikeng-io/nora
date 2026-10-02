@@ -124,10 +124,13 @@ async def run(
             platform=message.platform, handle=touch.target.message_id,
             sent_ts=touch.target.sent_ts, event_ts=message.timestamp,
         ):
-            # Looked, and it is not there, and it is older than the overtaking race
-            # lasts (`ORPHAN_RACE_WINDOW_MS`): a message from before Nora joined, one she
-            # never records, pruned history. Holding it would only fill the table. A
-            # lookup that FAILED is never taken for this: it is held below.
+            # Looked, and it is not there, and the target is older than
+            # `ORPHAN_RACE_WINDOW_MS`: DROPPED, not held. That rests on an ASSUMPTION about
+            # the ingest paths (a message reaches Nora within seconds of being sent), not
+            # on a proof: a Discord RESUME replaying a long outage, or a Signal device with
+            # a skewed clock, can still bring the message AFTER this delete, and it then
+            # stays visible (see `nora.domain.delete_authorship`). A lookup that FAILED is
+            # never taken for this: it is held below.
             metrics.inc(
                 "nora_delete_withdrawals_total",
                 platform=message.platform, outcome="orphan_stale_target",
@@ -216,7 +219,8 @@ async def _record_orphan(
         # the room scope the heaviest contributor's oldest). This is a LEAK-direction loss
         # if an evicted delete's message then arrives (it stays visible and is fed to
         # memory): it takes a flood big enough to push a legitimate row out within its
-        # seconds-to-minutes window, and the flood is loud (this counter). See
+        # seconds-to-minutes window, and it is only visible as this counter (alerted on:
+        # `OrphanDeleteEvicted`, `deploy/prometheus/rules/nora.yml`). See
         # `nora.domain.delete_authorship` for the caps and what each scope takes.
         log.warning(
             "%d held deletes evicted to make room (%s)", recorded.evicted, message.platform,

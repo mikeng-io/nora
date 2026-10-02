@@ -114,6 +114,16 @@ async def test_the_composed_ingest_withdraws_a_deleted_message(cfg):
     assert isinstance(deps.ingest._delete_withdrawer, SqlDeleteWithdrawer)
 
 
+async def test_the_composed_metrics_have_the_alerted_delete_outcomes_at_zero(cfg):
+    """`increase()` cannot see a series' first increment, and nora restarts several times a
+    day: `OrphanDeleteLost` and `OrphanDeleteEvicted` need the series to exist from start."""
+    deps = await build_dependencies(cfg)
+    lines = deps.metrics.render()
+    for outcome in ("orphan_lost", "orphan_evicted"):
+        series = f'nora_delete_withdrawals_total{{outcome="{outcome}",platform="signal"}} 0.0'
+        assert series in lines
+
+
 async def test_the_trigger_phrase_engages_by_default(cfg):
     """`[engagement.trigger].enabled` defaults to True — the trigger phrase
     already engaged her on every deployment before this flag existed, so the

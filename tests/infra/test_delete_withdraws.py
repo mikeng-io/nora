@@ -3181,3 +3181,64 @@ async def test_the_opportunistic_purge_skips_an_expired_row_another_writer_holds
         await blocker.close()
 
     assert sorted(o.handle for o in await _orphans(engine)) == ["FRESH", "OLD"]
+
+
+async def _lock_rows(engine: Any, ids: list[int]) -> Any:
+    blocker = await engine.connect()
+    await blocker.begin()
+    for i in ids:
+        await blocker.execute(
+            sa.text("SELECT id FROM orphan_delete WHERE id = :i FOR UPDATE"), {"i": i})
+    return blocker
+
+
+async def test_a_locked_heaviest_deleter_is_passed_over_for_the_next_heaviest_not_the_oldest(
+    engine, monkeypatch,
+):
+    """The reviewer's P3. The heaviest deleter's rows are all claimed by another writer:
+    the eviction takes the NEXT-heaviest deleter's oldest row, never «the oldest in the
+    room», which here is a victim's lone row."""
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 6)
+    store = SqlRecordStore(engine)
+    await _keep(store, platform="whatsapp", handle="VICTIM", deleter="victim", now=T0)
+    for n in range(3):
+        await _keep(store, platform="whatsapp", handle=f"A{n}", deleter="flood-a", now=T0 + 1 + n)
+    for n in range(2):
+        await _keep(store, platform="whatsapp", handle=f"B{n}", deleter="flood-b", now=T0 + 10 + n)
+    rows = await _orphans(engine)
+    blocker = await _lock_rows(engine, [r.id for r in rows if r.deleter_id == "flood-a"])
+    try:
+        rec = await asyncio.wait_for(
+            _keep(store, platform="whatsapp", handle="NEW", deleter="flood-c", now=T0 + 99), 10)
+    finally:
+        await blocker.rollback()
+        await blocker.close()
+
+    handles = sorted(o.handle for o in await _orphans(engine))
+    assert rec.evicted == 1
+    assert "VICTIM" in handles, "the lone, oldest row survived"
+    assert "B0" not in handles, "the next-heaviest deleter's oldest went"
+    assert {"A0", "A1", "A2", "NEW"} <= set(handles)
+
+
+async def test_when_every_deleters_rows_are_locked_the_write_still_lands_and_nothing_is_evicted(
+    engine, monkeypatch,
+):
+    import nora.infra.sql.audit as audit_module
+
+    monkeypatch.setattr(audit_module, "ORPHAN_CAP_PER_ROOM", 3)
+    store = SqlRecordStore(engine)
+    for n in range(3):
+        await _keep(store, platform="whatsapp", handle=f"L{n}", deleter=f"d{n}", now=T0 + n)
+    blocker = await _lock_rows(engine, [r.id for r in await _orphans(engine)])
+    try:
+        rec = await asyncio.wait_for(
+            _keep(store, platform="whatsapp", handle="NEW", deleter="d9", now=T0 + 99), 10)
+    finally:
+        await blocker.rollback()
+        await blocker.close()
+
+    assert rec.id and rec.evicted == 0
+    assert len(await _orphans(engine)) == 4, "soft cap: it lands over the cap"

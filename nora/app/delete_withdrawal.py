@@ -99,18 +99,41 @@ from nora.domain.models import OrphanDelete
 from nora.domain.ports import DeleteWithdrawal
 from nora.infra.sql.audit import orphan_delete_of
 from nora.infra.sql.schema import MESSAGE_DELETE, MESSAGE_EDIT, MESSAGES, ORPHAN_DELETE
+from nora.obs.metrics import Metrics
 from nora.platform.whatsapp.parser import revoker_ids
 
 log = logging.getLogger("nora.delete_withdrawal")
 
 __all__ = [
+    "DELETE_PLATFORMS",
     "ORPHAN_TTL_MS",
+    "PRIMED_OUTCOMES",
     "ReconcileReport",
     "SqlDeleteWithdrawer",
     "genuine_delete_ids",
+    "prime_delete_metrics",
     "reconcile_deletes",
     "render_reconcile",
 ]
+
+
+#: The platforms whose deletes reach the touch stage (the four parsers).
+DELETE_PLATFORMS = ("signal", "whatsapp", "discord", "instagram")
+
+#: The `nora_delete_withdrawals_total` outcomes that are should-be-zero and alerted on
+#: (`OrphanDeleteLost`, `OrphanDeleteEvicted`, `deploy/prometheus/rules/nora.yml`).
+PRIMED_OUTCOMES = ("orphan_lost", "orphan_evicted")
+
+
+def prime_delete_metrics(metrics: Metrics) -> None:
+    """Create the alerted outcomes' series at ZERO at start. A labelled series does not
+    exist until its first increment, and `increase()` over a series whose first sample
+    is already 1 reads 0, so the first lost or evicted delete after one of nora's
+    several daily restarts would be invisible to the rule written to catch it (the
+    computer counters' lesson, `nora.app.computer_metrics`)."""
+    for platform in DELETE_PLATFORMS:
+        for outcome in PRIMED_OUTCOMES:
+            metrics.inc("nora_delete_withdrawals_total", 0.0, platform=platform, outcome=outcome)
 
 
 async def _withdraw_in(

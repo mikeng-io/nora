@@ -671,27 +671,31 @@ class SqlRecordStore:
         )).scalar_one()
         evicted = 0
         for _ in range(max(0, held - cap + 1)):
-            pick = scope
             if heaviest_first:
-                heaviest = (await conn.execute(
+                # Deleters by how many rows they hold here, most first (ties by id, so
+                # the order is stable). Each one's OLDEST unlocked row is tried in turn:
+                # a deleter whose rows are all claimed by other writers is passed over
+                # for the NEXT-heaviest, never for «the oldest row in the room», which
+                # would be a lone victim's.
+                ranked = (await conn.execute(
                     sa.select(orphan.c.deleter_id).where(scope)
                     .group_by(orphan.c.deleter_id)
                     .order_by(sa.func.count().desc(), orphan.c.deleter_id)
-                    .limit(1)
-                )).scalar_one_or_none()
-                if heaviest is not None:
-                    pick = sa.and_(scope, orphan.c.deleter_id == heaviest)
+                )).scalars().all()
+                wheres = [sa.and_(scope, orphan.c.deleter_id == d) for d in ranked]
+            else:
+                wheres = [scope]
             victim = None
-            for where in (pick, scope):           # the heaviest's rows, else any in scope
+            for where in wheres:
                 victim = (await conn.execute(
                     sa.select(orphan.c.id).where(where)
                     .order_by(orphan.c.recorded_at, orphan.c.id)
                     .limit(1).with_for_update(skip_locked=True)
                 )).scalar_one_or_none()
-                if victim is not None or where is scope:
+                if victim is not None:
                     break
             if victim is None:
-                break                             # everything left is claimed by others
+                break                             # every row left is claimed by others
             evicted += int((await conn.execute(
                 sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == victim)
             )).rowcount or 0)
