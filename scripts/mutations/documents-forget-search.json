@@ -1,47 +1,5 @@
 [
   {
-    "name": "forget: the documents loop never writes, so a forgotten person's documents stay readable",
-    "file": "nora/app/person_forget.py",
-    "old": "        for document_id, seen in live:\n",
-    "new": "        for document_id, seen in []:\n",
-    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
-  },
-  {
-    "name": "sql list_created_by: created_by is dropped, so forget would delete every document",
-    "file": "nora/infra/sql/documents.py",
-    "old": "            .where(_D.created_by == person_id, _state().in_(states))\n",
-    "new": "            .where(_state().in_(states))\n",
-    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
-  },
-  {
-    "name": "fake list_created_by: created_by is dropped",
-    "file": "nora/testing/fakes.py",
-    "old": "             and d.summary.created_by == person_id and d.summary.state in states),\n",
-    "new": "             and d.summary.state in states),\n",
-    "target": "tests/contract/test_document_store_contract.py::test_list_created_by_is_the_creators_documents_in_the_states_asked_for[fake]"
-  },
-  {
-    "name": "forget: an already deleted document is written again, so a re-run is not idempotent",
-    "file": "nora/app/person_forget.py",
-    "old": "    live = await _documents_created_by(documents, person_id, (\"active\", \"archived\"))\n",
-    "new": "    live = await _documents_created_by(documents, person_id, (\"active\", \"archived\", \"deleted\"))\n",
-    "target": "tests/infra/test_forget_documents.py::test_a_document_the_person_already_deleted_keeps_their_own_set_by"
-  },
-  {
-    "name": "forget: set_by names the person, not the forget",
-    "file": "nora/app/person_forget.py",
-    "old": "set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\", only_if_state=(seen,),\n",
-    "new": "set_by=person_id, only_if_state=(seen,),\n",
-    "target": "tests/infra/test_forget_documents.py::test_forget_deletes_what_the_person_created_and_leaves_everyone_elses"
-  },
-  {
-    "name": "forget: a dry run goes on to write the documents",
-    "file": "nora/app/person_forget.py",
-    "old": "        report.documents = len(live)\n        return report\n",
-    "new": "        report.documents = len(live)\n",
-    "target": "tests/infra/test_forget_documents.py::test_a_dry_run_counts_and_writes_nothing_and_a_rerun_is_idempotent"
-  },
-  {
     "name": "document_read: the handle is never passed to the service, so a link's code reads nothing",
     "file": "nora/agent/tools.py",
     "old": "                conversation_id=bound_conversation_id, document_id=target,\n                handle=\"\" if target is not None else handle,\n            )\n        except Exception:\n            log.exception(\"document_read failed\")",
@@ -173,41 +131,6 @@
     "old": "            stored is None\n            or stored.summary.state == \"deleted\"\n            or not self._sees(stored.summary, person_id, rooms)",
     "new": "            stored is None\n            or not self._sees(stored.summary, person_id, rooms)",
     "target": "tests/web/test_documents_api.py::test_a_forgotten_document_cannot_be_moved_from_the_portal_and_reads_as_unknown"
-  },
-  {
-    "name": "sql set_state: the conditional is not checked under the lock",
-    "file": "nora/infra/sql/documents.py",
-    "old": "                if (current or \"active\") not in only_if_state:\n                    return False\n",
-    "new": "",
-    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_write_waits_for_the_lock_and_then_sees_the_change_made_meanwhile"
-  },
-  {
-    "name": "sql set_state: the conditional is ignored (contract)",
-    "file": "nora/infra/sql/documents.py",
-    "old": "                if (current or \"active\") not in only_if_state:\n                    return False\n",
-    "new": "",
-    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_state_write_only_lands_from_a_state_it_names[sql]"
-  },
-  {
-    "name": "fake set_state: the conditional is ignored",
-    "file": "nora/testing/fakes.py",
-    "old": "        if only_if_state is not None and self._state(document_id) not in only_if_state:\n            return False\n",
-    "new": "",
-    "target": "tests/contract/test_document_store_contract.py::test_a_conditional_state_write_only_lands_from_a_state_it_names[fake]"
-  },
-  {
-    "name": "forget: the write is no longer conditional on the state the snapshot saw",
-    "file": "nora/app/person_forget.py",
-    "old": "                set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\", only_if_state=(seen,),\n",
-    "new": "                set_by=f\"{FORGET_SET_BY_PREFIX}{person_id}\",\n",
-    "target": "tests/infra/test_forget_documents.py::test_forget_never_overwrites_a_state_changed_since_its_snapshot"
-  },
-  {
-    "name": "forget: a failure part-way is raised away instead of reported with what was done",
-    "file": "nora/app/person_forget.py",
-    "old": "        report.failure = type(exc).__name__\n    return report",
-    "new": "        raise\n    return report",
-    "target": "tests/infra/test_forget_documents.py::test_a_failure_part_way_leaves_a_printed_partial_report_and_a_rerun_completes_it"
   },
   {
     "name": "fake search: folds with casefold (ss for sharp s) where Postgres folds with lower",

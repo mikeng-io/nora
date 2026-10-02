@@ -5253,7 +5253,7 @@ def build_tool_specs(
         """The hits in `load_transcript`'s one shape (`_transcript_messages`),
         each named with its room, its reactions and whether it was deleted.
         A deleted message keeps its place and loses its words: its author
-        took them back (the withdrawal cascade that hides it is step 2c).
+        took them back (`RecordStore.hide_message` hides it).
 
         Each row carries its number `n` ONLY for the Cognition session, the
         citation handle a note's line rests on (DEC-250, #663 review major 2);

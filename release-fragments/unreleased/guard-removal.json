@@ -1,0 +1,16 @@
+{
+  "type": "change",
+  "summary": "A message someone deletes or unsends is hidden from Nora and nothing more: the cascade of notes, events and positions that marked what cited it is gone, and so are `nora person forget`, the held-delete table and the cognition health command and alerts.",
+  "details": [
+    "A delete or unsend of a recorded message hides it (it is not shown, replayed or fed to memory again). A delete of a message Nora has no record of is dropped.",
+    "Removed because the harm they guarded never happened: 2 deletes in 5,984 messages, no held delete ever, and Honcho keeps what it was fed regardless.",
+    "Removed: `nora person forget` / `unforget`, `nora withdrawal reconcile-deletes`, `nora cognition health`, the alerts NoraRestartLoop, NoraErrorsRising, CognitionWakeStalled, StimulusBacklog, CognitionSessionsFailing, OrphanDeleteLost and OrphanDeleteEvicted, the `orphan_delete` table (migration 0091) and the Assess check `unresolved_citations`.",
+    "Kept: the SIGTERM handler and the reclaim of sessions a restart left open."
+  ],
+  "limitations": [
+    "Rows already marked unsupported stay out of her context; nothing clears the mark except SQL.",
+    "The `unsupported_at` columns, the citation edges and their readers are still in place, written by nothing; they go in a follow-up once the Cognition session and culture work lands.",
+    "The token columns on `cognition_wake_outcome` (migration 0090) are kept for the same reason: removing them edits the Cognition session files.",
+    "A delete from someone other than the author is refused only on Signal; on WhatsApp a forged revoke hides the message."
+  ]
+}

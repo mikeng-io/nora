@@ -137,7 +137,7 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
-from nora.infra.sql.citation import lock_cited_messages, record_citations
+from nora.infra.sql.citation import record_citations
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
@@ -517,8 +517,6 @@ class SqlNoteStore:
         Lineage and `as_of` (migration `0073_lineage`) are computed here from
         the body's citations: the first revision rests on the room the note
         was raised in and on every room it cites."""
-        # The cited messages first (`citation.lock_cited_messages`): one lock order.
-        await lock_cited_messages(conn, cited_ids_in(revision.body))
         lineage, cited_at = await _revision_lineage(
             conn, body=revision.body, origin=note.established_in, first=True,
             unit=note.unit,
@@ -552,11 +550,9 @@ class SqlNoteStore:
             **derived,
         ))
         # The citation edge table (migration `0075_withdrawal`, step 2c):
-        # keyed to the NOTE, not the revision — only the head renders, and
-        # the withdrawal cascade marks the head.
+        # keyed to the NOTE, not the revision — only the head renders.
         await record_citations(
             conn, citing_store="note", citing_key=str(note.id), body=revision.body,
-            now_ms=revision.written_at,
         )
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
@@ -746,9 +742,6 @@ class SqlNoteStore:
         note_id = revision.note_id
         parent_revision_id = revision.parent_revision_id
         revision_id = revision.id
-        # The cited messages first, BEFORE the note row below is locked
-        # (`citation.lock_cited_messages`): one lock order, message then note.
-        await lock_cited_messages(conn, cited_ids_in(revision.body))
         # LINEAGE (migration `0073_lineage`): this revision rests on the rooms
         # its body cites and, from the tag path, the room it was written in;
         # the note rests on the union. Read under the row lock the CAS below
@@ -826,7 +819,6 @@ class SqlNoteStore:
         ))
         await record_citations(
             conn, citing_store="note", citing_key=str(note_id), body=revision.body,
-            now_ms=revision.written_at,
         )
 
     async def search(
@@ -1254,16 +1246,6 @@ class SqlNoteStore:
         # written — see the check below.
         declared: dict[str, str] = {}
         async with self._engine.begin() as conn:
-            # EVERY message the whole batch cites, locked ONCE, SORTED, before the first
-            # write (`citation.lock_cited_messages`). A lock taken per write meant the
-            # batch took message locks AFTER it already held an earlier note's row, the
-            # reverse of the delete's order (message, then the notes that cite it), and
-            # deadlocked with it: note A cites m3 and is revised to cite m9, note B is
-            # revised to cite m3, while a delete hides m3 and its cascade updates A. The
-            # per-write calls below find the same rows already locked and cost nothing.
-            await lock_cited_messages(
-                conn, {i for _, payload in typed for i in cited_ids_in(payload.body)},
-            )
             for p, payload in typed:
                 if isinstance(payload, NoteCreationProposal):
                     note, first = self._new_note(

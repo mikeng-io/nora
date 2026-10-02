@@ -702,61 +702,6 @@ def test_run_turns_a_cli_error_into_an_exit_code(capsys):
     assert capsys.readouterr().err.strip() == "error: nope"
 
 
-# ── nora withdrawal reconcile-deletes ───────────────────────────────────────
-
-async def _delete_recorded_but_message_visible(env) -> tuple[int, int]:
-    """A delete as the old touch stage left it: the record, and the message
-    still visible. Returns (that message's row, a sibling's)."""
-    gone = await audit(env, sender=MILES_PHONE, raw={}, ts=10, body="unsent words")
-    kept = await audit(env, sender=MILES_PHONE, raw={}, ts=20, body="kept words")
-    store = SqlRecordStore(create_sql_engine(env["url"]))
-    try:
-        await store.append_delete(
-            message_id=gone, person_id=None,
-            message=NormalizedMessage(
-                platform="signal", conversation_id=GROUP_ID, conversation_type="group",
-                sender_id=MILES_PHONE, sender_name=None, timestamp=11, body="", raw={},
-            ),
-        )
-    finally:
-        await store.aclose()
-    return gone, kept
-
-
-async def _visible_rows(env) -> list[int]:
-    store = SqlRecordStore(create_sql_engine(env["url"]))
-    try:
-        return [r.id for r in await store.recent(conversation_id=GROUP_ID, limit=10)]
-    finally:
-        await store.aclose()
-
-
-async def test_reconcile_deletes_is_a_dry_run_by_default_and_prints_counts_only(env, capsys):
-    gone, kept = await _delete_recorded_but_message_visible(env)
-
-    assert await invoke(env, "withdrawal", "reconcile-deletes") == 0
-
-    out = capsys.readouterr().out
-    assert "dry run: nothing written" in out
-    assert "1 deleted message(s) still visible" in out and "would hide 1 message(s)" in out
-    assert "re-run with --apply to write" in out
-    assert "unsent words" not in out and "kept words" not in out and GROUP_ID not in out
-    assert await _visible_rows(env) == [gone, kept], "nothing was written"
-
-
-async def test_reconcile_deletes_apply_hides_the_deleted_message_and_only_that_one(env, capsys):
-    _gone, kept = await _delete_recorded_but_message_visible(env)
-
-    assert await invoke(env, "withdrawal", "reconcile-deletes", "--apply") == 0
-
-    out = capsys.readouterr().out
-    assert "APPLIED" in out and "hid 1 message(s)" in out
-    assert await _visible_rows(env) == [kept]
-    capsys.readouterr()
-    assert await invoke(env, "withdrawal", "reconcile-deletes", "--apply") == 0
-    assert "0 deleted message(s) still visible" in capsys.readouterr().out
-
-
 def test_render_presence_members_is_paste_ready():
     """`nora presence members` output carries, per member, a paste-ready
     [[persons.<id>.life360]] block with BOTH member_id and circle_id — all ids in

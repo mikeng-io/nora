@@ -758,7 +758,7 @@ FORGOTTEN_BY = "forget:ada"
 async def test_a_forgotten_document_cannot_be_moved_and_answers_like_an_unknown_id(
     state: str,
 ) -> None:
-    """`nora person forget` deleted it; nothing Nora does brings it back or moves it, and
+    """`nora person forget` (removed) deleted it; nothing Nora does brings it back or moves it, and
     nothing she says confirms it exists. Only the operator, in the database, restores it."""
     svc, store = _service()
     made = await _publish(svc, _doc(title="Hers"))

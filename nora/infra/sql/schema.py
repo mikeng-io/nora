@@ -209,12 +209,12 @@ MESSAGES = sa.Table(
     # per platform, in ingest.
     sa.Column("mentions_json", sa.Text),
     # WITHDRAWAL (design/cognition-loop/10-tiers.md §8-9, migration
-    # `0075_withdrawal`, step 2c): epoch ms, set by `nora person forget <id>`
-    # for every message the person authored, cleared by `nora person
-    # unforget <id>`. `messages` is already in `HISTORY_TABLES`
+    # `0075_withdrawal`, step 2c): epoch ms, set when a platform delete or
+    # unsend hides the message (`RecordStore.hide_message`; `nora person
+    # forget`, which also set it, was removed 2026-10-03). `messages` is already in `HISTORY_TABLES`
     # (`0068_system_time_history`), so this UPDATE is captured as a new
     # version like any other write to this table — hiding is a transition,
-    # never a delete, and a snapshot before the forget restores the row.
+    # never a delete, and a snapshot before the hide restores the row.
     sa.Column("hidden_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("conversation_type IN ('group','dm')"),
 )
@@ -270,7 +270,7 @@ IDX_MESSAGE_EDIT_MESSAGE_TS = sa.Index(
 # touch — never `messages` rows, for `message_edit`'s reason: every reader of
 # `messages` would count them as utterances. Both are append-only: a reaction
 # taken back is its own row (`removed = 1`), and a delete leaves the message it
-# deletes untouched (hiding it is the withdrawal cascade, step 2c). CASCADE for
+# deletes untouched (hiding it is `RecordStore.hide_message`). CASCADE for
 # `message_edit`'s reason: `prune_all` deletes messages.
 #
 # `sender_id` is who the platform says acted, `''` where it names nobody (an
@@ -2523,9 +2523,9 @@ NOTE = sa.Table(
     # The union of its revisions' lineage (`0073_lineage`): the index line
     # this row renders rests on everything its body has ever cited.
     *_derived("note", per_row=True),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by
-    # the cascade (`nora.app.withdrawal`) when this note's citation chain
-    # reaches a withdrawn Record item. NULL (supported) otherwise.
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
+    # since 2026-10-03: the cascade that set it was removed, so a row marked before
+    # then stays out of its readers. NULL (supported) otherwise.
     sa.Column("unsupported_at", sa.BigInteger, nullable=True),
 )
 
@@ -2946,9 +2946,9 @@ STANDING = sa.Table(
     ),
     # Sections `body` and `working_set` (`0073_lineage`).
     *_derived("standing", per_row=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
-    # cascade (`nora.app.withdrawal`) when this room's position cites a
-    # withdrawn Record item. NULL (supported) otherwise.
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
+    # since 2026-10-03: the cascade that set it was removed, so a row marked before
+    # then stays out of its readers. NULL (supported) otherwise.
     sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     # THE SECTIONED SCHEMA (migration `0076_standing_sections`, step 3 row
     # 3b): `I hold open` and `I owe` (`design/cognition-loop/12-schemas.md`
@@ -3333,9 +3333,9 @@ CULTURE = sa.Table(
                             name="culture_head_revision_id_fkey"),
               nullable=False),
     sa.Column("updated_at", sa.BigInteger, nullable=False),
-    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms, set by the
-    # cascade (`nora.app.withdrawal`) when this account cites a withdrawn
-    # Record item. NULL (supported) otherwise.
+    # WITHDRAWAL (migration `0075_withdrawal`, step 2c): epoch ms. READ only
+    # since 2026-10-03: the cascade that set it was removed, so a row marked before
+    # then stays out of its readers. NULL (supported) otherwise.
     sa.Column("unsupported_at", sa.BigInteger, nullable=True),
     sa.CheckConstraint("length(btrim(key)) > 0", name="culture_has_a_key_check"),
 )
@@ -3427,10 +3427,10 @@ IDX_CULTURE_REVISION_KEY_WRITTEN = sa.Index(
 
 #: The citation edge table (migration `0075_withdrawal`, step 2c;
 #: design/cognition-loop/10-tiers.md §2 rule 7, §5): what a `note`,
-#: `standing` or `culture` head cites — today always a `messages.id` — so the
-#: withdrawal cascade (`nora.app.withdrawal`) can walk it rather than parse a
-#: body. See the migration's docstring for the full rationale and the three
-#: write sites that keep it current.
+#: `standing` or `culture` head, or an event, cites. WRITE-ONLY since 2026-10-03: the
+#: withdrawal cascade that walked it was removed, and nothing reads it. It stays
+#: because dropping it touches the Standing and culture stores' write paths (follow-up
+#: with the `unsupported_at` columns). See the migration's docstring.
 CITATION = sa.Table(
     "citation",
     METADATA,
@@ -4623,54 +4623,4 @@ DOCUMENT_STATE = sa.Table(
 )
 IDX_DOCUMENT_STATE_LATEST = sa.Index(
     "idx_document_state_latest", DOCUMENT_STATE.c.document_id, DOCUMENT_STATE.c.id,
-)
-
-# `orphan_delete` (migration `0088_orphan_delete`): a platform delete whose target was not
-# on record when it arrived, kept until the message lands (applied: hide plus cascade) or
-# it is purged. Keyed by what `RecordStore.find_edited` matches on: the platform handle
-# (`handle`, '' when the platform names the target by timestamp) or Signal's sent-timestamp
-# (`sent_ts`), in one conversation of one platform. The deleter is every id form the
-# platform gave (`deleter_ids`), the one the parser picked (`deleter_id`) and the person it
-# resolved to: the authorship check a delete on Signal or WhatsApp needs is made when the
-# message arrives (`nora.domain.delete_authorship`). Ids and times only. In place (a row is
-# deleted when applied or purged), so a `HISTORY_TABLES` table (the trigger keeps a
-# `delete` version, as `citation` does).
-ORPHAN_DELETE = sa.Table(
-    "orphan_delete",
-    METADATA,
-    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
-    sa.Column("platform", sa.Text, nullable=False),
-    sa.Column("conversation_id", sa.Text, nullable=False),
-    sa.Column("handle", sa.Text, nullable=False, server_default=sa.text("''")),
-    sa.Column("sent_ts", sa.BigInteger),
-    sa.Column("deleter_id", sa.Text, nullable=False, server_default=sa.text("''")),
-    sa.Column(
-        "deleter_ids", pg.ARRAY(sa.Text), nullable=False, server_default=sa.text("'{}'"),
-    ),
-    sa.Column("deleter_person_id", sa.Text),
-    sa.Column("event_ts", sa.BigInteger, nullable=False),
-    sa.Column("recorded_at", sa.BigInteger, nullable=False),
-    sa.CheckConstraint(
-        "handle <> '' OR sent_ts IS NOT NULL", name="ck_orphan_delete_names_a_target",
-    ),
-)
-IDX_ORPHAN_DELETE_HANDLE = sa.Index(
-    "idx_orphan_delete_handle", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.handle, postgresql_where=sa.text("handle <> ''"),
-)
-IDX_ORPHAN_DELETE_SENT_TS = sa.Index(
-    "idx_orphan_delete_sent_ts", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.sent_ts, postgresql_where=sa.text("sent_ts IS NOT NULL"),
-)
-IDX_ORPHAN_DELETE_DELETER = sa.Index(
-    "idx_orphan_delete_deleter", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.deleter_id,
-)
-IDX_ORPHAN_DELETE_RECORDED = sa.Index(
-    "idx_orphan_delete_recorded", ORPHAN_DELETE.c.recorded_at,
-)
-# One row per delivery (the key the store's ON CONFLICT DO NOTHING relies on).
-UQ_ORPHAN_DELETE_DELIVERY = sa.Index(
-    "uq_orphan_delete_delivery", ORPHAN_DELETE.c.platform, ORPHAN_DELETE.c.conversation_id,
-    ORPHAN_DELETE.c.handle, sa.func.coalesce(ORPHAN_DELETE.c.sent_ts, -1),
-    ORPHAN_DELETE.c.deleter_id, unique=True,
 )

@@ -27,7 +27,7 @@ def test_render_marks_ok_fail_and_not_applicable():
     report = AssessReport(
         kind="nightly_dq", run_at_ms=1234,
         results=(
-            DqCheckResult(check="unresolved_citations", status="ok"),
+            DqCheckResult(check="cross_room_duplicate_events", status="ok"),
             DqCheckResult(
                 check="empty_lineage_rows", status="fail", failing=3,
                 sample=("a", "b"), detail="expected before step 3 writers",
@@ -40,7 +40,7 @@ def test_render_marks_ok_fail_and_not_applicable():
     )
     lines = render(report)
     assert lines[0] == "assess nightly_dq @ 1234"
-    assert any("[OK] unresolved_citations" in line for line in lines)
+    assert any("[OK] cross_room_duplicate_events" in line for line in lines)
     assert any(
         "[FAIL] empty_lineage_rows (3): a, b" in line
         and "expected before step 3 writers" in line
@@ -54,14 +54,14 @@ def test_render_marks_error():
         kind="nightly_dq", run_at_ms=1234,
         results=(
             DqCheckResult(
-                check="unresolved_citations", status="error",
+                check="cross_room_duplicate_events", status="error",
                 detail="RuntimeError: boom",
             ),
         ),
     )
     lines = render(report)
     assert any(
-        "[ERROR] unresolved_citations" in line and "RuntimeError: boom" in line
+        "[ERROR] cross_room_duplicate_events" in line and "RuntimeError: boom" in line
         for line in lines
     )
 
@@ -84,7 +84,7 @@ async def test_run_nightly_counts_fail_and_error_on_separate_metrics(monkeypatch
     must be two distinct series — a check that raised is not the same fact
     as a check that ran clean and found a violation."""
     results = (
-        DqCheckResult(check="unresolved_citations", status="ok"),
+        DqCheckResult(check="cross_room_duplicate_events", status="ok"),
         DqCheckResult(
             check="cross_room_duplicate_events", status="fail", failing=1,
             sample=("a/b",),

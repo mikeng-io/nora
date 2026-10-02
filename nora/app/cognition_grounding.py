@@ -18,20 +18,19 @@ not the tool is on, and a session with the tool off still sees who said what.
 - *The room.* A row is joined to the stimulus that named it and must be in that
   stimulus's own room: the item's room is the one the reads and the render
   resolve through (R-21).
-- *Withdrawal.* `nora person forget` hides a message, and so does a platform
-  delete or unsend (`nora.app.delete_withdrawal`, DEC-276); the Record read
-  excludes hidden rows (`transcript_select`), so a hidden message is not «shown as
-  withheld», it is absent, and that includes her OWN unsent send. The `deleted`
-  mark and the withheld words (the rule `record_query` keeps) are what is left
-  for a delete whose hide has not landed: one that failed and awaits its retry or
-  the start-up sweep. DEC-245 (3) said an unsent send of hers was shown as
-  deleted; amended by DEC-276.
+- *Withdrawal.* A platform delete or unsend hides a message
+  (`RecordStore.hide_message`); the Record read excludes hidden rows
+  (`transcript_select`), so a hidden message is not «shown as withheld», it is
+  absent, and that includes her OWN unsent send. The `deleted` mark and the
+  withheld words (the rule `record_query` keeps) are what is left for a delete
+  whose hide did not land. DEC-245 (3) said an unsent send of hers was shown as
+  deleted; amended by DEC-276, whose cascade was removed 2026-10-03.
 - *Standing is pulled, never pushed* (30 §1: "Standing bodies are pulled ...
   never pushed"). No Standing text, head or revision is rendered here:
-  `standing_store.read()` returns rows the withdrawal cascade marked
-  unsupported, so a pushed head could carry a withdrawn person's words to the
-  model. The session sees no Standing until `standing_read` lands and applies
-  the withdrawal and lineage predicates itself (#637 second review, blocker).
+  `standing_store.read()` returns rows marked unsupported, so a pushed head could
+  carry a withdrawn person's words to the model. The session sees no Standing until
+  `standing_read` lands and applies the withdrawal and lineage predicates itself
+  (#637 second review, blocker).
 - *Every pushed index line honours withdrawal and lineage.* A note marked
   `unsupported_at` is dropped here as well as in the store's read (the seam is
   injected, so the rule is held where the line is built), and a note or an
@@ -312,7 +311,7 @@ def build_grounder(
             )
             for e in await events_in(unit, room.conversation_id):
                 if e.unsupported_at is not None:
-                    # Withdrawn (`nora.app.withdrawal`), dropped here too and in
+                    # Withdrawn (no writer left), dropped here too and in
                     # every mode, exactly as a note is: the composition's read
                     # already leaves it out, and this is the seam's own guard.
                     continue

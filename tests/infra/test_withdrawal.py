@@ -1,12 +1,8 @@
-"""The withdrawal cascade (design/cognition-loop/10-tiers.md §2 rule 7, §8,
-§9; 70-migration.md §2 row 2c; migration `0075_withdrawal`, DEC-238).
+"""The citation edges (migration `0075_withdrawal`) and the hide a platform delete
+does (`SqlRecordStore.hide_message`).
 
 Module-scoped database per `test_culture_store.py`'s pattern (one migrated
-database, truncated between tests). Every test proves the NEGATIVE too: a
-withdrawn item's citing row must stop reaching the reader that used to reach
-it, not merely gain a flag nothing checks (the task's own disclosure-critical
-rule).
-"""
+database, truncated between tests)."""
 
 from __future__ import annotations
 
@@ -134,218 +130,52 @@ async def test_a_culture_fold_citing_the_rooms_newest_message_records_the_edge(e
     assert [(r.citing_key, r.cited_id) for r in rows] == [("g1", str(mid))]
 
 
-async def test_cascade_marks_every_citing_store_unsupported(engine):
-    """The gate's own scenario: one Record item withdrawn, and every store
-    that cites it — note, standing, culture — goes `unsupported`."""
-    from nora.app.withdrawal import withdraw_message
-
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    standing_store = SqlStandingStore(engine)
-    await standing_store.write(standing=Standing(
-        platform="signal", conversation_id="g1", body="a position",
-        fold_count=1, updated_at=1000, last_folded_row_id=mid,
-    ))
-    culture_store = SqlCultureStore(engine)
-    await culture_store.append(
-        key="g1", body="an account", written_at=1000, established_by="fold",
-    )
-
-    async with engine.begin() as conn:
-        report = await withdraw_message(conn, message_id=mid, now_ms=2000)
-
-    assert set(report.marked["note"]) == {note.id}
-    assert report.marked["standing"] == ["signal:g1"]
-    assert report.marked["culture"] == ["g1"]
-    assert report.total_marked == 3
-
-    # NEGATIVE: the note index (the pushed block / `note_read`'s own
-    # resolution) no longer returns it.
-    assert await notes.standing(unit="u") == ()
-    hits = await notes.search(unit="u", query="claim", limit=10)
-    assert hits == ()
-
-    # `read()`/`revision_chain` still see the real row — the writer's own
-    # re-derivation path is not this cascade's job to block.
-    still_there = await notes.note_by_id(unit="u", note_id=note.id)
-    assert still_there is not None and still_there.unsupported_at == 2000
-
-
-async def test_cascade_is_idempotent(engine):
-    from nora.app.withdrawal import withdraw_message
-
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    async with engine.begin() as conn:
-        first = await withdraw_message(conn, message_id=mid, now_ms=2000)
-        second = await withdraw_message(conn, message_id=mid, now_ms=3000)
-
-    assert first.marked["note"] == [note.id]
-    assert second.marked == {}
-    held = await notes.note_by_id(unit="u", note_id=note.id)
-    # the ORIGINAL timestamp, never overwritten by the second cascade
-    assert held.unsupported_at == 2000
-
-
-async def test_forget_person_hides_messages_and_cascades(engine):
-    from nora.app.person_forget import forget_person, unforget_person
-
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-
-    dry = await forget_person(engine,
-        documents=_docs(engine), person_id="miles", apply=False, now_ms=5000
-    )
-    assert dry.hidden == 1
-    async with engine.connect() as conn:
-        untouched = (await conn.execute(
-            sa.select(MESSAGES.c.hidden_at).where(MESSAGES.c.id == mid)
-        )).scalar_one()
-    assert untouched is None, "a dry run must write nothing"
-
-    applied = await forget_person(engine,
-        documents=_docs(engine), person_id="miles", apply=True, now_ms=5000
-    )
-    assert applied.hidden == 1
-    assert applied.cascade is not None
-    assert applied.cascade.marked["note"] == [note.id]
-
-    # NEGATIVE: the note stops rendering, and the message stops reaching a
-    # transcript read.
-    assert await notes.standing(unit="u") == ()
+async def test_hide_message_hides_a_row_once_and_a_snapshot_before_it_restores_the_row(engine):
+    """A platform delete hides the message (`RecordStore.hide_message`): the first call
+    hides it and says so, a second keeps the first timestamp and says False, and the
+    transcript read no longer returns it. A snapshot taken before the hide shows it
+    unhidden (`as_of` is what `nora.infra.sql.snapshot_at.seed` builds a sandbox from)."""
     store = SqlRecordStore(engine)
-    assert await store.recent(conversation_id="g1", limit=10) == []
-
-    # unforget un-hides the message but does NOT un-mark the cascade.
-    unforgot = await unforget_person(engine, person_id="miles", apply=True)
-    assert unforgot.restored == 1
-    assert await store.recent(conversation_id="g1", limit=10) != []
-    held = await notes.note_by_id(unit="u", note_id=note.id)
-    assert held.unsupported_at == 5000, "unforget reverses the hide, not the cascade mark"
-
-
-async def test_clear_unsupported_clears_a_row_whose_citations_are_all_visible(engine):
-    """The operator lever for an accidentally cascaded row: `forget` then
-    `unforget` a person, and `--clear-unsupported` un-marks the note whose
-    ONLY citation is that person's now-visible-again message."""
-    from nora.app.person_forget import (
-        clear_unsupported,
-        forget_person,
-        unforget_person,
-    )
-
-    mid = await _message(engine)
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=5000)
-    await unforget_person(engine, person_id="miles", apply=True)
-    held = await notes.note_by_id(unit="u", note_id=note.id)
-    assert held.unsupported_at == 5000, "unforget alone must not clear the cascade mark"
-
-    dry = await clear_unsupported(engine, apply=False)
-    assert dry.cleared["note"] == [note.id]
-    async with engine.connect() as conn:
-        untouched = (await conn.execute(
-            sa.select(NOTE.c.unsupported_at).where(NOTE.c.id == note.id)
-        )).scalar_one()
-    assert untouched == 5000, "a dry run must write nothing"
-
-    applied = await clear_unsupported(engine, apply=True)
-    assert applied.cleared["note"] == [note.id]
-    assert applied.total_cleared == 1
-    cleared = await notes.note_by_id(unit="u", note_id=note.id)
-    assert cleared is not None and cleared.unsupported_at is None
-    # the note is back in the index too — the reader's own filter, proven
-    # negative-then-positive same as the cascade test above.
-    assert await notes.standing(unit="u") != ()
-
-
-async def test_clear_unsupported_leaves_a_row_with_a_still_hidden_citation(engine):
-    """NEGATIVE: a note citing TWO messages, only one of which is
-    unforgotten, must stay unsupported — clearing is all-or-nothing per
-    row, never per citation."""
-    from nora.app.person_forget import (
-        clear_unsupported,
-        forget_person,
-        unforget_person,
-    )
-    miles_mid = await _message(engine, ts=1000)
-    store = SqlRecordStore(engine)
-    other_mid = await store.append(
-        message=NormalizedMessage(
-            "signal", "g1", "group", "+2", "Alice", 1001, "yo", {},
-        ),
-        person_id="alice",
-    )
-    notes = SqlNoteStore(engine)
-    note = await notes.create(
-        unit="u", title="t", description="d", uncertainty="open",
-        closing_condition="c", established_in="signal:g1",
-        body=f"a claim [{miles_mid}, {other_mid}]", established_by="test", now_ms=1000,
-        anchor_date=20260901,
-    )
-
-    # forget BOTH people (one note citing both messages), then only
-    # unforget Miles — Alice's message stays hidden, so the note has one
-    # visible-again citation and one still-hidden one.
-    await forget_person(engine, documents=_docs(engine), person_id="alice", apply=True, now_ms=4000)
-    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=5000)
-    await unforget_person(engine, person_id="miles", apply=True)
-
-    result = await clear_unsupported(engine, apply=True)
-    assert result.cleared == {}
-    held = await notes.note_by_id(unit="u", note_id=note.id)
-    assert held is not None and held.unsupported_at == 4000, (
-        "a row with any still-unresolved citation must stay unsupported"
-    )
-
-
-async def test_a_snapshot_before_the_forget_restores_the_message(engine):
-    """10 §9's own gate: "a forget followed by a snapshot before it restores
-    everything". `as_of` is the mechanism `nora.infra.sql.snapshot_at.seed`
-    uses to build a sandbox as of T; proven directly here rather than
-    through the whole snapshot CLI, which needs a policy and a second
-    database to seed."""
-    from nora.app.person_forget import forget_person
-
     mid = await _message(engine, ts=1000)
     async with engine.connect() as conn:
-        before = (await conn.execute(
-            sa.select(sa.func.clock_timestamp())
-        )).scalar_one()
+        before = (await conn.execute(sa.select(sa.func.clock_timestamp()))).scalar_one()
 
-    await forget_person(engine, documents=_docs(engine), person_id="miles", apply=True, now_ms=9000)
+    assert await store.hide_message(message_id=mid, now_ms=9000) is True
+    assert await store.hide_message(message_id=mid, now_ms=9500) is False
+    assert await store.hide_message(message_id=987_654, now_ms=9000) is False
+
+    async with engine.connect() as conn:
+        held = (await conn.execute(
+            sa.select(MESSAGES.c.hidden_at).where(MESSAGES.c.id == mid)
+        )).scalar_one()
+    assert held == 9000, "the second delete keeps the first hide's timestamp"
+    assert await store.recent(conversation_id="g1", limit=10) == [], "a hidden row is not read"
 
     async with engine.connect() as conn:
         restored = [
             row for part in [p async for p in as_of(conn, "messages", before)]
             for row in part
         ]
-    assert len(restored) == 1
-    assert restored[0]["id"] == mid
-    assert restored[0]["hidden_at"] is None, (
-        "a snapshot before the forget must show the message unhidden"
+    assert len(restored) == 1 and restored[0]["id"] == mid
+    assert restored[0]["hidden_at"] is None
+
+
+async def test_a_note_marked_unsupported_stops_reaching_the_index_and_search(engine):
+    """No writer marks a row any more (the cascade is gone), but a row marked before it
+    was removed still stays out of the pushed index and `note_search`; `note_by_id`, the
+    writer's read, still returns it."""
+    mid = await _message(engine)
+    notes = SqlNoteStore(engine)
+    note = await notes.create(
+        unit="u", title="t", description="d", uncertainty="open",
+        closing_condition="c", established_in="signal:g1",
+        body=f"a claim [{mid}]", established_by="test", now_ms=1000,
+        anchor_date=20260901,
     )
+    assert len(await notes.standing(unit="u")) == 1
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(NOTE).where(NOTE.c.id == note.id).values(unsupported_at=2000))
+    assert await notes.standing(unit="u") == ()
+    assert await notes.search(unit="u", query="claim", limit=10) == ()
+    still_there = await notes.note_by_id(unit="u", note_id=note.id)
+    assert still_there is not None and still_there.unsupported_at == 2000

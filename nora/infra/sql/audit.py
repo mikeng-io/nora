@@ -21,33 +21,19 @@ is here in `append`: asyncpg has no `lastrowid`, so the new id comes back via
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy import and_, or_
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
-from nora.domain.delete_authorship import (
-    ORPHAN_CAP_GLOBAL,
-    ORPHAN_CAP_PER_DELETER,
-    ORPHAN_CAP_PER_ROOM,
-    ORPHAN_CAP_UNNAMED_PER_ROOM,
-    ORPHAN_TTL_MS,
-    orphan_names_message,
-)
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
     EditedMessage,
     EditTarget,
     NormalizedMessage,
-    OrphanDelete,
-    OrphanRecord,
     RowEdit,
-    Touch,
     TranscriptRow,
     UnattributedRow,
     mentions_json,
@@ -60,7 +46,6 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
-    ORPHAN_DELETE,
 )
 
 DEFAULT_MAX_PER_CONVERSATION = 500
@@ -98,7 +83,7 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
     one and miss another; `transcript_row` is its mapping.
 
     **`hidden_at IS NULL`** (migration `0075_withdrawal`, step 2c): a message
-    `nora person forget` hid is excluded from every transcript this select
+    `nora person forget` (removed) hid is excluded from every transcript this select
     powers — a prompt block, a tool result, `record_query`, and the
     snapshot's as-of read, which copies the historical row image (`hidden_at`
     as it stood at T) into the sandbox and then reads it through this same
@@ -114,45 +99,6 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
         MESSAGES.c.hidden_at.is_(None),
-    )
-
-
-def orphan_candidates_stmt(
-    message: NormalizedMessage, also_timestamps: Sequence[int] = (),
-) -> Any | None:
-    """The held deletes that MIGHT name `message`, narrowed through the handle and
-    sent-timestamp indexes of its room (`orphan_names_message` decides). `also_timestamps`
-    are the timestamps of its EDITS (Signal names an edit by its own): the edit path asks
-    about the original and the edit that just landed. `None` when the message offers
-    nothing to match on."""
-    key = []
-    if message.message_id:
-        key.append(and_(ORPHAN_DELETE.c.handle != "",
-                        ORPHAN_DELETE.c.handle == message.message_id))
-    stamps = [t for t in (message.timestamp, *also_timestamps) if t is not None]
-    if stamps:
-        key.append(ORPHAN_DELETE.c.sent_ts.in_(stamps))
-    if not key:
-        return None
-    return (
-        sa.select(ORPHAN_DELETE)
-        .where(
-            ORPHAN_DELETE.c.platform == message.platform,
-            ORPHAN_DELETE.c.conversation_id == message.conversation_id,
-            or_(*key),
-        )
-        .order_by(ORPHAN_DELETE.c.id.asc())
-    )
-
-
-def orphan_delete_of(r: Any) -> OrphanDelete:
-    """The `OrphanDelete` of one `orphan_delete` row (the sweep reads the table too)."""
-    return OrphanDelete(
-        id=int(r.id), platform=r.platform, conversation_id=r.conversation_id,
-        handle=r.handle, sent_ts=None if r.sent_ts is None else int(r.sent_ts),
-        deleter_id=r.deleter_id, deleter_ids=tuple(r.deleter_ids or ()),
-        deleter_person_id=r.deleter_person_id, event_ts=int(r.event_ts),
-        recorded_at=int(r.recorded_at),
     )
 
 
@@ -574,184 +520,14 @@ class SqlRecordStore:
             result = await conn.execute(stmt)
         return int(result.scalar_one())
 
-    async def record_orphan_delete(
-        self, *, message: NormalizedMessage, touch: Touch, person_id: str | None,
-        now_ms: int,
-    ) -> OrphanRecord:
-        """See `nora.domain.ports.RecordStore.record_orphan_delete`. One transaction: the
-        opportunistic purge of a few expired rows; the delivery's own row if it is
-        already held (a re-delivered event adds nothing and evicts nothing); EVICTION of
-        rows of whichever scope would pass its cap (oldest first; the heaviest contributor's
-        in the room scope), BEFORE the insert (so the table never holds a row only to
-        remove it, and `row_history` grows by one insert and at most a few evictions per
-        new delivery, never a pair for a refusal); then the INSERT. A new held delete
-        lands unless a concurrent writer deadlocks and the caller's retries are exhausted
-        (`orphan_lost`); a flood can evict it later (`orphan_evicted`).
-
-        The caps are SOFT: they are counted before the insert under READ COMMITTED, so
-        writers racing each other can overshoot by the number racing. The table is
-        still bounded, by the TTL and by every later write evicting back under the cap."""
-        ids = tuple(dict.fromkeys(i for i in (message.sender_id, *touch.actor_ids) if i))
-        values = {
-            "platform": message.platform,
-            "conversation_id": message.conversation_id,
-            "handle": touch.target.message_id,
-            "sent_ts": touch.target.sent_ts,
-            "deleter_id": message.sender_id,
-            "deleter_ids": list(ids),
-            "deleter_person_id": person_id,
-            "event_ts": message.timestamp,
-            "recorded_at": now_ms,
-        }
-        orphan = ORPHAN_DELETE
-        same_delivery = sa.and_(
-            orphan.c.platform == message.platform,
-            orphan.c.conversation_id == message.conversation_id,
-            orphan.c.handle == values["handle"],
-            sa.func.coalesce(orphan.c.sent_ts, -1) == (
-                -1 if touch.target.sent_ts is None else touch.target.sent_ts
-            ),
-            orphan.c.deleter_id == message.sender_id,
-        )
-        in_room = sa.and_(
-            orphan.c.platform == message.platform,
-            orphan.c.conversation_id == message.conversation_id,
-        )
-        async with self._engine.begin() as conn:
-            await self._purge_orphans(conn, before_ms=now_ms - ORPHAN_TTL_MS, limit=100)
-            held = (await conn.execute(
-                sa.select(orphan.c.id).where(same_delivery).limit(1)
-            )).scalar_one_or_none()
-            if held is not None:
-                return OrphanRecord(id=int(held))
-            evicted = 0
-            if message.sender_id:
-                evicted += await self._evict_orphans(
-                    conn, sa.and_(orphan.c.platform == message.platform,
-                                  orphan.c.deleter_id == message.sender_id),
-                    ORPHAN_CAP_PER_DELETER,
-                )
-            else:
-                evicted += await self._evict_orphans(
-                    conn, sa.and_(in_room, orphan.c.deleter_id == ""),
-                    ORPHAN_CAP_UNNAMED_PER_ROOM,
-                )
-            evicted += await self._evict_orphans(
-                conn, in_room, ORPHAN_CAP_PER_ROOM, heaviest_first=True,
-            )
-            evicted += await self._evict_orphans(conn, sa.true(), ORPHAN_CAP_GLOBAL)
-            inserted = (await conn.execute(
-                pg_insert(orphan).values(**values).on_conflict_do_nothing()
-                .returning(orphan.c.id)
-            )).scalar_one_or_none()
-            if inserted is None:                    # a concurrent writer held it first
-                inserted = (await conn.execute(
-                    sa.select(orphan.c.id).where(same_delivery).limit(1)
-                )).scalar_one()
-        return OrphanRecord(id=int(inserted), evicted=evicted)
-
-    @staticmethod
-    async def _evict_orphans(
-        conn: Any, scope: Any, cap: int, *, heaviest_first: bool = False,
-    ) -> int:
-        """Make room for ONE more row in `scope`: when it already holds `cap`, delete
-        rows until it holds `cap - 1`, the oldest first, or with `heaviest_first` the
-        oldest of the deleter holding the MOST rows in the scope (the unnamed bucket
-        counts as one deleter), so a row alone in its room outlives a flooder's.
-        Returns how many went.
-
-        Each row is claimed with `FOR UPDATE SKIP LOCKED`, so an eviction never WAITS
-        on a row another writer holds: two writers evicting overlapping sets, in the same
-        scope or across rooms, cannot deadlock on each other. A row skipped because it
-        is locked is being deleted (or applied) by that writer anyway, so the cap stays
-        soft by at most the writers racing."""
-        orphan = ORPHAN_DELETE
-        held = (await conn.execute(
-            sa.select(sa.func.count()).select_from(orphan).where(scope)
-        )).scalar_one()
-        evicted = 0
-        for _ in range(max(0, held - cap + 1)):
-            if heaviest_first:
-                # Deleters by how many rows they hold here, most first (ties by id, so
-                # the order is stable). Each one's OLDEST unlocked row is tried in turn:
-                # a deleter whose rows are all claimed by other writers is passed over
-                # for the NEXT-heaviest, never for «the oldest row in the room», which
-                # would be a lone victim's.
-                ranked = (await conn.execute(
-                    sa.select(orphan.c.deleter_id).where(scope)
-                    .group_by(orphan.c.deleter_id)
-                    .order_by(sa.func.count().desc(), orphan.c.deleter_id)
-                )).scalars().all()
-                wheres = [sa.and_(scope, orphan.c.deleter_id == d) for d in ranked]
-            else:
-                wheres = [scope]
-            victim = None
-            for where in wheres:
-                victim = (await conn.execute(
-                    sa.select(orphan.c.id).where(where)
-                    .order_by(orphan.c.recorded_at, orphan.c.id)
-                    .limit(1).with_for_update(skip_locked=True)
-                )).scalar_one_or_none()
-                if victim is not None:
-                    break
-            if victim is None:
-                break                             # every row left is claimed by others
-            evicted += int((await conn.execute(
-                sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == victim)
-            )).rowcount or 0)
-        return evicted
-
-    @staticmethod
-    async def _purge_orphans(conn: Any, *, before_ms: int, limit: int) -> int:
-        doomed = (await conn.execute(
-            sa.select(ORPHAN_DELETE.c.id)
-            .where(ORPHAN_DELETE.c.recorded_at < before_ms)
-            .order_by(ORPHAN_DELETE.c.recorded_at, ORPHAN_DELETE.c.id)
-            .limit(limit).with_for_update(skip_locked=True)
-        )).scalars().all()
-        if not doomed:
-            return 0
-        result = await conn.execute(
-            sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id.in_(doomed))
-        )
-        return int(result.rowcount or 0)
-
-    async def match_orphan_deletes(
-        self, *, message: NormalizedMessage, person_id: str | None,
-        edit_timestamps: Sequence[int] = (),
-    ) -> list[OrphanDelete]:
-        """See `nora.domain.ports.RecordStore.match_orphan_deletes`. SQL narrows the
-        candidates through the handle and sent-timestamp indexes (per room); the rule
-        that decides is the domain's, `orphan_names_message`, the same function the
-        start-up sweep uses."""
-        stmt = orphan_candidates_stmt(message, edit_timestamps)
-        if stmt is None:
-            return []
-        async with self._engine.connect() as conn:
-            rows = (await conn.execute(stmt)).all()
-        orphans = [orphan_delete_of(r) for r in rows]
-        return [
-            o for o in orphans
-            if orphan_names_message(
-                o, platform=message.platform, conversation_id=message.conversation_id,
-                handle=message.message_id, timestamps=(message.timestamp, *edit_timestamps),
-                sender_id=message.sender_id, person_id=person_id,
-            )
-        ]
-
-    async def is_hidden(self, *, row_id: int) -> bool:
-        """See `nora.domain.ports.RecordStore.is_hidden`: one read by primary key."""
-        async with self._engine.connect() as conn:
-            hidden = (await conn.execute(
-                sa.select(MESSAGES.c.hidden_at).where(MESSAGES.c.id == row_id)
-            )).first()
-        return hidden is not None and hidden.hidden_at is not None
-
-    async def discard_orphan_delete(self, *, orphan_id: int) -> bool:
-        """See `nora.domain.ports.RecordStore.discard_orphan_delete`."""
+    async def hide_message(self, *, message_id: int, now_ms: int) -> bool:
+        """See `nora.domain.ports.RecordStore.hide_message`: one conditional UPDATE, so a
+        second delete of the same message keeps the first hide's timestamp."""
         async with self._engine.begin() as conn:
             result = await conn.execute(
-                sa.delete(ORPHAN_DELETE).where(ORPHAN_DELETE.c.id == orphan_id)
+                sa.update(MESSAGES)
+                .where(MESSAGES.c.id == message_id, MESSAGES.c.hidden_at.is_(None))
+                .values(hidden_at=now_ms)
             )
         return bool(result.rowcount)
 

@@ -566,7 +566,7 @@ async def test_a_deleted_documents_pictures_are_404(media_client):
 async def test_a_forgotten_document_cannot_be_moved_from_the_portal_and_reads_as_unknown(
     world_client,
 ):
-    """`nora person forget` deleted it. The portal cannot restore or archive it, for the
+    """`nora person forget` (removed) deleted it. The portal cannot restore or archive it, for the
     creator or a room member, and every answer is the 404 an unknown id gets."""
     client, world = world_client
     doc = world.ids["a"]

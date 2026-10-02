@@ -21,7 +21,7 @@ downstream re-reads a row. It is also what the session row records, so a
 session is replayable from what it was actually shown.
 
 **What is never in it** (each has a test): a message the withdrawal cascade
-hid (`nora person forget`, the Record read excludes it), the words of a
+hid (`nora person forget` (removed), the Record read excludes it), the words of a
 message its author deleted (the row is shown as deleted, like `record_query`),
 and any row of a room that is not one of the unit's rooms. Framework-free, per
 `nora/domain/`'s rule.
@@ -82,7 +82,7 @@ class RecordItem:
     edited: bool = False
     #: The stimulus's person id (or None), what the session row keeps in the
     #: NAME's place: `cognition_session.situation` is append-only and
-    #: `nora person forget` cannot rewrite it, so a canonical name written
+    #: `nora person forget` (removed) cannot rewrite it, so a canonical name written
     #: there would outlive the person's withdrawal. A name is rendered to the
     #: model at read time and never serialized (#637 second review, minor 5).
     person_id: str | None = None

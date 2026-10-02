@@ -816,15 +816,14 @@ def _orphan_delete_exists(url: str) -> bool:
         engine.dispose()
 
 
-def test_0088_adds_only_orphan_delete_and_goes_back_down_leaving_messages_alone(pg_url):
-    """`0088_orphan_delete` is one NEW table: `messages` and its rows are untouched either
-    way, the table refuses a row that names no target, and going down forgets only the
-    deletes still waiting for their message."""
+def test_0091_drops_orphan_delete_and_goes_back_down_recreating_it_empty(pg_url):
+    """`0091_drop_orphan_delete` removes the held-delete table: `messages` and its rows are
+    untouched either way, and going down recreates the empty table `0088` made."""
     from alembic import command as alembic_command
 
     run_migrations(pg_url)
     assert current_revision(pg_url) == head_revision()
-    assert _orphan_delete_exists(pg_url)
+    assert not _orphan_delete_exists(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.begin() as conn:
@@ -833,25 +832,17 @@ def test_0088_adds_only_orphan_delete_and_goes_back_down_leaving_messages_alone(
                 "sender_id, ts, body, is_nora, delivery_status, raw_json) VALUES "
                 "('signal', 'g', 'group', '+1', 1, 'kept', 0, 'sent', '{}')"
             ))
-            conn.execute(sa.text(
-                "INSERT INTO orphan_delete (platform, conversation_id, handle, event_ts, "
-                "recorded_at) VALUES ('discord', 'g', 'H', 1, 1)"
-            ))
-        with pytest.raises(sa.exc.IntegrityError), engine.begin() as conn:
-            conn.execute(sa.text(
-                "INSERT INTO orphan_delete (platform, conversation_id, event_ts, recorded_at) "
-                "VALUES ('discord', 'g', 1, 1)"
-            ))
     finally:
         engine.dispose()
 
-    alembic_command.downgrade(alembic_config(pg_url), "0087_document_state")
-    assert not _orphan_delete_exists(pg_url)
+    alembic_command.downgrade(alembic_config(pg_url), "0090_cognition_outcome_tokens")
+    assert _orphan_delete_exists(pg_url)
     engine = sa.create_engine(sync_url_for(pg_url))
     try:
         with engine.connect() as conn:
+            assert conn.execute(sa.text("SELECT count(*) FROM orphan_delete")).scalar_one() == 0
             assert conn.execute(sa.text("SELECT count(*) FROM messages")).scalar_one() == 1
     finally:
         engine.dispose()
     run_migrations(pg_url)
-    assert _orphan_delete_exists(pg_url)
+    assert not _orphan_delete_exists(pg_url)

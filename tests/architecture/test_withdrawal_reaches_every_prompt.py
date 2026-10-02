@@ -2,8 +2,8 @@
 the read is pinned here as deliberately raw, with the reason.
 
 A head the cascade marked `unsupported_at` rests on a Record item that was
-withdrawn (today only a person forgotten by `nora person forget`; a message deleted or
-unsent withdraws nothing yet, design/context-assembly/04 §7). The rule
+withdrawn (nothing marks a head since 2026-10-03: the cascade and `nora person forget`
+were removed, so this guards rows marked before then; a deleted message is hidden only). The rule
 (design/cognition-loop/10-tiers.md §2 rule 7, `nora.domain.withdrawal`) is that
 it stops rendering. It was written inline in the tag path, missing from the
 fire path, and absent from every Dreamer prompt: seven prompts pushed a head

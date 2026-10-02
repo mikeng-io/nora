@@ -122,6 +122,8 @@ And the words that name processes, never stores:
    Register: by unit, with the origin room kept. Character: by (unit,
    entity). Lessons: by unit. Standing: by (unit, subject). A person in two
    units has two Characters, each from that unit's evidence.
+> **SUPERSEDED 2026-10-03 (guard removal; AGENTS.md «A guard needs a consequence»).** The cascade, `nora person forget`/`unforget` and `--clear-unsupported` are deleted. The `citation` edges and `unsupported_at` columns remain, written by nothing; their readers (`render_supported` and the store filters) still hide a row marked before then, and go with the columns in a follow-up.
+
 7. **Withdrawal cascades.** When a Record item is withdrawn (a message deleted
    or unsent, the PII scrub, a face label removed, a person leaving a unit,
    `nora person forget`), every derived row whose citation chain reaches it
@@ -438,6 +440,8 @@ versioned with them.
 
 **Operator-only rows** (tension, assess reports) are versioned like the rest
 and, like the rest, never read by her.
+
+> **SUPERSEDED 2026-10-03 (guard removal; AGENTS.md «A guard needs a consequence»).** `nora person forget`/`unforget` and the cascade are deleted; a platform delete hides the message (`hidden_at`).
 
 **Removal is soft.** `nora person forget`, retention and prune **hide** rows:
 a hidden row is excluded from every read, block, tool, Rollup build, portal

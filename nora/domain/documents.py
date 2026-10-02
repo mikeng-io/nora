@@ -50,7 +50,7 @@ RoomKey = tuple[str, str]
 #: (`tests/contract/test_document_store_contract.py` reads it back).
 DocumentState = Literal["active", "archived", "deleted"]
 DOCUMENT_STATES: tuple[str, ...] = get_args(DocumentState)
-#: What `nora person forget` writes in `document_state.set_by`, before the person's id. A
+#: What `nora person forget` (removed) wrote in `document_state.set_by`, before the id. A
 #: document whose LATEST state row carries it is FORGOTTEN, and stays so: nothing a person
 #: or Nora does restores it (`DocumentService.set_state`), and every person-facing answer
 #: about it is the one an unknown id gets. Only the operator, in the database, can.
@@ -135,7 +135,7 @@ class DocumentSummary:
 
     @property
     def forgotten(self) -> bool:
-        """The latest state change was `nora person forget`'s."""
+        """The latest state change was `nora person forget` (removed)'s."""
         return self.state_by.startswith(FORGET_SET_BY_PREFIX)
 
 
@@ -223,34 +223,14 @@ class DocumentStore(Protocol):
         document_id: UUID,
         state: DocumentState,
         set_by: str,
-        only_if_state: tuple[DocumentState, ...] | None = None,
     ) -> bool:
         """Append a `document_state` row. `False` (and nothing written) when there is no
-        such document. Who may do this is the caller's check, made before the call.
-
-        `only_if_state` makes the write conditional: the document's CURRENT state, read
-        under the same lock the write takes, must be one of these, else nothing is written
-        and the answer is `False`. It is what lets a caller that decided from a snapshot (a
-        bulk forget) refuse to overwrite a change made since."""
+        such document. Who may do this is the caller's check, made before the call."""
         ...
 
     async def get(self, *, document_id: UUID) -> StoredDocument | None:
         """The current document in ANY state, with no visibility check: for the service
         that publishes into a room, never for a reader."""
-        ...
-
-    async def list_created_by(
-        self,
-        *,
-        person_id: str,
-        states: tuple[DocumentState, ...] = ("active", "archived"),
-        limit: int,
-        offset: int = 0,
-    ) -> tuple[DocumentSummary, ...]:
-        """The documents `person_id` CREATED (`created_by`, never a room they merely read)
-        whose current state is in `states`, ordered by id so a page is stable, at most
-        `limit` from `offset`. No visibility check and no spec: this is the operator's read
-        for `nora person forget`, never a reader's."""
         ...
 
     async def history(self, *, document_id: UUID) -> tuple[RevisionRecord, ...]:

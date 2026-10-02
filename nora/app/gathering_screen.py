@@ -5,19 +5,20 @@ every fire turn").
 
 A gathering's reminder is written with the event's title copied into its
 payload, and the fire path composes its turn from that payload alone
-(`nora.app.fire.gathering_occasion`): it never reads the event. So when the
-withdrawal cascade (`nora.app.withdrawal`) marks an event `unsupported_at`, the
+(`nora.app.fire.gathering_occasion`): it never reads the event. So when an event is
+marked `unsupported_at` (nothing marks one since the cascade was removed, 2026-10-03;
+only a row marked before then, or by an operator's SQL, carries it), the
 reminder it owns would still say the title, in the room, at the time, on the
 strength of a message that is gone. This screen is the read that closes it: the
 heartbeat asks it before it claims the row, the same place and the same shape as
 `nora.app.proactive_screen.ProactiveScreen`.
 
 **Withdrawal is a hold, not a cancellation** (10 §2 rule 7: a marked row "stops
-rendering", and `nora person unforget --clear-unsupported` reverses it). So a
+rendering", and clearing the mark reverses it). So a
 reminder whose event is marked is HELD: left `PENDING`, not fired, not resolved.
 The mark is the one copy of the fact (a second flag on the reminder would be a
-second copy that could drift, and `clear_unsupported` would have to reach it), so
-a cleared mark releases the reminder with nothing else to undo.
+second copy that could drift), so a cleared mark releases the reminder with
+nothing else to undo.
 
 A hold has a time limit, stated once here: **a held reminder waits until
 `due_at + HOLD_GRACE`.** If the mark is cleared inside that window the reminder

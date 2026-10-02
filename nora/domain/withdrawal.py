@@ -1,9 +1,10 @@
 """The render-side withdrawal rule for a derived head (design/cognition-loop/
 10-tiers.md §2 rule 7, migration `0075_withdrawal`, step 2c).
 
-A Standing or culture head the withdrawal cascade marked `unsupported_at`
-stops rendering into a prompt: the same `None` a room with no fold yet gets,
-never a partial or stale account. The store's `read()`/`head()` still return
+A Standing or culture head marked `unsupported_at` stops rendering into a prompt: the
+same `None` a room with no fold yet gets, never a partial or stale account. NOTHING
+MARKS A HEAD any more (the cascade was removed 2026-10-03): this guards rows marked
+before then, and goes with the `unsupported_at` columns. The store's `read()`/`head()` still return
 the row (the fold's own "previous" read re-derives from it); only a PROMPT
 read filters.
 

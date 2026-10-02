@@ -8,8 +8,7 @@ lookups the pure `nora.domain.gatherings.event_lineage` needs (the room each
 cited message was said in, the lineage each cited Rollup row carries, the
 event's own room key) and leaves one `citation` edge per `EventCitation`. Both
 ride the caller's connection, so the row, its revision, its edges and its
-lineage are one fact (the argument `nora.app.withdrawal` makes for the
-cascade).
+lineage are one fact.
 
 A hidden message (`hidden_at`) is treated as gone: a citation of it resolves
 `unresolved`, never to the room it was said in. A Rollup key that matches no

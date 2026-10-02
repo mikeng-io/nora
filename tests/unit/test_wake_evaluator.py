@@ -606,7 +606,7 @@ async def _time_floor(store, clock, *, hours_old):
 
 
 async def test_an_inert_time_stimulus_does_not_age_the_backlog_gauge():
-    """`StimulusBacklog` reads this gauge as «the oldest stimulus that COULD wake the
+    """an operator reads this gauge as «the oldest stimulus that COULD wake the
     unit». A `time` floor while no skill ships for it never can (`inert_kinds`), so
     five hours of it is not a stuck unit: the gauge counted it and the alert would
     have fired on deploy and stayed (review of #714, probe: one tick set 18000)."""

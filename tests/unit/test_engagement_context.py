@@ -772,7 +772,7 @@ async def test_an_unsupported_culture_account_does_not_render():
     """The same guarantee, for the `culture` block (Character · room).
     `InMemoryCultureStore` (`nora.testing`) is the shared fake; this only
     marks the appended head `unsupported`, the same thing the withdrawal
-    cascade (`nora.app.withdrawal`) does in Postgres — a local twist on the
+    mark does in Postgres — a local twist on the
     shared fake, not a second implementation of `CultureReader`."""
     import dataclasses
 

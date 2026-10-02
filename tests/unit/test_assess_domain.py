@@ -19,7 +19,7 @@ def test_every_named_check_has_a_function():
 
 def test_status_ok_refuses_a_nonzero_failing_count():
     with pytest.raises(ValueError, match="status=ok"):
-        DqCheckResult(check="unresolved_citations", status="ok", failing=1)
+        DqCheckResult(check="cross_room_duplicate_events", status="ok", failing=1)
 
 
 def test_status_not_applicable_refuses_a_nonzero_failing_count():
@@ -31,7 +31,7 @@ def test_status_not_applicable_refuses_a_nonzero_failing_count():
 
 def test_status_fail_needs_a_nonzero_failing_count():
     with pytest.raises(ValueError, match="status=fail"):
-        DqCheckResult(check="unresolved_citations", status="fail", failing=0)
+        DqCheckResult(check="cross_room_duplicate_events", status="fail", failing=0)
 
 
 def test_an_unknown_check_name_is_refused():
@@ -41,7 +41,7 @@ def test_an_unknown_check_name_is_refused():
 
 def test_status_error_refuses_a_nonzero_failing_count():
     with pytest.raises(ValueError, match="status=error"):
-        DqCheckResult(check="unresolved_citations", status="error", failing=1)
+        DqCheckResult(check="cross_room_duplicate_events", status="error", failing=1)
 
 
 def test_status_error_is_distinct_from_fail_and_not_applicable():
@@ -49,7 +49,7 @@ def test_status_error_is_distinct_from_fail_and_not_applicable():
     honestly did not run, nothing to check yet) are different facts, and
     neither is `fail` (the check ran and found a violation)."""
     result = DqCheckResult(
-        check="unresolved_citations", status="error", detail="RuntimeError: boom",
+        check="cross_room_duplicate_events", status="error", detail="RuntimeError: boom",
     )
     assert result.status == "error"
     assert result.failing == 0
@@ -60,7 +60,7 @@ def test_report_failing_checks_names_only_the_fails():
     report = AssessReport(
         kind="nightly_dq", run_at_ms=1000,
         results=(
-            DqCheckResult(check="unresolved_citations", status="ok"),
+            DqCheckResult(check="cross_room_duplicate_events", status="ok"),
             DqCheckResult(
                 check="empty_lineage_rows", status="fail", failing=2,
                 sample=("a", "b"),
@@ -78,7 +78,7 @@ def test_report_errored_checks_names_only_the_errors():
     report = AssessReport(
         kind="nightly_dq", run_at_ms=1000,
         results=(
-            DqCheckResult(check="unresolved_citations", status="ok"),
+            DqCheckResult(check="cross_room_duplicate_events", status="ok"),
             DqCheckResult(
                 check="empty_lineage_rows", status="fail", failing=2,
                 sample=("a", "b"),

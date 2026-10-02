@@ -239,11 +239,6 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
         "id": 500 + i, "citing_store": "event", "citing_key": _uuid("event", i),
         "cited_store": "message", "cited_id": str(1000 + i), "part": "start",
     },
-    # 0088_orphan_delete: a platform delete waiting for its message (a DELETE keeps a version).
-    "orphan_delete": lambda i: {
-        "id": 700 + i, "platform": "discord", "conversation_id": "g1", "handle": f"H{i}",
-        "deleter_ids": [], "event_ts": MS0 + i, "recorded_at": MS0 + i,
-    },
     # design/sandbox-runtime §15.2 (0082): one open session per scope.
     "computer_sessions": lambda i: {
         "id": _uuid("cs", i), "platform": "signal", "conversation_id": f"g{i}",
@@ -296,7 +291,6 @@ REVISE: dict[str, tuple[str, Callable[[int], Any]]] = {
     "rollup_response": ("outcome", lambda i: "responded"),
     "events": ("status", lambda i: "confirmed"),
     "citation": ("part", lambda i: "place"),
-    "orphan_delete": ("event_ts", lambda i: MS0 + 100 + i),
 }
 
 #: One append-only row, number `n`, citing the stable key-0 parents.
@@ -391,7 +385,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     # Step 3 (0077_assess_report): the Assess adaptor's one store.
     "assess_report": lambda n: {
         "kind": "nightly_dq", "run_at_ms": MS0 + n,
-        "results": [{"check": "unresolved_citations", "status": "ok"}],
+        "results": [{"check": "cross_room_duplicate_events", "status": "ok"}],
     },
     # Step 3a (0078_cognition_session): the Cognition adaptor's session and
     # its dry-run write verbs. `session_id` on the other two is left unset
