@@ -167,3 +167,7 @@ cites this one and across Register links: a note and its event
 (`Note.event_id`) share it both ways, and a memo a note closes into inherits
 it. It is re-checked on every link write and when a reminder about the row
 fires ([10](10-tiers.md) §3).
+
+**Not yet reachable (2026-10-03):** the session verbs carry no `exclude_persons`,
+so the Cognition prelude keeps surprises out of the notebook until they do. This
+deliberately differs from the above until the verb exists.

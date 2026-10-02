@@ -239,6 +239,185 @@ def test_an_objective_in_the_doctrine_directory_is_refused(tmp_path):
         _store(root).for_objective("room-language")
 
 
+PRELUDE_FM = """\
+---
+name: {name}
+kind: dreamer-prelude
+version: {version}
+applies_to: [{applies}]
+description: d
+change_policy: operator-only
+---
+{body}"""
+
+SKILL_FM = """\
+---
+name: {name}
+kind: skill
+version: {version}
+applies_to: [cognition_session]
+description: d
+change_policy: operator-only
+---
+{body}"""
+
+
+def write_prelude(root, *, name="room-language-prelude", applies="room-language",
+                  version=1, body="Prelude body.\n", filename=None):
+    d = root / "preludes"
+    d.mkdir(exist_ok=True)
+    path = d / (filename or f"{name}.md")
+    path.write_text(PRELUDE_FM.format(name=name, applies=applies, version=version, body=body),
+                    encoding="utf-8")
+    return path
+
+
+def write_skill(root, *, name="plans", version=1, body="\nSkill body.\n\n", filename=None):
+    d = root / "skills"
+    d.mkdir(exist_ok=True)
+    path = d / (filename or f"{name}.md")
+    path.write_text(SKILL_FM.format(name=name, version=version, body=body), encoding="utf-8")
+    return path
+
+
+def test_a_prelude_replaces_the_doctrine_for_the_objective_it_names_only(tree):
+    """Operator decision D2 (step 4): Cognition reads its own prelude, and every
+    other adaptor's text and digest are exactly what they were."""
+    before = _store(tree).for_objective("room-exchange")
+    write_prelude(tree)
+    store = _store(tree)
+    got = store.for_objective("room-language")
+    assert got.text.startswith('<dreamer_doctrine name="room-language-prelude">\nPrelude body.')
+    assert "Doctrine body." not in got.text
+    assert got.versions == {"room-language-prelude": 1, "room-language": 1}
+    assert store.for_objective("room-exchange") == before
+
+
+def test_a_prelude_moves_its_objectives_digest(tree):
+    before = _store(tree).for_objective("room-language").sha256
+    write_prelude(tree)
+    assert _store(tree).for_objective("room-language").sha256 != before
+
+
+def test_two_preludes_for_one_objective_are_a_startup_failure(tree):
+    write_prelude(tree)
+    write_prelude(tree, name="another-prelude")
+    with pytest.raises(InstructionError, match="has two preludes"):
+        _store(tree).objective_names()
+
+
+def test_a_prelude_naming_no_loaded_objective_is_a_startup_failure(tree):
+    """A typo there would serve the shared doctrine to the objective it meant."""
+    write_prelude(tree, applies="room-langauge")
+    with pytest.raises(InstructionError, match="not a loaded objective"):
+        _store(tree).objective_names()
+
+
+#: Every `applies_to` that is not a list of objective names, as the YAML a prelude
+#: would carry. Each used to raise TypeError (an int or a bool is not iterable, a nested
+#: list is unhashable at the dict lookup) or be quietly misread (a mapping iterates its
+#: keys), none of it an `InstructionError`.
+BAD_APPLIES_TO = [
+    "5", "true", "3.5", "[[room-language]]", "[5]", "[true]", "{room-language: 1}",
+    "room-language", "~", "[~]", "[[]]", "[]",
+]
+
+
+def write_prelude_raw(root, applies_yaml, *, name="room-language-prelude"):
+    d = root / "preludes"
+    d.mkdir(exist_ok=True)
+    path = d / f"{name}.md"
+    path.write_text(
+        "---\n"
+        f"name: {name}\nkind: dreamer-prelude\nversion: 1\napplies_to: {applies_yaml}\n"
+        "description: d\nchange_policy: operator-only\n---\nPrelude body.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize("applies", BAD_APPLIES_TO)
+def test_a_prelude_applies_to_that_is_not_a_list_of_names_is_an_instruction_error_at_startup(
+    tree, applies,
+):
+    """The watcher tolerates only `InstructionError`; at startup anything else crash-loops
+    the process."""
+    write_prelude_raw(tree, applies)
+    with pytest.raises(InstructionError, match=r"room-language-prelude\.md: applies_to must be"):
+        _store(tree).objective_names()
+
+
+@pytest.mark.parametrize("applies", BAD_APPLIES_TO)
+def test_a_bad_prelude_applies_to_on_a_hot_reload_keeps_the_last_good_scan_and_counts_it(
+    tree, applies,
+):
+    """The takedown: a bad shape raised TypeError out of the reload, which the watcher does
+    not catch, so EVERY `for_objective` raised until the file was fixed."""
+    write_prelude(tree)
+    metrics = Metrics()
+    store = DreamerInstructions(tree, metrics=metrics)
+    good = store.for_objective("room-language")
+    assert good.versions == {"room-language-prelude": 1, "room-language": 1}
+
+    _touch_newer(tree / "preludes" / "room-language-prelude.md",
+                 write_prelude_raw(tree, applies).read_text(encoding="utf-8"))
+    still = store.for_objective("room-language")            # does not raise
+
+    assert still == good
+    assert store.reload_failures == 1
+    assert metrics.get("nora_dreamer_instruction_reload_failures_total") == 1
+    # and a fixed file is served again
+    _touch_newer(tree / "preludes" / "room-language-prelude.md",
+                 write_prelude(tree, version=2, body="Fixed.\n").read_text(encoding="utf-8"))
+    assert store.for_objective("room-language").versions["room-language-prelude"] == 2
+
+
+def test_lenient_mode_skips_a_prelude_whose_applies_to_is_not_a_list(tree):
+    """Like any broken instruction file: absent, and the objective then reads the doctrine."""
+    write_prelude_raw(tree, "5")
+    store = _store(tree, strict=False)
+    assert store.for_objective("room-language").versions == {
+        "dreamer": 1, "room-language": 1,
+    }
+
+
+def test_a_prelude_in_the_doctrine_directory_is_refused(tree):
+    """A second file in `doctrine/` stops an older image at its next restart."""
+    path = write_prelude(tree)
+    path.rename(tree / "doctrine" / path.name)
+    with pytest.raises(InstructionError, match="expected exactly one Dreamer doctrine"):
+        _store(tree).objective_names()
+
+
+def test_a_skill_is_served_as_its_body_with_a_digest_over_exactly_that(tree):
+    import hashlib
+
+    write_skill(tree)
+    skill = _store(tree).skill("plans")
+    assert skill is not None
+    assert skill.instructions == "Skill body."
+    assert skill.sha256 == hashlib.sha256(b"Skill body.").hexdigest()
+    assert skill.version == 1
+    assert _store(tree).skill("absent") is None
+
+
+def test_a_skill_edit_is_picked_up_without_reconstruction(tree):
+    path = write_skill(tree)
+    store = _store(tree)
+    assert store.skill("plans").instructions == "Skill body."
+    _touch_newer(path, SKILL_FM.format(name="plans", version=2, body="Edited.\n"))
+    got = store.skill("plans")
+    assert got is not None and (got.instructions, got.version) == ("Edited.", 2)
+
+
+def test_a_skill_and_a_prelude_leave_every_objectives_text_alone_when_unused(tree):
+    before = {n: _store(tree).for_objective(n) for n in ("room-language", "room-exchange")}
+    write_skill(tree)
+    after = _store(tree)
+    assert {n: after.for_objective(n) for n in before} == before
+    assert after.versions()["plans"] == 1
+
+
 def test_an_unknown_kind_is_refused(tree):
     write_objective(tree, name="room-language", kind="constraint")
     with pytest.raises(InstructionError, match="kind 'constraint' is not one of"):
@@ -368,7 +547,10 @@ def test_every_shipped_objective_assembles_inside_the_two_tags():
     store = shipped_objectives()
     for name in store.objective_names():
         text = store.for_objective(name).text
-        assert text.startswith('<dreamer_doctrine name="dreamer">\n'), name
+        # Cognition reads its own prelude in the doctrine's place; every other
+        # adaptor reads the shared doctrine.
+        doctrine = "cognition-prelude" if name == "cognition" else "dreamer"
+        assert text.startswith(f'<dreamer_doctrine name="{doctrine}">\n'), name
         assert text.endswith("\n</dreamer_objective>"), name
         assert text.count("<dreamer_doctrine") == 1, name
         assert text.count("</dreamer_doctrine>") == 1, name
@@ -398,6 +580,15 @@ def test_no_shipped_description_reaches_the_model():
             SHIPPED / "objectives" / f"{name}.md", required=("name", "description")
         ).meta["description"])
         assert desc not in text, name
+    # the prelude's and the skill's descriptions are repo metadata too
+    cognition = store.for_objective("cognition").text
+    skill = store.skill("cognition-register")
+    assert skill is not None
+    for path in (SHIPPED / "preludes" / "cognition-prelude.md",
+                 SHIPPED / "skills" / "cognition-register.md"):
+        desc = str(parse_document(path, required=("name", "description")).meta["description"])
+        assert len(desc) > 100
+        assert desc not in cognition and desc not in skill.instructions, path.name
 
 
 # --- every shipped objective is accounted for ------------------------------

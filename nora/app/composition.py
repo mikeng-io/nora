@@ -64,14 +64,18 @@ from nora.app.cognition_grounding import build_grounder
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
-    AgendaSkills,
     CognitionShutdown,
+    PreludeMissingError,
+    SkillNotInstalledError,
     build_cognition_runner,
     cognition_budget,
     open_events_reader,
     read_surface,
     require_session_hook,
     units_with_home_rooms,
+)
+from nora.app.cognition_wiring import (
+    agenda_skills as cognition_agenda_skills,
 )
 from nora.app.computer_metrics import ComputerMetrics
 from nora.app.computer_sweeper import ComputerSessionSweeper, SweepRules
@@ -3679,10 +3683,10 @@ async def build_dependencies(
     # The shadow Cognition session (step 3a-iii): built inside the Dreamer
     # block below ONLY under `[cognition] session_mode = "shadow"`; `off`
     # builds nothing here, no model client and no agent-runner import.
-    #: Skills injected per agenda kind. No skill ships for any kind in this step: the
-    #: table is where each lands (`AgendaSkills`). A `time` floor wakes a session only
-    #: once the table has its kind (M8, DEC-245).
-    agenda_skills = AgendaSkills(by_kind={}, resolve=lambda name: None)
+    #: Skills injected per agenda kind (`AGENDA_SKILLS`: the Register skill for
+    #: `message`, `rollup` and `self`). A `time` floor wakes a session only once the
+    #: table has its kind (M8, DEC-245), and it does not: see `AGENDA_SKILLS`.
+    agenda_skills = cognition_agenda_skills(dreamer_instructions)
     cognition_runner: CognitionSessionRunner | None = None
     # EVERY unit stays in the wake evaluator (#637 review, minor 1): a unit with
     # no home room keeps recording its would-wakes, it only cannot start a
@@ -4543,42 +4547,48 @@ async def build_dependencies(
                 own_sends_max=cfg.cognition.own_sends_max,
             )
 
-            cognition_runner = build_cognition_runner(
-                cfg=cfg, models=dream_models,
-                retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
-                metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
-                dry_run_store=dry_run_store, stimulus_store=stimulus_store,
-                note_titles=_note_titles, open_events_in=_open_events,
-                note_head=_note_head,
-                # Nora's own pending rows in the LIVE reminder store: what the live
-                # `remind` tool counts against `max_pending_per_requester`.
-                requester_pending=_requester_pending,
-                reminder_caps=reminder_caps,
-                room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
-                    platform=platform, conversation_id=conversation_id,
-                ),
-                # The HEAD with its `standing_revision` id: the token a
-                # `standing_revise` base is checked against (M6, DEC-250).
-                standing_of=lambda platform, conversation_id: standing_store.read_head(
-                    platform=platform, conversation_id=conversation_id,
-                ),
-                roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
-                homes=homes, units=cognition_wakeable,
-                skills=agenda_skills,
-                grounder=grounder,
-                person_known=lambda person_id: persons.by_person.get(
-                    persons.subject_id_for(person_id),
-                ) is not None,
-                render_budget=RenderBudget(
-                    record_chars=cfg.cognition.record_chars,
-                    message_chars=cfg.cognition.message_chars,
-                    register_lines=cfg.cognition.register_lines,
-                ),
-                surface=surface, clock=lambda: clock().timestamp(),
-                model_id=dream_model, model_route=cfg.llm.base_url,
-                budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
-                result_caps=TOOL_RESULT_CAPS,
-            )
+            try:
+                cognition_runner = build_cognition_runner(
+                    cfg=cfg, models=dream_models,
+                    retry=factory.build_retry_policy(timeout_seconds=tier.timeout_seconds),
+                    metrics=metrics, tools=dream_tools, instructions=dreamer_instructions,
+                    dry_run_store=dry_run_store, stimulus_store=stimulus_store,
+                    note_titles=_note_titles, open_events_in=_open_events,
+                    note_head=_note_head,
+                    # Nora's own pending rows in the LIVE reminder store: what the live
+                    # `remind` tool counts against `max_pending_per_requester`.
+                    requester_pending=_requester_pending,
+                    reminder_caps=reminder_caps,
+                    room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(
+                        platform=platform, conversation_id=conversation_id,
+                    ),
+                    # The HEAD with its `standing_revision` id: the token a
+                    # `standing_revise` base is checked against (M6, DEC-250).
+                    standing_of=lambda platform, conversation_id: standing_store.read_head(
+                        platform=platform, conversation_id=conversation_id,
+                    ),
+                    roster_of=_roster_names_of(rosters, persons, registry.self_aliases()),
+                    homes=homes, units=cognition_wakeable,
+                    skills=agenda_skills,
+                    grounder=grounder,
+                    person_known=lambda person_id: persons.by_person.get(
+                        persons.subject_id_for(person_id),
+                    ) is not None,
+                    render_budget=RenderBudget(
+                        record_chars=cfg.cognition.record_chars,
+                        message_chars=cfg.cognition.message_chars,
+                        register_lines=cfg.cognition.register_lines,
+                    ),
+                    surface=surface, clock=lambda: clock().timestamp(),
+                    model_id=dream_model, model_route=cfg.llm.base_url,
+                    budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),
+                    result_caps=TOOL_RESULT_CAPS,
+                )
+            except (InstructionError, PreludeMissingError, SkillNotInstalledError) as exc:
+                # A missing or malformed `cognition` objective, a prelude it resolved
+                # without, or a mapped skill that is not installed: named at startup,
+                # not the first wake's failure and never a raw `LookupError`.
+                raise StartupError(f"Cognition session error: {exc}") from exc
 
     # The wake evaluator, after the Dreamer block so `session_mode = "shadow"`
     # can hand it the runner's hook. The boot check below refuses a shadow

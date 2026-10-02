@@ -26,11 +26,13 @@ list, and a result with any other digit fails
 (`test_the_only_numbers_a_result_carries_...`, which runs the oversize refusals).
 
 **What is scanned** (every string the model can read that this catalogue owns):
-the assembled instruction (`DreamerInstructions.for_objective("cognition")`), the
-prompt the session renders, every verb's description and parameter descriptions as
-Strands hands them to the model, every result a scripted session gets back from
-every verb down its ok path and its refusal paths, and every refusal detail the pure
-checks can produce. A positive control proves the scan sees the old wording.
+the assembled instruction (`DreamerInstructions.for_objective("cognition")`, whose
+doctrine half is Cognition's own prelude since step 4 PR-1), the agenda skill
+production injects after it (`cognition-register`, through the production
+`AgendaSkills`), the prompt the session renders, every verb's description and
+parameter descriptions as Strands hands them to the model, every result a scripted
+session gets back from every verb down its ok path and its refusal paths, and every
+refusal detail the pure checks can produce. A positive control proves the scan sees the old wording.
 
 What each test catches if its fix is reverted is named in
 `scripts/mutations/cognition-measures.json`.
@@ -50,6 +52,7 @@ from nora.app.cognition_session import (
     CognitionRunResult,
     CognitionSessionRunner,
 )
+from nora.app.cognition_wiring import REGISTER_SKILL, agenda_skills
 from nora.domain.cognition_pace import (
     PendingSelfWake,
     check_wake_at,
@@ -147,10 +150,12 @@ async def _rendered() -> _Spy:
         return None
 
     loaded = shipped_objectives().for_objective("cognition")
+    skills = agenda_skills(shipped_objectives())
     runner = CognitionSessionRunner(
         dry_run_store=store, stimulus_store=stimuli, agent_runner=spy,
         home_rooms={"u": Room("signal", "room-a")}, read_tools_for=lambda u, r: [],
-        skill_text_for=lambda kinds: "", grounder=EmptyGrounder(),
+        skill_text_for=skills.text_for, skill_versions_for=skills.versions_for,
+        grounder=EmptyGrounder(),
         doctrine_text=loaded.text, doctrine_sha256=loaded.sha256, open_note_titles=none,
         open_events=none, prior_standing=no_head, pending_self_wakes=none,
         pending_mirrored_reminds=none, session_mode="shadow",
@@ -171,7 +176,39 @@ async def _rendered() -> _Spy:
 async def test_the_assembled_instruction_does_not_tell_the_model_it_is_in_a_shadow_run():
     spy = await _rendered()
     assert "# When a write is refused" in spy.system_prompt          # the real file was read
+    assert '<dreamer_doctrine name="cognition-prelude">' in spy.system_prompt   # the prelude
+    assert f"# Skill: {REGISTER_SKILL}" in spy.system_prompt         # and the skill
     assert findings(spy.system_prompt) == []
+
+
+#: What the shared Dreamer doctrine tells every judge and the Cognition session must
+#: no longer read: it writes the group's notebook (operator decision D2, step 4).
+JUDGE_PREMISE = re.compile(
+    r"nobody sees this|you do not act|nothing you produce|reaches anyone", re.IGNORECASE,
+)
+
+
+def test_the_scan_flags_the_shared_doctrines_premise():
+    text = (shipped_objectives().for_objective("note-merge").text)
+    assert JUDGE_PREMISE.search(text)                                # positive control
+
+
+async def test_the_session_no_longer_reads_the_judges_premise():
+    spy = await _rendered()
+    assert not JUDGE_PREMISE.search(spy.system_prompt)
+
+
+async def test_the_prelude_and_the_skill_state_no_number_outside_the_example_body():
+    """Caps stay in code (DEC-247). The skill's one example note body carries ids and
+    dates, which are the grammar, not a limit; nothing else in either text has a
+    digit."""
+    spy = await _rendered()
+    prelude = spy.system_prompt.split("</dreamer_doctrine>")[0]
+    skill = spy.system_prompt.split(f"# Skill: {REGISTER_SKILL}")[1]
+    assert "keep one group's notebook" in prelude and "[5201" in skill   # both were cut
+    prose = re.sub(r"^```\n.*?^```$", "", prelude + skill, flags=re.MULTILINE | re.DOTALL)
+    assert "[5201" not in prose                                      # the example was cut out
+    assert not re.search(r"\d", prose), re.findall(r".{20}\d.{20}", prose)
 
 
 async def test_the_rendered_prompt_does_not_tell_the_model_it_is_observed():
