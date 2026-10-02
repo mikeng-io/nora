@@ -8,7 +8,7 @@
     "Removed: the note-candidates, note-curation, note-merge and proactive decide passes, the event-driven Standing fold, the shadow ledger and `nora cognition compare`."
   ],
   "limitations": [
-    "Config: `[cognition] mode`/`session_mode` are replaced by `[cognition] enabled`, and `[notes] candidates_enabled`, `curator_enabled`, `merge_mode`, `candidates_interval_seconds` (and the curator's tuning keys), `[standing] event_enabled`/`rollup_max_folds` and `[memory] roster_index_*` are gone; a config that still names one refuses to start.",
+    "Config keys removed (a config that still names one refuses to start): `[cognition]` mode, session_mode, shadow_session_seconds; `[notes]` curator_enabled, candidates_enabled, discharge_enabled, merge_mode, candidate_samples, candidates_interval_seconds, max_expired_per_tick, max_revisits_per_tick, revisit_evidence_messages; `[standing]` event_enabled, rollup_max_folds; `[memory]` roster_index_conclusions, roster_index_members. Added: `[cognition] enabled`.",
     "Turning `[cognition] enabled` off leaves the notebook with no background writer until it is turned back on; the tag path's own note and reminder tools are unaffected."
   ]
 }

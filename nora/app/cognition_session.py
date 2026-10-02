@@ -68,6 +68,7 @@ from typing import Any, Literal, Protocol
 
 from nora.agent import cognition_pace as pace
 from nora.agent.fetch_watch import Fetched, watch_reads
+from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
 from nora.domain.cognition_pace import (
     DEFAULT_MAX_SELF_WAKES_PER_DAY,
@@ -127,7 +128,7 @@ from nora.domain.ports import (
     RecordedOutcome,
     StimulusStore,
 )
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.reminders import DuplicateProactiveNoteError, Reminder, ReminderState
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import (
     LIMIT_STOP_REASONS,
@@ -1581,6 +1582,11 @@ class CognitionSessionRunner:
                     "not_retired",
                     "no open note by that id at that revision; read the notebook again",
                 )
+            for held in await self._reminders.pending_of(self._ai_peer):
+                if (held.payload or {}).get("note_id") == note_id:
+                    await self._reminders.mark(
+                        held.id, ReminderState.CANCELLED, outcome=CANCELLED_NOTE_RETIRED,
+                    )
             return wrote(platform, conversation_id, item)
 
         async def note_merge(
@@ -2094,11 +2100,29 @@ class CognitionSessionRunner:
                 )
                 if refusal is not None:
                     return _refused(refusal.reason, refusal.detail)
+                link: dict[str, str] = {}
+                note_row = next((r for r in subject_rows if r.startswith("note:")), None)
+                if note_row is not None:
+                    shown_note = await self._notes.read(
+                        unit=unit, note_id=_bare_row(note_row),
+                    )
+                    if shown_note is None:
+                        return _refused("not_found", f"no open note {note_row!r}")
+                    link = {
+                        "note_id": shown_note[0].id, "revision_id": shown_note[1].id,
+                        "note_title": shown_note[0].title,
+                    }
                 row = self._reminder_row(
                     platform=platform, conversation_id=conversation_id, text=text,
                     intent=intent, subject_rows=subject_rows, at_ms=at_ms, unit=unit,
+                    link=link,
                 )
-                await self._reminders.create(row)
+                try:
+                    await self._reminders.create(row)
+                except DuplicateProactiveNoteError:
+                    return _refused(
+                        "duplicate_pending", "a reminder is already waiting on that note",
+                    )
             return {"status": "ok", "reminder_id": str(row.id)}
 
         async def _own_reminder(reminder_id: str) -> Reminder | dict[str, object]:
@@ -2181,7 +2205,7 @@ class CognitionSessionRunner:
 
     def _reminder_row(
         self, *, platform: str, conversation_id: str, text: str, intent: str,
-        subject_rows: Sequence[str], at_ms: int, unit: str,
+        subject_rows: Sequence[str], at_ms: int, unit: str, link: Mapping[str, str],
     ) -> Reminder:
         """The row the tag path's `remind` writes for Nora's own decision
         (`kind="proactive"`, owned by her `ai_peer` id, fired by the one fire
@@ -2193,7 +2217,7 @@ class CognitionSessionRunner:
             created_at=now_utc(self._now_ms()), due_at=now_utc(at_ms),
             state=ReminderState.PENDING, fired_at=None, outcome=None, kind="proactive",
             payload={
-                "intent": intent, "subject_rows": " ".join(subject_rows),
+                **link, "intent": intent, "subject_rows": " ".join(subject_rows),
                 "by": f"{COGNITION_PATH_PREFIX}{unit}",
             },
         )

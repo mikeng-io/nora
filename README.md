@@ -300,7 +300,7 @@ operator playbook when a doctrine edit misbehaves.
   the ones an operator reads first are `nora_silent_failures_total{audience}`,
   `nora_tags_total`, `nora_replies_total`, `nora_errors_total{stage}`,
   `nora_dream_run_total{adaptor,status}`, `nora_reminders_fired_total{outcome}`,
-  `nora_participation_*` and `nora_proactive_*` (the fire path's; the DECIDE-pass series are gone), and the latency histograms.
+  `nora_participation_*` and `nora_proactive_silence_total` / `nora_proactive_spoke_total` (the fire path's; the decide-pass series are gone), and the latency histograms.
 - **Something watches** (2026-09-09): Prometheus scrapes every process,
   Alertmanager routes, and alerts land in a Discord review channel through the
   alert bridge; exceptions go to Sentry. `docs/observability.md` is the map and

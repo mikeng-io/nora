@@ -322,9 +322,9 @@ be populated and merge was inert by construction; the registry store, the
 resolution pass and the merge verb are deleted (their tables stay). The
 curator only retires. R-75 in the decision index says which clauses survive. A
 model-judged merge returns in a separate `note-merge` adaptor (DEC-202, design
-41 §7, designed 2026-09-24, built 2026-09-25 behind `[notes] merge_mode`,
-default `off`, first run in `shadow`, which writes no note); the curator
-stays retire-only.
+41 §7, designed 2026-09-24, built 2026-09-25 behind a `merge_mode` key that has since been
+removed, first run in `shadow`, which wrote no note); the curator
+stayed retire-only.
 **2026-10-03 (DEC-277): `note_candidates`, the curator and `note-merge` are
 deleted; the Cognition session writes, retires (`note_retire`) and merges
 (`note_merge`) notes, and `[notes] enabled` is the only notes key left. The

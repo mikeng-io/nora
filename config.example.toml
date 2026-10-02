@@ -1763,7 +1763,7 @@ store_timeout_seconds = 15.0
 # than one bounded query — nora.domain.media_join.DEFAULT_QUERY_BLOBS). 300s
 # is headroom for their NORMAL running time, not a bound on a hang. This
 # derivation moves with every future edit to a [dreamer.budgets.*]
-# timeout_seconds or to [notes] candidate_samples — a fixed literal here
+# timeout_seconds or sample count — a fixed literal here
 # would need a human to remember to raise it alongside either one, and
 # forgetting is either a refused boot (too low) or a silently thinner margin
 # (an old literal that still happens to validate).

@@ -15,6 +15,7 @@ from nora.domain.reminders import ReminderState
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus
 from nora.language.cognition_render import render_agenda
+from nora.testing.note_store import InMemoryNoteStore
 from tests.unit.cognition_rig import GOOD_BODY, NOTE, NOW, A, Stores, iso, session
 
 PROVENANCE = "cognition:u"
@@ -187,6 +188,34 @@ async def test_remind_writes_the_proactive_row_the_fire_path_fires_and_can_move_
     assert {(r.payload or {}).get("by") for r in rows} == {PROVENANCE}
     assert rows[0].text == "ask where dinner is"
     assert all(r.state is ReminderState.CANCELLED for r in rows)
+
+
+async def test_a_note_linked_remind_carries_the_note_and_follows_a_merge_and_a_retire():
+    stores = Stores()
+    stores.notes = InMemoryNoteStore(reminders=stores.reminders)
+    survivor = await _seed_note(stores, "dinner")
+    duplicate = await _seed_note(stores, "dinner place")
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["remind"](
+            intent="ask", text="ask where dinner is",
+            subject_rows=[f"note:{duplicate.id}", "101"], at=iso(NOW + 3_600_000),
+        ))
+        row = next(iter(stores.reminders._rows.values()))
+        assert row.payload["note_id"] == duplicate.id
+        assert row.payload["note_title"] == "dinner place"
+        answers.append(await by["note_merge"](
+            survivor_id=survivor.id, duplicate_id=duplicate.id, body=GOOD_BODY,
+        ))
+        assert row.state is ReminderState.PENDING
+        answers.append(await by["note_retire"](note_id=survivor.id, reason="settled"))
+
+    await session(behave, stores=stores)
+    assert [a["status"] for a in answers] == ["ok", "ok", "ok"]
+    (row,) = stores.reminders._rows.values()
+    assert row.payload["note_id"] == survivor.id
+    assert row.state is ReminderState.CANCELLED and row.outcome == "cancelled_note_retired"
 
 
 def _note(note_id: str, title: str) -> Note:

@@ -286,7 +286,8 @@ def build_grounder(
         enforced = lineage.mode == "on"
         withheld = {"notes": 0, "events": 0}
         notes_out: list[NoteLine] = []
-        # The notebook review's facts (a `time` item): the anchor day passed or
+        # The notebook review's facts, marked on every agenda's index (the `time`
+        # item is what asks her to act on them): the anchor day passed or
         # the revisit date came, and a title that shares most of its words with
         # another open note's. Read off the rows the index already holds.
         now_ms = int(clock() * 1000)

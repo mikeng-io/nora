@@ -92,9 +92,9 @@ with what she knows».
 three shipped-off paths that speak uncalled — the heartbeat's reminders, the
 participation occasion (design/dreamer-agent-loop/35) and the proactive
 adaptor (design/dreamer-agent-loop/39, DEC-162) — are granted per room in
-`policy.toml` and per section in `config.toml`, and the Dreamer runs three
+`policy.toml` and per section in `config.toml`, and the Dreamer then ran three
 adaptors (`note-candidates`, `note-curation`, `proactive`) over the note tier
-and Standing. **Updated 2026-09-25:** five adaptors now — `note-merge`
+and Standing. **Updated 2026-09-25:** five adaptors then — `note-merge`
 (DEC-202) and `culture` (DEC-207) joined them. **Updated 2026-10-03
 (DEC-277):** those four note/proactive adaptors are deleted; the Cognition
 session writes notes, events, Standing and Nora's reminders, and `culture` is

@@ -46,7 +46,7 @@ is correct. To tell "quiet" from "broken":
    three outcomes for this kind — `silent`, and the fire-time screen's
    `cancelled_note_retired` / `cancelled_note_moved`. The decide pass and its
    `nora_proactive_decisions_total` / `nora_dream_run_total{adaptor="proactive"}`
-   are gone (DEC-277); read the deciding side in `cognition_wake_outcome`.
+   are gone (DEC-277); read the deciding side in the `cognition_wake_outcome` table.
 
    **A reminder can also be hours late with all three of those reading healthy.**
    A tick that finds the conversation's slot held by a tag leaves the rows
@@ -863,7 +863,7 @@ is deliberate — an observability store must not be able to break CI.
 ALSO gone (`design/evaluation/10-the-scenario-map.md` §15/16, the corpus
 port) — the suite is now `python -m evals <name>` (a corpus NAME, not a file
 path; `--list` shows every one, `--class`/`--all` select more than one), and
-`make eval-participation` / `eval-note-candidates` (the pass is deleted, DEC-277, 2026-10-03) / `eval-gate` /
+`make eval-participation` / `eval-gate` /
 `eval-adversarial-corpora` are the wrappers, updated to match. Read
 `design/evaluation/06-first-full-run.md` before quoting any number from it —
 four corpora are currently ungradable without a judge, and the judge is too
