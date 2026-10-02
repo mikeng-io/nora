@@ -373,7 +373,7 @@ the debrief through `standing_revise` (DEC-239), and the operator through
   comment replies are not Record (§1a);
 - a head the fold re-derives keeps its `unsupported_at` (neither upsert clears
   it), so it stays hidden until `unforget --clear-unsupported`
-  ([context-assembly/04](../context-assembly/04-every-occasion.md) §6);
+  ([context-assembly/04](../context-assembly/04-every-occasion.md) §7);
 - `<loop_decisions>` and `media_search`/`media_send` skip lineage (§6);
 - Views depart from one path in the other ways §6 lists.
 

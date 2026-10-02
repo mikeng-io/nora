@@ -185,6 +185,16 @@ counting a module's responsibilities to counting its lines.
 - **Never run `alembic revision --autogenerate` and trust the result for
   `idx_messages_conv_ts`.** It is excluded from autogenerate on purpose; a
   revision that touches it must be hand-written.
+- **Never build a model prompt outside context assembly.** Operator, 2026-10-01:
+  every agent assembles through context assembly, "or it goes back to the
+  original chaos, everything built differently". The census that was meant to
+  hold the line read a hand list of five files, so the Cognition session, built
+  after the list was written, hand-wrote its whole prompt (no blocks, no
+  escaping, an id shape its own `note_create` refused) and nothing noticed. The
+  enforcer now finds occasions by AST and a violation is a plain failure: there
+  is no ledger of known violations to hide one in. A new occasion follows
+  `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
+  (DEC-273).
 
 ## Reaching the deployment — the detail
 

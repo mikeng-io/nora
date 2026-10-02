@@ -25,7 +25,7 @@
     "file": "nora/domain/summons.py",
     "old": "assemble(blocks, sep=_SEP)",
     "new": "_SEP.join(b.render() for b in blocks)",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly tests/unit/test_summons_assembly_goldens.py::test_every_block_assemble_is_handed_carries_its_rows_order_and_key"
   },
   {
     "name": "4a: an empty body is dropped, as `assemble` drops it, where the hand join kept the pair",

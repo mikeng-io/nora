@@ -455,6 +455,13 @@ the same commit.
   index; on *still open*, the thing that would close it. Three instruction
   rewrites in one night changed nothing or made it worse; rendering an age per
   transcript row cut the same gate's error rate by two thirds.
+- **Never build a model prompt outside context assembly** — every agent, pass and
+  fold declares a `_BLOCKS` table and walks it with `assemble` from
+  `nora.domain.blocks`; there is no exception and no list of exceptions (DEC-273).
+  `tests/architecture/test_every_model_call_is_a_declared_occasion.py` finds a
+  violator by AST and fails; a new occasion follows
+  `design/context-assembly/04-every-occasion.md` «How a new occasion joins». The
+  list-based census it replaced let the Cognition session ship hand-built.
 - **Never paste production rows into a fixture** — not a slice, not "just six
   people", not with a docstring saying it is real. Fixtures are GENERATED, or
   placeholders from `identity.example.toml`; if a synthetic corpus cannot

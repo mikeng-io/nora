@@ -1,16 +1,21 @@
 """Every place Nora sends a prompt to a model is a declared context-assembly
 occasion, found by DISCOVERY and not by a list somebody keeps.
 
-`design/context-assembly` declared an occasion's blocks in one module-level
-`_BLOCKS` table and walked it with `nora.domain.blocks.assemble`. The census
-test that enforced it, `test_the_registry_is_exhaustive.py`, read a hand list
-of five files, so a sixth occasion could not fail it. The Cognition session
-was built after that list was written and hand-writes its whole prompt: no
+The rule, from the operator (2026-10-01): **every Nora agent assembles its
+prompt through context assembly, no exception.** A violation is a failure. There
+is no list of known violations, no debt count and no ceiling to hide one in: an
+earlier version of this file kept a PENDING ledger while the occasions were
+moved over (design/context-assembly/04-every-occasion.md, steps 0 to 5); it was
+empty when step 6 deleted it.
+
+The census this replaced, `test_the_registry_is_exhaustive.py`, read a hand list
+of five files, so a sixth occasion could not fail it. The Cognition session was
+built after that list was written and hand-wrote its whole prompt: no
 `ContextBlock`, no escaping, a different id shape from the one its own
 `note_create` demands. Nothing noticed, because nothing looked for it.
 
-This test looks. It reads source (no import of `nora`, the reason the census
-before it did too) and finds, with no list of occasions:
+This test looks. It reads source (no import of `nora`) and finds, with no list
+of occasions:
 
   1. every module that calls a model: `create_agent`, `create_dream_agent`,
      `ask_text`, `ask_structured`, `invoke_async`, `.invoke` on a runner or
@@ -25,28 +30,23 @@ from `nora.domain.blocks`, so the table's `order` is the order the model
 reads. Three kinds of module need no table, each with a written reason: a
 MECHANISM (the SDK or transport layer that never decides what a prompt says),
 a RUNNER (it runs a prompt that another named module builds, and that
-builder must itself be declared) and an EXEMPT occasion that is not a context
-at all (an authored prompt plus an image).
+builder must itself be declared and, for `imports`, really imported) and an
+EXEMPT occasion that is not a context at all (an authored prompt plus an
+image). A module that is none of these and builds a prompt fails
+`test_nothing_builds_a_prompt_outside_context_assembly`; the fix is to join it
+(design/context-assembly/04-every-occasion.md, «How a new occasion joins»),
+never to widen a table below to excuse it.
 
-**PENDING is a debt ledger, not an exemption.** It names what fails today and
-the step of `design/context-assembly/04-every-occasion.md` that removes it.
-Four guards keep it honest: an entry that no longer fails is refused (delete
-it), the count must EQUAL `CEILING` (so paying one down forces lowering the
-number in the same diff, and adding one forces raising it, which is the act
-this file says never to do), a RUNNER must really import a builder it names,
-and the last step of the plan deletes the ledger and this paragraph with it.
+**What the net cannot see**, so a reviewer knows what is left to review. None
+of it is recorded as debt here: a hand-built text the net cannot see is fixed,
+or covered by a purpose-built architecture test like
+`test_framing_is_one_typed_place.py` (authored prompt text in one typed
+module), `test_withdrawal_reaches_every_prompt.py` (a withdrawn head reaches no
+prompt) or `test_one_quote_resolver.py`; never added to a list.
 
-**What a test cannot see**, so a reviewer knows what is left to review:
-
-  - text a module hand-builds INSIDE a RUNNER or a MECHANISM. The net knows a
-    module runs a prompt, not that it also writes one. KNOWN_HAND_BUILT is the
-    by-hand record of the ones found by reading (it is empty now: the debrief's
-    `_prompt` was one until step 2b moved it into its renderer, fire's header
-    paragraphs until step 4b made them typed builders in `nora.domain.framing`,
-    which `test_framing_is_one_typed_place` now watches, and the vision
-    summarizer's unframed text until step 4c wrapped it in a `media_text`
-    block): each is a ledger entry like any other, but a NEW one is found by a
-    person, not by this test;
+  - text a module hand-builds INSIDE a RUNNER, a MECHANISM or an EXEMPT. The net
+    knows such a module runs a prompt, not that it also writes one. A NEW such
+    text is found by a person, and gets a test of its own;
   - a model door this file does not know. Honcho's `chat` (a dialectic query
     to a memory service's own model) and image generation are not matched;
   - a model call reached only through an imported helper (the net is
@@ -135,24 +135,6 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
         ("nora/engagement/debrief_render.py",), "imports",
     ),
 }
-
-#: Hand-built prompt text found by READING, inside a module the AST net treats
-#: as a RUNNER, a MECHANISM or an EXEMPT. rel -> what is hand-built. Each is a
-#: ledger entry below; this table is how a debt the net cannot detect is still
-#: recorded and counted.
-KNOWN_HAND_BUILT: dict[str, str] = {}
-
-#: What fails TODAY. (module, kind) -> the plan step that removes it.
-#: kind is `undeclared` (builds a prompt, no `_BLOCKS`), `hand_joined`
-#: (`_BLOCKS` declared but never walked by `assemble`, so its `order` is a
-#: comment) or `hand_built` (text written by hand inside a runner, from
-#: KNOWN_HAND_BUILT).
-PENDING: dict[tuple[str, str], str] = {}
-
-#: The ledger's size, pinned exactly. Pay one down and this test fails until
-#: you lower the number in the same diff; add one and it fails until you raise
-#: it, which should never be done.
-CEILING = 0
 
 
 def _rel(path: Path) -> str:
@@ -279,7 +261,7 @@ def imports_module(tree: ast.Module, rel: str) -> bool:
 
 def violations(modules: dict[str, ast.Module]) -> set[tuple[str, str]]:
     """Every (module, kind) that breaks the rule right now."""
-    found: set[tuple[str, str]] = {(rel, "hand_built") for rel in KNOWN_HAND_BUILT}
+    found: set[tuple[str, str]] = set()
     builders: set[str] = set()
     for rel, tree in modules.items():
         if rel == "nora/domain/ports.py":  # the Protocol that names `inputs`
@@ -304,41 +286,22 @@ def modules() -> dict[str, ast.Module]:
     return _modules()
 
 
-def test_every_prompt_builder_is_declared_or_on_the_ledger(modules):
-    unexpected = sorted(violations(modules) - set(PENDING))
-    assert not unexpected, (
+def check_the_rule(modules: dict[str, ast.Module]) -> None:
+    """The rule itself: a violation is a failure. Its own test below runs it
+    over a tree with a synthetic occasion added, so it cannot go vacuous."""
+    found = sorted(violations(modules))
+    assert not found, (
         "a module builds a model prompt outside context assembly: "
-        f"{unexpected}. Declare `_BLOCKS` and walk it with `assemble(...)` "
-        "(design/context-assembly), or, if it truly is not a context, add it "
-        "to MECHANISM, RUNNER or EXEMPT with a reason. Do not add it to "
-        "PENDING: the ledger only shrinks."
+        f"{found}. Declare `_BLOCKS` and walk it with `assemble(...)` "
+        "(design/context-assembly/04-every-occasion.md, «How a new occasion "
+        "joins»), or, if it truly is not a context, add it to MECHANISM, "
+        "RUNNER or EXEMPT with a reason. There is no list of exceptions to "
+        "add it to."
     )
 
 
-def test_no_pending_entry_has_been_paid_and_left_behind(modules):
-    stale = sorted(set(PENDING) - violations(modules))
-    assert not stale, (
-        f"{stale} no longer fail. Delete them from PENDING and lower CEILING: "
-        "a ledger entry that is not a debt hides the next one."
-    )
-
-
-def test_the_ledger_is_exactly_the_size_it_says():
-    assert len(PENDING) == CEILING, (
-        f"PENDING holds {len(PENDING)} entries and CEILING says {CEILING}. "
-        "Paying a debt lowers both in one diff. A new debt is a violation to "
-        "fix, not a line to add."
-    )
-
-
-def test_every_known_hand_built_module_is_a_real_runner_or_exempt(modules):
-    for rel, what in KNOWN_HAND_BUILT.items():
-        assert rel in modules, f"{rel} does not exist; delete its entry"
-        assert rel in RUNNER or rel in MECHANISM or rel in EXEMPT, (
-            f"{rel} is not a RUNNER, MECHANISM or EXEMPT, so the net already "
-            "sees it; delete the entry and let the net classify it"
-        )
-        assert len(what.split()) >= 12, f"{rel}: say what is hand-built"
+def test_nothing_builds_a_prompt_outside_context_assembly(modules):
+    check_the_rule(modules)
 
 
 @pytest.mark.parametrize("table", [MECHANISM, EXEMPT], ids=["mechanism", "exempt"])
@@ -363,7 +326,8 @@ def test_every_runner_names_builders_that_exist_and_are_reached(modules):
         if how == "imports":
             assert any(imports_module(modules[rel], b) for b in builders), (
                 f"{rel} says it imports one of {builders} and imports none; "
-                "re-pointing a RUNNER at a declared module must not clear a debt"
+                "re-pointing a RUNNER at a declared module must not launder a "
+                "module that builds a prompt"
             )
 
 
@@ -401,6 +365,37 @@ def test_the_net_catches_a_hand_built_occasion():
     )
     assert calls_a_model(tree)
     assert not declares_blocks(tree)
+
+
+def test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree(modules):
+    """The rule itself, not just its detectors: put a synthetic hand-built
+    occasion (an f-string prompt, a model call, no table) and one that declares
+    a table and joins it by hand into the real tree, and the violations name
+    both, beyond whatever the real tree already holds. With no ledger to hide
+    them in, that is a red test."""
+    hand_built = _tree(
+        "async def run(factory, rows):\n"
+        "    agent = factory.create_dream_agent(system_prompt='x')\n"
+        "    prompt = '\\n'.join(f'[#{r.id}] {r.who}: {r.body}' for r in rows)\n"
+        "    return await factory.invoke(agent, prompt)\n"
+    )
+    hand_joined = _tree(
+        "_BLOCKS: tuple[tuple[str, int, str], ...] = (('c', 1, 'turn'),)\n"
+        "async def run(factory, parts):\n"
+        "    agent = factory.create_dream_agent(system_prompt='x')\n"
+        "    return await factory.invoke(agent, '\\n\\n'.join(parts))\n"
+    )
+    scratch = {
+        **modules,
+        "nora/scratch_hand_built.py": hand_built,
+        "nora/scratch_hand_joined.py": hand_joined,
+    }
+    with pytest.raises(AssertionError, match="scratch_hand_built"):
+        check_the_rule(scratch)
+    assert violations(scratch) - violations(modules) == {
+        ("nora/scratch_hand_built.py", "undeclared"),
+        ("nora/scratch_hand_joined.py", "hand_joined"),
+    }
 
 
 @pytest.mark.parametrize("source", [

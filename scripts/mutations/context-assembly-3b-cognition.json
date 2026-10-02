@@ -74,7 +74,7 @@
     "file": "nora/language/cognition_render.py",
     "old": "    return assemble(blocks, sep=_SEP)",
     "new": "    return _SEP.join(b.render() for b in sorted(blocks, key=lambda b: b.order) if b.body or b.when_empty != \"drop\")",
-    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_no_pending_entry_has_been_paid_and_left_behind tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_every_prompt_builder_is_declared_or_on_the_ledger"
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
   },
   {
     "name": "3b: a row clipped to its share is cut through its own element, not in its words",

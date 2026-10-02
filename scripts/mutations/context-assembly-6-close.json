@@ -1,0 +1,65 @@
+[
+  {
+    "name": "6: prefill hands the tag turn's blocks to a hand join, so the table's order is a comment",
+    "file": "nora/agent/prefill.py",
+    "old": "assemble(declared),",
+    "new": "\"\".join(b.render() for b in declared),",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: culture's fold prompt is joined by hand again",
+    "file": "nora/language/culture.py",
+    "old": "return assemble(parts, sep=\"\\n\\n\")",
+    "new": "return \"\\n\\n\".join(b.render() for b in parts)",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: note-candidates is joined by hand again",
+    "file": "nora/language/note_candidates.py",
+    "old": "return assemble(parts, sep=\"\\n\\n\")",
+    "new": "return \"\\n\\n\".join(b.render() for b in parts)",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: the note curator is joined by hand again",
+    "file": "nora/language/note_curator.py",
+    "old": "return assemble([_now_block(self._today()), *cultures, *parts], sep=\"\\n\")",
+    "new": "return \"\\n\".join(b.render() for b in [_now_block(self._today()), *cultures, *parts])",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: note-merge is joined by hand again",
+    "file": "nora/language/note_merge.py",
+    "old": "prompt = assemble(blocks, sep=\"\\n\")",
+    "new": "prompt = \"\\n\".join(b.render() for b in blocks)",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: proactive is joined by hand again",
+    "file": "nora/language/proactive.py",
+    "old": "return assemble(blocks, sep=\"\\n\\n\")",
+    "new": "return \"\\n\\n\".join(b.render() for b in blocks)",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
+    "name": "6: the rule stops asking for a `_BLOCKS` table",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "        if not declares_blocks(tree):",
+    "new": "        if False:",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree"
+  },
+  {
+    "name": "6: the rule stops asking for a walk by `assemble`",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "        elif not calls_assemble(tree):",
+    "new": "        elif False:",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree"
+  },
+  {
+    "name": "6: a violation is no longer a failure",
+    "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
+    "old": "    found = sorted(violations(modules))\n    assert not found, (",
+    "new": "    found = []\n    assert not found, (",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree"
+  }
+]
