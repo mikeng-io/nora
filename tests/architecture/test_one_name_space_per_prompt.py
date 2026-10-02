@@ -46,12 +46,6 @@ ROOT = Path(__file__).resolve().parents[2]
 #: but having both in use is the thing that is never right.
 _FALLBACK = "unknown"
 
-#: Names a renderer may end the chain in instead, with the reason. Empty, and
-#: that is the state worth defending: every exemption here is a prompt or a post
-#: where one person can appear under two names.
-_NOT_THE_FALLBACK: dict[tuple[str, str], str] = {}
-
-
 def _speaker_chains() -> dict[tuple[str, str], str]:
     """Every `row.person_name or …` chain under `nora/`, by (module, function).
 
@@ -72,17 +66,30 @@ def _speaker_chains() -> dict[tuple[str, str], str]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover
             continue
-        for fn in (n for n in ast.walk(tree)
-                   if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)):
-            for node in ast.walk(fn):
-                if not (isinstance(node, ast.BoolOp)
-                        and isinstance(node.op, ast.Or)):
-                    continue
-                parts = [ast.unparse(v) for v in node.values]
-                if not any(p.endswith(".person_name") for p in parts):
-                    continue
-                found[(rel, fn.name)] = " or ".join(parts)
+        found.update(_chains_in(tree, rel))
     return found
+
+
+def _chains_in(tree: ast.Module, rel: str) -> dict[tuple[str, str], str]:
+    found: dict[tuple[str, str], str] = {}
+    for fn in (n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)):
+        for node in ast.walk(fn):
+            if not (isinstance(node, ast.BoolOp)
+                    and isinstance(node.op, ast.Or)):
+                continue
+            parts = [ast.unparse(v) for v in node.values]
+            if not any(p.endswith(".person_name") for p in parts):
+                continue
+            found[(rel, fn.name)] = " or ".join(parts)
+    return found
+
+
+def _wrong_fallback(chains: dict[tuple[str, str], str]) -> dict[tuple[str, str], str]:
+    return {
+        site: chain for site, chain in chains.items()
+        if not chain.rstrip().endswith(f"'{_FALLBACK}'")
+    }
 
 
 def test_no_renderer_names_a_speaker_by_their_platform_id():
@@ -104,16 +111,23 @@ def test_every_speaker_label_ends_in_the_same_fallback():
     """The DEC-80 half, which is the one a leak test alone would not catch: two
     renderers could both avoid `sender_id` and still disagree, which is exactly
     the two-name-spaces prompt the decision was made about."""
-    wrong = {
-        site: chain for site, chain in _speaker_chains().items()
-        if not chain.rstrip().endswith(f"'{_FALLBACK}'")
-        and site not in _NOT_THE_FALLBACK
-    }
+    wrong = _wrong_fallback(_speaker_chains())
     assert not wrong, (
-        f'every speaker label ends `or "{_FALLBACK}"`. These do not — either '
-        "change them, or add the site to `_NOT_THE_FALLBACK` with the reason:\n"
+        f'every speaker label ends `or "{_FALLBACK}"`. These do not; change '
+        "them (there is no list of sites that may end elsewhere):\n"
         + "\n".join(f"  {f}  in {fn}()  {c}" for (f, fn), c in sorted(wrong.items()))
     )
+
+
+def test_a_speaker_label_with_another_fallback_is_caught():
+    """Positive control: a synthetic renderer whose chain ends in the raw
+    platform id is discovered and is wrong; one ending in the fallback is not."""
+    bad = ast.parse("def f(row):\n    return row.person_name or row.sender_id\n")
+    good = ast.parse("def f(row):\n    return row.person_name or 'unknown'\n")
+    assert _wrong_fallback(_chains_in(bad, "nora/scratch.py")) == {
+        ("nora/scratch.py", "f"): "row.person_name or row.sender_id"
+    }
+    assert _wrong_fallback(_chains_in(good, "nora/scratch.py")) == {}
 
 
 def test_the_projection_is_preferred_over_the_profile_name():

@@ -192,9 +192,12 @@ counting a module's responsibilities to counting its lines.
   after the list was written, hand-wrote its whole prompt (no blocks, no
   escaping, an id shape its own `note_create` refused) and nothing noticed. The
   enforcer now finds occasions by AST and a violation is a plain failure: there
-  is no ledger of known violations to hide one in. A new occasion follows
+  is no debt ledger to hide one in, and no exception for an occasion. The only
+  modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
+  entries in the test, each with a written reason, reviewed in the PR that adds
+  it and re-checked by the test. A new occasion follows
   `design/context-assembly/04-every-occasion.md` «How a new occasion joins»
-  (DEC-273).
+  (DEC-273, ADR 0021).
 
 ## Reaching the deployment — the detail
 

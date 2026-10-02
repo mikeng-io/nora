@@ -33,21 +33,6 @@ from nora.domain.block_types import BLOCK_TYPES
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: Names passed to `ContextBlock(name=…)` that are NOT block types, with the
-#: reason. Kept as an inverted allowlist so a new name has to be argued for.
-#:
-#: **It is EMPTY, and it stays here for that reason.** Its two entries were the
-#: legends — `how_to_read_the_transcript` and `how_to_read_reasoning`, blocks
-#: whose whole content was prose describing a sibling's fields, which existed
-#: only because a field's meaning had nowhere to live. `BlockType.annotations`
-#: is where it lives, so both were deleted rather than exempted.
-#:
-#: An empty dict is the honest state of an inverted allowlist that has nothing
-#: to exempt. Deleting it would make the next exemption a one-line edit with no
-#: place to write the reason, which is how the list this file replaces grew.
-_NOT_A_BLOCK_TYPE: dict[str, str] = {}
-
-
 def _table_names() -> set[str]:
     """The block names in `prefill._BLOCKS` and `_TAG_MESSAGE_BLOCKS` — the
     table the tag path builds from, rather than a literal at a constructor."""
@@ -105,6 +90,25 @@ def _wrapper_names() -> set[str]:
     return names
 
 
+def _literal_block_names(tree: ast.Module) -> set[str]:
+    """Every literal `ContextBlock(name="x", ...)` in one parsed module."""
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ContextBlock"
+        ):
+            for kw in node.keywords:
+                if (
+                    kw.arg == "name"
+                    and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, str)
+                ):
+                    found.add(kw.value.value)
+    return found
+
+
 def _rendered_names() -> set[str]:
     """Every literal `name=` handed to a `ContextBlock`, discovered from source.
 
@@ -121,32 +125,28 @@ def _rendered_names() -> set[str]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:                                # pragma: no cover
             continue
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "ContextBlock"
-            ):
-                for kw in node.keywords:
-                    if (
-                        kw.arg == "name"
-                        and isinstance(kw.value, ast.Constant)
-                        and isinstance(kw.value.value, str)
-                    ):
-                        found.add(kw.value.value)
+        found |= _literal_block_names(tree)
     return found
 
 
 def test_every_rendered_block_has_a_declared_type():
     """A block reaching the model with no declared type is a block describing
     itself at inject time, which is the thing the registry replaced."""
-    undeclared = _rendered_names() - set(BLOCK_TYPES) - set(_NOT_A_BLOCK_TYPE)
+    undeclared = _rendered_names() - set(BLOCK_TYPES)
     assert not undeclared, (
         f"{sorted(undeclared)} are rendered as context blocks and declared in "
         "no type. Add each to `nora.domain.block_types.BLOCK_TYPES` with a "
-        "description saying what the block IS, or classify it in "
-        "`_NOT_A_BLOCK_TYPE` with a reason."
+        "description saying what the block IS (a name that is not a block type "
+        "does not go through `ContextBlock`)."
     )
+
+
+def test_a_block_with_no_declared_type_is_caught():
+    """Positive control: a synthetic module building a block under a name that
+    has no `BlockType` is discovered and undeclared, so the test above fails."""
+    tree = ast.parse("b = ContextBlock(name='scratch_unlisted', body='x')\n")
+    assert _literal_block_names(tree) == {"scratch_unlisted"}
+    assert _literal_block_names(tree) - set(BLOCK_TYPES) == {"scratch_unlisted"}
 
 
 def test_every_declared_type_is_actually_rendered():

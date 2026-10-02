@@ -72,6 +72,11 @@ _MODEL_CALLS = {
     "create_agent", "create_dream_agent", "ask_text", "ask_structured",
     "invoke_async",
 }
+#: Agent methods that send a prompt, matched on the trailing name alone.
+_MODEL_METHODS = {"stream_async", "structured_output", "structured_output_async"}
+#: A provider SDK's `.create(...)` on `<client>.<one of these>.create`: the
+#: chat, messages and responses endpoints.
+_SDK_ENDPOINTS = ("completions", "messages", "responses")
 #: `.invoke(...)` on a receiver whose name ends in one of these (so `runner`,
 #: `_runner`, `self._factory` and `agent_runner` all count).
 _INVOKE_RECEIVER_ENDINGS = ("runner", "factory")
@@ -83,8 +88,9 @@ MECHANISM = {
         "assembled by the occasion that called it, never here"
     ),
     "nora/agent/structured.py": (
-        "the structured-output call wrapper; it forwards a prompt a caller "
-        "built and has no caller in nora/ today"
+        "the structured-output call wrapper, `ask_text` and `ask_structured`; "
+        "it forwards a prompt a caller built, and its one caller today is the "
+        "debrief client composition.py constructs"
     ),
     "nora/app/composition.py": (
         "constructs the raw gate client and the debrief's ask_text client; the "
@@ -182,9 +188,9 @@ def calls_a_model(tree: ast.Module) -> bool:
             continue
         tail = chain[-1]
         keywords = {kw.arg for kw in node.keywords}
-        if tail in _MODEL_CALLS or tail in aliases:
+        if tail in _MODEL_CALLS or tail in aliases or tail in _MODEL_METHODS:
             return True
-        if tail == "create" and "completions" in chain:
+        if tail == "create" and set(chain) & set(_SDK_ENDPOINTS):
             return True
         if tail == "complete" and keywords & {"system", "prompt"}:
             return True
@@ -244,6 +250,38 @@ def calls_assemble(tree: ast.Module) -> bool:
     )
 
 
+def hand_joins_blocks(tree: ast.Module) -> bool:
+    """True if a `.join(...)` is handed a rendered collection of blocks: a
+    `<name>.render()` call or `map(<x>.render, ...)` inside its argument. That
+    is what `assemble` does and what reverting ONE of a module's several
+    `assemble` calls writes, which `calls_assemble` (any call in the module)
+    cannot see. A block nested inside another block's body is rendered from a
+    constructor call, not from a name, so it does not match."""
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join"
+        ):
+            continue
+        for arg in node.args:
+            for inner in ast.walk(arg):
+                if not isinstance(inner, ast.Call):
+                    continue
+                f = inner.func
+                if (
+                    isinstance(f, ast.Attribute) and f.attr == "render"
+                    and isinstance(f.value, ast.Name) and not inner.args
+                ):
+                    return True
+                if (
+                    isinstance(f, ast.Name) and f.id == "map" and inner.args
+                    and isinstance(inner.args[0], ast.Attribute)
+                    and inner.args[0].attr == "render"
+                ):
+                    return True
+    return False
+
+
 def imports_module(tree: ast.Module, rel: str) -> bool:
     dotted = rel[: -len(".py")].replace("/", ".")
     for node in ast.walk(tree):
@@ -278,6 +316,9 @@ def violations(modules: dict[str, ast.Module]) -> set[tuple[str, str]]:
             found.add((rel, "undeclared"))
         elif not calls_assemble(tree):
             found.add((rel, "hand_joined"))
+    for rel, tree in modules.items():
+        if rel != "nora/domain/blocks.py" and hand_joins_blocks(tree):
+            found.add((rel, "hand_join_call"))
     return found
 
 
@@ -313,22 +354,63 @@ def test_every_classification_names_a_real_module_and_a_real_reason(table, modul
         )
 
 
-def test_every_runner_names_builders_that_exist_and_are_reached(modules):
-    for rel, (builders, how) in RUNNER.items():
-        assert rel in modules, f"{rel} does not exist; delete its entry"
-        assert how in {"imports", "dispatched"}, f"{rel}: how is {how!r}"
-        assert calls_a_model(modules[rel]), (
-            f"{rel} no longer calls a model; it is not a RUNNER"
-        )
-        assert builders, f"{rel} is a RUNNER with no builder named"
+def runner_problems(
+    modules: dict[str, ast.Module],
+    runner: dict[str, tuple[tuple[str, ...], str]],
+) -> list[str]:
+    """What is wrong with a RUNNER table, as messages (empty when it is sound)."""
+    problems: list[str] = []
+    for rel, (builders, how) in runner.items():
+        if rel not in modules:
+            problems.append(f"{rel} does not exist; delete its entry")
+            continue
+        if how not in {"imports", "dispatched"}:
+            problems.append(f"{rel}: how is {how!r}")
+        if not calls_a_model(modules[rel]):
+            problems.append(f"{rel} no longer calls a model; it is not a RUNNER")
+        if not builders:
+            problems.append(f"{rel} is a RUNNER with no builder named")
         for builder in builders:
-            assert builder in modules, f"{rel} names {builder}, which is gone"
-        if how == "imports":
-            assert any(imports_module(modules[rel], b) for b in builders), (
+            if builder not in modules:
+                problems.append(f"{rel} names {builder}, which is gone")
+        if how == "imports" and builders and not any(
+            imports_module(modules[rel], b) for b in builders if b in modules
+        ):
+            problems.append(
                 f"{rel} says it imports one of {builders} and imports none; "
                 "re-pointing a RUNNER at a declared module must not launder a "
                 "module that builds a prompt"
             )
+    return problems
+
+
+def test_every_runner_names_builders_that_exist_and_are_reached(modules):
+    assert runner_problems(modules, RUNNER) == []
+
+
+def test_a_runner_entry_that_is_wrong_is_reported():
+    """Controls for each check `runner_problems` makes, on synthetic modules,
+    so none of them can be dropped without a test going red."""
+    caller = ast.parse("agent = create_agent(system_prompt='x')\n")
+    quiet = ast.parse("x = 1\n")
+    mods = {"nora/r.py": caller, "nora/q.py": quiet, "nora/b.py": quiet}
+    def one(rel, builders, how):
+        return runner_problems(mods, {rel: (builders, how)})
+    assert one("nora/r.py", ("nora/b.py",), "dispatched") == []
+    assert one("nora/gone.py", ("nora/b.py",), "dispatched")
+    assert one("nora/r.py", ("nora/b.py",), "sideways")
+    assert one("nora/q.py", ("nora/b.py",), "dispatched")
+    assert one("nora/r.py", (), "dispatched")
+    assert one("nora/r.py", ("nora/gone.py",), "dispatched")
+    assert one("nora/r.py", ("nora/b.py",), "imports")
+    importing_caller = ast.parse(
+        "from nora.scratch_builder import build\n"
+        "agent = create_agent(system_prompt='x')\n"
+    )
+    assert runner_problems(
+        {"nora/i.py": importing_caller, "nora/scratch_builder.py": quiet},
+        {"nora/i.py": (("nora/scratch_builder.py",), "imports")},
+    ) == []
 
 
 def test_discovery_sees_the_known_call_sites_and_occasions(modules):
@@ -403,9 +485,48 @@ def test_the_rule_fails_on_a_hand_built_occasion_added_to_the_tree(modules):
     "self._runner.invoke(agent, prompt)\n",
     "self._factory.invoke(agent, prompt)\n",
     "agent_runner.invoke(agent, prompt)\n",
-], ids=["alias", "self-runner", "self-factory", "agent-runner"])
+    "invoke.run(request)\n",
+], ids=["alias", "self-runner", "self-factory", "agent-runner", "invoke-run"])
 def test_the_net_follows_an_alias_and_a_wider_receiver(source):
     assert calls_a_model(_tree(source))
+
+
+#: Spelled out, never read off `_MODEL_CALLS`: a parametrisation over the
+#: constant it pins cannot fail when a name is removed from it.
+@pytest.mark.parametrize("source", [
+    "create_agent(system_prompt='x')\n",
+    "factory.create_agent(system_prompt='x')\n",
+    "create_dream_agent(system_prompt='x')\n",
+    "factory.create_dream_agent(system_prompt='x')\n",
+    "ask_text(client, prompt)\n",
+    "ask_structured(client, prompt)\n",
+    "await invoke_async(agent, prompt)\n",
+    "agent.stream_async(prompt)\n",
+    "agent.structured_output(Model, prompt)\n",
+    "agent.structured_output_async(Model, prompt)\n",
+    "client.chat.completions.create(model='m', messages=[])\n",
+    "client.messages.create(model='m', messages=[])\n",
+    "client.responses.create(model='m', input='p')\n",
+    "client.complete(system='s', prompt='p')\n",
+], ids=[
+    "create_agent", "factory.create_agent", "create_dream_agent",
+    "factory.create_dream_agent", "ask_text", "ask_structured", "invoke_async",
+    "stream_async", "structured_output", "structured_output_async",
+    "completions.create", "messages.create", "responses.create", "complete",
+])
+def test_every_known_model_door_is_seen(source):
+    assert calls_a_model(_tree(source))
+
+
+@pytest.mark.parametrize("source", [
+    "rows.create(x)\n",
+    "store.messages.append(x)\n",
+    "client.complete(1)\n",
+    "runner.run(x)\n",
+    "other.invoke(x)\n",
+], ids=["plain-create", "messages-append", "complete-no-kwargs", "run", "other-invoke"])
+def test_an_ordinary_call_is_not_a_model_door(source):
+    assert not calls_a_model(_tree(source))
 
 
 @pytest.mark.parametrize("source", [
@@ -435,7 +556,10 @@ def test_the_net_does_not_flag_a_declared_assembled_occasion():
     "def build(parts):\n    return assemble(parts)\n",
     "_BLOCKS: tuple[tuple[str, int, str], ...] = (('c', 1, 'turn'),)\n"
     "def build(self, r):\n    return self._ctx.assemble(request=r)\n",
-], ids=["hand-joined", "local-assemble", "method-assemble"])
+    "from nora.domain.blocks import ContextBlock\n"
+    "_BLOCKS: tuple[tuple[str, int, str], ...] = (('c', 1, 'turn'),)\n"
+    "def build(parts):\n    return ContextBlock(name='c', body=parts)\n",
+], ids=["hand-joined", "local-assemble", "method-assemble", "other-blocks-import"])
 def test_a_declared_table_that_is_not_walked_by_the_real_assemble_is_caught(source):
     tree = _tree(source)
     assert declares_blocks(tree) and not calls_assemble(tree)
@@ -448,3 +572,77 @@ def test_a_declared_table_that_is_not_walked_by_the_real_assemble_is_caught(sour
 ], ids=["empty", "inside-a-function", "unannotated"])
 def test_an_empty_or_nested_or_unannotated_table_is_not_a_declaration(source):
     assert not declares_blocks(_tree(source))
+
+
+def test_assemble_imported_under_an_alias_or_a_relative_path_counts():
+    aliased = _tree(
+        "from nora.domain.blocks import assemble as walk\n"
+        "def build(b):\n    return walk(b)\n"
+    )
+    relative = _tree(
+        "from ..domain.blocks import assemble\n"
+        "def build(b):\n    return assemble(b)\n"
+    )
+    assert calls_assemble(aliased) and calls_assemble(relative)
+
+
+@pytest.mark.parametrize("source", [
+    "def build(blocks):\n    return '\\n'.join(b.render() for b in blocks)\n",
+    "def build(blocks):\n    return ''.join([b.render() + '\\n' for b in blocks])\n",
+    "def build(blocks):\n    return '\\n'.join(map(ContextBlock.render, blocks))\n",
+], ids=["genexp", "list-comp", "map-render"])
+def test_a_hand_join_of_rendered_blocks_is_caught(source):
+    assert hand_joins_blocks(_tree(source))
+
+
+@pytest.mark.parametrize("source", [
+    "def build(blocks):\n    return assemble(blocks)\n",
+    "def build(rows):\n    return '\\n'.join(r.text for r in rows)\n",
+    "def build(items):\n    return '\\n'.join(\n"
+    "        ContextBlock(name='p', body=i).render() for i in items)\n",
+], ids=["assemble", "plain-join", "nested-constructor-render"])
+def test_a_join_that_is_not_of_rendered_blocks_is_not_flagged(source):
+    assert not hand_joins_blocks(_tree(source))
+
+
+def test_one_hand_join_beside_a_working_assemble_is_a_violation(modules):
+    """The per-call gap `calls_assemble` leaves (it asks for ANY call in the
+    module): a module that still calls `assemble` once and joins its other
+    blocks by hand."""
+    mixed = _tree(
+        "from nora.domain.blocks import assemble\n"
+        "_BLOCKS: tuple[tuple[str, int, str], ...] = (('c', 1, 'turn'),)\n"
+        "def one(blocks):\n    return assemble(blocks)\n"
+        "def two(blocks):\n    return '\\n'.join(b.render() for b in blocks)\n"
+    )
+    found = violations({**modules, "nora/scratch_mixed.py": mixed})
+    assert ("nora/scratch_mixed.py", "hand_join_call") in found
+    assert ("nora/scratch_mixed.py", "hand_joined") not in found
+
+
+def test_an_adaptor_that_defines_inputs_is_a_builder_in_the_real_function(modules):
+    """The wiring, not the detector: `violations` itself must treat a module
+    that defines `inputs` as a builder, with no model call in it."""
+    adaptor = _tree(
+        "class Adaptor:\n"
+        "    def inputs(self, key, batch):\n"
+        "        return f'[#{batch[0].id}] {batch[0].body}'\n"
+    )
+    found = violations({**modules, "nora/scratch_adaptor.py": adaptor})
+    assert ("nora/scratch_adaptor.py", "undeclared") in found
+
+
+def test_a_runners_named_builder_is_checked_by_the_real_function(modules, monkeypatch):
+    """A builder reached only through a RUNNER entry (it neither calls a model
+    nor defines `inputs`) must still be declared: this is what makes
+    reverting a named builder red."""
+    monkeypatch.setitem(
+        RUNNER, "nora/scratch_runner.py", (("nora/scratch_builder.py",), "dispatched"),
+    )
+    runner = _tree("agent = create_agent(system_prompt='x')\n")
+    builder = _tree("def render(rows):\n    return '\\n'.join(map(str, rows))\n")
+    found = violations({
+        **modules, "nora/scratch_runner.py": runner, "nora/scratch_builder.py": builder,
+    })
+    assert ("nora/scratch_builder.py", "undeclared") in found
+    assert ("nora/scratch_runner.py", "undeclared") not in found

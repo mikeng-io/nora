@@ -26,7 +26,10 @@ gate lives in
 computes over every message the turn emits rather than the one `_served_blocks`
 happens to read.
 
-Issue #292. `HAND_WRITTEN` empty is the finish line.
+Issue #292. There is no list of unconverted modules: a module that opens and
+closes an element by hand fails `test_every_module_that_writes_a_tag_is_classified`
+at once, and `HAND_WRITTEN`, the debt table that stood here until step 6 of
+`design/context-assembly/04-every-occasion.md`, is gone.
 """
 
 from __future__ import annotations
@@ -41,20 +44,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 _OPEN = re.compile(r"<([a-z_][a-z0-9_]*)[\s>]")
 _CLOSE = re.compile(r"</([a-z_][a-z0-9_]*)>")
-
-#: **EMPTY — the finish line #292 was opened for.** Module -> the elements it
-#: opens by hand. Nine modules were on it; all nine now build every model-facing
-#: block through `ContextBlock`, so `untrusted`, the framing clause and the
-#: attribute order are properties of the type rather than things each site
-#: remembered to type.
-#:
-#: The tests below still run: `test_every_module_that_writes_a_tag_is_classified`
-#: fails on a NEW hand-written block, and `test_the_census_can_only_shrink`
-#: cannot be widened by adding one here without a reason beside it. Re-populating
-#: this dict is how the tree gets back to where it was, so an entry needs an
-#: argument, not just a line.
-#:
-HAND_WRITTEN: dict[str, tuple[str, ...]] = {}
 
 #: Has its own injector, and it is the one #220 took the pattern FROM.
 #: `render_section` produces the exact bytes a section contributes and has two
@@ -109,7 +98,10 @@ def _built_tags(rel: str) -> tuple[str, ...]:
     `"<memory reads this pass>"` and self-closing markers out, because neither
     has a closing tag anywhere.
     """
-    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+    return _tags_in(ast.parse((ROOT / rel).read_text(encoding="utf-8")))
+
+
+def _tags_in(tree: ast.Module) -> tuple[str, ...]:
     skip = _docstring_nodes(tree)
     parts: list[str] = []
     for node in ast.walk(tree):
@@ -139,7 +131,15 @@ def _discovered() -> dict[str, tuple[str, ...]]:
     return out
 
 
-_CLASSIFIED = set(HAND_WRITTEN) | set(_OWN_INJECTOR)
+_CLASSIFIED = set(_OWN_INJECTOR)
+
+
+def _unclassified(discovered: dict[str, tuple[str, ...]]) -> set[str]:
+    # `CONVERTED` counts as classified: those modules ARE checked, per module,
+    # by `test_no_block_is_written_by_hand`. Leaving them out of `_CLASSIFIED`
+    # made the census demand a second classification for a module the stricter
+    # test already covers.
+    return set(discovered) - _CLASSIFIED - set(CONVERTED)
 
 
 def test_every_module_that_writes_a_tag_is_classified():
@@ -147,11 +147,7 @@ def test_every_module_that_writes_a_tag_is_classified():
     argued for — it cannot merely go unnoticed, which is the only failure mode
     that has actually happened."""
     discovered = _discovered()
-    # `CONVERTED` counts as classified: those modules ARE checked, per module,
-    # by `test_no_block_is_written_by_hand`. Leaving them out of `_CLASSIFIED`
-    # made this test demand a second classification for a module the stricter
-    # test already covers.
-    unclassified = set(discovered) - _CLASSIFIED - set(CONVERTED)
+    unclassified = _unclassified(discovered)
     assert not unclassified, (
         f"{sorted(unclassified)} open and close an element by hand and are "
         "classified nowhere. Route it through ContextBlock (see #292), or "
@@ -165,36 +161,24 @@ def test_every_module_that_writes_a_tag_is_classified():
     )
 
 
-def test_the_census_can_only_shrink():
-    """A module still on the census may not grow a NEW hand-written element.
-
-    The `xfail` below says «this module has not been converted yet». It must
-    not also say «and anything added to it meanwhile is fine» — that is how a
-    pinned baseline becomes a budget. Recorded tags may disappear; new ones
-    fail here even while the module's own row is still expected to fail.
-    """
-    discovered = _discovered()
-    for rel, recorded in sorted(HAND_WRITTEN.items()):
-        added = set(discovered.get(rel, ())) - set(recorded)
-        assert not added, (
-            f"{rel} grew hand-written element(s) {sorted(added)} while still "
-            "on #292's census. New model-facing blocks go through ContextBlock."
-        )
+def test_a_module_that_writes_a_tag_by_hand_is_caught():
+    """Positive control for the census: a synthetic module that opens and
+    closes an element in emitted text is discovered and unclassified, so the
+    test above would fail on it. Prose that only names the tag is not."""
+    offender = ast.parse("def build(x):\n    return f'<facts>{x}</facts>'\n")
+    prose = ast.parse('"""Mentions <facts> only."""\nx = "<facts>"\n')
+    assert _tags_in(offender) == ("facts",)
+    assert _tags_in(prose) == ()
+    assert _unclassified({"nora/scratch.py": ("facts",)}) == {"nora/scratch.py"}
 
 
-#: **The nine modules #292 converted**, named so the guard below has something
-#: to iterate. `HAND_WRITTEN` is empty, and a test parametrised over an empty
-#: dict COLLECTS NOTHING — pytest emits a single skipped `[NOTSET]` case and the
-#: file reads as though a per-module gate is running when none is.
-#:
-#: That is this file's own subject arriving in this file: a declaration that
-#: reads as a guarantee and enforces nothing (#187). Caught by a peer asking
-#: whether anything that is not the real declaration could satisfy the check,
-#: and by collecting the tests to look rather than trusting the green.
-#: Found by `test_the_converted_list_is_not_quietly_shrinking` on its first run:
-#: the four `*_render.py` modules and `decision_log` build `ContextBlock`s and
-#: were never on `HAND_WRITTEN` — they never hand-wrote a tag — so nothing was
-#: checking that they never start.
+#: **The modules that build blocks through `ContextBlock`**, named so the
+#: per-module guard below has something to iterate (a test parametrised over an
+#: empty dict COLLECTS NOTHING: pytest emits one skipped `[NOTSET]` case and the
+#: file reads as though a gate is running when none is, which is this file's own
+#: subject, a declaration that reads as a guarantee and enforces nothing, #187).
+#: `test_the_converted_list_is_not_quietly_shrinking` checks the list against the
+#: source, so a module that builds blocks and is missing here fails.
 CONVERTED = (
     "nora/agent/prefill.py",
     "nora/agent/reaction.py",
@@ -226,8 +210,6 @@ def test_no_block_is_written_by_hand(rel: str):
     """THE GATE, per module. One injector, so `untrusted`, the framing clause,
     the order and the catalogue line stop being per-site decisions.
 
-    Named modules rather than `HAND_WRITTEN`'s keys, so this keeps asserting
-    after the census empties — which is the moment it would otherwise go quiet.
     `test_every_module_that_writes_a_tag_is_classified` is the half that catches
     a module NOT on this list; this is the half that catches one on it
     regressing, and it names which.
