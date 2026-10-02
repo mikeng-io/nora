@@ -60,6 +60,7 @@ a claim about what a mock was not called with.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import re
 import time
@@ -96,7 +97,7 @@ from nora.domain.cognition_pace import (
     PaceAnswer,
     PendingSelfWake,
 )
-from nora.domain.cognition_remind import PendingMirroredRemind, RemindAnswer
+from nora.domain.cognition_remind import PendingMirroredRemind, RemindAnswer, RemindContext
 from nora.domain.cognition_session import (
     Agenda,
     AgendaItem,
@@ -114,6 +115,7 @@ from nora.domain.ports import (
     NewCognitionSession,
     NewCognitionSessionClose,
     NewWakeOutcome,
+    NoteHead,
     RecordedOutcome,
     StimulusStore,
 )
@@ -238,6 +240,9 @@ class CognitionRunResult:
     `None` on a run this module never made (belt-and-braces callers only)."""
 
     stop_reason: str | None = None
+    #: Tokens the whole loop spent (every cycle, the model's own reading of its
+    #: usage); `None` when the runner could not read it, never a zero.
+    total_tokens: int | None = None
 
 
 class CognitionAgentRunner(Protocol):
@@ -291,6 +296,14 @@ RosterOf = Callable[[str, str], Awaitable[Mapping[str, str] | None]]
 #: `(unit, since_ms)`: the unit's pending self-wakes, reading only refs with a
 #: transition at or after `since_ms` (`CognitionDryRunStore.pending_self_wakes`).
 PendingSelfWakes = Callable[[str, int], Awaitable[Sequence[PendingSelfWake]]]
+#: `(unit, note_id)` -> the note's head as the live store's compare-and-swap
+#: sees it (`SqlNoteStore.note_by_id`, a plain SELECT), or None for a note the
+#: unit does not hold. RAISES when it cannot read: a `note_update` that could
+#: not be checked is `unavailable`, never a would-commit.
+NoteHeadOf = Callable[[str, str], Awaitable[NoteHead | None]]
+#: `(platform, conversation_id)` -> the room's `proactive` flag
+#: (`Policy.proactive_allowed`): may Nora reach it unasked at all.
+RoomProactive = Callable[[str, str], bool]
 PendingMirroredReminds = Callable[[str], Awaitable[Sequence[PendingMirroredRemind]]]
 SelfWakesCreatedSince = Callable[[str, int], Awaitable[int]]
 #: `(unit, the agenda's rooms)`: the read tools for those rooms. One room: that
@@ -456,6 +469,13 @@ def _day_number(text: str) -> int | None:
     return day.year * 10_000 + day.month * 100 + day.day
 
 
+def _bare_row(row: str) -> str:
+    """`event:<id>` / `note:<id>` / `<id>` -> `<id>`, the spelling a row is
+    compared by (`nora.domain.cognition_compare.bare`'s rule)."""
+    kind, sep, rest = row.partition(":")
+    return rest if sep and kind in ("note", "event") else row
+
+
 def _verb_result(write: Any) -> dict[str, object]:
     if write.outcome == "refused":
         return {
@@ -501,6 +521,10 @@ class CognitionSessionRunner:
         person_known: Callable[[str], bool] | None = None,
         roster_of: RosterOf | None = None,
         nora_names: frozenset[str] = NORA_NAMES,
+        note_head: NoteHeadOf | None = None,
+        room_proactive: RoomProactive | None = None,
+        max_reminds_per_room_per_day: int | None = None,
+        max_pending_reminds: int | None = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -532,6 +556,14 @@ class CognitionSessionRunner:
         is known, so every owner is refused) and the names Nora goes by (a line
         may not be hers, nor owed by her).
 
+        `note_head`, `room_proactive`, `max_reminds_per_room_per_day` and
+        `max_pending_reminds` are the checks the LIVE verbs would make that a
+        dry run must make too, so a would-commit is a write the live path would
+        not refuse (the stale head of a `note_update`; a `remind`'s room flag,
+        daily act cap and pending ceiling). Each is read through the real read
+        path and never written. None leaves that check out, which only a test
+        wants: the composition (`build_cognition_runner`) requires all four.
+
         `model_window_tokens` (None: unknown) and `overflow_window_fraction`
         are what a context overflow is PROVEN against (DEC-244): without a
         known window no overflow is ever the agenda's, and every one is
@@ -558,6 +590,10 @@ class CognitionSessionRunner:
         self._prior_standing = prior_standing
         self._roster_of = roster_of
         self._nora_names = frozenset(nora_names)
+        self._note_head = note_head
+        self._room_proactive = room_proactive
+        self._max_reminds_per_room_per_day = max_reminds_per_room_per_day
+        self._max_pending_reminds = max_pending_reminds
         self._pending_self_wakes = pending_self_wakes
         self._pending_mirrored_reminds = pending_mirrored_reminds
         # "off" makes this belt-and-braces only — see the module docstring;
@@ -598,9 +634,29 @@ class CognitionSessionRunner:
         use (`nora.domain.stimuli.WakeHook`); mypy holds this line to it."""
         return self.on_wake
 
-    def _inc(self, name: str, **labels: str) -> None:
+    def _inc(self, name: str, value: float = 1.0, **labels: str) -> None:
         if self._metrics is not None:
-            self._metrics.inc(name, **labels)
+            self._metrics.inc(name, value, **labels)
+
+    def _counted(self, verb: str, call: Any) -> Any:
+        """A verb whose every refusal is counted by rule
+        (`nora_cognition_refused_total{verb,rule}`): one place, so no verb and
+        no early return can refuse without being counted. `unavailable` (a read
+        the verb needed failed) counts too, as its own rule, never as a refusal
+        of the model's work. The labels are the verb's own name and the reason
+        code, both code constants; no room, person or text is a label."""
+        @functools.wraps(call)
+        async def counted(*args: Any, **kwargs: Any) -> dict[str, object]:
+            result: dict[str, object] = await call(*args, **kwargs)
+            status = result.get("status")
+            if status in ("refused", "unavailable"):
+                reason = str(result.get("reason") or "unspecified")
+                self._inc(
+                    "nora_cognition_refused_total", verb=verb,
+                    rule=reason if status == "refused" else f"unavailable_{reason}",
+                )
+            return result
+        return counted
 
     def _lock(self, unit: str) -> asyncio.Lock:
         return self._locks.setdefault(unit, asyncio.Lock())
@@ -909,6 +965,13 @@ class CognitionSessionRunner:
                 f"the session ran past its {self._budget.timeout_seconds:g}s wall clock",
             ) from exc
 
+        if result.total_tokens is not None:
+            # By what the unit's agenda was made of, never by unit, room or
+            # person: a single kind, or `mixed`.
+            self._inc(
+                "nora_cognition_unit_tokens_total", float(result.total_tokens),
+                unit_kind=kinds[0] if len(kinds) == 1 else "mixed",
+            )
         if result.stop_reason in LIMIT_STOP_REASONS:
             # The loop RETURNED, but it was cut off at a bound (DEC-247), so it
             # never decided what to do with the items it had not reached: a
@@ -1010,7 +1073,7 @@ class CognitionSessionRunner:
             outcome = close_or_strike(
                 item, item_index=index, reason="waiting", max_strikes=self._max_strikes,
             )
-            await self._record_close(state, outcome)
+            await self._record_close(state, outcome, by_model=False)
 
         carries: list[NewCarry] = []
 
@@ -1058,11 +1121,18 @@ class CognitionSessionRunner:
                             ledger=self._store, session_id=state.session_id,
                             unit=state.unit, wake_ref=row.item, now_ms=self._now_ms(),
                         )
+                        self._inc("nora_self_wake_total", outcome="fired")
                     except Exception:
                         log.exception("could not record self-wake %s fired", row.item)
                         self._inc("nora_errors_total", stage="cognition_session")
 
-    async def _record_close(self, state: _RunState, outcome: CloseOutcome) -> None:
+    async def _record_close(
+        self, state: _RunState, outcome: CloseOutcome, *, by_model: bool = True,
+    ) -> None:
+        """Record one close. `by_model` False is CODE's close of an item the
+        model never closed (`_settle`): the row is the same `waiting`, but the
+        metric says `unclosed`, so a `waiting` the model chose and one it never
+        reached are not one number."""
         await self._store.record_close(
             close=NewCognitionSessionClose(
                 session_id=state.session_id, item_index=outcome.item_index,
@@ -1072,6 +1142,10 @@ class CognitionSessionRunner:
         )
         state.closed_indices.add(outcome.item_index)
         state.closes.append(outcome)
+        self._inc(
+            "nora_cognition_item_total", kind=outcome.kind,
+            outcome=outcome.reason if by_model or outcome.reason == "struck" else "unclosed",
+        )
 
     # -- tools --------------------------------------------------------------
 
@@ -1247,7 +1321,7 @@ class CognitionSessionRunner:
             description of a person. If a note already covers it, update that
             one instead. It MUST have a `closing_condition` (what would settle
             it) and an anchor (`anchor_date`, `anchor_entities` or both), or it
-            is refused. In this run the write is recorded, not committed.
+            is refused.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
@@ -1309,7 +1383,7 @@ class CognitionSessionRunner:
             """Revise a note. Call this when a note's content changes: a detail
             settles, a plan moves. Give back the WHOLE note with your change
             folded in: `body` replaces the current contents, and the old
-            revision is kept. In this run the write is recorded, not committed.
+            revision is kept.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
@@ -1338,11 +1412,25 @@ class CognitionSessionRunner:
             shown = await shown_for(platform, conversation_id, body)
             if isinstance(shown, dict):
                 return shown
+            head: NoteHead | None
+            if self._note_head is None:
+                # Unwired (a test): the check is left out, never guessed.
+                head = NoteHead(head_revision_id=parent_revision_id)
+            else:
+                try:
+                    head = await self._note_head(unit, note_id)
+                except Exception:
+                    log.exception("cognition note_update could not read the note's head")
+                    return {
+                        "status": "unavailable", "reason": "note_head",
+                        "detail": "the note could not be read, so whether this revision "
+                                  "still fits it cannot be checked; say so and try again later",
+                    }
             write = await dry_run_note_update(
                 ledger=self._store, session_id=state.session_id, unit=unit,
                 platform=platform, conversation_id=conversation_id, now_ms=now_ms,
                 established_by=established_by, shown=shown, note_id=note_id, body=body,
-                parent_revision_id=parent_revision_id,
+                parent_revision_id=parent_revision_id, head=head,
                 entity_ids=tuple(entity_ids or ()),
             )
             return wrote(platform, conversation_id, write, item)
@@ -1357,8 +1445,7 @@ class CognitionSessionRunner:
             """Propose a NEW gathering in a room, returning its id. Call this
             when a room wants to arrange something that is not open yet. If an
             event is already open (proposed) there, revise it with event_revise
-            instead of creating a second one. In this run the write is
-            recorded, not committed.
+            instead of creating a second one.
 
             Every field you give rests on the rows you cite. An `abduced` value
             (your best explanation of something nobody said) is written as
@@ -1437,8 +1524,7 @@ class CognitionSessionRunner:
         ) -> dict[str, object]:
             """Change the time or venue of an event that is still open in a
             room (staged, proposed or confirmed). Call this when an open
-            event's details are settled or change. In this run the write is
-            recorded, not committed.
+            event's details are settled or change.
 
             What you change rests on the rows you cite, and an `abduced` value
             is written as abduced and put as a question. One write has one
@@ -1506,8 +1592,7 @@ class CognitionSessionRunner:
         ) -> dict[str, object]:
             """Move an event that is still open in a room (staged, proposed or
             confirmed) to a new state. Call this when the room confirms it,
-            says it happened, or says it is off. In this run the write is
-            recorded, not committed.
+            says it happened, or says it is off.
 
             The move rests on the rows you cite; an `abduced` one is written as
             abduced and put as a question ("did it happen?"). A move to `lapsed`
@@ -1566,8 +1651,7 @@ class CognitionSessionRunner:
         ) -> dict[str, object]:
             """Revise a room's Standing: where it stands right now. Call this
             when what a room has settled, or is holding open, has changed. Give
-            the whole position, not a delta. In this run the write is recorded,
-            not committed.
+            the whole position, not a delta.
 
             Returns `status`: ok or refused, with a `reason` and `detail` when
             refused.
@@ -1613,13 +1697,11 @@ class CognitionSessionRunner:
             pending one replaces it.
 
             Returns `status`: ok (with the `wake_id` to move or cancel it) or
-            refused (too soon, too far, no subject, too many pending or too
-            many today).
+            refused, with a `reason` and `detail` when refused.
 
             Args:
                 subject_rows: The rows to look at again, at least one.
-                at: When, ISO 8601 with an offset. No sooner than the cooldown
-                    from now and no later than seven days.
+                at: When, ISO 8601 with an offset.
                 why: The reason you ask, in a sentence.
             """
             at_ms = _when_ms(at)
@@ -1641,14 +1723,15 @@ class CognitionSessionRunner:
                     max_self_wakes=self._max_self_wakes, created_today=created_today,
                     max_self_wakes_per_day=self._max_self_wakes_per_day,
                 )
+            self._inc("nora_self_wake_total", outcome="refused" if answer.refused else "created")
             return _answer(answer, wake_id=wake_ref)
 
         async def wake_move(wake_id: str, at: str, why: str) -> dict[str, object]:
             """Move a self-wake you set to a new time. Call this when the time
             you chose no longer fits. The old time no longer wakes you.
 
-            Returns `status`: ok or refused (not found, not yours, too soon or
-            too far).
+            Returns `status`: ok or refused, with a `reason` and `detail` when
+            refused.
 
             Args:
                 wake_id: The id `wake_at` returned.
@@ -1667,13 +1750,15 @@ class CognitionSessionRunner:
                     why=why, now_ms=call_ms, cooldown_seconds=self._cooldown_seconds,
                     pending=pending, created_by_session_id=None,
                 )
+            self._inc("nora_self_wake_total", outcome="refused" if answer.refused else "moved")
             return _answer(answer)
 
         async def wake_cancel(wake_id: str, why: str) -> dict[str, object]:
             """Cancel a self-wake you set. Call this when there is no longer
             anything to look at. It will not wake you.
 
-            Returns `status`: ok or refused (not found or not yours).
+            Returns `status`: ok or refused, with a `reason` and `detail` when
+            refused.
 
             Args:
                 wake_id: The id `wake_at` returned.
@@ -1687,6 +1772,9 @@ class CognitionSessionRunner:
                     session_id=state.session_id, unit=unit, wake_ref=wake_id, why=why,
                     now_ms=call_ms, pending=pending, created_by_session_id=None,
                 )
+            self._inc(
+                "nora_self_wake_total", outcome="refused" if answer.refused else "cancelled",
+            )
             return _answer(answer)
 
         async def remind(
@@ -1695,11 +1783,10 @@ class CognitionSessionRunner:
         ) -> dict[str, object]:
             """Reach a room at a time: a reminder that says something to it or
             asks it something. Call this when a room should hear from you and
-            not before. In this run it is recorded and held, never sent.
+            not before.
 
-            Returns `status`: ok (with the `reminder_id`) or refused (no
-            citation, a bad intent, a room not on the agenda, a bad time or an
-            identical one already pending).
+            Returns `status`: ok (with the `reminder_id`) or refused, with a
+            `reason` and `detail` when refused.
 
             Args:
                 intent: `tell` to say something, `ask` to ask something.
@@ -1719,12 +1806,16 @@ class CognitionSessionRunner:
                 return _bad_time("at")
             async with self._lock(unit):
                 pending = await self._pending_mirrored_reminds(unit)
+                context = await self._remind_context(
+                    unit, room_platform, room_conversation_id, subject_rows,
+                )
                 ref = self._mint_ref()
                 answer = await dry_run_remind(
                     ledger=self._store, session_id=state.session_id, unit=unit,
                     reminder_ref=ref, platform=room_platform,
                     conversation_id=room_conversation_id, intent=intent,
                     subject_rows=subject_rows, at_ms=at_ms, now_ms=now_ms, pending=pending,
+                    context=context,
                 )
             return _answer(answer, reminder_id=ref)
 
@@ -1734,8 +1825,8 @@ class CognitionSessionRunner:
             """Move a reminder you set to a new time. Call this when the time
             you chose no longer fits. Only your own.
 
-            Returns `status`: ok or refused (not found, not yours, or its room is
-            not on this agenda).
+            Returns `status`: ok or refused, with a `reason` and `detail` when
+            refused.
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -1765,8 +1856,8 @@ class CognitionSessionRunner:
             """Cancel a reminder you set. Call this when the room no longer
             needs to hear it. Only your own.
 
-            Returns `status`: ok or refused (not found, not yours, or its room is
-            not on this agenda).
+            Returns `status`: ok or refused, with a `reason` and `detail` when
+            refused.
 
             Args:
                 reminder_id: The id `remind` returned.
@@ -1788,11 +1879,12 @@ class CognitionSessionRunner:
                 )
             return _answer(answer)
 
-        return [
-            *read_tools, close, note_create, note_update, event_propose,
-            event_revise, event_set_status, standing_revise, wake_at, wake_move,
-            wake_cancel, remind, remind_move, remind_cancel,
-        ]
+        verbs = (
+            close, note_create, note_update, event_propose, event_revise,
+            event_set_status, standing_revise, wake_at, wake_move, wake_cancel,
+            remind, remind_move, remind_cancel,
+        )
+        return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
 
     # `created_by_session_id=None` on every move and cancel above, on purpose:
     # the pending seams return only rows COGNITION wrote (a person's own
@@ -1800,6 +1892,38 @@ class CognitionSessionRunner:
     # session's id would refuse a self-wake set by an EARLIER session, which is
     # the normal case («she keeps, moves or cancels them», 20 §3): a wake set
     # last session could never be cancelled this one.
+
+    async def _remind_context(
+        self, unit: str, platform: str, conversation_id: str, subject_rows: Sequence[str],
+    ) -> RemindContext:
+        """What the code-side act guards of `remind` need, read now: the room's
+        `proactive` flag, how many reminders the room was already given in the
+        last day, and whether a row the reminder cites is only abduced (an
+        event whose reasoning, or any field's, is `abduced`). A seam that is
+        not wired leaves its check out (`__init__`); one that fails to read
+        raises, and the verb fails rather than guess."""
+        proactive = (
+            True if self._room_proactive is None
+            else self._room_proactive(platform, conversation_id)
+        )
+        acts = 0
+        if self._max_reminds_per_room_per_day is not None:
+            acts = await self._store.count_reminds_created(
+                unit=unit, platform=platform, conversation_id=conversation_id,
+                since_ms=self._now_ms() - _DAY_MS,
+            )
+        cited = {_bare_row(r) for r in subject_rows}
+        abduced = any(
+            str(e.id) in cited and (
+                e.reasoning == "abduced" or any(m.reasoning == "abduced" for m in e.field_meta)
+            )
+            for e in await self._open_events(unit, conversation_id)
+        ) if cited else False
+        return RemindContext(
+            room_proactive=proactive, acts_in_room_today=acts,
+            max_acts_per_room_per_day=self._max_reminds_per_room_per_day,
+            max_pending=self._max_pending_reminds, abduced_subject=abduced,
+        )
 
     async def _pending(self, unit: str, now_ms: int) -> Sequence[PendingSelfWake]:
         """The unit's pending self-wakes, read over a BOUNDED window (a ref

@@ -73,6 +73,15 @@ def as_strands_tools(tools: list[Any]) -> list[Any]:
     return out
 
 
+def _total_tokens(result: Any) -> int | None:
+    """The loop's total tokens as Strands accumulated them over every cycle
+    (`AgentResult.metrics.accumulated_usage["totalTokens"]`), or None when the
+    result carries no usage: an unread count is never a zero."""
+    usage = getattr(getattr(result, "metrics", None), "accumulated_usage", None)
+    total = usage.get("totalTokens") if isinstance(usage, Mapping) else None
+    return total if isinstance(total, int) and not isinstance(total, bool) else None
+
+
 class LiveCognitionAgentRunner:
     """Satisfies `nora.app.cognition_session.CognitionAgentRunner`."""
 
@@ -123,7 +132,10 @@ class LiveCognitionAgentRunner:
                 annotate(**{"nora.outcome": "failed"})
                 raise
             annotate(**{"nora.outcome": "ok"})
-        return CognitionRunResult(stop_reason=getattr(result, "stop_reason", None))
+        return CognitionRunResult(
+            stop_reason=getattr(result, "stop_reason", None),
+            total_tokens=_total_tokens(result),
+        )
 
     def _guard(self, tool_names: list[str]) -> DreamGuard:
         """One `DreamGuard` for a session, with NO call ceiling of any kind

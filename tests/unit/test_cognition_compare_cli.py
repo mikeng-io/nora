@@ -14,9 +14,15 @@ import pytest
 
 import nora.app.cli as cli
 from nora.domain.cognition_shadow_compare import (
+    SessionCoverage,
     ShadowReport,
     TierResult,
     WriterVerdict,
+)
+
+COVERAGE = SessionCoverage(
+    sessions=3, units_with_sessions=1, policy_units=1, days=1.0, active_days=1, wakes=3,
+    wakes_without_session=0, wakes_failed_without_session=0, sessions_without_skills=0,
 )
 
 
@@ -25,18 +31,31 @@ class _FakeEngine:
         pass
 
 
-def _report(*, error: bool = False) -> ShadowReport:
+def _report(*, error: bool = False, no_sessions: bool = False) -> ShadowReport:
+    if no_sessions:
+        return ShadowReport(
+            since_ms=0, until_ms=1000, tolerance_ms=60_000, unit=None, tiers=(),
+            coverage=SessionCoverage(
+                sessions=0, units_with_sessions=0, policy_units=1, days=1.0, active_days=0,
+                wakes=0, wakes_without_session=0, wakes_failed_without_session=0,
+                sessions_without_skills=0,
+            ),
+            error="no Cognition session ran in this window",
+        )
     tier = (
         TierResult.errored("note", "OperationalError") if error else TierResult(
             tier="note", status="compared",
             writers=(WriterVerdict(writer="note-candidates", status="compared", matched=14),),
         )
     )
-    return ShadowReport(since_ms=0, until_ms=1000, tolerance_ms=60_000, unit=None, tiers=(tier,))
+    return ShadowReport(
+        since_ms=0, until_ms=1000, tolerance_ms=60_000, unit=None, tiers=(tier,),
+        coverage=COVERAGE,
+    )
 
 
 async def _run(monkeypatch, capsys, *, since="2026-09-29T00:00:00+08:00", until=None,
-               as_json=False, error=False, unit=None, tolerance=360):
+               as_json=False, error=False, unit=None, tolerance=360, no_sessions=False):
     seen: dict = {}
     monkeypatch.setattr(cli, "_config", lambda args: SimpleNamespace())
     monkeypatch.setattr(cli, "_database_url", lambda cfg: "postgresql://unused")
@@ -45,7 +64,7 @@ async def _run(monkeypatch, capsys, *, since="2026-09-29T00:00:00+08:00", until=
 
     async def _fake(engine, window, *, tolerance_ms, unit, directory):
         seen.update(window=window, tolerance_ms=tolerance_ms, unit=unit)
-        return _report(error=error)
+        return _report(error=error, no_sessions=no_sessions)
 
     monkeypatch.setattr(cli, "cognition_run_shadow_compare", _fake)
     args = Namespace(
@@ -102,3 +121,21 @@ def test_the_default_tolerance_is_the_derived_one_not_a_guess():
     cli.add_subcommands(top.add_subparsers(dest="cmd"), parent)
     args = top.parse_args(["cognition", "compare", "--since", "2026-09-29T00:00:00+08:00"])
     assert args.tolerance_minutes == DEFAULT_TOLERANCE_MINUTES == 65
+
+
+async def test_a_window_with_no_session_exits_one_and_prints_an_error_not_zeros(
+    monkeypatch, capsys,
+):
+    rc, out, _ = await _run(monkeypatch, capsys, no_sessions=True)
+    assert rc == 1
+    assert "ERROR: no Cognition session ran in this window" in out
+    assert "0 matched" not in out and "coverage: 0 session(s)" in out
+
+
+async def test_the_json_of_a_window_with_no_session_is_an_error_with_its_coverage(
+    monkeypatch, capsys,
+):
+    rc, out, _ = await _run(monkeypatch, capsys, no_sessions=True, as_json=True)
+    data = json.loads(out)
+    assert rc == 1 and data["status"] == "error" and data["tiers"] == []
+    assert data["coverage"]["sessions"] == 0

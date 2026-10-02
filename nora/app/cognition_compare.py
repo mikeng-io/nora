@@ -38,6 +38,7 @@ from nora.domain.cognition_shadow_compare import (
     CognitionWrite,
     Refusal,
     RoomDirectory,
+    SessionCoverage,
     ShadowReport,
     TierResult,
     act_tier,
@@ -49,6 +50,8 @@ from nora.infra.sql.schema import (
     COGNITION_REMIND_MIRROR,
     COGNITION_SESSION,
     COGNITION_SESSION_CLOSE,
+    COGNITION_WAKE,
+    COGNITION_WAKE_OUTCOME,
     COGNITION_WOULD_WRITE,
     CULTURE_REVISION,
     DECISION_LOG,
@@ -226,12 +229,8 @@ async def read_would_writes(
             refusals.append(Refusal(tier=r.tier, room=r.conversation_id, at_ms=at))
             continue
         cand, args = _obj(r.candidate), _obj(r.args)
-        key, anchor, title = "", None, ""
-        if r.verb == "note_update":
-            key = str(cand.get("note_id") or args.get("note_id") or "")
-        elif r.verb in ("event_revise", "event_set_status"):
-            key = str(cand.get("id") or "")
-        elif r.verb == "note_create":
+        key, anchor, title = _write_key(r.verb, cand, args), None, ""
+        if r.verb == "note_create":
             anchor = _anchor(cand.get("anchor_date"), cand.get("anchor_entity_ids"))
             title = str(cand.get("title") or "")
         elif r.verb == "event_propose":
@@ -241,6 +240,16 @@ async def read_would_writes(
             room=r.conversation_id, at_ms=at, key=key, anchor=anchor, title=title,
         ))
     return writes, refusals
+
+
+def _write_key(verb: str, cand: dict[str, Any], args: dict[str, Any]) -> str:
+    """The note or event id a would-write is about (`note_update`, `event_revise`,
+    `event_set_status`), `""` for a verb that creates or has none."""
+    if verb == "note_update":
+        return str(cand.get("note_id") or args.get("note_id") or "")
+    if verb in ("event_revise", "event_set_status"):
+        return str(cand.get("id") or "")
+    return ""
 
 
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
@@ -274,6 +283,8 @@ async def read_closes(
         stmt = stmt.where(s.c.unit == unit)
     async with engine.connect() as conn:
         rows = (await conn.execute(stmt.order_by(c.c.id))).all()
+    covered = sorted({r.session_id for r in rows if r.reason == "covered" and r.session_id})
+    backing = await _session_writes(engine, covered)
     closes: list[Close] = []
     unreadable = 0
     for r in rows:
@@ -289,8 +300,75 @@ async def read_closes(
         closes.append(Close(
             session_id=r.session_id, room=cid, reason=r.reason, at_ms=_ms(r.recorded_at),
             kind=r.kind, cited=_cited(item) if isinstance(item, dict) else frozenset(),
+            session_writes=backing.get(r.session_id, frozenset()) if r.reason == "covered"
+            else frozenset(),
         ))
     return closes, unreadable
+
+
+async def _session_writes(
+    engine: AsyncEngine, session_ids: list[int],
+) -> dict[int, frozenset[tuple[str, str, str]]]:
+    """`(tier, room, key)` of every `would_commit` write each session recorded:
+    what a `covered` close is proven against (a close is the model's word; a row
+    the same session wrote is the store's)."""
+    if not session_ids:
+        return {}
+    t = COGNITION_WOULD_WRITE
+    stmt = sa.select(
+        t.c.session_id, t.c.tier, t.c.verb, t.c.conversation_id, t.c.args, t.c.candidate,
+    ).where(t.c.session_id.in_(session_ids), t.c.outcome == "would_commit")
+    async with engine.connect() as conn:
+        rows = (await conn.execute(stmt)).all()
+    out: dict[int, set[tuple[str, str, str]]] = {}
+    for r in rows:
+        key = _write_key(r.verb, _obj(r.candidate), _obj(r.args))
+        out.setdefault(r.session_id, set()).add((r.tier, room_id(r.conversation_id), key))
+    return {sid: frozenset(v) for sid, v in out.items()}
+
+
+async def read_coverage(
+    engine: AsyncEngine, window: CompareWindow, *, unit: str | None,
+    policy_units: int | None,
+) -> SessionCoverage:
+    """How many sessions ran in the window, over how many units and days, and
+    how many wakes never became one. Plain SELECTs; the window is the window
+    asked for (not widened by the tolerance, which only decides matching)."""
+    s, w, o = COGNITION_SESSION, COGNITION_WAKE, COGNITION_WAKE_OUTCOME
+    sess = sa.select(s.c.id, s.c.unit, s.c.started_at_ms, s.c.skill_versions, s.c.wake_id).where(
+        s.c.started_at_ms >= window.since_ms, s.c.started_at_ms < window.until_ms,
+    )
+    wakes = sa.select(w.c.id, w.c.tracked).where(
+        w.c.at_ms >= window.since_ms, w.c.at_ms < window.until_ms,
+    )
+    if unit is not None:
+        sess = sess.where(s.c.unit == unit)
+        wakes = wakes.where(w.c.unit == unit)
+    async with engine.connect() as conn:
+        session_rows = (await conn.execute(sess)).all()
+        wake_rows = (await conn.execute(wakes)).all()
+        wake_ids = [r.id for r in wake_rows]
+        failed: set[int] = set()
+        if wake_ids:
+            failed = {
+                r.wake_id for r in (await conn.execute(
+                    sa.select(o.c.wake_id).where(
+                        o.c.wake_id.in_(wake_ids), o.c.outcome.in_(("failed", "timeout")),
+                    )
+                )).all()
+            }
+    with_session = {r.wake_id for r in session_rows if r.wake_id is not None}
+    without = [r.id for r in wake_rows if r.id not in with_session]
+    days = (window.until_ms - window.since_ms) / 86_400_000
+    return SessionCoverage(
+        sessions=len(session_rows),
+        units_with_sessions=len({r.unit for r in session_rows}),
+        policy_units=policy_units, days=days,
+        active_days=len({r.started_at_ms // 86_400_000 for r in session_rows}),
+        wakes=len(wake_rows), wakes_without_session=len(without),
+        wakes_failed_without_session=sum(1 for i in without if i in failed),
+        sessions_without_skills=sum(1 for r in session_rows if not _obj(r.skill_versions)),
+    )
 
 
 async def read_clocked_notes(
@@ -472,6 +550,33 @@ async def run_shadow_compare(
     directory: RoomDirectory,
 ) -> ShadowReport:
     rooms = directory.rooms_of(unit) if unit is not None else None
+    # COVERAGE FIRST, and fail-closed: a window with no session is an ERROR with no
+    # tiers, never a table of zeros that reads as a clean week (AGENTS.md: an ERROR
+    # is never a PASS), and the numbers below are read against this denominator.
+    policy_units = len(directory.unit_rooms) if directory.unit_rooms else None
+    coverage, err_coverage = await _try(
+        read_coverage(engine, window, unit=unit, policy_units=policy_units),
+    )
+    header: dict[str, Any] = {
+        "since_ms": window.since_ms, "until_ms": window.until_ms,
+        "tolerance_ms": tolerance_ms, "unit": unit,
+    }
+    if coverage is None:
+        return ShadowReport(
+            tiers=(), coverage=None,
+            error=f"session coverage could not be read ({err_coverage}); not compared, not zero",
+            **header,
+        )
+    if coverage.sessions == 0:
+        return ShadowReport(
+            tiers=(), coverage=coverage,
+            error="no Cognition session ran in this window"
+                  + (f" for unit {unit!r}" if unit else "")
+                  + f" ({coverage.wakes} wake(s), {coverage.wakes_without_session} of them "
+                  "without a session): there is nothing to compare, and a table of zeros "
+                  "would read as a clean week",
+            **header,
+        )
     lo, hi = window.since_ms - tolerance_ms, window.until_ms + tolerance_ms
     common: dict[str, Any] = {"tolerance_ms": tolerance_ms, "since_ms": window.since_ms,
                               "until_ms": window.until_ms}
@@ -535,7 +640,4 @@ async def run_shadow_compare(
             tier, compare(mirrored, tuple(a for a in live if _in_rooms(a, rooms))),
             closes=ledger, tolerance_ms=tolerance_ms, extra_notes=close_note,
         ))
-    return ShadowReport(
-        since_ms=window.since_ms, until_ms=window.until_ms, tolerance_ms=tolerance_ms,
-        unit=unit, tiers=tuple(tiers),
-    )
+    return ShadowReport(tiers=tuple(tiers), coverage=coverage, **header)

@@ -254,8 +254,8 @@
  {
   "name": "minor 3: the objective lists the kinds of write again",
   "file": "nora/dreamer/objectives/cognition.md",
-  "old": "This is the shadow run. What you write goes to a record that is read afterwards,",
-  "new": "This is the shadow run. Each note, event, Standing revision, reminder and self-wake you make goes to a record that is read afterwards,",
+  "old": "When a write is refused you are told why, in words. Read the reason and rewrite it, or close",
+  "new": "When a write is refused you are told why, in words. Each note, event, Standing revision, reminder and self-wake you make is checked. Read the reason and rewrite it, or close",
   "target": "tests/unit/test_cognition_wiring.py::test_the_objective_frames_what_she_reads_and_does_not_list_write_kinds"
  }
 ]

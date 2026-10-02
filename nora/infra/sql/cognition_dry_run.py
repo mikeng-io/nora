@@ -228,6 +228,18 @@ class SqlCognitionDryRunStore:
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
+    async def count_reminds_created(
+        self, *, unit: str, platform: str, conversation_id: str, since_ms: int,
+    ) -> int:
+        t = COGNITION_REMIND_MIRROR
+        stmt = sa.select(sa.func.count()).where(
+            t.c.unit == unit, t.c.verb == "remind", t.c.outcome == "recorded",
+            t.c.platform == platform, t.c.conversation_id == conversation_id,
+            t.c.recorded_at >= _at(since_ms),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
     async def pending_mirrored_reminds(
         self, *, unit: str, now_ms: int,
     ) -> Sequence[PendingMirroredRemind]:

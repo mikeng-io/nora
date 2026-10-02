@@ -54,7 +54,7 @@ from collections.abc import Sequence
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
-from nora.domain.cognition_write import WouldWrite, stale_event_base
+from nora.domain.cognition_write import WouldWrite, note_base_refusal, stale_event_base
 from nora.domain.gatherings import (
     TERMINAL_STATUSES,
     FieldMeta,
@@ -70,7 +70,7 @@ from nora.domain.notes import (
     NoteRevisionProposal,
     has_duplicate_open_title,
 )
-from nora.domain.ports import CognitionDryRunStore, NewCognitionWouldWrite
+from nora.domain.ports import CognitionDryRunStore, NewCognitionWouldWrite, NoteHead
 from nora.domain.standing import Standing, WorkingSetItem
 from nora.domain.standing_revise import check_mode, check_schema, check_stale_base
 
@@ -184,9 +184,16 @@ async def dry_run_note_update(
     *, ledger: CognitionDryRunStore, session_id: int | None, unit: str,
     platform: str, conversation_id: str, note_id: str, body: str,
     parent_revision_id: str, established_by: str, now_ms: int,
-    shown: Shown, entity_ids: tuple[str, ...] = (),
+    shown: Shown, head: NoteHead | None, entity_ids: tuple[str, ...] = (),
 ) -> WouldWrite:
-    """`note_update`/`append_revision` in shadow."""
+    """`note_update`/`append_revision` in shadow. `head` is the note's head as
+    the caller read it through the real read path (the same "prior is a
+    parameter" shape `event_revise` and `standing_revise` use: this function
+    reads nothing), `None` for a note the unit does not hold. The live store
+    refuses an append to a missing note, a retired one, or against a head that
+    moved (`SqlNoteStore._append_on_conn`); `note_base_refusal` makes those
+    three refusals here, after the body's own checks as the live verb orders
+    them, so a would-commit is a write the store would accept."""
     args: dict[str, object] = {
         "note_id": note_id, "body": body, "parent_revision_id": parent_revision_id,
         "established_by": established_by, "entity_ids": list(entity_ids),
@@ -210,6 +217,20 @@ async def dry_run_note_update(
             tier="note", verb="note_update", platform=platform,
             conversation_id=conversation_id, args=args, outcome="refused",
             refusal_reason="invalid_revision", refusal_detail=str(exc),
+        )
+        return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
+    base_refusal = note_base_refusal(
+        parent_revision_id=parent_revision_id,
+        head_revision_id=None if head is None else head.head_revision_id,
+        retired=head is not None and head.retired,
+    )
+    if base_refusal is not None:
+        reason, detail = base_refusal
+        write = WouldWrite(
+            tier="note", verb="note_update", platform=platform,
+            conversation_id=conversation_id, args=args, outcome="refused",
+            refusal_reason=reason, refusal_detail=detail,
+            base_revision_id=parent_revision_id,
         )
         return await _record(ledger, session_id=session_id, unit=unit, write=write, now_ms=now_ms)
     candidate = {

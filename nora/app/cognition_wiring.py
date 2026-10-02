@@ -45,7 +45,7 @@ from nora.agent.dreamer import (
 from nora.domain.cognition_session import COGNITION_ADAPTOR, Room
 from nora.domain.gatherings import OPEN_STATUSES, Gathering, GatheringStore
 from nora.domain.note_body import NORA_NAMES
-from nora.domain.ports import CognitionDryRunStore, StimulusStore
+from nora.domain.ports import CognitionDryRunStore, NoteHead, StimulusStore
 from nora.domain.standing import StandingHead
 
 log = logging.getLogger("nora.app.cognition_wiring")
@@ -347,6 +347,8 @@ def build_cognition_runner(
     dry_run_store: CognitionDryRunStore,
     stimulus_store: StimulusStore,
     note_titles: Callable[[str], Awaitable[Sequence[str]]],
+    note_head: Callable[[str, str], Awaitable[NoteHead | None]],
+    room_proactive: Callable[[str, str], bool],
     open_events_in: Callable[[str], Awaitable[Sequence[Gathering]]],
     standing_of: Callable[[str, str], Awaitable[StandingHead | None]],
     roster_of: Callable[[str, str], Awaitable[Mapping[str, str] | None]] | None = None,
@@ -424,6 +426,9 @@ def build_cognition_runner(
         max_items=cfg.cognition.max_items, max_strikes=cfg.cognition.max_strikes,
         max_self_wakes=cfg.cognition.max_self_wakes,
         max_self_wakes_per_day=cfg.cognition.max_self_wakes_per_day,
+        note_head=note_head, room_proactive=room_proactive,
+        max_reminds_per_room_per_day=cfg.cognition.max_reminds_per_room_per_day,
+        max_pending_reminds=cfg.cognition.max_pending_reminds,
         model_id=model_id, model_route=model_route, metrics=metrics, clock=clock,
         tz=ZoneInfo(cfg.cognition.timezone),
         model_window_tokens=cfg.cognition.model_window_tokens,

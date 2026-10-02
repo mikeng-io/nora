@@ -234,6 +234,42 @@ async def test_record_remind_mirror_refused(store):
     assert mirror_id is not None
 
 
+async def _remind(store, *, ref, room="room-a", platform="signal", unit="unit-1",
+                  verb="remind", outcome="recorded", at=NOW):
+    await store.record_remind_mirror(
+        mirror=NewCognitionRemindMirror(
+            session_id=None, unit=unit, verb=verb, reminder_ref=ref, platform=platform,
+            conversation_id=room, intent="tell" if verb == "remind" else None,
+            subject_rows=("note:1",) if verb == "remind" else (), at_ms=NOW + 60_000,
+            why=None, outcome=outcome,
+            refusal_reason="no_citations" if outcome == "refused" else None,
+        ),
+        recorded_at_ms=at,
+    )
+
+
+async def test_count_reminds_created_counts_a_rooms_recorded_reminds_since_an_instant(store):
+    """The per-room daily act cap's count (`remind`, 30 §3): one room of one unit,
+    recorded and not refused, at or after the instant; a move, a cancel, another
+    room, another unit and an older one are not it."""
+    await _remind(store, ref="a", at=NOW)
+    await _remind(store, ref="b", at=NOW + 1_000)
+    await _remind(store, ref="c", at=NOW - 10_000)                      # before the instant
+    await _remind(store, ref="d", room="room-b")                        # another room
+    await _remind(store, ref="e", platform="discord")                   # another platform
+    await _remind(store, ref="f", unit="unit-2")                        # another unit
+    await _remind(store, ref=None, outcome="refused")                   # refused: no act
+    await _remind(store, ref="a", verb="remind_move")                   # a move is no act
+    await _remind(store, ref="b", verb="remind_cancel")                 # nor a cancel
+    count = await store.count_reminds_created(
+        unit="unit-1", platform="signal", conversation_id="room-a", since_ms=NOW - 1,
+    )
+    assert count == 2
+    assert await store.count_reminds_created(
+        unit="unit-1", platform="signal", conversation_id="room-a", since_ms=NOW + 1_001,
+    ) == 0
+
+
 # ---- m1 (DEC-245): a jsonb column holds an object, not a string OF one -------
 
 

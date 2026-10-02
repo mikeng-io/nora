@@ -1108,6 +1108,19 @@ class NewCognitionSessionClose:
 
 
 @dataclass(frozen=True)
+class NoteHead:
+    """A note's head as the live store's compare-and-swap would see it: the
+    revision id a revision must be written against, and whether the note is
+    retired (an append requires an open one). Read through the real read path
+    (`SqlNoteStore.note_by_id`) by the Cognition session's dry-run
+    `note_update`, so the same refusals the live store makes are made without a
+    write; `None` in its place is a note absent from the unit."""
+
+    head_revision_id: str
+    retired: bool = False
+
+
+@dataclass(frozen=True)
 class NewCognitionWouldWrite:
     """A `nora.domain.cognition_write.WouldWrite`, addressed to a session
     and a unit — the port's own copy of the same fields rather than an
@@ -1195,6 +1208,15 @@ class CognitionDryRunStore(Protocol):
     async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
         """`created` (recorded, not refused) `wake_at` rows for the unit at or
         after `since_ms` (the per-day cap's count; moves do not count)."""
+        ...
+
+    async def count_reminds_created(
+        self, *, unit: str, platform: str, conversation_id: str, since_ms: int,
+    ) -> int:
+        """`remind` rows recorded (not refused) for the unit's room at or after
+        `since_ms`: the per-room daily act cap's count. Moves and cancels do not
+        count, and a reminder cancelled after it was made still counts (it was an
+        act cognition chose to make)."""
         ...
 
     async def pending_mirrored_reminds(

@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "The Cognition session is shadow-only and off for every room and person; this changes what it is measured by (its instruction, its dry-run checks, its metrics and the operator's `nora cognition compare` report), and nothing a person reads or receives.",
+  "details": [],
+  "limitations": []
+}

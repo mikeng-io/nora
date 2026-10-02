@@ -1,0 +1,345 @@
+[
+ {
+  "name": "1: the objective tells the model it is in the shadow run again",
+  "file": "nora/dreamer/objectives/cognition.md",
+  "old": "# When a write is refused\n\nWhen a write is refused you are told why, in words. Read the reason and rewrite it, or close\nthe item, or leave it: a refusal is the checks doing their work, not a fault of yours.\n",
+  "new": "# Everything you write here is recorded and not committed\n\nThis is the shadow run. What you write goes to a record that is read afterwards, side by side\nwith what the live passes did, and nothing you write is committed or reaches a room. Write\nexactly what you would write if it were live.\n\nWhen a write is refused you are told why, in words. Read the reason and rewrite it, or close\nthe item, or leave it: a refusal is the checks doing their work, not a fault of yours.\n",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k assembled_instruction"
+ },
+ {
+  "name": "1: note_update's text says the write is not committed",
+  "file": "nora/app/cognition_session.py",
+  "old": "            revision is kept.\n\n            Returns `status`: ok or refused, with a `reason` and `detail` when\n            refused.\n\n            Args:\n                note_id: The note's id.",
+  "new": "            revision is kept. In this run the write is recorded, not committed.\n\n            Returns `status`: ok or refused, with a `reason` and `detail` when\n            refused.\n\n            Args:\n                note_id: The note's id.",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k verb_description"
+ },
+ {
+  "name": "1: remind's text says it is held and never sent",
+  "file": "nora/app/cognition_session.py",
+  "old": "            not before.\n\n            Returns `status`: ok (with the `reminder_id`) or refused, with a\n            `reason` and `detail` when refused.",
+  "new": "            not before. In this run it is recorded and held, never sent.\n\n            Returns `status`: ok (with the `reminder_id`) or refused, with a\n            `reason` and `detail` when refused.",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k verb_description"
+ },
+ {
+  "name": "2: wake_at's text states the caps in words again",
+  "file": "nora/app/cognition_session.py",
+  "old": "            refused, with a `reason` and `detail` when refused.\n\n            Args:\n                subject_rows: The rows to look at again, at least one.\n                at: When, ISO 8601 with an offset.",
+  "new": "            refused (too soon, too far, no subject, too many pending or too\n            many today).\n\n            Args:\n                subject_rows: The rows to look at again, at least one.\n                at: When, ISO 8601 with an offset. No sooner than the cooldown\n                    from now and no later than seven days.",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k verb_description"
+ },
+ {
+  "name": "2: the daily cap's refusal states its number",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "                \"daily_cap\", \"you have already asked for enough next looks lately\",",
+  "new": "                \"daily_cap\",\n                f\"{max_self_wakes_per_day} self-wakes were already set for this unit \"\n                \"in the last 24 hours\",",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k pure_checks"
+ },
+ {
+  "name": "2: the pending ceiling's refusal states its number",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "                \"too_many_pending\", \"you already have enough next looks waiting\",",
+  "new": "                \"too_many_pending\",\n                f\"{max_self_wakes} self-wakes are already pending for this unit\",",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k pure_checks"
+ },
+ {
+  "name": "2: the horizon's refusal states the cooldown",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "                \"horizon_too_soon\", \"that time is too soon after now to wake you at\",",
+  "new": "                \"horizon_too_soon\",\n                f\"{horizon_seconds:.0f}s is inside the cooldown ({cooldown_seconds:.0f}s)\",",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k no_result_a_verb_returns"
+ },
+ {
+  "name": "1: a remind refusal says the reminder was mirrored",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "        return RemindRefusal(\"not_found\", f\"no pending reminder {reminder_ref!r}\")",
+  "new": "        return RemindRefusal(\"not_found\", f\"no pending mirrored reminder {reminder_ref!r}\")",
+  "target": "tests/unit/test_cognition_model_facing_text_hides_the_mode.py -k pure_checks"
+ },
+ {
+  "name": "3: a note_update against a moved head is recorded would_commit",
+  "file": "nora/agent/cognition_dry_run.py",
+  "old": "    if base_refusal is not None:\n        reason, detail = base_refusal",
+  "new": "    if False:\n        reason, detail = base_refusal",
+  "target": "tests/unit/test_cognition_dry_run.py -k stale_base"
+ },
+ {
+  "name": "3: the note head's staleness is not compared",
+  "file": "nora/domain/cognition_write.py",
+  "old": "    if parent_revision_id != head_revision_id:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_dry_run.py -k stale_base"
+ },
+ {
+  "name": "3: a retired note takes an append",
+  "file": "nora/domain/cognition_write.py",
+  "old": "    if retired:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_dry_run.py -k retired"
+ },
+ {
+  "name": "3: a note the unit does not hold takes an append",
+  "file": "nora/domain/cognition_write.py",
+  "old": "    if head_revision_id is None:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_dry_run.py -k not_hold"
+ },
+ {
+  "name": "3: the session does not read the note's head",
+  "file": "nora/app/cognition_session.py",
+  "old": "                    head = await self._note_head(unit, note_id)",
+  "new": "                    head = NoteHead(head_revision_id=parent_revision_id)",
+  "target": "tests/unit/test_cognition_measures.py -k stale_head"
+ },
+ {
+  "name": "3: an unreadable head reads as ok",
+  "file": "nora/app/cognition_session.py",
+  "old": "\"status\": \"unavailable\", \"reason\": \"note_head\",",
+  "new": "\"status\": \"ok\", \"reason\": \"note_head\",",
+  "target": "tests/unit/test_cognition_measures.py -k head_that_cannot_be_read"
+ },
+ {
+  "name": "3: a tell on an abduced row is accepted",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if ctx.abduced_subject and intent != \"ask\":",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_measures.py -k abduced"
+ },
+ {
+  "name": "3: a remind to a room that is not proactive is accepted",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if not ctx.room_proactive:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_measures.py -k not_proactive"
+ },
+ {
+  "name": "3: the room's flag is never read",
+  "file": "nora/app/cognition_session.py",
+  "old": "            True if self._room_proactive is None\n            else self._room_proactive(platform, conversation_id)",
+  "new": "            True",
+  "target": "tests/unit/test_cognition_measures.py -k not_proactive"
+ },
+ {
+  "name": "3: the daily cap binds one over the cap",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "        and ctx.acts_in_room_today >= ctx.max_acts_per_room_per_day",
+  "new": "        and ctx.acts_in_room_today > ctx.max_acts_per_room_per_day",
+  "target": "tests/unit/test_cognition_remind.py -k daily_cap"
+ },
+ {
+  "name": "3: the pending ceiling binds one over the ceiling",
+  "file": "nora/domain/cognition_remind.py",
+  "old": "    if ctx.max_pending is not None and len(pending) >= ctx.max_pending:",
+  "new": "    if ctx.max_pending is not None and len(pending) > ctx.max_pending:",
+  "target": "tests/unit/test_cognition_remind.py -k pending_ceiling"
+ },
+ {
+  "name": "3: the session passes no daily cap to the check",
+  "file": "nora/app/cognition_session.py",
+  "old": "            max_acts_per_room_per_day=self._max_reminds_per_room_per_day,",
+  "new": "            max_acts_per_room_per_day=None,",
+  "target": "tests/unit/test_cognition_measures.py -k daily_cap"
+ },
+ {
+  "name": "3: the daily cap counts every day",
+  "file": "nora/app/cognition_session.py",
+  "old": "                since_ms=self._now_ms() - _DAY_MS,\n            )\n        cited",
+  "new": "                since_ms=0,\n            )\n        cited",
+  "target": "tests/unit/test_cognition_measures.py -k daily_cap"
+ },
+ {
+  "name": "3: the session passes no pending ceiling to the check",
+  "file": "nora/app/cognition_session.py",
+  "old": "            max_pending=self._max_pending_reminds, abduced_subject=abduced,",
+  "new": "            max_pending=None, abduced_subject=abduced,",
+  "target": "tests/unit/test_cognition_measures.py -k pending_ceiling"
+ },
+ {
+  "name": "3: the wiring drops the pending ceiling",
+  "file": "nora/app/cognition_wiring.py",
+  "old": "        max_pending_reminds=cfg.cognition.max_pending_reminds,",
+  "new": "        max_pending_reminds=None,",
+  "target": "tests/unit/test_cognition_measures.py -k composition_requires"
+ },
+ {
+  "name": "3: the daily count includes another room's reminders",
+  "file": "nora/infra/sql/cognition_dry_run.py",
+  "old": "            t.c.platform == platform, t.c.conversation_id == conversation_id,\n            t.c.recorded_at >= _at(since_ms),\n        )\n        async with self._engine.connect() as conn:\n            return int((await conn.execute(stmt)).scalar_one())\n\n    async def pending_mirrored_reminds(",
+  "new": "            t.c.platform == platform,\n            t.c.recorded_at >= _at(since_ms),\n        )\n        async with self._engine.connect() as conn:\n            return int((await conn.execute(stmt)).scalar_one())\n\n    async def pending_mirrored_reminds(",
+  "target": "tests/contract/test_cognition_dry_run_store_contract.py -k count_reminds_created"
+ },
+ {
+  "name": "5: a refusal is counted by no one",
+  "file": "nora/app/cognition_session.py",
+  "old": "            if status in (\"refused\", \"unavailable\"):",
+  "new": "            if False:",
+  "target": "tests/unit/test_cognition_measures.py -k every_refusal_is_counted"
+ },
+ {
+  "name": "5: an unavailable verb counts as a refusal of the work",
+  "file": "nora/app/cognition_session.py",
+  "old": "                    rule=reason if status == \"refused\" else f\"unavailable_{reason}\",",
+  "new": "                    rule=reason,",
+  "target": "tests/unit/test_cognition_measures.py -k unreadable_head_is_counted"
+ },
+ {
+  "name": "5: a code close and a model close are one number",
+  "file": "nora/app/cognition_session.py",
+  "old": "            outcome=outcome.reason if by_model or outcome.reason == \"struck\" else \"unclosed\",",
+  "new": "            outcome=outcome.reason,",
+  "target": "tests/unit/test_cognition_measures.py -k items_are_counted"
+ },
+ {
+  "name": "5: tokens are labelled by something identifying",
+  "file": "nora/app/cognition_session.py",
+  "old": "                unit_kind=kinds[0] if len(kinds) == 1 else \"mixed\",",
+  "new": "                unit_kind=unit,",
+  "target": "tests/unit/test_cognition_measures.py -k tokens_are_counted_by_what"
+ },
+ {
+  "name": "5: a run with no readable usage adds a zero",
+  "file": "nora/app/cognition_session.py",
+  "old": "        if result.total_tokens is not None:",
+  "new": "        if True:",
+  "target": "tests/unit/test_cognition_measures.py -k could_not_read"
+ },
+ {
+  "name": "5: a created self-wake is not counted",
+  "file": "nora/app/cognition_session.py",
+  "old": "            self._inc(\"nora_self_wake_total\", outcome=\"refused\" if answer.refused else \"created\")",
+  "new": "            pass",
+  "target": "tests/unit/test_cognition_measures.py -k self_wakes_are_counted"
+ },
+ {
+  "name": "5: a fired self-wake is not counted",
+  "file": "nora/app/cognition_session.py",
+  "old": "                        self._inc(\"nora_self_wake_total\", outcome=\"fired\")",
+  "new": "                        pass",
+  "target": "tests/unit/test_cognition_session_lifecycle.py -k moved_self_wake_fires_once"
+ },
+ {
+  "name": "5: the live runner reads no usage",
+  "file": "nora/app/cognition_agent_runner.py",
+  "old": "            total_tokens=_total_tokens(result),",
+  "new": "            total_tokens=None,",
+  "target": "tests/unit/test_cognition_agent_runner.py -k tokens_the_loop_spent"
+ },
+ {
+  "name": "5: a metric the code records is not declared",
+  "file": "nora/obs/metric_specs.py",
+  "old": "        \"nora_self_wake_total\",\n        \"Self-wake calls",
+  "new": "        \"nora_self_wake_total_x\",\n        \"Self-wake calls",
+  "target": "tests/architecture/test_every_recorded_metric_is_declared.py"
+ },
+ {
+  "name": "5: the pace module cites the metric by a label it does not have",
+  "file": "nora/domain/cognition_pace.py",
+  "old": "`nora_self_wake_total{outcome=\"fired\"}`",
+  "new": "`nora_self_wake_total{transition=\"fired\"}`",
+  "target": "tests/unit/test_cognition_measures.py -k every_metric_a_cognition_module_cites"
+ },
+ {
+  "name": "4: a window with no session compares and prints zeros",
+  "file": "nora/app/cognition_compare.py",
+  "old": "    if coverage.sessions == 0:",
+  "new": "    if False:",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k no_session_is_an_error"
+ },
+ {
+  "name": "4: an unreadable coverage is not an error",
+  "file": "nora/app/cognition_compare.py",
+  "old": "    if coverage is None:\n        return ShadowReport(",
+  "new": "    if False:\n        return ShadowReport(",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k unreadable_coverage"
+ },
+ {
+  "name": "4: a report with an error exits clean",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "            self.error is not None or self.coverage is None\n            or any",
+  "new": "            self.coverage is None\n            or any",
+  "target": "tests/unit/test_cognition_compare_cli.py -k no_session"
+ },
+ {
+  "name": "4: the error report prints writer lines of zeros",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "    if report.error is not None:\n        return [f\"ERROR: {report.error}\"]",
+  "new": "    if False:\n        return [f\"ERROR: {report.error}\"]",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k no_session_is_one_error_line"
+ },
+ {
+  "name": "4: the model's own close counts as closed",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "        return sum(1 for g in self.clocked_only if g.closed_by and g.closed_by_code)",
+  "new": "        return sum(1 for g in self.clocked_only if g.closed_by)",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k every_session_closes_by_its_own_say_so"
+ },
+ {
+  "name": "4: every covered close is proven",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "    bare = room_id(room)\n    return any(\n        t == tier and room_id(r) == bare and (not key or k == key)\n        for t, r, k in close.session_writes\n    )",
+  "new": "    return True",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k proven_only_for_the_same"
+ },
+ {
+  "name": "4: a proof ignores which note it is about",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "t == tier and room_id(r) == bare and (not key or k == key)",
+  "new": "t == tier and room_id(r) == bare",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k proven_only_for_the_same"
+ },
+ {
+  "name": "4: a proof ignores which tier it is about",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "t == tier and room_id(r) == bare and (not key or k == key)",
+  "new": "room_id(r) == bare and (not key or k == key)",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k proven_only_for_the_same"
+ },
+ {
+  "name": "4: a covered close is proven by a refused write",
+  "file": "nora/app/cognition_compare.py",
+  "old": ").where(t.c.session_id.in_(session_ids), t.c.outcome == \"would_commit\")",
+  "new": ").where(t.c.session_id.in_(session_ids))",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k refused_write_of_the_same_session"
+ },
+ {
+  "name": "4: a covered close is proven by another session's write",
+  "file": "nora/app/cognition_compare.py",
+  "old": "            session_writes=backing.get(r.session_id, frozenset()) if r.reason == \"covered\"",
+  "new": "            session_writes=frozenset().union(*backing.values()) if r.reason == \"covered\"",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k would_write_of_another_session"
+ },
+ {
+  "name": "4: the verdict line says closed, not self-attested",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "f\"{w.closed_self_attested} closed self-attested: not evidence, {w.open} open)\"",
+  "new": "f\"{w.closed_self_attested} closed, {w.open} open)\"",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k self_attested_close_is_not_evidence"
+ },
+ {
+  "name": "4: the report does not say what matched means",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "    lines += [f\"matched: {m}\" for m in MATCHED_MEANS]\n",
+  "new": "",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k states_what_matched_does"
+ },
+ {
+  "name": "4: the report does not say a say-so is not evidence",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "    lines += [CLOSE_IS_NOT_EVIDENCE, \"\", \"verdicts (counts only; the gate is yours):\"]",
+  "new": "    lines += [\"\", \"verdicts (counts only; the gate is yours):\"]",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k says_what_matched_means"
+ },
+ {
+  "name": "6: the coverage never counts sessions with no skill",
+  "file": "nora/app/cognition_compare.py",
+  "old": "        sessions_without_skills=sum(1 for r in session_rows if not _obj(r.skill_versions)),",
+  "new": "        sessions_without_skills=0,",
+  "target": "tests/infra/test_cognition_shadow_compare_read.py -k session_with_no_skill"
+ },
+ {
+  "name": "6: the coverage hides the no-skills line",
+  "file": "nora/domain/cognition_shadow_compare.py",
+  "old": "    if c.sessions_without_skills:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_shadow_compare.py -k says_what_matched_means"
+ }
+]

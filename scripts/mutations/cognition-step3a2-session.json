@@ -37,15 +37,15 @@
  {
   "name": "cognition_pace: wake_move actually refuses an unknown wake_ref",
   "file": "nora/domain/cognition_pace.py",
-  "old": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if row is None:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
-  "new": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if False:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "old": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if row is None:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"you may only move or cancel a next look you set yourself\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "new": "    row = next((p for p in pending if p.wake_ref == wake_ref), None)\n    if False:\n        return PaceRefusal(\"not_found\", f\"no pending self-wake {wake_ref!r}\")\n    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"you may only move or cancel a next look you set yourself\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
   "target": "tests/unit/test_cognition_pace.py -k test_wake_move_refuses_an_unknown_ref"
  },
  {
   "name": "cognition_pace: wake_move and wake_cancel actually refuse a self-wake this session did not create",
   "file": "nora/domain/cognition_pace.py",
-  "old": "    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
-  "new": "    if False:\n        return PaceRefusal(\"not_own\", \"this self-wake was not created by this session\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "old": "    if (\n        created_by_session_id is not None\n        and row.created_by_session_id is not None\n        and row.created_by_session_id != created_by_session_id\n    ):\n        return PaceRefusal(\"not_own\", \"you may only move or cancel a next look you set yourself\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
+  "new": "    if False:\n        return PaceRefusal(\"not_own\", \"you may only move or cancel a next look you set yourself\")\n    horizon_seconds = (at_ms - now_ms) / 1000.0",
   "target": "tests/unit/test_cognition_pace.py -k test_wake_move_refuses_a_self_wake_created_by_another_session"
  },
  {
@@ -149,7 +149,7 @@
  {
   "name": "cognition_session: an item never closed by the model is actually closed waiting, not silently dropped",
   "file": "nora/app/cognition_session.py",
-  "old": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )\n            await self._record_close(state, outcome)",
+  "old": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )\n            await self._record_close(state, outcome, by_model=False)",
   "new": "            outcome = close_or_strike(\n                item, item_index=index, reason=\"waiting\", max_strikes=self._max_strikes,\n            )",
   "target": "tests/unit/test_cognition_session_runner.py -k test_an_item_never_closed_by_the_model_is_closed_waiting_by_code"
  },
@@ -387,8 +387,8 @@
  {
   "name": "cognition_session: a self-wake set by an earlier session can actually be cancelled",
   "file": "nora/app/cognition_session.py",
-  "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            return _answer(answer)\n\n        async def remind(",
-  "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            return _answer(answer)\n\n        async def remind(",
+  "old": "                    now_ms=call_ms, pending=pending, created_by_session_id=None,\n                )\n            self._inc(\n                \"nora_self_wake_total\", outcome=\"refused\" if answer.refused else \"cancelled\",\n            )\n            return _answer(answer)",
+  "new": "                    now_ms=call_ms, pending=pending, created_by_session_id=state.session_id,\n                )\n            self._inc(\n                \"nora_self_wake_total\", outcome=\"refused\" if answer.refused else \"cancelled\",\n            )\n            return _answer(answer)",
   "target": "tests/unit/test_cognition_session_lifecycle.py -k test_a_cancelled_self_wake_never_fires"
  },
  {

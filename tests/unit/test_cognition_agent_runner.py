@@ -104,3 +104,30 @@ async def test_a_loop_that_returns_hands_its_stop_reason_back_and_gets_strands_t
 def test_a_tool_that_is_already_a_strands_tool_passes_through_untouched():
     (adapted,) = as_strands_tools([_tool])
     assert as_strands_tools([adapted]) == [adapted]
+
+
+# -- tokens: the loop's own accounting, or nothing -----------------------------------------
+
+class _Result:
+    def __init__(self, usage: Any, stop_reason: str = "end_turn") -> None:
+        self.stop_reason = stop_reason
+        self.metrics = type("M", (), {"accumulated_usage": usage})()
+
+
+async def test_a_run_hands_up_the_tokens_the_loop_spent(monkeypatch):
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return _Result({"inputTokens": 900, "outputTokens": 100, "totalTokens": 1000})
+
+    _patch(monkeypatch, invoke)
+    result = await _run(_runner(Metrics()))
+    assert (result.stop_reason, result.total_tokens) == ("end_turn", 1000)
+
+
+@pytest.mark.parametrize("usage", [None, {}, {"totalTokens": None}, {"totalTokens": "9"},
+                                   {"totalTokens": True}])
+async def test_a_result_with_no_readable_usage_is_none_never_zero(monkeypatch, usage):
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return _Result(usage)
+
+    _patch(monkeypatch, invoke)
+    assert (await _run(_runner(Metrics()))).total_tokens is None

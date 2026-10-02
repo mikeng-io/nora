@@ -441,13 +441,16 @@ step's PR:
 
 ## 10. Observability
 
-- `nora_cognition_item_total{kind,reason}`;
+- `nora_cognition_item_total{kind,outcome}`;
   `nora_cognition_corrected_total{tier}`; refusals by rule,
   `nora_cognition_refused_total{verb,rule}`; acts by result;
-  `nora_cognition_unit_tokens_total{unit}`; the stimulus metrics of
-  [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
+  `nora_cognition_unit_tokens_total{unit_kind}` (built 2026-10-02 with `outcome`
+  for `reason` and `unit_kind`, the agenda's kind or `mixed`, for `unit`: a unit
+  is a name, and no metric label is a room, a person or a unit); the stimulus
+  metrics of [20](20-observe.md) §4; `nora_dq_failures_total{check}`;
   `nora_face_match_total{outcome}`; `nora_self_tension_total{doctrine_file}`;
-  `nora_self_wake_total{transition}`; per-adaptor wakes and sessions;
+  `nora_self_wake_total{outcome}` (created, moved, cancelled, refused, fired:
+  built 2026-10-02, with `outcome` for `transition`); per-adaptor wakes and sessions;
   `nora_lesson_total{result}` (written, retired, refused by rule, rolled
   back).
 - One Langfuse root per session, its model calls and tool calls as children.
@@ -553,12 +556,42 @@ first.
 --since ISO [--until ISO] [--unit U] [--tolerance-minutes N] [--json]` reports, per tier and per
 clocked writer (`note-candidates`, `note-curation`, `note-merge`, `event:tag`, `standing-debrief`,
 `standing-ingest-fold`, `culture`, `proactive`, `proactive-decide`), matched / cognition-only /
-clocked-only, with a clocked-only row `closed` only when a `no_change`, `waiting` or `covered` close
-explains it (same room, same tier, names the row's id, after the write, one close per row;
-DEC-252). The default tolerance is 65 minutes, derived from the hourly writers' cadence;
+clocked-only, with a clocked-only row EXPLAINED when a `no_change`, `waiting` or `covered` close
+names it (same room, same tier, names the row's id, after the write, one close per row;
+DEC-252), and since 2026-10-02 (below) that explanation is counted as `closed by code` only when the
+store proves it, and otherwise as `closed self-attested`, which is not evidence. The default tolerance is 65 minutes, derived from the hourly writers' cadence;
 `event:tag` is the live tag path and is reported apart, in no verdict; a Standing pair is
 `coincident`, not matched. An unreadable source is ERROR, never zero. It prints counts and does not
 decide the gate; step 4 retires a writer only on its own line. Matching rules: the module
 docstring of `nora.domain.cognition_shadow_compare`.
+
+**Step 3a measurability fixes built 2026-10-02** (branch `mikeng-io/fix-shadow-measures`; an
+independent audit of the live shadow data found it could not yet produce evidence the step 4
+cut-over could be judged on). None of it changes a live behaviour; the session is still
+shadow-only. (1) The measured model is no longer told it is measured: the objective's section
+«Everything you write here is recorded and not committed» and every «in this run the write is
+recorded, not committed» in a verb's text are gone (objective version 5), and a refusal detail names
+no dry run and no number; a test scans every string the model can read (the instruction, the
+prompt, each verb's description, each result, each refusal detail). (2) Caps stay in code: `wake_at`
+no longer says «too many pending or too many today», the cooldown or seven days, and no refusal
+detail states a limit. (3) The dry-run verbs make the live store's own refusals: a `note_update`
+against a moved head, a retired note or one the unit does not hold is `refused` (`stale_base`,
+`note_retired`, `not_found`) and no longer recorded `would_commit`; the event verbs already did;
+`remind` refuses a room that is not `proactive`, a `tell` resting on an abduced row (`abduced_must_ask`),
+a room past its daily cap (`room_daily_cap`) and a pending ceiling (`pending_ceiling`), the two caps
+being new `[cognition]` keys (`max_reminds_per_room_per_day`, `max_pending_reminds`, unmeasured
+starting values, never shown to the model); the design's per-person cap has no addressee to count
+against (a `remind` names a room) and is not built. (4) `nora cognition compare` is an ERROR, with no
+tiers, for a window with no session; every report carries a coverage line (sessions, units, per day,
+wakes that never became a session, sessions with no skill injected); a close the model wrote is never
+summed into `closed`: `closed by code` is a `covered` close whose own session recorded a
+`would_commit` write of the same tier, room and id, and every other explaining close is `closed
+self-attested`, which the report says is not evidence; and every report says what `matched` does and
+does not establish (the same kind and subject; not that the two say the same thing). (5) The metrics of §10 that
+3a-iii had not shipped now exist: `nora_cognition_item_total{kind,outcome}`,
+`nora_cognition_refused_total{verb,rule}`, `nora_cognition_unit_tokens_total{unit_kind}` and
+`nora_self_wake_total{outcome}`, none with a room, person or unit as a label. (6) The shadow week still
+injects no skill (`AgendaSkills(by_kind={})`, unchanged): the compare output says so, so a week of
+base-objective sessions is never read as the full design.
 
 Steps 4–8 remain design only.

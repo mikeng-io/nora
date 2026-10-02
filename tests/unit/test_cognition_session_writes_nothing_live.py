@@ -168,8 +168,10 @@ async def test_a_scripted_session_writes_nothing_to_a_live_store_and_sends_nothi
     # reference to them), so nothing raised and nothing was recorded there.
     assert agent.calls == 1
     assert outcome is not None
-    # open_note_titles, prior_standing, pending_self_wakes, pending_mirrored_reminds
-    assert live.read_calls == 4
+    # open_note_titles, prior_standing, pending_self_wakes, pending_mirrored_reminds,
+    # and open_events (the `remind` act guard reads the room's events to see
+    # whether a cited row is only abduced): reads, every one.
+    assert live.read_calls == 5
     assert len(dry_run_store.would_writes) == 2  # note_create + standing_revise
     assert len(dry_run_store.paces) == 1
     assert len(dry_run_store.remind_mirrors) == 1

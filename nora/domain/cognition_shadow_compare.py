@@ -67,11 +67,37 @@ the nearest unused compatible would-write (ties by id), so the same input is
 always the same pairing. A pair counts as matched when EITHER side is in the
 window; an unmatched row counts only when it is itself in the window.
 
-DELIBERATELY CLOSED
+WHAT `matched` MEANS, AND WHAT IT DOES NOT (`MATCHED_MEANS`, printed with every
+report). A matched pair is two writes of the same KIND (the same tier, both a
+creation or both a revision) about the same SUBJECT (the same note id or event
+id; for a creation, the same room, anchor and title or entity set), recorded
+within the tolerance. It does NOT establish that the two say the same thing (the
+body, the venue, the time are never compared) or that either is right; it is
+"both arms touched this thing about now". Standing is never matched at all, only
+coincident (the recorded write does not say what the fold read).
 
-A clocked-only row is `closed` when cognition looked at THAT thing and decided
-nothing needed writing. A `cognition_session_close` row with reason `no_change`,
-`waiting` or `covered` explains a clocked-only row only when ALL of these hold:
+DELIBERATELY CLOSED, AND WHO SAYS SO
+
+A clocked-only row can be explained by a `cognition_session_close` row, but a
+close is the MODEL's statement ("nothing needed writing", "another item's write
+covers it", "I cannot settle it"), and the model is the thing under measurement:
+a count of such closes is self-attestation (AGENTS.md: no self-attestation; DEC-252
+(3) admits it). So an explaining close is reported in one of two ways, never summed:
+
+- `closed_by_code`: the close is `covered` and the SAME session recorded a
+  `would_commit` write in the same room and tier (and, for a row with a note or
+  event id, for that same id). That is "another item's write already handles it"
+  proven from the would-write rows, not from the model's word. It is the one
+  close code can prove from the store.
+- `closed_self_attested`: every other explaining close (`no_change`, `waiting`,
+  and a `covered` no write backs). The model said it; nothing independent shows
+  it. It is NOT evidence and is not counted as `closed`.
+
+A `struck` close is code closing an item at `max_strikes`: it says the model
+never settled the item, so it proves nothing about the clocked row either way
+and explains none.
+
+A clocked-only row is explained by a close only when ALL of these hold:
 
 1. the close's agenda item is in the row's room;
 2. the item's kind maps to the row's tier (`CLOSE_KIND_TIERS`: a `message` item
@@ -88,10 +114,9 @@ nothing needed writing. A `cognition_session_close` row with reason `no_change`,
    explained row, not every row in its room.
 
 `written` does not close a row (it claims a write happened, and B3 means nothing
-proves it did) and `struck` does not (code's own strike at `max_strikes`, not a
-decision). A refused would-write nearby does not close a row either: it is
-named beside it (`refused_nearby`) and the row stays open. A clocked-only row
-no close explains is `open`. A cognition-only row is never closed: it is the
+proves it did) and `struck` does not (see above). A refused would-write nearby does not
+close a row either: it is named beside it (`refused_nearby`) and the row stays open.
+A clocked-only row no close explains is `open`. A cognition-only row is never closed: it is the
 other arm's extra write, not an omission. The pool of closes is shared by every
 tier of one report (tiers in report order), so a close is spent once.
 
@@ -101,7 +126,14 @@ many were refused in its room within the tolerance (`refused_nearby`), because
 "cognition tried and was refused" is a different finding from "cognition never
 looked".
 
-FAIL-CLOSED
+FAIL-CLOSED, AND COVERAGE
+
+A window in which NO Cognition session ran is an ERROR, never a table of zeros:
+there is nothing to compare, and a column of "0 matched, 0 cognition-only" over no
+sessions reads as a clean week. Every report also says how much of the week the
+sessions covered (`SessionCoverage`: sessions, units, per day, wakes that never
+became a session, and how many sessions ran with no skill injected, so a shadow
+week with `AgendaSkills(by_kind={})` is never read as the full design).
 
 THE TOLERANCE. The default is `DEFAULT_TOLERANCE_MINUTES` (65): the cadence of
 the HOURLY clocked writers (`note-candidates`, and `note-merge` in shadow, both
@@ -253,6 +285,10 @@ class Close:
     #: Ids the item names (tokens of its summary and cues, and any `note_id` /
     #: `event_id` field). A close that names none explains only id-less rows.
     cited: frozenset[str] = frozenset()
+    #: `(tier, room, key)` of every `would_commit` write the close's own session
+    #: recorded: what a `covered` close is proven against. Empty when the close is
+    #: not `covered` or its session wrote nothing, so the close is self-attested.
+    session_writes: frozenset[tuple[str, str, str]] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +305,9 @@ class Gap:
     key: str = ""
     session_id: int | None = None
     closed_by: str | None = None
+    #: The close that explains it is one code proved (`covered` and a same-session
+    #: same-room same-tier write); False for a self-attested close.
+    closed_by_code: bool = False
     refused_nearby: int = 0
     keyless: bool = False
 
@@ -285,9 +324,19 @@ class WriterVerdict:
 
     @property
     def closed(self) -> int | None:
+        """Rows closed BY CODE (`closed_by_code`). A close the model wrote is not in
+        this number: it is `closed_self_attested`."""
         if self.status == "error":
             return None
-        return sum(1 for g in self.clocked_only if g.closed_by)
+        return sum(1 for g in self.clocked_only if g.closed_by and g.closed_by_code)
+
+    @property
+    def closed_self_attested(self) -> int | None:
+        """Rows a close the model wrote explains and code did not prove: its own
+        say-so, not evidence."""
+        if self.status == "error":
+            return None
+        return sum(1 for g in self.clocked_only if g.closed_by and not g.closed_by_code)
 
     @property
     def open(self) -> int | None:
@@ -321,6 +370,81 @@ class TierResult:
         )
 
 
+#: What `matched` establishes, said in every report (module docstring).
+MATCHED_MEANS: tuple[str, ...] = (
+    "matched = the same KIND (tier; both a creation or both a revision) and the same "
+    "SUBJECT (note id or event id; for a creation the room, anchor and title or entity "
+    "set), recorded within the tolerance; an act is matched on room plus note or event id",
+    "matched does NOT mean the two writes say the same thing (body, venue, time and "
+    "intent are not compared) or that either is right; a Standing pair is only coincident",
+)
+
+#: The line every verdict block carries: which closes are evidence.
+CLOSE_IS_NOT_EVIDENCE = (
+    "closes: only `closed by code` (a `covered` close that a same-session write backs) is "
+    "evidence; a close the model wrote (no_change, waiting, an unbacked covered) is its own "
+    "say-so, counted apart as `self-attested`, and is never closed or matched"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SessionCoverage:
+    """How much of the window the Cognition sessions covered: the denominator every
+    number in the report is read against. Counts only; no unit, room or person."""
+
+    sessions: int
+    #: Distinct units with at least one session, and how many units the policy
+    #: names (None: the policy could not be read).
+    units_with_sessions: int
+    policy_units: int | None
+    #: The window's length in days, and how many distinct days held a session.
+    days: float
+    active_days: int
+    #: Wakes recorded in the window, those that never became a session (an empty
+    #: agenda, a failure before the session row, a wake with no hook wired), and
+    #: of those the ones that FAILED or timed out.
+    wakes: int
+    wakes_without_session: int
+    wakes_failed_without_session: int
+    #: Sessions that ran with no skill injected (`skill_versions` empty).
+    sessions_without_skills: int
+
+    @property
+    def per_day(self) -> float:
+        return self.sessions / self.days if self.days > 0 else 0.0
+
+
+def coverage_lines(c: SessionCoverage) -> list[str]:
+    units = (
+        f"{c.units_with_sessions} unit(s) with a session"
+        + ("" if c.policy_units is None else f" of {c.policy_units} in policy")
+    )
+    lines = [
+        f"coverage: {c.sessions} session(s), {units}, {c.per_day:.1f} per day over "
+        f"{c.days:.1f} day(s) ({c.active_days} with a session); "
+        f"{c.wakes_without_session} of {c.wakes} wake(s) never became a session "
+        f"({c.wakes_failed_without_session} of those failed)",
+    ]
+    if c.sessions_without_skills:
+        lines.append(
+            f"coverage: no skills injected in {c.sessions_without_skills} of {c.sessions} "
+            "session(s): they read the base objective only, which is not the full design "
+            "(30 §4); read nothing below as the design's verdict"
+        )
+    return lines
+
+
+def coverage_json(c: SessionCoverage) -> dict[str, object]:
+    return {
+        "sessions": c.sessions, "units_with_sessions": c.units_with_sessions,
+        "policy_units": c.policy_units, "days": round(c.days, 3), "per_day": round(c.per_day, 3),
+        "active_days": c.active_days, "wakes": c.wakes,
+        "wakes_without_session": c.wakes_without_session,
+        "wakes_failed_without_session": c.wakes_failed_without_session,
+        "sessions_without_skills": c.sessions_without_skills,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ShadowReport:
     since_ms: int
@@ -328,10 +452,20 @@ class ShadowReport:
     tolerance_ms: int
     unit: str | None
     tiers: tuple[TierResult, ...]
+    #: None only when the coverage could not be READ, which is `error`, never a
+    #: report with a blank where the denominator should be. Required: a report
+    #: cannot be built without saying what it is a report OF.
+    coverage: SessionCoverage | None
+    #: Set when there is nothing to compare (no session ran in the window, or the
+    #: coverage was unreadable): the report is an ERROR with no tiers.
+    error: str | None = None
 
     @property
     def any_error(self) -> bool:
-        return any(t.status == "error" for t in self.tiers)
+        return (
+            self.error is not None or self.coverage is None
+            or any(t.status == "error" for t in self.tiers)
+        )
 
 
 class CloseLedger:
@@ -349,7 +483,18 @@ class CloseLedger:
         self._tolerance_ms = tolerance_ms
 
     def claim(self, *, tier: str, room: str, at_ms: int, key: str) -> str | None:
-        best: tuple[int, str, int, int] | None = None
+        claimed = self.claim_with_proof(tier=tier, room=room, at_ms=at_ms, key=key)
+        return None if claimed is None else claimed[0]
+
+    def claim_with_proof(
+        self, *, tier: str, room: str, at_ms: int, key: str,
+    ) -> tuple[str, bool] | None:
+        """`(reason, proven)`: the close that explains the row, and whether code
+        proves it (a `covered` close whose own session wrote the same tier in the
+        same room, and the same id when the row has one). A proven close is taken
+        before a self-attested one at the same distance, so evidence is not
+        spent on a say-so."""
+        best: tuple[int, int, str, int, int] | None = None
         for index, close in enumerate(self._closes):
             if index in self._used or room_id(close.room) != room_id(room):
                 continue
@@ -360,15 +505,32 @@ class CloseLedger:
             gap = close.at_ms - at_ms
             if gap < 0 or gap > self._tolerance_ms:
                 continue
+            proven = _proven_by_code(close, tier=tier, room=room, key=key)
             rank = (
-                gap, close.reason, close.session_id if close.session_id is not None else 0, index,
+                gap, 0 if proven else 1, close.reason,
+                close.session_id if close.session_id is not None else 0, index,
             )
             if best is None or rank < best:
                 best = rank
         if best is None:
             return None
-        self._used.add(best[3])
-        return best[1]
+        self._used.add(best[4])
+        chosen = self._closes[best[4]]
+        return chosen.reason, _proven_by_code(chosen, tier=tier, room=room, key=key)
+
+
+def _proven_by_code(close: Close, *, tier: str, room: str, key: str) -> bool:
+    """A `covered` close is "another item's write already handles it" (30 §2):
+    code can check that from the would-write rows. True only when the close's own
+    session recorded a `would_commit` write of this tier in this room, and, when
+    the clocked row names a note or event, for that same id."""
+    if close.reason != "covered":
+        return False
+    bare = room_id(room)
+    return any(
+        t == tier and room_id(r) == bare and (not key or k == key)
+        for t, r, k in close.session_writes
+    )
 
 
 def _norm_title(title: str) -> str:
@@ -455,13 +617,15 @@ def compare_tier(
             if r.tier == tier and room_id(r.room) == room_id(w.room)
             and abs(r.at_ms - w.at_ms) <= tolerance_ms
         )
+        claimed = (
+            ledger.claim_with_proof(tier=tier, room=w.room, at_ms=w.at_ms, key=w.key)
+            if explainable and w.writer not in TAG_PATH_WRITERS else None
+        )
         gaps_by_writer.setdefault(w.writer, []).append(Gap(
             side="clocked", tier=tier, writer=w.writer, id=w.id, room=w.room, at_ms=w.at_ms,
             key=w.key, keyless=w.keyless, refused_nearby=refused,
-            closed_by=(
-                ledger.claim(tier=tier, room=w.room, at_ms=w.at_ms, key=w.key)
-                if explainable and w.writer not in TAG_PATH_WRITERS else None
-            ),
+            closed_by=None if claimed is None else claimed[0],
+            closed_by_code=claimed is not None and claimed[1],
         ))
     seen = {w.writer for w in clocked} | set(matched_by_writer) | set(coincident_by_writer)
 
@@ -493,19 +657,21 @@ def act_tier(
     note and no event is clocked-only and `keyless`."""
     writer = EXPECTED_WRITERS[tier][0]
     ledger = closes if isinstance(closes, CloseLedger) else CloseLedger(closes, tolerance_ms)
-    gaps = tuple(
-        Gap(
+    gaps_list: list[Gap] = []
+    for p in sorted(
+        (*result.proactive_only, *result.unkeyed), key=lambda a: (a.at_ms, a.reminder_id),
+    ):
+        claimed = ledger.claim_with_proof(
+            tier=tier, room=p.conversation_id, at_ms=p.at_ms, key=p.note_id or p.event_id,
+        )
+        gaps_list.append(Gap(
             side="clocked", tier=tier, writer=writer, id=p.reminder_id,
             room=f"{p.platform}:{p.conversation_id}", at_ms=p.at_ms,
             key=p.note_id or p.event_id, keyless=not p.keys,
-            closed_by=ledger.claim(
-                tier=tier, room=p.conversation_id, at_ms=p.at_ms, key=p.note_id or p.event_id,
-            ),
-        )
-        for p in sorted(
-            (*result.proactive_only, *result.unkeyed), key=lambda a: (a.at_ms, a.reminder_id),
-        )
-    )
+            closed_by=None if claimed is None else claimed[0],
+            closed_by_code=claimed is not None and claimed[1],
+        ))
+    gaps = tuple(gaps_list)
     cognition_only = tuple(
         Gap(
             side="cognition", tier=tier, writer="", id=m.reminder_ref, verb="remind",
@@ -530,7 +696,14 @@ def act_tier(
 
 
 def verdict_lines(report: ShadowReport) -> list[str]:
-    """One line per clocked writer. A count, never a pass or a fail."""
+    """One line per clocked writer. A count, never a pass or a fail. A report with
+    nothing to compare (no session in the window, or an unreadable coverage) is ONE
+    ERROR line and no writer lines: a table of zeros there would read as a clean
+    week."""
+    if report.error is not None:
+        return [f"ERROR: {report.error}"]
+    if report.coverage is None:
+        return ["ERROR: session coverage was not read; nothing to compare"]
     lines: list[str] = []
     for tier in report.tiers:
         for w in tier.writers:
@@ -542,7 +715,8 @@ def verdict_lines(report: ShadowReport) -> list[str]:
             cog = f"{len(tier.cognition_only)} cognition-only (tier {tier.tier}, shared)"
             lines.append(
                 f"{w.writer}: {w.matched} matched, {w.coincident} coincident, {cog}, "
-                f"{len(w.clocked_only)} clocked-only ({w.closed} closed, {w.open} open)"
+                f"{len(w.clocked_only)} clocked-only ({w.closed} closed by code, "
+                f"{w.closed_self_attested} closed self-attested: not evidence, {w.open} open)"
             )
     return lines
 
@@ -573,7 +747,8 @@ def _gap_json(g: Gap, directory: RoomDirectory) -> dict[str, object]:
         "side": g.side, "tier": g.tier, "writer": g.writer or None, "id": g.id,
         "verb": g.verb or None, "key": g.key or None, "room": directory.label(g.room),
         "at": _iso(g.at_ms), "session_id": g.session_id, "closed_by": g.closed_by,
-        "refused_nearby": g.refused_nearby, "keyless": g.keyless,
+        "closed_by_code": g.closed_by_code, "refused_nearby": g.refused_nearby,
+        "keyless": g.keyless,
     }
 
 
@@ -583,6 +758,10 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
         "since": _iso(report.since_ms), "until": _iso(report.until_ms),
         "tolerance_seconds": report.tolerance_ms // 1000, "unit": report.unit,
         "status": "error" if report.any_error else "compared",
+        "error": report.error,
+        "coverage": None if report.coverage is None else coverage_json(report.coverage),
+        "matched_means": list(MATCHED_MEANS),
+        "closes_are_evidence": CLOSE_IS_NOT_EVIDENCE,
         "verdicts": verdict_lines(report),
         "tag_path": tag_path_lines(report),
         "tiers": [
@@ -595,7 +774,8 @@ def report_json(report: ShadowReport, directory: RoomDirectory) -> dict[str, obj
                         "writer": w.writer, "status": w.status, "matched": w.matched,
                         "coincident": w.coincident,
                         "clocked_only": None if w.status == "error" else len(w.clocked_only),
-                        "closed": w.closed, "open": w.open,
+                        "closed": w.closed, "closed_by_code": w.closed,
+                        "closed_self_attested": w.closed_self_attested, "open": w.open,
                         "unmatched": [_gap_json(g, directory) for g in w.clocked_only],
                     }
                     for w in t.writers
@@ -619,8 +799,14 @@ def render_text(report: ShadowReport, directory: RoomDirectory) -> list[str]:
         f"{_iso(report.until_ms)}  tolerance={report.tolerance_ms // 60_000}min"
         + (f"  unit={report.unit}" if report.unit else ""),
         "",
-        "verdicts (counts only; the gate is yours):",
     ]
+    if report.coverage is not None:
+        lines += [*coverage_lines(report.coverage), ""]
+    if report.error is not None or report.coverage is None:
+        lines += [f"  {line}" for line in verdict_lines(report)]
+        return lines
+    lines += [f"matched: {m}" for m in MATCHED_MEANS]
+    lines += [CLOSE_IS_NOT_EVIDENCE, "", "verdicts (counts only; the gate is yours):"]
     lines += [f"  {line}" for line in verdict_lines(report)]
     lines += ["", "tag path (not retired; excluded from the verdicts above):"]
     lines += [f"  {line}" for line in tag_path_lines(report)] or ["  none"]
@@ -643,7 +829,11 @@ def render_text(report: ShadowReport, directory: RoomDirectory) -> list[str]:
                 lines.append(
                     f"  clocked-only    {w.writer}  id={g.id}  room={directory.label(g.room)}  "
                     f"at={_iso(g.at_ms)}" + (f"  key={g.key}" if g.key else "")
-                    + (f"  closed_by={g.closed_by}" if g.closed_by else "  OPEN")
+                    + (
+                        f"  closed_by={g.closed_by}"
+                        + ("(code)" if g.closed_by_code else "(self-attested)")
+                        if g.closed_by else "  OPEN"
+                    )
                     + (f"  refused_nearby={g.refused_nearby}" if g.refused_nearby else "")
                     + ("  KEYLESS" if g.keyless else "")
                 )

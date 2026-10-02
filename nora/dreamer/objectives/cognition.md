@@ -1,7 +1,7 @@
 ---
 name: cognition
 kind: objective
-version: 4
+version: 5
 applies_to: [cognition_session]
 description: >-
   The Cognition session (design/cognition-loop/30-cognition.md, migration step
@@ -23,7 +23,11 @@ description: >-
   grounded agenda of #637's review (the counts of version 1 could not be judged
   from); like version 1 it has not been measured on the Cognition catalogue, and
   `tool_selection_cognition` and a shadow week decide whether it is good enough to go
-  live.
+  live. Version 5 (2026-10-02) stops telling the model it is being measured: the
+  section that said its writes were recorded and not committed is gone, and so is
+  every such sentence in the verbs' texts (a gate that reads behaviour the model
+  will not show once live measures the wrong thing). The refusal paragraph under
+  its own heading is all that is left of it.
 change_policy: operator-only
 ---
 What you are reading is one group's recent life, as it reaches you in the quiet. You were
@@ -72,12 +76,7 @@ will change, and never for a thing you would rather not decide.
 Write times and dates as dates and clock times, read from the clock above, never as
 «tomorrow» or «later»; a relative word in a date field is refused.
 
-# Everything you write here is recorded and not committed
-
-This is the shadow run. What you write goes to a record that is read afterwards, side by side
-with what the live passes did, and nothing you write is committed or reaches a room. Write
-exactly what you would write if it were live: a run that writes less because nothing counts,
-or more because nothing costs, tells the reader nothing about you.
+# When a write is refused
 
 When a write is refused you are told why, in words. Read the reason and rewrite it, or close
 the item, or leave it: a refusal is the checks doing their work, not a fault of yours.
