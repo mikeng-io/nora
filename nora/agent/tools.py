@@ -266,6 +266,7 @@ from .whereis import (
     DisclosureGuard,
     Whereis,
     _dedupe,
+    presence_audience,
     resolvable_places,
 )
 
@@ -6576,11 +6577,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't work out who is in this group right now, so "
                         f"I can't say {anyone}. Say so rather than guessing.",
             }
-        room_person_ids = frozenset(p.person_id for p in view.people)
-        subset_ok = (
-            location_trusted or DisclosureGuard(circle).permits(room_person_ids)
-        )
-        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        # The decision is `presence_audience`'s, shared with a Cognition
+        # rollup line's place release; the branches below word and count it.
+        audience = presence_audience(view, circle, location_trusted=location_trusted)
+        subset_ok = audience != "not_subset"
+        unnamed_blocks = audience == "unnamed"
         if view.degraded:
             if metrics is not None:
                 metrics.inc(

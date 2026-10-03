@@ -73,7 +73,12 @@ handed.** Each of these was found by reading the input before the instruction
   analytics thresholds (duration, arrival and departure beside their usual
   value, a new place, where they usually are at those hours). Words are built
   at read time; the session row keeps only the deviation kinds. A presence read
-  that fails leaves the line as it was. Not available without a new pipeline:
+  that fails leaves the line as it was. **The place is named only where
+  `where_been` would name it (R-35)**: every room of the unit must pass
+  `presence_audience` (the decision `where_been` takes: a live roster, no
+  unnamed account, a subset of a circle the person is in, or location-trusted);
+  otherwise the line says how the stay differed and never where, and a room
+  that cannot be read names no place. Not available without a new pipeline:
   co-location and silence lines carry no place or usual pattern, and the anomaly
   is recomputed on read rather than read from a stored score (the rollup never
   stores one).
@@ -335,7 +340,8 @@ verb but `close` was called, `close` sets Strands' `request_state
 `stop_reason` is then `tool_use`, which is not a bound). Measured live: that
 follow-up call wrote nothing on every session that closed quiet. A `written` or
 `waiting` close, or any other verb called, refused or not, keeps the loop
-running as before.
+running as before, including a verb in the same model turn as the last close: Strands reads the
+flag only after the whole turn's tools ran, so such a verb takes the stop back.
 
 ## 6. The Assess adaptor and data quality
 

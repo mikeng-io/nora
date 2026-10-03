@@ -48,13 +48,13 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
 from ..domain.models import PersonRef
 from ..domain.ports import ReverseGeocoder
 from ..domain.presence import PresenceFix, SavedPlace, haversine_distance_m
-from .room import Room, find_by_name
+from .room import Room, RoomView, find_by_name
 
 log = logging.getLogger("nora.agent.whereis")
 
@@ -282,6 +282,31 @@ class DisclosureGuard:
             # «could not verify», so it refuses (#647 M2).
             return False
         return room_person_ids <= self._circle.person_ids
+
+
+#: What `presence_audience` says about one room and one circle.
+PresenceAudience = Literal["ok", "unavailable", "unnamed", "not_subset"]
+
+
+def presence_audience(
+    view: RoomView, circle: Circle, *, location_trusted: bool,
+) -> PresenceAudience:
+    """May a DERIVED-presence answer (a place a person goes, what is usual for
+    them) be said in this room? The ONE decision `where_been`/`routine_read`
+    (`nora.agent.tools._presence_audience`) and a Cognition rollup line
+    (`nora.app.cognition_grounding.place_release`) both take, so the two
+    cannot drift (R-35's room-subset rule, design/27 §4.3). Fail-closed: a
+    room that could not be read, or was read degraded, is `unavailable`; an
+    unnamed account is `unnamed` and a room not a subset of `circle` is
+    `not_subset`, both waived only by a location-trusted room (DEC-79)."""
+    if not view.available or view.degraded:
+        return "unavailable"
+    if view.unnamed > 0 and not location_trusted:
+        return "unnamed"
+    room_person_ids = frozenset(p.person_id for p in view.people)
+    if not (location_trusted or DisclosureGuard(circle).permits(room_person_ids)):
+        return "not_subset"
+    return "ok"
 
 
 def check_disclosure_invariant(

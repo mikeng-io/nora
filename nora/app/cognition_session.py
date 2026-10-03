@@ -392,6 +392,11 @@ class _RunState:
     #: A verb other than `close` was called in this session, whatever it
     #: answered: the loop then never ends at the last close (`_all_quiet`).
     acted: bool = False
+    #: Strands' `request_state` as `close` last saw it: where a quiet close set
+    #: `stop_event_loop`, so a verb that runs in the SAME model turn (Strands
+    #: reads the flag only after every tool of the turn has run) can take it
+    #: back.
+    request_state: dict[str, Any] | None = None
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
@@ -1419,11 +1424,14 @@ class CognitionSessionRunner:
             except ValueError as exc:
                 return _refused("bad_reason", str(exc))
             await self._record_close(state, outcome)
-            if tool_context is not None and _all_quiet(state):
-                # Strands' own way for a tool to end the loop: no further model
-                # call after this tool batch (`strands.event_loop`, 1.50.2).
+            if tool_context is not None:
                 request = tool_context.invocation_state.setdefault("request_state", {})
-                request["stop_event_loop"] = True
+                state.request_state = request
+                if _all_quiet(state):
+                    # Strands' own way for a tool to end the loop: no further
+                    # model call after this tool batch (`strands.event_loop`,
+                    # 1.50.2). Any other verb of the same batch takes it back.
+                    request["stop_event_loop"] = True
             return {"status": "ok"}
 
         async def note_create(
@@ -2216,13 +2224,25 @@ class CognitionSessionRunner:
                 await self._reminders.cancel(row.id, conversation_id=row.conversation_id)
             return {"status": "ok"}
 
+        def unstop() -> None:
+            if state.request_state is not None:
+                state.request_state.pop("stop_event_loop", None)
+
         def acting(verb: Any) -> Any:
             """Every verb but `close` marks the session as having acted, before
-            it runs and whatever it answers (`_all_quiet`)."""
+            it runs and whatever it answers (`_all_quiet`), and takes back a
+            stop a quiet `close` set earlier in the same model turn: the model
+            must see what this verb answered (a refusal it may correct). Taken
+            back before AND after it runs, so tools run concurrently in one
+            turn cannot order a close's stop after it."""
             @functools.wraps(verb)
             async def call(*args: Any, **kwargs: Any) -> dict[str, object]:
                 state.acted = True
-                result: dict[str, object] = await verb(*args, **kwargs)
+                unstop()
+                try:
+                    result: dict[str, object] = await verb(*args, **kwargs)
+                finally:
+                    unstop()
                 return result
             return call
 

@@ -17,7 +17,9 @@ from collections.abc import Sequence
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from nora.app.cognition_grounding import build_grounder, stay_context_reader
+from nora.agent.room import RoomView
+from nora.agent.whereis import Circle
+from nora.app.cognition_grounding import build_grounder, place_release, stay_context_reader
 from nora.domain.cognition_ground import Grounding
 from nora.domain.cognition_session import Room, build_situation
 from nora.domain.mobility import DerivedPlace, Stay
@@ -72,6 +74,30 @@ class _Mobility:
         return [p for p in self.places if p.subject_id == subject_id]
 
 
+BEN = PERSONS.by_person["ben"]
+ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
+OUTSIDER = PersonRef(person_id="zed", name="Zed", honcho_peer_id="zed")
+CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"ben", "ada"}))
+
+
+def _release(*rooms: RoomView, fail: bool = False, trusted: bool = False) -> Any:
+    """The unit's rooms as `presence_audience` reads them, one view each."""
+    views = {f"room-{i}": v for i, v in enumerate(rooms)}
+
+    async def view(platform: str, conversation_id: str) -> RoomView:
+        if fail:
+            raise ConnectionError("roster daemon down")
+        return views[conversation_id]
+
+    return place_release(
+        rooms_of=lambda unit: [("signal", cid, trusted) for cid in views],
+        room_view=view, circles=(CIRCLE,),
+    )
+
+
+ALL_CIRCLE = _release(RoomView(available=True, people=(BEN, ADA)))
+
+
 def _rollup(stay: Stay) -> Stimulus:
     return Stimulus(
         id=1, unit="u", kind="rollup", item="deviation_anomaly",
@@ -84,7 +110,9 @@ async def _none(*_a: Any) -> Sequence[Any]:
     return ()
 
 
-async def _ground(mobility: _Mobility | None, stimulus: Stimulus) -> tuple[Grounding, str]:
+async def _ground(
+    mobility: _Mobility | None, stimulus: Stimulus, release: Any = ALL_CIRCLE,
+) -> tuple[Grounding, str]:
     grounder = build_grounder(
         records=None, persons=PERSONS, media_join=None, note_index=_none, events_in=_none,
         lineage=_lineage(), clock=lambda: NOW / 1000, unit_rooms=lambda unit: set(),
@@ -92,6 +120,7 @@ async def _ground(mobility: _Mobility | None, stimulus: Stimulus) -> tuple[Groun
             mobility, tz_name="Asia/Hong_Kong", min_samples=5, z_threshold=3.0,
             novelty_radius_m=100.0,
         ),
+        place_release=release,
     )
     sit = build_situation(unit="u", pending=[stimulus], home_room=HOME, now_ms=NOW,
                           last_session_ms=None)
@@ -137,3 +166,54 @@ async def test_a_presence_read_that_fails_leaves_the_line_as_it_was():
     _, failed = await _ground(_Mobility([*HISTORY, ODD], [GYM], fail=True), _rollup(ODD))
     assert failed == unwired
     assert unwired.startswith("Ben: a stay the rhythm scored anomalous, from ")
+
+
+# ---- a place is named only where `where_been` would name it (R-35, review of #720) ----
+
+PLAIN = "Ben: a stay the rhythm scored anomalous, from "
+
+
+async def test_a_unit_with_someone_outside_the_circle_hears_no_place():
+    """One room of the unit holds a person outside Ben's location circle: the
+    line says how the stay differed and never where, no saved name and no
+    street, though the second room alone would pass."""
+    release = _release(
+        RoomView(available=True, people=(BEN, ADA)),
+        RoomView(available=True, people=(BEN, OUTSIDER)),
+    )
+    _, line = await _ground(_Mobility([*HISTORY, ODD], [GYM]), _rollup(ODD), release)
+    assert line.startswith(PLAIN)
+    assert "Harbour Gym" not in line and " near " not in line
+    assert "stayed 300 min, where their stays there usually last about 60 min" in line
+
+
+async def test_an_unmapped_account_in_a_room_withholds_the_place():
+    release = _release(RoomView(available=True, people=(BEN, ADA), unnamed=1))
+    _, line = await _ground(_Mobility([*HISTORY, ODD], [GYM]), _rollup(ODD), release)
+    assert line.startswith(PLAIN) and "Harbour Gym" not in line
+
+
+async def test_a_location_trusted_unit_names_the_place_as_where_been_does():
+    release = _release(RoomView(available=True, people=(BEN, OUTSIDER)), trusted=True)
+    _, line = await _ground(_Mobility([*HISTORY, ODD], [GYM]), _rollup(ODD), release)
+    assert " at Harbour Gym, " in line
+
+
+async def test_a_guard_that_cannot_read_a_room_names_no_place():
+    for release in (
+        _release(RoomView(available=True, people=(BEN,)), fail=True),
+        _release(RoomView(available=False)),
+        _release(RoomView(available=True, people=(BEN,), degraded=True)),
+        None,
+    ):
+        _, line = await _ground(_Mobility([*HISTORY, ODD], [GYM]), _rollup(ODD), release)
+        assert line.startswith(PLAIN) and "Harbour Gym" not in line
+
+
+async def test_the_usual_place_is_withheld_with_the_stay_place():
+    """`unusual_place` names where they usually are: withheld the same way."""
+    from nora.app.cognition_grounding import _withheld
+    from nora.domain.cognition_ground import StayDeviation
+
+    (d,) = _withheld((StayDeviation(kind="unusual_place", usual_place="Mum's flat"),))
+    assert d.usual_place is None and d.kind == "unusual_place"

@@ -419,8 +419,9 @@ def _deviation(d: StayDeviation) -> str:
     if d.kind == "new_place":
         return "a place they had not been to before"
     if d.kind == "unusual_place":
-        where = d.usual_place or "somewhere else"
-        return f"at these hours they are usually at {where}"
+        if d.usual_place is None:
+            return "at these hours they are usually somewhere else"
+        return f"at these hours they are usually at {d.usual_place}"
     return d.kind
 
 

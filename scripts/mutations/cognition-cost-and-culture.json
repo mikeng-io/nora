@@ -16,8 +16,8 @@
   {
     "name": "2 stay context: the line is not given its stay's place and usual",
     "file": "nora/app/cognition_grounding.py",
-    "old": "            out[ref] = replace(line, stay_place=place, deviations=deviations)",
-    "new": "            out[ref] = line",
+    "old": "        out[ref] = replace(line, stay_place=place, deviations=deviations)",
+    "new": "        out[ref] = line",
     "target": "tests/unit/test_cognition_rollup_stay_context.py::test_an_anomaly_line_says_where_the_stay_was_and_what_is_usual_there"
   },
   {
@@ -37,8 +37,8 @@
   {
     "name": "3 quiet close: the loop is not stopped at the last close",
     "file": "nora/app/cognition_session.py",
-    "old": "                request[\"stop_event_loop\"] = True",
-    "new": "                request[\"stop_event_loop\"] = False",
+    "old": "                    request[\"stop_event_loop\"] = True",
+    "new": "                    request[\"stop_event_loop\"] = False",
     "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_that_closes_every_item_no_change_makes_exactly_one_model_call"
   },
   {
@@ -138,5 +138,47 @@
     "old": "        run = run + 1 if previous == start else 1\n",
     "new": "        run = run + 1\n",
     "target": "tests/unit/test_culture_adaptor.py::test_the_third_rejection_of_one_batch_in_a_row_advances_past_it"
+  },
+  {
+    "name": "3 review: a verb in the same turn as a quiet close does not take the stop back",
+    "file": "nora/app/cognition_session.py",
+    "old": "                state.request_state.pop(\"stop_event_loop\", None)",
+    "new": "                pass",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_write_in_the_same_turn_as_a_quiet_close_keeps_the_follow_up_call"
+  },
+  {
+    "name": "2 review: the place is named whatever the unit's rooms",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        if release is None or not await release(unit, subject):\n            place, deviations = None, _withheld(deviations)\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_a_unit_with_someone_outside_the_circle_hears_no_place"
+  },
+  {
+    "name": "2 review: only the unit's first room is checked",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "            for platform, conversation_id, trusted in rooms:",
+    "new": "            for platform, conversation_id, trusted in rooms[:1]:",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_a_unit_with_someone_outside_the_circle_hears_no_place"
+  },
+  {
+    "name": "2 review: a guard that cannot read a room names the place",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "            log.exception(\"cognition grounding: could not check who may hear a place\")\n            return False",
+    "new": "            log.exception(\"cognition grounding: could not check who may hear a place\")\n            return True",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_a_guard_that_cannot_read_a_room_names_no_place"
+  },
+  {
+    "name": "2 review: the usual place survives the withholding",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "    return tuple(replace(d, usual_place=None) for d in deviations)",
+    "new": "    return tuple(deviations)",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_the_usual_place_is_withheld_with_the_stay_place"
+  },
+  {
+    "name": "2 review: an unmapped account no longer blocks (shared audience decision)",
+    "file": "nora/agent/whereis.py",
+    "old": "    if view.unnamed > 0 and not location_trusted:\n        return \"unnamed\"\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_an_unmapped_account_in_a_room_withholds_the_place"
   }
 ]

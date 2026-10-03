@@ -58,6 +58,8 @@ from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
+from nora.agent.room import RoomView
+from nora.agent.whereis import Circle, presence_audience
 from nora.domain.blocks import speaker_name
 from nora.domain.cognition_ground import (
     UNNAMED_ROOM,
@@ -201,28 +203,76 @@ def stay_context_reader(
     return read
 
 
+def place_release(
+    *, rooms_of: Callable[[str], Collection[tuple[str, str, bool]]],
+    room_view: Callable[[str, str], Awaitable[RoomView]], circles: Sequence[Circle],
+) -> Callable[[str, str], Awaitable[bool]]:
+    """`(unit, person_id) -> may a place of theirs be named here`: True only
+    when EVERY room of the unit passes `presence_audience`, the decision
+    `where_been` takes before it names a place (R-35, DEC-279), for a circle
+    the person is in. `rooms_of(unit)` is each room's `(platform,
+    conversation_id, location_trusted)`. A Cognition session reads across its
+    unit and may write into any of its rooms, so one room that may not hear
+    it withholds it from all. FAIL-CLOSED: no room, no circle holding the
+    person, a room that cannot be read, or any error is False."""
+
+    async def may(unit: str, person_id: str) -> bool:
+        try:
+            rooms = list(rooms_of(unit))
+            mine = [c for c in circles if person_id in c.person_ids]
+            if not rooms or not mine:
+                return False
+            for platform, conversation_id, trusted in rooms:
+                view = await room_view(platform, conversation_id)
+                if not any(
+                    presence_audience(view, c, location_trusted=trusted) == "ok" for c in mine
+                ):
+                    return False
+            return True
+        except Exception:
+            log.exception("cognition grounding: could not check who may hear a place")
+            return False
+
+    return may
+
+
+def _withheld(deviations: tuple[StayDeviation, ...]) -> tuple[StayDeviation, ...]:
+    """The deviations with no place in them: what kind of change, never where."""
+    return tuple(replace(d, usual_place=None) for d in deviations)
+
+
 async def _with_stays(
-    rollups: dict[str, RollupLine], persons: Any,
+    unit: str, rollups: dict[str, RollupLine], persons: Any,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None,
+    release: Callable[[str, str], Awaitable[bool]] | None,
 ) -> dict[str, RollupLine]:
     """Each `deviation_anomaly` line with its stay's place and what is usual for
     the person (DEC-279). FAIL-SOFT, like `where_been`'s unusual-stay flags: the
     line without them is still true, so a presence read that fails is logged and
-    the line is shown as before, never made up."""
+    the line is shown as before, never made up.
+
+    **A place is named only where `where_been` would name it** (`release`,
+    `place_release`): otherwise the line says how the stay differed and never
+    where, neither the stay's place nor where they usually are. No `release`
+    wired is no place."""
     if stay_context is None:
         return rollups
     out = dict(rollups)
     for ref, line in rollups.items():
         if line.kind != "deviation_anomaly" or line.start_ms is None or not line.person_ids:
             continue
+        subject = persons.subject_id_for(line.person_ids[0])
         try:
-            found = await stay_context(persons.subject_id_for(line.person_ids[0]), line.start_ms)
+            found = await stay_context(subject, line.start_ms)
         except Exception:
             log.exception("cognition grounding: the stay behind %s could not be read", ref)
             continue
-        if found is not None:
-            place, deviations = found
-            out[ref] = replace(line, stay_place=place, deviations=deviations)
+        if found is None:
+            continue
+        place, deviations = found
+        if release is None or not await release(unit, subject):
+            place, deviations = None, _withheld(deviations)
+        out[ref] = replace(line, stay_place=place, deviations=deviations)
     return out
 
 
@@ -283,6 +333,7 @@ def build_grounder(
     own_sends_max: int = 6,
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
+    place_release: Callable[[str, str], Awaitable[bool]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -418,7 +469,8 @@ def build_grounder(
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
         rollups = await _with_stays(
-            _rollup_lines(pending, claimed, persons), persons, stay_context,
+            unit, _rollup_lines(pending, claimed, persons), persons, stay_context,
+            place_release,
         )
         own_sends = await _own_sends(
             records, items, pending, allowed, ai_display_name,
