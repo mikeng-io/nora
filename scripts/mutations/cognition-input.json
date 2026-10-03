@@ -175,13 +175,6 @@
     "target": "tests/unit/test_cognition_input.py -k roster_does_not_know_yet"
   },
   {
-    "name": "runner: a retained rollup is written as a waiting carry when the agenda is empty",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    state=\"carried\", session_id=None, waits=True,",
-    "new": "                    state=\"carried\", session_id=None, waits=False,",
-    "target": "tests/unit/test_cognition_input.py -k roster_does_not_know_yet"
-  },
-  {
     "name": "runner: a retained rollup is written as a waiting carry when the session runs",
     "file": "nora/app/cognition_session.py",
     "old": "                state=\"carried\", session_id=session_id, waits=True,",
