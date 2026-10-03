@@ -152,7 +152,7 @@ Cognition session on the **first** trigger that holds:
 | trigger | fires when | starting value |
 |---|---|---|
 | **settled** | at least one stimulus pending, and the unit's rooms quiet for `quiet_seconds` | 1800 s (operator 2026-09-29, was 600 s; matches `[dreamer] quiet_seconds`) |
-| **strong cue** | a pending stimulus carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message, a `handoff` from E2), then `cue_quiet_seconds` of quiet | 120 s |
+| **strong cue** | a pending stimulus carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message, a `handoff` from E2; straight after a `strong_cue` wake only an RSVP or a place link, DEC-281), then `cue_quiet_seconds` of quiet | 120 s |
 | ~~**rollup**~~ | WITHDRAWN 2026-10-03 (DEC-279): a Rollup stimulus (co-location start, a stay starting at a place an open event names, play-together start, deviation) wakes nothing; it rides the next wake, and `batch` and `max age` do not count it either | (was 60 s, `rollup_delay_seconds`) |
 | **batch** | pending stimuli ≥ `batch_max` | 80 |
 | **max age** | the oldest pending stimulus ≥ `max_age_seconds` old | 3600 s |
@@ -188,7 +188,8 @@ claimed sets back).
   starting at 2 (design/dreamer-agent-loop/06-trigger.md §6 required a global
   bound; the current `dream_loop` has none);
 - a per-unit **cooldown** between sessions, starting at 300 s; a strong cue
-  may cut it once;
+  may cut it once (not straight after a strong-cue wake for a bare date or
+  time: DEC-281, §3 notes);
 - her own messages raise no stimulus, and a person's reply to her message
   within `reply_quiet_seconds` does not wake a session by itself;
 - an empty agenda makes no model call;
@@ -230,6 +231,15 @@ a name this table leaves open:
   table, as do the other cited-message cues.
 - «A strong cue may cut it once» is read as: a wake that cut a cooldown
   leaves a cooldown no cue can cut.
+- **A strong cue does not chain (DEC-281).** While the unit's newest wake has
+  reason `strong_cue`, only an RSVP or a place link (`REARMING_CUES` in
+  `nora/domain/cues.py`) trips `strong cue` or cuts a cooldown; a date or
+  time (and a keep instruction) said again waits for `settled`, `max age` or
+  `batch`. Measured live, all-time (82 sessions): `strong_cue` wakes wrote
+  something in 8/20, the best of any reason, but one conversation woke 6 in
+  2h13m, 5 writing nothing, each paying a full prompt to read a fragment.
+  Any wake of another reason lifts it. Derived from the newest `cognition_wake`
+  row, so a restart keeps it.
 - A reaction on her message inside `reply_quiet_seconds` counts as a reply
   and is marked `waits`, like a quote of hers.
 - The watermark is the unit's newest `cognition_wake` row in its mode; a
