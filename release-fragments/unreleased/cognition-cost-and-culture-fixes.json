@@ -1,0 +1,18 @@
+{
+  "type": "change",
+  "summary": "Nora's background thinking spends less and judges movement better: a change in someone's movements no longer starts a pass of its own, it is looked at in the next pass she makes for any other reason, and it now says where the person was and what is usual for them there. She can also tell who an Instagram tag means.",
+  "details": [
+    "A movement change (two people meeting up, an unusual stay) waits for the next pass a group's messages, a reminder she set herself or the twice-daily notebook look start, instead of starting one alone. In one group six of nine passes in a day had been a single unusual stay that came to nothing.",
+    "An unusual stay is described with the place (its saved name, or what it is to them and the street it is near) and how it differed from their own habit there: how long they usually stay, when they usually arrive or leave, or where they usually are at those hours.",
+    "A pass that decides nothing needs changing ends as soon as it has said so, one model call earlier than before.",
+    "When someone tags a member by their Instagram username, Nora can work out who it is, but only for people in that conversation.",
+    "The daily write-up of what each person is like asks her memory only about the people who wrote that day, and leaves everyone else's write-up as it was.",
+    "A write-up reply that reads the task wrongly no longer uses up that day's messages: they are read again, up to three times."
+  ],
+  "limitations": [
+    "A movement change can now wait until the next morning or midnight look in a group where nobody talks.",
+    "Only unusual stays get the place and usual pattern; two people meeting up and a long silence are described as before.",
+    "The write-up's three-try count is kept in memory, so a restart gives a stuck day's messages up to three more tries.",
+    "People who were only mentioned that day, not writing, do not get their write-up refreshed."
+  ]
+}

@@ -50,7 +50,8 @@ what success looks like ([17-failure-classes §11]).
 
 **It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
 the same daily clock, the same fold asks Nora's memory «what is the character of
-X?» for each person the room lists (`memory.chat`, the dialectic verb
+X?» for each person the room lists who wrote in the batch (DEC-280: only
+those; `memory.chat`, the dialectic verb
 `ask_memory` calls), hands those answers to the model beside the room's own
 account, and stores one short account per person under `character_key` in this
 same store and chain. **That supersedes DEC-182's narrowing, for this use
@@ -813,8 +814,9 @@ class CultureAdaptor:
         if not roster or self._memory is None or self._screen is None or unit is None:
             return None
         screen = self._screen
-        # ponytail: one dialectic call per listed person, no cap; rooms here
-        # are a handful of friends. Add a cap key to `[culture]` if one grows.
+        # ponytail: one dialectic call per listed person who wrote in the
+        # batch, no cap; rooms here are a handful of friends. Add a cap key to
+        # `[culture]` if one grows.
         answers = await asyncio.gather(
             *(
                 self._memory.chat(

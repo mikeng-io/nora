@@ -795,8 +795,8 @@ class CognitionSessionRunner:
             #   malformed   the ref can never be read: consumed.
             #   roster_miss a person the roster does not know YET: RETAINED, as a
             #               carry row with `waits`, so it is never consumed
-            #               unseen and never raises the `rollup` trigger (a
-            #               waiting stimulus does not wake), and it is an agenda
+            #               unseen (no Rollup stimulus wakes a unit, DEC-279;
+            #               it rides the next wake), and it is an agenda
             #               item again in the first session after the roster
             #               knows the person.
             malformed: set[int] = set()
