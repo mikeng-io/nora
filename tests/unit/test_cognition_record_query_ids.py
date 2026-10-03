@@ -87,7 +87,7 @@ def persons(tmp_path):
 
 async def _stream(tool: Any, **arguments: Any) -> dict[str, Any]:
     events = [e async for e in tool.stream(
-        {"toolUseId": "t1", "name": tool.tool_name, "input": arguments}, {},
+        {"toolUseId": "t1", "name": tool.tool_name, "input": arguments}, {"agent": None},
     )]
     return json.loads(events[-1].tool_result["content"][0]["text"])  # type: ignore[no-any-return]
 
