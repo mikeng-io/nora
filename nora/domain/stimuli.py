@@ -64,7 +64,7 @@ from collections.abc import Awaitable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
-from .cues import is_strong
+from .cues import is_rearming, is_strong
 
 #: 20 §3's stimulus kinds. Only `message` has a producer at step 1 (ingest), and
 #: `time` (the daily floors, raised by the evaluator); `rollup` arrives with
@@ -728,6 +728,26 @@ def _backing_off(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
     return base is not None and now_ms < base + backoff_ms(view.failures, policy)
 
 
+def _strong_pending(view: UnitView, stimuli: list[Stimulus]) -> bool:
+    """Whether any of `stimuli` carries a cue that trips `strong cue` NOW.
+
+    Right after a `strong_cue` wake whose session ran (the unit's newest wake, a
+    durable row, so this survives a restart; a failed one re-pended its
+    stimuli and does not count) only `REARMING_CUES` count: a date or time said
+    again in the conversation that just woke a session waits for `settled`,
+    `max age` or `batch`, and never cuts a cooldown. Any other newest reason
+    lifts it."""
+    last = view.last_wake
+    session = view.last_session
+    # A strong-cue wake whose session FAILED, timed out or was cancelled (a
+    # restart included) put its stimuli back: that datetime was never read, so
+    # it still re-arms. Only a session that ran (`closed`, or untracked) did.
+    read = session is None or session.state != "failed"
+    if last is not None and last.reason == "strong_cue" and read:
+        return any(is_rearming(s.cues) for s in stimuli)
+    return any(is_strong(s.cues) for s in stimuli)
+
+
 def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | None:
     """The FIRST of 20 §3's triggers that holds, in the table's order.
 
@@ -753,7 +773,7 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
     observed = [s for s in eligible if s.kind in _OBSERVED]
     if observed and quiet_for(policy.quiet_seconds):
         return "settled"
-    if any(is_strong(s.cues) for s in observed) and quiet_for(policy.cue_quiet_seconds):
+    if _strong_pending(view, observed) and quiet_for(policy.cue_quiet_seconds):
         return "strong_cue"
     if len(eligible) >= policy.batch_max:
         return "batch"
@@ -774,7 +794,8 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     The brakes, in code (20 §3): single-flight per unit; a cooldown after
     each session that ONE strong cue may cut — «once» read as: a wake that
     cut a cooldown leaves a cooldown nothing can cut, so two strong cues in a
-    row cannot chain past it."""
+    row cannot chain past it. After a `strong_cue` wake a bare date or time
+    is no strong cue at all (`_strong_pending`), so it cuts nothing."""
     reason = _trigger(view, policy, now_ms)
     if reason is None:
         return Verdict()
@@ -783,7 +804,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     cut = False
     cooling = _cooling(view, policy, now_ms)
     if cooling or _backing_off(view, policy, now_ms):
-        strong = any(is_strong(s.cues) for s in view.pending if can_wake(s, view))
+        strong = _strong_pending(view, [s for s in view.pending if can_wake(s, view)])
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
             None if view.last_activity_ms is None else now_ms - view.last_activity_ms

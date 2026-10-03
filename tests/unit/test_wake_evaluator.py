@@ -19,6 +19,8 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from nora.app.wake import Floor, WakeEvaluator
 from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.obs.metrics import Metrics
@@ -247,7 +249,7 @@ async def test_one_strong_cue_may_cut_the_cooldown_once():
     await _say(store, clock, cues=("keep",))
     await ev.tick()                                   # cuts the cooldown
     clock.advance(61)
-    await _say(store, clock, cues=("datetime",))
+    await _say(store, clock, cues=("rsvp",))          # re-arming: only the once-rule holds
     assert await ev.tick() == []                      # cannot cut the next one
     assert [(w.reason, w.cut_cooldown) for w in store.wakes] == [
         ("settled", False), ("strong_cue", True),
@@ -677,3 +679,175 @@ def test_a_stimulus_due_after_the_watermarks_time_is_not_consumed_by_the_id_rang
                          at_ms=10, recorded_at_ms=10, due_ms=200)
     assert Watermark(5, 100).consumed(due_later) is False
     assert Watermark(5, 300).consumed(due_later) is True
+
+
+# ── a strong cue does not chain (DEC-281) ────────────────────────────────────
+
+_CHAIN = WakePolicy(
+    quiet_seconds=1800, cue_quiet_seconds=120, batch_max=500,
+    max_age_seconds=3600, cooldown_seconds=300, session_seconds=60,
+)
+
+
+async def _strong_wake_then(cues, *, policy=_CHAIN):
+    """A unit whose newest wake is a `strong_cue` one, with `cues` said after."""
+    ev, store, clock, _ = _setup(policy=policy)
+    await _say(store, clock, cues=("datetime",))
+    clock.advance(120)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue"]
+    clock.advance(400)                                  # past the cooldown
+    await _say(store, clock, cues=cues)
+    return ev, store, clock
+
+
+async def test_a_datetime_after_a_strong_cue_wake_waits_for_settled():
+    ev, store, clock = await _strong_wake_then(("datetime",))
+    clock.advance(1000)                                 # far past cue_quiet_seconds
+    assert await ev.tick() == []
+    clock.advance(799)                                  # 1799 s of quiet: not yet
+    assert await ev.tick() == []
+    clock.advance(1)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue", "settled"]
+
+
+async def test_an_rsvp_after_a_strong_cue_wake_still_wakes_as_strong_cue():
+    ev, store, clock = await _strong_wake_then(("rsvp",))
+    clock.advance(119)
+    assert await ev.tick() == []
+    clock.advance(1)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue", "strong_cue"]
+
+
+async def test_a_place_link_after_a_strong_cue_wake_still_wakes_as_strong_cue():
+    ev, store, clock = await _strong_wake_then(("datetime", "place_link"))
+    clock.advance(120)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue", "strong_cue"]
+
+
+async def test_a_datetime_after_a_settled_wake_wakes_as_strong_cue_unchanged():
+    ev, store, clock, _ = _setup(policy=_CHAIN)
+    await _say(store, clock)
+    clock.advance(1800)
+    await ev.tick()                                     # settled
+    clock.advance(400)
+    await _say(store, clock, cues=("datetime",))
+    clock.advance(120)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["settled", "strong_cue"]
+
+
+async def test_the_restriction_lifts_once_another_reason_has_woken():
+    ev, store, clock = await _strong_wake_then(("datetime",))
+    clock.advance(1800)
+    await ev.tick()                                     # settled lifts it
+    clock.advance(400)
+    await _say(store, clock, cues=("datetime",))
+    clock.advance(120)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue", "settled", "strong_cue"]
+
+
+_COOLDOWN = WakePolicy(
+    quiet_seconds=0, cue_quiet_seconds=0, cooldown_seconds=300, session_seconds=60,
+)
+
+
+async def test_the_cooldown_cut_obeys_the_rule_after_a_strong_cue_wake():
+    # batch_max=2 gives the second pair a trigger to be held by the cooldown;
+    # settled never fires, so the first wake is the strong cue.
+    ev, store, clock, metrics = _setup(policy=WakePolicy(
+        quiet_seconds=1800, cue_quiet_seconds=0, batch_max=2, max_age_seconds=3600,
+        cooldown_seconds=300, session_seconds=60))
+    await _say(store, clock, cues=("datetime",))
+    await ev.tick()                                     # strong_cue
+    clock.advance(61)
+    await _say(store, clock, cues=("datetime",))
+    await _say(store, clock)
+    assert await ev.tick() == []                        # a bare datetime cuts nothing
+    assert metrics.get("nora_cognition_wake_deferred_total", brake="cooldown") == 1
+    await _say(store, clock, cues=("rsvp",))
+    await ev.tick()                                     # an rsvp does
+    assert [(w.reason, w.cut_cooldown) for w in store.wakes] == [
+        ("strong_cue", False), ("strong_cue", True),
+    ]
+
+
+async def test_the_cooldown_cut_after_a_settled_wake_is_unchanged():
+    ev, store, clock, _ = _setup(policy=_COOLDOWN)
+    await _say(store, clock)
+    await ev.tick()                                     # settled
+    clock.advance(61)
+    await _say(store, clock, cues=("datetime",))
+    await ev.tick()
+    assert [(w.reason, w.cut_cooldown) for w in store.wakes] == [
+        ("settled", False), ("strong_cue", True),
+    ]
+
+
+async def _afternoon_wakes() -> list[str]:
+    """One conversation for 2h13m: a message with a date or time every 5
+    minutes (so a pause of 300 s, past cue_quiet_seconds), ticked every 30 s."""
+    ev, store, clock, _ = _setup(policy=_CHAIN)
+    for minute in range(0, 134):
+        if minute % 5 == 0:
+            await _say(store, clock, cues=("datetime",))
+        for _ in range(2):
+            await ev.tick()
+            clock.advance(30)
+    return [w.reason for w in store.wakes]
+
+
+async def test_a_long_conversation_of_dates_wakes_far_less_than_it_did(monkeypatch):
+    from nora.domain import cues as cues_module
+
+    new = await _afternoon_wakes()
+    # The old rule: every strong cue re-arms, whatever woke the unit last.
+    monkeypatch.setattr(cues_module, "REARMING_CUES", cues_module.STRONG_CUES)
+    old = await _afternoon_wakes()
+    assert len(old) >= 5                                # positive control: the slicing was real
+    assert len(new) <= 3
+    assert len(new) * 2 <= len(old)
+
+
+# ── a strong-cue wake whose session did not run is retried (DEC-281) ─────────
+
+def _retry_view(state, outcome, cause="infra"):
+    from nora.domain.stimuli import LastSession, Stimulus, UnitView, WakeRow
+
+    wake = WakeRow(
+        id=1, unit="nora", mode="live", reason="strong_cue", from_stimulus_id=1,
+        through_stimulus_id=1, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=T, cut_cooldown=False, at_ms=T, recorded_at_ms=T, tracked=True,
+    )
+    unread = Stimulus(
+        id=2, unit="nora", kind="message", item="message", ref="messages:2",
+        at_ms=T, recorded_at_ms=T, conversation_id="g1", cues=("datetime",),
+    )
+    session = LastSession(
+        state=state, started_at_ms=T, ended_at_ms=T + 60 * S, outcome=outcome, cause=cause,
+    )
+    return UnitView(
+        unit="nora", pending=(unread,), last_activity_ms=T, last_wake=wake,
+        last_session=session, tracked=True, failures=1 if state == "failed" else 0,
+    )
+
+
+def _retry_decision(state, outcome):
+    from nora.domain.stimuli import decide
+
+    # 300 s after the session ended: the cooldown is over, the room has been
+    # quiet for far longer than cue_quiet_seconds and far less than quiet_seconds.
+    return decide(_retry_view(state, outcome), _CHAIN, T + 360 * S)
+
+
+@pytest.mark.parametrize("outcome", ["failed", "timeout", "cancelled"])
+def test_a_strong_cue_wake_that_did_not_run_is_retried_as_strong_cue(outcome):
+    assert _retry_decision("failed", outcome).reason == "strong_cue"
+
+
+def test_a_strong_cue_wake_that_ran_still_waits_on_a_bare_datetime():
+    assert _retry_decision("closed", "closed").reason is None

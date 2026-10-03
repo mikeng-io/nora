@@ -51,6 +51,15 @@ CUES: tuple[str, ...] = get_args(Cue)
 #: moving, so they wait for a settled room like any other stimulus.
 STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link"})
 
+#: After a wake whose reason was `strong_cue`, only these cues trip the trigger
+#: again. A `datetime` (or `keep`) mention in a conversation that just woke a
+#: session is usually the same plan being talked on, and re-waking on each one
+#: slices one conversation into many ~13k-token sessions (measured on the live
+#: record: 6 strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
+#: decision) or a place link (a place) is new information worth catching fast.
+#: The restriction lifts when a wake of any other reason is the unit's newest.
+REARMING_CUES: frozenset[str] = frozenset({"rsvp", "place_link"})
+
 _WEEKDAYS_EN = (
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
     r"|mon|tue|tues|wed|thu|thur|thurs|fri"   # not `sat`/`sun`: ordinary words
@@ -178,3 +187,9 @@ def cues_of(text: str | None) -> tuple[str, ...]:
 def is_strong(cues: tuple[str, ...] | frozenset[str]) -> bool:
     """Whether any of `cues` trips the strong-cue trigger."""
     return any(c in STRONG_CUES for c in cues)
+
+
+def is_rearming(cues: tuple[str, ...] | frozenset[str]) -> bool:
+    """Whether any of `cues` trips the strong-cue trigger straight after a
+    `strong_cue` wake (`REARMING_CUES`)."""
+    return any(c in REARMING_CUES for c in cues)
