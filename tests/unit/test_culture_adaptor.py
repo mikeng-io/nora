@@ -491,18 +491,19 @@ async def test_the_third_rejection_of_one_batch_in_a_row_advances_past_it():
     await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
     assert await adaptor.accept(key=KEY, items=two) == ()
     assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
-    # The run starts again: on a new batch, and after an accepted reply.
-    await adaptor.inputs(key=KEY, batch=(_row("lunch?", rid=8),))
-    with pytest.raises(AccountNotRecordableError):
-        await adaptor.accept(key=KEY, items=two)
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
-    with pytest.raises(AccountNotRecordableError):
-        await adaptor.accept(key=KEY, items=two)
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
+    # The run starts again on a new batch: two rejections of one batch and
+    # then one of another is a first rejection, not a third.
+    for rid in (7, 7, 8):
+        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=rid),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=two)
+    # ...and after an accepted reply.
+    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
     assert await adaptor.accept(key=KEY, items=[{"body": "fine"}])
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
-    with pytest.raises(AccountNotRecordableError):
-        await adaptor.accept(key=KEY, items=two)
+    for _ in range(2):
+        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=two)
     assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
 
 

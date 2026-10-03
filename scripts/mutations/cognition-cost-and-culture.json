@@ -42,10 +42,10 @@
     "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_that_closes_every_item_no_change_makes_exactly_one_model_call"
   },
   {
-    "name": "3 quiet close: a written close ends the loop too",
+    "name": "3 quiet close: a session that wrote ends at its written close (the write marks it acted; a written close cannot exist without one, B3)",
     "file": "nora/app/cognition_session.py",
-    "old": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\"})",
-    "new": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\", \"written\"})",
+    "old": "                state.acted = True\n",
+    "new": "                state.acted = False\n",
     "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_with_a_written_close_keeps_the_follow_up_call"
   },
   {
