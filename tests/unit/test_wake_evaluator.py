@@ -247,7 +247,7 @@ async def test_one_strong_cue_may_cut_the_cooldown_once():
     await _say(store, clock, cues=("keep",))
     await ev.tick()                                   # cuts the cooldown
     clock.advance(61)
-    await _say(store, clock, cues=("datetime",))
+    await _say(store, clock, cues=("rsvp",))          # a re-arming cue, so only the once-rule holds it
     assert await ev.tick() == []                      # cannot cut the next one
     assert [(w.reason, w.cut_cooldown) for w in store.wakes] == [
         ("settled", False), ("strong_cue", True),
