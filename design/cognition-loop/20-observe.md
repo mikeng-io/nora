@@ -238,7 +238,7 @@ a name this table leaves open:
   `batch`. Measured live, all-time (82 sessions): `strong_cue` wakes wrote
   something in 8/20, the best of any reason, but one conversation woke 6 in
   2h13m, 5 writing nothing, each paying a full prompt to read a fragment.
-  Any wake of another reason lifts it. Derived from the newest `cognition_wake`
+  Any wake of another reason lifts it, and so does a `strong_cue` wake whose session failed, timed out or was cancelled (its stimuli were put back unread, so the retry is as before). Derived from the newest `cognition_wake`
   row, so a restart keeps it.
 - A reaction on her message inside `reply_quiet_seconds` counts as a reply
   and is marked `waits`, like a quote of hers.

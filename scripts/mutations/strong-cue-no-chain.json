@@ -2,8 +2,8 @@
  {
   "name": "DEC-281: after a strong_cue wake a bare datetime still trips strong cue",
   "file": "nora/domain/stimuli.py",
-  "old": "    if last is not None and last.reason == \"strong_cue\":\n        return any(is_rearming(s.cues) for s in stimuli)",
-  "new": "    if False:\n        return any(is_rearming(s.cues) for s in stimuli)",
+  "old": "    if last is not None and last.reason == \"strong_cue\" and read:\n        return any(is_rearming(s.cues) for s in stimuli)",
+  "new": "    if False and read:\n        return any(is_rearming(s.cues) for s in stimuli)",
   "target": "tests/unit/test_wake_evaluator.py::test_a_datetime_after_a_strong_cue_wake_waits_for_settled"
  },
  {
