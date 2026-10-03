@@ -1,0 +1,142 @@
+[
+  {
+    "name": "1 ride-along: a Rollup stimulus may wake a unit again",
+    "file": "nora/domain/stimuli.py",
+    "old": "        and stimulus.kind not in RIDES_ALONG\n    )",
+    "new": "    )",
+    "target": "tests/unit/test_wake_evaluator.py::test_a_rollup_stimulus_alone_never_wakes_the_unit"
+  },
+  {
+    "name": "1 ride-along: a floor's wake leaves the pending rollups behind",
+    "file": "nora/domain/stimuli.py",
+    "old": "            if (s.kind == reason and not s.waits) or s.kind in RIDES_ALONG",
+    "new": "            if (s.kind == reason and not s.waits)",
+    "target": "tests/unit/test_wake_evaluator.py::test_a_floor_wake_takes_a_pending_rollup_and_leaves_an_unsettled_room_pending"
+  },
+  {
+    "name": "2 stay context: the line is not given its stay's place and usual",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "            out[ref] = replace(line, stay_place=place, deviations=deviations)",
+    "new": "            out[ref] = line",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_an_anomaly_line_says_where_the_stay_was_and_what_is_usual_there"
+  },
+  {
+    "name": "2 render: the deviation line drops the usual pattern",
+    "file": "nora/language/cognition_render.py",
+    "old": "        usual = \"\".join(f\"; {_deviation(d)}\" for d in line.deviations)",
+    "new": "        usual = \"\"",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_an_anomaly_line_says_where_the_stay_was_and_what_is_usual_there"
+  },
+  {
+    "name": "2 fail-soft: a presence read that fails takes the grounding down",
+    "file": "nora/app/cognition_grounding.py",
+    "old": "        except Exception:\n            log.exception(\"cognition grounding: the stay behind %s could not be read\", ref)\n            continue",
+    "new": "        except ZeroDivisionError:\n            continue",
+    "target": "tests/unit/test_cognition_rollup_stay_context.py::test_a_presence_read_that_fails_leaves_the_line_as_it_was"
+  },
+  {
+    "name": "3 quiet close: the loop is not stopped at the last close",
+    "file": "nora/app/cognition_session.py",
+    "old": "                request[\"stop_event_loop\"] = True",
+    "new": "                request[\"stop_event_loop\"] = False",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_that_closes_every_item_no_change_makes_exactly_one_model_call"
+  },
+  {
+    "name": "3 quiet close: a written close ends the loop too",
+    "file": "nora/app/cognition_session.py",
+    "old": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\"})",
+    "new": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\", \"written\"})",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_session_with_a_written_close_keeps_the_follow_up_call"
+  },
+  {
+    "name": "3 quiet close: a waiting close ends the loop too",
+    "file": "nora/app/cognition_session.py",
+    "old": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\"})",
+    "new": "_QUIET_CLOSES: frozenset[str] = frozenset({\"no_change\", \"covered\", \"waiting\"})",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_a_waiting_close_keeps_the_follow_up_call"
+  },
+  {
+    "name": "3 quiet close: another verb called does not keep the loop",
+    "file": "nora/app/cognition_session.py",
+    "old": "                state.acted = True\n",
+    "new": "                state.acted = False\n",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_any_other_verb_called_keeps_the_follow_up_call_even_when_it_was_refused"
+  },
+  {
+    "name": "3 quiet close: the stop fires before every item is closed",
+    "file": "nora/app/cognition_session.py",
+    "old": "        and len(state.closed_indices) == len(state.items_by_index)\n",
+    "new": "",
+    "target": "tests/unit/test_cognition_quiet_close_ends_the_loop.py::test_the_loop_ends_only_once_the_last_item_is_closed"
+  },
+  {
+    "name": "4 lookup: an Instagram username is not read",
+    "file": "nora/agent/room.py",
+    "old": "            *(p for p in view.people if p.person_id in owners),\n",
+    "new": "",
+    "target": "tests/test_room_tools.py::test_an_instagram_username_resolves_to_the_member_it_was_recorded_for"
+  },
+  {
+    "name": "4 lookup: a username resolves outside the room",
+    "file": "nora/agent/room.py",
+    "old": "            *(p for p in view.people if p.person_id in owners),\n",
+    "new": "            *(p for p in self._persons.by_person.values() if p.person_id in owners),\n",
+    "target": "tests/test_room_tools.py::test_an_instagram_username_of_someone_not_in_this_room_resolves_to_nobody"
+  },
+  {
+    "name": "4 lookup: a leading @ is not stripped from a name",
+    "file": "nora/agent/room.py",
+    "old": "            *view.find(name), *view.find(bare),\n",
+    "new": "            *view.find(name),\n",
+    "target": "tests/test_room_tools.py::test_a_name_typed_as_a_tag_resolves_like_the_name"
+  },
+  {
+    "name": "4 persons: a username with no fbid is not indexed",
+    "file": "nora/persons.py",
+    "old": "                if platform == \"instagram\" and \"username\" in account:\n",
+    "new": "                if platform == \"instagram\" and \"username\" in account and \"fbid\" in account:\n",
+    "target": "tests/test_room_tools.py::test_an_instagram_username_resolves_to_the_member_it_was_recorded_for"
+  },
+  {
+    "name": "5 culture: every listed person is asked again",
+    "file": "nora/language/culture.py",
+    "old": "        roster = tuple(ref for ref in self._roster(key) if ref.name in senders)\n",
+    "new": "        roster = self._roster(key)\n",
+    "target": "tests/unit/test_culture_adaptor.py::test_only_the_batchs_senders_are_asked_and_a_silent_persons_account_stands"
+  },
+  {
+    "name": "5 culture: accept takes an account for a person not shown",
+    "file": "nora/language/culture.py",
+    "old": "        by_name = {ref.name: ref.person_id for ref in self._roster(key) if ref.name in shown}\n",
+    "new": "        by_name = {ref.name: ref.person_id for ref in self._roster(key)}\n",
+    "target": "tests/unit/test_culture_adaptor.py::test_only_the_batchs_senders_are_asked_and_a_silent_persons_account_stands"
+  },
+  {
+    "name": "6 culture: two room accounts spend the batch again",
+    "file": "nora/language/culture.py",
+    "old": "            self._reject(key, f\"{len(room_items)} room accounts for scope={key}; a room has one\")\n",
+    "new": "",
+    "target": "tests/unit/test_culture_adaptor.py::test_TWO_accounts_are_refused_ENTIRELY_and_the_batch_is_HELD"
+  },
+  {
+    "name": "6 culture: an unknown person's item is dropped uncounted",
+    "file": "nora/language/culture.py",
+    "old": "                    self._inc(\"dropped_person\")\n",
+    "new": "",
+    "target": "tests/unit/test_culture_adaptor.py::test_a_person_not_on_the_roster_drops_only_that_item"
+  },
+  {
+    "name": "6 culture: rejections are never abandoned",
+    "file": "nora/language/culture.py",
+    "old": "        if run < MAX_CONSECUTIVE_REJECTIONS:\n",
+    "new": "        if True:\n",
+    "target": "tests/unit/test_culture_adaptor.py::test_the_third_rejection_of_one_batch_in_a_row_advances_past_it"
+  },
+  {
+    "name": "6 culture: a new batch does not restart the rejection run",
+    "file": "nora/language/culture.py",
+    "old": "        run = run + 1 if previous == start else 1\n",
+    "new": "        run = run + 1\n",
+    "target": "tests/unit/test_culture_adaptor.py::test_the_third_rejection_of_one_batch_in_a_row_advances_past_it"
+  }
+]
