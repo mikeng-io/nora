@@ -93,8 +93,8 @@
   {
     "name": "4 persons: a username with no fbid is not indexed",
     "file": "nora/persons.py",
-    "old": "                if platform == \"instagram\" and \"username\" in account:\n",
-    "new": "                if platform == \"instagram\" and \"username\" in account and \"fbid\" in account:\n",
+    "old": "                    platform == \"instagram\" and \"username\" in account\n",
+    "new": "                    platform == \"instagram\" and \"username\" in account and \"fbid\" in account\n",
     "target": "tests/test_room_tools.py::test_an_instagram_username_resolves_to_the_member_it_was_recorded_for"
   },
   {

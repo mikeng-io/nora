@@ -341,9 +341,11 @@ def load_persons(path: Path) -> Persons:
                     # duplicate-checked index key below, so this needs no
                     # collision check of its own.
                     instagram_handles[str(account["fbid"])] = str(account["username"])
-                if platform == "instagram" and "username" in account:
-                    if key_ := instagram_username_key(str(account["username"])):
-                        instagram_usernames.setdefault(key_, set()).add(person_id)
+                if (
+                    platform == "instagram" and "username" in account
+                    and (key_ := instagram_username_key(str(account["username"])))
+                ):
+                    instagram_usernames.setdefault(key_, set()).add(person_id)
                 if platform == "instagram" and "igid" in account:
                     # By KIND, read off the block, because the index below
                     # keeps only the value. Uniqueness is the index's own
