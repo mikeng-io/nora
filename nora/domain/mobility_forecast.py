@@ -58,6 +58,7 @@ __all__ = [
     "forecast_hour",
     "forecast_window",
     "habits_of",
+    "place_words",
     "rollover_minute",
     "time_forecast",
     "trip_patterns",
@@ -514,6 +515,27 @@ def detect_stay_anomalies(
                 expected_place_id=fc.chances[0].place_id,
             )
     return out
+
+
+#: What a place with no household name is to its person, by its kind.
+_UNNAMED_PLACE = {
+    "home": "a home of theirs", "work": "their work", "unlabeled": "a place they go",
+}
+
+
+def place_words(label: str | None, kind: str, saved: bool) -> str:
+    """What she calls a place: its household name when Life360 saved one;
+    otherwise what it is to them, near the street its label gives. An unsaved
+    label is the street address of the spot (the geocode cache), not a name:
+    live on 2026-09-28 a road's name, read as a name, became «a road they only
+    drive along» for a place with four-hour stays. The one spelling every
+    reader of a place uses (the presence tools, a Cognition rollup line)."""
+    unnamed = _UNNAMED_PLACE.get(kind, _UNNAMED_PLACE["unlabeled"])
+    if label and saved:
+        return label
+    if label:
+        return f"{unnamed} near {label}"
+    return unnamed
 
 
 # --- the movement model (design/27 §4.4) -----------------------------------

@@ -53,6 +53,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Collection, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
@@ -66,11 +67,13 @@ from nora.domain.cognition_ground import (
     RecordItem,
     RecordKind,
     RollupLine,
+    StayDeviation,
     parse_rollup_ref,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
+from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
@@ -145,6 +148,84 @@ def _rollup_lines(
     return out
 
 
+#: What a `deviation_anomaly` line can say about its stay, read from the presence
+#: store: the stay's place in words, and how it differed from their own past.
+StayContext = tuple[str | None, tuple[StayDeviation, ...]]
+
+
+class StayReader(Protocol):
+    """`nora.infra.sql.mobility.SqlMobilityStore`'s two reads this needs."""
+
+    async def stays_for_subject(self, *, subject_id: str) -> Sequence[Any]: ...
+
+    async def places_for_subject(self, *, subject_id: str) -> Sequence[Any]: ...
+
+
+def stay_context_reader(
+    mobility: StayReader, *, tz_name: str, min_samples: int, z_threshold: float,
+    novelty_radius_m: float,
+) -> Callable[[str, int], Awaitable[StayContext | None]]:
+    """`(subject_id, stay started_ts) -> (place words, deviations)` for the stay a
+    `deviation_anomaly` rollup names, or None when the store holds no such stay.
+    The deviations are recomputed on read (`detect_stay_anomalies`, as the
+    rollup scored them and as `where_been` marks them), with the analytics
+    process's own thresholds, so what the line says is what raised it. Nothing is
+    invented: a stay with no place has no `at`, and a kind with no baseline is not
+    said."""
+
+    async def read(subject_id: str, started_ts: int) -> StayContext | None:
+        stays = list(await mobility.stays_for_subject(subject_id=subject_id))
+        stay = next((s for s in stays if s.started_ts == started_ts), None)
+        if stay is None:
+            return None
+        places = {p.id: p for p in await mobility.places_for_subject(subject_id=subject_id)}
+
+        def words(place_id: int | None) -> str | None:
+            place = places.get(place_id) if place_id is not None else None
+            if place is None:
+                return None
+            return place_words(place.label, place.kind, place.saved_place_id is not None)
+
+        deviations = tuple(
+            StayDeviation(
+                kind=a.kind, observed=a.observed, expected=a.expected,
+                usual_place=words(a.expected_place_id) if a.kind == "unusual_place" else None,
+            )
+            for a in detect_stay_anomalies(
+                stay, history=stays, tz_name=tz_name, min_samples=min_samples,
+                z_threshold=z_threshold, novelty_radius_m=novelty_radius_m,
+            )
+        )
+        return words(stay.place_id), deviations
+
+    return read
+
+
+async def _with_stays(
+    rollups: dict[str, RollupLine], persons: Any,
+    stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None,
+) -> dict[str, RollupLine]:
+    """Each `deviation_anomaly` line with its stay's place and what is usual for
+    the person (DEC-279). FAIL-SOFT, like `where_been`'s unusual-stay flags: the
+    line without them is still true, so a presence read that fails is logged and
+    the line is shown as before, never made up."""
+    if stay_context is None:
+        return rollups
+    out = dict(rollups)
+    for ref, line in rollups.items():
+        if line.kind != "deviation_anomaly" or line.start_ms is None or not line.person_ids:
+            continue
+        try:
+            found = await stay_context(persons.subject_id_for(line.person_ids[0]), line.start_ms)
+        except Exception:
+            log.exception("cognition grounding: the stay behind %s could not be read", ref)
+            continue
+        if found is not None:
+            place, deviations = found
+            out[ref] = replace(line, stay_place=place, deviations=deviations)
+    return out
+
+
 async def _own_sends(
     records: RecordRefSource, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
     allowed: set[tuple[str, str]], ai_name: str, *, now_ms: int, lookback_ms: int, limit: int,
@@ -201,6 +282,7 @@ def build_grounder(
     own_send_lookback_seconds: float = 1800.0,
     own_sends_max: int = 6,
     tz: tzinfo = UTC,
+    stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -335,7 +417,9 @@ def build_grounder(
                     venue=e.venue_name or e.venue_text or "", status=e.status.value,
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
-        rollups = _rollup_lines(pending, claimed, persons)
+        rollups = await _with_stays(
+            _rollup_lines(pending, claimed, persons), persons, stay_context,
+        )
         own_sends = await _own_sends(
             records, items, pending, allowed, ai_display_name,
             now_ms=int(clock() * 1000), lookback_ms=int(own_send_lookback_seconds * 1000),

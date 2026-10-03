@@ -86,6 +86,7 @@ from nora.domain.cognition_ground import (
     Grounding,
     RecordItem,
     RollupLine,
+    StayDeviation,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
@@ -390,8 +391,37 @@ def _rollup_sentence(line: RollupLine, *, now_ms: int, tz: tzinfo) -> str:
             "(presence and the platforms were healthy throughout)"
         )
     if line.kind == "deviation_anomaly":
-        return f"{who}: a stay the rhythm scored anomalous, {span}"
+        at = f" at {line.stay_place}" if line.stay_place else ""
+        usual = "".join(f"; {_deviation(d)}" for d in line.deviations)
+        return f"{who}: a stay the rhythm scored anomalous{at}, {span}{usual}"
     return f"{who}: {line.kind} {span}"
+
+
+def _clock(minute_of_day: float | None) -> str:
+    m = round(minute_of_day or 0) % 1440
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def _deviation(d: StayDeviation) -> str:
+    """How a stay differed from what is usual for this person, as a fact with
+    both sides of it: what happened, and what usually does (DEC-279)."""
+    if d.kind == "duration":
+        return (
+            f"stayed {round((d.observed or 0) / 60_000)} min, where their stays "
+            f"there usually last about {round((d.expected or 0) / 60_000)} min"
+        )
+    if d.kind in ("arrival", "departure"):
+        verb, usual = ("arrived", "arrive") if d.kind == "arrival" else ("left", "leave")
+        return (
+            f"{verb} at {_clock(d.observed)}, where they usually {usual} "
+            f"about {_clock(d.expected)}"
+        )
+    if d.kind == "new_place":
+        return "a place they had not been to before"
+    if d.kind == "unusual_place":
+        where = d.usual_place or "somewhere else"
+        return f"at these hours they are usually at {where}"
+    return d.kind
 
 
 def _rollup_row(stimulus: Stimulus, line: RollupLine, *, now_ms: int, tz: tzinfo) -> _Row:

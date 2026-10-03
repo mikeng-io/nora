@@ -59,7 +59,7 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.app.cognition_grounding import build_grounder
+from nora.app.cognition_grounding import build_grounder, stay_context_reader
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -3869,6 +3869,15 @@ async def build_dependencies(
                 own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
                 own_sends_max=cfg.cognition.own_sends_max,
                 tz=ZoneInfo(cfg.cognition.timezone),
+                # A deviation line says where the stay was and what is usual
+                # for the person (DEC-279), scored with the analytics process's
+                # own thresholds, as the rollup that raised it was.
+                stay_context=stay_context_reader(
+                    mobility, tz_name=cfg.analytics.tz_name,
+                    min_samples=cfg.analytics.anomaly_min_samples,
+                    z_threshold=cfg.analytics.anomaly_z_threshold,
+                    novelty_radius_m=cfg.analytics.cluster_eps_m,
+                ),
             )
 
             try:

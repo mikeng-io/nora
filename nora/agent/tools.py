@@ -149,6 +149,7 @@ from ..domain.mobility_forecast import (
     detect_stay_anomalies,
     forecast_hour,
     forecast_window,
+    place_words,
     time_forecast,
     trip_patterns,
 )
@@ -7143,22 +7144,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     _routine_ladder = ((85, 3), (60, 2), (35, 1))
     # An unnamed place is said by its label's absence, never a guessed name;
     # its kind still tells her what it is to them (DEC-190).
-    _routine_unnamed = {
-        "home": "a home of theirs", "work": "their work",
-        "unlabeled": "a place they go",
-    }
-
-    def _place_words(label: str | None, kind: str, saved: bool) -> str:
-        """What she calls a place: its household name when Life360 saved one;
-        otherwise what it is to them, near the street its label gives. An
-        unsaved label is the street address of the spot (the geocode cache),
-        not a name: live on 2026-09-28 a road's name, read as a name, became
-        «a road they only drive along» for a place with four-hour stays."""
-        if label and saved:
-            return label
-        if label:
-            return f"{_routine_unnamed[kind]} near {label}"
-        return _routine_unnamed[kind]
+    # One spelling for a place, shared with the Cognition rollup line.
+    _place_words = place_words
     _routine_rough = ("nearby_hours", "day_type", "overall")
     _routine_days = (
         "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
