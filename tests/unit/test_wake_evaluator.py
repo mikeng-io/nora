@@ -19,6 +19,8 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from nora.app.wake import Floor, WakeEvaluator
 from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.obs.metrics import Metrics
@@ -809,3 +811,43 @@ async def test_a_long_conversation_of_dates_wakes_far_less_than_it_did(monkeypat
     assert len(old) >= 5                                # positive control: the slicing was real
     assert len(new) <= 3
     assert len(new) * 2 <= len(old)
+
+
+# ── a strong-cue wake whose session did not run is retried (DEC-281) ─────────
+
+def _retry_view(state, outcome, cause="infra"):
+    from nora.domain.stimuli import LastSession, Stimulus, UnitView, WakeRow
+
+    wake = WakeRow(
+        id=1, unit="nora", mode="live", reason="strong_cue", from_stimulus_id=1,
+        through_stimulus_id=1, stimulus_count=1, eligible_count=1,
+        oldest_pending_ms=T, cut_cooldown=False, at_ms=T, recorded_at_ms=T, tracked=True,
+    )
+    unread = Stimulus(
+        id=2, unit="nora", kind="message", item="message", ref="messages:2",
+        at_ms=T, recorded_at_ms=T, conversation_id="g1", cues=("datetime",),
+    )
+    session = LastSession(
+        state=state, started_at_ms=T, ended_at_ms=T + 60 * S, outcome=outcome, cause=cause,
+    )
+    return UnitView(
+        unit="nora", pending=(unread,), last_activity_ms=T, last_wake=wake,
+        last_session=session, tracked=True, failures=1 if state == "failed" else 0,
+    )
+
+
+def _retry_decision(state, outcome):
+    from nora.domain.stimuli import decide
+
+    # 300 s after the session ended: the cooldown is over, the room has been
+    # quiet for far longer than cue_quiet_seconds and far less than quiet_seconds.
+    return decide(_retry_view(state, outcome), _CHAIN, T + 360 * S)
+
+
+@pytest.mark.parametrize("outcome", ["failed", "timeout", "cancelled"])
+def test_a_strong_cue_wake_that_did_not_run_is_retried_as_strong_cue(outcome):
+    assert _retry_decision("failed", outcome).reason == "strong_cue"
+
+
+def test_a_strong_cue_wake_that_ran_still_waits_on_a_bare_datetime():
+    assert _retry_decision("closed", "closed").reason is None

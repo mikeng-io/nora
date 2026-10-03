@@ -731,13 +731,19 @@ def _backing_off(view: UnitView, policy: WakePolicy, now_ms: int) -> bool:
 def _strong_pending(view: UnitView, stimuli: list[Stimulus]) -> bool:
     """Whether any of `stimuli` carries a cue that trips `strong cue` NOW.
 
-    Right after a `strong_cue` wake (the unit's newest wake, a durable row, so
-    this survives a restart) only `REARMING_CUES` count: a date or time said
+    Right after a `strong_cue` wake whose session ran (the unit's newest wake, a
+    durable row, so this survives a restart; a failed one re-pended its
+    stimuli and does not count) only `REARMING_CUES` count: a date or time said
     again in the conversation that just woke a session waits for `settled`,
     `max age` or `batch`, and never cuts a cooldown. Any other newest reason
     lifts it."""
     last = view.last_wake
-    if last is not None and last.reason == "strong_cue":
+    session = view.last_session
+    # A strong-cue wake whose session FAILED, timed out or was cancelled (a
+    # restart included) put its stimuli back: that datetime was never read, so
+    # it still re-arms. Only a session that ran (`closed`, or untracked) did.
+    read = session is None or session.state != "failed"
+    if last is not None and last.reason == "strong_cue" and read:
         return any(is_rearming(s.cues) for s in stimuli)
     return any(is_strong(s.cues) for s in stimuli)
 

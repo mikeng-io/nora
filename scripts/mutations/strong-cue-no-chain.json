@@ -33,5 +33,12 @@
   "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\"})",
   "new": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"datetime\", \"keep\"})",
   "target": "tests/unit/test_wake_evaluator.py::test_a_datetime_after_a_strong_cue_wake_waits_for_settled"
+ },
+ {
+  "name": "DEC-281: a strong_cue wake whose session failed still restricts its retry (closed-only condition dropped)",
+  "file": "nora/domain/stimuli.py",
+  "old": "    read = session is None or session.state != \"failed\"",
+  "new": "    read = True",
+  "target": "tests/unit/test_wake_evaluator.py::test_a_strong_cue_wake_that_did_not_run_is_retried_as_strong_cue"
  }
 ]
