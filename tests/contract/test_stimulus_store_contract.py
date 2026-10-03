@@ -330,7 +330,7 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
 
     rng = random.Random(seed)
     policy = WakePolicy(
-        quiet_seconds=60, cue_quiet_seconds=30, rollup_delay_seconds=0, batch_max=1000,
+        quiet_seconds=60, cue_quiet_seconds=30, batch_max=1000,
         max_age_seconds=10**9, cooldown_seconds=0, session_seconds=0,
     )
     made: list[int] = []
@@ -376,6 +376,17 @@ async def test_a_random_run_of_wakes_claims_every_stimulus_exactly_once(store, s
     for _ in range(60):                      # let everything become due and settle
         t += 3_000_000
         await tick()
+    # A Rollup stimulus starts no wake (DEC-279): whatever is still pending now
+    # is one riding along, and the next daily floor's wake takes it.
+    left = await store.view(unit=UNIT, mode="live", now_ms=t, limit=1000)
+    assert all(s.kind == "rollup" for s in left.pending)
+    floor = await store.append(
+        stimulus=_kind("time", "floor:last", at=t, due=t), recorded_at_ms=t,
+    )
+    assert floor is not None
+    made.append(floor)
+    t += 3_000_000
+    await tick()
     final = await store.view(unit=UNIT, mode="live", now_ms=t, limit=1000)
     assert final.pending == ()
     assert sorted(claimed) == sorted(made)   # every stimulus, exactly once
@@ -407,7 +418,7 @@ async def test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulu
             ))
     rng = random.Random(seed)
     policy = WakePolicy(
-        quiet_seconds=60, cue_quiet_seconds=30, rollup_delay_seconds=0, batch_max=1000,
+        quiet_seconds=60, cue_quiet_seconds=30, batch_max=1000,
         max_age_seconds=10**9, cooldown_seconds=0, session_seconds=0,
     )
     made: list[int] = []

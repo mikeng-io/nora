@@ -3337,6 +3337,13 @@ class CognitionConfig(BaseModel):
     tick_seconds: float = Field(default=30.0, gt=0)
     quiet_seconds: float = Field(default=1800.0, ge=0)  # operator 2026-09-29, was 600
     cue_quiet_seconds: float = Field(default=120.0, ge=0)
+    # DEPRECATED (DEC-279, 2026-10-03) and read by nothing: a Rollup stimulus
+    # no longer starts a wake, it rides the next one, so there is no delay to
+    # wait. The key stays declared because `extra="forbid"` is on every model
+    # in this file and the deployment's `config.toml` is untracked: deleting
+    # the field would turn a live file that still carries the line into a
+    # container that refuses to boot. It goes when the operator has removed it
+    # from that file.
     rollup_delay_seconds: float = Field(default=60.0, ge=0)
     batch_max: int = Field(default=80, ge=1)
     max_age_seconds: float = Field(default=3600.0, gt=0)

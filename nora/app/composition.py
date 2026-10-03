@@ -347,7 +347,6 @@ def _build_wake_evaluator(
         policy=WakePolicy(
             quiet_seconds=cfg.cognition.quiet_seconds,
             cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
-            rollup_delay_seconds=cfg.cognition.rollup_delay_seconds,
             batch_max=cfg.cognition.batch_max,
             max_age_seconds=cfg.cognition.max_age_seconds,
             cooldown_seconds=cfg.cognition.cooldown_seconds,

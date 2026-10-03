@@ -47,6 +47,7 @@ from nora.domain.stimuli import (
     WakeMode,
     WakePolicy,
     WakeReason,
+    can_wake,
     decide,
     inert_kinds_for,
     restart_detail,
@@ -449,10 +450,7 @@ class WakeEvaluator:
         whose kind is inert (a `time` floor while no skill ships for it), can
         never wake the unit: counting it would read a unit that is not stuck as
         backed up."""
-        eligible = [
-            s.pending_since_ms for s in view.pending
-            if not s.waits and s.kind not in view.inert_kinds
-        ]
+        eligible = [s.pending_since_ms for s in view.pending if can_wake(s, view)]
         age = (now_ms - min(eligible)) / 1000 if eligible else 0.0
         self._metrics.gauge("nora_stimulus_pending_age_seconds", max(0.0, age), unit=view.unit)
 

@@ -35,7 +35,7 @@ from nora.testing.stimuli import InMemoryStimulusStore
 HK = ZoneInfo("Asia/Hong_Kong")
 T = int(dt.datetime(2026, 9, 28, 15, 0, tzinfo=HK).timestamp() * 1000)
 POLICY = WakePolicy(
-    quiet_seconds=0, cue_quiet_seconds=0, rollup_delay_seconds=60, batch_max=1000,
+    quiet_seconds=0, cue_quiet_seconds=0, batch_max=1000,
     max_age_seconds=3600, cooldown_seconds=300, max_concurrent_sessions=2,
     session_seconds=60, session_timeout_seconds=900,
 )
