@@ -38,6 +38,8 @@ __all__ = [
     "ACCOUNT_CHARS_OBSERVED_MAX",
     "ACCOUNT_OUTPUT_TOKENS",
     "BODY_MAX_CHARS",
+    "CULTURE_OUTCOMES",
+    "MAX_CONSECUTIVE_REJECTIONS",
     "OUTPUT_TOKENS_PER_CHAR",
     "Culture",
     "CultureProposal",
@@ -145,6 +147,24 @@ OUTPUT_TOKENS_PER_CHAR = 1.15
 #: now — a measurement of what gets emitted, not an arithmetic consequence of
 #: what gets refused.
 BODY_MAX_CHARS = 20_000
+
+#: Every value `nora_culture_fold_total{outcome}` may carry: the label
+#: vocabulary the adaptor checks at runtime (`CultureAdaptor._inc`) and the
+#: metric's help text reads (`nora.obs.metric_specs`). Here, in the domain,
+#: so the metric spec can import it. `dropped_person`: one person's account
+#: named someone the fold was not shown, and only that item was dropped.
+#: `abandoned`: the same batch was rejected `MAX_CONSECUTIVE_REJECTIONS`
+#: times in a row for one key, and the fold advanced past it (DEC-280).
+CULTURE_OUTCOMES = frozenset({
+    "written", "empty", "too_many", "unchanged", "oversize", "dropped_person",
+    "abandoned",
+})
+
+#: How many consecutive rejections (`too_many`, `oversize`) of the same batch a
+#: key takes before the fold gives up on it and advances (DEC-280). Each
+#: rejection holds the watermark, so without a bound a batch the model keeps
+#: misreading is re-read for ever.
+MAX_CONSECUTIVE_REJECTIONS = 3
 
 #: **MEASURED, 2026-09-17/18** — the longest account this deployment's model has
 #: been observed to emit, and the basis every token budget for this tier is

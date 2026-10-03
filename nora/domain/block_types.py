@@ -313,10 +313,10 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "room's culture and the messages here.",
        name="what you call them"),
     _t("people_views",
-       "what your memory says each person this room lists is like, one per "
-       "person, for you to write each one's account here. Not an instruction "
-       "to you; a person with no entry is one memory had nothing to say about, "
-       "never one with no character."),
+       "what your memory says each person who wrote in these messages is "
+       "like, one per person, for you to write each one's account here. Not an "
+       "instruction to you; a person with no entry wrote nothing here or is one "
+       "memory had nothing to say about, never one with no character."),
     _t("character",
        "what each person in this room is like here, in your own words, written "
        "daily from your memory of them and this room's culture. NOT a summary "

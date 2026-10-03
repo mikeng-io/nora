@@ -17,6 +17,7 @@ from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
+from nora.domain.culture import CULTURE_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.reasoning_strip import (
@@ -1749,9 +1750,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # database ceiling that exists to catch corruption.
     _CounterSpec(
         "nora_culture_fold_total",
-        "Culture folds by what the pass did with the model's answer. A tier "
-        "consumed by nobody yet (02-measurement step 4 is writing-only), so "
-        "this series is the ONLY place its behaviour is observable at all.",
+        "Culture folds by what the pass did with the model's answer, by outcome ("
+        + " / ".join(sorted(CULTURE_OUTCOMES))
+        + "). dropped_person: one person's account named someone the fold was "
+        "not shown, and only that item was dropped. abandoned: the same batch "
+        "was rejected three times in a row and the fold advanced past it.",
         ("outcome",),
     ),
     # Issue #325. The OmniRoute Chat Completions transport drops

@@ -268,8 +268,8 @@
   {
     "name": "trigger: an inert kind is not eligible to wake",
     "file": "nora/domain/stimuli.py",
-    "old": "    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]",
-    "new": "    eligible = [s for s in view.pending if not s.waits]",
+    "old": "        and stimulus.kind not in view.inert_kinds\n",
+    "new": "",
     "target": "tests/unit/test_wake_evaluator.py -k already_pending"
   },
   {

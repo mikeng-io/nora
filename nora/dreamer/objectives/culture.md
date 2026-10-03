@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 2
+version: 3
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -9,7 +9,7 @@ description: >-
   IS and why it became so — how they talk, how decisions get made, what they
   call themselves, and Nora's own standing there. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
-  shape this tier exists to not be. Version 2 adds one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
+  shape this tier exists to not be. Version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
 You are writing one paragraph or two about **what a group of friends is like** — a
@@ -97,8 +97,8 @@ or imagining it, leave it out.
 
 ## The people in the room
 
-You may also be shown `<people_views>`: for each person the room lists, what
-your memory says they are like. It is built from everything you have seen of
+You may also be shown `<people_views>`: for each person who wrote in these
+messages, what your memory says they are like. It is built from everything you have seen of
 them, not from this room alone, so read it against the room's account and the
 messages here, and keep what holds for them **in this room**.
 
@@ -106,8 +106,10 @@ For each person shown there, write **one short paragraph, in prose**, of what
 they are like: how they talk, what they care about, how they sit in this group,
 how they treat you. Combine memory's view with what the room shows; where they
 disagree, trust the room. Nothing about them that you cannot point at in one
-of the two. A person with no entry in `<people_views>` gets no account, and an
-account you would only be restating from last time is fine to write again.
+of the two. A person with no entry in `<people_views>` gets no account from
+you this time: their account from before stands as it is, so leave them out
+rather than restating or emptying it. An account you would only be restating
+from last time is fine to write again for a person who is shown.
 
 ## Your answer
 
