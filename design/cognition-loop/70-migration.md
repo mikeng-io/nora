@@ -62,6 +62,21 @@ bypass is the session setting the snapshot's seeding and test resets use.
 | 7 | **Memos** (moved: E1b, built right after step 3's shadow week as the first kind on the entry, gated on its corpus, written only by Cognition, DEC-249; the «記低» routing is a strong-cue hand-off, not a tag-path `memo_write`) | the memo table, `memo_write`/`memo_withdraw`/`memo_read`, `<memos>`, the «記低» routing, the key-shape exemption | the memo corpus meets its gates; `tool_selection` before and after; the dinner case whole |
 | 8 | **Character, Lessons and Standing** (whole) | the Character adaptor generalised to the unit, persons and Nora; unit and person Standing, sectioned with per-section support and age; `character_read`, `standing_read`; the `self` block (her whole Character · Nora, capped, below the doctrine), and `self_card` out of the prompt; Honcho pushed as `explicit` plus the peer card; the correction portal and `character_dispute`; tension rows and their page; the rebuild-drift metric; **the Lessons adaptor**: `lesson_write`/`lesson_retire`, the `lessons` block, the size cap, the doctrine-conflict check, the portal page with rollback by id, Character · Nora's `What lands and what does not` moved into Lessons | a labelled set of accounts judged against the Record they cite; a labelled set of lessons (including ones that would loosen doctrine, which must become tension rows); the lesson drift and churn baselines |
 
+**After the cut-over, read back live (DEC-279, DEC-280, 2026-10-03).** The
+first day of step 4 measured three costs and one loss, each fixed without a
+flag (undo is the revert): (1) a Rollup stimulus no longer wakes a session; it
+rides the next wake, and the daily floors bound the wait ([20](20-observe.md)
+§3); six of one unit's nine sessions had been a lone `deviation_anomaly` closed
+`no_change`, and one person in two units woke two at once. (2) A
+`deviation_anomaly` line says the stay's place and what is usual for the person
+there ([30](30-cognition.md) §1). (3) A session whose every item closed
+`no_change` or `covered`, with no other verb called, ends at the last close
+instead of paying one more model call ([30](30-cognition.md) §5). (4) The
+Character fold asks memory only about the people who wrote in the batch (eight
+dialectic calls had been made where two people posted), and a misread reply
+(two room accounts) holds its batch instead of consuming it, with a three-try
+bound (`design/09-decision-index.md` DEC-280).
+
 **The data model's convergence** ([05](05-data-model.md) §9, operator
 2026-10-01, DEC-249). **E1a gates step 4**: the `citation` table widened to
 events and every Notebook kind as citing stores and to Rollup keys as cited,

@@ -251,6 +251,25 @@ class Room:
             self._view = self._resolve(await self._read())
         return self._view
 
+    def find(self, view: RoomView, name: str) -> tuple[PersonRef, ...]:
+        """Every person in `view` that `name` could mean: `view.find`'s
+        names, the same name with a leading `@` dropped (a tag as typed), and
+        an Instagram `username` the operator recorded for them
+        (`Persons.instagram_username_owners`, casefolded, `@` stripped).
+
+        Scoped by `view`, the room this tool may resolve within: a username
+        recorded for someone who is not in it resolves to nobody, exactly as
+        their name would. One person matched two ways is one match."""
+        bare = _key(name).removeprefix("@")
+        owners = self._persons.instagram_username_owners(bare) if bare else frozenset()
+        found: dict[str, PersonRef] = {}
+        for ref in (
+            *view.find(name), *view.find(bare),
+            *(p for p in view.people if p.person_id in owners),
+        ):
+            found.setdefault(ref.person_id, ref)
+        return tuple(found.values())
+
     async def scope(self) -> RoomView:
         """The set a name lookup may resolve within.
 

@@ -459,15 +459,52 @@ async def test_one_well_formed_account_is_accepted():
     assert got == (CultureProposal(body="an account"),)
 
 
-async def test_TWO_accounts_are_refused_ENTIRELY_never_picked_between():
+async def test_TWO_accounts_are_refused_ENTIRELY_and_the_batch_is_HELD():
     """A room has one account. Picking one of two would be an arbitrary choice
-    made silently, on the row that claims to say how the room works."""
+    made silently, on the row that claims to say how the room works. And the
+    refusal RAISES (DEC-280): returning `()` consumed the batch with no
+    account written from it; raising makes the run `unavailable`, which holds
+    the watermark (`tests/unit/test_dreamer_runtime.py::
+    test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit`)."""
     m = Metrics()
-    got = await _adaptor(_Store(), m).accept(
-        key=KEY, items=[{"body": "one"}, {"body": "two"}],
-    )
-    assert got == ()
+    with pytest.raises(AccountNotRecordableError):
+        await _adaptor(_Store(), m).accept(
+            key=KEY, items=[{"body": "one"}, {"body": "two"}],
+        )
     assert m.get("nora_culture_fold_total", outcome="too_many") == 1
+    assert m.get("nora_culture_fold_total", outcome="abandoned") == 0
+
+
+async def test_the_third_rejection_of_one_batch_in_a_row_advances_past_it():
+    """Each rejection holds the watermark, so a batch the model keeps misreading
+    would be re-read for ever. The third in a row of the SAME batch (named by its
+    first row) returns `()` instead, so the batch is consumed, counted
+    `abandoned` and logged; a different batch, or a reply that is not
+    rejected, starts the run again."""
+    m = Metrics()
+    adaptor = _adaptor(_Store(), m)
+    two = [{"body": "one"}, {"body": "two"}]
+    for _ in range(2):
+        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=two)
+    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
+    assert await adaptor.accept(key=KEY, items=two) == ()
+    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
+    # The run starts again on a new batch: two rejections of one batch and
+    # then one of another is a first rejection, not a third.
+    for rid in (7, 7, 8):
+        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=rid),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=two)
+    # ...and after an accepted reply.
+    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
+    assert await adaptor.accept(key=KEY, items=[{"body": "fine"}])
+    for _ in range(2):
+        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=two)
+    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
 
 
 async def test_an_empty_envelope_is_a_real_answer_and_writes_nothing():
@@ -507,16 +544,12 @@ async def test_an_oversize_account_RAISES_so_the_batch_is_not_spent_too():
     assert m.get("nora_culture_fold_total", outcome="oversize") == 1
 
 
-async def test_the_OTHER_two_refusals_still_return_and_let_the_batch_advance():
-    """Only `oversize` holds. `empty` and `too_many` are «I looked and there
-    was nothing usable» — true, and the previous account stands — so holding
-    the cursor for them would re-fold a batch that has already been answered,
-    which is the wedge with none of the benefit."""
+async def test_an_empty_answer_still_returns_and_lets_the_batch_advance():
+    """`empty` is «I looked and there was nothing usable», true, and the
+    previous account stands, so holding the cursor for it would re-fold a batch
+    that has already been answered. `too_many` and `oversize` hold (DEC-280)."""
     adaptor = _adaptor(_Store())
     assert await adaptor.accept(key=KEY, items=[]) == ()
-    assert await adaptor.accept(
-        key=KEY, items=[{"body": "one"}, {"body": "two"}],
-    ) == ()
     assert await adaptor.accept(key=KEY, items=[{"body": "  "}]) == ()
 
 
@@ -606,7 +639,8 @@ def test_every_declared_outcome_is_reachable():
     """A vocabulary member nothing produces is a label that renders as a series
     which is always zero."""
     assert {
-        "written", "empty", "too_many", "unchanged", "oversize",
+        "written", "empty", "too_many", "unchanged", "oversize", "dropped_person",
+        "abandoned",
     } == CULTURE_OUTCOMES
 
 
@@ -828,9 +862,11 @@ _MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
 _ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
 
 
-def _character_adaptor(store: _Store, memory: _Memory) -> CultureAdaptor:
+def _character_adaptor(
+    store: _Store, memory: _Memory, metrics: Metrics | None = None,
+) -> CultureAdaptor:
     return CultureAdaptor(
-        culture=store, unit_for=lambda _k: "friends",
+        culture=store, unit_for=lambda _k: "friends", metrics=metrics,
         standing_key_for=lambda _k: None, label_for=lambda _k: "Zone 42",
         description_for=lambda _k: None,
         members_for=lambda _k: (_MILES, _ADA), memory=memory, ai_peer="nora",
@@ -839,12 +875,12 @@ def _character_adaptor(store: _Store, memory: _Memory) -> CultureAdaptor:
 
 
 async def test_the_people_views_are_asked_per_listed_person_and_screened():
-    """One question per listed person, routed by the unit; a person memory has
-    nothing for gets no entry, and an answer carrying an identifier (R-18) is
-    withheld whole."""
+    """One question per listed person who wrote in the batch, routed by the
+    unit; a person memory has nothing for gets no entry, and an answer carrying
+    an identifier (R-18) is withheld whole."""
     memory = _Memory({"miles": "dry, loyal, late to everything", "ada": "call +852 5555"})
     out = await _character_adaptor(_Store(), memory).inputs(
-        key=KEY, batch=(_row("dinner?"),),
+        key=KEY, batch=(_row("dinner?", name="Miles"), _row("yes", name="Ada", rid=2)),
     )
     assert memory.asked == [
         ("miles", "What is the character of Miles?", "friends"),
@@ -860,7 +896,8 @@ async def test_a_person_account_is_written_under_its_own_key():
     `commit` stores it in the same store under `character_key`, leaving the
     room's own head alone."""
     store = _Store()
-    adaptor = _character_adaptor(store, _Memory({}))
+    adaptor = _character_adaptor(store, _Memory({"miles": "dry and loyal"}))
+    await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
     proposals = await adaptor.accept(key=KEY, items=[
         {"body": "a games room"},
         {"person": "Miles", "body": "dry and loyal"},
@@ -878,3 +915,57 @@ async def test_a_person_account_is_written_under_its_own_key():
     )
     assert (await store.head(key=KEY)).body == "a games room"
     assert (await store.head(key=character_key(KEY, "miles"))).body == "dry and loyal"
+
+
+async def test_only_the_batchs_senders_are_asked_and_a_silent_persons_account_stands():
+    """DEC-280. Live 2026-10-03: eight dialectic calls on a pass where two
+    people had posted. A listed person who wrote nothing in the batch is not
+    asked, gets no `<person_view>`, and their existing account is neither
+    rewritten nor removed, even when the model names them anyway."""
+    store = _Store(head=CultureRevision(
+        id="c1", culture_key=character_key(KEY, "ada"), body="steady and kind",
+        written_at=T0, established_by="culture",
+    ))
+    memory = _Memory({"miles": "dry, loyal", "ada": "steady"})
+    m = Metrics()
+    adaptor = _character_adaptor(store, memory, m)
+    out = await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
+    assert [target for target, _q, _u in memory.asked] == ["miles"]
+    views = out.split("<room_messages")[0].split("<people_views")[1]
+    assert 'name="Miles"' in views and 'name="Ada"' not in views
+    proposals = await adaptor.accept(key=KEY, items=[
+        {"body": "a games room"},
+        {"person": "Miles", "body": "dry and loyal"},
+        {"person": "Ada", "body": "rewritten from nothing"},
+    ])
+    assert [(p.person_id, p.body) for p in proposals] == [
+        (None, "a games room"), ("miles", "dry and loyal"),
+    ]
+    assert m.get("nora_culture_fold_total", outcome="dropped_person") == 1
+    await adaptor.commit(
+        key=KEY,
+        proposals=[Proposal(payload=p, instruction_sha256="a" * 64,
+                            model="flash", established_by="culture-run-1")
+                   for p in proposals],
+        now_ms=T0 + 1,
+    )
+    assert (await store.head(key=character_key(KEY, "ada"))).body == "steady and kind"
+    assert (await store.head(key=character_key(KEY, "miles"))).body == "dry and loyal"
+
+
+async def test_a_person_not_on_the_roster_drops_only_that_item():
+    """A person's item naming nobody the fold was shown drops that item alone:
+    the room's account and the other person's stand, and it is counted."""
+    m = Metrics()
+    adaptor = _character_adaptor(_Store(), _Memory({"miles": "dry"}), m)
+    await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
+    proposals = await adaptor.accept(key=KEY, items=[
+        {"body": "a games room"},
+        {"person": "Nobody", "body": "dropped"},
+        {"person": "Miles", "body": "dry"},
+    ])
+    assert [(p.person_id, p.body) for p in proposals] == [
+        (None, "a games room"), ("miles", "dry"),
+    ]
+    assert m.get("nora_culture_fold_total", outcome="dropped_person") == 1
+    assert m.get("nora_culture_fold_total", outcome="too_many") == 0

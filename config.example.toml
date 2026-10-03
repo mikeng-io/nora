@@ -2030,8 +2030,9 @@ quiet_seconds = 1800
 # strong cue: a date/time, a place link, a keep instruction or an RSVP
 # pending, then this much quiet.
 cue_quiet_seconds = 120
-# rollup: a Rollup stimulus has waited this long (no producer until step 2).
-rollup_delay_seconds = 60
+# A Rollup stimulus (a co-location, an arrival, a deviation) never wakes a
+# session on its own: it rides the next wake for any reason, a daily floor
+# included (DEC-279). `rollup_delay_seconds` is read by nothing now.
 # batch: this many pending stimuli.
 batch_max = 80
 # max age: the oldest pending stimulus is this old.
@@ -2046,6 +2047,8 @@ reply_quiet_seconds = 600
 # The daily floors, local time in `timezone`, raised as `time` stimuli once per
 # unit per day: each wakes a session whose `time` item reviews the notebook
 # (passed anchors, due revisits, likely duplicates) and decides what to raise.
+# A floor's wake also takes every pending Rollup stimulus, so the floors bound
+# how long one waits in a unit nobody talks in.
 # Raised only while no more than `floor_grace_seconds` late (a deploy at 15:00
 # does not raise that morning's 07:00).
 time_floors = ["07:00", "00:00"]

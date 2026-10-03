@@ -23,8 +23,8 @@
   {
     "name": "wake policy: a waits stimulus counts toward a trigger",
     "file": "nora/domain/stimuli.py",
-    "old": "    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]\n    if not eligible:\n        return None",
-    "new": "    eligible = [s for s in view.pending if s.kind not in view.inert_kinds]\n    if not eligible:\n        return None",
+    "old": "        not stimulus.waits\n        and stimulus.kind not in view.inert_kinds",
+    "new": "        True\n        and stimulus.kind not in view.inert_kinds",
     "target": "tests/unit/test_wake_evaluator.py::test_a_reply_to_nora_never_wakes_a_unit_by_itself"
   },
   {

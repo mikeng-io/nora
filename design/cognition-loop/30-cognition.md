@@ -65,6 +65,23 @@ handed.** Each of these was found by reading the input before the instruction
   YET is not permanent: the stimulus is retained as a waiting carry
   (`agenda.retained_stimulus_ids`), so it never starts a wake, wedges nothing and
   is an item again once the roster knows the person.
+  **A `deviation_anomaly` also says where and what is usual (DEC-279,
+  2026-10-03).** The grounder reads the stay its ref names from the presence
+  store (`stay_context_reader`): the place in the words `where_been` uses (the
+  saved name, else «a place they go near <street>»), and how the stay differed
+  from the person's own past, recomputed with `detect_stay_anomalies` and the
+  analytics thresholds (duration, arrival and departure beside their usual
+  value, a new place, where they usually are at those hours). Words are built
+  at read time; the session row keeps only the deviation kinds. A presence read
+  that fails leaves the line as it was. **The place is named only where
+  `where_been` would name it (R-35)**: every room of the unit must pass
+  `presence_audience` (the decision `where_been` takes: a live roster, no
+  unnamed account, a subset of a circle the person is in, or location-trusted);
+  otherwise the line says how the stay differed and never where, and a room
+  that cannot be read names no place. Not available without a new pipeline:
+  co-location and silence lines carry no place or usual pattern, and the anomaly
+  is recomputed on read rather than read from a stored score (the rollup never
+  stores one).
 - **Her own sends are part of the situation (D1, operator 2026-09-30).** Inside
   each message item's window (from `own_send_lookback_seconds`, 1800 s, before its
   oldest message until now, at most `own_sends_max`, 6) her own delivered sends in
@@ -315,6 +332,16 @@ the old stimulus retracted) and its identical `remind` is refused
 `duplicate_pending`. The per-day self-wake cap counts both creations. Only a
 session that ends on its own (`end_turn`) settles its open items with a strike
 (§2).
+
+**A session whose every item closed quiet ends at the last close (DEC-279,
+2026-10-03).** When every agenda item is closed `no_change` or `covered` and no
+verb but `close` was called, `close` sets Strands' `request_state
+["stop_event_loop"]`, and the loop makes no further model call (its
+`stop_reason` is then `tool_use`, which is not a bound). Measured live: that
+follow-up call wrote nothing on every session that closed quiet. A `written` or
+`waiting` close, or any other verb called, refused or not, keeps the loop
+running as before, including a verb in the same model turn as the last close: Strands reads the
+flag only after the whole turn's tools ran, so such a verb takes the stop back.
 
 ## 6. The Assess adaptor and data quality
 

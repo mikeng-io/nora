@@ -149,6 +149,7 @@ from ..domain.mobility_forecast import (
     detect_stay_anomalies,
     forecast_hour,
     forecast_window,
+    place_words,
     time_forecast,
     trip_patterns,
 )
@@ -265,6 +266,7 @@ from .whereis import (
     DisclosureGuard,
     Whereis,
     _dedupe,
+    presence_audience,
     resolvable_places,
 )
 
@@ -5444,7 +5446,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         on how to report it.
 
         Args:
-            name: The name or nickname exactly as it appeared in the message.
+            name: The name, nickname or @username exactly as it appeared in
+                the message.
         """
         view = await room.scope()
         if not view.available:
@@ -5454,7 +5457,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't check who is in this group right now, so I can't "
                         "tell you who that is. Say so rather than guessing.",
             }
-        matches = view.find(name)
+        matches = room.find(view, name)
         # `name` is never in the line. It is the one MODEL-SUPPLIED string
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.
@@ -6574,11 +6577,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't work out who is in this group right now, so "
                         f"I can't say {anyone}. Say so rather than guessing.",
             }
-        room_person_ids = frozenset(p.person_id for p in view.people)
-        subset_ok = (
-            location_trusted or DisclosureGuard(circle).permits(room_person_ids)
-        )
-        unnamed_blocks = view.unnamed > 0 and not location_trusted
+        # The decision is `presence_audience`'s, shared with a Cognition
+        # rollup line's place release; the branches below word and count it.
+        audience = presence_audience(view, circle, location_trusted=location_trusted)
+        subset_ok = audience != "not_subset"
+        unnamed_blocks = audience == "unnamed"
         if view.degraded:
             if metrics is not None:
                 metrics.inc(
@@ -7142,22 +7145,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     _routine_ladder = ((85, 3), (60, 2), (35, 1))
     # An unnamed place is said by its label's absence, never a guessed name;
     # its kind still tells her what it is to them (DEC-190).
-    _routine_unnamed = {
-        "home": "a home of theirs", "work": "their work",
-        "unlabeled": "a place they go",
-    }
-
-    def _place_words(label: str | None, kind: str, saved: bool) -> str:
-        """What she calls a place: its household name when Life360 saved one;
-        otherwise what it is to them, near the street its label gives. An
-        unsaved label is the street address of the spot (the geocode cache),
-        not a name: live on 2026-09-28 a road's name, read as a name, became
-        «a road they only drive along» for a place with four-hour stays."""
-        if label and saved:
-            return label
-        if label:
-            return f"{_routine_unnamed[kind]} near {label}"
-        return _routine_unnamed[kind]
+    # One spelling for a place, shared with the Cognition rollup line.
+    _place_words = place_words
     _routine_rough = ("nearby_hours", "day_type", "overall")
     _routine_days = (
         "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",

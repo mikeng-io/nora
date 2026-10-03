@@ -156,10 +156,30 @@ def rollup_status(stimulus: Stimulus, known: Callable[[str], bool]) -> RollupSta
 
 
 @dataclass(frozen=True, slots=True)
+class StayDeviation:
+    """One way a stay differed from the person's own past
+    (`nora.domain.mobility_forecast.Anomaly`, computed on read): its `kind`,
+    and `observed`/`expected` in that kind's unit (milliseconds for
+    `duration`, local minute of day for `arrival`/`departure`, None for the
+    two place kinds). `usual_place` is the words for where they usually are at
+    these hours (`unusual_place` only)."""
+
+    kind: str
+    observed: float | None = None
+    expected: float | None = None
+    usual_place: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RollupLine:
     """A Rollup stimulus as the session reads it: the `ref`'s fields with the
     people's roster NAMES. Built at read time and never serialized (a name in
-    an append-only row outlives a person's withdrawal)."""
+    an append-only row outlives a person's withdrawal).
+
+    For a `deviation_anomaly`, `stay_place` (what she calls the place of the
+    stay) and `deviations` (how it differed from what is usual for them) are
+    read from the presence store when it has them (DEC-279), and are words
+    built at read time too: neither reaches the session row."""
 
     ref: str
     kind: str
@@ -168,6 +188,8 @@ class RollupLine:
     start_ms: int | None
     end_ms: int | None
     place: str | None = None
+    stay_place: str | None = None
+    deviations: tuple[StayDeviation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +262,8 @@ class Grounding:
             # By reference, and no name: a person id, the kind, the interval.
             "rollups": [
                 {"ref": r.ref, "kind": r.kind, "person_ids": list(r.person_ids),
-                 "start_ms": r.start_ms, "end_ms": r.end_ms, "place": r.place}
+                 "start_ms": r.start_ms, "end_ms": r.end_ms, "place": r.place,
+                 "deviations": [d.kind for d in r.deviations]}
                 for r in self.rollups.values()
             ],
             # Her own sends by message id and time; never the words.
@@ -254,5 +277,5 @@ class Grounding:
 
 __all__ = [
     "RECORD_REF_TABLES", "UNNAMED_ROOM", "EventLine", "Grounding", "NoteLine", "RecordItem",
-    "RecordKind", "RollupLine", "RollupRef", "parse_rollup_ref", "record_ref",
+    "RecordKind", "RollupLine", "RollupRef", "StayDeviation", "parse_rollup_ref", "record_ref",
 ]

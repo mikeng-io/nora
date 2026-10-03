@@ -78,11 +78,26 @@ STIMULUS_KINDS: tuple[str, ...] = get_args(StimulusKind)
 MessageItem = Literal["message", "edit", "reaction", "delete"]
 
 #: 20 §3's wake table, in the table's order — the order `decide` tries them
-#: in and the label vocabulary of `nora_cognition_wake_total{reason}`.
+#: in and the label vocabulary of `nora_cognition_wake_total{reason}`. No
+#: `rollup` since DEC-279: a Rollup stimulus never starts a wake, it rides the
+#: next one (`RIDES_ALONG`). `cognition_wake.reason`'s CHECK still admits
+#: `rollup` for the rows recorded before.
 WakeReason = Literal[
-    "settled", "strong_cue", "rollup", "batch", "max_age", "time", "self",
+    "settled", "strong_cue", "batch", "max_age", "time", "self",
 ]
 WAKE_REASONS: tuple[str, ...] = get_args(WakeReason)
+
+#: Kinds that never start a wake and are claimed by EVERY wake (DEC-279,
+#: 2026-10-03): a Rollup stimulus (a co-location, an arrival, a deviation) is
+#: context for a session another reason started, never a reason of its own.
+#: Measured live: six of one unit's nine sessions in a day were woken by a lone
+#: `deviation_anomaly`, each closed `no_change` at about 13k input tokens, and a
+#: person in two units woke two concurrent sessions for one anomaly. The
+#: bound on how long one waits is the daily `time` floors (07:00 and 00:00 by
+#: default): a `time` wake claims these too, so a unit nobody talks in still
+#: sees them within a day. With `[cognition] time_floors = []` and a silent
+#: unit nothing bounds it; that is the operator's configuration to choose.
+RIDES_ALONG: frozenset[str] = frozenset({"rollup"})
 
 #: Why a unit with pending stimuli did NOT wake this tick.
 WakeBrake = Literal["single_flight", "cooldown", "backoff", "concurrency"]
@@ -445,7 +460,6 @@ class WakePolicy:
 
     quiet_seconds: float = 1800.0  # operator 2026-09-29, was 600 ([cognition])
     cue_quiet_seconds: float = 120.0
-    rollup_delay_seconds: float = 60.0
     batch_max: int = 80
     max_age_seconds: float = 3600.0
     cooldown_seconds: float = 300.0
@@ -721,7 +735,7 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
     `reply_quiet_seconds` rides the next wake and never starts one. Quiet is
     measured from the unit's newest person-authored item, `waits` ones
     included: a room still replying to her is not a quiet room."""
-    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]
+    eligible = [s for s in view.pending if can_wake(s, view)]
     if not eligible:
         return None
     quiet_ms = (
@@ -732,21 +746,15 @@ def _trigger(view: UnitView, policy: WakePolicy, now_ms: int) -> WakeReason | No
         return quiet_ms is None or quiet_ms >= seconds * 1000
 
     # `settled` and `strong cue` are about a ROOM going quiet after people
-    # said something, so they count observed items only. A pending `time`,
-    # `self` or `rollup` stimulus has its own row in the table; letting it read
-    # as `settled` in a quiet unit would record every 07:00 floor under the
-    # wrong reason.
+    # said something, so they count observed items only. A pending `time` or
+    # `self` stimulus has its own row in the table; letting it read as
+    # `settled` in a quiet unit would record every 07:00 floor under the
+    # wrong reason. A `rollup` stimulus is not `eligible` at all (DEC-279).
     observed = [s for s in eligible if s.kind in _OBSERVED]
     if observed and quiet_for(policy.quiet_seconds):
         return "settled"
     if any(is_strong(s.cues) for s in observed) and quiet_for(policy.cue_quiet_seconds):
         return "strong_cue"
-    if any(
-        s.kind == "rollup"
-        and now_ms - s.pending_since_ms >= policy.rollup_delay_seconds * 1000
-        for s in eligible
-    ):
-        return "rollup"
     if len(eligible) >= policy.batch_max:
         return "batch"
     oldest = min(s.pending_since_ms for s in eligible)
@@ -775,10 +783,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
     cut = False
     cooling = _cooling(view, policy, now_ms)
     if cooling or _backing_off(view, policy, now_ms):
-        strong = any(
-            is_strong(s.cues) for s in view.pending
-            if not s.waits and s.kind not in view.inert_kinds
-        )
+        strong = any(is_strong(s.cues) for s in view.pending if can_wake(s, view))
         last_cut = view.last_wake is not None and view.last_wake.cut_cooldown
         quiet_ms = (
             None if view.last_activity_ms is None else now_ms - view.last_activity_ms
@@ -791,7 +796,7 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
             return Verdict(brake="cooldown" if cooling else "backoff")
         reason, cut = "strong_cue", True
     claimed = claim(view, reason)
-    eligible = [s for s in claimed if not s.waits]
+    eligible = [s for s in claimed if can_wake(s, view)]
     through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))
     taken = {s.id for s in claimed}
     return Verdict(
@@ -823,22 +828,37 @@ def decide(view: UnitView, policy: WakePolicy, now_ms: int) -> Verdict:
 
 
 #: The wake reasons that are about ONE kind of stimulus (20 §3, D2/DEC-245):
-#: a `rollup`, `time` or `self` wake claims only stimuli of that kind.
-_OWN_KIND_REASONS: frozenset[str] = frozenset({"rollup", "time", "self"})
+#: a `time` or `self` wake claims only stimuli of that kind, and the kinds that
+#: ride along (DEC-279).
+_OWN_KIND_REASONS: frozenset[str] = frozenset({"time", "self"})
+
+
+def can_wake(stimulus: Stimulus, view: UnitView) -> bool:
+    """Whether `stimulus` may start a wake: not a reply that `waits`, not of an
+    inert kind (M8) and not of a kind that only rides along (DEC-279). Every
+    reader of «what could wake this unit» (`decide`, the age gauge) asks this."""
+    return (
+        not stimulus.waits
+        and stimulus.kind not in view.inert_kinds
+        and stimulus.kind not in RIDES_ALONG
+    )
 
 
 def claim(view: UnitView, reason: WakeReason) -> list[Stimulus]:
-    """The pending stimuli a wake for `reason` takes (D2, DEC-245).
+    """The pending stimuli a wake for `reason` takes (D2, DEC-245; DEC-279).
 
     `settled`, `strong_cue`, `batch` and `max_age` are about the pile or the
-    room, so they take every pending stimulus. `rollup`, `time` and `self` are
-    about one kind of stimulus: they take THAT kind only, and a room's messages
-    stay pending until they satisfy `settled` or `strong_cue` themselves, where
-    before a rollup wake consumed a room's unsettled conversation unseen. The
-    stimuli left over are recorded on the wake (`NewWake.unclaimed_ids`) so the
-    watermark never passes them: the claim is a SET, and no stimulus is lost or
-    processed twice."""
+    room, so they take every pending stimulus. `time` and `self` are about one
+    kind of stimulus: they take THAT kind, and a room's messages stay pending
+    until they satisfy `settled` or `strong_cue` themselves. Every wake also
+    takes the pending stimuli that ride along (`RIDES_ALONG`, a Rollup's), so
+    a `time` floor is what bounds how long one waits. The stimuli left over are
+    recorded on the wake (`NewWake.unclaimed_ids`) so the watermark never passes
+    them: the claim is a SET, and no stimulus is lost or processed twice."""
     live = [s for s in view.pending if s.kind not in view.inert_kinds]
     if reason in _OWN_KIND_REASONS:
-        return [s for s in live if s.kind == reason and not s.waits]
+        return [
+            s for s in live
+            if (s.kind == reason and not s.waits) or s.kind in RIDES_ALONG
+        ]
     return live

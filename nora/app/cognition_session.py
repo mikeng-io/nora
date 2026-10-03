@@ -389,12 +389,37 @@ class _RunState:
     written: set[tuple[str, int | None]] = field(default_factory=set)
     closed_indices: set[int] = field(default_factory=set)
     closes: list[CloseOutcome] = field(default_factory=list)
+    #: A verb other than `close` was called in this session, whatever it
+    #: answered: the loop then never ends at the last close (`_all_quiet`).
+    acted: bool = False
+    #: Strands' `request_state` as `close` last saw it: where a quiet close set
+    #: `stop_event_loop`, so a verb that runs in the SAME model turn (Strands
+    #: reads the flag only after every tool of the turn has run) can take it
+    #: back.
+    request_state: dict[str, Any] | None = None
     #: The line of the prompt that says which room(s) the read tools resolve
     #: through (`_build_tools`).
     reads_note: str = ""
 
 
 _room_key = room_key
+
+#: The close reasons that leave nothing for a follow-up model call to do: when
+#: every agenda item closed with one of these and no other verb was called, the
+#: loop ends at the last close (DEC-279).
+_QUIET_CLOSES: frozenset[str] = frozenset({"no_change", "covered"})
+
+
+def _all_quiet(state: _RunState) -> bool:
+    """Every agenda item is closed, each `no_change` or `covered`, and no verb
+    but `close` was called: the model has nothing left to write, and the call
+    Strands would make after the last close only returns. Measured live
+    2026-10-03: that call wrote nothing on every session that closed quiet."""
+    return (
+        not state.acted
+        and len(state.closed_indices) == len(state.items_by_index)
+        and all(c.reason in _QUIET_CLOSES for c in state.closes)
+    )
 
 
 def _room_of(room: str, state: _RunState) -> tuple[str, str] | dict[str, object]:
@@ -775,8 +800,8 @@ class CognitionSessionRunner:
             #   malformed   the ref can never be read: consumed.
             #   roster_miss a person the roster does not know YET: RETAINED, as a
             #               carry row with `waits`, so it is never consumed
-            #               unseen and never raises the `rollup` trigger (a
-            #               waiting stimulus does not wake), and it is an agenda
+            #               unseen (no Rollup stimulus wakes a unit, DEC-279;
+            #               it rides the next wake), and it is an agenda
             #               item again in the first session after the roster
             #               knows the person.
             malformed: set[int] = set()
@@ -1358,6 +1383,7 @@ class CognitionSessionRunner:
 
         async def close(
             item_index: int, reason: Literal["written", "no_change", "waiting", "covered"],
+            tool_context: Any = None,
         ) -> dict[str, object]:
             """Close one agenda item. Call this when you have dealt with an item
             or decided it needs nothing now. An item you leave open, or close
@@ -1398,6 +1424,14 @@ class CognitionSessionRunner:
             except ValueError as exc:
                 return _refused("bad_reason", str(exc))
             await self._record_close(state, outcome)
+            if tool_context is not None:
+                request = tool_context.invocation_state.setdefault("request_state", {})
+                state.request_state = request
+                if _all_quiet(state):
+                    # Strands' own way for a tool to end the loop: no further
+                    # model call after this tool batch (`strands.event_loop`,
+                    # 1.50.2). Any other verb of the same batch takes it back.
+                    request["stop_event_loop"] = True
             return {"status": "ok"}
 
         async def note_create(
@@ -2190,10 +2224,34 @@ class CognitionSessionRunner:
                 await self._reminders.cancel(row.id, conversation_id=row.conversation_id)
             return {"status": "ok"}
 
+        def unstop() -> None:
+            if state.request_state is not None:
+                state.request_state.pop("stop_event_loop", None)
+
+        def acting(verb: Any) -> Any:
+            """Every verb but `close` marks the session as having acted, before
+            it runs and whatever it answers (`_all_quiet`), and takes back a
+            stop a quiet `close` set earlier in the same model turn: the model
+            must see what this verb answered (a refusal it may correct). Taken
+            back before AND after it runs, so tools run concurrently in one
+            turn cannot order a close's stop after it."""
+            @functools.wraps(verb)
+            async def call(*args: Any, **kwargs: Any) -> dict[str, object]:
+                state.acted = True
+                unstop()
+                try:
+                    result: dict[str, object] = await verb(*args, **kwargs)
+                finally:
+                    unstop()
+                return result
+            return call
+
         verbs = (
-            close, note_create, note_update, note_retire, note_merge, event_propose,
-            event_revise, event_set_status, standing_revise, wake_at, wake_move,
-            wake_cancel, remind, remind_move, remind_cancel,
+            close, *(acting(v) for v in (
+                note_create, note_update, note_retire, note_merge, event_propose,
+                event_revise, event_set_status, standing_revise, wake_at, wake_move,
+                wake_cancel, remind, remind_move, remind_cancel,
+            )),
         )
         return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]
 

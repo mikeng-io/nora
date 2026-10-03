@@ -50,7 +50,8 @@ what success looks like ([17-failure-classes §11]).
 
 **It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
 the same daily clock, the same fold asks Nora's memory «what is the character of
-X?» for each person the room lists (`memory.chat`, the dialectic verb
+X?» for each person the room lists who wrote in the batch (DEC-280: only
+those; `memory.chat`, the dialectic verb
 `ask_memory` calls), hands those answers to the model beside the room's own
 account, and stores one short account per person under `character_key` in this
 same store and chain. **That supersedes DEC-182's narrowing, for this use
@@ -87,6 +88,8 @@ from nora.domain.blocks import (
 )
 from nora.domain.culture import (
     BODY_MAX_CHARS,
+    CULTURE_OUTCOMES,
+    MAX_CONSECUTIVE_REJECTIONS,
     CultureProposal,
     CultureRevision,
     character_key,
@@ -208,7 +211,10 @@ STORE_CALLS_PER_TICK = 6
 #: to every reading of it. The durable per-outcome row that WOULD carry a rate
 #: is DEC-179's, excluded there; `log.warning` on `too_many` and `oversize`
 #: carries the news meanwhile, which is the half a counter cannot.
-CULTURE_OUTCOMES = frozenset({"written", "empty", "too_many", "unchanged", "oversize"})
+#:
+#: Defined in `nora.domain.culture` since DEC-280 (2026-10-03), so the
+#: metric's help text reads the same set; `dropped_person` and `abandoned`
+#: joined it there.
 
 #: The read verbs one fold holds — granted 2026-09-17, against
 #: `tools = frozenset()` since the tier shipped.
@@ -551,6 +557,16 @@ class CultureAdaptor:
         self._tz = timezone
         self._platform_for = platform_for
         self._resolve_names = resolve_names
+        # Per key, for the run in flight: the names whose views `inputs`
+        # showed (only those may get an account, DEC-280), the batch's first
+        # row id, and the run of consecutive rejections of that batch.
+        # ponytail: in memory, so a restart forgets a rejection run and the
+        # batch gets up to `MAX_CONSECUTIVE_REJECTIONS` more tries; a column
+        # on `dream_schedule_state` if that is ever seen to matter. The runtime
+        # serializes runs per (adaptor, key), so no two runs share a key here.
+        self._shown: dict[str, frozenset[str]] = {}
+        self._batch_start: dict[str, int] = {}
+        self._rejections: dict[str, tuple[int | None, int]] = {}
 
     def _inc(self, outcome: str) -> None:
         if outcome not in CULTURE_OUTCOMES:
@@ -611,6 +627,8 @@ class CultureAdaptor:
         """
         if not batch:
             return ""
+        self._batch_start[key] = batch[0].id
+        self._shown[key] = frozenset()
         # RESOLVE NAMES (issue #200), the same projection the deleted `NoteCandidateAdaptor`
         # applied before its own batch renders. Every row this fold gets from
         # `record.since` carries `person_name=None` — nothing on this path
@@ -726,10 +744,15 @@ class CultureAdaptor:
                 "(unit=%r standing_key=%r); folding without those inputs",
                 key, unit, standing_key,
             )
-        # HONCHO'S VIEW OF EACH LISTED PERSON, asked once here (comprehend
-        # once) so the model computes on a fixed answer instead of deciding
-        # whether to ask. Absent when no person answered.
-        people = await self._people_views(key, unit)
+        # HONCHO'S VIEW OF EACH LISTED PERSON WHO WROTE IN THIS BATCH, asked
+        # once here (comprehend once) so the model computes on a fixed answer
+        # instead of deciding whether to ask. Absent when no person answered.
+        # A sender is known by the name `resolve_names` gave their row, which
+        # it resolved from the platform id: never a self-set profile name.
+        senders = frozenset(
+            row.person_name for row in batch if not row.is_nora and row.person_name
+        )
+        people = await self._people_views(key, unit, senders)
         if people is not None:
             parts.append(people)
         # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
@@ -759,9 +782,19 @@ class CultureAdaptor:
             return ()
         return tuple(self._members_for(key) or ())
 
-    async def _people_views(self, key: str, unit: str | None) -> ContextBlock | None:
-        """`<people_views>`: what Nora's memory says each listed person is
-        like, one `<person>` per answer (the Character tier, DEC-278).
+    async def _people_views(
+        self, key: str, unit: str | None, senders: frozenset[str],
+    ) -> ContextBlock | None:
+        """`<people_views>`: what Nora's memory says each listed person who
+        WROTE in this batch is like, one `<person>` per answer (the Character
+        tier, DEC-278, narrowed by DEC-280).
+
+        **Only the batch's senders are asked.** Live 2026-10-03: eight
+        dialectic calls on a pass where two people had posted. A person who
+        said nothing in the batch gives the fold nothing new to combine with
+        memory, so they are not asked and get no entry; their account stands
+        as it was (`commit` only appends, and `accept` takes an account only
+        for a name shown here).
 
         **The operator's design, and nothing more:** ask the memory system
         «what is the character of X?», combine the answer with the room's
@@ -777,12 +810,13 @@ class CultureAdaptor:
         own fold is unaffected. An answer carrying an identifier is withheld
         whole (R-18), as `ask_memory` does.
         """
-        roster = self._roster(key)
+        roster = tuple(ref for ref in self._roster(key) if ref.name in senders)
         if not roster or self._memory is None or self._screen is None or unit is None:
             return None
         screen = self._screen
-        # ponytail: one dialectic call per listed person, no cap; rooms here
-        # are a handful of friends. Add a cap key to `[culture]` if one grows.
+        # ponytail: one dialectic call per listed person who wrote in the
+        # batch, no cap; rooms here are a handful of friends. Add a cap key to
+        # `[culture]` if one grows.
         answers = await asyncio.gather(
             *(
                 self._memory.chat(
@@ -794,6 +828,7 @@ class CultureAdaptor:
             return_exceptions=True,
         )
         rows: list[str] = []
+        shown: set[str] = set()
         for ref, answer in zip(roster, answers, strict=True):
             if isinstance(answer, BaseException) or not answer or not answer.strip():
                 log.warning("character: no view of %s for scope=%s", ref.person_id, key)
@@ -804,6 +839,8 @@ class CultureAdaptor:
             rows.append(ContextBlock(
                 name="person_view", attrs=(("name", ref.name),), body=escape(answer.strip()),
             ).render())
+            shown.add(ref.name)
+        self._shown[key] = frozenset(shown)
         if not rows:
             return None
         order, bkey = _ROW["people_views"]
@@ -862,14 +899,23 @@ class CultureAdaptor:
         choice made silently, on the row that claims to say how the room works.
         Refusing is visible (`outcome="too_many"`); picking is not.
 
-        **The three refusals are not the same refusal, and only one of them
-        holds the batch.** `empty` and `too_many` return `()`: the model said
-        nothing usable, so «I looked and there was nothing» is true and the
-        batch is spent honestly — the previous account stands, which the
-        objective explicitly calls a real answer. `oversize` RAISES
-        (`AccountNotRecordableError`), because the model DID write an account,
-        it was read, and it is being thrown away; consuming the batch as well
-        would lose both, with only a restart-scoped counter to say so.
+        **Fail-closed, split by kind (DEC-280, 2026-10-03).** `empty` returns
+        `()`: the model said nothing usable, so «I looked and there was
+        nothing» is true and the batch is spent honestly. `too_many` and
+        `oversize` RAISE (`AccountNotRecordableError`): the model wrote
+        something, it was read and it is being thrown away, so the runtime
+        reports `unavailable` and HOLDS the watermark. Until DEC-280 `too_many`
+        returned `()`, and the batch was consumed with no account written from
+        it. A person's item naming someone the fold was not SHOWN (not on the
+        roster, or no view of them this pass) drops only that item
+        (`dropped_person`); the room's account and the other people's stand.
+
+        **A rejection run is bounded.** The `MAX_CONSECUTIVE_REJECTIONS`-th
+        rejection in a row of the same batch for one key (the batch named by
+        its first row, which a shrunk retry keeps) does not raise: it is logged
+        at WARNING, counted `abandoned`, and returns `()`, so the fold advances
+        past a batch the model keeps misreading instead of re-reading it for
+        ever. The run is in memory (a restart starts it again).
 
         **The cap is enforced HERE, after the model has already emitted, and
         the model is never told it.** `BODY_MAX_CHARS` appears in no prompt and
@@ -903,17 +949,20 @@ class CultureAdaptor:
         back into chronicle, and refusing 13%-over prose was never the thing
         that would have.
         """
-        # A person's item carries a `person` NAME from the roster the prompt
-        # showed; the id is resolved HERE, so a model never supplies one. An
-        # unknown name, a repeat and a malformed item are dropped.
-        by_name = {ref.name: ref.person_id for ref in self._roster(key)}
+        # A person's item carries a `person` NAME the prompt showed in
+        # `<people_views>`; the id is resolved HERE, so a model never supplies
+        # one. A name not shown this pass, a repeat and a malformed item are
+        # dropped, and only that item.
+        shown = self._shown.get(key, frozenset())
+        by_name = {ref.name: ref.person_id for ref in self._roster(key) if ref.name in shown}
         room_items = [i for i in items if "person" not in i]
         if len(room_items) > 1:
             log.warning(
                 "culture: %d accounts proposed for scope=%s; a room has one, "
-                "so the whole reply is discarded", len(room_items), key,
+                "so the whole reply is refused", len(room_items), key,
             )
             self._inc("too_many")
+            self._reject(key, f"{len(room_items)} room accounts for scope={key}; a room has one")
             return ()
         out: list[CultureProposal] = []
         seen: set[str] = set()
@@ -926,6 +975,7 @@ class CultureAdaptor:
                 if person_id is None or person_id in seen:
                     log.warning("character: dropped an account for %r in scope=%s",
                                 item["person"], key)
+                    self._inc("dropped_person")
                     continue
                 seen.add(person_id)
                 parsed = CultureProposal(body=parsed.body, person_id=person_id)
@@ -937,14 +987,37 @@ class CultureAdaptor:
                     key, len(parsed.body), BODY_MAX_CHARS,
                 )
                 self._inc("oversize")
-                raise AccountNotRecordableError(
+                self._reject(
+                    key,
                     f"culture account for scope={key} is {len(parsed.body)} chars, "
-                    f"past the {BODY_MAX_CHARS} cap"
+                    f"past the {BODY_MAX_CHARS} cap",
                 )
+                return ()
             out.append(parsed)
+        self._rejections.pop(key, None)
         if not out:
             self._inc("empty")
         return tuple(out)
+
+    def _reject(self, key: str, why: str) -> None:
+        """Refuse this reply. RAISES `AccountNotRecordableError` (the runtime
+        reports `unavailable` and holds the watermark) unless this is the
+        `MAX_CONSECUTIVE_REJECTIONS`-th rejection in a row of the same batch for
+        `key`: then it RETURNS, after a WARNING and `abandoned`, and the caller
+        returns `()` so the batch is consumed (DEC-280)."""
+        start = self._batch_start.get(key)
+        previous, run = self._rejections.get(key, (start, 0))
+        run = run + 1 if previous == start else 1
+        if run < MAX_CONSECUTIVE_REJECTIONS:
+            self._rejections[key] = (start, run)
+            raise AccountNotRecordableError(why)
+        self._rejections.pop(key, None)
+        log.warning(
+            "culture: scope=%s rejected %d times in a row on the batch from row %s "
+            "(%s); advancing past it with no account written from it",
+            key, run, start, why,
+        )
+        self._inc("abandoned")
 
     # -- commit ---------------------------------------------------------
 

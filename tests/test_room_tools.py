@@ -269,6 +269,50 @@ async def test_a_model_supplied_identifier_is_never_echoed_back(persons):
     assert scan_identifiers(repr(result)) is None
 
 
+_HANDLES = """
+[[persons.tyler_cortez.instagram]]
+username = "Harbour.Kite_88"
+igid = "10000002"
+[[persons.elsewhere_liu.instagram]]
+username = "far_away_handle"
+fbid = "100000000000003"
+"""
+
+
+@pytest.fixture
+def handled(tmp_path):
+    """IDENTITY plus Instagram usernames: Tyler's, with an `igid` and no `fbid`
+    (the handle index must not depend on the fbid pairing), and one for
+    `elsewhere_liu`, who is in no group under test. Usernames are invented."""
+    path = tmp_path / "identity.toml"
+    path.write_text(IDENTITY + _HANDLES)
+    return load_persons(path)
+
+
+@pytest.mark.parametrize("tag", ["@harbour.kite_88", "Harbour.Kite_88", " @HARBOUR.KITE_88 "])
+async def test_an_instagram_username_resolves_to_the_member_it_was_recorded_for(handled, tag):
+    """Live 2026-10-03: a tag of a known member's Instagram username came back
+    `not_found`, because the lookup matched names and aliases only. The
+    username is in identity.toml already; case-insensitive, `@` stripped."""
+    result = await _call(_build(persons=handled)["lookup_person"], name=tag)
+    assert result["status"] == "ok"
+    assert result["name"] == "Tyler Cortez"
+
+
+async def test_an_instagram_username_of_someone_not_in_this_room_resolves_to_nobody(handled):
+    """The room is the scope: a username recorded for a person who is not a
+    member here reads exactly like a username nobody recorded."""
+    tools = _build(persons=handled)
+    absent = await _call(tools["lookup_person"], name="@far_away_handle")
+    invented = await _call(tools["lookup_person"], name="@nobody_recorded_this")
+    assert absent["status"] == invented["status"] == "not_found"
+
+
+async def test_a_name_typed_as_a_tag_resolves_like_the_name(persons):
+    result = await _call(_build(persons=persons)["lookup_person"], name="@阿豹")
+    assert result["status"] == "ok" and result["name"] == "Tyler Cortez"
+
+
 async def test_lookup_person_reports_an_ambiguous_nickname_rather_than_picking(persons, tmp_path):
     path = tmp_path / "twins.toml"
     path.write_text(

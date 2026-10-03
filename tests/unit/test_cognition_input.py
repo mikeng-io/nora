@@ -67,6 +67,21 @@ def _rollup(unit: str, ref: str, at: int, item: str = "deviation_silence") -> Ne
                        person_id="ada")
 
 
+async def _floor(rig) -> int:
+    """A daily `time` floor due now. A Rollup stimulus starts no wake of its own
+    (DEC-279): it rides the next one, and a floor's is the one that bounds it."""
+    sid = await rig.stimuli.append(stimulus=NewStimulus(
+        unit="u1", kind="time", item="floor", ref=f"floor:{rig.clock.ms}",
+        at_ms=rig.clock.ms, due_ms=rig.clock.ms,
+    ), recorded_at_ms=rig.clock.ms)
+    assert sid is not None
+    return sid
+
+
+def _rollup_items(session) -> list[dict]:
+    return [i for i in session.agenda["items"] if i["kind"] == "rollup"]
+
+
 def _readable(ref: str) -> RollupLine:
     return RollupLine(ref=ref, kind="deviation_silence", names=("Ada",), person_ids=("ada",),
                       start_ms=T, end_ms=T + HOUR * 1000)
@@ -85,11 +100,12 @@ async def test_a_malformed_rollup_is_skipped_recorded_and_consumed_and_a_readabl
     rig = _rig(person_known=_known)
     for ref in (good, bad):
         await rig.stimuli.append(stimulus=_rollup("u1", ref, T), recorded_at_ms=T)
+    await _floor(rig)
     rig.clock.advance(120)
     await rig.tick()
     await rig.settle()
     (_, session, _), = rig.ledger.sessions
-    (item,) = session.agenda["items"]
+    (item,) = _rollup_items(session)
     assert item["stimulus_ids"] == [1]
     assert session.agenda["skipped_stimulus_ids"] == [2]        # recorded, never silent
     assert session.agenda["retained_stimulus_ids"] == []
@@ -110,12 +126,13 @@ async def test_a_readable_rollup_cut_by_max_items_is_deferred_and_carried_not_sk
     for ref, item in (("deviation|silence|ada|1", "deviation_silence"),
                       ("deviation|anomaly|ada|2", "deviation_anomaly")):     # two ITEMS
         await rig.stimuli.append(stimulus=_rollup("u1", ref, T, item), recorded_at_ms=T)
+    await _floor(rig)
     rig.clock.advance(120)
     await rig.tick()
     await rig.settle()
     (_, session, _), = rig.ledger.sessions
-    assert len(session.agenda["items"]) == 1
-    assert session.agenda["deferred_stimulus_ids"] == [2]
+    assert [i["stimulus_ids"] for i in session.agenda["items"]] == [[1]]
+    assert 2 in session.agenda["deferred_stimulus_ids"]
     assert session.agenda["skipped_stimulus_ids"] == []
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total", reason="unreadable_rollup") == 0
     assert (2, 1, "carried", False) in rig.carried()             # returned to the next agenda
@@ -131,11 +148,13 @@ async def test_a_rollup_the_roster_does_not_know_yet_is_retained_and_returns_onc
     KNOWN.discard("ghost")
     rig = _rig(person_known=_known)
     await rig.stimuli.append(stimulus=_rollup("u1", BAD, T), recorded_at_ms=T)
+    await _floor(rig)
     rig.clock.advance(120)
     await rig.tick()
     await rig.settle()
-    assert rig.agent.calls == 0 and rig.ends() == ["closed"]
-    assert rig.carried() == [(1, 0, "carried", True)]
+    (_, first, _), = rig.ledger.sessions
+    assert _rollup_items(first) == [] and rig.ends() == ["closed"]
+    assert (1, 0, "carried", True) in rig.carried()
     assert rig.metrics.get("nora_cognition_stimuli_skipped_total",
                            reason="roster_miss_rollup") == 1
     # ... it is still pending, and it does NOT wake the unit again, however long we wait
@@ -143,7 +162,7 @@ async def test_a_rollup_the_roster_does_not_know_yet_is_retained_and_returns_onc
         rig.clock.advance(6 * HOUR)
         assert await rig.tick() == []
     view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
-    assert [(x.id, x.waits) for x in view.pending] == [(1, True)]
+    assert (1, True) in [(x.id, x.waits) for x in view.pending]
     # The roster learns her; the next wake for any reason shows it as an item.
     KNOWN.add("ghost")
     try:
@@ -176,17 +195,20 @@ async def test_a_roster_miss_rides_a_session_that_runs_and_is_retained_beside_it
     assert rig.ends() == ["closed"]
 
 
-async def test_a_wake_whose_only_rollups_are_unreadable_makes_no_model_call():
+async def test_unreadable_rollups_riding_a_floor_are_skipped_and_the_floor_is_the_only_item():
     rig = _rig(person_known=_known)
     await rig.stimuli.append(stimulus=_rollup("u1", "deviation|silence||1", T),
                              recorded_at_ms=T)
+    await _floor(rig)
     rig.clock.advance(120)
     await rig.tick()
     await rig.settle()
-    assert rig.agent.calls == 0
-    assert rig.ends() == ["closed"] and "unreadable" in rig.detail()
+    (_, session, _), = rig.ledger.sessions
+    assert [i["kind"] for i in session.agenda["items"]] == ["time"]
+    assert session.agenda["skipped_stimulus_ids"] == [1]
+    assert rig.ends() == ["closed"]
     view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
-    assert view.pending == ()                                    # skipped, not wedged
+    assert 1 not in {x.id for x in view.pending}                 # skipped, not wedged
 
 
 # ---- m5: the label, and the id only where a tool needs it ---------------------------------
@@ -245,11 +267,12 @@ async def test_a_closed_wake_records_no_cause_and_a_failed_one_records_its_own()
 
 # ---- D2: what a failing wake struck is what it CLAIMED -----------------------------------
 
-async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left_pending():
-    """A rollup wake that fails its agenda five times strikes the rollup. The
-    unsettled room's message sat INSIDE its id range but was never claimed, so it
-    must not be retracted unseen: the strike reads the failed wake's watermark,
-    unclaimed ids excluded."""
+async def test_striking_a_failing_floor_wake_never_strikes_the_messages_it_left_pending():
+    """A floor wake (carrying the rollup that rode it, DEC-279) that fails its
+    agenda five times strikes what it claimed. The unsettled room's message sat
+    INSIDE its id range but was never claimed, so it must not be retracted
+    unseen: the strike reads the failed wake's watermark, unclaimed ids
+    excluded."""
     from tests.unit.test_cognition_session_lifecycle import agenda_fault
 
     ref = "deviation|silence|ada|1"
@@ -263,10 +286,11 @@ async def test_striking_a_failing_rollup_wake_never_strikes_the_messages_it_left
     message = await rig.say()                       # id 1: the room is live, never settles
     rolled = await rig.stimuli.append(stimulus=_rollup("u1", ref, T), recorded_at_ms=T)
     assert rolled is not None and rolled > message
+    floor = await _floor(rig)
     await _until_calls(rig, 5)
     await rig.settle()
     await _run(rig, ticks=2, chatty=False)          # the tick that reads five agenda failures
-    assert rig.stimuli.retracted == {rolled}        # the rollup it claimed, and nothing else
+    assert rig.stimuli.retracted == {rolled, floor}  # what it claimed, and nothing else
     view = await rig.stimuli.view(unit="u1", mode="live", now_ms=rig.clock.ms, limit=10)
     assert [s.id for s in view.pending] == [message]
 

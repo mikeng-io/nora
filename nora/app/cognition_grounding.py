@@ -53,10 +53,13 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable, Collection, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy, derived_view, visible_sections
+from nora.agent.room import RoomView
+from nora.agent.whereis import Circle, presence_audience
 from nora.domain.blocks import speaker_name
 from nora.domain.cognition_ground import (
     UNNAMED_ROOM,
@@ -66,11 +69,13 @@ from nora.domain.cognition_ground import (
     RecordItem,
     RecordKind,
     RollupLine,
+    StayDeviation,
     parse_rollup_ref,
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.gatherings import Gathering
+from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
@@ -145,6 +150,132 @@ def _rollup_lines(
     return out
 
 
+#: What a `deviation_anomaly` line can say about its stay, read from the presence
+#: store: the stay's place in words, and how it differed from their own past.
+StayContext = tuple[str | None, tuple[StayDeviation, ...]]
+
+
+class StayReader(Protocol):
+    """`nora.infra.sql.mobility.SqlMobilityStore`'s two reads this needs."""
+
+    async def stays_for_subject(self, *, subject_id: str) -> Sequence[Any]: ...
+
+    async def places_for_subject(self, *, subject_id: str) -> Sequence[Any]: ...
+
+
+def stay_context_reader(
+    mobility: StayReader, *, tz_name: str, min_samples: int, z_threshold: float,
+    novelty_radius_m: float,
+) -> Callable[[str, int], Awaitable[StayContext | None]]:
+    """`(subject_id, stay started_ts) -> (place words, deviations)` for the stay a
+    `deviation_anomaly` rollup names, or None when the store holds no such stay.
+    The deviations are recomputed on read (`detect_stay_anomalies`, as the
+    rollup scored them and as `where_been` marks them), with the analytics
+    process's own thresholds, so what the line says is what raised it. Nothing is
+    invented: a stay with no place has no `at`, and a kind with no baseline is not
+    said."""
+
+    async def read(subject_id: str, started_ts: int) -> StayContext | None:
+        stays = list(await mobility.stays_for_subject(subject_id=subject_id))
+        stay = next((s for s in stays if s.started_ts == started_ts), None)
+        if stay is None:
+            return None
+        places = {p.id: p for p in await mobility.places_for_subject(subject_id=subject_id)}
+
+        def words(place_id: int | None) -> str | None:
+            place = places.get(place_id) if place_id is not None else None
+            if place is None:
+                return None
+            return place_words(place.label, place.kind, place.saved_place_id is not None)
+
+        deviations = tuple(
+            StayDeviation(
+                kind=a.kind, observed=a.observed, expected=a.expected,
+                usual_place=words(a.expected_place_id) if a.kind == "unusual_place" else None,
+            )
+            for a in detect_stay_anomalies(
+                stay, history=stays, tz_name=tz_name, min_samples=min_samples,
+                z_threshold=z_threshold, novelty_radius_m=novelty_radius_m,
+            )
+        )
+        return words(stay.place_id), deviations
+
+    return read
+
+
+def place_release(
+    *, rooms_of: Callable[[str], Collection[tuple[str, str, bool]]],
+    room_view: Callable[[str, str], Awaitable[RoomView]], circles: Sequence[Circle],
+) -> Callable[[str, str], Awaitable[bool]]:
+    """`(unit, person_id) -> may a place of theirs be named here`: True only
+    when EVERY room of the unit passes `presence_audience`, the decision
+    `where_been` takes before it names a place (R-35, DEC-279), for a circle
+    the person is in. `rooms_of(unit)` is each room's `(platform,
+    conversation_id, location_trusted)`. A Cognition session reads across its
+    unit and may write into any of its rooms, so one room that may not hear
+    it withholds it from all. FAIL-CLOSED: no room, no circle holding the
+    person, a room that cannot be read, or any error is False."""
+
+    async def may(unit: str, person_id: str) -> bool:
+        try:
+            rooms = list(rooms_of(unit))
+            mine = [c for c in circles if person_id in c.person_ids]
+            if not rooms or not mine:
+                return False
+            for platform, conversation_id, trusted in rooms:
+                view = await room_view(platform, conversation_id)
+                if not any(
+                    presence_audience(view, c, location_trusted=trusted) == "ok" for c in mine
+                ):
+                    return False
+            return True
+        except Exception:
+            log.exception("cognition grounding: could not check who may hear a place")
+            return False
+
+    return may
+
+
+def _withheld(deviations: tuple[StayDeviation, ...]) -> tuple[StayDeviation, ...]:
+    """The deviations with no place in them: what kind of change, never where."""
+    return tuple(replace(d, usual_place=None) for d in deviations)
+
+
+async def _with_stays(
+    unit: str, rollups: dict[str, RollupLine], persons: Any,
+    stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None,
+    release: Callable[[str, str], Awaitable[bool]] | None,
+) -> dict[str, RollupLine]:
+    """Each `deviation_anomaly` line with its stay's place and what is usual for
+    the person (DEC-279). FAIL-SOFT, like `where_been`'s unusual-stay flags: the
+    line without them is still true, so a presence read that fails is logged and
+    the line is shown as before, never made up.
+
+    **A place is named only where `where_been` would name it** (`release`,
+    `place_release`): otherwise the line says how the stay differed and never
+    where, neither the stay's place nor where they usually are. No `release`
+    wired is no place."""
+    if stay_context is None:
+        return rollups
+    out = dict(rollups)
+    for ref, line in rollups.items():
+        if line.kind != "deviation_anomaly" or line.start_ms is None or not line.person_ids:
+            continue
+        subject = persons.subject_id_for(line.person_ids[0])
+        try:
+            found = await stay_context(subject, line.start_ms)
+        except Exception:
+            log.exception("cognition grounding: the stay behind %s could not be read", ref)
+            continue
+        if found is None:
+            continue
+        place, deviations = found
+        if release is None or not await release(unit, subject):
+            place, deviations = None, _withheld(deviations)
+        out[ref] = replace(line, stay_place=place, deviations=deviations)
+    return out
+
+
 async def _own_sends(
     records: RecordRefSource, items: Sequence[AgendaItem], pending: Sequence[Stimulus],
     allowed: set[tuple[str, str]], ai_name: str, *, now_ms: int, lookback_ms: int, limit: int,
@@ -201,6 +332,8 @@ def build_grounder(
     own_send_lookback_seconds: float = 1800.0,
     own_sends_max: int = 6,
     tz: tzinfo = UTC,
+    stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
+    place_release: Callable[[str, str], Awaitable[bool]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -335,7 +468,10 @@ def build_grounder(
                     venue=e.venue_name or e.venue_text or "", status=e.status.value,
                     revision=None if e.head_revision_id is None else str(e.head_revision_id),
                 ))
-        rollups = _rollup_lines(pending, claimed, persons)
+        rollups = await _with_stays(
+            unit, _rollup_lines(pending, claimed, persons), persons, stay_context,
+            place_release,
+        )
         own_sends = await _own_sends(
             records, items, pending, allowed, ai_display_name,
             now_ms=int(clock() * 1000), lookback_ms=int(own_send_lookback_seconds * 1000),

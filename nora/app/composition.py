@@ -59,7 +59,11 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.app.cognition_grounding import build_grounder
+from nora.app.cognition_grounding import (
+    build_grounder,
+    place_release,
+    stay_context_reader,
+)
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
     COGNITION_ADAPTOR_NAME,
@@ -347,7 +351,6 @@ def _build_wake_evaluator(
         policy=WakePolicy(
             quiet_seconds=cfg.cognition.quiet_seconds,
             cue_quiet_seconds=cfg.cognition.cue_quiet_seconds,
-            rollup_delay_seconds=cfg.cognition.rollup_delay_seconds,
             batch_max=cfg.cognition.batch_max,
             max_age_seconds=cfg.cognition.max_age_seconds,
             cooldown_seconds=cfg.cognition.cooldown_seconds,
@@ -3870,6 +3873,31 @@ async def build_dependencies(
                 own_send_lookback_seconds=cfg.cognition.own_send_lookback_seconds,
                 own_sends_max=cfg.cognition.own_sends_max,
                 tz=ZoneInfo(cfg.cognition.timezone),
+                # A deviation line says where the stay was and what is usual
+                # for the person (DEC-279), scored with the analytics process's
+                # own thresholds, as the rollup that raised it was.
+                stay_context=stay_context_reader(
+                    mobility, tz_name=cfg.analytics.tz_name,
+                    min_samples=cfg.analytics.anomaly_min_samples,
+                    z_threshold=cfg.analytics.anomaly_z_threshold,
+                    novelty_radius_m=cfg.analytics.cluster_eps_m,
+                ),
+                # ...but names a place only where `where_been` would (R-35):
+                # every room of the unit, read live, a subset of a circle the
+                # person is in, or location-trusted (DEC-79).
+                place_release=place_release(
+                    rooms_of=lambda unit: [
+                        (conv.platform, conv.primary_id, conv.location)
+                        for conv in allowlist.conversations
+                        if conv.unit == unit and conv.primary_id
+                    ],
+                    room_view=lambda platform, conversation_id: Room(
+                        platform=platform, conversation_id=conversation_id,
+                        roster_source=rosters.get(platform), persons=persons,
+                        self_ids=registry.self_aliases(),
+                    ).members(),
+                    circles=presence_circles,
+                ),
             )
 
             try:

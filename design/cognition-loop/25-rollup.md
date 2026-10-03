@@ -169,8 +169,13 @@ is NULL until then — pending).
 
 ## 4. Stimuli the Rollup raises
 
-A Rollup row is observed state changing, so it can wake cognition
-([20](20-observe.md) §3):
+A Rollup row is observed state changing, so it is put in front of cognition
+([20](20-observe.md) §3). **Since DEC-279 (2026-10-03) it does not wake a
+session by itself**: it rides the next wake for any reason, the daily floors
+included, because six of one unit's nine sessions in a day were a lone
+deviation closed `no_change`. A `deviation_anomaly` is shown with the stay's
+place and what is usual for the person there, read from the presence store
+at grounding time ([30](30-cognition.md) §1):
 
 - **co-location start** — two or more members at one place now.
 - **arrival at an event's place** — a stay starts at a place an open event

@@ -1,10 +1,10 @@
 [
   {
-    "name": "decide: a rollup, time or self wake claims only its own kind",
+    "name": "decide: a time or self wake claims only its own kind (and what rides along)",
     "file": "nora/domain/stimuli.py",
     "old": "    if reason in _OWN_KIND_REASONS:",
     "new": "    if False:",
-    "target": "tests/unit/test_wake_evaluator.py -k test_a_rollup_wake_takes_the_rollup"
+    "target": "tests/unit/test_wake_evaluator.py -k test_a_floor_wake_takes_a_pending_rollup"
   },
   {
     "name": "decide: the messages a narrow wake leaves are listed as unclaimed, so the watermark never passes them",
@@ -25,7 +25,7 @@
     "file": "nora/domain/stimuli.py",
     "old": "            and stimulus.id not in self.unclaimed\n        )",
     "new": "        )",
-    "target": "tests/unit/test_cognition_input.py -k striking_a_failing_rollup_wake"
+    "target": "tests/unit/test_cognition_input.py -k striking_a_failing_floor_wake"
   },
   {
     "name": "SQL view: what the watermark's wake left unclaimed is read back as pending",
@@ -175,13 +175,6 @@
     "target": "tests/unit/test_cognition_input.py -k roster_does_not_know_yet"
   },
   {
-    "name": "runner: a retained rollup is written as a waiting carry when the agenda is empty",
-    "file": "nora/app/cognition_session.py",
-    "old": "                    state=\"carried\", session_id=None, waits=True,",
-    "new": "                    state=\"carried\", session_id=None, waits=False,",
-    "target": "tests/unit/test_cognition_input.py -k roster_does_not_know_yet"
-  },
-  {
     "name": "runner: a retained rollup is written as a waiting carry when the session runs",
     "file": "nora/app/cognition_session.py",
     "old": "                state=\"carried\", session_id=session_id, waits=True,",
@@ -268,8 +261,8 @@
   {
     "name": "trigger: an inert kind is not eligible to wake",
     "file": "nora/domain/stimuli.py",
-    "old": "    eligible = [s for s in view.pending if not s.waits and s.kind not in view.inert_kinds]",
-    "new": "    eligible = [s for s in view.pending if not s.waits]",
+    "old": "        and stimulus.kind not in view.inert_kinds\n",
+    "new": "",
     "target": "tests/unit/test_wake_evaluator.py -k already_pending"
   },
   {

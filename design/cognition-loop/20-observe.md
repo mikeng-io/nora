@@ -12,6 +12,8 @@ edges:
 
 # 20 · Observe
 
+> 2026-10-03 (DEC-279): **a Rollup stimulus no longer wakes a session.** It rides the next wake for any other reason, and every wake, a `time` floor's and a `self` wake's included, claims the pending ones; the daily floors bound the wait. The `rollup` row of the wake table below is withdrawn and `rollup_delay_seconds` is read by nothing. Measured: six of one unit's nine sessions in a day were a lone `deviation_anomaly`, each closed `no_change`.
+>
 > 2026-10-03 (DEC-277): the shadow period is over. The Cognition session writes live (`[cognition] enabled`) and is the one background writer of notes, events, Standing and her reminders. The clocked note/proactive adaptors, the shadow machinery and `[cognition] mode` / `session_mode` / `shadow_session_seconds` named here are deleted; wording below that describes them is the plan as written, not current behaviour. See `70-migration.md`.
 
 
@@ -151,7 +153,7 @@ Cognition session on the **first** trigger that holds:
 |---|---|---|
 | **settled** | at least one stimulus pending, and the unit's rooms quiet for `quiet_seconds` | 1800 s (operator 2026-09-29, was 600 s; matches `[dreamer] quiet_seconds`) |
 | **strong cue** | a pending stimulus carries a strong cue (a date or time, a place change, a keep instruction, an RSVP, an edit of a cited message, a `handoff` from E2), then `cue_quiet_seconds` of quiet | 120 s |
-| **rollup** | a Rollup stimulus (co-location start, a stay starting at a place an open event names, play-together start, deviation) has waited `rollup_delay_seconds` | 60 s |
+| ~~**rollup**~~ | WITHDRAWN 2026-10-03 (DEC-279): a Rollup stimulus (co-location start, a stay starting at a place an open event names, play-together start, deviation) wakes nothing; it rides the next wake, and `batch` and `max age` do not count it either | (was 60 s, `rollup_delay_seconds`) |
 | **batch** | pending stimuli ≥ `batch_max` | 80 |
 | **max age** | the oldest pending stimulus ≥ `max_age_seconds` old | 3600 s |
 | **time** | an anchor passed, a revisit due, an event's date reached, the daily floors (07:00 HK and 00:00 HK) | at the time |
@@ -164,8 +166,10 @@ restart, and a failed session does not advance it.
 
 **A wake claims a set, not a range (D2, operator 2026-09-30; DEC-245).** The
 first four triggers are about the room or the pile, and their wake takes every
-pending stimulus. **rollup, time and self are about one kind of stimulus, and
-their wake claims only stimuli of that kind:** a room's messages stay pending
+pending stimulus. **time and self are about one kind of stimulus, and
+their wake claims only stimuli of that kind** (and, since DEC-279, the pending
+Rollup stimuli, which ride every wake; rollup was the third such row until
+then): a room's messages stay pending
 until they themselves satisfy `settled` or `strong cue`. Before this, a rollup
 wake consumed the conversation of a room that had not yet settled, unseen by
 anything that judges a room. Because a range cannot say «through 40 except 33
@@ -238,13 +242,26 @@ a name this table leaves open:
   committed after a higher one was read is then still pending, not consumed
   unseen.
 - **As built (the cognition-input PR, DEC-245): the input, and the claim.** A
-  `rollup`, `time` or `self` wake claims only its own kind (above). A `time` floor
+  `rollup`, `time` or `self` wake claims only its own kind (above; DEC-279 withdrew the
+  `rollup` wake and makes `time` and `self` claim pending Rollup stimuli too). A `time` floor
   raises NO stimulus, and a `time` stimulus already pending wakes nothing and is
   claimed by nothing, for a unit whose wakes start sessions until the `time` agenda
   kind has a skill (`AgendaSkills.by_kind`): the item was «a time stimulus is due:
   floor» with nothing to act on (M8). A unit that only records would-wakes still
   raises its floors, because sizing them is what shadow is for. A closed or
   cancelled outcome records `cause = none` (migration 0085), never `infra`.
+- **As built (DEC-279, 2026-10-03): a Rollup stimulus rides along.** It is
+  never `eligible` to wake a unit (`nora.domain.stimuli.can_wake`,
+  `RIDES_ALONG`): not by a trigger of its own, not toward `batch`, not toward
+  `max age`, and not on the backlog gauge. Every wake claims the pending ones:
+  `settled`, `strong cue`, `batch` and `max age` took everything already, and
+  `time` and `self` now take their own kind plus these. The daily floors are the
+  bound: in a unit nobody talks in, a Rollup stimulus waits at most until the next
+  floor (17 h with the default 07:00 and 00:00). `[cognition] time_floors = []`
+  removes that bound; that is the operator's to choose. The claim is still a
+  set, and the store contract's random stream now ends on a floor that takes
+  what rode along. Old `cognition_wake` rows keep `reason = 'rollup'` (the CHECK
+  still admits it); no new row carries it.
 - An adapter connected but silent for `PlatformSilent`'s 900 s is recorded
   `stale`, not `up`.
 - `nora_cognition_wake_total` carries `mode` beside `reason`, and
