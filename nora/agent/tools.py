@@ -5444,7 +5444,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         on how to report it.
 
         Args:
-            name: The name or nickname exactly as it appeared in the message.
+            name: The name, nickname or @username exactly as it appeared in
+                the message.
         """
         view = await room.scope()
         if not view.available:
@@ -5454,7 +5455,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't check who is in this group right now, so I can't "
                         "tell you who that is. Say so rather than guessing.",
             }
-        matches = view.find(name)
+        matches = room.find(view, name)
         # `name` is never in the line. It is the one MODEL-SUPPLIED string
         # these tools take, and `_asked_about` exists because a model does put
         # phone numbers in it.

@@ -87,6 +87,13 @@ class Persons:
     # igid names a different account or none, with no error anywhere
     # (design/instagram-adoption/02).
     _instagram_igids: dict[str, frozenset[str]] = field(default_factory=dict)
+    # An Instagram `username` (casefolded, no leading `@`) -> every person_id
+    # whose `[[persons.<id>.instagram]]` block records it, whether or not the
+    # block also names an `fbid`. A room tag on Instagram is `@<username>`,
+    # and a person's name is often nothing like it, so `lookup_person` reads
+    # this to say who a tag means (`instagram_username_owners`). Still never
+    # MATCHED against a sender: a sender is resolved by platform id only.
+    _instagram_usernames: dict[str, frozenset[str]] = field(default_factory=dict)
     # Nora workspace -> the Honcho workspace id it is bound to, from
     # `[workspaces.<name>] honcho_workspace = "..."` (DEC-214). Only the
     # bindings the operator WROTE: resolving an unbound workspace to its own
@@ -181,6 +188,14 @@ class Persons:
         """
         return self._instagram_handles.get(fbid)
 
+    def instagram_username_owners(self, handle: str) -> frozenset[str]:
+        """Every person_id whose Instagram block records `handle` as its
+        `username`, compared casefolded with one leading `@` and surrounding
+        whitespace removed. Empty for a handle nobody recorded, never a
+        `KeyError`. A set, for `instagram_igids`' reason: choosing among
+        several is the caller's question, and the room scopes it."""
+        return self._instagram_usernames.get(instagram_username_key(handle), frozenset())
+
     def instagram_igids(self, person_id: str) -> frozenset[str]:
         """Every Instagram `igid` (the public/social id) recorded for
         `person_id` — never an `fbid`, which `platform_ids` would mix in.
@@ -249,6 +264,13 @@ class Persons:
         ))
 
 
+def instagram_username_key(handle: str) -> str:
+    """The one normalisation an Instagram username is compared under: case
+    folded, surrounding whitespace and ONE leading `@` removed."""
+    text = str(handle).strip()
+    return text.removeprefix("@").strip().casefold()
+
+
 def load_persons(path: Path) -> Persons:
     path = Path(path).expanduser()
     if not path.exists():
@@ -268,6 +290,7 @@ def load_persons(path: Path) -> Persons:
     life360: list[Life360Membership] = []
     instagram_handles: dict[str, str] = {}
     instagram_igids: dict[str, set[str]] = {}
+    instagram_usernames: dict[str, set[str]] = {}
     for person_id, entry in parsed.persons.items():
         # `name` is what Nora calls them out loud. Fall back through the
         # structured parts before the person_id, so a file that gives only
@@ -318,6 +341,9 @@ def load_persons(path: Path) -> Persons:
                     # duplicate-checked index key below, so this needs no
                     # collision check of its own.
                     instagram_handles[str(account["fbid"])] = str(account["username"])
+                if platform == "instagram" and "username" in account:
+                    if key_ := instagram_username_key(str(account["username"])):
+                        instagram_usernames.setdefault(key_, set()).add(person_id)
                 if platform == "instagram" and "igid" in account:
                     # By KIND, read off the block, because the index below
                     # keeps only the value. Uniqueness is the index's own
@@ -393,6 +419,9 @@ def load_persons(path: Path) -> Persons:
         by_person=by_person, index=index, life360=tuple(life360),
         _subject_aliases=subject_aliases, _instagram_handles=instagram_handles,
         _instagram_igids={pid: frozenset(ids) for pid, ids in instagram_igids.items()},
+        _instagram_usernames={
+            handle: frozenset(pids) for handle, pids in instagram_usernames.items()
+        },
         honcho_workspaces={
             name: binding.honcho_workspace
             for name, binding in parsed.workspaces.items()
