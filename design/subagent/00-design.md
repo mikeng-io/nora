@@ -105,20 +105,65 @@ those facts when it starts, the way a cognition session builds tools for its
 item's room (`CognitionSessionRunner._build_tools`), and its computer scope
 is `computer_scope(platform, conversation_id)` (`nora/domain/computer.py:70`),
 so it sees the same workspace as the turn that launched it, including the
-`inbox/` file the turn imported.
+`inbox/` file the turn imported. The room facts reach the backend in
+`launch()` itself: `backend_job_id` is NOT NULL and comes back from `launch`,
+so the row is written after the worker already exists.
 
 **Its tools.** A closed list, checked in code:
 
 - the computer: `computer_run`, `computer_read`, `computer_write`,
-  `computer_edit`, `computer_import`, `computer_export`;
+  `computer_edit`, `computer_import`, and `computer_export` with `to="keep"`
+  only;
 - documents: `document_publish`, `document_read`;
-- read-only lookups: the web read tools and `media_fetch`;
-- `skills` and `load_tools`, so task know-how arrives as skills, the way the
-  document-authoring skill does today.
+- read-only lookups: `web_search`, `web_fetch`, `media_fetch`;
+- `skills` and `load_tools`, so task know-how arrives as skills, the way
+  `nora/skills/document-creation` does today.
 
 Not on it: `send_reply` and every other send path (it has no voice), `remind`,
 note and event writes, memory writes. A later worker that needs a write gets
 it by a row in this document, not by default.
+
+**Neither precedent can build that list.** Review of this design (2026-10-04)
+found the Dreamer and cognition paths stop write tools on purpose:
+
+- `RegistryToolSource.build` keeps only `read_only()` tools
+  (`nora/agent/dreamer.py`, `wanted = frozenset(names) & self.read_only()`),
+  the Dreamer's "may look, may not act" ceiling (`ToolRegistry.read_only_tools`);
+  cognition's `_guarded_read_tools` raises `NotReadOnlyToolError` on anything
+  else. `computer_run` and `computer_write` are not read-only.
+- `document_publish` refuses any call whose actor is not `tag` or whose room
+  has no tagger: `unavailable`, `no_requester` (`nora/agent/tools.py`).
+- `computer_export` to a link or the chat is refused for any actor but `tag`:
+  the containment line of `design/sandbox-runtime/00-design.md` §15.4,
+  decision 6 ("an effect outside the VM waits for a person who asked in THIS
+  turn").
+- `create_dream_agent` takes no `skills_dir` by design (`nora/agent/factory.py`),
+  and `read_only_tools()` excludes the tool loader.
+
+So the worker needs its own tool source: `build_tool_specs` called with a
+`Room` whose tagger is the recorded requester, and a new actor, `subagent`,
+added to `ACTORS` and to the `ck_computer_events_actor` check (a migration);
+its computer calls use `path="subagent"`, already reserved in
+`nora/domain/computer_events.py`. `create_dream_agent` gains an optional
+skills directory, or the worker uses its own factory call.
+
+**The ruling this needs (operator, at the step-2 DEC).** That a person's
+launch of a job counts as "asked" for `document_publish`'s requester check,
+for the job's lifetime. Proposed: yes for documents, which reach the room
+only through Nora's delivery message (§6, gap 5); no for `computer_export` to
+a link or the chat, which stays `tag`-only, so decision 6's line holds for
+files.
+
+**The computer lease, as the code already decides it.** A background actor
+never waits for the room's lease and never opens a computer session; it only
+continues one a live turn opened, and a held lease answers it `busy` at once
+(`_computer_lease`, `_computer_session` in `nora/agent/tools.py`). Since the
+worker has no per-tool ceiling, `busy` retries would spend its turns. The
+`subagent` actor therefore gets one of two behaviours, chosen at step 2: wait
+for the lease with a bound, as a live turn does; or run under its own lease
+key in a job folder (`projects/<job id>/`) so a tag turn in the room never
+blocks it. Proposed: its own key and folder, with the launching turn's
+`inbox/` files copied in at launch.
 
 **Its doctrine.** One short new file, `subagent.md` (not yet written), of the
 kind `nora/dreamer/doctrine/dreamer.md` is, plus
@@ -166,7 +211,7 @@ The tag turn is unchanged: it keeps its per-tool allowances and `[llm.limits]`.
 
 The port, store, poller, fire-path delivery and boot recovery all exist
 (`nora/domain/ports.py` `ComputeBackend`, `nora/domain/compute.py`,
-`nora/app/compute_poller.py`, `nora/app/fire.py` `compute_occasion`). Four
+`nora/app/compute_poller.py`, `nora/app/fire.py` `compute_occasion`). Nine
 gaps, all confirmed in code:
 
 1. **One backend.** Composition holds a single `compute_backend`, the poller
@@ -183,7 +228,27 @@ gaps, all confirmed in code:
    summary and one link. Both become kind-neutral: what was asked, what came
    back, what did not finish.
 4. **`launch` has no options.** `launch(task, artifact_id, context)` gains a
-   typed per-kind payload (objective, inputs, document ids).
+   typed per-kind payload (objective, inputs, document ids) and the room
+   facts (§4).
+5. **R-100 would strip the links.** The delivery is a fire turn with
+   documents wired, so the link carrier is armed, and a document link it was
+   not handed in that turn is removed (`nora/agent/links.py`). The ids in
+   `ComputeBody` alone would arrive as text with their links stripped.
+   Delivery seeds the carrier (`mint_document`) from code's read-back of each
+   `document_id` before the fire turn composes.
+6. **States.** `ck_compute_jobs_state` allows `pending`, `firing`, `done`,
+   `failed` only (`nora/infra/sql/schema.py`). `cancelled` is a new state;
+   `lost` and each limit stop are failure reasons in a new column, not
+   states.
+7. **No cancel.** `ComputeBackend` has `launch` and `poll` only;
+   `subagent_cancel` needs `cancel(job_id)`.
+8. **No progress source.** `poll` returns status, url, summary and error, so
+   `subagent_read`'s rounds used and last tool have nowhere to come from. The
+   in-process backend keeps them in memory per running job (a hook counts
+   rounds and records the last tool name); reading Langfuse at runtime is not
+   a dependency Nora takes.
+9. **No link to the launching turn.** The row gains `tag_id` for §8's trace
+   link.
 
 **A restart loses a running job.** `recover()` already fails every pending
 row at boot and the room is told (`lost_job_occasion`). That stays: resuming
@@ -235,24 +300,33 @@ writes the message herself through `FirePath.speak`.
 
 ## 10. Open questions
 
-- **Two writers in one workspace.** A room holds one open computer session
-  (`uq_computer_sessions_open_scope`); the worker's calls continue it while
-  the room's tag turns may also use the computer. Accept, or give the worker
-  its own folder under the scope.
+- **The two rulings in §4**: launch counts as "asked" for documents; the
+  worker's own lease key and folder.
+- **The browser worker.** `design/sandbox-runtime/00-design.md` §14 plans
+  `computer_browse` as a Strands sub-agent and reserves `path="subagent"` for
+  it. Proposed: it is a kind of this worker (synchronous, inside a tag turn,
+  browser tools only) sharing the runner, guard and actor, so the two do not
+  drift.
 - **Model.** Nora's alias or a cheaper one; measured on the §8 case.
 - **How many at once.** One running sub-agent per room, or more.
 - **Who may launch.** Any member who can tag her, or a policy row.
 
 ## 11. Build order
 
-1. Outbox: `kind` column, `JobResult` report and `document_id`s,
-   kind-neutral `ComputeHeader`/`ComputeBody`, poller resolves by kind.
-2. Worker: runner, tool surface, doctrine, `[dreamer.budgets.subagent]` with
-   its two load-time checks, in-process `ComputeBackend` adapter.
+1. Outbox: `kind`, `tag_id`, failure reason and the `cancelled` state;
+   `JobResult` report and `document_id`s; kind-neutral
+   `ComputeHeader`/`ComputeBody`; delivery seeds the link carrier; poller
+   resolves by kind.
+2. Worker: the `subagent` actor and its migration, its tool source, runner,
+   doctrine, `[dreamer.budgets.subagent]` with its two load-time checks,
+   in-process `ComputeBackend` adapter with `cancel`.
 3. Tools: `subagent_create`, `subagent_list`, `subagent_read`,
    `subagent_cancel`, through `nora-tool` (ADR 0015), with the routing
    measurement.
 4. The §1 eval case, then live.
 
 Each step lands with a DEC row (`nora-decision`); step 1's names the
-supersession of issue #22.
+supersession of issue #22. Step 2's amends DEC-247, whose text keeps every
+other adaptor's guards unchanged and whose
+`test_every_other_adaptor_keeps_its_per_tool_ceiling` enforces it, and
+records the §4 rulings.
