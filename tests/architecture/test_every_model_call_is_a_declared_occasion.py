@@ -136,6 +136,9 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     "nora/engagement/stages/debrief.py": (
         ("nora/engagement/debrief_render.py",), "imports",
     ),
+    # The sub-agent worker's run (design/subagent step 2): its prompt is the brief, built by
+    # ONE formatter that walks the declared `subagent_*` blocks through `ContextBlock`.
+    "nora/app/subagent_runner.py": (("nora/language/subagent_render.py",), "imports"),
 }
 
 

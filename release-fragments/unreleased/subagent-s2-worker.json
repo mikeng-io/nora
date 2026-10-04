@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Internal sub-agent worker (design/subagent step 2): built behind [subagent] enabled = false and started by no model-facing tool yet, so no user sees it.", "details": [], "limitations": []}

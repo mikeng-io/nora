@@ -444,6 +444,10 @@ class App:
         # already cancelled by `run`; `CognitionShutdown` is idempotent.
         if self.deps.cognition_shutdown is not None:
             await self.deps.cognition_shutdown()
+        # Sub-agent jobs in flight: cancelled before the client and the database close. Their
+        # rows are failed by the next boot's recovery and the room is told.
+        if self.deps.subagent_backend is not None:
+            await self.deps.subagent_backend.shutdown()
         if self._health_runner is not None:
             await self._health_runner.cleanup()
         await self.deps.client.close()

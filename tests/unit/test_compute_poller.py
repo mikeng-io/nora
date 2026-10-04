@@ -444,3 +444,19 @@ async def test_delivery_keeps_the_report_and_document_ids_on_the_row(fake_slots,
 
     row = await store.get(job.id)
     assert (row.result_report, row.result_document_ids) == ("made it", ("d1",))
+
+
+async def test_delivery_writes_the_workers_trace_id_on_the_row(fake_slots, fake_metrics):
+    """A finished job links to every call its worker made (design/subagent §4b)."""
+    store = FakeComputeJobStore()
+    job = _pending_job()
+    await store.create(job)
+    backend = FakeComputeBackend()
+    backend.set_result(job_id="job_1", result=JobResult(
+        JobStatus.SUCCEEDED, report="made it", trace_id="t-1",
+    ))
+    poller = _poller(store, {"subagent": backend}, fake_slots, fake_metrics, [])
+
+    await poller.tick()
+
+    assert (await store.get(job.id)).trace_id == "t-1"

@@ -97,6 +97,10 @@ _NOT_A_TRANSCRIPT = {
     # `render_elements` the transcripts use. `note_render.py`'s own reason one
     # index over: it renders no message (design/context-assembly/04 §5 step 3b).
     "nora/language/event_render.py": "renders the event index, not a transcript",
+    # THE SUB-AGENT'S BRIEF, not a transcript: its objective, inputs and documents and each
+    # decision (question, answer, who made it) as elements through `render_elements`. The worker
+    # starts with no conversation at all (design/subagent §4a).
+    "nora/language/subagent_render.py": "renders a brief, never a transcript",
 }
 
 #: The operator's surfaces: a Discord review channel, not a prompt. Exempt from

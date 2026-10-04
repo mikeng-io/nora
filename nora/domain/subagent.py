@@ -1,0 +1,102 @@
+"""The sub-agent's typed brief and the facts code adds to it (design/subagent §4a).
+
+The worker starts blank: no transcript, no peer card, no room block. What it needs is in the
+brief, interpreted ONCE by Nora when she launched it, and the worker never re-reads the chat.
+Two kinds of field, kept apart because the model reading them must be able to tell them
+apart:
+
+- `SubagentBrief`: what NORA wrote. The objective, what was settled with the room (each
+  decision with who made it), the workspace paths to work from, the documents to revise and
+  what done looks like. It is the launch payload (`LaunchRequest.payload`), JSON-shaped through
+  `as_payload`, and is what `compute_jobs.payload` keeps in full.
+- `SubagentLaunch`: what CODE adds and the model never chooses: the job, the room, the
+  requester, the launching turn, the time and the timezone.
+
+Rendered by one formatter (`nora.language.subagent_render`).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from typing import Any
+
+from nora.domain.stimuli import LIMIT_STOP_REASONS
+
+#: The kind a sub-agent job's row carries (`compute_jobs.kind`); the poller resolves the
+#: backend by it.
+SUBAGENT_KIND = "subagent"
+
+#: Where a job works, in the room's computer workspace (relative to it).
+JOB_FOLDER_ROOT = "projects"
+
+
+#: Why a job ended `failed` (`compute_jobs.failure_reason`): the loop's own bounds, the wall
+#: clock, and the worker's own failures. `lost` (a restart) is the poller's, written by boot
+#: recovery, not by the worker.
+FAILURE_REASONS: tuple[str, ...] = (
+    *LIMIT_STOP_REASONS, "limit_max_tokens", "timeout", "no_report", "tools", "bad_inputs",
+    "inputs_unavailable", "error",
+)
+
+#: What `nora_subagent_jobs_total{outcome}` counts: a job that finished, was cancelled, or
+#: failed for one of `FAILURE_REASONS`. Derived, so the metric's vocabulary cannot drift.
+SUBAGENT_OUTCOMES: tuple[str, ...] = ("done", "cancelled", *FAILURE_REASONS)
+
+
+def job_folder(job_id: str) -> str:
+    return f"{JOB_FOLDER_ROOT}/{job_id}"
+
+
+@dataclass(frozen=True)
+class Decision:
+    """One thing settled before the launch. `by` says who decided: a person's name, or
+    `nora` for an assumption she made without asking, so the worker can tell "the operator
+    decided" from "Nora assumed"."""
+
+    question: str
+    answer: str
+    by: str
+
+
+@dataclass(frozen=True)
+class SubagentBrief:
+    objective: str
+    decisions: tuple[Decision, ...] = ()
+    inputs: tuple[str, ...] = ()
+    document_ids: tuple[str, ...] = ()
+    deliverable: str = ""
+
+    def as_payload(self) -> dict[str, Any]:
+        """The brief as JSON-shaped data, for `compute_jobs.payload`."""
+        return asdict(self)
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> SubagentBrief:
+        return cls(
+            objective=str(payload.get("objective", "")),
+            decisions=tuple(
+                Decision(str(d.get("question", "")), str(d.get("answer", "")), str(d.get("by", "")))
+                for d in payload.get("decisions") or ()
+            ),
+            inputs=tuple(str(p) for p in payload.get("inputs") or ()),
+            document_ids=tuple(str(i) for i in payload.get("document_ids") or ()),
+            deliverable=str(payload.get("deliverable", "")),
+        )
+
+
+@dataclass(frozen=True)
+class SubagentLaunch:
+    """What code adds to a brief. Never a model argument."""
+
+    job_id: str
+    platform: str
+    conversation_id: str
+    conversation_type: str
+    requester_person_id: str
+    requester_name: str
+    tag_id: str | None
+    launched_at: datetime
+    tz: str
+    folder: str = field(default="")

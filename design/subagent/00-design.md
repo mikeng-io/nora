@@ -358,6 +358,7 @@ writes the message herself through `FirePath.speak`.
   browser tools only) sharing the runner, guard and actor, so the two do not
   drift.
 - **Model.** Nora's alias or a cheaper one; measured on the §8 case.
+- **One workspace.** The worker and a tag turn in the same room share the room's workspace; only the job folder `projects/<id>/` separates them, by convention, not by enforcement.
 - **How many at once.** One running sub-agent per room, or more.
 - **Who may launch.** Any member who can tag her, or a policy row.
 
@@ -380,3 +381,18 @@ supersession of issue #22. Step 2's amends DEC-247, whose text keeps every
 other adaptor's guards unchanged and whose
 `test_every_other_adaptor_keeps_its_per_tool_ceiling` enforces it, and
 records the §4 rulings.
+
+**Step 2 as built (DEC-282).** Off by default (`[subagent] enabled = false`). Three places
+differ from the text above, none of them a reversal:
+
+- the job folder `projects/<id>/` is named by the backend's job id (the row does not exist
+  until `launch` returns), and it is a convention the brief states plus the worker's own lease
+  key, not a rewrite of every path argument: `computer_import` writes to `inbox/`, which a
+  rewritten `computer_read` could not then find;
+- the trace id travels on `JobResult.trace_id` and `mark` writes it to `compute_jobs.trace_id`
+  when the job is delivered; while running it is held in memory beside the rounds and last tool
+  (`SubagentBackend.status`);
+- the worker's model runs at `[subagent] reasoning_effort = "low"` (operator, 2026-10-04), on
+  the Dreamer's model with `ReasoningStripWatch` wired;
+- enabling the sub-agent requires `[compute] enabled` and `[dreamer] enabled` at load rather
+  than implying the poller.

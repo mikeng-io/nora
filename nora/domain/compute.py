@@ -164,6 +164,7 @@ class ComputeJobStore(Protocol):
         result_summary: str | None = None, error: str | None = None,
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
+        trace_id: str | None = None,
     ) -> bool:
         """Terminal write for a row already claimed. True if it changed."""
         ...

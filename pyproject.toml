@@ -76,6 +76,9 @@ nora = [
     # without the Dreamer's instructions and every adaptor fails at startup.
     "dreamer/doctrine/*.md",
     "dreamer/objectives/*.md",
+    # `nora/subagent/` is data too (no `__init__.py`): the sub-agent worker's doctrine,
+    # baked into the image and read by `nora.app.subagent_runner` at startup.
+    "subagent/doctrine/*.md",
     # The generated schema, prompt fragment and corpus beside `nora/documents/check.py`.
     # Without them a WHEEL would import the checker and answer `error` to every
     # document, because `document.schema.json` is read from beside the module.
@@ -281,7 +284,7 @@ forbidden_modules = [
     "nora.doctrine", "nora.domain", "nora.dreamer", "nora.engagement", "nora.infra",
     "nora.ingest", "nora.instructions", "nora.language", "nora.obs", "nora.persons",
     "nora.persons_file", "nora.platform",
-    "nora.policy", "nora.presence", "nora.skills", "nora.subject", "nora.tag",
+    "nora.policy", "nora.presence", "nora.skills", "nora.subagent", "nora.subject", "nora.tag",
     "nora.testing", "nora.web",
 ]
 allow_indirect_imports = "True"

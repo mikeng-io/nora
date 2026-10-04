@@ -455,13 +455,13 @@ CONSTRAINT ck_cognition_wake_outcome_cause CHECK ((cause = ANY (ARRAY['infra'::t
 CONSTRAINT ck_cognition_wake_outcome_outcome CHECK ((outcome = ANY (ARRAY['closed'::text, 'failed'::text, 'timeout'::text, 'cancelled'::text])))
 CONSTRAINT ck_cognition_wake_reason CHECK ((reason = ANY (ARRAY['settled'::text, 'strong_cue'::text, 'rollup'::text, 'batch'::text, 'max_age'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_compute_jobs_state CHECK ((state = ANY (ARRAY['pending'::text, 'firing'::text, 'done'::text, 'failed'::text, 'cancelled'::text])))
-CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_events_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'subagent'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
 CONSTRAINT ck_computer_events_path CHECK ((path = ANY (ARRAY['direct'::text, 'subagent'::text]))),
 CONSTRAINT ck_computer_events_phase CHECK ((phase = ANY (ARRAY['finished'::text, 'started'::text]))),
 CONSTRAINT ck_computer_events_phase_times CHECK ((((phase = 'started'::text) AND (finished_at IS NULL)) OR ((phase = 'finished'::text) AND (finished_at IS NOT NULL) AND (finished_at >= started_at))))
 CONSTRAINT ck_computer_exports_destination CHECK ((destination = ANY (ARRAY['chat'::text, 'keep'::text, 'link'::text]))),
 CONSTRAINT ck_computer_exports_target CHECK ((((destination = 'link'::text) AND (artifact_id IS NOT NULL) AND (url IS NOT NULL)) OR ((destination <> 'link'::text) AND (artifact_id IS NULL) AND (NOT revised) AND (blob_key IS NOT NULL))))
-CONSTRAINT ck_computer_sessions_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
+CONSTRAINT ck_computer_sessions_actor CHECK (((actor = ANY (ARRAY['cognition'::text, 'fire'::text, 'operator'::text, 'subagent'::text, 'sweeper'::text, 'tag'::text])) OR (starts_with(actor, 'dreamer:'::text) AND (length(actor) > 8)))),
 CONSTRAINT ck_computer_sessions_expired_reason CHECK (((expired_reason IS NULL) OR (expired_reason = ANY (ARRAY['idle'::text, 'jobs_ended'::text, 'running_past_limit'::text])))),
 CONSTRAINT ck_computer_sessions_expiry CHECK ((((status = 'open'::text) AND (expired_at IS NULL) AND (expired_reason IS NULL)) OR ((status = 'expired'::text) AND (expired_at IS NOT NULL) AND (expired_reason IS NOT NULL)))),
 CONSTRAINT ck_computer_sessions_status CHECK ((status = ANY (ARRAY['expired'::text, 'open'::text])))

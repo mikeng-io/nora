@@ -1907,8 +1907,9 @@ def test_documents_public_url_refuses_anything_that_is_not_an_origin(bad) -> Non
 
 def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     """`budget_for` falls back SILENTLY for an unknown key, so an adaptor with no
-    block runs on numbers nobody chose. The template declares two: culture and
-    the Cognition session (DEC-247: rounds, tokens and time, no call ceiling)."""
+    block runs on numbers nobody chose. The template declares three: culture, the
+    Cognition session and the sub-agent worker (DEC-247 and its amendment: rounds, tokens
+    and time, no call ceiling)."""
     from nora.config import (
         COGNITION_OUTPUT_TOKENS,
         COGNITION_TIMEOUT_SECONDS,
@@ -1917,7 +1918,7 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     )
 
     budgets = load(toml_path).dreamer.budgets
-    assert set(budgets) == {"culture", "cognition"}
+    assert set(budgets) == {"culture", "cognition", "subagent"}
     culture = budgets["culture"]
     assert (culture.turns, culture.total_tokens) == (10, 120_000)
     assert (culture.output_tokens, culture.max_memory_calls) == (6_000, 12)
@@ -1925,6 +1926,11 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     cognition = budgets["cognition"]
     assert (cognition.turns, cognition.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
     assert (cognition.output_tokens, cognition.timeout_seconds) == (
+        COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
+    )
+    subagent = budgets["subagent"]
+    assert (subagent.turns, subagent.total_tokens) == (COGNITION_TURNS, COGNITION_TOTAL_TOKENS)
+    assert (subagent.output_tokens, subagent.timeout_seconds) == (
         COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
     )
 
@@ -1947,3 +1953,76 @@ def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
     cfg = load(toml_path)
     assert cfg.dreamer.max_unit_hold_seconds is None
     assert cfg.dreamer_max_unit_hold_seconds() > cfg._dream_unit_hold_known_minimum()
+
+
+# --------------------------------------------------------- [subagent] (design/subagent §5)
+def _subagent_on(text: str) -> str:
+    """`[subagent] enabled = true` with the Dreamer and the compute poller on."""
+    import re as _re
+
+    head, sep, tail = text.partition("\n[subagent]\n")
+    assert sep, "the template has no [subagent] section"
+    tail, n = _re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
+    assert n == 1, "the [subagent] section states no `enabled = false`"
+    text = _set_dreamer_enabled(head + sep + tail)
+    head, sep, tail = text.partition("\n[compute]\n")
+    assert sep, "the template has no [compute] section"
+    tail, n = _re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
+    assert n == 1
+    return head + sep + tail
+
+
+def test_the_subagent_ships_off_and_the_example_carries_its_block(toml_path):
+    config = load(toml_path)
+    assert config.subagent.enabled is False
+    block = config.dreamer.budgets["subagent"]
+    assert (block.turns, block.total_tokens, block.output_tokens, block.timeout_seconds) == (
+        200, 10_240_000, 120_000, 3600.0)
+
+
+def test_subagent_on_with_the_dreamer_and_the_poller_loads(toml_path):
+    toml_path.write_text(_subagent_on(toml_path.read_text()))
+    assert load(toml_path).subagent.enabled is True
+
+
+@pytest.mark.parametrize("key", ["max_memory_calls = 6\n", "max_tool_calls = 60\n", None])
+def test_a_subagent_block_that_sets_a_call_ceiling_refuses_to_load(toml_path, key):
+    """DEC-247, amended: the keys are refused, not ignored (an ignored ceiling is one the
+    operator believes binds), exactly as for cognition."""
+    text = toml_path.read_text()
+    marker = "[dreamer.budgets.subagent]\n"
+    assert marker in text
+    if key is None:                       # the per-tool table
+        toml_path.write_text(text + "\n[dreamer.budgets.subagent.tool_calls]\nabout = 4\n")
+    else:
+        toml_path.write_text(text.replace(marker, marker + key, 1))
+    with pytest.raises(ConfigError, match="no call ceiling of any kind"):
+        load(toml_path)
+
+
+def test_subagent_on_refuses_to_load_without_its_budget_block(toml_path):
+    import re as _re
+
+    text = _subagent_on(toml_path.read_text())
+    load(_write(toml_path, text))                              # with the block: loads
+    stripped, n = _re.subn(
+        r"(?ms)^\[dreamer\.budgets\.subagent\]\n.*?(?:\n\n|\Z)", "", text, count=1,
+    )
+    assert n == 1
+    toml_path.write_text(stripped)
+    with pytest.raises(ConfigError, match=r"needs an explicit \[dreamer\.budgets\.subagent\]"):
+        load(toml_path)
+
+
+@pytest.mark.parametrize("section", ["[compute]", "[dreamer]"])
+def test_subagent_on_refuses_to_load_without_the_poller_or_the_dreamer(toml_path, section):
+    import re as _re
+
+    text = _subagent_on(toml_path.read_text())
+    head, sep, tail = text.partition(f"\n{section}\n")
+    assert sep
+    tail, n = _re.subn(r"(?m)^enabled = true$", "enabled = false", tail, count=1)
+    assert n == 1
+    toml_path.write_text(head + sep + tail)
+    with pytest.raises(ConfigError, match=r"\[subagent\] enabled = true needs"):
+        load(toml_path)
