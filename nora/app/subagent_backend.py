@@ -20,12 +20,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from nora.agent.subagent_progress import SubagentProgress
 from nora.app.subagent_runner import REASON_TEXT, SubagentOutcome, SubagentRunner
+from nora.domain.checkpoint import Checkpoint
+from nora.domain.compute import ComputeJobStore
 from nora.domain.ports import JobResult, JobStatus, LaunchRequest
 from nora.obs.metrics import Metrics
 
@@ -59,13 +62,19 @@ class SubagentStatus:
     rounds: int
     last_tool: str | None
     trace_id: str | None
+    # The worker's last checkpoint and what code recorded (design/subagent §4d), from memory:
+    # fresher than the row, which a failed or not-yet-possible write can lag.
+    checkpoint: Checkpoint | None = None
+    document_ids: tuple[str, ...] = ()
+    kept_files: tuple[str, ...] = ()
 
 
 class SubagentBackend:
     def __init__(
         self, *, runner: SubagentRunner, metrics: Metrics, clock: Callable[[], datetime],
-        requester_name: Callable[[str], str],
+        requester_name: Callable[[str], str], jobs: ComputeJobStore | None = None,
     ) -> None:
+        self._store = jobs
         self._runner = runner
         self._metrics = metrics
         self._clock = clock
@@ -74,10 +83,22 @@ class SubagentBackend:
 
     async def launch(self, *, request: LaunchRequest) -> str:
         self._prune()
-        job = _Job(id=uuid.uuid4().hex, request=request, started_at=self._clock())
+        job_id = uuid.uuid4().hex
+        job = _Job(
+            id=job_id, request=request, started_at=self._clock(),
+            progress=SubagentProgress(
+                persist=lambda payload, at: self._persist(job_id, payload, at),
+            ),
+        )
         self._jobs[job.id] = job
         job.task = asyncio.create_task(self._work(job), name=f"subagent-{job.id}")
         return job.id
+
+    async def _persist(self, backend_job_id: str, payload: Mapping[str, Any], at: datetime) -> None:
+        """Write a job's checkpoint to its row. The row is written after `launch` returns, so
+        an update that comes first finds none (False) and stays in memory until the next."""
+        if self._store is not None:
+            await self._store.set_checkpoint(backend_job_id, payload, at)
 
     async def _work(self, job: _Job) -> None:
         try:
@@ -137,11 +158,12 @@ class SubagentBackend:
             return JobResult(
                 status=JobStatus.FAILED, error=out.error or REASON_TEXT["error"],
                 failure_reason=out.failure_reason, document_ids=out.document_ids,
-                trace_id=job.progress.trace_id,
+                trace_id=job.progress.trace_id, checkpoint=job.progress.checkpoint_payload(),
             )
         return JobResult(
             status=JobStatus.SUCCEEDED, summary=out.report, report=out.report,
             document_ids=out.document_ids, trace_id=job.progress.trace_id,
+            checkpoint=job.progress.checkpoint_payload(),
         )
 
     async def cancel(self, *, job_id: str) -> None:
@@ -160,6 +182,8 @@ class SubagentBackend:
             job_id=job.id, running=job.outcome is None and not job.cancelled,
             started_at=job.started_at, rounds=job.progress.rounds,
             last_tool=job.progress.last_tool, trace_id=job.progress.trace_id,
+            checkpoint=job.progress.checkpoint, document_ids=job.progress.document_ids,
+            kept_files=job.progress.kept_files,
         )
 
     async def shutdown(self) -> None:

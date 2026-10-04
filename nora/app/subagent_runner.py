@@ -52,6 +52,7 @@ from nora.domain.subagent import (
     SubagentBrief,
     SubagentLaunch,
     job_folder,
+    job_title,
     workspace_path,
 )
 from nora.domain.turn_deadline import turn_deadline
@@ -164,8 +165,10 @@ class SubagentRunner:
             "conversation_type": request.conversation_type,
             "requester_person_id": request.requester_person_id,
         }
+        progress.title = job_title({"title": brief.title}, brief.objective)
+        progress.clock = self._clock
         try:
-            tools = self._tools.build(job_id=job_id, **room)
+            tools = self._tools.build(job_id=job_id, checkpoint_sink=progress, **room)
         except SubagentToolsError:
             log.exception("sub-agent %s: its tools could not be built", job_id)
             return SubagentOutcome(failure_reason="tools")

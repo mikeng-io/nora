@@ -36,6 +36,7 @@ def _row_to_job(r: Row[Any]) -> ComputeJob:
             kind=r.kind, tag_id=r.tag_id, failure_reason=r.failure_reason,
             payload=r.payload, result_report=r.result_report,
             result_document_ids=tuple(r.result_document_ids or ()), trace_id=r.trace_id,
+            checkpoint=r.checkpoint, checkpoint_at=r.checkpoint_at,
         )
     )
 
@@ -62,6 +63,8 @@ class SqlComputeJobStore:
                 list(row.result_document_ids) if row.result_document_ids else None
             ),
             trace_id=row.trace_id,
+            checkpoint=None if row.checkpoint is None else dict(row.checkpoint),
+            checkpoint_at=row.checkpoint_at,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
@@ -101,6 +104,24 @@ class SqlComputeJobStore:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_job(r) for r in rows]
+
+    async def set_checkpoint(self, backend_job_id: str, checkpoint: Any, at: Any) -> bool:
+        # ponytail: matched by `backend_job_id` with no index; the table holds a handful of
+        # rows a day and only pending ones are touched.
+        stmt = (
+            sa.update(COMPUTE_JOBS)
+            .where(
+                COMPUTE_JOBS.c.backend_job_id == backend_job_id,
+                COMPUTE_JOBS.c.state == ComputeJobState.PENDING.value,
+            )
+            .values(
+                checkpoint=dict(checkpoint),
+                checkpoint_at=ensure_utc_job(at, field="checkpoint_at"),
+            )
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return bool(result.rowcount)
 
     async def claim(self, job_id: UUID) -> bool:
         stmt = (

@@ -280,3 +280,56 @@ async def test_room_jobs_returns_only_that_rooms_rows_of_that_kind_newest_first(
         platform="signal", conversation_id="conv-1", kind="subagent", limit=1,
     )
     assert [j.id for j in capped] == [newer.id]
+
+
+# -- the sub-agent's checkpoint (design/subagent §4d) ---------------------------------------
+
+
+async def test_a_new_row_has_no_checkpoint(store):
+    job = _job()
+    await store.create(job)
+    fetched = await store.get(job.id)
+    assert (fetched.checkpoint, fetched.checkpoint_at) == (None, None)
+
+
+async def test_set_checkpoint_writes_a_pending_row_and_replaces_the_whole_value(store):
+    job = _job(backend_job_id="bj-1")
+    await store.create(job)
+    first = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    second = datetime(2026, 10, 5, 12, 5, tzinfo=UTC)
+    assert await store.set_checkpoint(
+        "bj-1", {"done": ["a"], "doing": ["b"], "next": [], "decisions": ["x"],
+                 "kept_files": ["out.txt"]}, first,
+    )
+    assert await store.set_checkpoint(
+        "bj-1", {"done": ["a", "b"], "doing": [], "next": ["c"], "decisions": [],
+                 "kept_files": []}, second,
+    )
+    fetched = await store.get(job.id)
+    assert fetched.checkpoint == {
+        "done": ["a", "b"], "doing": [], "next": ["c"], "decisions": [], "kept_files": [],
+    }
+    assert fetched.checkpoint_at == second
+
+
+async def test_set_checkpoint_finds_no_row_for_an_unknown_or_claimed_job(store):
+    job = _job(backend_job_id="bj-2")
+    await store.create(job)
+    at = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    assert not await store.set_checkpoint("nope", {"done": []}, at)
+    assert await store.claim(job.id)
+    assert not await store.set_checkpoint("bj-2", {"done": ["late"]}, at)
+    assert (await store.get(job.id)).checkpoint is None
+
+
+async def test_a_checkpoint_given_at_create_round_trips_and_naive_times_are_refused(store):
+    at = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    job = _job(checkpoint={"done": ["a"], "kept_files": []}, checkpoint_at=at)
+    await store.create(job)
+    fetched = await store.get(job.id)
+    assert fetched.checkpoint == {"done": ["a"], "kept_files": []}
+    assert fetched.checkpoint_at == at
+    other = _job(backend_job_id="bj-3")
+    await store.create(other)
+    with pytest.raises(NaiveComputeJobDatetimeError):
+        await store.set_checkpoint("bj-3", {"done": []}, datetime(2026, 10, 5, 12, 0))

@@ -1826,6 +1826,9 @@ class JobResult:
     # The worker's trace, when it has one: written to the row so a finished job links to
     # every model and tool call it made (design/subagent §4b).
     trace_id: str | None = None
+    # The worker's checkpoint as `nora.domain.checkpoint.row_payload` shapes it (its lists, and
+    # the files code saw it keep), so a delivery can say where a job that stopped had got to.
+    checkpoint: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "A background job keeps its place: the worker records what is done, in hand and next, so a long job no longer loses its thread, and Nora can see it while the job runs.",
+  "details": [
+    "The worker saves a short checkpoint (done, doing, next, decisions) at each step, and its history is now a sliding window that is re-anchored on that checkpoint and on what code recorded as made.",
+    "Nora's sub-agent block shows a running job's doing and next, and reading a job shows the whole checkpoint; what was made always comes from code, never from the worker's own list.",
+    "A job that stops early is delivered with where it had got to, and a finished job's report now ends with Done, Not done and Decisions."
+  ],
+  "limitations": [
+    "A job that is running when this ships has no checkpoint and carries on as before.",
+    "A restart still ends a running job as lost; the checkpoint is not used to resume it."
+  ]
+}

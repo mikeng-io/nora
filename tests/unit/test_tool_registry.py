@@ -13,6 +13,7 @@ from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
+from nora.agent.surface import WORKER_ONLY_TOOLS
 from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS, SUBAGENT_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
@@ -329,6 +330,8 @@ def test_budgets_match_todays_table():
         # design/subagent §3: one job started (a second call repairs a refused brief), one
         # room's few jobs listed, one job read, one stopped.
         "subagent_create": 2, "subagent_list": 1, "subagent_read": 2, "subagent_cancel": 1,
+        # design/subagent §4d: the worker's own place-keeper; it has no per-tool ceiling in use.
+        "checkpoint_update": 1,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -543,12 +546,13 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # wired — but that budget is not a built tool here.
     # And `load_tools` is declared but not handed over: `build()` never
     # defers, and the loader ships only when something is on the shelf.
-    # (this build is the Dreamer path, which the four tag-only `subagent_*` tools never reach)
+    # (this build is the Dreamer path, which the four tag-only `subagent_*` tools and the
+    # worker-only `checkpoint_update` never reach)
     assert set(agent.tool_names) == (
-        set(ToolRegistry().tool_names()) - {LOADER_TOOL, *SUBAGENT_TOOLS}
+        set(ToolRegistry().tool_names()) - {LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS}
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
-        "skills", LOADER_TOOL, *SUBAGENT_TOOLS,
+        "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS,
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -820,6 +824,8 @@ ACT_VERBS = frozenset({
     # design/subagent §3: starting a worker and ending one are acts (a worker runs, a row is
     # written); the list and the read are reads.
     "subagent_create", "subagent_cancel",
+    # design/subagent §4d: the worker's checkpoint replaces a row's value, an act.
+    "checkpoint_update",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.

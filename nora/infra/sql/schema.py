@@ -1240,6 +1240,10 @@ COMPUTE_JOBS = sa.Table(
     sa.Column("result_report", sa.Text, nullable=True),
     sa.Column("result_document_ids", pg.JSONB, nullable=True),
     sa.Column("trace_id", sa.Text, nullable=True),
+    # A sub-agent job's checkpoint (design/subagent §4d): the worker's four lists plus, written
+    # by code, `kept_files`; NULL for every row from before it and for a job that wrote none.
+    sa.Column("checkpoint", pg.JSONB, nullable=True),
+    sa.Column("checkpoint_at", sa.DateTime(timezone=True), nullable=True),
     sa.CheckConstraint(
         "state IN ('pending', 'firing', 'done', 'failed', 'cancelled')",
         name="ck_compute_jobs_state",

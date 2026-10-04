@@ -96,6 +96,10 @@ class ComputeJob:
     result_document_ids: tuple[str, ...] = ()
     # The worker's Langfuse trace id, written by the backend when known.
     trace_id: str | None = None
+    # The sub-agent's checkpoint as last written (`nora.domain.checkpoint.row_payload`) and
+    # when; `None` for a row from before checkpoints or a job that wrote none.
+    checkpoint: Mapping[str, Any] | None = None
+    checkpoint_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +131,10 @@ def normalise_compute_job(job: ComputeJob) -> ComputeJob:
             None if job.completed_at is None
             else ensure_utc_job(job.completed_at, field="completed_at")
         ),
+        checkpoint_at=(
+            None if job.checkpoint_at is None
+            else ensure_utc_job(job.checkpoint_at, field="checkpoint_at")
+        ),
     )
 
 
@@ -157,6 +165,15 @@ class ComputeJobStore(Protocol):
         """The newest `limit` rows of one `kind` launched in ONE room, newest first, any
         state. The room is the whole filter: a caller never sees another room's row
         (`subagent_list` and `subagent_read` are the readers)."""
+        ...
+
+    async def set_checkpoint(
+        self, backend_job_id: str, checkpoint: Mapping[str, Any], at: datetime,
+    ) -> bool:
+        """Replace the checkpoint of the still-`PENDING` row a backend job belongs to (a
+        worker knows its backend id, never the row's: the row is written after `launch`
+        returns). False when there is no such row yet or it is no longer pending: the
+        caller still holds the checkpoint in memory and writes again at its next update."""
         ...
 
     async def claim(self, job_id: UUID) -> bool:

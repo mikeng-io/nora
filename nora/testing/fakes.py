@@ -1672,6 +1672,18 @@ class FakeComputeJobStore:
         rows.sort(key=lambda j: (j.created_at, str(j.id)), reverse=True)
         return rows[:limit]
 
+    async def set_checkpoint(self, backend_job_id: str, checkpoint: Any, at: Any) -> bool:
+        stamp = ensure_utc_job(at, field="checkpoint_at")
+        for job_id, job in self._jobs.items():
+            if job.backend_job_id == backend_job_id and job.state is ComputeJobState.PENDING:
+                self._jobs[job_id] = replace(
+                    job, checkpoint={k: list(v) if isinstance(v, (list, tuple)) else v
+                                     for k, v in checkpoint.items()},
+                    checkpoint_at=stamp,
+                )
+                return True
+        return False
+
     async def claim(self, job_id: UUID) -> bool:
         job = self._jobs.get(job_id)
         if job is None or job.state is not ComputeJobState.PENDING:

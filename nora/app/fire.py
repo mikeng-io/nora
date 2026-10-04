@@ -377,6 +377,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
 
 def compute_occasion(
     job: ComputeJob, result: JobResult, readback: DocumentReadBack | None = None,
+    *, checkpoint: str = "", kept_files: tuple[str, ...] = (),
 ) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
     — the THIRD `Event`, reusing `FirePath.speak` exactly as
@@ -393,6 +394,10 @@ def compute_occasion(
     (R-100). `None` means nobody read them back, so every id is reported missing: a link the
     turn was not handed would be stripped anyway, and an unverified document is not saved.
     The read-back URLs ride on the `Event` so the fire turn can seed its link carrier.
+
+    `checkpoint` is where a job that stopped had got to, already rendered to plain markdown by
+    the one checkpoint renderer (design/subagent §4d); `kept_files` are the files code saw the
+    worker keep. Neither is the worker's report, and neither is read from it.
     """
     if readback is None:
         readback = DocumentReadBack(missing=tuple(result.document_ids))
@@ -401,7 +406,9 @@ def compute_occasion(
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=ComputeBody(written_title(job.payload) or job.task, result, readback).render(),
+        body=ComputeBody(
+            written_title(job.payload) or job.task, result, readback, checkpoint, kept_files,
+        ).render(),
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
         document_urls=tuple(d.url for d in readback.found if d.url),

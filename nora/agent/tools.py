@@ -71,6 +71,7 @@ from nora.agent.security import _names_a_person, scan_identifiers
 from nora.agent.security import looks_like_coordinate as _looks_like_coordinate
 from nora.agent.security import screen_and_resolve_place as _screen_and_resolve_place
 
+from ..domain.checkpoint import Checkpoint, parse_lists
 from ..domain.cognition_session import COGNITION_ADAPTOR
 from ..domain.computer import (
     ComputerToolSettings,
@@ -262,6 +263,7 @@ from .rollup_read import parse_interval, render_row, visible_rows
 from .room import Room, RoomView, _key, _names_of, find_by_name
 from .standing_read import render_standing
 from .subagent_desk import JobView, SubagentDesk
+from .subagent_progress import SubagentProgress
 from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
 from .whereis import (
     STALE_AFTER_MS,
@@ -1652,6 +1654,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                   side_effect_state="confirmed", idempotency="idempotent",
                                   retry="safe",
                                   output_contract="three_state", level=1),
+    # The sub-agent WORKER's own tool (design/subagent §4d, ADR 0015): it keeps its place in a
+    # long job. Held by the worker only (`WORKER_ONLY_TOOLS`, `ToolScope`); no tag turn, fire
+    # turn, Dreamer pass or cognition session is ever offered it, and the registry names no
+    # budget the worker is held to (it has no per-tool ceiling). Not `read_only`: it replaces
+    # the job's checkpoint. `confirmed`: the answer is the in-memory replace; the row write
+    # follows and a failed one is logged, never a refusal. `idempotent`: the same lists twice
+    # leave the same checkpoint. Level 2: what it holds, that it replaces, and the caps.
+    "checkpoint_update": NativeTool(1, read_only=False,
+                                    side_effect_state="confirmed", idempotency="idempotent",
+                                    retry="safe",
+                                    output_contract="three_state", level=2),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -4431,6 +4444,9 @@ def build_tool_specs(
     # blocks the worker. It changes nothing else: WHICH tools the worker holds is the
     # grant `nora.agent.subagent_tools` passes to `ToolRegistry.surface`.
     subagent_job: str = "",
+    # The running worker's progress record (design/subagent §4d): where `checkpoint_update`
+    # writes. `None` for every occasion that is not a worker, where the tool is not offered.
+    checkpoint_sink: SubagentProgress | None = None,
     reminders: ReminderStore | None = None,
     reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
@@ -14549,6 +14565,8 @@ Args:
             ]
         if view.failure:
             out["failure"] = view.failure
+        if view.checkpoint:
+            out["checkpoint"] = view.checkpoint
         return out
 
     async def subagent_create(
@@ -14672,7 +14690,8 @@ Args:
 
     subagent_read_notes = {
         "running": "It is still running. Say so, with its age if asked; do not guess when "
-                   "it will finish.",
+                   "it will finish. A `checkpoint` is the worker's own unchecked account of "
+                   "where it is; only its Outputs are recorded by code.",
         "finishing": "It has ended and its result is on its way to the room as a message. "
                      "Say it is about to arrive.",
         "done": "It finished. Say only what its `report` says. The room already got the "
@@ -14746,6 +14765,42 @@ Args:
         _record(metrics, tool, "ok")
         return {"status": "ok", "id": view.id, "state": view.state,
                 "note": "It is cancelled and will not report. Say so."}
+
+    async def checkpoint_update(
+        done: list[str], doing: list[str], next: list[str], decisions: list[str],
+    ) -> dict:
+        """Save where you are in the job. Call this when you finish a step or change
+        course, so you keep your place.
+
+        It replaces your whole checkpoint, so send everything that is still true:
+        what is `done`, what you are `doing`, what is `next`, and what you `decided`.
+        Keep each list short and each item one line. Code, not this list, records what
+        you made, so never rely on it to say a file or document exists.
+
+        `status` is one of:
+        - `ok`: saved.
+        - `bad_arguments`: nothing was saved; the note says what to fix.
+        - `unavailable`: nothing was saved.
+
+        Args:
+            done: Steps finished, one line each.
+            doing: What you are working on now.
+            next: What you will do after.
+            decisions: Choices you made where the brief left it open.
+        """
+        tool = "checkpoint_update"
+        if checkpoint_sink is None or not subagent_job:
+            _record(metrics, tool, "unavailable", reason="not_a_worker")
+            return {"status": "unavailable",
+                    "note": "There is no checkpoint to keep here. Carry on without it."}
+        lists, problem = parse_lists(done=done, doing=doing, next=next, decisions=decisions)
+        if problem:
+            _record(metrics, tool, "bad_arguments", reason="lists")
+            return {"status": "bad_arguments",
+                    "note": f"Nothing was saved: {problem}. Call again with it fixed."}
+        await checkpoint_sink.update_checkpoint(Checkpoint(at=now_fn(), **lists))
+        _record(metrics, tool, "ok")
+        return {"status": "ok", "note": "Saved. Carry on with the step you are on."}
 
     async def load_tools(names: list[str], tool_context: Any) -> dict:
         """Load catalogue tools by name so you can call them. Call this before
@@ -14846,6 +14901,7 @@ Args:
         _spec("subagent_list", subagent_list),
         _spec("subagent_read", subagent_read),
         _spec("subagent_cancel", subagent_cancel),
+        _spec("checkpoint_update", checkpoint_update),
         _spec("load_tools", load_tools),
     ), metrics=metrics)
 

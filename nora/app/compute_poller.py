@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from nora.app.fire import SENT, compute_occasion
+from nora.domain.checkpoint import read_row
 from nora.domain.compute import (
     ComputeJob,
     ComputeJobState,
@@ -24,7 +25,9 @@ from nora.domain.compute import (
 )
 from nora.domain.events import Event
 from nora.domain.ports import ComputeBackend, JobStatus
+from nora.domain.subagent import job_title
 from nora.engagement.slots import ConversationSlots, Key
+from nora.language.checkpoint_render import render_checkpoint
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.compute_poller")
@@ -112,6 +115,19 @@ class ComputeJobPoller:
                 missing.append(raw)
         return DocumentReadBack(tuple(found), tuple(missing))
 
+    def _occasion(self, job: ComputeJob, result: Any, readback: Any) -> Event:
+        """The delivery's occasion. A job that STOPPED also carries where it had got to, from
+        the one checkpoint renderer; a job that finished does not (its report has the same
+        sections). The files it kept are code's, from the result, whatever the outcome."""
+        stored, kept = read_row(result.checkpoint, None)
+        text = ""
+        if result.status is not JobStatus.SUCCEEDED and stored is not None:
+            text = render_checkpoint(
+                stored, None, title=job_title(job.payload, job.task), now=self._clock(),
+                mode="delivery",
+            )
+        return compute_occasion(job, result, readback, checkpoint=text, kept_files=kept)
+
     async def _maybe_deliver(self, job: ComputeJob) -> None:
         backend = self._backends.get(job.kind)
         if backend is None:
@@ -139,7 +155,7 @@ class ComputeJobPoller:
                 await self._read_back(job, result.document_ids)
                 if self._documents is not None else None
             )
-            outcome = await self._speak(compute_occasion(job, result, readback))
+            outcome = await self._speak(self._occasion(job, result, readback))
             # `SENT`, never the literal `"sent"`: the string decides the ROW's
             # terminal state, so a typo would record a delivery that never
             # happened — the reason `nora.app.fire` owns these four names

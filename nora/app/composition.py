@@ -2876,6 +2876,7 @@ async def build_dependencies(
             reasoning_effort=str(_reasoning_effort(
                 cfg.subagent.reasoning_effort, source="[subagent] reasoning_effort",
             )),
+            jobs=compute_jobs,
         )
         compute_backends[SUBAGENT_KIND] = subagent_backend
         if subagent_desk is not None:
