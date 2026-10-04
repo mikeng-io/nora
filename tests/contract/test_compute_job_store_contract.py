@@ -333,3 +333,20 @@ async def test_a_checkpoint_given_at_create_round_trips_and_naive_times_are_refu
     await store.create(other)
     with pytest.raises(NaiveComputeJobDatetimeError):
         await store.set_checkpoint("bj-3", {"done": []}, datetime(2026, 10, 5, 12, 0))
+
+
+async def test_mark_writes_the_final_checkpoint_after_the_row_is_no_longer_pending(store):
+    job = _job(backend_job_id="bj-9")
+    await store.create(job)
+    at = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    await store.claim(job.id)
+    await store.mark(
+        job.id, ComputeJobState.DONE, completed_at=at,
+        checkpoint={"done": ["a"], "kept_files": []}, checkpoint_at=at,
+    )
+    fetched = await store.get(job.id)
+    assert fetched.checkpoint == {"done": ["a"], "kept_files": []}
+    assert fetched.checkpoint_at == at
+    # a mark without one leaves what is there
+    await store.mark(job.id, ComputeJobState.DONE, error="x")
+    assert (await store.get(job.id)).checkpoint == {"done": ["a"], "kept_files": []}

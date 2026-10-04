@@ -117,6 +117,10 @@ class SubagentProgress(HookProvider):
         """The row's `checkpoint` value: the worker's lists, and the kept files from code."""
         return row_payload(self.checkpoint, self.kept_files)
 
+    def stamp(self) -> datetime:
+        """When the row's checkpoint was last written: the worker's own, else now."""
+        return (self.checkpoint.at if self.checkpoint is not None else None) or self.clock()
+
     async def update_checkpoint(self, checkpoint: Checkpoint) -> None:
         """Replace the checkpoint (the whole of it) and write it to the row. A failed write
         is logged and left: the checkpoint is held here, and the next update writes again."""
@@ -128,8 +132,7 @@ class SubagentProgress(HookProvider):
         if self._persist is None:
             return
         try:
-            at = (self.checkpoint.at if self.checkpoint is not None else None) or self.clock()
-            await self._persist(self.checkpoint_payload(), at)
+            await self._persist(self.checkpoint_payload(), self.stamp())
         except Exception:
             log.exception("could not persist the sub-agent checkpoint")
 
@@ -163,8 +166,8 @@ class SubagentProgress(HookProvider):
             b for b in content
             if not (isinstance(b, dict) and str(b.get("text", "")).startswith(ANCHOR_MARK))
         ]
-        if text:
-            content.append({"text": ANCHOR_LEAD + text})
+        # the lead is written even with nothing recorded: the worker must know it was trimmed
+        content.append({"text": ANCHOR_LEAD + text if text else ANCHOR_LEAD.rstrip("\n")})
         self._anchored = (removed, self._version)
 
     def _before_tool(self, event: Any) -> None:

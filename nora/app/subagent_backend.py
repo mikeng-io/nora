@@ -97,8 +97,13 @@ class SubagentBackend:
     async def _persist(self, backend_job_id: str, payload: Mapping[str, Any], at: datetime) -> None:
         """Write a job's checkpoint to its row. The row is written after `launch` returns, so
         an update that comes first finds none (False) and stays in memory until the next."""
-        if self._store is not None:
-            await self._store.set_checkpoint(backend_job_id, payload, at)
+        if self._store is not None and not await self._store.set_checkpoint(
+            backend_job_id, payload, at,
+        ):
+            # no pending row yet (the row is written after launch) or it has moved on: the
+            # checkpoint stays in memory and the terminal `mark` writes the final one
+            log.info("sub-agent %s: checkpoint not written, no pending row", backend_job_id)
+            self._metrics.inc("nora_subagent_checkpoint_unwritten_total")
 
     async def _work(self, job: _Job) -> None:
         try:
@@ -159,11 +164,13 @@ class SubagentBackend:
                 status=JobStatus.FAILED, error=out.error or REASON_TEXT["error"],
                 failure_reason=out.failure_reason, document_ids=out.document_ids,
                 trace_id=job.progress.trace_id, checkpoint=job.progress.checkpoint_payload(),
+                checkpoint_at=job.progress.stamp(),
             )
         return JobResult(
             status=JobStatus.SUCCEEDED, summary=out.report, report=out.report,
             document_ids=out.document_ids, trace_id=job.progress.trace_id,
             checkpoint=job.progress.checkpoint_payload(),
+            checkpoint_at=job.progress.stamp(),
         )
 
     async def cancel(self, *, job_id: str) -> None:

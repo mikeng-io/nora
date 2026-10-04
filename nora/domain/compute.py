@@ -190,8 +190,11 @@ class ComputeJobStore(Protocol):
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
         trace_id: str | None = None,
+        checkpoint: Mapping[str, Any] | None = None, checkpoint_at: datetime | None = None,
     ) -> bool:
-        """Terminal write for a row already claimed. True if it changed."""
+        """Terminal write for a row already claimed. True if it changed. `checkpoint` is the
+        worker's final one, from the result in memory: the row may hold an older one (an update
+        that came before the row existed, or a failed write)."""
         ...
 
     async def sweep_firing(self, *, now: datetime) -> list[ComputeJob]:

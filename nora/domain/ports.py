@@ -202,6 +202,7 @@ from __future__ import annotations
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -1829,6 +1830,7 @@ class JobResult:
     # The worker's checkpoint as `nora.domain.checkpoint.row_payload` shapes it (its lists, and
     # the files code saw it keep), so a delivery can say where a job that stopped had got to.
     checkpoint: Mapping[str, Any] | None = None
+    checkpoint_at: datetime | None = None
 
 
 @dataclass(frozen=True)

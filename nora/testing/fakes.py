@@ -1698,6 +1698,7 @@ class FakeComputeJobStore:
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
         trace_id: str | None = None,
+        checkpoint: Any = None, checkpoint_at: Any = None,
     ) -> bool:
         job = self._jobs.get(job_id)
         if job is None:
@@ -1721,6 +1722,15 @@ class FakeComputeJobStore:
                 else job.result_document_ids
             ),
             trace_id=trace_id if trace_id is not None else job.trace_id,
+            checkpoint=(
+                {k: list(v) if isinstance(v, (list, tuple)) else v
+                 for k, v in checkpoint.items()}
+                if checkpoint is not None else job.checkpoint
+            ),
+            checkpoint_at=(
+                ensure_utc_job(checkpoint_at, field="checkpoint_at")
+                if checkpoint is not None and checkpoint_at is not None else job.checkpoint_at
+            ),
         )
         return True
 

@@ -169,6 +169,7 @@ class ComputeJobPoller:
                 result_report=result.report,
                 result_document_ids=result.document_ids or None,
                 trace_id=result.trace_id,
+                checkpoint=result.checkpoint, checkpoint_at=result.checkpoint_at,
             )
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=outcome)
         finally:

@@ -528,3 +528,69 @@ def test_the_constants_the_doctrine_leans_on_are_the_ones_the_tool_enforces():
     assert factory.SUBAGENT_WINDOW_MESSAGES == 40
     with pytest.raises(TypeError):
         Checkpoint(kept_files=())            # the worker's value has no field for code's files
+
+
+# -- review fixes: the terminal write, the pinned message on the wire, the lead ----------------
+
+
+async def test_a_checkpoint_written_before_the_row_exists_is_on_the_row_after_delivery(tmp_path):
+    rig = _Rig(tmp_path)
+    store = FakeComputeJobStore()
+    backend = SubagentBackend(
+        runner=rig.runner(_Script([("tool", "checkpoint_update", LISTS), ("text", "Done.")])),
+        metrics=rig.metrics, clock=lambda: NOW, requester_name=lambda _p: "Miles", jobs=store,
+    )
+    job = await backend.launch(request=_request())
+    # let the worker run to the end BEFORE the row is written: its only update finds no row
+    await backend._jobs[job].task
+    row = _row(uuid4(), job)
+    await store.create(row)
+    assert (await store.get(row.id)).checkpoint is None
+    assert rig.metrics.get("nora_subagent_checkpoint_unwritten_total") == 1
+    from nora.engagement.slots import ConversationSlots
+
+    async def speak(_event):
+        return "sent"
+
+    poller = ComputeJobPoller(
+        store=store, backends={SUBAGENT_KIND: backend}, speak=speak,
+        slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=rig.metrics,
+        tick_seconds=1.0, clock=lambda: NOW,
+    )
+    await poller.tick()
+    done = await store.get(row.id)
+    assert done.state is ComputeJobState.DONE
+    assert done.checkpoint["doing"] == ["publishing sheet 3"] and done.checkpoint_at is not None
+
+
+def test_the_pinned_and_anchored_first_message_reaches_the_api_with_only_api_fields():
+    from nora.agent.subagent_progress import ANCHOR_LEAD
+
+    model = factory.create_model_provider(
+        model="m", max_tokens=100, temperature=0.0,
+        client=factory.create_client(base_url="http://localhost:1/v1", api_key="k"),
+    )
+    messages = [{"role": "user", "content": [{"text": "brief"}, {"text": ANCHOR_LEAD + "x"}],
+                 "metadata": {"custom": {"pinned": True}}},
+                {"role": "assistant", "content": [{"text": "ok"}],
+                 "metadata": {"usage": {"inputTokens": 1, "outputTokens": 1}}}]
+    sent = model.format_request_messages(messages, "system")
+    assert {k for m in sent for k in m} <= {"role", "content", "tool_calls", "tool_call_id"}
+    assert "pinned" not in json.dumps(sent) and "metadata" not in json.dumps(sent)
+
+
+async def test_the_lead_is_written_after_a_trim_even_with_nothing_recorded(tmp_path):
+    rig = _Rig(tmp_path)
+    steps = [("tool", "computer_run", {"command": "true"}) for _ in range(30)] + [("text", "ok")]
+    model = _Recording(steps)
+    backend = rig.backend(model, turns=80)
+    await _until_done(backend, await backend.launch(request=_request()))
+    texts = _first_texts(model.seen[-1])
+    assert any(t.startswith(ANCHOR_MARK) for t in texts)
+
+
+def test_a_refused_list_note_carries_no_numbers():
+    _, problem = parse_lists(done=["x"] * 9, doing=[], next=[], decisions=[])
+    assert not any(ch.isdigit() for ch in problem)
+    _, problem = parse_lists(done=["x" * 999], doing=[], next=[], decisions=[])
+    assert not any(ch.isdigit() for ch in problem)

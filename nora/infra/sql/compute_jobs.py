@@ -143,6 +143,7 @@ class SqlComputeJobStore:
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
         trace_id: str | None = None,
+        checkpoint: Any = None, checkpoint_at: Any = None,
     ) -> bool:
         values: dict[str, Any] = {"state": state.value}
         if completed_at is not None:
@@ -161,6 +162,10 @@ class SqlComputeJobStore:
             values["result_document_ids"] = list(result_document_ids)
         if trace_id is not None:
             values["trace_id"] = trace_id
+        if checkpoint is not None:
+            values["checkpoint"] = dict(checkpoint)
+            if checkpoint_at is not None:
+                values["checkpoint_at"] = ensure_utc_job(checkpoint_at, field="checkpoint_at")
         stmt = sa.update(COMPUTE_JOBS).where(COMPUTE_JOBS.c.id == job_id).values(**values)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)

@@ -86,13 +86,10 @@ def parse_lists(**raw: object) -> tuple[dict[str, tuple[str, ...]], str]:
             return {}, f"`{name}` must be a list of strings"
         items = tuple(one for one in (" ".join(i.split()) for i in value) if one)
         if len(items) > MAX_ITEMS:
-            return {}, f"`{name}` has {len(items)} items; keep it to {MAX_ITEMS} or fewer"
+            return {}, f"`{name}` has too many items; shorten the list"
         for item in items:
             if len(item) > MAX_ITEM_CHARS:
-                return {}, (
-                    f"an item in `{name}` is {len(item)} characters; "
-                    f"keep each to {MAX_ITEM_CHARS} or fewer"
-                )
+                return {}, f"an item in `{name}` is too long; shorten it"
         out[name] = items
     return out, ""
 
