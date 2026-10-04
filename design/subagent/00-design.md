@@ -388,7 +388,10 @@ differ from the text above, none of them a reversal:
   until `launch` returns), and it is a convention the brief states plus the worker's own lease
   key, not a rewrite of every path argument: `computer_import` writes to `inbox/`, which a
   rewritten `computer_read` could not then find;
-- `compute_jobs.trace_id` is not written: `JobResult` and `mark` carry none, so the trace id is
-  held in memory beside the rounds and last tool (`SubagentBackend.status`);
+- the trace id travels on `JobResult.trace_id` and `mark` writes it to `compute_jobs.trace_id`
+  when the job is delivered; while running it is held in memory beside the rounds and last tool
+  (`SubagentBackend.status`);
+- the worker's model runs at `[subagent] reasoning_effort = "low"` (operator, 2026-10-04), on
+  the Dreamer's model with `ReasoningStripWatch` wired;
 - enabling the sub-agent requires `[compute] enabled` and `[dreamer] enabled` at load rather
   than implying the poller.

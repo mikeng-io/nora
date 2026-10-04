@@ -152,6 +152,7 @@ class ComputeJobPoller:
                 error=result.error, failure_reason=result.failure_reason,
                 result_report=result.report,
                 result_document_ids=result.document_ids or None,
+                trace_id=result.trace_id,
             )
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=outcome)
         finally:

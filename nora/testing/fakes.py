@@ -1675,6 +1675,7 @@ class FakeComputeJobStore:
         result_summary: str | None = None, error: str | None = None,
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
+        trace_id: str | None = None,
     ) -> bool:
         job = self._jobs.get(job_id)
         if job is None:
@@ -1697,6 +1698,7 @@ class FakeComputeJobStore:
                 tuple(result_document_ids) if result_document_ids
                 else job.result_document_ids
             ),
+            trace_id=trace_id if trace_id is not None else job.trace_id,
         )
         return True
 

@@ -108,7 +108,7 @@ class SubagentBackend:
         if job.cancelled:
             return JobResult(
                 status=JobStatus.FAILED, error="it was cancelled", failure_reason="cancelled",
-                document_ids=job.progress.document_ids,
+                document_ids=job.progress.document_ids, trace_id=job.progress.trace_id,
             )
         out = job.outcome
         if out is None:
@@ -117,10 +117,11 @@ class SubagentBackend:
             return JobResult(
                 status=JobStatus.FAILED, error=out.error or REASON_TEXT["error"],
                 failure_reason=out.failure_reason, document_ids=out.document_ids,
+                trace_id=job.progress.trace_id,
             )
         return JobResult(
             status=JobStatus.SUCCEEDED, summary=out.report, report=out.report,
-            document_ids=out.document_ids,
+            document_ids=out.document_ids, trace_id=job.progress.trace_id,
         )
 
     async def cancel(self, *, job_id: str) -> None:

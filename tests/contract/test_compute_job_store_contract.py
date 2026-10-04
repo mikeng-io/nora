@@ -253,3 +253,11 @@ async def test_a_trace_id_given_at_create_round_trips(store):
     job = _job(trace_id="trace-abc")
     await store.create(job)
     assert (await store.get(job.id)).trace_id == "trace-abc"
+
+
+async def test_mark_writes_the_workers_trace_id(store):
+    job = _job()
+    await store.create(job)
+    await store.claim(job.id)
+    await store.mark(job.id, ComputeJobState.DONE, trace_id="abc123")
+    assert (await store.get(job.id)).trace_id == "abc123"
