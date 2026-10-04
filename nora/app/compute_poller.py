@@ -66,7 +66,9 @@ class ComputeJobPoller:
     ) -> None:
         self._store = store
         # kind -> the backend that owns rows of that kind. A row whose kind has no entry is
-        # left alone (logged once): another deployment's or a later build's worker may own it.
+        # left alone while the process runs (logged once), never failed or delivered. Boot
+        # recovery (`recover`) still fails every pending row whatever its kind: every worker
+        # today is in-process, so no row outlives the process that launched it.
         self._backends = dict(backends)
         self._documents = documents
         self._unowned: set[UUID] = set()
