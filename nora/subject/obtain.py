@@ -15,6 +15,7 @@ it.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import uuid
@@ -38,6 +39,7 @@ from .memory_workspace import (
     refuse_unless_draw_workspace,
     shared_eval_workspace,
 )
+from .recording_subagent import recording_subagent_worker
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -633,7 +635,13 @@ async def obtain(spec: SubjectSpec) -> Subject:
     cfg = _with(cfg, "store.database_url_env", var)
     os.environ[var] = spec.database_url
     try:
-        deps = await build_dependencies(cfg, clock=clock)
+        # Under `[subagent] enabled` the worker is a recorder: the tools are
+        # present, nothing runs (`recording_subagent`).
+        with (
+            recording_subagent_worker() if cfg.subagent.enabled
+            else contextlib.nullcontext()
+        ):
+            deps = await build_dependencies(cfg, clock=clock)
     finally:
         os.environ.pop(var, None)
     # The variable is GONE, so the config must not go on naming it: anything

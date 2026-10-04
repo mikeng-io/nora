@@ -89,11 +89,27 @@ FORCE_OFF: tuple[str, ...] = (
     "obs.tracing.enabled", "obs.errors.enabled",
     "analytics.enabled", "heartbeat.enabled", "presence.enabled",
     "media.rustfs.enabled", "evals.langfuse.enabled",
-    # The deferred-delivery poller is a background loop with no adapter behind
-    # it (S3b retired the only one); an eval has nothing to deliver, and off
-    # spares it the "enabled but no backend" boot warning.
+    # The deferred-delivery poller. Off by default: with no backend registered
+    # it is a loop with nothing behind it, and off spares the "enabled but no
+    # backend" boot warning. NOT forced off when the deployment runs the
+    # sub-agent (`forced_off`): `[subagent] enabled` REFUSES to load without
+    # `[compute] enabled`, so forcing it off made every such subject unloadable.
     "compute.enabled",
 )
+
+#: What `[subagent] enabled` needs ON to load (`nora/config.py`
+#: `_subagent_needs_the_dreamer_and_the_poller`); a key here leaves `FORCE_OFF`
+#: when the deployment runs the sub-agent. The eval subject then registers a
+#: recorder as the worker (`nora/subject/recording_subagent.py`), so the poller
+#: has nothing to deliver and no worker model call is made.
+SUBAGENT_PRECONDITIONS: tuple[str, ...] = ("compute.enabled",)
+
+
+def forced_off(values: dict[str, object]) -> tuple[str, ...]:
+    """`FORCE_OFF`, less what the deployment's sub-agent needs left alone."""
+    if values.get("subagent.enabled") is True:
+        return tuple(k for k in FORCE_OFF if k not in SUBAGENT_PRECONDITIONS)
+    return FORCE_OFF
 
 _KEY = re.compile(r"^(\s*)([A-Za-z_][\w-]*)(\s*=\s*)(.*)$")
 
@@ -122,7 +138,7 @@ def adopted(deployment_toml: str) -> dict[str, object]:
         k: v for k, v in values.items()
         if not any(k.startswith(prefix) for prefix in SKIP_PREFIX)
     }
-    taken.update(dict.fromkeys(FORCE_OFF, False))
+    taken.update(dict.fromkeys(forced_off(values), False))
     return taken
 
 
@@ -219,8 +235,10 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
     "media.rustfs.enabled": "its endpoint resolves only inside the deploy network",
     "evals.langfuse.enabled": "as above, and a run would write its own traces back",
     "compute.enabled":
-        "no compute backend adapter ships (S3b), so the poller has nothing to "
-        "poll; an eval has nothing to deliver",
+        "off unless the deployment runs the sub-agent: with no backend the "
+        "poller has nothing to poll. Under `[subagent] enabled` it is kept (the "
+        "config will not load without it) and the worker is a recorder, so the "
+        "poller still delivers nothing",
 }
 
 
