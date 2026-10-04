@@ -29,12 +29,23 @@ from uuid import UUID, uuid4
 
 from nora.domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from nora.domain.ports import LaunchRequest
-from nora.domain.subagent import SUBAGENT_KIND, SubagentBrief, workspace_path
+from nora.domain.subagent import (
+    SUBAGENT_KIND,
+    TITLE_CHARS,
+    SubagentBrief,
+    job_title,
+    workspace_path,
+)
 
 log = logging.getLogger("nora.agent.subagent_desk")
 
 #: How many of a room's jobs `subagent_list` shows.
 LIST_LIMIT = 10
+
+#: What `subagent_list` shows of a job's description (its objective) and its report; a read
+#: shows them whole (the report to `REPORT_CHARS`).
+LIST_DESCRIPTION_CHARS = 120
+LIST_REPORT_CHARS = 200
 
 #: The report a read returns is the worker's own prose; cut so one read cannot flood a turn.
 REPORT_CHARS = 6000
@@ -88,7 +99,9 @@ class JobView:
 
     id: str
     state: str
-    objective: str
+    title: str
+    #: The job's objective, as Nora wrote it: cut in a list, whole in a read.
+    description: str
     age_seconds: int
     rounds: int | None = None
     last_tool: str | None = None
@@ -132,7 +145,8 @@ class SubagentDesk:
         if worker is None:
             return CreateOutcome("unavailable", reason="not_wired")
         clean = SubagentBrief(
-            objective=brief.objective.strip(), decisions=brief.decisions,
+            objective=brief.objective.strip(), title=" ".join(brief.title.split()),
+            decisions=brief.decisions,
             inputs=tuple(workspace_path(p) or "" for p in brief.inputs),
             document_ids=tuple(i.strip() for i in brief.document_ids),
             deliverable=brief.deliverable.strip(),
@@ -174,7 +188,7 @@ class SubagentDesk:
             platform=platform, conversation_id=conversation_id, kind=SUBAGENT_KIND,
             limit=LIST_LIMIT,
         )
-        return [self._view(r, titles=()) for r in rows]
+        return [self._view(r, titles=(), full=False) for r in rows]
 
     async def read(
         self, *, platform: str, conversation_id: str, job_id: str,
@@ -183,7 +197,7 @@ class SubagentDesk:
         row = await self._own(platform, conversation_id, job_id)
         if row is None:
             return None
-        return self._view(row, titles=await self._titles(row))
+        return self._view(row, titles=await self._titles(row), full=True)
 
     async def cancel(
         self, *, platform: str, conversation_id: str, job_id: str,
@@ -243,7 +257,7 @@ class SubagentDesk:
                 titles.append("")
         return tuple(titles)
 
-    def _view(self, row: ComputeJob, *, titles: Sequence[str]) -> JobView:
+    def _view(self, row: ComputeJob, *, titles: Sequence[str], full: bool = True) -> JobView:
         age = max(0, int((self._clock() - row.created_at).total_seconds()))
         state = _state(row)
         rounds: int | None = None
@@ -256,9 +270,11 @@ class SubagentDesk:
                 # the worker has ended (or this process forgot it) and the poller has not
                 # delivered yet
                 state = "finishing"
-        report = (row.result_report or "")[:REPORT_CHARS] or None
+        report = (row.result_report or "")[: REPORT_CHARS if full else LIST_REPORT_CHARS] or None
         return JobView(
-            id=str(row.id), state=state, objective=row.task[:200], age_seconds=age,
+            id=str(row.id), state=state, title=job_title(row.payload, row.task),
+            description=row.task if full else row.task[:LIST_DESCRIPTION_CHARS],
+            age_seconds=age,
             rounds=rounds, last_tool=last_tool, report=report,
             document_ids=row.result_document_ids,
             document_titles=tuple(titles),
@@ -284,6 +300,11 @@ def _state(row: ComputeJob) -> str:
 
 
 def _problem(brief: SubagentBrief) -> str:
+    title = " ".join(brief.title.split())
+    if not title:
+        return "title is empty"
+    if len(title) > TITLE_CHARS:
+        return f"title is {len(title)} characters; keep it to {TITLE_CHARS} or fewer"
     if not brief.objective.strip():
         return "objective is empty"
     if not brief.deliverable.strip():

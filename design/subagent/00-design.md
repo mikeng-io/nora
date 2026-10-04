@@ -77,7 +77,7 @@ that runs:
 
 | tool | verb | who calls it | built |
 |---|---|---|---|
-| `subagent_create(objective, deliverable, decisions?, inputs?, document_ids?)` | `create` | Nora | step 3 |
+| `subagent_create(title, objective, deliverable, decisions?, inputs?, document_ids?)` | `create` | Nora | step 3 |
 | `subagent_list()` | `list` | Nora | step 3 |
 | `subagent_read(id)` | `read` | Nora | step 3 |
 | `subagent_cancel(id)` | `cancel` | Nora | step 3 |
@@ -88,6 +88,14 @@ All five verbs are already on the list. `subagent_create` returns
 on to say she is on it. `inputs` are paths in the room's computer workspace;
 `document_ids` are documents to revise. The name is measured before it is
 final (ADR 0004, `nora-tool`'s `tool_selection` routing check).
+
+**Every job has a title** (operator, 2026-10-05): `subagent_create` requires one, empty or over
+60 characters is `bad_arguments`, and it is kept in `compute_jobs.payload` (no migration). The
+worker's brief carries it, the delivery message names the job by it, and `subagent_list` and
+`subagent_read` return per job `title`, `description` (the objective: cut to 120 characters in a
+list, whole in a read), state, and either live progress (rounds, last tool, age) or the outcome,
+the report (cut to 200 in a list, whole in a read) and document titles and ids. No model writes
+a summary of any job. A row or payload from before titles shows its objective cut to 60.
 
 ## 4. The worker
 
@@ -189,6 +197,7 @@ needs is in the brief, interpreted once by Nora; it never re-reads the chat.
 
 | field | carries |
 |---|---|
+| `title` | a short name the room would recognise (required, at most 60 characters; operator, 2026-10-05) |
 | `objective` | the job, in Nora's words |
 | `decisions` | what was settled with the room, each `{question, answer, by}` |
 | `inputs` | paths in the room's workspace; code copies them into the job folder |
@@ -317,6 +326,16 @@ Between launch and delivery Nora answers "how is it going" from
 from the job and its trace, without touching the worker. Delivery follows the
 existing rule: the poller waits for the room's slot, claims the row, and Nora
 writes the message herself through `FirePath.speak`.
+
+**The `<subagents>` block (operator, 2026-10-05; DEC-284).** Nora also sees, on every TAG turn
+and without asking, a `<subagents>` block of this room's jobs: the running ones with their
+rounds and last tool, and the ones finished in the last 24 hours with outcome, age, the start
+of the report, the documents and whether the room was already told. Code builds it fresh from
+`ComputeJobStore.room_jobs` and `SubagentBackend.status`; no model writes it. It is not carried
+by Standing because Standing is a model's fold and a fold drops an open plan, and a job that is still running is exactly an open plan. It is absent
+under `[subagent] enabled = false` and when the room has no job in the window, and it is never
+rendered on a fire turn, a Dreamer pass or a cognition session. `subagent_read` stays the way
+to the whole report.
 
 ## 8. What is measured
 

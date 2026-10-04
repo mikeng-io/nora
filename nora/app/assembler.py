@@ -35,6 +35,7 @@ from nora.engagement.context import (
 )
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
+from nora.engagement.subagents_context import SubagentsContextReader
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -68,6 +69,7 @@ def build_assembler(
     culture: CultureReader | None = None,
     computer: ComputerContextReader | None = None,
     documents: DocumentsContextReader | None = None,
+    subagents: SubagentsContextReader | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -112,4 +114,7 @@ def build_assembler(
         # `<documents>` (design/artifact §29). The SAME reader the fire path holds;
         # `None` while `[documents]` is off, which renders no block.
         documents=documents,
+        # `<subagents>` (design/subagent §7). TAG PATH ONLY: the fire path is given no such
+        # reader. `None` while `[subagent]` is off, which renders no block.
+        subagents=subagents,
     )

@@ -138,6 +138,7 @@ from nora.domain.standing import (
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
     Standing,
 )
+from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
 from nora.engagement.computer_context import ComputerContextReader
@@ -400,7 +401,7 @@ def compute_occasion(
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=ComputeBody(job.task, result, readback).render(),
+        body=ComputeBody(written_title(job.payload) or job.task, result, readback).render(),
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
         document_urls=tuple(d.url for d in readback.found if d.url),
@@ -459,7 +460,7 @@ def lost_job_occasion(job: ComputeJob) -> Event:
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=LostJobBody(job.task).render(),
+        body=LostJobBody(written_title(job.payload) or job.task).render(),
         header=lambda tagger, now: LostJobHeader(tagger).render(),
         kind="compute_lost",
     )

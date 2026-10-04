@@ -466,7 +466,8 @@ def _launch() -> SubagentLaunch:
 
 def test_the_brief_renders_each_decision_with_who_made_it():
     brief = SubagentBrief(
-        objective="rebuild the 8 sheets for a phone", deliverable="8 documents, read back",
+        title="Sheets for a phone", objective="rebuild the 8 sheets for a phone",
+        deliverable="8 documents, read back",
         decisions=(Decision("keep the layout?", "no, rebuild it", "Miles"),
                    Decision("include phone numbers?", "leave them out", "nora")),
         inputs=("inbox/sheets.zip",), document_ids=("d-1",),
@@ -474,6 +475,7 @@ def test_the_brief_renders_each_decision_with_who_made_it():
     text = render_brief(brief, _launch())
     assert 'question="keep the layout?" answer="no, rebuild it" by="Miles"' in text
     assert 'question="include phone numbers?" answer="leave them out" by="nora"' in text
+    assert '<part is="title">Sheets for a phone</part>' in text
     assert '<part is="objective">rebuild the 8 sheets for a phone</part>' in text
     assert '<part is="deliverable">8 documents, read back</part>' in text
     assert '<input path="inbox/sheets.zip">' in text and '<document id="d-1">' in text

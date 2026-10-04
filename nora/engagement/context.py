@@ -45,9 +45,11 @@ from nora.domain.ports import (
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
+from nora.domain.subagents_context import SubagentsView
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
+from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.culture_render import read_character, read_culture
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
@@ -107,6 +109,7 @@ class TranscriptInjection:
         lineage: LineagePolicy | None = None,
         computer: ComputerContextReader | None = None,
         documents: DocumentsContextReader | None = None,
+        subagents: SubagentsContextReader | None = None,
     ) -> None:
         self._audit = audit
         self._memory = memory
@@ -179,6 +182,10 @@ class TranscriptInjection:
         # `<documents>` (design/artifact §29). `None` while `[documents]` is off; the
         # reader never raises, so it is safe inside the gather.
         self._documents_reader = documents
+        # `<subagents>` (design/subagent §7). `None` while `[subagent]` is off; the reader
+        # never raises, so it is safe inside the gather. Tag path only: the fire path holds
+        # no such reader.
+        self._subagents_reader = subagents
 
     async def assemble(self, *, request: EngagementRequest) -> TagContext:
         msg = request.message
@@ -226,8 +233,7 @@ class TranscriptInjection:
             presence,
             culture,
             character,
-            computer,
-            documents,
+            (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
@@ -240,8 +246,11 @@ class TranscriptInjection:
             self._presence(msg),
             self._culture(msg),
             self._character(msg),
-            self._computer(msg),
-            self._documents(msg),
+            asyncio.gather(
+                self._computer(msg),
+                self._documents(msg),
+                self._subagents(msg),
+            ),
         )
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
@@ -280,6 +289,7 @@ class TranscriptInjection:
             character=character,
             computer=computer,
             documents=documents,
+            subagents=subagents,
             # A pure lookup (policy.toml, identity.toml), no read: the room's
             # listed persons and their aliases for `<room_members>`.
             room_members=self._room_members(msg),
@@ -363,6 +373,15 @@ class TranscriptInjection:
         if self._documents_reader is None:
             return None
         return await traced_read("documents", "read", self._documents_reader.read(
+            platform=msg.platform, conversation_id=msg.conversation_id,
+        ))
+
+    async def _subagents(self, msg: NormalizedMessage) -> SubagentsView | None:
+        """This room's sub-agent jobs, or `None` (no reader, none in the window, or the read
+        failed). `SubagentsContextReader.read` never raises."""
+        if self._subagents_reader is None:
+            return None
+        return await traced_read("subagents", "read", self._subagents_reader.read(
             platform=msg.platform, conversation_id=msg.conversation_id,
         ))
 

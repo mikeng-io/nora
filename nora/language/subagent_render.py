@@ -38,7 +38,10 @@ def _launched(launch: SubagentLaunch) -> str:
 
 
 def _brief_body(brief: SubagentBrief) -> str:
-    parts: list[tuple[str, str]] = [("objective", brief.objective)]
+    parts: list[tuple[str, str]] = []
+    if brief.title:
+        parts.append(("title", brief.title))
+    parts.append(("objective", brief.objective))
     if brief.deliverable:
         parts.append(("deliverable", brief.deliverable))
     return "\n".join(p for p in (
