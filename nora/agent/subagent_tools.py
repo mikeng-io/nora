@@ -46,6 +46,8 @@ log = logging.getLogger("nora.agent.subagent_tools")
 ACTS: frozenset[str] = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
     "computer_export", "document_publish",
+    # the worker's own place-keeper (design/subagent §4d): not a lookup, not an effect outside
+    "checkpoint_update",
 })
 
 #: Read-only tools that are still not the worker's.
@@ -143,9 +145,10 @@ class SubagentToolSource:
 
     def build(
         self, *, job_id: str, platform: str, conversation_id: str, conversation_type: str,
-        requester_person_id: str,
+        requester_person_id: str, checkpoint_sink: Any = None,
     ) -> list[Any]:
-        """The worker's tools for one job, from the job's recorded room facts."""
+        """The worker's tools for one job, from the job's recorded room facts.
+        `checkpoint_sink` is the job's `SubagentProgress`, where `checkpoint_update` writes."""
         room = self._room(
             platform=platform, conversation_id=conversation_id,
             requester_person_id=requester_person_id,
@@ -159,7 +162,7 @@ class SubagentToolSource:
             # absence is stated here so a `None` that was once a deliverer is not
             # passed back in.
             deliverer=None, metrics=self._metrics, room=room,
-            subagent_job=job_id,
+            subagent_job=job_id, checkpoint_sink=checkpoint_sink,
         )
         names = {getattr(t, "tool_name", "") for t in surface.tools}
         held = names & NEVER

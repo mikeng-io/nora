@@ -23,11 +23,12 @@ import hashlib
 import json
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
+from nora.domain.checkpoint import Outputs, read_row
 from nora.domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from nora.domain.ports import LaunchRequest
 from nora.domain.subagent import (
@@ -37,6 +38,7 @@ from nora.domain.subagent import (
     job_title,
     workspace_path,
 )
+from nora.language.checkpoint_render import render_checkpoint
 
 log = logging.getLogger("nora.agent.subagent_desk")
 
@@ -112,6 +114,9 @@ class JobView:
     document_ids: tuple[str, ...] = ()
     document_titles: tuple[str, ...] = ()
     failure: str | None = None
+    #: The job's checkpoint and what code recorded, rendered (`render_checkpoint`, mode `read`),
+    #: on a read only; `None` for a job with neither (every job from before checkpoints).
+    checkpoint: str | None = None
 
 
 class SubagentUnavailableError(RuntimeError):
@@ -230,7 +235,13 @@ class SubagentDesk:
         row = await self._own(platform, conversation_id, job_id)
         if row is None:
             return None
-        return self._view(row, titles=await self._titles(row), full=True)
+        live = self._live(row)
+        ids = (tuple(getattr(live, "document_ids", ())) if live is not None else ()) or (
+            row.result_document_ids
+        )
+        titles = await self._titles(row, ids)
+        view = self._view(row, titles=titles, full=True)
+        return replace(view, checkpoint=self._checkpoint_text(row, live, ids, titles) or None)
 
     async def cancel(
         self, *, platform: str, conversation_id: str, job_id: str,
@@ -274,11 +285,37 @@ class SubagentDesk:
             return None
         return row
 
-    async def _titles(self, row: ComputeJob) -> tuple[str, ...]:
-        if self._documents is None or not row.result_document_ids:
+    def _live(self, row: ComputeJob) -> Any:
+        """The worker's in-memory status for a job still running, or None."""
+        if row.state is not ComputeJobState.PENDING or self._worker is None:
+            return None
+        live = self._worker.status(row.backend_job_id)
+        return live if live is not None and live.running else None
+
+    def _checkpoint_text(
+        self, row: ComputeJob, live: Any, ids: tuple[str, ...], titles: Sequence[str],
+    ) -> str:
+        """The checkpoint and outputs as `subagent_read` shows them. A running job's come from
+        the worker's memory (fresher than the row); a finished job's from the row. Outputs are
+        the document ids and kept files code recorded, never anything the checkpoint says."""
+        stored, kept = read_row(row.checkpoint, row.checkpoint_at)
+        checkpoint = getattr(live, "checkpoint", None) or stored
+        kept = tuple(getattr(live, "kept_files", ())) or kept
+        padded = [*titles, *([""] * len(ids))]
+        outputs = Outputs(
+            documents=tuple((i, padded[n]) for n, i in enumerate(ids)), kept_files=kept,
+            rounds=getattr(live, "rounds", None),
+        )
+        return render_checkpoint(
+            checkpoint, outputs, title=job_title(row.payload, row.task), now=self._clock(),
+            mode="read",
+        )
+
+    async def _titles(self, row: ComputeJob, ids: tuple[str, ...]) -> tuple[str, ...]:
+        if self._documents is None or not ids:
             return ()
         titles: list[str] = []
-        for raw in row.result_document_ids:
+        for raw in ids:
             try:
                 out = await self._documents.read(
                     platform=row.platform, conversation_id=row.conversation_id,

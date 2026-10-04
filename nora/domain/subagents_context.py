@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from nora.domain.checkpoint import Checkpoint
+
 #: A finished job is shown for this long after it finished. A running one has no window.
 FINISHED_WINDOW = timedelta(hours=24)
 #: Jobs shown, running first, then finished, each newest first. The rest are counted.
@@ -66,6 +68,9 @@ class SubagentLine:
     progress_known: bool = False
     rounds: int = 0
     last_tool: str | None = None
+    #: Running only: the worker's last checkpoint (design/subagent §4d), from the worker's
+    #: memory or else the row; `None` when it has written none (every job from before them).
+    checkpoint: Checkpoint | None = None
     report: str | None = None
     #: `(document_id, title)`; the title is `""` when it could not be read.
     documents: tuple[tuple[str, str], ...] = ()

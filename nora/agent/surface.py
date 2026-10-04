@@ -66,6 +66,12 @@ TAG_ONLY_TOOLS: frozenset[str] = frozenset({
 })
 
 
+#: The sub-agent worker's own tools (design/subagent §4d): offered to a worker and to nothing
+#: else. The mirror of `TAG_ONLY_TOOLS`: a tag turn must not hold the worker's checkpoint, and
+#: no occasion but a worker's may.
+WORKER_ONLY_TOOLS: frozenset[str] = frozenset({"checkpoint_update"})
+
+
 @dataclass(frozen=True)
 class ToolScope:
     """Which tools one occasion may see.
@@ -86,18 +92,22 @@ class ToolScope:
     to run on `build()`'s output, now part of the one scope.
 
     `tag_turn` is False for every occasion that is not a person's tag: a fire turn, a Dreamer
-    adaptor, and the sub-agent worker. `TAG_ONLY_TOOLS` are refused there.
+    adaptor, and the sub-agent worker. `TAG_ONLY_TOOLS` are refused there. `worker` is True
+    only for the sub-agent worker, the one occasion `WORKER_ONLY_TOOLS` are admitted to.
     """
 
     platform: str | None
     dreamer: bool = False
     grant: frozenset[str] | None = None
     tag_turn: bool = True
+    worker: bool = False
 
     def admits(self, name: str) -> bool:
         if self.grant is not None and name not in self.grant:
             return False
         if name in TAG_ONLY_TOOLS and not self.tag_turn:
+            return False
+        if name in WORKER_ONLY_TOOLS and not self.worker:
             return False
         if self.platform is None:
             return True

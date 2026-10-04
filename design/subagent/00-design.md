@@ -126,6 +126,7 @@ so the row is written after the worker already exists.
 - read-only lookups: `web_search`, `web_fetch`, `media_fetch`;
 - `skills` and `load_tools`, so task know-how arrives as skills, the way
   `nora/skills/document-creation` does today.
+- `checkpoint_update`, its own place-keeper (§4d), offered to no other occasion.
 
 Not on it: `send_reply` and every other send path (it has no voice), `remind`,
 note and event writes, memory writes. A later worker that needs a write gets
@@ -238,6 +239,58 @@ the launching room holds, scoped to that room and its disclosure rules:
 | yes | the computer (`computer_export` `keep` only); `document_publish`, `document_read`; `web_search`, `web_fetch`, `media_fetch`; `skills`; the room's read-only lookups (`note_read`, `note_search`, `record_query`, `place_info`, `route`, `transit`, `weather`, …) |
 | never | `send_reply`, `send_to`, `send_gif`, `media_send`, every other send path; `computer_export` to a link or chat |
 | not now | memory writes: `note_create`, `note_update`, event writes, `remind`, `remember`. Hers to make in a turn; the worker reports, she decides |
+
+## 4d. The checkpoint: a job keeps its place (operator, 2026-10-05; DEC-285)
+
+A job of hundreds of rounds outruns any history, and one that has lost its place repeats work
+or reports what it never finished. The worker therefore keeps a **checkpoint**: what is done,
+what it is doing, what is next, what it decided.
+
+**Why not Standing.** Standing is a model's fold over a conversation, and a fold drops an open
+plan; what it says exists is the model's word. The checkpoint differs on the two points that
+failure turns on. It is **typed and written by the worker itself**, through one tool that
+replaces the whole of it (no merge, so a correction leaves nothing stale), and it is **never the
+record of what exists**: code keeps the hard facts outside it, from tool results.
+
+**Typed, then markdown.** `checkpoint_update(done, doing, next, decisions)` takes four lists of
+at most 8 items of at most 160 characters; past either, `bad_arguments` and nothing changes. It
+is on the worker's closed list and offered to no other occasion (`ToolScope.worker`). Its
+docstring says to call it at each step boundary and says nothing of the run's limits. The
+lists are stored on the job row (`compute_jobs.checkpoint` JSONB, `checkpoint_at`), written by
+code on each update and held in memory beside the rounds. One renderer
+(`nora.language.checkpoint_render`) turns them into compact markdown in a self-describing
+`<subagent_checkpoint job="..." updated="...">` block: **Done / Doing / Next / Decisions** are the
+worker's words, unchecked, and **Outputs** are code's.
+
+**What code records.** The documents are the ids of `document_publish` results that came back
+`ok` (a conflict result carries an id and is not one); the kept files are the paths of
+`computer_export` `to="keep"` results that came back `ok`, stored under a `kept_files` key only
+code writes; the rounds are counted by a hook. A checkpoint that names a document code does not
+have is shown as the worker's words and produces no output line.
+
+**Where it is used.**
+
+| reader | what it gets |
+|---|---|
+| the `<subagents>` block (§7), a running job | Doing and Next only, three items each, cut; from the worker's memory, else the row |
+| `subagent_read` | everything, with Outputs and the rounds |
+| the worker after its history trims | everything and Outputs, no rounds, re-anchored into the pinned first message |
+| the delivery to the room | where a job that **stopped** had got to, plus the kept files; a job that finished delivers its report, which has the same three sections |
+
+**Compaction.** The worker's history is a Strands `SlidingWindowConversationManager` (40
+messages, `per_turn=True` so it trims before every model call, the brief pinned with
+`pin_first=1`) instead of `NullConversationManager`. After the window has trimmed anything, a
+`BeforeModelCallEvent` callback in `SubagentProgress` replaces an anchor block in the pinned
+first message with the latest rendered checkpoint and outputs, whenever either moves. Nothing is
+anchored before the first trim.
+
+**The report.** The doctrine asks the worker to keep its place with `checkpoint_update` at step
+boundaries and to end with **Done**, **Not done** (with the reason) and **Decisions**. It still
+states no limit.
+
+**Old rows.** Both columns are NULL on every row from before and on a job that wrote none; every
+reader renders that as nothing. A running job from before the build has no tool and no anchor;
+its worker simply carries on as it did.
 
 ## 5. Bounds: turns, tokens, time; never per tool
 
@@ -430,3 +483,15 @@ enabled`. Three places differ from the text above, none of them a reversal:
 
 The routing of `subagent_create` against a reply is not yet measured on the live model: five
 `tool_selection` cases are in the corpus, the positives for the sub-agent-on arm only.
+
+**Step 6 as built (DEC-285).** The checkpoint of §4d. Three places differ from the text above,
+none of them a reversal:
+
+- a worker knows its backend job id, never the row's (the row is written after `launch`
+  returns), so `ComputeJobStore.set_checkpoint` finds the still-pending row by `backend_job_id`;
+  an update that comes before the row exists stays in memory and the next one lands;
+- a published document's title is not in `document_publish`'s result, so Outputs carry ids and
+  the readers that can look a title up (the block, `subagent_read`, delivery) do; the worker's
+  own anchor shows ids;
+- `kept_files` lives inside the `checkpoint` JSONB under a key only code writes, rather than in
+  a column of its own.

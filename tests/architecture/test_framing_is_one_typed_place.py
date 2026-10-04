@@ -131,6 +131,10 @@ NON_ESCAPED: dict[tuple[str, str, str], str] = {
     ),
     ("ComputeBody", "doc.title", "carried"): "a read-back document's title, in the body",
     ("ComputeBody", "doc.url", "carried"): "a read-back document's link, in the body",
+    ("ComputeBody", "f", "carried"): "a file the worker kept, a workspace path, in the body",
+    ("ComputeBody", "self.checkpoint", "carried"): (
+        "where a stopped job had got to, rendered by `checkpoint_render` as plain markdown"
+    ),
     ("ComputeBody", "i", "carried"): "an id that did not read back, named missing in the body",
     ("ComputeBody", "result.url", "carried"): "the backend's link, in the body",
     ("ComputeBody", "result.error or 'no reason given'", "carried"): "the failure, in the body",

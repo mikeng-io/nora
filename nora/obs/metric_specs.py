@@ -967,6 +967,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "of them is work that cannot finish inside its bounds (DEC-247, amended).",
         ("outcome",),
     ),
+    _CounterSpec(
+        "nora_subagent_checkpoint_unwritten_total",
+        "Sub-agent checkpoint updates that found no pending job row to write to (design/subagent "
+        "§4d): the row is written after launch, so an early one is expected; the terminal "
+        "write of the delivery still stores the final checkpoint.",
+        (),
+    ),
     # #110. Paired with `nora_loop_exhausted_fallbacks_total` below and read
     # AGAINST it: a healthy deployment moves THIS one and leaves that one flat.
     # `outcome="drafted"` is a cut-off turn that answered from what it had;
