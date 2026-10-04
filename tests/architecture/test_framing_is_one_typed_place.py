@@ -126,7 +126,12 @@ NON_ESCAPED: dict[tuple[str, str, str], str] = {
         "non-str refuses as it did on master"
     ),
     ("ComputeBody", "self.task", "carried"): "the job's task, the body of `<tag_message>`",
-    ("ComputeBody", "result.summary", "carried"): "the backend's summary, in the body",
+    ("ComputeBody", "result.report or result.summary", "carried"): (
+        "the worker's report (else its summary), in the body"
+    ),
+    ("ComputeBody", "doc.title", "carried"): "a read-back document's title, in the body",
+    ("ComputeBody", "doc.url", "carried"): "a read-back document's link, in the body",
+    ("ComputeBody", "i", "carried"): "an id that did not read back, named missing in the body",
     ("ComputeBody", "result.url", "carried"): "the backend's link, in the body",
     ("ComputeBody", "result.error or 'no reason given'", "carried"): "the failure, in the body",
     ("LostJobBody", "self.task", "carried"): "the job's task, the body of `<tag_message>`",
@@ -143,7 +148,7 @@ NON_ESCAPED: dict[tuple[str, str, str], str] = {
 #: is defined in framing (`test_clean_calls_are_exactly_the_helpers_framing_defines`).
 CLEAN_CALLS: frozenset[str] = frozenset({
     "_put", "_figure", "stamp", "_name", "_repeat", "_gate_note", "_utc_minute",
-    "_asked", "_repeats", "_request", "_decided", "_about", "_outcome", "len",
+    "_asked", "_repeats", "_request", "_decided", "_about", "_outcome", "_documents", "len",
 })
 
 _WORD = re.compile(r"[^\W\d_][\w'’-]*")

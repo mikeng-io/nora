@@ -81,6 +81,7 @@ from nora.domain.ports import (
     ArtifactRegistration,
     JobResult,
     JobStatus,
+    LaunchRequest,
     LinkPreview,
     MediaDescription,
     MediaLookup,
@@ -1603,17 +1604,15 @@ class FakeComputeBackend:
         self._results: dict[str, JobResult] = {}
         self._polls_before_done: dict[str, int] = {}
         self.launched: list[dict[str, Any]] = []
+        self.cancelled: list[str] = []
         self._next_id = 1
 
-    async def launch(
-        self, *, task: str, artifact_id: str | None = None,
-        context: list[dict[str, Any]] | None = None,
-    ) -> str:
+    async def launch(self, *, request: LaunchRequest) -> str:
         job_id = f"job_{self._next_id:06d}"
         self._next_id += 1
         self.launched.append({
-            "task": task, "artifact_id": artifact_id, "context": context,
-            "job_id": job_id,
+            "task": request.task, "artifact_id": request.artifact_id,
+            "context": request.context, "job_id": job_id, "request": request,
         })
         self._results.setdefault(
             job_id,
@@ -1631,6 +1630,9 @@ class FakeComputeBackend:
     ) -> None:
         self._results[job_id] = result
         self._polls_before_done[job_id] = polls_before_done
+
+    async def cancel(self, *, job_id: str) -> None:
+        self.cancelled.append(job_id)
 
     async def poll(self, *, job_id: str) -> JobResult:
         if job_id not in self._results:
@@ -1671,6 +1673,8 @@ class FakeComputeJobStore:
         self, job_id: UUID, state: ComputeJobState, *,
         completed_at: Any = None, result_url: str | None = None,
         result_summary: str | None = None, error: str | None = None,
+        failure_reason: str | None = None, result_report: str | None = None,
+        result_document_ids: tuple[str, ...] | None = None,
     ) -> bool:
         job = self._jobs.get(job_id)
         if job is None:
@@ -1685,21 +1689,31 @@ class FakeComputeJobStore:
             result_url=result_url if result_url is not None else job.result_url,
             result_summary=result_summary if result_summary is not None else job.result_summary,
             error=error if error is not None else job.error,
+            failure_reason=(
+                failure_reason if failure_reason is not None else job.failure_reason
+            ),
+            result_report=result_report if result_report is not None else job.result_report,
+            result_document_ids=(
+                tuple(result_document_ids) if result_document_ids
+                else job.result_document_ids
+            ),
         )
         return True
 
     async def sweep_firing(self, *, now: Any) -> list[ComputeJob]:
         return self._sweep(
-            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
+            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery", "lost",
         )
 
     async def sweep_pending(self, *, now: Any) -> list[ComputeJob]:
         return self._sweep(
             ComputeJobState.PENDING, now,
-            "swept at boot: lost track of this job across a restart",
+            "swept at boot: lost track of this job across a restart", "lost",
         )
 
-    def _sweep(self, state: ComputeJobState, now: Any, error: str) -> list[ComputeJob]:
+    def _sweep(
+        self, state: ComputeJobState, now: Any, error: str, reason: str,
+    ) -> list[ComputeJob]:
         """Returns the SWEPT ROWS, matching `SqlComputeJobStore._sweep`'s
         `RETURNING`. A count would have been the easier fake and the wrong one:
         the rows are what let boot recovery tell each requester it lost track
@@ -1711,6 +1725,7 @@ class FakeComputeJobStore:
             if job.state is state:
                 updated = replace(
                     job, state=ComputeJobState.FAILED, completed_at=stamp, error=error,
+                    failure_reason=reason,
                 )
                 self._jobs[job_id] = updated
                 swept.append(updated)

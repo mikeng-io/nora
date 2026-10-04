@@ -10,10 +10,11 @@ since the two ports are independent even though the rule is identical.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
 
@@ -34,6 +35,7 @@ class ComputeJobState(StrEnum):
     FIRING = "firing"
     DONE = "done"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +43,7 @@ class ComputeJob:
     """One deferred job awaiting delivery (Nora Compute spec §4). Nothing writes
     one today: the artifact tool, its only producer, was retired in S3b
     (design/sandbox-runtime decision 4), and the row is kept as the generic
-    deferred-delivery outbox a future `delegate_task` uses.
+    deferred-delivery outbox any worker uses (`kind` says which).
 
     `backend_job_id` is `ComputeBackend.launch`'s own return value — the
     handle `ComputeJobPoller` polls with. `artifact_id`, when set, means this
@@ -52,6 +54,9 @@ class ComputeJob:
     `Event` once the job completes — the same four fields
     `Event`/`Reminder` both already carry, for the same reason (a fire
     turn needs one Room, one policy decision, one Deliverer binding).
+
+    `kind` names the backend that owns the row, `tag_id` the turn that launched
+    it and `failure_reason` why a failed row failed (design/subagent §6).
 
     `task_sha256`/`context_sha256` are the SHA-256 of `task`/`context` as
     the producer actually sent them (context-channel spec §5) — computed
@@ -75,6 +80,41 @@ class ComputeJob:
     error: str | None
     task_sha256: str
     context_sha256: str
+    # Which backend owns the row (design/subagent §6): the poller resolves
+    # `ComputeBackend` by it. Required, no default: a producer names its kind.
+    # Rows from before the column are `legacy` and terminal.
+    kind: str
+    # The launching turn's tag id, for the trace link.
+    tag_id: str | None = None
+    # Why a failed row failed (`lost`, a limit stop, a timeout); `error` stays
+    # the human-readable text.
+    failure_reason: str | None = None
+    # The launch payload as stored, in full (JSON-shaped); `{}` for a row that had none.
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    # What a finished result carried, kept so a job can be read back after delivery.
+    result_report: str | None = None
+    result_document_ids: tuple[str, ...] = ()
+    # The worker's Langfuse trace id, written by the backend when known.
+    trace_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReadBackDocument:
+    """A document a job's result named, read back by code before delivery (R-100). `url` is
+    `""` when no public origin is configured: the document exists and has no link."""
+
+    document_id: str
+    title: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentReadBack:
+    """What code found when it read back each `document_id` a result named: the ones that
+    read back, and the ids that did not (a missing one is reported missing, never linked)."""
+
+    found: tuple[ReadBackDocument, ...] = ()
+    missing: tuple[str, ...] = ()
 
 
 def normalise_compute_job(job: ComputeJob) -> ComputeJob:
@@ -122,6 +162,8 @@ class ComputeJobStore(Protocol):
         self, job_id: UUID, state: ComputeJobState, *,
         completed_at: datetime | None = None, result_url: str | None = None,
         result_summary: str | None = None, error: str | None = None,
+        failure_reason: str | None = None, result_report: str | None = None,
+        result_document_ids: tuple[str, ...] | None = None,
     ) -> bool:
         """Terminal write for a row already claimed. True if it changed."""
         ...

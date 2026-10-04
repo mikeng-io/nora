@@ -189,7 +189,7 @@ def _job(**kw: Any) -> ComputeJob:
         "conversation_type": "group", "requester_person_id": "miles",
         "created_at": T0, "state": ComputeJobState.FIRING, "completed_at": None,
         "result_url": None, "result_summary": None, "error": None,
-        "task_sha256": "0" * 64, "context_sha256": "0" * 64,
+        "task_sha256": "0" * 64, "context_sha256": "0" * 64, "kind": "subagent",
     }
     base.update(kw)
     return ComputeJob(**base)

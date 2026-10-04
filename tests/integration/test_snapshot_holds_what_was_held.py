@@ -112,7 +112,7 @@ ROWS: dict[str, Callable[[int], dict[str, Any]]] = {
     "compute_jobs": lambda i: {
         "id": _uuid("job", i), "backend_job_id": f"b{i}", "task": "t", "platform": "signal",
         "conversation_id": "g1", "conversation_type": "group", "requester_person_id": "p",
-        "created_at": T0, "state": "pending",
+        "created_at": T0, "state": "pending", "kind": "subagent", "payload": {},
     },
     "instagram_summons": lambda i: {
         "id": _uuid("ig", i), "message_id": f"m{i}", "media_id": "md", "shortcode": "sc",

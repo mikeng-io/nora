@@ -44,10 +44,11 @@ builder in it, and `FRAMING` lists every builder this module declares.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
+from nora.domain.compute import DocumentReadBack
 from nora.domain.models import PersonRef
 from nora.domain.ports import JobResult, JobStatus
 from nora.domain.prompt import escape
@@ -339,12 +340,13 @@ class ComputeHeader:
     def render(self) -> str:
         return (
             "You are in a group chat you have been reading all along. Nobody has "
-            f"just called you. Earlier, {_name(self.tagger)} asked you to build "
-            "something, and the job has now finished (or failed) — that is why "
-            "this turn is happening, and it is the only reason.\n"
-            "Tell them what you built (or what went wrong), in your own words, "
-            "including the link if there is one. Do not just repeat the raw "
-            "summary verbatim — say it the way you'd actually tell a friend."
+            f"just called you. Earlier, {_name(self.tagger)} asked you for a piece "
+            "of work, and it has now finished or failed — that is why this turn is "
+            "happening, and it is the only reason.\n"
+            "Tell them how it went, in your own words: what came back, with the link "
+            "for each document if there is one, or what went wrong. Do not just "
+            "repeat the raw report verbatim — say it the way you'd actually tell a "
+            "friend."
         )
 
 
@@ -517,19 +519,37 @@ class RequestBody:
 
 @dataclass(frozen=True)
 class ComputeBody:
-    """What a finished compute job puts to her: its own task description PLUS its
-    result summary, the backend's account of what it built (Nora Compute spec §11).
-    Carried: every value is escaped once, by the `<tag_message>` block."""
+    """What a finished job puts to her, whatever worker ran it: what was asked, then what
+    came back (the worker's report, falling back to its summary, and the documents code read
+    back) or why it failed. A document id that did not read back is named missing and carries
+    no link (R-100). Carried: every value is escaped once, by the `<tag_message>` block."""
 
     task: str
     result: JobResult
+    documents: DocumentReadBack = field(default_factory=DocumentReadBack)
+
+    def _documents(self) -> str:
+        made = "".join(
+            f"\n- {_put(doc.title, 'carried')}: {_put(doc.url, 'carried')}" if doc.url
+            else f"\n- {_put(doc.title, 'carried')}"
+            for doc in self.documents.found
+        )
+        lost = ", ".join(_put(i, "carried") for i in self.documents.missing)
+        return (
+            (f"\nDocuments it made:{made}" if made else "")
+            + (
+                "\nIt named these documents but they could not be found, so they are not "
+                f"saved and have no link: {lost}" if lost else ""
+            )
+        )
 
     def _outcome(self) -> str:
         result = self.result
         if result.status is JobStatus.SUCCEEDED:
+            link = f"\n{_put(result.url, 'carried')}" if result.url else ""
             return (
-                f"It finished: {_put(result.summary, 'carried')}\n"
-                f"{_put(result.url, 'carried')}"
+                f"It finished: {_put(result.report or result.summary, 'carried')}"
+                f"{link}{self._documents()}"
             )
         return f"It failed: {_put(result.error or 'no reason given', 'carried')}"
 

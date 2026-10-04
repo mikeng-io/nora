@@ -59,6 +59,9 @@ class Event:
     body: str
     header: Callable[[PersonRef | None, datetime], str]
     speaker: str = ""
+    # URLs of documents code read back for this occasion (R-100). The fire turn seeds its link
+    # carrier with them so a link the body names survives delivery; nothing else may mint one.
+    document_urls: tuple[str, ...] = ()
 
 
 EventFactory: TypeAlias = Callable[[Sequence[Reminder]], Event]

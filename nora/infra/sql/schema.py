@@ -1204,8 +1204,8 @@ ARTIFACTS = sa.Table(
 
 
 # `compute_jobs` — the Nora Compute outbox (Nora Compute spec §4, §12). One
-# row per deferred job; nothing writes one today (S3b retired its only
-# producer; the table is kept for a future `delegate_task`). No recurrence
+# row per deferred job from any worker (`kind` names it; design/subagent §6).
+# Nothing writes one yet (S3b retired its only producer). No recurrence
 # columns — unlike `REMINDERS`, a compute job never repeats.
 COMPUTE_JOBS = sa.Table(
     "compute_jobs",
@@ -1229,8 +1229,19 @@ COMPUTE_JOBS = sa.Table(
     sa.Column("error", sa.Text, nullable=True),
     sa.Column("task_sha256", sa.Text, nullable=False, server_default=""),
     sa.Column("context_sha256", sa.Text, nullable=False, server_default=""),
+    # Which backend owns the row (`ComputeBackend` is resolved by it); rows from
+    # before the column are 'legacy' and terminal. No default: a producer names it.
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("tag_id", sa.Text, nullable=True),
+    sa.Column("failure_reason", sa.Text, nullable=True),
+    # The typed launch payload in full (a brief re-derivable beyond its hashes), what a finished
+    # result carried, and the worker's Langfuse trace when a backend knows it.
+    sa.Column("payload", pg.JSONB, nullable=False),
+    sa.Column("result_report", sa.Text, nullable=True),
+    sa.Column("result_document_ids", pg.JSONB, nullable=True),
+    sa.Column("trace_id", sa.Text, nullable=True),
     sa.CheckConstraint(
-        "state IN ('pending', 'firing', 'done', 'failed')",
+        "state IN ('pending', 'firing', 'done', 'failed', 'cancelled')",
         name="ck_compute_jobs_state",
     ),
 )

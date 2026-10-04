@@ -839,7 +839,7 @@ def _compute_job(**kw: object) -> ComputeJob:
         "conversation_type": "group", "requester_person_id": "miles",
         "created_at": T0, "state": ComputeJobState.PENDING, "completed_at": None,
         "result_url": None, "result_summary": None, "error": None,
-        "task_sha256": "hash-task", "context_sha256": "hash-context",
+        "task_sha256": "hash-task", "context_sha256": "hash-context", "kind": "subagent",
     }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     base.update(kw)
     return ComputeJob(**base)                                   # type: ignore[arg-type]
@@ -893,6 +893,42 @@ def test_a_failure_with_no_error_says_so_rather_than_reading_as_success() -> Non
 
     assert "It failed: no reason given" in occasion.body
     assert "None" not in occasion.body
+
+
+def test_a_finished_job_puts_its_report_and_documents_to_her_not_a_build() -> None:
+    """Kind-neutral wording: the report (not the summary) is what came back, each read-back
+    document carries its title and link, and the header no longer says she was asked to build."""
+    from nora.domain.compute import DocumentReadBack, ReadBackDocument
+
+    occasion = compute_occasion(
+        _compute_job(),
+        JobResult(
+            status=JobStatus.SUCCEEDED, summary="short", report="sorted 2 sheets",
+            document_ids=("d1", "d2"),
+        ),
+        DocumentReadBack(
+            found=(ReadBackDocument("d1", "Sheet one", "https://nora.example/documents/aaaaaa"),),
+            missing=("d2",),
+        ),
+    )
+
+    assert "It finished: sorted 2 sheets" in occasion.body
+    assert "short" not in occasion.body
+    assert "Sheet one: https://nora.example/documents/aaaaaa" in occasion.body
+    assert "could not be found" in occasion.body and "d2" in occasion.body
+    assert occasion.document_urls == ("https://nora.example/documents/aaaaaa",)
+    header = occasion.header(MILES, T0)
+    assert "build" not in header and "or failed" in header
+
+
+def test_a_result_naming_documents_nobody_read_back_reports_them_all_missing() -> None:
+    """Fail closed: no read-back means no document is vouched for or linked."""
+    occasion = compute_occasion(
+        _compute_job(), JobResult(status=JobStatus.SUCCEEDED, report="done", document_ids=("d1",)),
+    )
+
+    assert "could not be found" in occasion.body and "d1" in occasion.body
+    assert occasion.document_urls == ()
 
 
 class _DiscordFireAdapter(_FireAdapter):

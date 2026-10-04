@@ -86,7 +86,7 @@ from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
-from nora.domain.compute import ComputeJob
+from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import (
@@ -374,7 +374,9 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     )
 
 
-def compute_occasion(job: ComputeJob, result: JobResult) -> Event:
+def compute_occasion(
+    job: ComputeJob, result: JobResult, readback: DocumentReadBack | None = None,
+) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
     — the THIRD `Event`, reusing `FirePath.speak` exactly as
     `VersionAnnouncer` (DEC-97) already established as the pattern for a
@@ -385,15 +387,23 @@ def compute_occasion(job: ComputeJob, result: JobResult) -> Event:
     passes R-18 like any other reply; the artifact bytes themselves do not).
     Nora composes the actual group-facing message from this in her own
     voice; this function only assembles what she is TOLD, not what she says.
+
+    `readback` is what code found when it read back each `document_id` the result named
+    (R-100). `None` means nobody read them back, so every id is reported missing: a link the
+    turn was not handed would be stripped anyway, and an unverified document is not saved.
+    The read-back URLs ride on the `Event` so the fire turn can seed its link carrier.
     """
+    if readback is None:
+        readback = DocumentReadBack(missing=tuple(result.document_ids))
     return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
         conversation_type=job.conversation_type,
         person_id=job.requester_person_id,
-        body=ComputeBody(job.task, result).render(),
+        body=ComputeBody(job.task, result, readback).render(),
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
+        document_urls=tuple(d.url for d in readback.found if d.url),
     )
 
 
@@ -1832,6 +1842,12 @@ class FirePath:
                 # for the same reason it gets the `OutboundComposer` above.
                 links=handle.links,
             )
+            # R-100: the documents code read back for this occasion (a finished job's) were
+            # handed to her in the body, so their links are hers to repeat. Seeded AFTER the
+            # surface is built, because building the tools arms the carrier; before it, the
+            # mint is a no-op and delivery would strip the very links we are delivering.
+            for url in occasion.document_urls:
+                handle.links.mint_document(url, published=False)
             now = self._clock().astimezone()
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name,

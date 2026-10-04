@@ -33,6 +33,9 @@ def _row_to_job(r: Row[Any]) -> ComputeJob:
             completed_at=r.completed_at, result_url=r.result_url,
             result_summary=r.result_summary, error=r.error,
             task_sha256=r.task_sha256, context_sha256=r.context_sha256,
+            kind=r.kind, tag_id=r.tag_id, failure_reason=r.failure_reason,
+            payload=r.payload, result_report=r.result_report,
+            result_document_ids=tuple(r.result_document_ids or ()), trace_id=r.trace_id,
         )
     )
 
@@ -53,6 +56,12 @@ class SqlComputeJobStore:
             requester_person_id=row.requester_person_id,
             created_at=row.created_at, state=row.state.value,
             task_sha256=row.task_sha256, context_sha256=row.context_sha256,
+            kind=row.kind, tag_id=row.tag_id, failure_reason=row.failure_reason,
+            payload=dict(row.payload), result_report=row.result_report,
+            result_document_ids=(
+                list(row.result_document_ids) if row.result_document_ids else None
+            ),
+            trace_id=row.trace_id,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
@@ -91,6 +100,8 @@ class SqlComputeJobStore:
         self, job_id: UUID, state: ComputeJobState, *,
         completed_at: Any = None, result_url: str | None = None,
         result_summary: str | None = None, error: str | None = None,
+        failure_reason: str | None = None, result_report: str | None = None,
+        result_document_ids: tuple[str, ...] | None = None,
     ) -> bool:
         values: dict[str, Any] = {"state": state.value}
         if completed_at is not None:
@@ -101,6 +112,12 @@ class SqlComputeJobStore:
             values["result_summary"] = result_summary
         if error is not None:
             values["error"] = error
+        if failure_reason is not None:
+            values["failure_reason"] = failure_reason
+        if result_report is not None:
+            values["result_report"] = result_report
+        if result_document_ids:
+            values["result_document_ids"] = list(result_document_ids)
         stmt = sa.update(COMPUTE_JOBS).where(COMPUTE_JOBS.c.id == job_id).values(**values)
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
@@ -108,23 +125,25 @@ class SqlComputeJobStore:
 
     async def sweep_firing(self, *, now: Any) -> list[ComputeJob]:
         return await self._sweep(
-            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery",
+            ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery", "lost",
         )
 
     async def sweep_pending(self, *, now: Any) -> list[ComputeJob]:
         return await self._sweep(
             ComputeJobState.PENDING, now,
-            "swept at boot: lost track of this job across a restart",
+            "swept at boot: lost track of this job across a restart", "lost",
         )
 
-    async def _sweep(self, state: ComputeJobState, now: Any, error: str) -> list[ComputeJob]:
+    async def _sweep(
+        self, state: ComputeJobState, now: Any, error: str, reason: str,
+    ) -> list[ComputeJob]:
         stmt = (
             sa.update(COMPUTE_JOBS)
             .where(COMPUTE_JOBS.c.state == state.value)
             .values(
                 state=ComputeJobState.FAILED.value,
                 completed_at=ensure_utc_job(now, field="now"),
-                error=error,
+                error=error, failure_reason=reason,
             )
         )
         # RETURNING the rows, not just a count: the person who asked for each

@@ -109,7 +109,7 @@ so it sees the same workspace as the turn that launched it, including the
 `launch()` itself: `backend_job_id` is NOT NULL and comes back from `launch`,
 so the row is written after the worker already exists.
 
-**Its tools.** A closed list, checked in code:
+**Its tools.** A closed list, checked in code (widened in §4c):
 
 - the computer: `computer_run`, `computer_read`, `computer_write`,
   `computer_edit`, `computer_import`, and `computer_export` with `to="keep"`
@@ -179,6 +179,56 @@ and does not apply. The file says:
   carries on, and lists each decision in the report.
 
 It never states a limit (§5).
+
+## 4a. The brief: how Nora hands context over (operator, 2026-10-04)
+
+The worker starts blank: no transcript, no peer card, no room block. What it
+needs is in the brief, interpreted once by Nora; it never re-reads the chat.
+
+`subagent_create` takes a typed brief:
+
+| field | carries |
+|---|---|
+| `objective` | the job, in Nora's words |
+| `decisions` | what was settled with the room, each `{question, answer, by}` |
+| `inputs` | paths in the room's workspace; code copies them into the job folder |
+| `document_ids` | documents to revise |
+| `deliverable` | what "done" looks like |
+
+Code adds, never the model: room, requester, `tag_id`, launch time, timezone.
+One formatter (a `SubagentBrief` render, the shape of cognition's
+`render_agenda`) makes the worker's prompt; every block says what it is and who
+wrote it, so "the operator decided" is distinguishable from "Nora assumed"
+(`AGENTS.md`: a model's input has to explain itself).
+
+## 4b. What is kept
+
+| what | where |
+|---|---|
+| the brief, in full | `compute_jobs.payload` (step 1) |
+| report, document ids | `result_report`, `result_document_ids` (step 1) |
+| trace link | `trace_id`, and `tag_id` back to the launching turn (step 1) |
+| every model and tool call | the Langfuse `subagent` trace (step 2) |
+| every computer action | `computer_events`, actor `subagent` (step 2) |
+| rounds, tokens, last tool while running | in memory, served by `subagent_read` (step 2) |
+| the worker's message history | not stored; Langfuse holds it for reading. Needed only to survive a restart (§9) |
+
+## 4c. Reach: one room, a closed list (operator, 2026-10-04)
+
+**No other room.** The worker has no send path. Its result reaches the
+launching room only, through Nora. Delivering elsewhere would move room A's
+content into room B from a background job with no person asking and no
+disclosure check (R-31, sandbox decision 6). To share it elsewhere, someone
+asks Nora later and she uses `send_to` in a turn, under her guards.
+
+**Not every tool.** The list widens §4's to the read-only tools a tag turn in
+the launching room holds, scoped to that room and its disclosure rules:
+
+| | on the worker's list |
+|---|---|
+| yes | the computer (`computer_export` `keep` only); `document_publish`, `document_read`; `web_search`, `web_fetch`, `media_fetch`; `skills`; the room's read-only lookups (`note_read`, `note_search`, `record_query`, `place_info`, `route`, `transit`, `weather`, …) |
+| never | `send_reply`, `send_to`, `send_gif`, `media_send`, every other send path; `computer_export` to a link or chat |
+| not now | memory writes: `note_create`, `note_update`, event writes, `remind`, `remember`. Hers to make in a turn; the worker reports, she decides |
 
 ## 5. Bounds: turns, tokens, time; never per tool
 

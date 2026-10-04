@@ -15,7 +15,8 @@ every test in this module — not a third invented double.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from types import SimpleNamespace
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -45,7 +46,7 @@ def _pending_job(**overrides):
         "conversation_type": "group", "requester_person_id": "person-1",
         "created_at": datetime.now(UTC), "state": ComputeJobState.PENDING,
         "completed_at": None, "result_url": None, "result_summary": None, "error": None,
-        "task_sha256": "hash-task", "context_sha256": "hash-context",
+        "task_sha256": "hash-task", "context_sha256": "hash-context", "kind": "subagent",
     }   # a dict LITERAL: ruff's C4 ruleset is enabled and C408 rejects dict()
     defaults.update(overrides)
     return ComputeJob(**defaults)
@@ -61,7 +62,7 @@ async def test_a_still_running_job_is_left_pending(fake_slots, fake_metrics):
     )
     spoken = []
     poller = ComputeJobPoller(
-        store=store, backend=backend, speak=lambda occ: spoken.append(occ) or "sent",
+        store=store, backends={"subagent": backend}, speak=lambda occ: spoken.append(occ) or "sent",
         slots=fake_slots, metrics=fake_metrics, tick_seconds=1.0,
         clock=lambda: datetime.now(UTC),
     )
@@ -88,7 +89,7 @@ async def test_a_finished_job_is_delivered_and_marked_done(fake_slots, fake_metr
         return "sent"
 
     poller = ComputeJobPoller(
-        store=store, backend=backend, speak=speak, slots=fake_slots,
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
     await poller.tick()
@@ -138,7 +139,7 @@ async def test_a_job_never_delivered_twice(fake_slots, fake_metrics):
         return "sent"
 
     poller = ComputeJobPoller(
-        store=store, backend=backend, speak=speak, slots=fake_slots,
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
 
@@ -176,7 +177,7 @@ async def test_a_turn_that_did_not_speak_still_ends_the_job(fake_slots, fake_met
         return FAILED_POLICY
 
     poller = ComputeJobPoller(
-        store=store, backend=backend, speak=speak, slots=fake_slots,
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
     await poller.tick()
@@ -221,7 +222,7 @@ async def test_a_held_slot_defers_the_delivery_and_says_so_in_the_series(
         return "sent"
 
     poller = ComputeJobPoller(
-        store=store, backend=backend, speak=speak, slots=fake_slots,
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
         metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
     )
     # A tag is holding this conversation, exactly as `try_acquire` sees it.
@@ -313,3 +314,133 @@ async def test_a_lost_job_says_it_lost_track_and_never_that_it_failed():
     assert "lost" in header
     assert "do not say it failed" in header
     assert "do not say it worked" in header
+
+
+# ---------------------------------------------------------------------------
+# the outbox is generic: a row is delivered by the backend its `kind` names
+# ---------------------------------------------------------------------------
+
+
+def _poller(store, backends, fake_slots, fake_metrics, spoken, documents=None):
+    async def speak(occ):
+        spoken.append(occ)
+        return "sent"
+
+    return ComputeJobPoller(
+        store=store, backends=backends, speak=speak, slots=fake_slots,
+        metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
+        documents=documents,
+    )
+
+
+async def test_each_row_is_polled_by_the_backend_of_its_own_kind(fake_slots, fake_metrics):
+    store = FakeComputeJobStore()
+    await store.create(_pending_job(kind="subagent", backend_job_id="s-1"))
+    await store.create(_pending_job(kind="video", backend_job_id="v-1"))
+    subagent, video = FakeComputeBackend(), FakeComputeBackend()
+    subagent.set_result(
+        job_id="s-1", result=JobResult(JobStatus.SUCCEEDED, summary="from subagent"),
+    )
+    video.set_result(job_id="v-1", result=JobResult(JobStatus.SUCCEEDED, summary="from video"))
+    spoken: list = []
+    poller = _poller(
+        store, {"subagent": subagent, "video": video}, fake_slots, fake_metrics, spoken,
+    )
+
+    await poller.tick()
+
+    assert sorted(("from subagent" in o.body, "from video" in o.body) for o in spoken) == [
+        (False, True), (True, False),
+    ]
+    assert await store.pending(limit=10) == []
+
+
+async def test_a_row_whose_kind_has_no_backend_is_left_pending_not_failed(
+    fake_slots, fake_metrics, caplog,
+):
+    store = FakeComputeJobStore()
+    orphan = _pending_job(kind="video", backend_job_id="v-1")
+    owned = _pending_job(kind="subagent", backend_job_id="s-1")
+    await store.create(orphan)
+    await store.create(owned)
+    backend = FakeComputeBackend()
+    backend.set_result(job_id="s-1", result=JobResult(JobStatus.SUCCEEDED, summary="ok"))
+    spoken: list = []
+    poller = _poller(store, {"subagent": backend}, fake_slots, fake_metrics, spoken)
+
+    await poller.tick()
+    await poller.tick()
+
+    assert (await store.get(orphan.id)).state is ComputeJobState.PENDING
+    assert (await store.get(owned.id)).state is ComputeJobState.DONE   # positive control
+    assert len(spoken) == 1
+    assert sum("no backend is wired" in r.message for r in caplog.records) == 1   # once
+
+
+async def test_boot_recovery_still_sweeps_pending_and_firing_rows_of_any_kind(fake_metrics):
+    store = FakeComputeJobStore()
+    pending = _pending_job(kind="video")
+    firing = _pending_job(kind="subagent", backend_job_id="job_2")
+    await store.create(pending)
+    await store.create(firing)
+    await store.claim(firing.id)
+
+    swept = await recover(store=store, metrics=fake_metrics, now=datetime.now(UTC))
+
+    assert {j.id for j in swept} == {pending.id, firing.id}
+    assert await store.pending(limit=10) == []
+
+
+class _Documents:
+    """What the document store answers: `ok` for the ids it holds, `refused` for the rest."""
+
+    def __init__(self, held: dict[str, str]) -> None:
+        self._held = held
+
+    async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+        key = str(document_id)
+        if key not in self._held:
+            return SimpleNamespace(status="refused", title="", url="")
+        return SimpleNamespace(status="ok", title=f"title-{key[-4:]}", url=self._held[key])
+
+
+async def test_delivery_reads_each_document_back_and_names_a_missing_one(
+    fake_slots, fake_metrics,
+):
+    here, gone = UUID(int=1), UUID(int=2)
+    url = f"https://nora.example/documents/{here.hex}"
+    store = FakeComputeJobStore()
+    await store.create(_pending_job())
+    backend = FakeComputeBackend()
+    backend.set_result(job_id="job_1", result=JobResult(
+        JobStatus.SUCCEEDED, report="two sheets made", document_ids=(str(here), str(gone)),
+    ))
+    spoken: list = []
+    poller = _poller(
+        store, {"subagent": backend}, fake_slots, fake_metrics, spoken,
+        documents=_Documents({str(here): url}),
+    )
+
+    await poller.tick()
+
+    body = spoken[0].body
+    assert "two sheets made" in body
+    assert url in body
+    assert f"{gone}" in body and "could not be found" in body
+    assert spoken[0].document_urls == (url,)   # only the one that read back
+
+
+async def test_delivery_keeps_the_report_and_document_ids_on_the_row(fake_slots, fake_metrics):
+    store = FakeComputeJobStore()
+    job = _pending_job()
+    await store.create(job)
+    backend = FakeComputeBackend()
+    backend.set_result(job_id="job_1", result=JobResult(
+        JobStatus.SUCCEEDED, report="made it", document_ids=("d1",),
+    ))
+    poller = _poller(store, {"subagent": backend}, fake_slots, fake_metrics, [])
+
+    await poller.tick()
+
+    row = await store.get(job.id)
+    assert (row.result_report, row.result_document_ids) == ("made it", ("d1",))
