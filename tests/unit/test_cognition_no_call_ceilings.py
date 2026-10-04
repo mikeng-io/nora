@@ -145,7 +145,12 @@ def _veto_after(guard: DreamGuard, calls: int) -> str | None:
 
 def test_every_other_adaptor_keeps_its_per_tool_ceiling():
     """The default guard, which is how the Dreamer builds it for every adaptor
-    but the session, still vetoes the call over a tool's ceiling."""
+    but the session, still vetoes the call over a tool's ceiling.
+
+    "Every other adaptor" is every adaptor but TWO, deliberately: `cognition` (DEC-247) and
+    `subagent`, which DEC-247's amendment (DEC-282) exempts by name. The sub-agent's own half
+    is `tests/unit/test_subagent_worker.py::
+    test_the_workers_guard_has_no_call_ceiling_and_every_other_adaptors_keeps_its_own`."""
     guard = DreamGuard(adaptor="proactive", budgets={"about": 4}, metrics=Metrics())
     message = _veto_after(guard, 4)
     assert message is not None

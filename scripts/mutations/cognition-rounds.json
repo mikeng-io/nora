@@ -72,8 +72,8 @@
  {
   "name": "the template's round cap is under 10x",
   "file": "config.example.toml",
-  "old": "turns = 200\ntotal_tokens = 10240000",
-  "new": "turns = 24\ntotal_tokens = 10240000",
+  "old": "[dreamer.budgets.cognition]\nturns = 200\ntotal_tokens = 10240000",
+  "new": "[dreamer.budgets.cognition]\nturns = 24\ntotal_tokens = 10240000",
   "target": "tests/test_config.py::test_the_cognition_bounds_are_at_least_ten_times_the_tag_turns"
  },
  {

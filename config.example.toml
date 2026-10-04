@@ -1965,6 +1965,21 @@ total_tokens = 10240000
 output_tokens = 120000
 timeout_seconds = 3600.0
 
+# The sub-agent worker's bounds (design/subagent §5, DEC-247 amended): rounds, tokens
+# and a wall clock, and NOTHING per tool. Its DreamGuard is built with
+# `per_tool_ceilings = false`, every tool budget at 0 and no memory or pass-wide
+# budget, so a key `max_memory_calls`, `max_tool_calls` or `tool_calls` here is
+# refused at load (an ignored ceiling is one the operator believes binds). Starting
+# values are cognition's; UNMEASURED, so size them on traces, never on one sample.
+# `[subagent] enabled = true` refuses to load without this block. A stop at a bound
+# or the wall clock ends the job failed with that reason. Never stated in the
+# prompt (a model told of a cap declines the work).
+[dreamer.budgets.subagent]
+turns = 200
+total_tokens = 10240000
+output_tokens = 120000
+timeout_seconds = 3600.0
+
 
 # Lineage at assembly (design/cognition-loop/10-tiers.md §3; migration step
 # 2). Every derived row carries the set of (kind, subject, origin room) its
@@ -2006,6 +2021,18 @@ enabled = false
 # egress would block). Empty = no link at all: she says it is under Documents, by title.
 # An origin only: no path, query, fragment or login.
 public_url = ""
+
+
+[subagent]
+# The sub-agent worker (design/subagent): a background agent that does one objective
+# for Nora in her computer's workspace and reports once, through the compute-job
+# outbox. Ships OFF; undo is this flag and a restart. ON needs `[dreamer] enabled =
+# true` (its model source), `[compute] enabled = true` (the poller that delivers its
+# result) and a `[dreamer.budgets.subagent]` block (each refused at load otherwise).
+# Step 2 builds the worker only: no model-facing tool starts one yet.
+enabled = false
+# The worker's reasoning effort (operator, 2026-10-04). Its model is the Dreamer's.
+reasoning_effort = "low"
 
 
 [cognition]

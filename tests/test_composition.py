@@ -856,6 +856,37 @@ async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
         await deps.background.cancel_all()
 
 
+async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
+    """`[subagent] enabled = false` is the shipped default: nothing is built, nothing is
+    registered with the poller, and boot is what it was (design/subagent step 2)."""
+    assert cfg.subagent.enabled is False
+    deps = await build_dependencies(cfg)
+    try:
+        assert deps.subagent_backend is None
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_runs(
+    cfg, no_build_stamp,
+):
+    """On, the worker is the one `ComputeBackend` the poller resolves by kind `subagent`,
+    and the poller (which needs a backend to be spawned) now runs."""
+    from nora.app.subagent_backend import SubagentBackend
+
+    on = override_config(cfg, {
+        "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
+        "heartbeat.enabled": False,
+    })
+    deps = await build_dependencies(on)
+    try:
+        assert isinstance(deps.subagent_backend, SubagentBackend)
+        (poller,) = _spawned(deps, "ComputeJobPoller.run")
+        assert dict(poller._backends) == {"subagent": deps.subagent_backend}
+    finally:
+        await deps.background.cancel_all()
+
+
 def _resolved_module_name(rel: Path) -> str:
     """The dotted module name `nora/<rel>` would have at import time, e.g.
     `infra/sql/migrations_runner.py` -> `nora.infra.sql.migrations_runner`."""

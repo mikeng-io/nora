@@ -195,6 +195,7 @@ CONVERTED = (
     "nora/engagement/debrief_render.py",
     "nora/infra/transit/arrivals.py",
     "nora/language/cognition_render.py",
+    "nora/language/subagent_render.py",
     "nora/language/culture.py",
     "nora/domain/summons.py",
     "nora/skills/loader.py",

@@ -33,6 +33,7 @@ from nora.domain.stimuli import (
     WAKE_MODES,
     WAKE_REASONS,
 )
+from nora.domain.subagent import SUBAGENT_OUTCOMES
 from nora.domain.summons import (
     FOLLOW_UP_OUTCOMES,
     INTAKE_OUTCOMES,
@@ -956,6 +957,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "handle is in-memory and did not survive); and deferred (the "
         "conversation slot was held — the ONLY non-terminal value here, the "
         "row stays PENDING and the next tick tries again).",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_subagent_jobs_total",
+        "Sub-agent worker jobs (design/subagent) by how they ended: done, cancelled, "
+        "or failed for a reason (" + " / ".join(SUBAGENT_OUTCOMES[2:]) + "). The limit "
+        "reasons are the loop's own bounds and timeout the wall clock; a rising rate "
+        "of them is work that cannot finish inside its bounds (DEC-247, amended).",
         ("outcome",),
     ),
     # #110. Paired with `nora_loop_exhausted_fallbacks_total` below and read

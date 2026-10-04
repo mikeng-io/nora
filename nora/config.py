@@ -3431,6 +3431,30 @@ class CognitionConfig(BaseModel):
         return value
 
 
+class SubagentConfig(BaseModel):
+    """The sub-agent worker (design/subagent): a background Strands agent that does one
+    objective for Nora and reports once, through the deferred-job outbox.
+
+    **Ships OFF** (`enabled = false`): off, no `SubagentBackend` is built and no kind is
+    registered with the poller, so boot is what it was. On, it runs on the Dreamer's model
+    source and under the poller (`[dreamer] enabled` and `[compute] enabled` are both
+    required, refused at load), bounded by `[dreamer.budgets.subagent]` alone: rounds,
+    tokens and a wall clock, never per tool (DEC-247, amended). Step 2 builds the worker
+    only; no model-facing tool starts one yet. Undo is this flag and a restart.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    #: The worker's reasoning effort (operator, 2026-10-04): LOW, so a long job spends its
+    #: tokens on work, not thought. Typed as the provider's closed set, so a typo refuses to
+    #: start. The model itself is the Dreamer's (`[dreamer] model`, inheriting `[llm]`); a
+    #: separate model is not offered until a measurement asks for one.
+    reasoning_effort: Literal[
+        "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "low"
+
+
 class AssessConfig(BaseModel):
     """The Assess adaptor (design/cognition-loop/30-cognition.md §6,
     70-migration.md §2 row 3): the nightly, deterministic data-quality
@@ -3924,6 +3948,8 @@ class Config(BaseModel):
     # Optional and defaulted — see `CognitionConfig`. Ships OFF: no stimulus
     # is written and no wake evaluator runs until the operator sets `mode`.
     cognition: CognitionConfig = CognitionConfig()
+    # Optional and defaulted — see `SubagentConfig`. Ships OFF.
+    subagent: SubagentConfig = SubagentConfig()
     # Optional and defaulted — see `AssessConfig`. Ships OFF: `nora assess
     # run-nightly` is refused and nothing is written to `assess_report`.
     assess: AssessConfig = AssessConfig()
@@ -4349,6 +4375,59 @@ class Config(BaseModel):
                 "[dreamer.budgets.cognition] block: without one the session silently "
                 "runs on the code defaults (200 turns, 10.24M tokens, 3600 s). Copy the block "
                 "from config.example.toml or size your own"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _subagent_has_no_call_ceilings(self) -> Config:
+        """`[dreamer.budgets.subagent]` names no per-tool, memory or pass-wide call ceiling
+        (DEC-247, amended: the worker is bounded by rounds, tokens and time, never per tool).
+        The shared budget class accepts `max_memory_calls`, `max_tool_calls` and a `tool_calls`
+        table; this refuses them for this adaptor, where they would be inert (its guard holds no
+        such ceiling) and an operator would believe they bound something. Same rule as
+        `_cognition_has_no_call_ceilings`."""
+        block = self.dreamer.budgets.get("subagent")
+        if block is None:
+            return self
+        stale = sorted(
+            k for k in ("max_memory_calls", "max_tool_calls", "tool_calls")
+            if k in block.model_fields_set
+        )
+        if stale:
+            raise ValueError(
+                f"[dreamer.budgets.subagent] sets {', '.join(stale)}: a sub-agent has no call "
+                "ceiling of any kind (DEC-247, amended); it is bounded by turns, "
+                "total_tokens, output_tokens and timeout_seconds. Delete the key(s)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _subagent_needs_its_own_budget(self) -> Config:
+        """`[subagent] enabled = true` REFUSES to load without an explicit
+        `[dreamer.budgets.subagent]` block, for `_cognition_sessions_need_their_own_budget`'s
+        reason: `budget_for` would answer a missing block from the class defaults (6 turns, 40k
+        tokens, 120 s), a budget nobody chose for a job that runs for minutes. The block is in
+        `config.example.toml`."""
+        if self.subagent.enabled and "subagent" not in self.dreamer.budgets:
+            raise ValueError(
+                "[subagent] enabled = true needs an explicit [dreamer.budgets.subagent] "
+                "block: without one the worker silently runs on the class defaults (6 turns, "
+                "40k tokens, 120 s). Copy the block from config.example.toml or size your own"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _subagent_needs_the_dreamer_and_the_poller(self) -> Config:
+        """The worker runs on the Dreamer's model source and delivers through the compute
+        poller, so `[subagent] enabled = true` needs `[dreamer] enabled` and `[compute]
+        enabled`. Refused at load (the smaller change: the poller is `[compute]`'s and stays
+        its own switch), not found as a job that never starts or a result that is never
+        delivered."""
+        if self.subagent.enabled and not (self.dreamer.enabled and self.compute.enabled):
+            raise ValueError(
+                "[subagent] enabled = true needs [dreamer] enabled = true (the worker runs "
+                "on the Dreamer's model source) and [compute] enabled = true (the poller "
+                "that delivers its result)"
             )
         return self
 

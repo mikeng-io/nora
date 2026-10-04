@@ -542,6 +542,72 @@ def create_dream_agent(
     )
 
 
+def create_subagent(
+    *,
+    model: OpenAIModel,
+    system_prompt: str,
+    tools: list,
+    guard: HookProvider,
+    progress: HookProvider,
+    reasoning_watch: HookProvider | None = None,
+    skills_dir: str | Path,
+    trace_attributes: dict,
+    retry: RetryPolicy,
+    agent_name: str = "subagent",
+) -> Agent:
+    """The sub-agent worker's agent (design/subagent §4): a background loop that does ONE
+    objective for Nora and answers with a report.
+
+    A sibling of `create_dream_agent` rather than a flag on it, and it lives HERE for the same
+    reason: this module is the only one in the codebase allowed to construct Strands objects
+    (spec C.7). What differs from the Dreamer's, and why:
+
+    - **it has a `skills_dir`.** The worker's know-how arrives as skills, the way
+      `nora/skills/document-creation` does for a tag turn, so `AgentSkills` is built over
+      `skills_dir` exactly as `create_agent` builds it (one plugin per agent, `strict=False`).
+      The Dreamer has an objective and no repertoire; the worker has both. The `skills`
+      activation tool the plugin registers is admitted by the guard because the runner adds
+      its name to the guard's membership set.
+    - **`progress` is a second hook**, after the guard, which counts rounds, records the last
+      tool and collects the `document_id`s of `document_publish` results that came back `ok`.
+    - **`reasoning_watch`** is the Dreamer's optional one (issue #325): the worker runs at a
+      reasoning effort (`[subagent] reasoning_effort`, low), and the watch counts continuation
+      calls whose reasoning the transport threw away, so it is wired the same way.
+    - no `pre_fill` (the worker starts blank; its brief is the invocation's prompt), no
+      `tool_call_log` (no conversation to replay), no reasoning watch (nothing it writes is
+      delivered as written; the report goes to Nora).
+
+    `guard` is typed `HookProvider` for `create_dream_agent`'s reason; the guard that belongs
+    here is a `DreamGuard` built with `per_tool_ceilings=False` (DEC-247, amended for the
+    sub-agent). The posture is otherwise the Dreamer's: `NullConversationManager`, no session
+    manager, no stdout handler, no tools loaded from a directory, and a FRESH
+    `ModelRetryStrategy` per agent.
+
+    `tool_choice` is not set here: it belongs to the MODEL, built with `AFTER_SPEAKING` so the
+    loop ends when the model stops calling tools.
+    """
+    return Agent(
+        model=model,
+        plugins=[AgentSkills(str(skills_dir), strict=False)],
+        name=agent_name,
+        agent_id=agent_name,
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts,
+            initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
+        system_prompt=system_prompt,
+        tools=tools,
+        # `reasoning_watch` LAST, for `create_agent`'s reason: it must read the guard's verdicts.
+        hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
+        conversation_manager=NullConversationManager(),
+        session_manager=None,
+        callback_handler=None,
+        load_tools_from_directory=False,
+        trace_attributes=trace_attributes,
+    )
+
+
 #: Strands' canned recovery notice (`_recover_message_on_max_tokens_reached`,
 #: `event_loop.py:601`) as two fragments, so a partial-text extraction can
 #: exclude a block carrying it without asserting a full-sentence match.

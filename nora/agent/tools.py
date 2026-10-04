@@ -4380,6 +4380,13 @@ def build_tool_specs(
     ai_peer: str = "nora",
     fire_turn: bool = False,
     dream_adaptor: str = "",
+    # THE THIRD provenance (design/subagent §4): the id of the background job this set
+    # is built for, `""` for every tag, fire turn and Dreamer pass. Non-empty makes the
+    # computer and document actor `subagent`, the audit path `subagent`, and the
+    # computer lease its own (`job:<id>`), so a tag turn holding the room's lease never
+    # blocks the worker. It changes nothing else: WHICH tools the worker holds is the
+    # grant `nora.agent.subagent_tools` passes to `ToolRegistry.surface`.
+    subagent_job: str = "",
     reminders: ReminderStore | None = None,
     reminder_caps: ReminderCaps | None = None,
     clock: Callable[[], datetime] | None = None,
@@ -12985,7 +12992,8 @@ Args:
     # pass names its adaptor, a fire turn has no tagger, anything else is a
     # tag. `cognition` and `operator` are reserved actors no path reaches yet.
     computer_actor = (
-        f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
+        "subagent" if subagent_job
+        else f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
         else "fire" if fire_turn else "tag"
     )
     # The computer runs only when every call can be recorded in full: the
@@ -13045,7 +13053,8 @@ Args:
             requester_person_id=_computer_requester(),
             platform=computer_platform, conversation_id=bound_conversation_id,
             conversation_type=conversation_type, tag_id=current_tag_id(),
-            scope=bound_computer_scope, tool=tool, path="direct",
+            scope=bound_computer_scope, tool=tool,
+            path="subagent" if subagent_job else "direct",
             trace_id=trace_id, span_id=span_id, status=status,
             request=_audit_safe(request or {}),
             result=_audit_safe({"status": status, **(result or {})}) if phase == "finished"
@@ -13150,8 +13159,12 @@ Args:
         call's `started` row, which carries the id. A failure is logged and
         counted (`stage="session"`) and the call still runs: the session is
         bookkeeping over the audit, and the audit row is what must exist.
-        An opening writes its own transition row."""
-        if computer_sessions is None:
+        An opening writes its own transition row.
+
+        A sub-agent job keeps no session: sessions are a live turn's task record
+        (`<computer>`, the sweeper), and the worker's own record is its job row and
+        its audit rows, so it neither continues nor bumps a tag turn's."""
+        if computer_sessions is None or subagent_job:
             return None
         now = now_fn()
         try:
@@ -13195,18 +13208,26 @@ Args:
         if computer_leases is None:
             yield None
             return
-        key = lease_key(bound_computer_scope, session_id)
+        # A sub-agent job locks its OWN key, never the room's, so a tag turn
+        # holding the room's lease never blocks it and it never blocks a tag. It
+        # waits (bounded) like a live caller, because the only other holder of its
+        # key is its own parallel tool call, and a `busy` there would spend a turn.
+        key = (
+            f"job:{subagent_job}" if subagent_job
+            else lease_key(bound_computer_scope, session_id)
+        )
         asked = now_fn()
-        lease: Lease | None = await computer_leases.acquire(key, live=computer_live)
+        waits = computer_live or bool(subagent_job)
+        lease: Lease | None = await computer_leases.acquire(key, live=waits)
         request = {"key": key, "for_tool": tool, "for_operation": str(operation_id)}
         if lease is None:
             _record(metrics, tool, "unavailable")
             await _computer_append_finished(_computer_row(
                 "computer_lease", uuid.uuid4(), "finished", "busy", started=asked,
                 finished=now_fn(), session_id=session_id,
-                result={**request, "deferred": not computer_live},
+                result={**request, "deferred": not waits},
             ), tool=tool)
-            yield "live" if computer_live else "background"
+            yield "live" if waits else "background"
             return
         lease_op, acquired = uuid.uuid4(), now_fn()
         try:
@@ -14114,9 +14135,16 @@ Args:
 
     # ---- document_publish / document_read (design/artifact §26) ----------------
     document_actor = (
-        f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
+        "subagent" if subagent_job
+        else f"{DREAMER_ACTOR_PREFIX}{dream_adaptor}" if dream_adaptor
         else "fire" if fire_turn else "tag"
     )
+    # Who counts as having ASKED for a document (`document_publish`'s requester
+    # check). A tag turn does. A sub-agent job does too, for its lifetime: the person
+    # who launched it asked (operator ruling, design/subagent §4, DEC-282), and what it
+    # publishes reaches the room only through Nora's delivery message. Nothing else
+    # joins them: `document_set_status` below stays `tag` only.
+    document_asked = frozenset({"tag", "subagent"})
 
     def _document_findings(findings: Sequence[Any]) -> list[str]:
         """The checker's findings as plain sentences, each led by where it is."""
@@ -14180,7 +14208,7 @@ Args:
             }
         link_carry.document_tried()
         tagger = getattr(room, "tagger", None) if room is not None else None
-        if document_actor != "tag" or tagger is None:
+        if document_actor not in document_asked or tagger is None:
             _record(metrics, tool, "unavailable", reason="no_requester")
             return {
                 "status": "unavailable",

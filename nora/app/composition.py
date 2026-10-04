@@ -90,6 +90,8 @@ from nora.app.memory_routing import (
     workspaces_of_person,
 )
 from nora.app.source_health import AdapterHealthRecorder
+from nora.app.subagent_backend import SubagentBackend
+from nora.app.subagent_wiring import build_subagent_backend
 from nora.app.summons_inbox import SummonsInbox
 from nora.app.voice_events import VoiceEventConsumer
 from nora.app.wake import Floor, WakeEvaluator
@@ -130,6 +132,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.reminders import ReminderCaps, ReminderStore
 from nora.domain.speech_markup import normalise as normalise_for_speech
 from nora.domain.stimuli import WakeHook, WakePolicy
+from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -1096,6 +1099,9 @@ class Dependencies:
     wake_evaluator: WakeEvaluator | None = None
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
+    # The sub-agent worker (design/subagent): `None` under `[subagent] enabled = false`, the
+    # shipped default. The shutdown cancels the jobs in flight.
+    subagent_backend: SubagentBackend | None = None
     wake_tick_seconds: float = 30.0
     # The computer session sweeper (design/sandbox-runtime §15.2): `None`
     # unless `[computer] enabled`. `nora/__main__.py` spawns
@@ -2548,12 +2554,6 @@ async def build_dependencies(
     # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`
     # (design/subagent §6). Empty today; step 2 registers the sub-agent worker here.
     compute_backends: dict[str, ComputeBackend] = {}
-    if cfg.compute.enabled and not compute_backends:
-        log.warning(
-            "[compute] enabled = true but no ComputeBackend is registered (the "
-            "per-job container backend was retired, design/sandbox-runtime "
-            "decision 4); the compute-job poller stays idle. Set enabled = false."
-        )
     # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
     # built ONLY when `[computer] enabled`. Off leaves it `None` and every
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
@@ -2843,6 +2843,27 @@ async def build_dependencies(
         # is a tool that exists.
         budget_overrides=cfg.llm.budgets,
     )
+    # The sub-agent worker (design/subagent), registered under its kind for the poller below.
+    # OFF by default: nothing is built and `compute_backends` stays empty. It needs the tool
+    # registry (its closed tool list is built from it), which is why it sits here.
+    subagent_backend: SubagentBackend | None = None
+    if cfg.subagent.enabled:
+        subagent_backend = build_subagent_backend(
+            cfg=cfg, client=client, tier=tier, registry=tool_registry, store=audit,
+            persons=persons, honcho=memory, metrics=metrics, rosters=rosters,
+            self_ids=registry.self_aliases(), clock=clock, result_caps=TOOL_RESULT_CAPS,
+            reasoning_effort=str(_reasoning_effort(
+                cfg.subagent.reasoning_effort, source="[subagent] reasoning_effort",
+            )),
+        )
+        compute_backends[SUBAGENT_KIND] = subagent_backend
+    if cfg.compute.enabled and not compute_backends:
+        log.warning(
+            "[compute] enabled = true but no ComputeBackend is registered (the "
+            "per-job container backend was retired, design/sandbox-runtime "
+            "decision 4; `[subagent] enabled` registers the sub-agent worker); the "
+            "compute-job poller stays idle. Set enabled = false."
+        )
     if presence_store is not None:
         # The R-21/R-31 startup invariant (design/19 §7.7, wired with `whereis`
         # per DEC-54(4)): alarm the day a policy conversation is no longer a
@@ -4012,6 +4033,7 @@ async def build_dependencies(
         wake_evaluator=wake_evaluator,
         cognition_runner=cognition_runner,
         cognition_shutdown=cognition_shutdown,
+        subagent_backend=subagent_backend,
         wake_tick_seconds=cfg.cognition.tick_seconds,
         computer_sweeper=(
             ComputerSessionSweeper(

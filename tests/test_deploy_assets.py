@@ -202,3 +202,12 @@ def test_the_presence_alert_rules_pass_their_promtool_tests():
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_the_subagent_doctrine_is_data_declared_as_package_data():
+    """`nora/subagent/` has no `__init__.py` (data, not a package), so a wheel ships its
+    doctrine only if pyproject declares it; the image gets it from `COPY nora/`."""
+    assert "subagent/doctrine/*.md" in (ROOT / "pyproject.toml").read_text()
+    assert (ROOT / "nora" / "subagent" / "doctrine" / "subagent.md").is_file()
+    assert not list((ROOT / "nora" / "subagent").rglob("*.py"))
+    assert not (ROOT / "nora" / "subagent" / "__init__.py").exists()

@@ -380,3 +380,15 @@ supersession of issue #22. Step 2's amends DEC-247, whose text keeps every
 other adaptor's guards unchanged and whose
 `test_every_other_adaptor_keeps_its_per_tool_ceiling` enforces it, and
 records the §4 rulings.
+
+**Step 2 as built (DEC-282).** Off by default (`[subagent] enabled = false`). Three places
+differ from the text above, none of them a reversal:
+
+- the job folder `projects/<id>/` is named by the backend's job id (the row does not exist
+  until `launch` returns), and it is a convention the brief states plus the worker's own lease
+  key, not a rewrite of every path argument: `computer_import` writes to `inbox/`, which a
+  rewritten `computer_read` could not then find;
+- `compute_jobs.trace_id` is not written: `JobResult` and `mark` carry none, so the trace id is
+  held in memory beside the rounds and last tool (`SubagentBackend.status`);
+- enabling the sub-agent requires `[compute] enabled` and `[dreamer] enabled` at load rather
+  than implying the poller.

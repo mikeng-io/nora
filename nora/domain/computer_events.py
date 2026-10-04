@@ -41,9 +41,13 @@ from uuid import UUID
 #: her into, `fire` a fire turn (a reminder, participation, a proactive act),
 #: `dreamer:<adaptor>` a Dreamer pass. `sweeper` is the session sweeper
 #: (design/sandbox-runtime §15.2, migration `0082`), which writes only the
-#: rows of the sessions it expires. `cognition` and `operator` are reserved:
-#: no path reaches the computer tools as either today.
-ACTORS: frozenset[str] = frozenset({"tag", "fire", "cognition", "operator", "sweeper"})
+#: rows of the sessions it expires. `subagent` is a background worker a tag turn
+#: launched (design/subagent §4, migration `0095`): it runs under its own lease key
+#: and is never a live actor. `cognition` and `operator` are reserved: no path
+#: reaches the computer tools as either today.
+ACTORS: frozenset[str] = frozenset({
+    "tag", "fire", "cognition", "operator", "sweeper", "subagent",
+})
 
 #: The actors who wait for a turn's answer: a live turn (design §15.4). Every
 #: other actor is background and never queues behind one.
@@ -55,8 +59,8 @@ def is_live_actor(actor: str) -> bool:
 DREAMER_ACTOR_PREFIX = "dreamer:"
 
 #: How the call reached the computer (`ComputerEvent.path`). `direct` is a
-#: tool call from Nora's own loop; `subagent` is reserved for S4 (a browsing
-#: sub-agent acting on her behalf).
+#: tool call from Nora's own loop; `subagent` is a call made by a background
+#: worker acting on her behalf (design/subagent §4).
 CALL_PATHS: frozenset[str] = frozenset({"direct", "subagent"})
 
 

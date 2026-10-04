@@ -961,6 +961,7 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
+        subagent_job: str = "",
         shelf: ToolShelf | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
     ) -> tuple[ToolSpec, ...]:
@@ -1039,6 +1040,7 @@ class ToolRegistry:
             question=question, context_window=context_window,
             transcript=transcript,
             ai_peer=self._ai_peer, fire_turn=fire_turn, dream_adaptor=dream_adaptor,
+            subagent_job=subagent_job,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
             notes=self._notes, note_unit=self._note_unit,
@@ -1132,6 +1134,7 @@ class ToolRegistry:
         links: LinkCarry | None = None,
         supplied_unit: str | None = None,
         dream_adaptor: str = "",
+        subagent_job: str = "",
         grant: frozenset[str] | None = None,
         on_rows: Callable[[Sequence[TranscriptRow]], None] | None = None,
         defer: bool = False,
@@ -1179,6 +1182,7 @@ class ToolRegistry:
             transcript=transcript,
             fire_turn=fire_turn, location_trusted=location_trusted, links=links,
             supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
+            subagent_job=subagent_job,
             shelf=shelf, on_rows=on_rows,
         )
         loader = next(spec for spec in specs if spec.name == LOADER_TOOL)
