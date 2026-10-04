@@ -35,7 +35,10 @@ from typing import Any
 import httpx
 from openai import AsyncOpenAI
 from strands import Agent, ModelRetryStrategy
-from strands.agent.conversation_manager import NullConversationManager
+from strands.agent.conversation_manager import (
+    NullConversationManager,
+    SlidingWindowConversationManager,
+)
 from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
@@ -542,6 +545,12 @@ def create_dream_agent(
     )
 
 
+#: The sub-agent worker's history window, in messages (design/subagent §4d). A long job's
+#: history would otherwise grow without bound, so the oldest steps scroll away and the
+#: checkpoint, re-anchored into the pinned brief (`SubagentProgress`), carries the place.
+SUBAGENT_WINDOW_MESSAGES = 40
+
+
 def create_subagent(
     *,
     model: OpenAIModel,
@@ -579,9 +588,11 @@ def create_subagent(
 
     `guard` is typed `HookProvider` for `create_dream_agent`'s reason; the guard that belongs
     here is a `DreamGuard` built with `per_tool_ceilings=False` (DEC-247, amended for the
-    sub-agent). The posture is otherwise the Dreamer's: `NullConversationManager`, no session
-    manager, no stdout handler, no tools loaded from a directory, and a FRESH
-    `ModelRetryStrategy` per agent.
+    sub-agent). The posture is otherwise the Dreamer's: no session manager, no stdout handler,
+    no tools loaded from a directory, and a FRESH `ModelRetryStrategy` per agent. The one
+    difference is its history: a sliding window of `SUBAGENT_WINDOW_MESSAGES`, not
+    `NullConversationManager`, because a job runs hundreds of rounds in one invocation (the
+    Dreamer's passes are short). `progress` re-anchors the checkpoint after each trim.
 
     `tool_choice` is not set here: it belongs to the MODEL, built with `AFTER_SPEAKING` so the
     loop ends when the model stops calling tools.
@@ -600,7 +611,13 @@ def create_subagent(
         tools=tools,
         # `reasoning_watch` LAST, for `create_agent`'s reason: it must read the guard's verdicts.
         hooks=[guard, progress] if reasoning_watch is None else [guard, progress, reasoning_watch],
-        conversation_manager=NullConversationManager(),
+        # A sliding window, trimmed BEFORE every model call (`per_turn=True`: the default trims
+        # once per invocation, and a job is one invocation of hundreds of rounds) with the
+        # brief, the first message, pinned. The agent registers the manager's own callback
+        # before `hooks`, so `progress` re-anchors the checkpoint on the trimmed list.
+        conversation_manager=SlidingWindowConversationManager(
+            window_size=SUBAGENT_WINDOW_MESSAGES, per_turn=True, pin_first=1,
+        ),
         session_manager=None,
         callback_handler=None,
         load_tools_from_directory=False,

@@ -204,6 +204,8 @@ def test_every_declared_tool_is_built(wiring):
         "document_publish", "document_read", "document_set_status",
         # design/subagent §3 (DEC-283).
         "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+        # design/subagent §4d: the worker's own place-keeper.
+        "checkpoint_update",
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).

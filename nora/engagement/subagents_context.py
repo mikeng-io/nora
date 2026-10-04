@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from nora.domain.checkpoint import read_row
 from nora.domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
 from nora.domain.subagent import SUBAGENT_KIND, job_title
 from nora.domain.subagents_context import (
@@ -129,6 +130,7 @@ class SubagentsContextReader:
         )
 
     def _running(self, row: ComputeJob) -> SubagentLine:
+        stored, _kept = read_row(row.checkpoint, row.checkpoint_at)
         base: dict[str, Any] = {"id": str(row.id), "objective": row.task,
                 "title": job_title(row.payload, row.task), "created_at": row.created_at}
         if row.state is ComputeJobState.FIRING:
@@ -142,14 +144,18 @@ class SubagentsContextReader:
                 # The status read failed: nothing is known about the worker, so the job is
                 # still running as far as the row says, with its progress unknown.
                 log.exception("subagent status read failed for %s", row.id)
-                return SubagentLine(state="running", progress_known=False, **base)
+                return SubagentLine(
+                    state="running", progress_known=False, checkpoint=stored, **base,
+                )
         if worker is None:
-            return SubagentLine(state="running", progress_known=False, **base)
+            return SubagentLine(state="running", progress_known=False, checkpoint=stored, **base)
         if status is None or not status.running:
             return SubagentLine(state="ended", **base)
         return SubagentLine(
             state="running", progress_known=True, rounds=status.rounds,
-            last_tool=status.last_tool, **base,
+            last_tool=status.last_tool,
+            # memory first: it is fresher than a row whose write failed or came too early
+            checkpoint=getattr(status, "checkpoint", None) or stored, **base,
         )
 
     async def _titles(self, row: ComputeJob) -> tuple[tuple[str, str], ...]:

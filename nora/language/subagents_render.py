@@ -28,6 +28,7 @@ from ..domain.subagents_context import (
     SubagentLine,
     SubagentsView,
 )
+from .checkpoint_render import render_checkpoint
 
 
 def _cut(text: str, limit: int) -> str:
@@ -79,12 +80,24 @@ def render_subagents(view: SubagentsView | None) -> ContextBlock | None:
     in the window, or the read did not come back)."""
     if view is None or not view.lines:
         return None
-    rows = [_line(line, view) for line in view.lines]
+    rows: list[str] = []
+    for line in view.lines:
+        rows.append(render_bullets([_line(line, view)], mark=""))
+        # a running job's own doing and next, under its line (design/subagent §4d): already
+        # escaped by the renderer, so it is added after `render_bullets`, never through it
+        if line.state == "running" and line.checkpoint is not None:
+            nested = render_checkpoint(
+                line.checkpoint, None, title=line.title or "(untitled)", now=view.now,
+                mode="block",
+            )
+            if nested:
+                rows.append(nested)
     if view.omitted:
         floor = "at least " if view.omitted_at_least else ""
-        rows.append(f"{floor}{view.omitted} more jobs in the window are left out; "
-                    "subagent_list shows them")
-    body = render_bullets(rows, mark="")
+        rows.append(render_bullets([
+            f"{floor}{view.omitted} more jobs in the window are left out; "
+            "subagent_list shows them"], mark=""))
+    body = "\n".join(r for r in rows if r)
     if not body:
         return None
     return ContextBlock(name="subagents", body=body)

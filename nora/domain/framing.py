@@ -527,6 +527,12 @@ class ComputeBody:
     task: str
     result: JobResult
     documents: DocumentReadBack = field(default_factory=DocumentReadBack)
+    #: Plain markdown from `nora.language.checkpoint_render` (mode `delivery`): where a job that
+    #: STOPPED had got to, in the worker's own unchecked words. Empty for a job that finished
+    #: (its report has the same sections) and for one that wrote none.
+    checkpoint: str = ""
+    #: Files the worker stored with `computer_export` to `keep`, as code saw it do it.
+    kept_files: tuple[str, ...] = ()
 
     def _documents(self) -> str:
         made = "".join(
@@ -535,8 +541,10 @@ class ComputeBody:
             for doc in self.documents.found
         )
         lost = ", ".join(_put(i, "carried") for i in self.documents.missing)
+        kept = ", ".join(_put(f, "carried") for f in self.kept_files)
         return (
             (f"\nDocuments it made:{made}" if made else "")
+            + (f"\nFiles it kept in the workspace: {kept}" if kept else "")
             + (
                 "\nIt named these documents but they could not be found, so they are not "
                 f"saved and have no link: {lost}" if lost else ""
@@ -551,7 +559,15 @@ class ComputeBody:
                 f"It finished: {_put(result.report or result.summary, 'carried')}"
                 f"{link}{self._documents()}"
             )
-        return f"It failed: {_put(result.error or 'no reason given', 'carried')}"
+        where = (
+            "\nWhat it had recorded when it stopped (its own words, not checked; what it "
+            f"made is listed above):\n{_put(self.checkpoint, 'carried')}"
+            if self.checkpoint else ""
+        )
+        return (
+            f"It failed: {_put(result.error or 'no reason given', 'carried')}"
+            f"{self._documents()}{where}"
+        )
 
     def render(self) -> str:
         return f"(asked earlier) {_put(self.task, 'carried')}\n\n{self._outcome()}"

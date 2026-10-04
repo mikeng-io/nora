@@ -80,6 +80,9 @@ _SPECS_ONLY = frozenset({
     # design/subagent step 2: the third provenance, threaded from `ToolRegistry.specs` by
     # `SubagentToolSource`. `build_tools` is the legacy wrapper no worker is built through.
     "subagent_job",
+    # design/subagent §4d: the worker's progress record, where `checkpoint_update` writes;
+    # threaded the same way as `subagent_job`.
+    "checkpoint_sink",
     "music", "relay", "reminder_caps", "reminders", "tool_call_log_store",
     "versions",
     # design/tool-catalogue/02: `load_tools`' per-turn shelf. Created and

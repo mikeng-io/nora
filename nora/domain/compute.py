@@ -96,6 +96,10 @@ class ComputeJob:
     result_document_ids: tuple[str, ...] = ()
     # The worker's Langfuse trace id, written by the backend when known.
     trace_id: str | None = None
+    # The sub-agent's checkpoint as last written (`nora.domain.checkpoint.row_payload`) and
+    # when; `None` for a row from before checkpoints or a job that wrote none.
+    checkpoint: Mapping[str, Any] | None = None
+    checkpoint_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +130,10 @@ def normalise_compute_job(job: ComputeJob) -> ComputeJob:
         completed_at=(
             None if job.completed_at is None
             else ensure_utc_job(job.completed_at, field="completed_at")
+        ),
+        checkpoint_at=(
+            None if job.checkpoint_at is None
+            else ensure_utc_job(job.checkpoint_at, field="checkpoint_at")
         ),
     )
 
@@ -159,6 +167,15 @@ class ComputeJobStore(Protocol):
         (`subagent_list` and `subagent_read` are the readers)."""
         ...
 
+    async def set_checkpoint(
+        self, backend_job_id: str, checkpoint: Mapping[str, Any], at: datetime,
+    ) -> bool:
+        """Replace the checkpoint of the still-`PENDING` row a backend job belongs to (a
+        worker knows its backend id, never the row's: the row is written after `launch`
+        returns). False when there is no such row yet or it is no longer pending: the
+        caller still holds the checkpoint in memory and writes again at its next update."""
+        ...
+
     async def claim(self, job_id: UUID) -> bool:
         """`PENDING -> FIRING`, compare-and-set. True iff this caller took
         the row — the same at-most-once discipline `ReminderStore.claim`
@@ -173,8 +190,11 @@ class ComputeJobStore(Protocol):
         failure_reason: str | None = None, result_report: str | None = None,
         result_document_ids: tuple[str, ...] | None = None,
         trace_id: str | None = None,
+        checkpoint: Mapping[str, Any] | None = None, checkpoint_at: datetime | None = None,
     ) -> bool:
-        """Terminal write for a row already claimed. True if it changed."""
+        """Terminal write for a row already claimed. True if it changed. `checkpoint` is the
+        worker's final one, from the result in memory: the row may hold an older one (an update
+        that came before the row existed, or a failed write)."""
         ...
 
     async def sweep_firing(self, *, now: datetime) -> list[ComputeJob]:
