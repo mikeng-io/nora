@@ -1653,7 +1653,7 @@ tests. The `spike` page and the demos stay: `app/e2e/documents.spec.ts` drives t
 restore, and present and print stay: they are operator decisions of the last two days (DEC-266 to DEC-268, DEC-272) and
 four documents give no evidence to reverse them. `Checklist` stays (3 of 4 documents use it).
 
-## 43. A day-of pack: five components, and four that stop being static (2026-10-05)
+## 43. A day-of pack: five components, and four that stop being static (2026-10-05, DEC-286)
 
 **What was read.** On 2026-10-04 the operator sent the Ridgeline room a zip of eight spreadsheet exports for a
 wedding day (a rundown, a check list, a seating plan, a tea-ceremony table, a photo table, a music list, a thank-you
