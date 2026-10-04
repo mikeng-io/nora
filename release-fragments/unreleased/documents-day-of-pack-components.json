@@ -1,0 +1,12 @@
+{
+  "type": "feature",
+  "summary": "Documents can now hold a run of show with several people, a seating plan, a tap-to-call contact list, a countdown, a progress bar and a budget donut, and their check lists can be ticked off on the reader's phone.",
+  "details": [
+    "A timeline entry shows its list items as a list and who it falls to; a table can right-align numbers, show a totals row and keep its first column in view while it scrolls sideways.",
+    "When Nora is sent a spreadsheet to turn into a document, she is told to rebuild it for a phone with these blocks rather than paste a wide grid."
+  ],
+  "limitations": [
+    "A ticked box is kept in that one browser; two people opening the same document do not see each other's ticks.",
+    "Documents Nora has already made keep their old look until she is asked to make them again."
+  ]
+}

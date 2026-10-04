@@ -10,10 +10,17 @@ import { createContext, useContext, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { nestedToFlat } from "@json-render/core";
-import ReactMarkdown from "react-markdown";
 import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
+import { ChecklistBlock } from "./checklist";
+import { Md } from "./markdown";
+import { ContactBlock } from "./contact";
+import { CountdownBlock } from "./countdown";
+import { ProgressBlock } from "./progress";
+import { ScheduleBlock } from "./schedule";
+import { SeatingBlock } from "./seating";
+import { TimelineBlock } from "./timeline";
 import { ChartBlock, DocumentIdContext, ImageBlock, MapBlock, MermaidBlock } from "./blocks";
 import { cn } from "@/lib/cn";
 import { catalog, parseDocument, type DocumentSpec, type components } from "@/lib/documents/catalog";
@@ -38,35 +45,6 @@ const COLS: Record<number, string> = {
   4: "grid-cols-2 sm:grid-cols-4",
 };
 
-// Markdown for a document: raw HTML is never parsed (react-markdown's default),
-// images are refused (a picture is an Image, through custody), links open
-// outside and carry no referrer. Anything but http(s) and mailto is dropped.
-const SAFE_LINK = /^(https?:|mailto:)/i;
-
-function Md({ text }: { text: string }) {
-  return (
-    <div className="flex flex-col gap-3 text-body text-ink [&_code]:rounded-control [&_code]:bg-hoodie [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-meta [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_h1]:text-heading [&_h2]:text-lead [&_h3]:text-title [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-hairline [&_blockquote]:pl-3 [&_blockquote]:text-ink-soft">
-      <ReactMarkdown
-        disallowedElements={["img", "iframe", "script", "style"]}
-        unwrapDisallowed
-        urlTransform={(url) => (SAFE_LINK.test(url) ? url : "")}
-        components={{
-          a: ({ href, children }) =>
-            href ? (
-              <a href={href} target="_blank" rel="noopener noreferrer nofollow" className="text-denim underline underline-offset-2">
-                {children}
-              </a>
-            ) : (
-              <span>{children}</span>
-            ),
-        }}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
 /** What the page that shows a document puts right under its title (who made it, the
  * archive and delete controls): the title is the first thing on the page, so these
  * cannot sit above it. Empty for a fixture. */
@@ -90,39 +68,65 @@ function PageBlock({ props, children }: Render<"Page">) {
   );
 }
 
+const ALIGN = { left: "text-left", right: "text-right tabular-nums", center: "text-center" } as const;
+
 function TableBlock({ props }: Render<"Table">) {
   const t = useTranslations("documents.renderer");
+  const align = (j: number) => ALIGN[props.align?.[j] ?? "left"];
+  // The first column stays put while a wide table scrolls sideways, and the header row
+  // while a long one scrolls down. Borders sit on the cells (border-separate), because a
+  // collapsed border does not travel with a sticky cell.
+  const first = "sticky left-0 z-10 bg-surface";
   return (
-    // A wide table scrolls sideways on a phone, so its scroll region takes focus (axe:
+    // A wide table scrolls on a phone, so its scroll region takes focus (axe:
     // scrollable-region-focusable) and has a name.
     <div
       role="region"
       aria-label={props.caption ?? t("tableFallback")}
       tabIndex={0}
-      className="overflow-x-auto rounded-panel border border-hairline bg-surface focus-visible:outline-2 focus-visible:outline-denim"
+      className="max-h-[70vh] overflow-auto rounded-panel border border-hairline bg-surface focus-visible:outline-2 focus-visible:outline-denim"
     >
-      <table className="w-full min-w-max border-collapse text-left text-body">
+      <table className="w-full border-separate border-spacing-0 text-left text-body">
         {props.caption ? <caption className="px-4 py-2 text-left text-meta text-ink-muted">{props.caption}</caption> : null}
         <thead>
-          <tr className="border-b border-hairline">
+          <tr>
             {props.columns.map((c, i) => (
-              <th key={i} scope="col" className="px-4 py-2 text-label font-semibold text-ink-soft">
+              <th
+                key={i}
+                scope="col"
+                className={cn(
+                  "sticky top-0 border-b border-hairline bg-surface px-4 py-2 text-label font-semibold text-ink-soft",
+                  align(i),
+                  i === 0 ? "left-0 z-30" : "z-20",
+                )}
+              >
                 {c}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-hairline">
+        <tbody className="[&_tr:last-child_td]:border-b-0">
           {props.rows.map((r, i) => (
             <tr key={i}>
               {props.columns.map((_, j) => (
-                <td key={j} className="px-4 py-2 align-top text-ink">
+                <td key={j} className={cn("border-b border-hairline px-4 py-2 align-top text-ink", align(j), j === 0 && first, props.align?.[j] === "right" && "whitespace-nowrap")}>
                   {r[j] ?? ""}
                 </td>
               ))}
             </tr>
           ))}
         </tbody>
+        {props.footer ? (
+          <tfoot>
+            <tr>
+              {props.columns.map((_, j) => (
+                <td key={j} className={cn("border-t border-hairline px-4 py-2 align-top font-semibold text-ink", align(j), j === 0 && first, props.align?.[j] === "right" && "whitespace-nowrap")}>
+                  {props.footer?.[j] ?? ""}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   );
@@ -238,33 +242,14 @@ const { registry } = defineRegistry(catalog, {
         {props.text ? <p className="mt-0.5 text-body text-ink-soft">{props.text}</p> : null}
       </div>
     ),
-    Timeline: ({ props }: Render<"Timeline">) => (
-      <ol className="flex flex-col divide-y divide-hairline rounded-panel border border-hairline bg-surface">
-        {props.items.map((it, i) => (
-          <li key={i} className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[8rem_1fr] sm:gap-4">
-            <span className="font-mono text-meta text-ink-muted">{it.label}</span>
-            <div>
-              <p className="text-title font-semibold text-ink">{it.title}</p>
-              {it.text ? <p className="mt-0.5 text-body text-ink-soft">{it.text}</p> : null}
-            </div>
-          </li>
-        ))}
-      </ol>
-    ),
+    Timeline: TimelineBlock,
     Sources: SourcesBlock,
-    Checklist: ({ props }: Render<"Checklist">) => (
-      <ul className="flex flex-col gap-2 text-body text-ink">
-        {props.items.map((it, i) => (
-          <li key={i} className="flex gap-3">
-            <span aria-hidden className="mt-1 size-4 shrink-0 rounded-control border border-seam" />
-            <span>
-              {it.text}
-              {it.note ? <span className="block text-meta text-ink-muted">{it.note}</span> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
-    ),
+    Checklist: ChecklistBlock,
+    Progress: ProgressBlock,
+    Countdown: CountdownBlock,
+    Contact: ContactBlock,
+    Seating: SeatingBlock,
+    Schedule: ScheduleBlock,
   } as never,
 });
 

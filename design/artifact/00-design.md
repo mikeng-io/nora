@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Documents: json-render specs, stored by Nora and opened in the portal"
-description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 19 components (21 until §42 removed Tabs) (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are built (§33, §34). The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
+description: "Built and live in part. What Smith called an artifact is a document: a small JSON spec over a closed catalog of 24 components (19 after §42 removed Tabs, five added in §43) (json-render's catalog and renderer on the portal's own primitives, no shadcn components), validated in Nora's container, stored in Postgres, listed and opened inside the signed-in web app with the portal's own theme, with archive, delete and restore. Drop's artifact READ path and its POST/PATCH /api/artifacts stay for computer_export links and old links (DEC-254). Search, a phone bottom-bar entry, a present view, print/PDF and a revision-history view are built (§33, §34). The sandbox side (files only, never a page; make_artifact and Smith retired) belongs to design/sandbox-runtime."
 tags: [nora, documents, artifact, json-render, react, portal, drop, skill]
 timestamp: '2026-10-01'
 status: partly-built
@@ -1652,3 +1652,56 @@ tests. The `spike` page and the demos stay: `app/e2e/documents.spec.ts` drives t
 `javascript:` sink tests through the spike page, which is a security harness and not a leftover. `Map`, history and
 restore, and present and print stay: they are operator decisions of the last two days (DEC-266 to DEC-268, DEC-272) and
 four documents give no evidence to reverse them. `Checklist` stays (3 of 4 documents use it).
+
+## 43. A day-of pack: five components, and four that stop being static (2026-10-05)
+
+**What was read.** On 2026-10-04 the operator sent the Ridgeline room a zip of eight spreadsheet exports for a
+wedding day (a rundown, a check list, a seating plan, a tea-ceremony table, a photo table, a music list, a thank-you
+script and the departure flow) and asked for a page they could open on a phone at the venue instead of a Google Sheet. Nora
+built three documents from them. Read back from norty the same day: the three used only `Page`, `Section`, `Grid`,
+`KeyValue`, `Table`, `Timeline`, `Checklist`, `Callout`, `Stat`, `Markdown`, `Accordion` and `Sources`, and the two
+shapes the sheets are made of, a grid of people against times and a grid of tables of guests, were forced into a six-column
+`Table`. The operator said so in the room: the content must be transformed into widgets, with some loss acceptable and not
+much.
+
+**What was wrong with what existed**, each read in the renderer, not guessed:
+
+- `Timeline` drew `text` as a plain paragraph, so the `- item` lists Nora wrote in it ran together into one line.
+- `Checklist` drew empty squares that nothing could tick, in a document whose use is ticking things off.
+- `Table` had no alignment, no totals row and no fixed first column, so a wide table lost its row labels on a phone.
+- `Chart` had no share-of-a-whole form, for a budget.
+
+**Decided** (admission by §19: a scenario cannot be written without it, and it has a schema, a renderer, a demo, a
+negative fixture and a test):
+
+| change | why a sheet needs it |
+|---|---|
+| `Timeline`: `text` is Markdown; `people` chips; `tone` | a run of show says who and which moment is critical |
+| `Checklist`: tickable on the reader's device (localStorage, never shared), count, `owner`, `title` | four check lists, each by place and person |
+| `Table`: `align`, `footer`, sticky first column and header | a cost table with totals |
+| `Chart`: `donut` (2 to 8 positive slices) | a budget by item |
+| `Schedule` (new): people as rows against one time axis | the rundown's six-column grid |
+| `Seating` (new): table cards, seats against capacity, replies | the seating plan |
+| `Contact` (new): name, role, a tap-to-call `tel:` link | the day's phone list |
+| `Progress` (new): a count against a target | replies in, money paid |
+| `Countdown` (new): time left, in Hong Kong time | the day itself |
+
+The catalog is now 24 components. All of it is additive, so `version` stays 1 and every stored document still validates.
+
+**Where the rules live.** The shapes are in `catalog.ts`; the clock and phone patterns are in the schema
+(`HH:MM`, and digits, spaces and hyphens with an optional `+`, so a `tel:` link can be built from nothing else). The rules
+the schema cannot state are in the checker (`check.py`): a Schedule block that runs backwards, leaves its axis or overlaps its
+neighbour in a row, a Progress over its max, a donut with a non-positive slice, a table footer or alignment of the wrong width,
+a Seating table over its capacity. The renderer still clamps, so a document that skipped the checker cannot draw outside its
+frame. A Schedule's times and a Contact's number are in the search text.
+
+**What the model is told.** One paragraph in the emitted catalog prompt, which is the one home for how to write a document:
+a sheet is a source, not a layout; rebuild it for a phone; keep every row a person acts on; and which component each
+shape of sheet becomes. The `document-creation` skill is unchanged.
+
+**A ceiling.** A ticked box lives in one browser. Two people on one pack do not see each other's ticks. Sharing them would need
+a write path from the portal, which a document does not have (design §32: a document is read-only on the portal). The
+reading that would reopen it: two people ticking the same pack and asking why the other's box is empty.
+
+**The fixture.** `demos/wedding.ts` is an invented day-of pack that uses every one of these; no name, number or venue in it
+belongs to a real wedding. The source sheets are the operator's and are not in the repository.

@@ -170,6 +170,106 @@ def test_a_table_row_of_the_wrong_width_is_refused() -> None:
     assert result.findings[0].path == "/root/children/0/props/rows/1"
 
 
+def _block(type_: str, **props: Any) -> dict[str, Any]:
+    return {"type": type_, "props": props}
+
+
+def _lanes(*blocks: tuple[str, str]) -> list[dict[str, Any]]:
+    return [
+        {"name": "a", "blocks": [{"from": a, "to": b, "title": "t"} for a, b in blocks]},
+    ]
+
+
+def test_a_table_footer_and_alignment_must_match_the_columns() -> None:
+    table = _block("Table", columns=["a", "b"], rows=[["1", "2"]], footer=["x"], align=["left"])
+    assert _rules(check_document(_page(table))) == {"table_footer_width", "table_align_width"}
+    ok = _block(
+        "Table", columns=["a", "b"], rows=[["1", "2"]], footer=["x", "3"], align=["left", "right"]
+    )
+    assert check_document(_page(ok)).ok
+
+
+def test_a_progress_over_its_max_is_refused() -> None:
+    assert _rules(check_document(_page(_block("Progress", label="a", value=11, max=10)))) == {
+        "progress_over_max"
+    }
+    assert check_document(_page(_block("Progress", label="a", value=10, max=10))).ok
+
+
+@pytest.mark.parametrize("values", [[1], [1, 0], [1, -2], list(range(1, 10))])
+def test_a_donut_needs_two_to_eight_positive_slices(values: list[int]) -> None:
+    data = [{"label": str(i), "value": v} for i, v in enumerate(values)]
+    chart = _block("Chart", kind="donut", caption="c", data=data)
+    assert not check_document(_page(chart)).ok
+
+
+def test_a_countdown_date_must_be_a_real_date() -> None:
+    assert _rules(check_document(_page(_block("Countdown", label="a", date="2027-02-30")))) == {
+        "bad_date"
+    }
+
+
+@pytest.mark.parametrize(
+    ("blocks", "rule"),
+    [
+        ([("09:00", "08:00")], "schedule_block"),
+        ([("09:00", "09:00")], "schedule_block"),
+        ([("06:00", "08:00")], "schedule_block"),
+        ([("13:00", "15:00")], "schedule_block"),
+        ([("08:00", "10:00"), ("09:30", "11:00")], "schedule_overlap"),
+    ],
+)
+def test_a_schedule_block_that_cannot_be_placed_is_refused(
+    blocks: list[tuple[str, str]], rule: str
+) -> None:
+    schedule = _block("Schedule", caption="c", start="07:00", end="14:00", lanes=_lanes(*blocks))
+    result = check_document(_page(schedule))
+    assert _rules(result) == {rule}
+    assert result.findings[0].path.startswith("/root/children/0/props/lanes/0/blocks/")
+
+
+def test_a_schedule_whose_blocks_touch_or_sit_in_other_lanes_is_fine() -> None:
+    lanes = _lanes(("08:00", "09:00"), ("09:00", "10:00")) + _lanes(("08:30", "09:30"))
+    assert check_document(
+        _page(_block("Schedule", caption="c", start="07:00", end="14:00", lanes=lanes))
+    ).ok
+
+
+def test_a_schedule_axis_must_run_forward() -> None:
+    schedule = _block("Schedule", caption="c", start="14:00", end="07:00", lanes=_lanes())
+    assert _rules(check_document(_page(schedule))) == {"schedule_axis"}
+
+
+def test_more_guests_than_a_table_holds_is_refused() -> None:
+    seats = [{"name": f"g{i}"} for i in range(4)]
+    seating = _block("Seating", caption="c", capacity=3, tables=[{"name": "T1", "seats": seats}])
+    result = check_document(_page(seating))
+    assert _rules(result) == {"table_over_capacity"}
+    assert check_document(
+        _page(_block("Seating", caption="c", tables=[{"name": "T1", "seats": seats}]))
+    ).ok
+
+
+def test_the_new_blocks_reach_the_search_text() -> None:
+    doc = _page(
+        _block("Contact", items=[{"name": "Nina", "role": "Venue manager", "phone": "5550 0101"}]),
+        _block(
+            "Seating",
+            caption="seats",
+            tables=[{"name": "T1", "label": "Bride", "seats": [{"name": "Mr Ko"}]}],
+        ),
+        _block(
+            "Timeline",
+            items=[{"label": "a", "title": "b", "text": "- **bold**", "people": ["Ray"]}],
+        ),
+        _block("Checklist", title="Pack", items=[{"text": "rings", "owner": "Dana"}]),
+    )
+    text = check_document(doc).text
+    for word in ("Nina", "Venue manager", "Bride", "Mr Ko", "bold", "Ray", "Pack", "Dana"):
+        assert word in text
+    assert "5550 0101" in text  # a number to ring is something a person searches for
+
+
 @pytest.mark.parametrize("as_of", ["2026-02-30", "2026-13-01", "0000-00-00"])
 def test_an_as_of_that_is_not_a_real_date_is_refused(as_of: str) -> None:
     sources = {
@@ -266,11 +366,12 @@ def test_the_node_count_is_reported() -> None:
 
 
 # ----------------------------------------------------------------- the search text
-_SKIP = {"url", "media", "asOf", "kind", "tone", "columns_count"}
+_SKIP = {"url", "media", "asOf", "kind", "tone", "columns_count", "align", "status"}
 _DIAGRAM_SYNTAX = {"flowchart", "graph", "sequenceDiagram", "gantt", "timeline", "mindmap"}
 _PROSE = {
     "text_md": ("Markdown", "text"),
     "accordion": ("Accordion", "text"),
+    "timeline": ("Timeline", "text"),
     "mermaid": ("Mermaid", "source"),
 }
 

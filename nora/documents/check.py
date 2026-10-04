@@ -42,6 +42,7 @@ import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -164,8 +165,8 @@ def _where_it_broke(text: str, exc: json.JSONDecodeError) -> str:
     elsewhere and told the room the document was made. The usual cause is a straight double quote
     inside a string that was not escaped, so the hint names it."""
     start = max(0, exc.pos - _CONTEXT_CHARS)
-    before = text[start:exc.pos].replace("\n", "\\n")
-    after = text[exc.pos:exc.pos + _CONTEXT_CHARS].replace("\n", "\\n")
+    before = text[start : exc.pos].replace("\n", "\\n")
+    after = text[exc.pos : exc.pos + _CONTEXT_CHARS].replace("\n", "\\n")
     return _clip(
         f"{exc.msg} at character {exc.pos}: ...{before}<<HERE>>{after}... "
         "Usual causes: an unescaped straight double quote inside a string, or a missing or "
@@ -332,6 +333,40 @@ def _schema_findings(document: Any) -> list[Finding]:
 
 
 # ------------------------------------------------------------------ 3. rules
+def _minutes(clock: str) -> int:
+    return int(clock[:2]) * 60 + int(clock[3:])
+
+
+def _schedule_findings(props: dict[str, Any], where: str) -> list[Finding]:
+    """A Schedule's blocks are placed by their times, so a block that runs backwards,
+    leaves the axis or overlaps its neighbour in the same row draws wrongly, and the
+    schema cannot compare two fields."""
+    out: list[Finding] = []
+    start, end = _minutes(props["start"]), _minutes(props["end"])
+    if end <= start:
+        out.append(Finding(f"{where}/props/end", "schedule_axis", "end is not after start"))
+        return out
+    for lane_index, lane in enumerate(props["lanes"]):
+        spans: list[tuple[int, int, int]] = []
+        for index, block in enumerate(lane["blocks"]):
+            at = f"{where}/props/lanes/{lane_index}/blocks/{index}"
+            a, b = _minutes(block["from"]), _minutes(block["to"])
+            if b <= a:
+                out.append(Finding(at, "schedule_block", "to is not after from"))
+            elif a < start or b > end:
+                out.append(Finding(at, "schedule_block", "falls outside the start to end axis"))
+            else:
+                spans.append((a, b, index))
+        spans.sort()
+        for (_, prev_end, _), (next_start, _, index) in pairwise(spans):
+            if next_start < prev_end:
+                at = f"{where}/props/lanes/{lane_index}/blocks/{index}"
+                out.append(
+                    Finding(at, "schedule_overlap", "overlaps the block before it in the same row")
+                )
+    return out
+
+
 def _rule_findings(document: dict[str, Any]) -> list[Finding]:
     out: list[Finding] = []
 
@@ -361,6 +396,56 @@ def _rule_findings(document: dict[str, Any]) -> list[Finding]:
                             f"{where}/props/rows/{index}",
                             "table_row_width",
                             f"{len(row)} cells but the table has {width} columns",
+                        )
+                    )
+            footer = props.get("footer")
+            if footer is not None and len(footer) != width:
+                out.append(
+                    Finding(
+                        f"{where}/props/footer",
+                        "table_footer_width",
+                        f"{len(footer)} cells but the table has {width} columns",
+                    )
+                )
+            align = props.get("align")
+            if align is not None and len(align) != width:
+                out.append(
+                    Finding(
+                        f"{where}/props/align",
+                        "table_align_width",
+                        f"{len(align)} alignments but the table has {width} columns",
+                    )
+                )
+        if kind == "Progress" and props["value"] > props["max"]:
+            out.append(
+                Finding(f"{where}/props/value", "progress_over_max", "value is more than max")
+            )
+        if kind == "Chart" and props["kind"] == "donut":
+            values = [d["value"] for d in props["data"]]
+            if not 2 <= len(values) <= 8 or any(v <= 0 for v in values):
+                out.append(
+                    Finding(
+                        f"{where}/props/data",
+                        "donut_slices",
+                        "a donut takes 2 to 8 slices, every value above zero",
+                    )
+                )
+        if kind == "Countdown":
+            try:
+                date.fromisoformat(props["date"])
+            except ValueError:
+                out.append(Finding(f"{where}/props/date", "bad_date", "is not a real date"))
+        if kind == "Schedule":
+            out.extend(_schedule_findings(props, where))
+        if kind == "Seating":
+            capacity = props.get("capacity", 10)
+            for index, table in enumerate(props["tables"]):
+                if len(table["seats"]) > capacity:
+                    out.append(
+                        Finding(
+                            f"{where}/props/tables/{index}/seats",
+                            "table_over_capacity",
+                            f"{len(table['seats'])} guests at a table of {capacity}",
                         )
                     )
         if kind == "Sources":
@@ -504,6 +589,7 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
                 p.get("caption", ""),
                 *p["columns"],
                 *(cell for row in p["rows"] for cell in row),
+                *p.get("footer", []),
             ]
         case "Badge":
             return [p["text"]]
@@ -512,11 +598,23 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
         case "Callout":
             return [p["title"], p.get("text", "")]
         case "Timeline":
-            return [s for i in items for s in (i["label"], i["title"], i.get("text", ""))]
+            return [
+                s
+                for i in items
+                for s in (
+                    i["label"],
+                    i["title"],
+                    _markdown(i.get("text", "")),
+                    *i.get("people", []),
+                )
+            ]
         case "Sources":
             return [s for i in items for s in (i["title"], i.get("note", ""))]
         case "Checklist":
-            return [s for i in items for s in (i["text"], i.get("note", ""))]
+            return [
+                p.get("title", ""),
+                *(s for i in items for s in (i["text"], i.get("note", ""), i.get("owner", ""))),
+            ]
         case "Stat":
             return [p["label"], p["value"], p.get("detail", "")]
         case "Accordion":
@@ -532,6 +630,52 @@ def _strings(kind: str, p: dict[str, Any]) -> list[str]:
             return [p["caption"], *(pl["name"] for pl in p["places"])]
         case "Image":
             return [p["alt"], p.get("caption", "")]
+        case "Progress":
+            return [p["label"], p.get("detail", "")]
+        case "Countdown":
+            return [p["label"], p["date"], p.get("time", ""), p.get("detail", "")]
+        case "Contact":
+            return [
+                s
+                for i in items
+                for s in (i["name"], i.get("role", ""), i.get("phone", ""), i.get("note", ""))
+            ]
+        case "Seating":
+            return [
+                p["caption"],
+                *(
+                    s
+                    for t in p["tables"]
+                    for s in (
+                        t["name"],
+                        t.get("label", ""),
+                        *(
+                            x
+                            for g in t["seats"]
+                            for x in (g["name"], g.get("role", ""), g.get("note", ""))
+                        ),
+                    )
+                ),
+            ]
+        case "Schedule":
+            # The times are searchable like a Timeline's labels: "who is on at 11:00".
+            return [
+                p["caption"],
+                p["start"],
+                p["end"],
+                *(
+                    s
+                    for lane in p["lanes"]
+                    for s in (
+                        lane["name"],
+                        *(
+                            x
+                            for b in lane["blocks"]
+                            for x in (b["from"], b["to"], b["title"], b.get("note", ""))
+                        ),
+                    )
+                ),
+            ]
         case _:
             return []
 

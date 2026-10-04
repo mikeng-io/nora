@@ -47,10 +47,15 @@ describe("messages", () => {
     });
 
     it("is every key the renderer's source asks for, and the source keeps no English string of its own", async () => {
-      const { readFileSync } = await import("node:fs");
+      const { readFileSync, readdirSync } = await import("node:fs");
       const dir = new URL("../components/documents/", import.meta.url);
+      // Every block lives in its own file, so the scan reads each file of the folder that
+      // translates from this namespace (document-actions.tsx uses another).
+      const files = readdirSync(dir).filter(
+        (f) => f.endsWith(".tsx") && readFileSync(new URL(f, dir), "utf-8").includes('useTranslations("documents.renderer")'),
+      );
       const wanted = new Set<string>();
-      for (const file of ["registry.tsx", "blocks.tsx"]) {
+      for (const file of files) {
         const source = readFileSync(new URL(file, dir), "utf-8");
         for (const m of source.matchAll(/\bt\("([A-Za-z]+)"/g)) wanted.add(`documents.renderer.${m[1]}`);
         // The words the renderer used to hard-code.
@@ -65,6 +70,10 @@ describe("messages", () => {
           expect(source, `${file} still says "${english}"`).not.toContain(english);
         }
       }
+      // A key chosen from a lookup table (`{ info: "toneInfo" }`) is asked for by name, not
+      // through a literal `t("…")`: its quoted name in the source counts as asking.
+      const sources = files.map((f) => readFileSync(new URL(f, dir), "utf-8")).join("\n");
+      for (const key of ns(a)) if (sources.includes(`"${key.slice("documents.renderer.".length)}"`)) wanted.add(key);
       expect(wanted.size).toBeGreaterThan(5);
       for (const key of wanted) {
         expect(a, `en lacks ${key}`).toHaveProperty([key]);

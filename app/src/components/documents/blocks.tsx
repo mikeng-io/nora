@@ -11,6 +11,7 @@ import { BarList } from "@/components/charts/bars";
 import { TimeChart } from "@/components/charts/time-chart";
 import { cn } from "@/lib/cn";
 import { MERMAID_PLAIN } from "@/lib/documents/catalog";
+import { donutSlices, formatPct } from "./donut";
 
 /** The stored document's id, so an Image can name its bytes. Absent for fixtures. */
 export const DocumentIdContext = createContext<string | null>(null);
@@ -21,7 +22,7 @@ const FIG = "flex flex-col gap-2 rounded-panel border border-hairline bg-surface
 
 // ------------------------------------------------------------------ Chart
 export function ChartBlock(props: {
-  kind: "bar" | "line";
+  kind: "bar" | "line" | "donut";
   title?: string;
   unit?: string;
   caption: string;
@@ -29,7 +30,8 @@ export function ChartBlock(props: {
 }) {
   const t = useTranslations("documents.renderer");
   const unit = props.unit ? ` ${props.unit}` : "";
-  const fmt = (v: number) => `${Number.isInteger(v) ? v : v.toFixed(1)}${unit}`;
+  // en-US on purpose: the server and the browser must agree on the separators.
+  const fmt = (v: number) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })}${unit}`;
   return (
     <figure className={FIG}>
       {props.title ? <p className="text-title font-semibold text-ink">{props.title}</p> : null}
@@ -38,6 +40,8 @@ export function ChartBlock(props: {
           label={props.caption}
           data={props.data.map((d, i) => ({ key: `${i}`, label: d.label, value: d.value, display: fmt(d.value) }))}
         />
+      ) : props.kind === "donut" ? (
+        <Donut label={props.caption} data={props.data} fmt={fmt} />
       ) : (
         <TimeChart
           label={props.caption}
@@ -68,6 +72,56 @@ export function ChartBlock(props: {
         </table>
       </details>
     </figure>
+  );
+}
+
+// The ring is decoration: the legend (swatch, label, value, share) is the content. Arcs are
+// stroke-dasharray on a circle of pathLength 100, so a percent is its own length, and a
+// small gap between arcs lets the surface show through.
+function Donut({ label, data, fmt }: { label: string; data: Array<{ label: string; value: number }>; fmt: (v: number) => string }) {
+  const t = useTranslations("documents.renderer");
+  const { total, slices } = donutSlices(data);
+  const gap = slices.length > 1 ? 0.8 : 0;
+  return (
+    <div className="@container">
+      <div className="flex flex-col items-center gap-4 @md:flex-row @md:gap-6">
+      {total > 0 ? (
+        <div className="relative size-40 shrink-0">
+          <svg viewBox="0 0 100 100" aria-hidden className="size-full -rotate-90">
+            <circle cx={50} cy={50} r={40} fill="none" stroke="var(--hoodie)" strokeWidth={14} />
+            {slices.map((s, i) => (
+              <circle
+                key={i}
+                cx={50}
+                cy={50}
+                r={40}
+                fill="none"
+                pathLength={100}
+                stroke={`var(--${s.color})`}
+                strokeWidth={14}
+                strokeDasharray={`${Math.max(0.2, s.pct - gap)} ${100 - Math.max(0.2, s.pct - gap)}`}
+                strokeDashoffset={-s.start}
+              />
+            ))}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
+            <span className="text-label text-ink-muted">{t("donutTotal")}</span>
+            <span className="max-w-full font-mono text-title font-semibold text-ink tnum [overflow-wrap:anywhere]">{fmt(total)}</span>
+          </div>
+        </div>
+      ) : null}
+      <ul aria-label={label} className="flex w-full min-w-0 flex-1 flex-col divide-y divide-hairline">
+        {slices.map((s, i) => (
+          <li key={i} className="flex items-baseline gap-2.5 py-1.5 text-body">
+            <span aria-hidden className="size-3 shrink-0 translate-y-0.5 self-start rounded-[3px]" style={{ backgroundColor: `var(--${s.color})` }} />
+            <span className="min-w-0 flex-1 text-ink [overflow-wrap:anywhere]">{s.label}</span>
+            <span className="shrink-0 font-mono text-meta text-ink tnum">{fmt(s.value)}</span>
+            <span className="w-10 shrink-0 text-right font-mono text-meta text-ink-muted tnum">{formatPct(s.pct)}</span>
+          </li>
+        ))}
+      </ul>
+      </div>
+    </div>
   );
 }
 
