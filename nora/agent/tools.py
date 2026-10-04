@@ -14634,6 +14634,11 @@ Args:
             return {"status": "unavailable",
                     "note": "I couldn't start it, and nothing is running. Say so; don't "
                             "say you are on it."}
+        if out.repeated:
+            _record(metrics, tool, "started", reason="repeated_in_turn")
+            return {"status": "started", "id": out.id,
+                    "note": "This job was already started earlier in this turn, and nothing "
+                            "new was started. Tell the room once that you are on it."}
         _record(metrics, tool, "started")
         return {"status": "started", "id": out.id,
                 "note": "It is running in the background. Tell the room you are on it and "

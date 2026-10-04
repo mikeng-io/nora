@@ -18,6 +18,7 @@ backend job has already ended is `finishing`: the result is on its way to the ro
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -90,6 +91,8 @@ class CreateOutcome:
     id: str = ""
     problem: str = ""
     reason: str = ""
+    #: True when this turn had already started a job and `id` is that first job's.
+    repeated: bool = False
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,12 @@ class SubagentDesk:
         self._clock = clock
         self._documents = documents
         self._worker: SubagentWorker | None = None
+        # One job per tag turn per room: the first job a turn started, by `(tag_id, room)`. A
+        # model that calls create again in the same turn (measured 2026-10-05: 2-3 calls per
+        # draw) gets the first job back, never a duplicate. Only a created job is recorded,
+        # so a refused or failed first attempt leaves the next one free to start.
+        self._turn_jobs: dict[tuple[str, str, str], str] = {}
+        self._create_lock = asyncio.Lock()
 
     def attach(self, worker: SubagentWorker) -> None:
         self._worker = worker
@@ -141,6 +150,30 @@ class SubagentDesk:
         problem = _problem(brief)
         if problem:
             return CreateOutcome("bad_arguments", problem=problem)
+        if not tag_id:
+            return await self._create(
+                platform=platform, conversation_id=conversation_id,
+                conversation_type=conversation_type,
+                requester_person_id=requester_person_id, tag_id=tag_id, brief=brief)
+        key = (tag_id, platform, conversation_id)
+        async with self._create_lock:
+            first = self._turn_jobs.get(key)
+            if first is not None:
+                return CreateOutcome("started", id=first, repeated=True)
+            out = await self._create(
+                platform=platform, conversation_id=conversation_id,
+                conversation_type=conversation_type,
+                requester_person_id=requester_person_id, tag_id=tag_id, brief=brief)
+            if out.status == "started":
+                if len(self._turn_jobs) >= 256:
+                    self._turn_jobs.pop(next(iter(self._turn_jobs)))
+                self._turn_jobs[key] = out.id
+            return out
+
+    async def _create(
+        self, *, platform: str, conversation_id: str, conversation_type: str,
+        requester_person_id: str, tag_id: str | None, brief: SubagentBrief,
+    ) -> CreateOutcome:
         worker = self._worker
         if worker is None:
             return CreateOutcome("unavailable", reason="not_wired")

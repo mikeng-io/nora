@@ -595,3 +595,46 @@ def test_the_title_comes_from_the_payload_and_never_from_a_model_summary():
     assert job_title(brief.as_payload(), "x") == "Trip plan"
     assert written_title({}) == "" and written_title(None) == ""
     assert job_title({}, "short") == "short"
+
+
+# -- one job per tag turn ------------------------------------------------------------------
+
+
+async def test_a_second_create_in_the_same_turn_launches_nothing_and_returns_the_first_id():
+    rig = _Desk()
+    first = await _create(rig)
+    second = await _create(rig)
+    assert first["status"] == second["status"] == "started"
+    assert second["id"] == first["id"] and "already" in second["note"]
+    assert len(rig.worker.launched) == 1
+    assert len(await rig.store.pending(limit=10)) == 1
+
+
+async def test_a_create_in_a_later_turn_or_another_room_starts_its_own_job():
+    rig = _Desk()
+    first = await _create(rig)
+    bind_tag_id("tag-10")
+    later = await rig.tools()["subagent_create"](**BRIEF)
+    other = await _create(rig, OTHER_ROOM)
+    assert len({first["id"], later["id"], other["id"]}) == 3
+    assert len(rig.worker.launched) == 3
+
+
+async def test_a_first_attempt_that_made_no_job_does_not_block_the_next():
+    rig = _Desk()
+    refused = await _create(rig, title="")
+    assert refused["status"] == "bad_arguments"
+    ok = await _create(rig)
+    assert ok["status"] == "started" and "already" not in ok["note"]
+    assert len(rig.worker.launched) == 1
+
+    unavailable = _Desk()
+
+    async def would_not_launch(*, request):
+        raise RuntimeError("no")
+
+    unavailable.worker.launch = would_not_launch      # type: ignore[method-assign]
+    assert (await _create(unavailable))["status"] == "unavailable"
+    del unavailable.worker.launch                      # the real launch again
+    again = await _create(unavailable)
+    assert again["status"] == "started" and len(unavailable.worker.launched) == 1

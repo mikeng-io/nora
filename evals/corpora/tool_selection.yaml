@@ -1071,7 +1071,16 @@ cases:
       separate documents that read well on a phone. It will take a while, so just tell me
       when they are done.
     metadata: {tools: [subagent_create], not_tools: [document_publish, computer_run]}
-    snapshot: *room_a
+    parked:
+      reason: P-A
+      why: |
+        The sandbox's computer holds no zip in its inbox, so every draw (5/5) correctly
+        inspects the inbox with computer_run and finds nothing: the eval cannot reproduce
+        the live input, and a pass or a fail here would measure the empty inbox, not the
+        routing.
+      returns_when: |
+        The sandbox can hold a real archive in the inbox, or the first real archive job
+        is read back live and its routing is measured there.
 
   - name: route_subagent_create_research_then_write
     entry: tag
