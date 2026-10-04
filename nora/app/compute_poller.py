@@ -9,11 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
+from typing import Any, Protocol
+from uuid import UUID
 
 from nora.app.fire import SENT, compute_occasion
-from nora.domain.compute import ComputeJob, ComputeJobState, ComputeJobStore
+from nora.domain.compute import (
+    ComputeJob,
+    ComputeJobState,
+    ComputeJobStore,
+    DocumentReadBack,
+    ReadBackDocument,
+)
 from nora.domain.events import Event
 from nora.domain.ports import ComputeBackend, JobStatus
 from nora.engagement.slots import ConversationSlots, Key
@@ -34,20 +42,34 @@ BATCH_LIMIT = 50
 DEFERRED = "deferred"
 
 
+class DocumentReader(Protocol):
+    """The read `DocumentService.read` already is: one document, as its room sees it."""
+
+    async def read(
+        self, *, platform: str, conversation_id: str, document_id: UUID | None = None,
+        handle: str = "",
+    ) -> Any: ...
+
+
 class ComputeJobPoller:
     def __init__(
         self,
         *,
         store: ComputeJobStore,
-        backend: ComputeBackend,
+        backends: Mapping[str, ComputeBackend],
         speak: Callable[[Event], Awaitable[str]],
         slots: ConversationSlots,
         metrics: Metrics,
         tick_seconds: float,
         clock: Callable[[], datetime],
+        documents: DocumentReader | None = None,
     ) -> None:
         self._store = store
-        self._backend = backend
+        # kind -> the backend that owns rows of that kind. A row whose kind has no entry is
+        # left alone (logged once): another deployment's or a later build's worker may own it.
+        self._backends = dict(backends)
+        self._documents = documents
+        self._unowned: set[UUID] = set()
         self._speak = speak
         self._slots = slots
         self._metrics = metrics
@@ -66,8 +88,39 @@ class ComputeJobPoller:
                 )
                 self._metrics.inc("nora_errors_total", stage="compute_poller")
 
+    async def _read_back(self, job: ComputeJob, ids: tuple[str, ...]) -> DocumentReadBack:
+        """Read each `document_id` the result named back through the document store, in the
+        job's own room. An id that is not a document here, or whose read raised, is missing:
+        fail closed, never linked (R-100)."""
+        found: list[ReadBackDocument] = []
+        missing: list[str] = []
+        for raw in ids:
+            try:
+                out = await self._documents.read(  # type: ignore[union-attr]
+                    platform=job.platform, conversation_id=job.conversation_id,
+                    document_id=UUID(raw),
+                )
+                ok = out.status == "ok"
+            except Exception:
+                log.exception("compute job %s: document %s did not read back", job.id, raw)
+                ok = False
+            if ok:
+                found.append(ReadBackDocument(raw, out.title, out.url))
+            else:
+                missing.append(raw)
+        return DocumentReadBack(tuple(found), tuple(missing))
+
     async def _maybe_deliver(self, job: ComputeJob) -> None:
-        result = await self._backend.poll(job_id=job.backend_job_id)
+        backend = self._backends.get(job.kind)
+        if backend is None:
+            if job.id not in self._unowned:
+                self._unowned.add(job.id)
+                log.warning(
+                    "compute job %s has kind %r and no backend is wired for it; left pending",
+                    job.id, job.kind,
+                )
+            return
+        result = await backend.poll(job_id=job.backend_job_id)
         if result.status is JobStatus.RUNNING:
             return
 
@@ -80,7 +133,11 @@ class ComputeJobPoller:
             if not await self._store.claim(job.id):
                 # Already claimed by an earlier tick's overlapping poll.
                 return
-            outcome = await self._speak(compute_occasion(job, result))
+            readback = (
+                await self._read_back(job, result.document_ids)
+                if self._documents is not None else None
+            )
+            outcome = await self._speak(compute_occasion(job, result, readback))
             # `SENT`, never the literal `"sent"`: the string decides the ROW's
             # terminal state, so a typo would record a delivery that never
             # happened — the reason `nora.app.fire` owns these four names
@@ -90,7 +147,9 @@ class ComputeJobPoller:
             await self._store.mark(
                 job.id, state, completed_at=self._clock(),
                 result_url=result.url, result_summary=result.summary,
-                error=result.error,
+                error=result.error, failure_reason=result.failure_reason,
+                result_report=result.report,
+                result_document_ids=result.document_ids or None,
             )
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=outcome)
         finally:

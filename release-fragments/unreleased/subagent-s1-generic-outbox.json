@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Internal outbox generalisation (design/subagent step 1): compute_jobs gains kind, payload, result and trace columns and the delivery wording is kind-neutral; nothing produces a job yet, so no user sees it.", "details": [], "limitations": []}

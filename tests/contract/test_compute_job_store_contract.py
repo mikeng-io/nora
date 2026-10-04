@@ -25,7 +25,7 @@ def _job(**overrides):
         "conversation_type": "group", "requester_person_id": "person-1",
         "created_at": datetime.now(UTC), "state": ComputeJobState.PENDING,
         "completed_at": None, "result_url": None, "result_summary": None, "error": None,
-        "task_sha256": "hash-task", "context_sha256": "hash-context",
+        "task_sha256": "hash-task", "context_sha256": "hash-context", "kind": "subagent",
     }
     defaults.update(overrides)
     return ComputeJob(**defaults)
@@ -188,3 +188,68 @@ async def test_naive_datetimes_are_refused_rather_than_guessed(store):
 
     with pytest.raises(NaiveComputeJobDatetimeError):
         await store.sweep_pending(now=naive)
+
+
+async def test_kind_tag_id_and_failure_reason_round_trip(store):
+    job = _job(kind="video", tag_id="tag-7")
+    await store.create(job)
+    await store.claim(job.id)
+    await store.mark(
+        job.id, ComputeJobState.FAILED, completed_at=datetime.now(UTC),
+        error="ran out of turns", failure_reason="limit_turns",
+    )
+    fetched = await store.get(job.id)
+    assert (fetched.kind, fetched.tag_id) == ("video", "tag-7")
+    assert (fetched.state, fetched.failure_reason) == (ComputeJobState.FAILED, "limit_turns")
+
+
+async def test_a_new_row_has_no_tag_or_failure_reason_unless_given(store):
+    job = _job()
+    await store.create(job)
+    fetched = await store.get(job.id)
+    assert (fetched.tag_id, fetched.failure_reason) == (None, None)
+
+
+async def test_a_cancelled_row_is_stored_and_is_never_pending(store):
+    job = _job()
+    await store.create(job)
+    await store.claim(job.id)
+    await store.mark(job.id, ComputeJobState.CANCELLED, completed_at=datetime.now(UTC))
+    fetched = await store.get(job.id)
+    assert fetched.state is ComputeJobState.CANCELLED
+    assert job.id not in {j.id for j in await store.pending(limit=10)}
+
+
+async def test_boot_sweeps_say_lost_as_the_failure_reason(store):
+    firing, pending = _job(), _job(id=uuid4(), backend_job_id="job_y")
+    await store.create(firing)
+    await store.claim(firing.id)
+    await store.create(pending)
+    swept = [*await store.sweep_firing(now=datetime.now(UTC)),
+             *await store.sweep_pending(now=datetime.now(UTC))]
+    assert {j.id for j in swept} == {firing.id, pending.id}
+    assert {j.failure_reason for j in swept} == {"lost"}
+
+
+async def test_payload_result_and_trace_round_trip(store):
+    payload = {"objective": "sort the sheets", "inputs": ["a.zip"], "n": 3}
+    job = _job(payload=payload)
+    await store.create(job)
+    assert (await store.get(job.id)).payload == payload
+    assert (await store.get(job.id)).result_document_ids == ()
+    await store.claim(job.id)
+    await store.mark(
+        job.id, ComputeJobState.DONE, completed_at=datetime.now(UTC),
+        result_report="3 sheets made", result_document_ids=("d1", "d2"),
+    )
+    fetched = await store.get(job.id)
+    assert fetched.payload == payload
+    assert fetched.result_report == "3 sheets made"
+    assert fetched.result_document_ids == ("d1", "d2")
+    assert fetched.trace_id is None
+
+
+async def test_a_trace_id_given_at_create_round_trips(store):
+    job = _job(trace_id="trace-abc")
+    await store.create(job)
+    assert (await store.get(job.id)).trace_id == "trace-abc"

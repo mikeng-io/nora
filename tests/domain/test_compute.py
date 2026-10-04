@@ -29,7 +29,7 @@ def test_a_compute_job_constructs_with_pending_state():
         conversation_type="group", requester_person_id="person-1",
         created_at=datetime.now(UTC), state=ComputeJobState.PENDING,
         completed_at=None, result_url=None, result_summary=None, error=None,
-        task_sha256="hash-task", context_sha256="hash-context",
+        task_sha256="hash-task", context_sha256="hash-context", kind="subagent",
     )
     assert job.state is ComputeJobState.PENDING
 
@@ -41,7 +41,7 @@ def test_a_compute_job_carries_its_own_provenance_hashes():
         conversation_type="group", requester_person_id="person-1",
         created_at=datetime.now(UTC), state=ComputeJobState.PENDING,
         completed_at=None, result_url=None, result_summary=None, error=None,
-        task_sha256="a" * 64, context_sha256="b" * 64,
+        task_sha256="a" * 64, context_sha256="b" * 64, kind="subagent",
     )
     assert job.task_sha256 == "a" * 64
     assert job.context_sha256 == "b" * 64
@@ -62,7 +62,7 @@ def test_normalise_compute_job_with_non_utc_created_at_and_none_completed_at():
         conversation_type="direct", requester_person_id="person-2",
         created_at=non_utc_created, state=ComputeJobState.PENDING,
         completed_at=None, result_url=None, result_summary=None, error=None,
-        task_sha256="hash-task", context_sha256="hash-context",
+        task_sha256="hash-task", context_sha256="hash-context", kind="subagent",
     )
 
     normalized = normalise_compute_job(job)
@@ -87,7 +87,7 @@ def test_normalise_compute_job_with_both_non_utc_datetimes():
         created_at=non_utc_created, state=ComputeJobState.DONE,
         completed_at=non_utc_completed, result_url="https://example.com",
         result_summary="test", error=None,
-        task_sha256="hash-task", context_sha256="hash-context",
+        task_sha256="hash-task", context_sha256="hash-context", kind="subagent",
     )
 
     normalized = normalise_compute_job(job)

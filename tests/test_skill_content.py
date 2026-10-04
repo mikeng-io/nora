@@ -820,6 +820,7 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
         requester_person_id="p1", created_at=datetime(2026, 9, 13, tzinfo=UTC),
         state=ComputeJobState.FIRING, completed_at=None, result_url=None,
         result_summary=None, error=None, task_sha256="0" * 64, context_sha256="0" * 64,
+        kind="subagent",
     )
     finished = compute_occasion(job, JobResult(
         status=JobStatus.SUCCEEDED, summary="one chart",

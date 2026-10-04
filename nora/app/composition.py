@@ -1222,7 +1222,7 @@ async def build_dependencies(
     # tool writes it today (S3b retired its only producer, the artifact tool); it
     # is kept as the generic deferred-delivery outbox a future `delegate_task`
     # writes (design/sandbox-runtime decision 4). Only the poller's tick loop
-    # (`compute_backend`, further down) is behind the flag.
+    # (`compute_backends`, further down) is behind the flag.
     compute_jobs: ComputeJobStore = SqlComputeJobStore(engine)
     # Second consumer wired here (EngagementPipeline/FirePath, via
     # deliver.build); the THIRD — ToolRegistry(...) below, for
@@ -2545,10 +2545,12 @@ async def build_dependencies(
     # as the generic deferred-delivery path a future `delegate_task` will
     # plug an adapter into. Until one is assigned here the poller below is
     # never built: wired, idle.
-    compute_backend: ComputeBackend | None = None
-    if cfg.compute.enabled and compute_backend is None:
+    # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`
+    # (design/subagent §6). Empty today; step 2 registers the sub-agent worker here.
+    compute_backends: dict[str, ComputeBackend] = {}
+    if cfg.compute.enabled and not compute_backends:
         log.warning(
-            "[compute] enabled = true but no ComputeBackend adapter ships (the "
+            "[compute] enabled = true but no ComputeBackend is registered (the "
             "per-job container backend was retired, design/sandbox-runtime "
             "decision 4); the compute-job poller stays idle. Set enabled = false."
         )
@@ -3004,7 +3006,7 @@ async def build_dependencies(
     fire_path: FirePath | None = None
     # `or cfg.compute.enabled`: without this, a deployment that enables
     # `[compute]` alone (heartbeat off, no version announcement) would build
-    # `compute_backend` and accept deferred jobs, but the poller below —
+    # `compute_backends` and accept deferred jobs, but the poller below —
     # which needs `fire_path` to deliver a finished job — would never spawn,
     # and every such job would sit `pending` forever with no path to ever
     # reach the group it was asked into. This gate pre-dates Nora Compute and
@@ -3241,14 +3243,15 @@ async def build_dependencies(
     # `VersionAnnouncer`'s own wiring shape immediately above: a background
     # loop, gated on BOTH the feature flag and a live `fire_path` (a compute
     # job is delivered as a fire turn into the same conversation, exactly as
-    # a reminder or an announcement is). `compute_backend` is only non-`None`
+    # a reminder or an announcement is). `compute_backends` is only non-empty
     # when `cfg.compute.enabled` is true (see its construction above), so
     # this condition is really `cfg.compute.enabled and fire_path is not
     # None` restated — spelled out with the third check anyway so the
-    # relationship holds even if `compute_backend`'s own gate ever moves.
-    if cfg.compute.enabled and fire_path is not None and compute_backend is not None:
+    # relationship holds even if `compute_backends`' own gate ever moves.
+    if cfg.compute.enabled and fire_path is not None and compute_backends:
         compute_poller = ComputeJobPoller(
-            store=compute_jobs, backend=compute_backend,
+            store=compute_jobs, backends=compute_backends,
+            documents=document_service if cfg.documents.enabled else None,
             # `speak`, NOT `run`: the same reason `VersionAnnouncer` above
             # takes `fire_path.speak` rather than the reminder-shaped `run`.
             speak=fire_path.speak,

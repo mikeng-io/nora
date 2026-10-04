@@ -1817,6 +1817,33 @@ class JobResult:
     url: str | None = None
     summary: str | None = None
     error: str | None = None
+    # The worker's own account, and the ids of the documents it published. Code reads each id
+    # back before delivery (R-100); the prose never names a document the ids do not.
+    report: str | None = None
+    document_ids: tuple[str, ...] = ()
+    # Why a FAILED job failed, as a short name (a limit stop, a timeout); `error` is the text.
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class LaunchRequest:
+    """Everything `ComputeBackend.launch` is given (design/subagent §4, §6).
+
+    The room facts are written by code from the launching turn, never chosen by a
+    model; a backend builds its worker from them. `payload` is the kind's own typed
+    request (a frozen dataclass each backend defines and narrows); `task`/`context`
+    are the caller's distilled brief and Nora's already-typed tool results, as before.
+    """
+
+    task: str
+    platform: str
+    conversation_id: str
+    conversation_type: str
+    requester_person_id: str
+    tag_id: str | None = None
+    artifact_id: str | None = None
+    context: list[dict[str, Any]] | None = None
+    payload: Any = None
 
 
 @runtime_checkable
@@ -1832,7 +1859,7 @@ class ComputeBackend(Protocol):
     a second, lossy prose-compression step is exactly the failure the
     context-channel spec exists to remove.
 
-    `artifact_id`, when set, means "this job revises an existing artifact"
+    `request.artifact_id`, when set, means "this job revises an existing artifact"
     (spec §9) rather than creating a new one.
 
     NEVER raises. A backend that cannot even start a job (Docker unreachable,
@@ -1843,12 +1870,13 @@ class ComputeBackend(Protocol):
     needs a try/except around a call it expects to be load-bearing.
     """
 
-    async def launch(
-        self, *, task: str, artifact_id: str | None = None,
-        context: list[dict[str, Any]] | None = None,
-    ) -> str: ...
+    async def launch(self, *, request: LaunchRequest) -> str: ...
 
     async def poll(self, *, job_id: str) -> JobResult: ...
+
+    async def cancel(self, *, job_id: str) -> None:
+        """Stop a running job. A job already finished, or unknown, is a no-op."""
+        ...
 
 
 @runtime_checkable
