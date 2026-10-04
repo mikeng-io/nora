@@ -34,7 +34,7 @@ import shlex
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from nora.agent import factory
@@ -47,7 +47,13 @@ from nora.domain.errors import PartialReplyError
 from nora.domain.ports import LaunchRequest
 from nora.domain.reasoning_strip import dreamer_path
 from nora.domain.stimuli import LIMIT_STOP_REASONS
-from nora.domain.subagent import SUBAGENT_KIND, SubagentBrief, SubagentLaunch, job_folder
+from nora.domain.subagent import (
+    SUBAGENT_KIND,
+    SubagentBrief,
+    SubagentLaunch,
+    job_folder,
+    workspace_path,
+)
 from nora.domain.turn_deadline import turn_deadline
 from nora.instructions.frontmatter import parse_document
 from nora.language.subagent_render import render_brief
@@ -100,14 +106,6 @@ def load_system_prompt(doctrine: Path, constraints: Path) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-def _input_path(raw: str) -> str | None:
-    """A workspace-relative path with nothing that leaves the workspace, or None."""
-    path = PurePosixPath(raw.strip())
-    if not raw.strip() or path.is_absolute() or ".." in path.parts:
-        return None
-    return str(path)
-
-
 class SubagentRunner:
     def __init__(
         self, *, models: Any, retry: factory.RetryPolicy, metrics: Metrics,
@@ -157,7 +155,7 @@ class SubagentRunner:
     ) -> SubagentOutcome:
         inputs: list[str] = []
         for raw in brief.inputs:
-            path = _input_path(raw)
+            path = workspace_path(raw)
             if path is None:
                 return SubagentOutcome(failure_reason="bad_inputs")
             inputs.append(path)

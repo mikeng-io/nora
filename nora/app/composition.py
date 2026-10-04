@@ -51,6 +51,7 @@ from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
 from nora.agent.structured import ask_text, build_structured_model
+from nora.agent.subagent_desk import SubagentDesk
 from nora.agent.telemetry import (
     end_raw_model_span,
     end_raw_model_span_with_error,
@@ -2720,7 +2721,15 @@ async def build_dependencies(
     # assembler builds the same value from the same three inputs
     # (`build_assembler`).
     lineage = lineage_policy(cfg, policy=allowlist, persons=persons)
+    # The sub-agent desk the four `subagent_*` tools call (design/subagent §3): built ONLY under
+    # `[subagent] enabled`, so off the registry withholds the tools. The worker is attached below,
+    # once built, because its closed tool list is built from this registry.
+    subagent_desk = SubagentDesk(
+        jobs=compute_jobs, clock=clock,
+        documents=document_service if cfg.documents.enabled else None,
+    ) if cfg.subagent.enabled else None
     tool_registry = ToolRegistry(
+        subagent=subagent_desk,
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
@@ -2857,6 +2866,8 @@ async def build_dependencies(
             )),
         )
         compute_backends[SUBAGENT_KIND] = subagent_backend
+        if subagent_desk is not None:
+            subagent_desk.attach(subagent_backend)
     if cfg.compute.enabled and not compute_backends:
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "

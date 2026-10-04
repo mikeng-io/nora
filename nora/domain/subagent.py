@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import PurePosixPath
 from typing import Any
 
 from nora.domain.stimuli import LIMIT_STOP_REASONS
@@ -43,6 +44,15 @@ FAILURE_REASONS: tuple[str, ...] = (
 #: What `nora_subagent_jobs_total{outcome}` counts: a job that finished, was cancelled, or
 #: failed for one of `FAILURE_REASONS`. Derived, so the metric's vocabulary cannot drift.
 SUBAGENT_OUTCOMES: tuple[str, ...] = ("done", "cancelled", *FAILURE_REASONS)
+
+
+def workspace_path(raw: str) -> str | None:
+    """A workspace-relative path with nothing that leaves the workspace, or None. The one rule
+    `subagent_create` refuses a bad input by and the runner stages by."""
+    path = PurePosixPath(raw.strip())
+    if not raw.strip() or path.is_absolute() or ".." in path.parts:
+        return None
+    return str(path)
 
 
 def job_folder(job_id: str) -> str:
@@ -69,8 +79,12 @@ class SubagentBrief:
     deliverable: str = ""
 
     def as_payload(self) -> dict[str, Any]:
-        """The brief as JSON-shaped data, for `compute_jobs.payload`."""
-        return asdict(self)
+        """The brief as JSON-shaped data (lists, never tuples, so the row reads back the same
+        from the in-memory store and from JSONB), for `compute_jobs.payload`."""
+        out = asdict(self)
+        for key in ("decisions", "inputs", "document_ids"):
+            out[key] = list(out[key])
+        return out
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> SubagentBrief:

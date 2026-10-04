@@ -83,6 +83,25 @@ class SqlComputeJobStore:
             rows = (await conn.execute(stmt)).all()
         return [_row_to_job(r) for r in rows]
 
+    async def room_jobs(
+        self, *, platform: str, conversation_id: str, kind: str, limit: int,
+    ) -> list[ComputeJob]:
+        # ponytail: no (platform, conversation_id) index; the table holds a handful of rows a
+        # day. Add one if `subagent_list` ever shows up in a slow-query read-back.
+        stmt = (
+            sa.select(COMPUTE_JOBS)
+            .where(
+                COMPUTE_JOBS.c.platform == platform,
+                COMPUTE_JOBS.c.conversation_id == conversation_id,
+                COMPUTE_JOBS.c.kind == kind,
+            )
+            .order_by(COMPUTE_JOBS.c.created_at.desc(), COMPUTE_JOBS.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [_row_to_job(r) for r in rows]
+
     async def claim(self, job_id: UUID) -> bool:
         stmt = (
             sa.update(COMPUTE_JOBS)

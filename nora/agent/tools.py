@@ -216,6 +216,7 @@ from ..domain.reminders import (
 from ..domain.rollup_read import ROLLUP_READ_KINDS, RollupRead, RollupReadQuery
 from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
 from ..domain.standing import StandingHead
+from ..domain.subagent import Decision, SubagentBrief
 from ..domain.tool_call_log import ToolCallLogStore
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
@@ -260,6 +261,7 @@ from .rollup_read import iso as rollup_iso
 from .rollup_read import parse_interval, render_row, visible_rows
 from .room import Room, RoomView, _key, _names_of, find_by_name
 from .standing_read import render_standing
+from .subagent_desk import JobView, SubagentDesk
 from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
 from .whereis import (
     STALE_AFTER_MS,
@@ -1614,6 +1616,42 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                       side_effect_state="confirmed",
                                       idempotency="idempotent", retry="safe",
                                       output_contract="three_state", level=2),
+    # The sub-agent tools (design/subagent §3, DEC-283): a tag turn hands a long job to a
+    # background worker and reads it later. A deferred group like the computer's: none is in
+    # `HOT_TOOLS`, so a turn loads them through `load_tools` from the catalogue line (which
+    # carries the routing: long multi-step work, not an answer). Withheld from every surface
+    # unless `[subagent] enabled` (`ToolRegistry._withheld`), and admitted to a tag turn only
+    # (`ToolScope`). The budgets are Nora's own turn's; the worker has none per tool.
+    #
+    # `subagent_create` 2: one call starts a job, and a second is the repair of a brief the
+    # tool refused (`bad_arguments`). A third would be a second job nobody asked for. Not
+    # `read_only`: it starts a worker and writes a row. `confirmed`: the answer is the row's
+    # own id, written after the worker launched. `non_idempotent`/`never`: a second call is
+    # a second job. Level 3: a status contract and two MUSTs (the brief is written for a
+    # reader who never saw the chat; say she is on it and do not wait).
+    "subagent_create": NativeTool(2, read_only=False,
+                                  side_effect_state="confirmed",
+                                  idempotency="non_idempotent", retry="never",
+                                  output_contract="three_state", level=3),
+    # `subagent_list` 1: one room's few jobs, the same answer if called twice. Level 1.
+    "subagent_list": NativeTool(1, time_shiftable=False, read_only=True,
+                                side_effect_state="none", idempotency="idempotent",
+                                retry="safe",
+                                output_contract="three_state", level=1),
+    # `subagent_read` 2: one job, and a second is another job. Its answer is the job's state
+    # NOW, so it decays (`time_shiftable=False`). Level 1: what, when, what comes back; how to
+    # report each state rides in the `note`.
+    "subagent_read": NativeTool(2, time_shiftable=False, read_only=True,
+                                side_effect_state="none", idempotency="idempotent",
+                                retry="safe",
+                                output_contract="three_state", level=1),
+    # `subagent_cancel` 1: one job stopped; a second call is a different job and is rare.
+    # Not `read_only`: it ends a worker. `confirmed`: the row says `cancelled`.
+    # `idempotent`: a second cancel of the same job answers `already_present`.
+    "subagent_cancel": NativeTool(1, read_only=False,
+                                  side_effect_state="confirmed", idempotency="idempotent",
+                                  retry="safe",
+                                  output_contract="three_state", level=1),
     # WHAT SHE IS RUNNING, and what was in each version (DEC-97). ONE verb with
     # two shapes rather than two tools (`weather`'s DEC-72 argument): "咩version"
     # and "V2 有咩" are one capability asked from two angles, and two tools would
@@ -4235,6 +4273,12 @@ COMPUTER_TOOLS: frozenset[str] = frozenset({
     "computer_export", "computer_import", "computer_session_list",
 })
 
+#: The sub-agent tools (design/subagent §3). `ToolRegistry` withholds all four from every
+#: surface unless `[subagent] enabled`, and `ToolScope` admits them to a tag turn only.
+SUBAGENT_TOOLS: frozenset[str] = frozenset({
+    "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+})
+
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
@@ -4456,6 +4500,10 @@ def build_tool_specs(
     # path) answers `unavailable`; both tools are Dreamer-only besides.
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
+    # The sub-agent desk (design/subagent §3): `subagent_create`/`list`/`read`/`cancel`. `None`
+    # (`[subagent] enabled = false`, offline, eval) answers `unavailable`; the registry
+    # withholds the four before that matters, and the scope admits them to a tag turn only.
+    subagent: SubagentDesk | None = None,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -14467,6 +14515,224 @@ Args:
             result["url"] = out.url
         return result
 
+    # ---- subagent_create / list / read / cancel (design/subagent §3, DEC-283) ---------------
+    # THE ROOM IS NEVER AN ARGUMENT. The desk is handed this turn's `platform` and
+    # `bound_conversation_id`, and it checks every row it reads or changes against them, so a
+    # job id from another room is an unknown id. The four are tag-turn tools only: the scope
+    # does not admit them to a fire turn, a Dreamer pass, cognition or the worker itself, and
+    # each closure refuses on the same provenance as a second layer (the worker holding
+    # `subagent_create` would be recursion).
+    subagent_on_tag = not (fire_turn or dream_adaptor or subagent_job)
+
+    def _subagent_unavailable(tool: str, reason: str) -> dict:
+        _record(metrics, tool, "unavailable", reason=reason)
+        return {"status": "unavailable",
+                "note": "I can't reach background jobs right now. Say so; nothing was "
+                        "started or changed."}
+
+    def _subagent_view(view: JobView) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "id": view.id, "state": view.state, "objective": view.objective,
+            "age_seconds": view.age_seconds,
+        }
+        if view.rounds is not None:
+            out["rounds"] = view.rounds
+        if view.last_tool:
+            out["last_tool"] = view.last_tool
+        if view.report:
+            out["report"] = view.report
+        if view.document_ids:
+            titles = list(view.document_titles) + [""] * len(view.document_ids)
+            out["documents"] = [
+                {"document_id": i, "title": titles[n]}
+                for n, i in enumerate(view.document_ids)
+            ]
+        if view.failure:
+            out["failure"] = view.failure
+        return out
+
+    async def subagent_create(
+        objective: str,
+        deliverable: str,
+        decisions: list[dict[str, str]] | None = None,
+        inputs: list[str] | None = None,
+        document_ids: list[str] | None = None,
+    ) -> dict:
+        """Hand a long job to a background worker that reports later. Call this when
+        work needs many files or documents, or research then writing; not for what one
+        reply answers.
+
+        MUST: write the brief for a reader who never saw the chat: the `objective`, what
+        done looks like in `deliverable`, and everything the room settled in `decisions`.
+
+        MUST: after `started`, tell the room you are on it and that the result comes
+        later. Do not wait for it or poll.
+
+        `status` is one of:
+        - `started`: the job is running; it carries `id`.
+        - `bad_arguments`: nothing started; the note says what to fix.
+        - `unavailable`: nothing started.
+        Every result carries a `note` saying how to report it.
+
+        Args:
+            objective: The job, in your own words, complete on its own.
+            deliverable: What done looks like: what exists, and where.
+            decisions: What was settled with the room, each {question, answer, by}; `by`
+                is who decided, or `nora` for an assumption you made.
+            inputs: Paths in this room's computer workspace the job works from.
+            document_ids: Documents to revise, from your documents view or a publish.
+        """
+        tool = "subagent_create"
+        if subagent is None:
+            _record(metrics, tool, "unavailable", reason="not_wired")
+            return {"status": "unavailable",
+                    "note": "I can't start background jobs right now. Say so; nothing was "
+                            "started."}
+        tagger = getattr(room, "tagger", None) if room is not None else None
+        if not subagent_on_tag or tagger is None:
+            _record(metrics, tool, "unavailable", reason="no_requester")
+            return {"status": "unavailable",
+                    "note": "A background job is started for the person who asked, in a "
+                            "turn they started. Nothing was started."}
+        listed = decisions or []
+        if not all(isinstance(d, Mapping) for d in listed):
+            _record(metrics, tool, "bad_arguments", reason="decisions")
+            return {"status": "bad_arguments",
+                    "note": "Each decision is an object with `question`, `answer` and `by`. "
+                            "Nothing was started; call again with them fixed."}
+        brief = SubagentBrief(
+            objective=str(objective or ""), deliverable=str(deliverable or ""),
+            decisions=tuple(
+                Decision(str(d.get("question", "")), str(d.get("answer", "")),
+                         str(d.get("by", "")))
+                for d in listed
+            ),
+            inputs=tuple(str(p) for p in inputs or ()),
+            document_ids=tuple(str(i) for i in document_ids or ()),
+        )
+        out = await subagent.create(
+            platform=room.platform if room is not None else "",
+            conversation_id=bound_conversation_id, conversation_type=conversation_type,
+            requester_person_id=tagger.person_id, tag_id=current_tag_id() or None,
+            brief=brief,
+        )
+        if out.status == "bad_arguments":
+            _record(metrics, tool, "bad_arguments", reason="brief")
+            return {"status": "bad_arguments",
+                    "note": f"Nothing was started: {out.problem}. Call again with it fixed."}
+        if out.status != "started":
+            _record(metrics, tool, "unavailable", reason=out.reason or "unavailable")
+            return {"status": "unavailable",
+                    "note": "I couldn't start it, and nothing is running. Say so; don't "
+                            "say you are on it."}
+        _record(metrics, tool, "started")
+        return {"status": "started", "id": out.id,
+                "note": "It is running in the background. Tell the room you are on it and "
+                        "that the result comes later, as a message. Do not wait for it, "
+                        "and do not say when it will be done."}
+
+    async def subagent_list() -> dict:
+        """List this room's background jobs, running and recent, with state and age.
+        Call this when somebody asks what you are working on, or to find a job's id.
+
+        Returns `status`: ok, nothing_found or unavailable, with `jobs`.
+        """
+        tool = "subagent_list"
+        if subagent is None or not subagent_on_tag:
+            return _subagent_unavailable(tool, "not_wired")
+        try:
+            views = await subagent.recent(
+                platform=room.platform if room is not None else "",
+                conversation_id=bound_conversation_id,
+            )
+        except Exception:
+            log.exception("subagent_list failed")
+            return _subagent_unavailable(tool, "raised")
+        if not views:
+            _record(metrics, tool, "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "There are no background jobs in this room."}
+        _record(metrics, tool, "ok", count=len(views))
+        return {"status": "ok", "jobs": [_subagent_view(v) for v in views],
+                "note": "Newest first. Use `subagent_read` with an `id` for one job."}
+
+    subagent_read_notes = {
+        "running": "It is still running. Say so, with its age if asked; do not guess when "
+                   "it will finish.",
+        "finishing": "It has ended and its result is on its way to the room as a message. "
+                     "Say it is about to arrive.",
+        "done": "It finished. Say only what its `report` says. The room already got the "
+                "result message.",
+        "failed": "It did not finish. Say why in plain words from `failure`.",
+        "cancelled": "It was cancelled. Say so.",
+    }
+
+    async def subagent_read(id: str) -> dict:
+        """Read one background job of this room: its state, or its report once it ended.
+        Call this when somebody asks how a job is going.
+
+        While it runs you get its age, rounds used and last tool; after, its report and
+        documents.
+
+        Returns `status`: ok, nothing_found or unavailable, with a `note`.
+
+        Args:
+            id: The job's `id`, from `subagent_create` or `subagent_list`.
+        """
+        tool = "subagent_read"
+        if subagent is None or not subagent_on_tag:
+            return _subagent_unavailable(tool, "not_wired")
+        try:
+            view = await subagent.read(
+                platform=room.platform if room is not None else "",
+                conversation_id=bound_conversation_id, job_id=id,
+            )
+        except Exception:
+            log.exception("subagent_read failed")
+            return _subagent_unavailable(tool, "raised")
+        if view is None:
+            _record(metrics, tool, "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "There is no background job with that id in this room."}
+        _record(metrics, tool, "ok", state=view.state)
+        return {"status": "ok", **_subagent_view(view),
+                "note": subagent_read_notes.get(view.state, "Report it as it is.")}
+
+    async def subagent_cancel(id: str) -> dict:
+        """Stop one of this room's background jobs. Call this when somebody asks you to
+        stop or drop a job.
+
+        Returns `status`: ok, already_present (nothing left to stop), nothing_found
+        or unavailable, with a `note`.
+
+        Args:
+            id: The job's `id`, from `subagent_create` or `subagent_list`.
+        """
+        tool = "subagent_cancel"
+        if subagent is None or not subagent_on_tag:
+            return _subagent_unavailable(tool, "not_wired")
+        try:
+            done = await subagent.cancel(
+                platform=room.platform if room is not None else "",
+                conversation_id=bound_conversation_id, job_id=id,
+            )
+        except Exception:
+            log.exception("subagent_cancel failed")
+            return _subagent_unavailable(tool, "raised")
+        if done is None:
+            _record(metrics, tool, "nothing_found")
+            return {"status": "nothing_found",
+                    "note": "There is no background job with that id in this room."}
+        view, changed = done
+        if not changed:
+            _record(metrics, tool, "already_present", state=view.state)
+            return {"status": "already_present", "id": view.id, "state": view.state,
+                    "note": "Nothing was left to stop: it was already " + view.state
+                            + ". Say so."}
+        _record(metrics, tool, "ok")
+        return {"status": "ok", "id": view.id, "state": view.state,
+                "note": "It is cancelled and will not report. Say so."}
+
     async def load_tools(names: list[str], tool_context: Any) -> dict:
         """Load catalogue tools by name so you can call them. Call this before
         using any tool your catalogue lists without a *.
@@ -14562,6 +14828,10 @@ Args:
         _spec("send_to", send_to),
         _spec("search_gifs", search_gifs),
         _spec("send_gif", send_gif),
+        _spec("subagent_create", subagent_create),
+        _spec("subagent_list", subagent_list),
+        _spec("subagent_read", subagent_read),
+        _spec("subagent_cancel", subagent_cancel),
         _spec("load_tools", load_tools),
     ), metrics=metrics)
 
@@ -14750,6 +15020,7 @@ def build_tools(
     lineage: LineagePolicy | None = None,
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
+    subagent: SubagentDesk | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -14810,5 +15081,6 @@ def build_tools(
         lineage=lineage,
         rollup=rollup,
         standing_head=standing_head,
+        subagent=subagent,
     )
     return [adapt(spec) for spec in specs]

@@ -863,6 +863,10 @@ async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     deps = await build_dependencies(cfg)
     try:
         assert deps.subagent_backend is None
+        # and the four model-facing tools are withheld from every turn (step 3)
+        from nora.agent.tools import SUBAGENT_TOOLS
+
+        assert deps.engagement._tool_registry._withheld >= SUBAGENT_TOOLS
     finally:
         await deps.background.cancel_all()
 
@@ -881,6 +885,12 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     deps = await build_dependencies(on)
     try:
         assert isinstance(deps.subagent_backend, SubagentBackend)
+        # step 3: the tools are offered, and their desk launches into THIS backend
+        from nora.agent.tools import SUBAGENT_TOOLS
+
+        registry = deps.engagement._tool_registry
+        assert registry._withheld.isdisjoint(SUBAGENT_TOOLS)
+        assert registry._subagent._worker is deps.subagent_backend
         (poller,) = _spawned(deps, "ComputeJobPoller.run")
         assert dict(poller._backends) == {"subagent": deps.subagent_backend}
     finally:

@@ -58,6 +58,8 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
     # reads that belong to a live turn or to a Dreamer pass
     "load_tools", "recall_lookups", "list_reminders", "music_status", "search_gifs",
     "computer_session_list", "rollup_read", "standing_read",
+    # Nora's own handle on background jobs: a worker that held it would recurse
+    "subagent_list", "subagent_read",
 })
 
 #: Held by nobody on a worker, whatever the registry grows: every send path, every
@@ -69,6 +71,8 @@ NEVER: frozenset[str] = frozenset({
     "event_propose", "event_revise", "event_rsvp", "event_set_status",
     "remember", "document_set_status",
     "play_music", "skip_music", "stop_music", "top_music", "set_music_volume",
+    # no recursion: a worker never starts, reads or stops a worker
+    "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
 })
 
 #: The activation tool the agent factory wires (`AgentSkills`); the guard must admit it.

@@ -62,6 +62,10 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                        "because the hold is not about the text. Added "
                        "2026-09-09 after a live participation turn read a hold "
                        "as a failure and rewrote the same reply four times.",
+    "started": "the call launched work that is still running: a background job has "
+               "an id and no result yet. Not `ok` (that reads as «done») and not "
+               "`unavailable` (it did start). The result arrives later, by message "
+               "(design/subagent §3).",
     "bad_arguments": "the call named an argument the tool does not take; "
                      "nothing ran; calling again with the listed arguments "
                      "will work. Not `unavailable` (R-99, design/"

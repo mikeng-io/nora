@@ -77,10 +77,10 @@ that runs:
 
 | tool | verb | who calls it | built |
 |---|---|---|---|
-| `subagent_create(objective, inputs?, document_ids?)` | `create` | Nora | step 1 |
-| `subagent_list()` | `list` | Nora | step 1 |
-| `subagent_read(id)` | `read` | Nora | step 1 |
-| `subagent_cancel(id)` | `cancel` | Nora | step 1 |
+| `subagent_create(objective, deliverable, decisions?, inputs?, document_ids?)` | `create` | Nora | step 3 |
+| `subagent_list()` | `list` | Nora | step 3 |
+| `subagent_read(id)` | `read` | Nora | step 3 |
+| `subagent_cancel(id)` | `cancel` | Nora | step 3 |
 | `subagent_send(id, message)` | `send` | Nora | later (§9) |
 
 All five verbs are already on the list. `subagent_create` returns
@@ -396,3 +396,18 @@ differ from the text above, none of them a reversal:
   the Dreamer's model with `ReasoningStripWatch` wired;
 - enabling the sub-agent requires `[compute] enabled` and `[dreamer] enabled` at load rather
   than implying the poller.
+
+**Step 3 as built (DEC-283).** The four tools, tag turn only, withheld unless `[subagent]
+enabled`. Three places differ from the text above, none of them a reversal:
+
+- the result status is `started`, a new declared extension beside `already_present` (work
+  running, no result yet), because `ok` reads as done;
+- `subagent_cancel` claims the row with the poller's own compare-and-set before it stops the
+  worker, so a job being delivered at that instant is never also cancelled, and a second cancel
+  answers `already_present`;
+- the tools reach the worker through `nora.agent.subagent_desk.SubagentDesk`, which the
+  composition attaches the backend to after the registry is built (the backend's tool list is
+  built from the registry), and `ComputeJobStore.room_jobs` is the one new store read.
+
+The routing of `subagent_create` against a reply is not yet measured on the live model: five
+`tool_selection` cases are in the corpus, the positives for the sub-agent-on arm only.

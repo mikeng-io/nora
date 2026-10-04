@@ -1214,9 +1214,12 @@ def test_the_digest_is_derived_from_the_registry_and_read_only():
     # plumbing — whether it can LOAD a tool is never whether an answer exists.
     # And minus the two reads only a Dreamer loop holds (DEC-246): what a
     # reply cannot call is never «something she can serve» to the gate.
-    from nora.agent.surface import DREAMER_LOOP_TOOLS
+    from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_ONLY_TOOLS
 
-    assert named == set(registry.read_only_tools()) - {"load_tools"} - DREAMER_LOOP_TOOLS
+    # (the tag-only `subagent_*` reads are not offered to a gate about an untagged window)
+    assert named == (
+        set(registry.read_only_tools()) - {"load_tools"} - DREAMER_LOOP_TOOLS - TAG_ONLY_TOOLS
+    )
     # The two the live miss turned on, and the one #145 grants the Dreamer.
     assert "weather" in named
     assert "lookup_person" in named

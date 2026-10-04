@@ -1662,6 +1662,16 @@ class FakeComputeJobStore:
         rows.sort(key=lambda j: (j.created_at, str(j.id)))
         return rows[:limit]
 
+    async def room_jobs(
+        self, *, platform: str, conversation_id: str, kind: str, limit: int,
+    ) -> list[ComputeJob]:
+        rows = [
+            j for j in self._jobs.values()
+            if (j.platform, j.conversation_id, j.kind) == (platform, conversation_id, kind)
+        ]
+        rows.sort(key=lambda j: (j.created_at, str(j.id)), reverse=True)
+        return rows[:limit]
+
     async def claim(self, job_id: UUID) -> bool:
         job = self._jobs.get(job_id)
         if job is None or job.state is not ComputeJobState.PENDING:

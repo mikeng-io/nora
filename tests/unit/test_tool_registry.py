@@ -13,7 +13,7 @@ from nora.agent.guards import Deliverer, ReplyGuard
 from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS
+from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS, SUBAGENT_TOOLS
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -215,6 +215,8 @@ def test_the_registry_exposes_every_declared_tool():
         "computer_export", "computer_import", "computer_session_list",
         # design/artifact §26: a document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
+        # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
+        # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
@@ -324,6 +326,9 @@ def test_budgets_match_todays_table():
         # Archive, delete or restore one document; a second call is an undo or
         # another document.
         "document_set_status": 2,
+        # design/subagent §3: one job started (a second call repairs a refused brief), one
+        # room's few jobs listed, one job read, one stopped.
+        "subagent_create": 2, "subagent_list": 1, "subagent_read": 2, "subagent_cancel": 1,
         # The one tool whose budget is sized by the QUESTION rather than by
         # cost: it is a pure function with no network and no clock, so four
         # calls are four model round trips and nothing else.
@@ -538,8 +543,13 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # wired — but that budget is not a built tool here.
     # And `load_tools` is declared but not handed over: `build()` never
     # defers, and the loader ships only when something is on the shelf.
-    assert set(agent.tool_names) == set(ToolRegistry().tool_names()) - {LOADER_TOOL}
-    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {"skills", LOADER_TOOL}
+    # (this build is the Dreamer path, which the four tag-only `subagent_*` tools never reach)
+    assert set(agent.tool_names) == (
+        set(ToolRegistry().tool_names()) - {LOADER_TOOL, *SUBAGENT_TOOLS}
+    )
+    assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
+        "skills", LOADER_TOOL, *SUBAGENT_TOOLS,
+    }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
 
@@ -807,6 +817,9 @@ ACT_VERBS = frozenset({
     "document_publish",
     # Appends a `document_state` row: archives, deletes or restores a document.
     "document_set_status",
+    # design/subagent §3: starting a worker and ending one are acts (a worker runs, a row is
+    # written); the list and the read are reads.
+    "subagent_create", "subagent_cancel",
     "send_reply", "send_to", "send_gif",
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
@@ -895,6 +908,9 @@ READ_ONLY = frozenset({
     "computer_session_list",
     # design/artifact §26: reads one document of the room; writes nothing.
     "document_read",
+    # design/subagent §3: this room's background jobs; a read of the outbox row and the
+    # worker's in-memory progress. Eligible, never granted (tag-only by `ToolScope`).
+    "subagent_list", "subagent_read",
 })
 
 

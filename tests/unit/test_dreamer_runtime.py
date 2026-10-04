@@ -857,6 +857,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # `computer_session_list` (design/sandbox-runtime §15.2) reads the
         # ROOM's own sessions and workspace state; same reason, fail-closed.
         "computer_session_list",
+        # `subagent_list` / `subagent_read` (design/subagent §3) read THIS room's jobs, keyed
+        # on the room's (platform, conversation_id), and are tag-turn tools by `ToolScope`.
+        "subagent_list", "subagent_read",
     }
     # The unit-safe half is `UNIT_SAFE_TOOLS` itself, read from the
     # module. Since design/dreamer-agent-loop/32 §3.4 that set includes the
