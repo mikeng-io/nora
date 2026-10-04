@@ -61,6 +61,7 @@ class SubagentsContextReader:
         shown: int = SUBAGENTS_SHOWN,
         rows: int = ROWS_READ,
         timeout: float = 1.0,
+        title_timeout: float = 0.4,
     ) -> None:
         self._jobs = jobs
         self._clock = clock
@@ -69,6 +70,7 @@ class SubagentsContextReader:
         self._shown = shown
         self._rows = rows
         self._timeout = timeout
+        self._title_timeout = title_timeout
         self._worker: SubagentWorker | None = None
 
     def attach(self, worker: SubagentWorker) -> None:
@@ -107,7 +109,7 @@ class SubagentsContextReader:
         done.sort(key=lambda r: r.completed_at or r.created_at, reverse=True)
         ordered = live + done
         shown = ordered[: self._shown]
-        lines = [await self._line(r) for r in shown]
+        lines = await asyncio.gather(*(self._line(r) for r in shown))
         return SubagentsView(
             lines=tuple(lines), now=now, omitted=len(ordered) - len(shown),
             omitted_at_least=len(rows) >= self._rows,
@@ -137,7 +139,10 @@ class SubagentsContextReader:
             try:
                 status = worker.status(row.backend_job_id)
             except Exception:
+                # The status read failed: nothing is known about the worker, so the job is
+                # still running as far as the row says, with its progress unknown.
                 log.exception("subagent status read failed for %s", row.id)
+                return SubagentLine(state="running", progress_known=False, **base)
         if worker is None:
             return SubagentLine(state="running", progress_known=False, **base)
         if status is None or not status.running:
@@ -148,20 +153,26 @@ class SubagentsContextReader:
         )
 
     async def _titles(self, row: ComputeJob) -> tuple[tuple[str, str], ...]:
-        out: list[tuple[str, str]] = []
-        for raw in row.result_document_ids:
-            title = ""
-            if self._documents is not None:
-                try:
-                    res = await self._documents.read(
+        """Each document's title, read concurrently and each bounded on its own, so one slow
+        or failing read costs that title (`""`, rendered «title not read» beside the id),
+        never the block."""
+        async def one(raw: str) -> tuple[str, str]:
+            if self._documents is None:
+                return raw, ""
+            try:
+                res = await asyncio.wait_for(
+                    self._documents.read(
                         platform=row.platform, conversation_id=row.conversation_id,
                         document_id=UUID(raw),
-                    )
-                    title = str(res.title) if res.status == "ok" else ""
-                except Exception:
-                    log.exception("subagents context: document %s did not read", raw)
-            out.append((raw, title))
-        return tuple(out)
+                    ),
+                    timeout=self._title_timeout,
+                )
+                return raw, (str(res.title) if res.status == "ok" else "")
+            except Exception:
+                log.exception("subagents context: document %s did not read", raw)
+                return raw, ""
+
+        return tuple(await asyncio.gather(*(one(r) for r in row.result_document_ids)))
 
 
 def _unfinished(row: ComputeJob) -> bool:

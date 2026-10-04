@@ -371,3 +371,30 @@ async def test_a_store_that_leaks_another_rooms_row_still_shows_none_of_it():
     body = render_subagents(view).body
     assert 'description "mine"' in body
     assert "other room" not in body and len(body.splitlines()) == 1
+
+
+async def test_a_status_read_that_raises_is_running_with_progress_unknown_never_ended():
+    class Boom:
+        def status(self, job_id):
+            raise RuntimeError("backend gone")
+
+    body = await _body(await _store(_job()), worker=Boom())
+    assert body.startswith("running · ") and "progress unknown" in body
+    assert "ended" not in body
+
+
+async def test_a_slow_or_failing_title_read_costs_the_title_never_the_block():
+    class _Sleepy(_Titles):
+        async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+            await asyncio.sleep(5)
+
+    class _Broken(_Titles):
+        async def read(self, *, platform, conversation_id, document_id=None, handle=""):
+            raise RuntimeError("down")
+
+    job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_document_ids=(DOC, DOC))
+    for docs in (_Sleepy(), _Broken()):
+        started = asyncio.get_event_loop().time()
+        body = await _body(await _store(job), documents=docs, timeout=2.0, title_timeout=0.05)
+        assert asyncio.get_event_loop().time() - started < 1.0
+        assert body.startswith("done · ") and body.count(f'"(title not read)" (id {DOC})') == 2
