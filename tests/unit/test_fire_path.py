@@ -864,6 +864,20 @@ def test_a_finished_job_puts_its_summary_and_link_to_her() -> None:
     assert occasion.kind == "compute"
 
 
+def test_a_delivery_names_the_job_by_its_title_and_an_older_row_by_its_task() -> None:
+    """Operator 2026-10-05: a sub-agent job carries a title, and the delivery names it by that
+    title; a payload without one (a row from before titles, or another kind) falls back to
+    the task text."""
+    result = JobResult(status=JobStatus.SUCCEEDED, summary="done")
+    titled = compute_occasion(
+        _compute_job(payload={"title": "Rainfall chart", "objective": "chart the rainfall"}),
+        result)
+    assert titled.body.startswith("(asked earlier) Rainfall chart")
+    assert "chart the rainfall" not in titled.body
+    untitled = compute_occasion(_compute_job(), result)
+    assert untitled.body.startswith("(asked earlier) chart the rainfall")
+
+
 def test_a_failed_job_is_put_to_her_as_a_failure_not_as_a_result() -> None:
     """The branch nothing exercised. A `JobResult` that is not SUCCEEDED must
     reach her AS a failure — she composes the group-facing message from this

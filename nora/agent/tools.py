@@ -14532,8 +14532,8 @@ Args:
 
     def _subagent_view(view: JobView) -> dict[str, Any]:
         out: dict[str, Any] = {
-            "id": view.id, "state": view.state, "objective": view.objective,
-            "age_seconds": view.age_seconds,
+            "id": view.id, "title": view.title, "state": view.state,
+            "description": view.description, "age_seconds": view.age_seconds,
         }
         if view.rounds is not None:
             out["rounds"] = view.rounds
@@ -14552,6 +14552,7 @@ Args:
         return out
 
     async def subagent_create(
+        title: str,
         objective: str,
         deliverable: str,
         decisions: list[dict[str, str]] | None = None,
@@ -14562,8 +14563,9 @@ Args:
         work needs many files or documents, or research then writing; not for what one
         reply answers.
 
-        MUST: write the brief for a reader who never saw the chat: the `objective`, what
-        done looks like in `deliverable`, and everything the room settled in `decisions`.
+        MUST: give it a short `title` the room would recognise, and write the brief for a
+        reader who never saw the chat: the `objective`, what done looks like in
+        `deliverable`, and everything the room settled in `decisions`.
 
         MUST: after `started`, tell the room you are on it and that the result comes
         later. Do not wait for it or poll.
@@ -14575,6 +14577,7 @@ Args:
         Every result carries a `note` saying how to report it.
 
         Args:
+            title: A name for the job the room would recognise, at most 60 characters.
             objective: The job, in your own words, complete on its own.
             deliverable: What done looks like: what exists, and where.
             decisions: What was settled with the room, each {question, answer, by}; `by`
@@ -14606,7 +14609,8 @@ Args:
                     "note": "Each decision is an object with `question`, `answer` and `by`. "
                             "Nothing was started; call again with them fixed."}
         brief = SubagentBrief(
-            objective=str(objective or ""), deliverable=str(deliverable or ""),
+            title=str(title or ""), objective=str(objective or ""),
+            deliverable=str(deliverable or ""),
             decisions=tuple(
                 Decision(str(d.get("question", "")), str(d.get("answer", "")),
                          str(d.get("by", "")))
@@ -14630,6 +14634,11 @@ Args:
             return {"status": "unavailable",
                     "note": "I couldn't start it, and nothing is running. Say so; don't "
                             "say you are on it."}
+        if out.repeated:
+            _record(metrics, tool, "started", reason="repeated_in_turn")
+            return {"status": "started", "id": out.id,
+                    "note": "This job was already started earlier in this turn, and nothing "
+                            "new was started. Tell the room once that you are on it."}
         _record(metrics, tool, "started")
         return {"status": "started", "id": out.id,
                 "note": "It is running in the background. Tell the room you are on it and "

@@ -26,12 +26,14 @@ from nora.domain.models import (
 from nora.domain.notes import Note
 from nora.domain.prompt import escape_attr
 from nora.domain.standing import Standing, WorkingSetItem
+from nora.domain.subagents_context import SubagentLine, SubagentsView
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, self_card=(),
          quote=None, platform="signal", tagger_card=(), notes=(),
          standing=None, decisions=(), people_in_window=(), culture=None,
-         room_members=(), computer=None, documents=None, character=()) -> TagContext:
+         room_members=(), computer=None, documents=None, character=(),
+         subagents=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
@@ -39,7 +41,8 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
               "decisions": tuple(decisions),
               "people_in_window": tuple(people_in_window),
               "room_members": tuple(room_members), "computer": computer,
-              "documents": documents, "character": tuple(character)}
+              "documents": documents, "character": tuple(character),
+              "subagents": subagents}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -49,6 +52,16 @@ def _documents() -> DocumentsView:
     now = datetime.now(UTC)
     return DocumentsView(
         lines=(DocumentLine("Trip to Tokyo", "00000000-0000-0000-0000-000000000001", 2, now),),
+        now=now,
+    )
+
+
+def _subagents() -> SubagentsView:
+    """One running job, so `_full_prefill_body` renders `<subagents>`."""
+    now = datetime.now(UTC)
+    return SubagentsView(
+        lines=(SubagentLine("job-1", "running", "Sheets to documents", "turn the sheets over",
+                            now),),
         now=now,
     )
 
@@ -271,7 +284,7 @@ def _full_prefill_body() -> str:
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
         room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),
-        computer=_computer(), documents=_documents(),
+        computer=_computer(), documents=_documents(), subagents=_subagents(),
         character=(("Miles", _culture()),),
     )
     return build_prefill(

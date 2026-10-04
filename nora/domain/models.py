@@ -16,6 +16,7 @@ from .media import MediaBlob, MediaRef
 from .notes import Note
 from .self_presence import Presence
 from .standing import Standing
+from .subagents_context import SubagentsView
 
 
 @dataclass(frozen=True)
@@ -651,6 +652,11 @@ class TagContext:
     # `[documents]` is off, in a room with no document, and in every harness
     # that wires no reader: the block then renders nothing.
     documents: DocumentsView | None = None
+    # `<subagents>` (design/subagent §7): this room's sub-agent jobs, running and finished
+    # within a day, read at turn start by `SubagentsContextReader`. Tag turn only. `None`
+    # while `[subagent]` is off, in a room with no job in the window, and in every harness
+    # that wires no reader: the block then renders nothing.
+    subagents: SubagentsView | None = None
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,7 @@ from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing, render_standing_working_set
+from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 from .lineage import DerivedView, derived_view
@@ -170,6 +171,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # turn. Directly after `computer` (both are «what I have made in this room») and
     # before `standing`. Renders only where `[documents]` is on and the room has one.
     ("documents", 58, "turn"),
+    # design/subagent §7: this room's sub-agent jobs (running and finished within a day),
+    # read fresh from the job rows. `turn`: its ages and a running job's progress move every
+    # turn. Tag turn only, and only under `[subagent] enabled` with a job in the window.
+    ("subagents", 59, "turn"),
     ("standing", 60, "room"),
     # design/standing-compact/30-working-set.md, issue #445. Immediately
     # after `standing` and before the transcript, on purpose — the read
@@ -1044,6 +1049,7 @@ def build_prefill(
             _restamp(render_character(ctx.character, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
+            _restamp(render_subagents(ctx.subagents)),
             _restamp(_standing_block(ctx, view)),
             _restamp(_standing_working_set_block(ctx, now=clock, view=view)),
             _transcript_block(ctx, display_name, clock, context_window),

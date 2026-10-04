@@ -187,6 +187,7 @@ CONVERTED = (
     "nora/ingest/relevance_gate.py",
     "nora/language/computer_render.py",
     "nora/language/documents_render.py",
+    "nora/language/subagents_render.py",
     "nora/language/culture_render.py",
     "nora/language/note_render.py",
     "nora/language/presence_render.py",

@@ -122,6 +122,7 @@ class _Desk:
 
 
 BRIEF = {
+    "title": "Planning sheets to mobile documents",
     "objective": "turn the 8 planning sheets into 8 mobile documents",
     "deliverable": "8 published documents, each read back",
     "decisions": [{"question": "keep the layout?", "answer": "rebuild it", "by": "Miles Novak"}],
@@ -151,7 +152,8 @@ async def test_create_writes_the_row_with_the_full_brief_and_the_turns_room_fact
     assert row.requester_person_id == MILES.person_id         # the tagger, from the turn
     assert row.backend_job_id == "bj1" and row.created_at == NOW
     assert dict(row.payload) == {
-        "objective": BRIEF["objective"], "deliverable": BRIEF["deliverable"],
+        "title": BRIEF["title"], "objective": BRIEF["objective"],
+        "deliverable": BRIEF["deliverable"],
         "decisions": [{"question": "keep the layout?", "answer": "rebuild it",
                        "by": "Miles Novak"}],
         "inputs": ["inbox/sheets.zip"], "document_ids": [],
@@ -168,7 +170,7 @@ def test_a_model_cannot_name_the_room_or_the_requester():
     """The room, the requester, the tag and the time are code's, so none is a parameter."""
     params = set(inspect.signature(
         _Desk().tools()["subagent_create"]).parameters)
-    assert params == {"objective", "deliverable", "decisions", "inputs", "document_ids"}
+    assert params == {"title", "objective", "deliverable", "decisions", "inputs", "document_ids"}
     for name in ("subagent_list", "subagent_read", "subagent_cancel"):
         assert set(inspect.signature(_Desk().tools()[name]).parameters) <= {"id"}
 
@@ -190,6 +192,9 @@ async def test_create_returns_at_once_and_never_awaits_the_run():
 
 @pytest.mark.parametrize("over", [
     {"objective": "   "},
+    {"title": ""},
+    {"title": "   "},
+    {"title": "x" * 61},
     {"deliverable": ""},
     {"inputs": ["../outside.txt"]},
     {"inputs": ["/etc/passwd"]},
@@ -527,3 +532,109 @@ async def test_the_workers_document_tools_refuse_a_document_of_another_room(tmp_
         spec=_doc("Hijack"), document_id=made["document_id"], base_revision=1,
     )
     assert revised["status"] != "ok"
+
+
+# -- titles (operator, 2026-10-05) ---------------------------------------------------------
+
+
+async def test_a_title_of_exactly_sixty_characters_is_accepted_and_kept():
+    rig = _Desk()
+    out = await _create(rig, title="t" * 60)
+    assert out["status"] == "started"
+    assert (await rig.store.get(UUID(out["id"]))).payload["title"] == "t" * 60
+
+
+async def test_the_title_is_a_required_argument_of_subagent_create():
+    sig = inspect.signature(_Desk().tools()["subagent_create"])
+    assert sig.parameters["title"].default is inspect.Parameter.empty
+
+
+async def test_list_gives_title_and_a_cut_description_and_read_gives_the_whole_of_it():
+    rig = _Desk()
+    long = "o" * 300
+    job_id = (await _create(rig, objective=long))["id"]
+    rig.worker.live["bj1"] = SimpleNamespace(running=True, rounds=3, last_tool="computer_run")
+    (listed,) = (await rig.tools()["subagent_list"]())["jobs"]
+    assert listed["title"] == BRIEF["title"] and listed["description"] == "o" * 120
+    assert (listed["state"], listed["rounds"], listed["last_tool"]) == (
+        "running", 3, "computer_run")
+    assert "objective" not in listed and "summary" not in listed
+    read = await rig.tools()["subagent_read"](id=job_id)
+    assert read["title"] == BRIEF["title"] and read["description"] == long
+
+
+async def test_list_cuts_the_report_and_read_has_it_whole():
+    rig = _Desk()
+    job_id = (await _create(rig))["id"]
+    await rig.store.claim(UUID(job_id))
+    doc = "0b9e1c9e-6f0e-4f43-9a52-3d1f5a4e7a10"
+    await rig.store.mark(UUID(job_id), ComputeJobState.DONE, completed_at=NOW,
+                         result_report="r" * 500, result_document_ids=(doc,))
+    (listed,) = (await rig.tools()["subagent_list"]())["jobs"]
+    assert listed["report"] == "r" * 200
+    assert (await rig.tools()["subagent_read"](id=job_id))["report"] == "r" * 500
+
+
+async def test_a_row_from_before_titles_falls_back_to_its_objective_cut_to_sixty():
+    from dataclasses import replace
+
+    rig = _Desk()
+    job_id = (await _create(rig, objective="w" * 100))["id"]
+    row = await rig.store.get(UUID(job_id))
+    legacy = {k: v for k, v in row.payload.items() if k != "title"}
+    rig.store._jobs[row.id] = replace(row, payload=legacy)
+    (listed,) = (await rig.tools()["subagent_list"]())["jobs"]
+    assert listed["title"] == "w" * 59 + "…"
+
+
+def test_the_title_comes_from_the_payload_and_never_from_a_model_summary():
+    from nora.domain.subagent import SubagentBrief, job_title, written_title
+
+    brief = SubagentBrief(objective="x", title="  Trip   plan ")
+    assert SubagentBrief.from_payload(brief.as_payload()).title == "  Trip   plan "
+    assert job_title(brief.as_payload(), "x") == "Trip plan"
+    assert written_title({}) == "" and written_title(None) == ""
+    assert job_title({}, "short") == "short"
+
+
+# -- one job per tag turn ------------------------------------------------------------------
+
+
+async def test_a_second_create_in_the_same_turn_launches_nothing_and_returns_the_first_id():
+    rig = _Desk()
+    first = await _create(rig)
+    second = await _create(rig)
+    assert first["status"] == second["status"] == "started"
+    assert second["id"] == first["id"] and "already" in second["note"]
+    assert len(rig.worker.launched) == 1
+    assert len(await rig.store.pending(limit=10)) == 1
+
+
+async def test_a_create_in_a_later_turn_or_another_room_starts_its_own_job():
+    rig = _Desk()
+    first = await _create(rig)
+    bind_tag_id("tag-10")
+    later = await rig.tools()["subagent_create"](**BRIEF)
+    other = await _create(rig, OTHER_ROOM)
+    assert len({first["id"], later["id"], other["id"]}) == 3
+    assert len(rig.worker.launched) == 3
+
+
+async def test_a_first_attempt_that_made_no_job_does_not_block_the_next():
+    rig = _Desk()
+    refused = await _create(rig, title="")
+    assert refused["status"] == "bad_arguments"
+    ok = await _create(rig)
+    assert ok["status"] == "started" and "already" not in ok["note"]
+    assert len(rig.worker.launched) == 1
+
+    unavailable = _Desk()
+
+    async def would_not_launch(*, request):
+        raise RuntimeError("no")
+
+    unavailable.worker.launch = would_not_launch      # type: ignore[method-assign]
+    assert (await _create(unavailable))["status"] == "unavailable"
+    del unavailable.worker.launch                      # the real launch again
+    again = await _create(unavailable)
+    assert again["status"] == "started" and len(unavailable.worker.launched) == 1

@@ -178,6 +178,9 @@ def build_offline_pipeline(
         # `<documents>` (design/artifact §29) — `None`: this harness has no document
         # store; the live eval subject builds the real reader through composition.
         documents=None,
+        # `<subagents>` (design/subagent §7) — `None`: no job store here, and `[subagent]`
+        # ships off.
+        subagents=None,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:

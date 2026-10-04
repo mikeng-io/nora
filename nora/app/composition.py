@@ -142,6 +142,7 @@ from nora.engagement.self_presence import PresenceReader
 from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages.debrief import Completion as DebriefCompletion
 from nora.engagement.stages.debrief import Wiring as DebriefWiring
+from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
@@ -1358,6 +1359,14 @@ async def build_dependencies(
             store=documents_store, room_ids=_room_ids_of(allowlist),
             clock=lambda: datetime.now(UTC), metrics=metrics,
         )
+    # `<subagents>` (design/subagent §7): this room's sub-agent jobs, tag turn only. `None`
+    # while `[subagent]` is off. The worker is attached where the desk's is, once built.
+    subagents_context: SubagentsContextReader | None = None
+    if cfg.subagent.enabled:
+        subagents_context = SubagentsContextReader(
+            jobs=compute_jobs, clock=lambda: datetime.now(UTC), metrics=metrics,
+            documents=document_service if cfg.documents.enabled else None,
+        )
     # ONE media join for the whole process (issue #116, operator 2026-09-08),
     # handed to every transcript builder there is: the tag assembler, the fire
     # path, the tag-path debrief, the Cognition session and lazy adoption. On master the sticker
@@ -1928,6 +1937,9 @@ async def build_dependencies(
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,
         documents=documents_context,
+        # `<subagents>` (design/subagent §7): `None` while `[subagent]` is off. The worker is
+        # attached below, beside the desk's. Not given to the fire path.
+        subagents=subagents_context,
     )
 
     def _spawn(coro: Coroutine[Any, Any, None]) -> None:
@@ -2868,6 +2880,8 @@ async def build_dependencies(
         compute_backends[SUBAGENT_KIND] = subagent_backend
         if subagent_desk is not None:
             subagent_desk.attach(subagent_backend)
+        if subagents_context is not None:
+            subagents_context.attach(subagent_backend)
     if cfg.compute.enabled and not compute_backends:
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "

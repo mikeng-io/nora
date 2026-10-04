@@ -29,6 +29,9 @@ from nora.domain.stimuli import LIMIT_STOP_REASONS
 #: backend by it.
 SUBAGENT_KIND = "subagent"
 
+#: A job's title is a name the room would recognise: required at launch, at most this long.
+TITLE_CHARS = 60
+
 #: Where a job works, in the room's computer workspace (relative to it).
 JOB_FOLDER_ROOT = "projects"
 
@@ -73,6 +76,9 @@ class Decision:
 @dataclass(frozen=True)
 class SubagentBrief:
     objective: str
+    #: A short name the room would recognise (<= `TITLE_CHARS`), written by Nora. Empty only
+    #: on a payload from before the field existed: read it through `job_title`.
+    title: str = ""
     decisions: tuple[Decision, ...] = ()
     inputs: tuple[str, ...] = ()
     document_ids: tuple[str, ...] = ()
@@ -90,6 +96,7 @@ class SubagentBrief:
     def from_payload(cls, payload: Mapping[str, Any]) -> SubagentBrief:
         return cls(
             objective=str(payload.get("objective", "")),
+            title=str(payload.get("title", "") or ""),
             decisions=tuple(
                 Decision(str(d.get("question", "")), str(d.get("answer", "")), str(d.get("by", "")))
                 for d in payload.get("decisions") or ()
@@ -98,6 +105,22 @@ class SubagentBrief:
             document_ids=tuple(str(i) for i in payload.get("document_ids") or ()),
             deliverable=str(payload.get("deliverable", "")),
         )
+
+
+def job_title(payload: Mapping[str, Any] | None, objective: str) -> str:
+    """The job's title: the one Nora wrote, or for a row from before titles the objective cut
+    to `TITLE_CHARS` on one line. Never empty unless the objective is."""
+    written = " ".join(str((payload or {}).get("title") or "").split())
+    if written:
+        return written[:TITLE_CHARS]
+    one = " ".join(objective.split())
+    return one if len(one) <= TITLE_CHARS else one[: TITLE_CHARS - 1].rstrip() + "…"
+
+
+def written_title(payload: Mapping[str, Any] | None) -> str:
+    """The title Nora wrote, or `""` for a payload that has none (a delivery then names the
+    job by its task text)."""
+    return " ".join(str((payload or {}).get("title") or "").split())[:TITLE_CHARS]
 
 
 @dataclass(frozen=True)
