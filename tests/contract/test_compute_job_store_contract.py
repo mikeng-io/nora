@@ -261,3 +261,22 @@ async def test_mark_writes_the_workers_trace_id(store):
     await store.claim(job.id)
     await store.mark(job.id, ComputeJobState.DONE, trace_id="abc123")
     assert (await store.get(job.id)).trace_id == "abc123"
+
+
+async def test_room_jobs_returns_only_that_rooms_rows_of_that_kind_newest_first(store):
+    t0 = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+    older = _job(created_at=t0)
+    newer = _job(id=uuid4(), created_at=t0.replace(minute=30), state=ComputeJobState.DONE)
+    other_room = _job(id=uuid4(), conversation_id="conv-2")
+    other_platform = _job(id=uuid4(), platform="discord")
+    other_kind = _job(id=uuid4(), kind="video")
+    for j in (older, newer, other_room, other_platform, other_kind):
+        await store.create(j)
+    rows = await store.room_jobs(
+        platform="signal", conversation_id="conv-1", kind="subagent", limit=10,
+    )
+    assert [j.id for j in rows] == [newer.id, older.id]
+    capped = await store.room_jobs(
+        platform="signal", conversation_id="conv-1", kind="subagent", limit=1,
+    )
+    assert [j.id for j in capped] == [newer.id]

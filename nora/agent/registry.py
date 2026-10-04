@@ -76,7 +76,8 @@ from .reaction import ReactionPicker
 from .relay import Relay
 from .room import Room
 from .shelf_hook import ShelfLoader
-from .surface import DREAMER_LOOP_TOOLS, ToolScope, ToolShelf, ToolSurface
+from .subagent_desk import SubagentDesk
+from .surface import DREAMER_LOOP_TOOLS, TAG_ONLY_TOOLS, ToolScope, ToolShelf, ToolSurface
 from .tools import (
     COMPUTER_TOOLS,
     DOCUMENT_TOOLS,
@@ -84,6 +85,7 @@ from .tools import (
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
+    SUBAGENT_TOOLS,
     DocumentPublisher,
     EventsCollaborator,
     ImageGenerator,
@@ -253,6 +255,9 @@ class ToolRegistry:
         # every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
+        # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools call. Without
+        # it the registry withholds them from every turn.
+        subagent: SubagentDesk | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
@@ -274,7 +279,9 @@ class ToolRegistry:
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
+            | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
         )
+        self._subagent = subagent
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -710,7 +717,8 @@ class ToolRegistry:
         verb and its subject, not its usage rules.
         """
         return "\n".join(self._digest_lines(
-            self.read_only_tools() - {LOADER_TOOL} - self._withheld - DREAMER_LOOP_TOOLS,
+            self.read_only_tools() - {LOADER_TOOL} - TAG_ONLY_TOOLS
+            - self._withheld - DREAMER_LOOP_TOOLS,
         ))
 
     def _digest_lines(
@@ -1070,6 +1078,7 @@ class ToolRegistry:
             image_refs_allowed=self._image_refs_allowed,
             media_store=self._media_store,
             documents=self._documents,
+            subagent=self._subagent,
             shelf=shelf,
             on_rows=on_rows,
         )
@@ -1173,6 +1182,7 @@ class ToolRegistry:
             platform=None if room is None else room.platform,
             dreamer=bool(dream_adaptor),
             grant=grant,
+            tag_turn=not (fire_turn or dream_adaptor or subagent_job),
         )
         shelf = ToolShelf()
         specs = self.specs(

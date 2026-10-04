@@ -58,6 +58,13 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read", "standing_read"})
 DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | DREAMER_LOOP_TOOLS
 
+#: Tag-turn tools only (design/subagent §3): the four `subagent_*` tools are a person's
+#: tool for handing work to a background worker, so a fire turn, a Dreamer pass, a cognition
+#: session and the worker itself (which would recurse) are never offered them.
+TAG_ONLY_TOOLS: frozenset[str] = frozenset({
+    "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+})
+
 
 @dataclass(frozen=True)
 class ToolScope:
@@ -77,14 +84,20 @@ class ToolScope:
     its adaptor's granted tools intersected with what it may hold
     (read-only, plus the acts a home-room grant allows) — the filter that used
     to run on `build()`'s output, now part of the one scope.
+
+    `tag_turn` is False for every occasion that is not a person's tag: a fire turn, a Dreamer
+    adaptor, and the sub-agent worker. `TAG_ONLY_TOOLS` are refused there.
     """
 
     platform: str | None
     dreamer: bool = False
     grant: frozenset[str] | None = None
+    tag_turn: bool = True
 
     def admits(self, name: str) -> bool:
         if self.grant is not None and name not in self.grant:
+            return False
+        if name in TAG_ONLY_TOOLS and not self.tag_turn:
             return False
         if self.platform is None:
             return True

@@ -151,6 +151,14 @@ class ComputeJobStore(Protocol):
         """
         ...
 
+    async def room_jobs(
+        self, *, platform: str, conversation_id: str, kind: str, limit: int,
+    ) -> list[ComputeJob]:
+        """The newest `limit` rows of one `kind` launched in ONE room, newest first, any
+        state. The room is the whole filter: a caller never sees another room's row
+        (`subagent_list` and `subagent_read` are the readers)."""
+        ...
+
     async def claim(self, job_id: UUID) -> bool:
         """`PENDING -> FIRING`, compare-and-set. True iff this caller took
         the row — the same at-most-once discipline `ReminderStore.claim`

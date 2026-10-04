@@ -1049,3 +1049,62 @@ cases:
     input: what is in this one [image a3f2c1]
     metadata: {tools: [media_fetch], not_tools: [media_search]}
     snapshot: *room_a
+
+  # --- the sub-agent (design/subagent §3, DEC-283) ---------------------------------
+  # `subagent_create` against what one reply or one tool call answers. ON ARM ONLY for the
+  # positives (`route_subagent_create_*`): the four tools are withheld from every surface
+  # unless `[subagent] enabled` (`ToolRegistry._withheld`), so with it off they FAIL by
+  # construction. Run them with `--case` on a subject whose config has `[subagent] enabled =
+  # true` (which needs `[dreamer]`, `[compute]`, `[computer]` and `[documents]`). The three
+  # negatives are valid on BOTH arms: off, nothing can be handed over, so they pass trivially;
+  # on, they are the measurement that a short question, a sum or ONE document does not become
+  # a background job.
+  #
+  # NOT COVERED, stated: `subagent_read`, `subagent_list` and `subagent_cancel` need a job in
+  # the room, which no sandbox seeds into the clone, so their routing is a live read-back.
+  - name: route_subagent_create_archive_conversion
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      I put a zip with 8 planning sheets in your computer's inbox. Rebuild all 8 as
+      separate documents that read well on a phone. It will take a while, so just tell me
+      when they are done.
+    metadata: {tools: [subagent_create], not_tools: [document_publish, computer_run]}
+    snapshot: *room_a
+
+  - name: route_subagent_create_research_then_write
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      研究下北海道十個溫泉小鎮，逐個比較，然後每個鎮寫一份詳細介紹文件。
+      要搵好多資料，唔使即刻有，搞掂再話我知
+    metadata: {tools: [subagent_create], not_tools: [document_publish, web_search]}
+    snapshot: *room_a
+
+  - name: route_calculate_not_a_subagent
+    entry: tag
+    expect: reply
+    mention: true
+    input: 840蚊加一成服務費，再三個人夾，每人幾多？
+    metadata: {tools: [calculate], not_tools: [subagent_create]}
+    snapshot: *room_a
+
+  - name: route_single_document_not_a_subagent
+    entry: tag
+    expect: reply
+    mention: true
+    input: >-
+      write one proper document comparing Tokyo and Osaka for a week in December, a
+      section for each and which one you would pick
+    metadata: {tools: [document_publish], not_tools: [subagent_create]}
+    snapshot: *room_a
+
+  - name: route_quick_question_not_a_subagent
+    entry: tag
+    expect: reply
+    mention: true
+    input: 東京十二月冷唔冷？簡單答我就得
+    metadata: {tools: [web_search, weather], not_tools: [subagent_create]}
+    snapshot: *room_a

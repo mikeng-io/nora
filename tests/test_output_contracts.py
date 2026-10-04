@@ -85,6 +85,9 @@ def test_every_declared_extension_is_named_and_documented() -> None:
         # disclosure. This one names a mistake in the CALL, correctable on
         # the very next turn.
         "bad_arguments",
+        # design/subagent §3 (DEC-283): a background job was launched and has no result
+        # yet. Not `ok` (that reads as done) and not `unavailable` (it did start).
+        "started",
     }
     undocumented = sorted(k for k, v in DECLARED_STATUS_EXTENSIONS.items() if not v.strip())
     assert undocumented == [], f"declared with no meaning: {undocumented}"
