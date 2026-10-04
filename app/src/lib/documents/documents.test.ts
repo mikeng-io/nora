@@ -93,7 +93,7 @@ describe("parseDocument never throws and never recurses on hostile depth", () =>
 describe("the demo documents", () => {
   // They are what the skill shows the model and what the viewer is tested on,
   // so one that stops validating is a bug in both.
-  it("are registered", () => expect([...DEMO_NAMES].sort()).toEqual(["comparison", "evening", "report", "runbook", "trip"]));
+  it("are registered", () => expect([...DEMO_NAMES].sort()).toEqual(["comparison", "evening", "report", "runbook", "trip", "wedding"]));
   for (const name of DEMO_NAMES) {
     it(`${name} states its facts with a Page title and stays under 20 KB`, () => {
       expect(DEMOS[name].root.props.title).toBeTruthy();

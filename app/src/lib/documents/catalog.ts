@@ -64,6 +64,14 @@ export const MERMAID_PLAIN = new RegExp(
     "[\\s\\S]*(?![\\s\\S])",
 );
 
+// A clock time, 24 hours. Written with explicit classes for the same reason as the
+// patterns above: the Python checker reads the JSON Schema `pattern` alone.
+const clock = z.string().regex(/^(?:[01][0-9]|2[0-3]):[0-5][0-9](?![\s\S])/, "HH:MM, 24 hours");
+// A telephone number is digits, spaces and hyphens with an optional leading plus, so the
+// renderer can build a `tel:` link from it and nothing else can ride along.
+const phone = z.string().regex(/^\+?[0-9][0-9 -]{3,18}[0-9](?![\s\S])/, "a telephone number");
+const day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}(?![\s\S])/, "YYYY-MM-DD");
+
 export const components = {
   Page: {
     props: z.strictObject({ title: text(200), subtitle: text(300).optional() }),
@@ -92,8 +100,13 @@ export const components = {
       caption: text(200).optional(),
       columns: z.array(z.string().max(80)).min(1).max(12),
       rows: z.array(z.array(z.string().max(500)).max(12)).max(200),
+      // One entry per column; a number column reads best right-aligned.
+      align: z.array(z.enum(["left", "right", "center"])).max(12).optional(),
+      // A totals row, drawn under the body in bold: the same cell count as `columns`.
+      footer: z.array(z.string().max(500)).max(12).optional(),
     }),
-    description: "A data table. Every row has the same number of cells as there are columns.",
+    description:
+      "A data table. Every row has the same number of cells as there are columns. `align` sets each column's alignment (numbers right); `footer` is a totals row.",
   },
   Badge: {
     props: z.strictObject({ text: text(40), tone: tone.default("neutral") }),
@@ -128,14 +141,14 @@ export const components = {
   },
   Chart: {
     props: z.strictObject({
-      kind: z.enum(["bar", "line"]),
+      kind: z.enum(["bar", "line", "donut"]),
       title: text(120).optional(),
       unit: text(20).optional(),
       caption: text(200),
       data: z.array(z.strictObject({ label: text(40), value: z.number().min(-1e15).max(1e15) })).min(2).max(60),
     }),
     description:
-      "One measure, one axis: `bar` ranks or compares categories, `line` shows a change over an ordered `label` axis (days, months). `caption` states what the chart shows. Two measures of different scale are two charts, never one; a single number is a Stat, not a chart.",
+      "One measure, one axis: `bar` ranks or compares categories, `line` shows a change over an ordered `label` axis (days, months), `donut` shows the share of a whole (a budget by item; every value positive, 2 to 8 slices). `caption` states what the chart shows. Two measures of different scale are two charts, never one; a single number is a Stat, not a chart.",
   },
   Mermaid: {
     props: z.strictObject({
@@ -186,11 +199,22 @@ export const components = {
   Timeline: {
     props: z.strictObject({
       items: z
-        .array(z.strictObject({ label: text(60), title: text(200), text: text(1000).optional() }))
+        .array(
+          z.strictObject({
+            label: text(60),
+            title: text(200),
+            // Markdown: a short list or bold in an entry is drawn, not shown as raw text.
+            text: text(1000).optional(),
+            // Who the entry falls to, one chip each.
+            people: z.array(text(40)).min(1).max(8).optional(),
+            tone: tone.optional(),
+          }),
+        )
         .min(1)
         .max(60),
     }),
-    description: "Ordered entries with a time or day label, such as a day-by-day itinerary.",
+    description:
+      "Ordered entries with a time or day label, such as a day-by-day itinerary or a run of show. `text` is Markdown; `people` names who each entry falls to; `tone` marks a key moment.",
   },
   Sources: {
     props: z.strictObject({
@@ -211,9 +235,95 @@ export const components = {
   },
   Checklist: {
     props: z.strictObject({
-      items: z.array(z.strictObject({ text: text(300), note: text(300).optional() })).min(1).max(50),
+      title: text(120).optional(),
+      items: z
+        .array(z.strictObject({ text: text(300), note: text(300).optional(), owner: text(40).optional() }))
+        .min(1)
+        .max(50),
     }),
-    description: "A static list of things to prepare. It cannot be ticked.",
+    description:
+      "Things to prepare or bring. The reader ticks them off on their own device (kept in that browser, never shared), with a count of what is left; `owner` names who carries each item. One Checklist per place or moment (before leaving the house, before leaving the venue).",
+  },
+  Progress: {
+    props: z.strictObject({
+      label: text(80),
+      value: z.number().min(0).max(1e12),
+      max: z.number().gt(0).max(1e12),
+      detail: text(120).optional(),
+      tone: tone.default("info"),
+    }),
+    description:
+      "How far a count has got toward its target: guests confirmed of invited, money paid of budget. `value` is from 0 to `max`, and `max` is above 0.",
+  },
+  Countdown: {
+    props: z.strictObject({ label: text(80), date: day, time: clock.optional(), detail: text(120).optional() }),
+    description:
+      "Time left until a dated event, counted on the reader's device in Hong Kong time (days, then hours); after the date it reads as passed. `date` is YYYY-MM-DD and `time` is HH:MM, 24 hours (default 00:00).",
+  },
+  Contact: {
+    props: z.strictObject({
+      items: z
+        .array(z.strictObject({ name: text(80), role: text(80).optional(), phone: phone.optional(), note: text(200).optional() }))
+        .min(1)
+        .max(30),
+    }),
+    description:
+      "People to reach on the day, each with a role and a telephone number the reader can tap to call. `phone` is digits, spaces and hyphens with an optional leading +.",
+  },
+  Seating: {
+    props: z.strictObject({
+      caption: text(200),
+      capacity: z.number().int().min(1).max(20).default(10),
+      tables: z
+        .array(
+          z.strictObject({
+            name: text(40),
+            label: text(60).optional(),
+            seats: z
+              .array(
+                z.strictObject({
+                  name: text(80),
+                  role: text(60).optional(),
+                  note: text(120).optional(),
+                  status: z.enum(["confirmed", "pending", "declined"]).optional(),
+                }),
+              )
+              .max(20),
+          }),
+        )
+        .min(1)
+        .max(40),
+    }),
+    description:
+      "A seating plan: one card per table with its guests, a seat count against `capacity` (seats per table) and each guest's reply (`confirmed`, `pending`, `declined`). `capacity` defaults to 10. Totals are counted for you.",
+  },
+  Schedule: {
+    props: z.strictObject({
+      caption: text(200),
+      start: clock,
+      end: clock,
+      lanes: z
+        .array(
+          z.strictObject({
+            name: text(40),
+            blocks: z
+              .array(
+                z.strictObject({
+                  from: clock,
+                  to: clock,
+                  title: text(80),
+                  note: text(160).optional(),
+                  tone: tone.optional(),
+                }),
+              )
+              .max(30),
+          }),
+        )
+        .min(1)
+        .max(12),
+    }),
+    description:
+      "Who is doing what, when: one row per person or team along a shared time axis from `start` to `end`, each block with `from`, `to` and a title. `start`, `end`, `from` and `to` are HH:MM clock times, 24 hours (07:00, 13:45), never `9am`. Blocks in a row must not overlap and must sit inside the axis; `to` is after `from`. Use it for a rota or a run of show with several people; one person's day is a Timeline.",
   },
 } as const;
 
