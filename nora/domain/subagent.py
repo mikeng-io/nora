@@ -36,8 +36,8 @@ JOB_FOLDER_ROOT = "projects"
 #: clock, and the worker's own failures. `lost` (a restart) is the poller's, written by boot
 #: recovery, not by the worker.
 FAILURE_REASONS: tuple[str, ...] = (
-    *LIMIT_STOP_REASONS, "timeout", "no_report", "tools", "bad_inputs", "inputs_unavailable",
-    "error",
+    *LIMIT_STOP_REASONS, "limit_max_tokens", "timeout", "no_report", "tools", "bad_inputs",
+    "inputs_unavailable", "error",
 )
 
 #: What `nora_subagent_jobs_total{outcome}` counts: a job that finished, was cancelled, or

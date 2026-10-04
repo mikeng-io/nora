@@ -86,9 +86,12 @@ class ComputerLeases:
     def busy(self, key: str) -> bool:
         return self._users.get(key, 0) > 0
 
-    async def acquire(self, key: str, *, live: bool) -> Lease | None:
+    async def acquire(
+        self, key: str, *, live: bool, wait_seconds: float | None = None,
+    ) -> Lease | None:
         """A lease on `key`, or None when refused: a background caller finds
-        it held or waited for; a live one waited `live_wait_seconds`."""
+        it held or waited for; a live one waited `live_wait_seconds`, or `wait_seconds`
+        when the caller names its own bound (a sub-agent job's)."""
         if not live and self.busy(key):
             return None
         started = self._monotonic()
@@ -96,7 +99,10 @@ class ComputerLeases:
         self._users[key] = self._users.get(key, 0) + 1
         try:
             if live:
-                await asyncio.wait_for(lock.acquire(), self._live_wait)
+                await asyncio.wait_for(
+                    lock.acquire(),
+                    self._live_wait if wait_seconds is None else wait_seconds,
+                )
             else:
                 await lock.acquire()  # nobody holds or waits: immediate
         except TimeoutError:

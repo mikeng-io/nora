@@ -358,6 +358,7 @@ writes the message herself through `FirePath.speak`.
   browser tools only) sharing the runner, guard and actor, so the two do not
   drift.
 - **Model.** Nora's alias or a cheaper one; measured on the §8 case.
+- **One workspace.** The worker and a tag turn in the same room share the room's workspace; only the job folder `projects/<id>/` separates them, by convention, not by enforcement.
 - **How many at once.** One running sub-agent per room, or more.
 - **Who may launch.** Any member who can tag her, or a policy row.
 

@@ -13210,15 +13210,20 @@ Args:
             return
         # A sub-agent job locks its OWN key, never the room's, so a tag turn
         # holding the room's lease never blocks it and it never blocks a tag. It
-        # waits (bounded) like a live caller, because the only other holder of its
-        # key is its own parallel tool call, and a `busy` there would spend a turn.
+        # waits like a live caller, but for as long as the longest command it can run
+        # (`max_run_timeout_seconds`, not the live turn's 10 s): the only other holder
+        # of its key is its own parallel tool call, queued behind a long `computer_run`,
+        # and a `busy` there would spend a turn.
         key = (
             f"job:{subagent_job}" if subagent_job
             else lease_key(bound_computer_scope, session_id)
         )
         asked = now_fn()
         waits = computer_live or bool(subagent_job)
-        lease: Lease | None = await computer_leases.acquire(key, live=waits)
+        lease: Lease | None = await computer_leases.acquire(
+            key, live=waits,
+            wait_seconds=float(computer_bounds.max_run_timeout_seconds) if subagent_job else None,
+        )
         request = {"key": key, "for_tool": tool, "for_operation": str(operation_id)}
         if lease is None:
             _record(metrics, tool, "unavailable")
@@ -14246,6 +14251,13 @@ Args:
             if not out.url:
                 # No public origin is configured: there is no link, and she must not
                 # invent one (a path or a host she made up would point nowhere).
+                if subagent_job:
+                    return {
+                        "status": "ok", "document_id": str(out.document_id),
+                        "revision": out.revision,
+                        "note": "Stored, with no link yet. Name it in your report by its "
+                                "title and this `document_id`: Nora's delivery reads it back.",
+                    }
                 return {
                     "status": "ok", "document_id": str(out.document_id),
                     "revision": out.revision,
@@ -14255,6 +14267,14 @@ Args:
                             "the `document_id` in a reply.",
                 }
             link_carry.mint_document(out.url, published=True)
+            if subagent_job:
+                return {
+                    "status": "ok", "document_id": str(out.document_id),
+                    "revision": out.revision, "url": out.url,
+                    "note": "Stored. Name it in your report by its title and this "
+                            "`document_id`: Nora's delivery reads it back and adds the "
+                            "link. Do not write a link yourself.",
+                }
             return {
                 "status": "ok", "document_id": str(out.document_id),
                 "revision": out.revision, "url": out.url,

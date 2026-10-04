@@ -540,3 +540,91 @@ def test_the_workers_model_is_built_with_the_configured_reasoning_effort(tmp_pat
         assert spec.tool_choice == "auto" or spec.tool_choice is not None
         assert backend._runner._models.create().get_config()["params"].get(
             "reasoning_effort") == effort
+
+
+# -- review fixes (PR #724) ----------------------------------------------------------------
+
+
+class _Raises(Model):
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def update_config(self, **model_config: Any) -> None:
+        return None
+
+    def get_config(self) -> Any:
+        return {}
+
+    async def structured_output(self, output_model: Any, prompt: Any = None, **kw: Any) -> Any:
+        raise NotImplementedError
+
+    async def stream(self, *args: Any, **kwargs: Any) -> AsyncIterable[Any]:
+        raise self._exc
+        yield {}
+
+
+async def test_the_publish_note_tells_the_worker_to_name_the_document_in_its_report(tmp_path):
+    rig = _Rig(tmp_path)
+    worker = await rig.specs(job="j1")["document_publish"](spec=_doc())
+    tag = await rig.specs()["document_publish"](spec=_doc())
+    assert "your report" in worker["note"] and "document_id" in worker["note"]
+    assert "added to your reply" not in worker["note"]
+    assert "added to your reply" in tag["note"] or "no link to give" in tag["note"]
+    assert "your report" not in tag["note"]
+
+
+async def test_a_staging_failure_fails_the_job_even_with_no_inputs(tmp_path):
+    rig = _Rig(tmp_path)
+    rig.sandbox.down = True
+    model = _Script([("text", "ok")])
+    backend = rig.backend(model)
+    result = await _until_done(backend, await backend.launch(request=_request()))
+    assert (result.status, result.failure_reason) == (JobStatus.FAILED, "inputs_unavailable")
+    assert model.turn == 0
+
+
+async def test_staging_runs_inside_the_wall_clock(tmp_path):
+    rig = _Rig(tmp_path)
+    rig.sandbox.hold = asyncio.Event()           # the staging command never returns
+    backend = rig.backend(_Script([("text", "ok")]), timeout=0.3)
+    result = await _until_done(backend, await backend.launch(request=_request()))
+    assert (result.status, result.failure_reason) == (JobStatus.FAILED, "timeout")
+
+
+async def test_a_reply_cut_at_max_tokens_is_limit_max_tokens_not_error(tmp_path):
+    from nora.domain.errors import PartialReplyError
+
+    rig = _Rig(tmp_path)
+    backend = rig.backend(_Raises(PartialReplyError("half a rep")))
+    result = await _until_done(backend, await backend.launch(request=_request()))
+    assert (result.status, result.failure_reason) == (JobStatus.FAILED, "limit_max_tokens")
+    assert "length limit" in (result.error or "")
+    assert rig.metrics.get("nora_subagent_jobs_total", outcome="limit_max_tokens") == 1
+
+
+async def test_an_inner_timeout_is_an_error_and_only_the_wall_clock_is_timeout(tmp_path):
+    rig = _Rig(tmp_path)
+    backend = rig.backend(_Raises(TimeoutError("a transport's own")), timeout=30.0)
+    result = await _until_done(backend, await backend.launch(request=_request()))
+    assert (result.status, result.failure_reason) == (JobStatus.FAILED, "error")
+
+
+async def test_a_finished_job_is_evicted_after_its_ttl_and_not_before(tmp_path):
+    from datetime import timedelta
+
+    from nora.app import subagent_backend as sb
+
+    rig = _Rig(tmp_path)
+    now = [datetime(2026, 10, 4, 14, 0, tzinfo=UTC)]
+    backend = SubagentBackend(
+        runner=rig.runner(_Script([("text", "ok")])), metrics=rig.metrics,
+        clock=lambda: now[0], requester_name=lambda pid: "Miles",
+    )
+    job = await backend.launch(request=_request())
+    assert (await _until_done(backend, job)).status is JobStatus.SUCCEEDED
+    now[0] += timedelta(seconds=sb.FINISHED_TTL_SECONDS - 1)
+    assert (await backend.poll(job_id=job)).status is JobStatus.SUCCEEDED
+    now[0] += timedelta(seconds=5)
+    await backend.poll(job_id=job)
+    assert backend.status(job) is None
+    assert job not in backend._jobs

@@ -43,6 +43,7 @@ from nora.agent.reasoning_strip import ReasoningStripWatch
 from nora.agent.subagent_progress import SubagentProgress
 from nora.agent.subagent_tools import SKILLS_TOOL, SubagentToolsError, SubagentToolSource
 from nora.app.cognition_session import AdaptorBudget
+from nora.domain.errors import PartialReplyError
 from nora.domain.ports import LaunchRequest
 from nora.domain.reasoning_strip import dreamer_path
 from nora.domain.stimuli import LIMIT_STOP_REASONS
@@ -62,6 +63,7 @@ REASON_TEXT: Mapping[str, str] = {
     "limit_turns": "it ran out of rounds before it finished",
     "limit_total_tokens": "it used up its token allowance before it finished",
     "limit_output_tokens": "it used up its output allowance before it finished",
+    "limit_max_tokens": "one of its replies was cut off at the length limit before it finished",
     "timeout": "it ran out of time before it finished",
     "no_report": "it ended without writing a report",
     "tools": "its tools could not be set up",
@@ -170,8 +172,6 @@ class SubagentRunner:
             log.exception("sub-agent %s: its tools could not be built", job_id)
             return SubagentOutcome(failure_reason="tools")
         folder = job_folder(job_id)
-        if not await self._stage(job_id, room, folder, inputs) and inputs:
-            return SubagentOutcome(failure_reason="inputs_unavailable")
         launch = SubagentLaunch(
             job_id=job_id, platform=request.platform, conversation_id=request.conversation_id,
             conversation_type=request.conversation_type,
@@ -180,13 +180,26 @@ class SubagentRunner:
         )
         prompt = render_brief(brief, launch)
         guard = self._guard([getattr(t, "tool_name", "") for t in tools])
+        # ONE wall clock over staging and the loop. `cm.expired()` is what says the clock fired:
+        # a TimeoutError raised inside (a tool's own, a transport's) is an error, not a timeout.
         try:
-            result = await self._invoke(
-                tools=tools, guard=guard, progress=progress, prompt=prompt, trace=trace,
-            )
+            async with asyncio.timeout(self._budget.timeout_seconds) as clock:
+                if not await self._stage(job_id, room, folder, inputs):
+                    return SubagentOutcome(failure_reason="inputs_unavailable")
+                result = await self._invoke(
+                    tools=tools, guard=guard, progress=progress, prompt=prompt, trace=trace,
+                )
         except TimeoutError:
-            log.error("sub-agent %s timed out after %.0fs", job_id, self._budget.timeout_seconds)
-            return self._ended(progress, failure_reason="timeout")
+            if clock.expired():
+                log.error(
+                    "sub-agent %s timed out after %.0fs", job_id, self._budget.timeout_seconds,
+                )
+                return self._ended(progress, failure_reason="timeout")
+            log.exception("sub-agent %s failed on an inner timeout", job_id)
+            return self._ended(progress, failure_reason="error")
+        except PartialReplyError:
+            log.error("sub-agent %s: a reply hit max_tokens", job_id)
+            return self._ended(progress, failure_reason="limit_max_tokens")
         except Exception:
             log.exception("sub-agent %s failed", job_id)
             return self._ended(progress, failure_reason="error")
@@ -254,13 +267,10 @@ class SubagentRunner:
         )
         budget = self._budget
         with turn_deadline(budget.timeout_seconds):
-            return await asyncio.wait_for(
-                factory.invoke(
-                    agent, prompt, invocation_state={},
-                    limits=factory.build_limits(
-                        output_tokens=budget.output_tokens, turns=budget.turns,
-                        total_tokens=budget.total_tokens,
-                    ),
+            return await factory.invoke(
+                agent, prompt, invocation_state={},
+                limits=factory.build_limits(
+                    output_tokens=budget.output_tokens, turns=budget.turns,
+                    total_tokens=budget.total_tokens,
                 ),
-                timeout=budget.timeout_seconds,
             )

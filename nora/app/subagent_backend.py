@@ -31,6 +31,11 @@ from nora.obs.metrics import Metrics
 
 log = logging.getLogger("nora.app.subagent_backend")
 
+#: How long a finished job stays in memory. The poller reads a result on its next tick and
+#: writes it to the row, which is what `subagent_read` serves afterwards, so this only has to
+#: outlast a few ticks.
+FINISHED_TTL_SECONDS = 3600.0
+
 
 @dataclass
 class _Job:
@@ -41,6 +46,7 @@ class _Job:
     task: asyncio.Task[None] | None = None
     outcome: SubagentOutcome | None = None
     cancelled: bool = False
+    finished_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +73,7 @@ class SubagentBackend:
         self._jobs: dict[str, _Job] = {}
 
     async def launch(self, *, request: LaunchRequest) -> str:
+        self._prune()
         job = _Job(id=uuid.uuid4().hex, request=request, started_at=self._clock())
         self._jobs[job.id] = job
         job.task = asyncio.create_task(self._work(job), name=f"subagent-{job.id}")
@@ -87,9 +94,20 @@ class SubagentBackend:
             job.outcome = SubagentOutcome(
                 document_ids=job.progress.document_ids, failure_reason="error",
             )
+        job.finished_at = self._clock()
         self._metrics.inc(
             "nora_subagent_jobs_total", outcome=job.outcome.failure_reason or "done",
         )
+
+    def _prune(self) -> None:
+        """Drop jobs that finished more than `FINISHED_TTL_SECONDS` ago (the row keeps them)."""
+        now = self._clock()
+        for job_id in [
+            j.id for j in self._jobs.values()
+            if j.finished_at is not None
+            and (now - j.finished_at).total_seconds() > FINISHED_TTL_SECONDS
+        ]:
+            del self._jobs[job_id]
 
     def _mark_cancelled(self, job: _Job) -> None:
         """Once per job, and also for a task cancelled before its first step, whose body never
@@ -97,9 +115,11 @@ class SubagentBackend:
         if job.cancelled or job.outcome is not None:
             return
         job.cancelled = True
+        job.finished_at = self._clock()
         self._metrics.inc("nora_subagent_jobs_total", outcome="cancelled")
 
     async def poll(self, *, job_id: str) -> JobResult:
+        self._prune()
         job = self._jobs.get(job_id)
         if job is None:
             return JobResult(
