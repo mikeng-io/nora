@@ -1955,3 +1955,45 @@ async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
 
     assert 'from="Miles"' in text
     assert "not-miles" not in text
+
+
+async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recorder(
+    cfg, no_build_stamp,
+):
+    """`recording_subagent_worker` (what `obtain` wraps composition in under `[subagent]
+    enabled`): the four tools are offered, the desk and the poller hold a recorder under kind
+    `subagent`, and no worker is built, so nothing can start. The patch is gone afterwards."""
+    from nora.agent.tools import SUBAGENT_TOOLS
+    from nora.app import composition
+    from nora.subject.recording_subagent import (
+        RecordingSubagentBackend,
+        recording_subagent_worker,
+    )
+
+    real = composition.build_subagent_backend
+    on = override_config(cfg, {
+        "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
+        "heartbeat.enabled": False,
+    })
+    with recording_subagent_worker():
+        deps = await build_dependencies(on)
+    assert composition.build_subagent_backend is real
+    try:
+        recorder = deps.subagent_backend
+        assert isinstance(recorder, RecordingSubagentBackend)
+        registry = deps.engagement._tool_registry
+        assert registry._withheld.isdisjoint(SUBAGENT_TOOLS)
+        assert registry._subagent._worker is recorder
+        (poller,) = _spawned(deps, "ComputeJobPoller.run")
+        assert dict(poller._backends) == {"subagent": recorder}
+        # launch records and returns an id; poll stays RUNNING; nothing ran
+        from nora.domain.ports import JobStatus, LaunchRequest
+
+        job_id = await recorder.launch(request=LaunchRequest(
+            task="t", platform="signal", conversation_id="g1", conversation_type="group",
+            requester_person_id="p", tag_id=None, payload=None,
+        ))
+        assert (await recorder.poll(job_id=job_id)).status is JobStatus.RUNNING
+        assert len(recorder.launched) == 1
+    finally:
+        await deps.background.cancel_all()

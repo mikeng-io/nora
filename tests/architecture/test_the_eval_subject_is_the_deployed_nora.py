@@ -410,7 +410,7 @@ def test_a_key_whose_default_cannot_be_resolved_is_not_silently_passed():
 
 
 def test_a_deployment_with_compute_on_yields_a_subject_with_it_off():
-    """No compute backend adapter ships (S3b), so a deployment's
+    """Without the sub-agent no backend is registered, so a deployment's
     `[compute] enabled = true` would only make the subject log a boot warning
     and run a poller with nothing behind it. The deployment's `true` must come
     out of the rebuild as `false`, and the difference must be a declared one."""
@@ -419,3 +419,48 @@ def test_a_deployment_with_compute_on_yields_a_subject_with_it_off():
     deployment = _DEPLOYMENT_FIXTURE + "\n[compute]\nenabled = true\n"
     assert adopted(deployment)["compute.enabled"] is False
     assert "compute.enabled" in ALLOWED_TO_DIFFER
+
+
+_SUBAGENT_DEPLOYMENT = (
+    _DEPLOYMENT_FIXTURE
+    + "\n[compute]\nenabled = true\n[subagent]\nenabled = true\n"
+    + "[dreamer.budgets.subagent]\nturns = 8\n"
+)
+
+
+def test_a_deployment_with_the_subagent_on_keeps_the_preconditions_it_needs():
+    """`[subagent] enabled` refuses to load without `[dreamer]` and `[compute]`
+    on. FORCE_OFF wrote `compute.enabled = false` over it, so the generated
+    config could not even be loaded (measured on norty 2026-10-05)."""
+    from evals.subject_config import adopted
+
+    taken = adopted(_SUBAGENT_DEPLOYMENT)
+    assert taken["subagent.enabled"] is True
+    assert taken["compute.enabled"] is True
+    assert taken["dreamer.enabled"] is True
+
+
+def test_the_generated_subagent_config_loads_under_the_production_validators(tmp_path):
+    from evals.subject_config import build
+    from nora.config import load
+
+    generated = build(
+        (_REPO_ROOT / "config.example.toml").read_text(encoding="utf-8"),
+        _SUBAGENT_DEPLOYMENT,
+    )
+    target = tmp_path / "config.toml"
+    target.write_text(generated, encoding="utf-8")
+    cfg = load(target, require_secrets=False)
+    assert cfg.subagent.enabled and cfg.compute.enabled and cfg.dreamer.enabled
+
+
+def test_without_the_subagent_the_generated_config_is_unchanged_by_it():
+    """Byte-identical to the build that has no sub-agent code path at all."""
+    from evals.subject_config import FORCE_OFF, adopted, forced_off
+
+    assert forced_off({}) == FORCE_OFF
+    assert forced_off({"subagent.enabled": False}) == FORCE_OFF
+    deployment = _DEPLOYMENT_FIXTURE + "\n[compute]\nenabled = true\n"
+    taken = adopted(deployment)
+    assert taken["compute.enabled"] is False
+    assert all(taken[k] is False for k in FORCE_OFF)
