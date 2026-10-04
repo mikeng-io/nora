@@ -22,17 +22,29 @@ export function hkDate(now: number): string {
   return new Date(now + HK).toISOString().slice(0, 10);
 }
 
+/** Whole calendar days from one YYYY-MM-DD to a later one (both read as UTC dates, so no clock enters). */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
+}
+
 /**
- * Days when a day or more is left; hours and minutes when under a day; "today" on the
- * event's own day once it has started (a date with no time starts at 00:00, so it reads
- * "today" all day); "passed" from the next day. null when the target cannot be read.
+ * Calendar days in Hong Kong when the event is on a later day (tomorrow is "1 day", whatever
+ * the hour); hours and minutes later the same day; "today" on the event's own day once it has
+ * started (a date with no time starts at 00:00, so it reads "today" all day); "passed" from
+ * the next day. null when the target cannot be read.
  */
 export function remaining(date: string, time: string | undefined, now: number): Remaining | null {
   const target = targetInstant(date, time);
   if (!Number.isFinite(target) || !Number.isFinite(now)) return null;
+  const today = hkDate(now);
+  if (date > today) {
+    // A day with no time that is still ahead of today's date is a whole number of days away.
+    return { kind: "days", days: daysBetween(today, date) };
+  }
   const diff = target - now;
-  if (diff <= 0) return hkDate(now) === date ? { kind: "today" } : { kind: "passed" };
-  if (diff >= DAY) return { kind: "days", days: Math.floor(diff / DAY) };
-  const total = Math.ceil(diff / MINUTE);
-  return { kind: "hours", hours: Math.floor(total / 60), minutes: total % 60 };
+  if (diff > 0) {
+    const total = Math.ceil(diff / MINUTE);
+    return { kind: "hours", hours: Math.floor(total / 60), minutes: total % 60 };
+  }
+  return date === today ? { kind: "today" } : { kind: "passed" };
 }

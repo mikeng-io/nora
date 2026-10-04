@@ -8,7 +8,7 @@ export function telHref(phone: string): string | null {
   return `tel:${trimmed.startsWith("+") ? "+" : ""}${digits}`;
 }
 
-const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter("en", { granularity: "grapheme" }) : null;
 
 /** The first grapheme of a name, upper-cased for a Latin one: one CJK character, one
  * emoji sequence or one accented letter is never cut in half. */
@@ -16,5 +16,5 @@ export function firstGrapheme(name: string): string {
   const s = name.trim();
   if (!s) return "?";
   const first = segmenter ? (segmenter.segment(s)[Symbol.iterator]().next().value?.segment ?? "") : (Array.from(s)[0] ?? "");
-  return (first || "?").toLocaleUpperCase();
+  return (first || "?").toLocaleUpperCase("en-US");
 }

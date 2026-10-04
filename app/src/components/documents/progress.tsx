@@ -13,7 +13,7 @@ export function ProgressBlock({ props }: Render<"Progress">) {
   const f = useFormatter();
   const value = Math.min(Math.max(props.value, 0), props.max);
   const pct = value >= props.max ? 1 : Math.floor((value / props.max) * 100) / 100;
-  const n = (v: number) => f.number(v, { maximumFractionDigits: 2 });
+  const n = (v: number) => f.number(v, { maximumFractionDigits: 6 });
 
   return (
     <Panel className="flex flex-col gap-2 px-4 py-3 sm:px-5 sm:py-4">

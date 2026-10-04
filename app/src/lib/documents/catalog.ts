@@ -253,12 +253,12 @@ export const components = {
       tone: tone.default("info"),
     }),
     description:
-      "How far a count has got toward its target: guests confirmed of invited, money paid of budget. `value` never exceeds `max`.",
+      "How far a count has got toward its target: guests confirmed of invited, money paid of budget. `value` is from 0 to `max`, and `max` is above 0.",
   },
   Countdown: {
     props: z.strictObject({ label: text(80), date: day, time: clock.optional(), detail: text(120).optional() }),
     description:
-      "Time left until a dated event, counted on the reader's device in Hong Kong time (days, then hours); after the date it reads as passed. `time` defaults to 00:00.",
+      "Time left until a dated event, counted on the reader's device in Hong Kong time (days, then hours); after the date it reads as passed. `date` is YYYY-MM-DD and `time` is HH:MM, 24 hours (default 00:00).",
   },
   Contact: {
     props: z.strictObject({
@@ -295,7 +295,7 @@ export const components = {
         .max(40),
     }),
     description:
-      "A seating plan: one card per table with its guests, a seat count against `capacity` (seats per table) and each guest's reply (`confirmed`, `pending`, `declined`). Totals are counted for you.",
+      "A seating plan: one card per table with its guests, a seat count against `capacity` (seats per table) and each guest's reply (`confirmed`, `pending`, `declined`). `capacity` defaults to 10. Totals are counted for you.",
   },
   Schedule: {
     props: z.strictObject({
@@ -323,7 +323,7 @@ export const components = {
         .max(12),
     }),
     description:
-      "Who is doing what, when: one row per person or team along a shared time axis from `start` to `end`, each block with `from`, `to` and a title. Blocks in a row must not overlap and must sit inside the axis; `to` is after `from`. Use it for a rota or a run of show with several people; one person's day is a Timeline.",
+      "Who is doing what, when: one row per person or team along a shared time axis from `start` to `end`, each block with `from`, `to` and a title. `start`, `end`, `from` and `to` are HH:MM clock times, 24 hours (07:00, 13:45), never `9am`. Blocks in a row must not overlap and must sit inside the axis; `to` is after `from`. Use it for a rota or a run of show with several people; one person's day is a Timeline.",
   },
 } as const;
 

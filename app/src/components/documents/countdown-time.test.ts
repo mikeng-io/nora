@@ -25,6 +25,13 @@ describe("remaining", () => {
     expect(remaining("2026-10-10", "09:00", at("2026-10-08T23:00:00Z"))).toEqual({ kind: "days", days: 1 });
   });
 
+  it("counts calendar days in Hong Kong, so tomorrow is one day at any hour", () => {
+    // 10:00 HK on the 5th, event on the 7th with no time: two days, not one and a half.
+    expect(remaining("2026-10-07", undefined, at("2026-10-05T02:00:00Z"))).toEqual({ kind: "days", days: 2 });
+    // 23:30 HK the evening before.
+    expect(remaining("2026-10-10", "11:15", at("2026-10-09T15:30:00Z"))).toEqual({ kind: "days", days: 1 });
+  });
+
   it("shows hours and minutes under a day, rounding a part minute up", () => {
     expect(remaining("2026-10-10", "09:00", at("2026-10-09T23:00:00Z"))).toEqual({ kind: "hours", hours: 2, minutes: 0 });
     expect(remaining("2026-10-10", "09:00", at("2026-10-10T00:29:30Z"))).toEqual({ kind: "hours", hours: 0, minutes: 31 });

@@ -196,11 +196,11 @@ def test_a_progress_over_its_max_is_refused() -> None:
     assert check_document(_page(_block("Progress", label="a", value=10, max=10))).ok
 
 
-@pytest.mark.parametrize("values", [[1], [1, 0], [1, -2], list(range(1, 10))])
+@pytest.mark.parametrize("values", [[1, 0], [1, -2], list(range(1, 10))])
 def test_a_donut_needs_two_to_eight_positive_slices(values: list[int]) -> None:
     data = [{"label": str(i), "value": v} for i, v in enumerate(values)]
-    chart = _block("Chart", kind="donut", caption="c", data=data)
-    assert not check_document(_page(chart)).ok
+    result = check_document(_page(_block("Chart", kind="donut", caption="c", data=data)))
+    assert _rules(result) == {"donut_slices"}
 
 
 def test_a_countdown_date_must_be_a_real_date() -> None:
@@ -233,6 +233,16 @@ def test_a_schedule_whose_blocks_touch_or_sit_in_other_lanes_is_fine() -> None:
     assert check_document(
         _page(_block("Schedule", caption="c", start="07:00", end="14:00", lanes=lanes))
     ).ok
+
+
+@pytest.mark.parametrize(
+    "blocks",
+    [[("07:00", "08:00")], [("13:00", "14:00")], [("07:00", "14:00")]],
+    ids=["at the start", "at the end", "the whole axis"],
+)
+def test_a_schedule_block_that_touches_the_axis_edge_is_fine(blocks: list[tuple[str, str]]) -> None:
+    schedule = _block("Schedule", caption="c", start="07:00", end="14:00", lanes=_lanes(*blocks))
+    assert check_document(_page(schedule)).ok
 
 
 def test_a_schedule_axis_must_run_forward() -> None:

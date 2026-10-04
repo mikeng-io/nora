@@ -7,6 +7,6 @@
   ],
   "limitations": [
     "A ticked box is kept in that one browser; two people opening the same document do not see each other's ticks.",
-    "Documents Nora has already made keep their old look until she is asked to make them again."
+    "Documents Nora has already made look different the next time they are opened: a timeline entry's text is now read as Markdown, a check list can be ticked, and a wide table scrolls under a fixed header."
   ]
 }
