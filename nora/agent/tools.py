@@ -14594,6 +14594,11 @@ Args:
             return {"status": "unavailable",
                     "note": "A background job is started for the person who asked, in a "
                             "turn they started. Nothing was started."}
+        if isinstance(inputs, str) or isinstance(document_ids, str):
+            _record(metrics, tool, "bad_arguments", reason="not_a_list")
+            return {"status": "bad_arguments",
+                    "note": "`inputs` and `document_ids` are lists of strings, not one string. "
+                            "Nothing was started; call again with lists."}
         listed = decisions or []
         if not all(isinstance(d, Mapping) for d in listed):
             _record(metrics, tool, "bad_arguments", reason="decisions")

@@ -98,6 +98,10 @@ class JobView:
     failure: str | None = None
 
 
+class SubagentUnavailableError(RuntimeError):
+    """The desk cannot act: no worker is attached."""
+
+
 class SubagentDesk:
     def __init__(
         self, *, jobs: ComputeJobStore, clock: Callable[[], datetime],
@@ -192,19 +196,22 @@ class SubagentDesk:
         if row is None:
             return None
         worker = self._worker
-        if (
-            row.state is ComputeJobState.PENDING and worker is not None
-            and await self._jobs.claim(row.id)
-        ):
-            try:
-                await worker.cancel(job_id=row.backend_job_id)
-            finally:
+        if row.state is ComputeJobState.PENDING:
+            if worker is None:
+                raise SubagentUnavailableError("no worker is attached")
+            if await self._jobs.claim(row.id):
+                try:
+                    await worker.cancel(job_id=row.backend_job_id)
+                except Exception:
+                    # the row is ended below either way: a worker that would not stop must
+                    # not leave a row the poller would still deliver
+                    log.exception("subagent_cancel: the worker would not stop")
                 await self._jobs.mark(
                     row.id, ComputeJobState.CANCELLED, completed_at=self._clock(),
                     error="it was cancelled", failure_reason="cancelled",
                 )
-            fresh = await self._jobs.get(row.id)
-            return self._view(fresh or row, titles=()), True
+                fresh = await self._jobs.get(row.id)
+                return self._view(fresh or row, titles=()), True
         fresh = await self._jobs.get(row.id)
         return self._view(fresh or row, titles=()), False
 
@@ -255,8 +262,8 @@ class SubagentDesk:
             rounds=rounds, last_tool=last_tool, report=report,
             document_ids=row.result_document_ids,
             document_titles=tuple(titles),
-            failure=(row.failure_reason or row.error)
-            if state in ("failed", "cancelled") else None,
+            # the controlled vocabulary only: `error` is free text a worker or a backend wrote
+            failure=row.failure_reason if state in ("failed", "cancelled") else None,
         )
 
 

@@ -50,7 +50,7 @@ def workspace_path(raw: str) -> str | None:
     """A workspace-relative path with nothing that leaves the workspace, or None. The one rule
     `subagent_create` refuses a bad input by and the runner stages by."""
     path = PurePosixPath(raw.strip())
-    if not raw.strip() or path.is_absolute() or ".." in path.parts:
+    if not raw.strip() or path.is_absolute() or ".." in path.parts or str(path) == ".":
         return None
     return str(path)
 
