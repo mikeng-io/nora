@@ -1,0 +1,7 @@
+{
+  "type": "none",
+  "summary": "Design bundle only: a context-plan seam and a decision-model measurement, no behaviour change.",
+  "reason": "design/context-plan/ is a proposal plus a benchmark record; no Nora code, config, doctrine or prompt changes, so nothing is user-observable.",
+  "details": [],
+  "limitations": []
+}

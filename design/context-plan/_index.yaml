@@ -1,0 +1,40 @@
+---
+kind: design_index
+title: "Context plan — what the tag turn is allowed to look at, and whether a decision model should decide it"
+description: "A per-turn selection over the block table the context-assembly track already made declarative, evaluated against the repo. The measurement says the token lever is single-digit percent (doctrine is 72% of the prompt), the selector's own substrate costs more input tokens than the blocks it removes, and on this host every local decision model runs on CPU at 6-33s per plan while the JEV/Laya class the operator had in mind is not reachable through Ollama cloud or through OmniRoute."
+tags: [nora, context, prompt-blocks, decision-model, jev, laya, benchmark, evals]
+timestamp: '2026-10-05'
+status: proposed
+governance: operator-directed
+origin: >
+  Operator 2026-10-05 (Discord, #nora thread, "strand decision 2b - benchmark the
+  performance on this machine with ollama cloud with iGPU"). Two asks in one
+  message: (1) inspect the CURRENT Nora source and design docs, challenge the idea,
+  and produce a design recommendation for a dynamic context selection / context
+  planning layer before the main turn, with a fast Decision API such as JEV or Laya
+  as the selector — do NOT implement; (2) benchmark what a decision model actually
+  does on this machine, ollama-cloud with iGPU, for reference.
+members:
+  - 00-overview.md
+  - 01-the-seam.md
+  - 02-what-is-selectable.md
+  - 03-measurement-decision-models.md
+  - 04-sequencing.md
+  - 05-open-for-the-operator.md
+edges:
+  - {src: 00-overview, dst: 01-the-seam, rel: sequences, provenance: asserted}
+  - {src: 00-overview, dst: 03-measurement-decision-models, rel: informs, provenance: asserted}
+  - {src: 01-the-seam, dst: 02-what-is-selectable, rel: constrained_by, provenance: asserted}
+  - {src: 02-what-is-selectable, dst: ../context-assembly/04-every-occasion.md, rel: extends, provenance: asserted}
+  - {src: 03-measurement-decision-models, dst: 04-sequencing, rel: informs, provenance: asserted}
+scope:
+  v1:
+    - the seam: a ContextPlan type and where a plan is consumed (block filter only)
+    - which blocks are mandatory, selectable, and never selector-controlled, with the reason per class
+    - the transcript's three knobs and the two the plan must not touch
+    - fail-open on selector failure, recorded on the turn
+    - the decision-model measurement, and the verdict it forces on sequencing
+  deferred:
+    - selective retrieval (Phase 2 in the operator's framing) — gated on a measurement this bundle does not have
+    - any hosted decision API (JEV/Laya) wiring — needs an operator decision on egress and cost
+    - a per-room eval that grades "did this block help this turn"
