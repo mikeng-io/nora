@@ -50,6 +50,7 @@ export function CodeSignIn({ locale, next }: { locale: string; next?: string }) 
                     key={p}
                     className={cn(
                       "flex h-11 cursor-pointer items-center justify-center rounded-control border text-body font-semibold transition-colors",
+                      "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-denim",
                       platform === p
                         ? "border-denim bg-surface text-ink ring-1 ring-denim"
                         : "border-hairline text-ink-soft hover:bg-hoodie",
@@ -68,10 +69,15 @@ export function CodeSignIn({ locale, next }: { locale: string; next?: string }) 
                 ))}
               </div>
             </fieldset>
-            <label className="grid gap-1.5">
-              <span className="text-label font-medium text-ink-soft">{t("phoneLabel")}</span>
+            <div className="grid gap-1.5">
+              <label htmlFor="code-identifier" className="text-label font-medium text-ink-soft">
+                {t("phoneLabel")}
+              </label>
               <input
+                id="code-identifier"
                 name="identifier"
+                aria-describedby={state.error ? "code-hint code-error" : "code-hint"}
+                aria-invalid={state.error === "invalid" || undefined}
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
@@ -81,8 +87,10 @@ export function CodeSignIn({ locale, next }: { locale: string; next?: string }) 
                 placeholder={t("phonePlaceholder")}
                 className={FIELD}
               />
-              <span className="text-meta text-ink-muted">{t("phoneHint")}</span>
-            </label>
+              <span id="code-hint" className="text-meta text-ink-muted">
+                {t("phoneHint")}
+              </span>
+            </div>
             <SubmitButton variant="outline" pendingLabel={t("sending")} name="intent" value="send">
               {t("sendCode")}
             </SubmitButton>
@@ -99,8 +107,11 @@ export function CodeSignIn({ locale, next }: { locale: string; next?: string }) 
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
+                // A pasted "123 456" must fit; the server drops the space.
+                pattern="[0-9 ]{6,7}"
+                maxLength={7}
+                aria-describedby={state.error ? "code-error" : undefined}
+                aria-invalid={state.error === "wrong" || state.error === "invalid" || undefined}
                 required
                 autoFocus
                 placeholder="123456"
@@ -123,14 +134,16 @@ export function CodeSignIn({ locale, next }: { locale: string; next?: string }) 
         )}
 
         {state.error ? (
-          <p role="alert" className="flex items-center gap-2 text-body text-danger">
+          <p id="code-error" role="alert" className="flex items-center gap-2 text-body text-danger">
             <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
             {t(
               state.error === "wrong"
                 ? "codeWrong"
                 : state.error === "invalid"
                   ? "codeInvalid"
-                  : "codeUnavailable",
+                  : state.error === "slow"
+                    ? "codeSlow"
+                    : "codeUnavailable",
             )}
           </p>
         ) : null}

@@ -2211,27 +2211,35 @@ export function handleDocumentState(pathname, sp, payload) {
 }
 
 // One-time codes (DEC-287, nora/web/otp.py), dev only. The real routes need a
-// bearer token and send a real message; this stands in for both. The
-// identifier is a dev person_id ("miles", "ken", ...), the code is always
-// 123456, and it is printed to the console as if it had been sent. An unknown
-// identifier still gets a challenge, as the real API answers, and its code
-// never verifies.
+// bearer token and send a real message; this stands in for both. Like Nora,
+// it resolves a phone number on the chosen platform from identity.dev.toml
+// (Miles is +852 0000 0001), never a person_id; the code is always 123456 and
+// is printed to the console as if it had been sent. An unknown number still
+// gets a challenge, as the real API answers, and its code never verifies.
 const DEV_CODE = "123456";
 const OTP_CHALLENGES = new Map();
+let otpIssued = 0;
 
 export function handleOtp(pathname, payload) {
   if (pathname === "/app/v1/otp/request") {
-    const challengeId = `dev-${OTP_CHALLENGES.size + 1}`;
-    const person = ROSTER_BY_ID.get(String(payload?.identifier ?? "").trim());
-    OTP_CHALLENGES.set(challengeId, person?.personId ?? null);
-    if (person) console.log(`[mock-nora] one-time code for ${person.personId}: ${DEV_CODE}`);
+    otpIssued += 1;
+    const challengeId = `dev-${otpIssued}`;
+    const typed = String(payload?.identifier ?? "").replace(/[\s\-().]/g, "");
+    const platform = String(payload?.platform ?? "");
+    const personId =
+      Object.entries(identityToml.persons ?? {}).find(([, p]) =>
+        (p[platform] ?? []).some((block) => block.phone === typed),
+      )?.[0] ?? null;
+    OTP_CHALLENGES.set(challengeId, { personId, purpose: payload?.purpose ?? "sign_in" });
+    if (personId) console.log(`[mock-nora] one-time code for ${personId}: ${DEV_CODE}`);
     return { status: 202, body: { challengeId } };
   }
   if (pathname === "/app/v1/otp/verify") {
-    const personId = OTP_CHALLENGES.get(String(payload?.challengeId ?? ""));
-    if (personId && payload?.code === DEV_CODE) {
+    const challenge = OTP_CHALLENGES.get(String(payload?.challengeId ?? ""));
+    const purpose = payload?.purpose ?? "sign_in";
+    if (challenge?.personId && challenge.purpose === purpose && payload?.code === DEV_CODE) {
       OTP_CHALLENGES.delete(payload.challengeId);
-      return { status: 200, body: { personId } };
+      return { status: 200, body: { personId: challenge.personId } };
     }
     return { status: 401, body: { error: "refused" } };
   }

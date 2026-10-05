@@ -1,9 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import { AuthError } from "next-auth";
 import { DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
 import { routing } from "@/i18n/routing";
-import { CODE_PLATFORMS, type CodePlatform, requestCode } from "./otp";
+import { CODE_PLATFORMS, type CodePlatform, SendThrottle, clientKey, requestCode } from "./otp";
+
+const sendThrottle = new SendThrottle();
 
 const safeLocale = (l: string) =>
   (routing.locales as readonly string[]).includes(l) ? l : routing.defaultLocale;
@@ -39,7 +42,7 @@ export type CodeState = {
   platform: CodePlatform;
   identifier: string;
   challengeId?: string;
-  error?: "unavailable" | "invalid" | "wrong";
+  error?: "unavailable" | "invalid" | "wrong" | "slow";
 };
 
 /** One action for both steps, chosen by the submit button's `intent`. */
@@ -50,11 +53,15 @@ export async function codeSignInAction(prev: CodeState, form: FormData): Promise
 
   if (intent === "send") {
     const raw = String(form.get("platform") ?? "");
-    const platform = (CODE_PLATFORMS as readonly string[]).includes(raw)
+    // `prev` comes back from the browser, so nothing in it is trusted as a choice.
+    const platform: CodePlatform = (CODE_PLATFORMS as readonly string[]).includes(raw)
       ? (raw as CodePlatform)
-      : prev.platform;
+      : "signal";
     const identifier = String(form.get("identifier") ?? "").trim().slice(0, 64);
     if (!identifier) return { step: "ask", platform, identifier, error: "invalid" };
+    if (!sendThrottle.allow(clientKey(await headers()), Date.now())) {
+      return { step: "ask", platform, identifier, error: "slow" };
+    }
     const challengeId = await requestCode({ identifier, platform });
     if (!challengeId) return { step: "ask", platform, identifier, error: "unavailable" };
     return { step: "code", platform, identifier, challengeId };

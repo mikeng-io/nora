@@ -120,7 +120,8 @@ acceptable:
    already enforces this shape: Nora is silent by default.
    **One bounded exception (DEC-287, 2026-10-05):** a one-time code the person
    asked for, to their own account in `identity.toml`, at most `[otp]
-   max_per_hour` an hour. Nobody outside `identity.toml` is ever messaged
+   max_per_hour` an hour and `max_per_day` a day, and 3 requests per portal
+   visitor in 15 minutes. Nobody outside `identity.toml` is ever messaged
    (R-101).
 3. **No scheduled/bulk campaigns** through the bridge, ever. If a future
    feature wants to push notifications to many people, that is a Business

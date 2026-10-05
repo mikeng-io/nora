@@ -2379,7 +2379,10 @@ class OtpConfig(BaseModel):
     `enabled` is true and either is unset or empty.
 
     `ttl_seconds` is how long a code lives, `max_attempts` how many wrong codes
-    kill it, `max_per_hour` how many codes one person can be sent in an hour.
+    kill it, `max_per_hour` and `max_per_day` how many codes one person can be
+    sent in an hour and in a day. The day cap is what bounds a stranger who
+    knows somebody's number: the messages that person receives, and the
+    guesses (`max_attempts` per code) anybody gets at their codes.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2390,6 +2393,7 @@ class OtpConfig(BaseModel):
     ttl_seconds: int = Field(default=300, gt=0, le=3600)
     max_attempts: int = Field(default=5, gt=0, le=20)
     max_per_hour: int = Field(default=5, gt=0, le=60)
+    max_per_day: int = Field(default=10, gt=0, le=200)
 
 
 class VersionConfig(BaseModel):

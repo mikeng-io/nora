@@ -1648,6 +1648,8 @@ autoplay_prewarm_seconds = 0.0
 # what the portal's sign-in, and later adopting somebody, check a person against.
 # A code goes ONLY to somebody in identity.toml, and only to their Signal or
 # WhatsApp account there; nobody else can be sent one, whatever is set here.
+# It is asked for by that account's phone number (or Signal ACI), never by a
+# person_id, which anybody could guess.
 # Off by default: no service is built and /app/v1/otp/* is not mounted.
 enabled = false
 # secret_env = "NORA_OTP_SECRET"        # HMAC key codes are hashed under; required when enabled
@@ -1655,6 +1657,7 @@ enabled = false
 # ttl_seconds = 300                     # how long a code lives
 # max_attempts = 5                      # wrong codes before it dies
 # max_per_hour = 5                      # codes one person can be sent in an hour
+# max_per_day = 10                      # and in a day: bounds messages and guesses
 
 [version]
 # The startup upgrade note (DEC-97). On the boot after a deploy, if the version

@@ -96,8 +96,8 @@ and `MOCK_EMPTY=events` exercise loading, unavailable and empty states. With
 `NORA_DEV_LOGIN=1` the login page offers the people in
 `dev/identity.dev.toml`; a production build has no such sign-in whatever the
 environment says. With `NORA_OTP_API_TOKEN` set (any value against the mock),
-the code sign-in takes a dev person_id (`miles`) as the number and `123456` as
-the code.
+the code sign-in takes the invented numbers in `dev/identity.dev.toml`
+(Miles is `+852 0000 0001`) and `123456` as the code.
 
 ## Check it
 

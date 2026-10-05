@@ -72,7 +72,8 @@ def parts(tmp_path, store):
         doctrine_store=DoctrineStore(doctrine, canary="CANARY-1", display_name="Nora",
                                      metrics=metrics),
         canary="CANARY-1", metrics=metrics, secret=b"k" * 32,
-        ttl=timedelta(minutes=5), max_attempts=3, max_per_hour=2, clock=clock,
+        ttl=timedelta(minutes=5), max_attempts=3, max_per_hour=2, max_per_day=3,
+        clock=clock,
     )
     return service, adapter, records, metrics, clock
 
@@ -100,17 +101,21 @@ async def test_somebody_not_in_identity_toml_is_sent_nothing_and_answered_the_sa
     challenge = await service.request(identifier="+85299999999", platform="signal",
                                       purpose="sign_in")
     uuid.UUID(challenge)                    # an id all the same
-    no_account = await service.request(identifier="ada", platform="signal", purpose="sign_in")
+    by_name = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    uuid.UUID(by_name)                      # a person_id is not an identifier
+    no_account = await service.request(identifier="123456789012345678", platform="signal",
+                                       purpose="sign_in")
     uuid.UUID(no_account)
     assert adapter.sent == []
-    assert metrics.get("nora_otp_requests_total", platform="signal", outcome="unknown") == 1
-    assert metrics.get("nora_otp_requests_total", platform="signal", outcome="no_account") == 1
+    assert metrics.get("nora_otp_requests_total", platform="signal", outcome="unknown") == 3
     assert await service.verify(challenge_id=challenge, code="000000", purpose="sign_in") is None
 
 
 async def test_a_code_dies_after_the_attempt_limit_even_when_then_right(parts):
     service, adapter, _, _, _ = parts
-    challenge = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    challenge = await service.request(
+        identifier="+85212345678", platform="signal", purpose="sign_in",
+    )
     code = _code(adapter)
     wrong = f"{(int(code) + 1) % 10**6:06d}"
     for _ in range(3):
@@ -120,25 +125,29 @@ async def test_a_code_dies_after_the_attempt_limit_even_when_then_right(parts):
 
 async def test_a_code_expires_and_a_newer_one_supersedes_it(parts):
     service, adapter, _, _, clock = parts
-    first = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    first = await service.request(identifier="+85212345678", platform="signal", purpose="sign_in")
     first_code = _code(adapter)
-    second = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    second = await service.request(identifier="+85212345678", platform="signal", purpose="sign_in")
     second_code = _code(adapter)
     assert await service.verify(challenge_id=first, code=first_code, purpose="sign_in") is None
     clock.now = T0 + timedelta(minutes=6)
     assert await service.verify(challenge_id=second, code=second_code, purpose="sign_in") is None
 
 
-async def test_a_person_is_sent_at_most_max_per_hour_codes(parts):
+async def test_a_person_is_sent_at_most_max_per_hour_and_max_per_day_codes(parts):
     service, adapter, _, metrics, clock = parts
     for _ in range(3):
-        await service.request(identifier="miles", platform="signal", purpose="sign_in")
+        await service.request(identifier="+85212345678", platform="signal", purpose="sign_in")
     assert len(adapter.sent) == 2
     assert metrics.get(
         "nora_otp_requests_total", platform="signal", outcome="rate_limited",
     ) == 1
     clock.now = T0 + timedelta(hours=1, seconds=1)
-    await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    await service.request(identifier="+85212345678", platform="signal", purpose="sign_in")
+    assert len(adapter.sent) == 3
+    # The day cap (3 here) holds after the hour has rolled over.
+    clock.now = T0 + timedelta(hours=2, seconds=2)
+    await service.request(identifier="+85212345678", platform="signal", purpose="sign_in")
     assert len(adapter.sent) == 3
 
 
@@ -159,7 +168,7 @@ async def test_two_right_answers_at_once_sign_in_only_once(store):
 
 async def test_a_code_is_good_only_for_the_purpose_it_was_asked_for(parts):
     service, adapter, _, _, _ = parts
-    challenge = await service.request(identifier="miles", platform="signal", purpose="adopt")
+    challenge = await service.request(identifier="+85212345678", platform="signal", purpose="adopt")
     code = _code(adapter)
     assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") is None
     assert await service.verify(challenge_id=challenge, code=code, purpose="adopt") == "miles"
@@ -167,7 +176,9 @@ async def test_a_code_is_good_only_for_the_purpose_it_was_asked_for(parts):
 
 async def test_a_code_with_anything_but_six_ascii_digits_is_refused_unread(parts):
     service, adapter, _, _, _ = parts
-    challenge = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    challenge = await service.request(
+        identifier="+85212345678", platform="signal", purpose="sign_in",
+    )
     code = _code(adapter)
     for bad in (code + "\n", "１２３４５６", code[:5]):
         assert await service.verify(challenge_id=challenge, code=bad, purpose="sign_in") is None

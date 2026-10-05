@@ -4,7 +4,7 @@
   "details": [
     "On the login page, pick Signal or WhatsApp, type your number with its country code, and type the code Nora sends you.",
     "A code goes only to someone listed in identity.toml, at the account listed there; nobody else can be sent one.",
-    "A code lasts five minutes, stops working after five wrong tries or once a newer code is asked for, and works once. One person can be sent at most five codes an hour.",
+    "A code lasts five minutes, stops working after five wrong tries or once a newer code is asked for, and works once. One person can be sent at most five codes an hour and ten a day, and one visitor to the login page can ask for three codes every fifteen minutes.",
     "Codes are never stored, only a keyed hash of them, and Nora's own record of the message has the code blanked out.",
     "Nora also refuses to send a direct message to, or keep one from, anyone who is not in identity.toml.",
     "Signal and WhatsApp can now carry a 1:1 message at all, so a direct chat with someone in identity.toml that policy.toml lists would now be answered; nothing lists one by default."

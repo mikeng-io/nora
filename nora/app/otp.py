@@ -61,7 +61,7 @@ class OtpService:
     def __init__(
         self, *, store: SqlOtpStore, persons: Persons, adapters: Mapping[str, Any],
         records: Any, doctrine_store: Any, canary: str, metrics: Any, secret: bytes,
-        ttl: timedelta, max_attempts: int, max_per_hour: int,
+        ttl: timedelta, max_attempts: int, max_per_hour: int, max_per_day: int,
         clock: Callable[[], datetime],
     ) -> None:
         self._store = store
@@ -75,6 +75,7 @@ class OtpService:
         self._ttl = ttl
         self._max_attempts = max_attempts
         self._max_per_hour = max_per_hour
+        self._max_per_day = max_per_day
         self._clock = clock
 
     def _lifetime(self) -> str:
@@ -89,11 +90,11 @@ class OtpService:
         return hmac.new(self._secret, message, hashlib.sha256).hexdigest()
 
     def _person_for(self, platform: str, identifier: str) -> str | None:
-        """A person_id, or the person whose `platform` id this is, as typed or
-        with phone punctuation removed. Nothing else resolves."""
+        """The person whose `platform` id this is (a phone number, or a Signal
+        ACI), as typed or with phone punctuation removed. A person_id does NOT
+        resolve: it is a first name anybody could guess, and the portal hands
+        this endpoint to the internet (review of the portal sign-in, 2026-10-05)."""
         ident = identifier.strip()
-        if ident in self._persons.by_person:
-            return ident
         for candidate in (ident, _PHONE_PUNCTUATION.sub("", ident)):
             if person := self._persons.resolve(platform, candidate):
                 return person.person_id
@@ -128,10 +129,15 @@ class OtpService:
         # requests racing in parallel can pass `max_per_hour` by a few. They
         # come through the portal behind a token; an advisory lock per person
         # is the upgrade path if that ever matters.
-        if await self._store.issued_since(
-            person_id=person_id, since=now - timedelta(hours=1),
-        ) >= self._max_per_hour:
-            return "rate_limited"
+        # Two windows: the hour bounds a burst, the day bounds what somebody who
+        # knows a number can do with it all day — both the messages the person
+        # receives and the guesses (`max_attempts` per code) at their codes.
+        for window, cap in ((timedelta(hours=1), self._max_per_hour),
+                            (timedelta(days=1), self._max_per_day)):
+            if await self._store.issued_since(
+                person_id=person_id, since=now - window,
+            ) >= cap:
+                return "rate_limited"
         code = f"{secrets.randbelow(10**6):06d}"
         # Recorded BEFORE the send, deliberately: a send that fails still
         # supersedes the person's earlier code and counts toward the hourly cap,

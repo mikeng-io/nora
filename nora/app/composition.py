@@ -4055,6 +4055,7 @@ async def build_dependencies(
             metrics=metrics, secret=otp_secret,
             ttl=timedelta(seconds=cfg.otp.ttl_seconds),
             max_attempts=cfg.otp.max_attempts, max_per_hour=cfg.otp.max_per_hour,
+            max_per_day=cfg.otp.max_per_day,
             clock=lambda: datetime.now(UTC),
         )
     return Dependencies(

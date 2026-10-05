@@ -49,6 +49,8 @@ export default async function LoginPage({
   const check = await checkSession();
   if (check.status === "ok") redirect(next?.startsWith(`/${locale}/`) ? next : `/${locale}/today`);
   const refused = check.status === "denied" || denied === "1";
+  // A code session whose person left identity.toml: nothing about Discord applies.
+  const refusedCode = check.status === "denied" && check.via === "code";
 
   const devPeople = DEV_LOGIN_ENABLED ? discordPeople(readIdentityToml()) : [];
   const siteHome = locale === "en" ? "/en/" : "/";
@@ -95,11 +97,13 @@ export default async function LoginPage({
                 <p className="flex items-start gap-2.5 text-body font-semibold text-ink">
                   <CircleAlert className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden="true" />
                   <span>
-                    {t("deniedTitle")}
+                    {t(refusedCode ? "deniedCodeTitle" : "deniedTitle")}
                     <span className="mt-1 block font-normal text-ink-soft">
-                      {check.status === "denied" && check.name
-                        ? t("deniedAs", { name: check.name })
-                        : t("deniedBody")}
+                      {refusedCode
+                        ? t("deniedCodeBody")
+                        : check.status === "denied" && check.name
+                          ? t("deniedAs", { name: check.name })
+                          : t("deniedBody")}
                     </span>
                   </span>
                 </p>
@@ -134,13 +138,13 @@ export default async function LoginPage({
             <form
               action={async () => {
                 "use server";
-                await signInWithDiscord(locale, next, refused);
+                await signInWithDiscord(locale, next, refused && !refusedCode);
               }}
               className="grid gap-3"
             >
               <SubmitButton variant="discord" pendingLabel={t("redirecting")}>
                 <DiscordGlyph />
-                {refused ? t("tryAnother") : t("discord")}
+                {refused && !refusedCode ? t("tryAnother") : t("discord")}
               </SubmitButton>
               {codeSignInEnabled() ? null : (
                 <p className="text-meta text-ink-muted">{t("footnote")}</p>

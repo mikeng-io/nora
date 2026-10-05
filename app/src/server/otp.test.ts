@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { codeSignInEnabled, requestCode, verifyCode } from "./otp";
+import { SendThrottle, clientKey, codeSignInEnabled, requestCode, verifyCode } from "./otp";
 
 type Seen = { url?: string; init?: RequestInit };
 
@@ -56,5 +56,23 @@ describe("one-time code client", () => {
     expect(await requestCode({ identifier: "miles", platform: "signal" }, nora(202, {}, seen)))
       .toBeNull();
     expect(seen.url).toBeUndefined();
+  });
+});
+
+describe("the per-visitor limit on sending codes", () => {
+  it("lets one address ask three times in fifteen minutes, then not until the window moves", () => {
+    const throttle = new SendThrottle();
+    const t0 = 1_000_000;
+    expect([0, 1, 2].map((i) => throttle.allow("1.2.3.4", t0 + i))).toEqual([true, true, true]);
+    expect(throttle.allow("1.2.3.4", t0 + 60_000)).toBe(false);
+    expect(throttle.allow("5.6.7.8", t0 + 60_000)).toBe(true);
+    expect(throttle.allow("1.2.3.4", t0 + 15 * 60_000 + 3)).toBe(true);
+  });
+
+  it("names the visitor by the tunnel's header first, then the first proxy hop", () => {
+    const h = (o: Record<string, string>) => new Headers(o);
+    expect(clientKey(h({ "cf-connecting-ip": "9.9.9.9", "x-forwarded-for": "1.1.1.1" }))).toBe("9.9.9.9");
+    expect(clientKey(h({ "x-forwarded-for": "1.1.1.1, 10.0.0.1" }))).toBe("1.1.1.1");
+    expect(clientKey(h({}))).toBe("unknown");
   });
 });
