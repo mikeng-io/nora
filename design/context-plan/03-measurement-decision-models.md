@@ -75,12 +75,21 @@ with a growing question count (one call, `tev1:0.8b`):
 | `usage.input_tokens` | 185 | 450 | 1,725 | 5,450 | 19,110 |
 | output tokens | 1 | 3 | 6 | 11 | 21 |
 
+A 20-question call on the same shape bills 18,610 input tokens for 20 output
+tokens in 4.38 s — the same linearity at a larger scale, and the reason the
+`output_tokens` field is a red herring: **the cost of a decision model is
+entirely on the input side.**
+
 So `input_tokens` is a SUM, and the per-question prompt (state + that question's
 instructions) is what the model's `num_ctx` caps. This is why 11 plan questions
 over a 1.4k-char substrate bill **~17.6k input tokens for one plan** — more than
 the entire rendered tag prompt's *context-block* share (§5). The vendor's own
 model page states the mechanism ("Nimble reads the prompt once per question and
 scores the answer tokens directly").
+
+The daemon's own timing lines put a number on the CPU rate behind these walls:
+`prompt eval time … 7.0 ms per token, ~140 tokens per second` (`tev1:0.8b`, warm
+slot, journalctl `print_timing`).
 
 **Per-model context is a hard refusal, not a hint.** `tev1:0.8b`'s Modelfile
 pins `num_ctx 2050`, and the endpoint rejects an over-long per-question prompt
