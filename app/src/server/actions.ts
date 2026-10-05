@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { AuthError } from "next-auth";
 import { DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
 import { routing } from "@/i18n/routing";
+import { fullNumber, safeRegion } from "@/lib/dial-codes";
 import { CODE_PLATFORMS, type CodePlatform, SendThrottle, clientKey, requestCode } from "./otp";
 
 const sendThrottle = new SendThrottle();
@@ -40,7 +41,11 @@ export async function signOutAction(locale: string) {
 export type CodeState = {
   step: "ask" | "code";
   platform: CodePlatform;
+  // The country picked beside the number (`DIAL_REGIONS`), and the number as
+  // typed; `sentTo` is the full number the code was asked for.
+  region: string;
   identifier: string;
+  sentTo?: string;
   challengeId?: string;
   error?: "unavailable" | "invalid" | "wrong" | "slow";
 };
@@ -49,7 +54,9 @@ export type CodeState = {
 export async function codeSignInAction(prev: CodeState, form: FormData): Promise<CodeState> {
   const intent = String(form.get("intent") ?? "");
   const locale = safeLocale(String(form.get("locale") ?? ""));
-  if (intent === "back") return { step: "ask", platform: prev.platform, identifier: prev.identifier };
+  if (intent === "back") {
+    return { step: "ask", platform: prev.platform, region: prev.region, identifier: prev.identifier };
+  }
 
   if (intent === "send") {
     const raw = String(form.get("platform") ?? "");
@@ -57,14 +64,16 @@ export async function codeSignInAction(prev: CodeState, form: FormData): Promise
     const platform: CodePlatform = (CODE_PLATFORMS as readonly string[]).includes(raw)
       ? (raw as CodePlatform)
       : "signal";
+    const region = safeRegion(String(form.get("region") ?? "")).region;
     const identifier = String(form.get("identifier") ?? "").trim().slice(0, 64);
-    if (!identifier) return { step: "ask", platform, identifier, error: "invalid" };
+    if (!identifier) return { step: "ask", platform, region, identifier, error: "invalid" };
     if (!sendThrottle.allow(clientKey(await headers()), Date.now())) {
-      return { step: "ask", platform, identifier, error: "slow" };
+      return { step: "ask", platform, region, identifier, error: "slow" };
     }
-    const challengeId = await requestCode({ identifier, platform });
-    if (!challengeId) return { step: "ask", platform, identifier, error: "unavailable" };
-    return { step: "code", platform, identifier, challengeId };
+    const sentTo = fullNumber(region, identifier);
+    const challengeId = await requestCode({ identifier: sentTo, platform });
+    if (!challengeId) return { step: "ask", platform, region, identifier, error: "unavailable" };
+    return { step: "code", platform, region, identifier, sentTo, challengeId };
   }
 
   // intent === "verify"

@@ -58,3 +58,24 @@ test("one visitor asking for a fourth code in a few minutes is told to wait", as
   await page.getByRole("button", { name: "Send me a code" }).click();
   await expect(page.getByText("That's a few codes in a short time", { exact: false })).toBeVisible();
 });
+
+test("a local number is joined to Hong Kong, the default country code", async ({ page }) => {
+  await asNewVisitor(page);
+  await page.goto("/en/login");
+  await expect(page.getByLabel("Country or region code")).toHaveValue("HK");
+  await page.getByLabel("Your phone number").fill("0000 0001");
+  await page.getByRole("button", { name: "Send me a code" }).click();
+  await expect(page.getByText(/If \+85200000001 is on the list/)).toBeVisible();
+  await page.getByLabel("The code").fill("123456");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL(/\/today$/);
+});
+
+test("another country code is used when it is picked", async ({ page }) => {
+  await asNewVisitor(page);
+  await page.goto("/en/login");
+  await page.getByLabel("Country or region code").selectOption("GB");
+  await page.getByLabel("Your phone number").fill("07700 900123");
+  await page.getByRole("button", { name: "Send me a code" }).click();
+  await expect(page.getByText(/If \+447700900123 is on the list/)).toBeVisible();
+});
