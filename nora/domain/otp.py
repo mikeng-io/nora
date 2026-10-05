@@ -8,8 +8,6 @@ from __future__ import annotations
 #: confirming somebody before Nora adopts them. The table's CHECK says the same.
 PURPOSES: tuple[str, ...] = ("sign_in", "adopt")
 
-#: The platforms a code can be sent on: the two where Nora holds a phone number.
-PLATFORMS: tuple[str, ...] = ("signal", "whatsapp")
 
 #: How a request for a code ended. Every one of them answers the caller the
 #: same way, so these are the only place the difference is visible.

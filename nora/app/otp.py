@@ -38,21 +38,21 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from nora.domain.audience import ONE_TIME_CODE
-from nora.domain.otp import PLATFORMS, PURPOSES
+from nora.domain.otp import PURPOSES
 from nora.engagement.stages import deliver
 from nora.infra.sql.otp import SqlOtpStore
-from nora.persons import Persons
+from nora.persons import DIRECT_PLATFORMS, Persons
 
 log = logging.getLogger("nora.app.otp")
 
-_CODE = re.compile(r"^\d{6}$")
+_CODE = re.compile(r"[0-9]{6}")
 # What a person types for a phone number: spaces, dashes and brackets dropped.
 _PHONE_PUNCTUATION = re.compile(r"[\s\-().]")
 
 _MESSAGES = {
-    "sign_in": "{code} is your Nora sign-in code. It expires in {minutes} minutes. "
+    "sign_in": "{code} is your Nora sign-in code. It expires in {lifetime}. "
                "Nobody will ever ask you for it, not even Nora.",
-    "adopt": "{code} is your Nora confirmation code. It expires in {minutes} minutes. "
+    "adopt": "{code} is your Nora confirmation code. It expires in {lifetime}. "
              "Nobody will ever ask you for it, not even Nora.",
 }
 
@@ -77,6 +77,11 @@ class OtpService:
         self._max_per_hour = max_per_hour
         self._clock = clock
 
+    def _lifetime(self) -> str:
+        """`ttl` in words for the message: whole minutes, or seconds below two."""
+        seconds = int(self._ttl.total_seconds())
+        return f"{seconds // 60} minutes" if seconds >= 120 else f"{seconds} seconds"
+
     def _hash(self, challenge_id: uuid.UUID, code: str) -> str:
         """The code under the server secret, bound to its challenge so one
         code's hash says nothing about another's."""
@@ -99,7 +104,7 @@ class OtpService:
         answer the challenge id to check it against. Raises `ValueError` only
         for a platform or purpose outside the closed vocabularies; every other
         outcome answers an id."""
-        if platform not in PLATFORMS or purpose not in PURPOSES:
+        if platform not in DIRECT_PLATFORMS or purpose not in PURPOSES:
             raise ValueError(f"unknown platform {platform!r} or purpose {purpose!r}")
         challenge_id = uuid.uuid4()
         outcome = await self._request(challenge_id, identifier, platform, purpose)
@@ -119,18 +124,24 @@ class OtpService:
         if adapter is None:
             return "unavailable"
         now = self._clock()
+        # ponytail: the count and the insert below are two statements, so
+        # requests racing in parallel can pass `max_per_hour` by a few. They
+        # come through the portal behind a token; an advisory lock per person
+        # is the upgrade path if that ever matters.
         if await self._store.issued_since(
             person_id=person_id, since=now - timedelta(hours=1),
         ) >= self._max_per_hour:
             return "rate_limited"
         code = f"{secrets.randbelow(10**6):06d}"
+        # Recorded BEFORE the send, deliberately: a send that fails still
+        # supersedes the person's earlier code and counts toward the hourly cap,
+        # because a send that times out may have arrived anyway.
         await self._store.issue(
             challenge_id=challenge_id, person_id=person_id, purpose=purpose,
             platform=platform, code_hash=self._hash(challenge_id, code),
             issued_at=now, expires_at=now + self._ttl,
         )
-        minutes = max(1, int(self._ttl.total_seconds()) // 60)
-        text = _MESSAGES[purpose].format(code=code, minutes=minutes)
+        text = _MESSAGES[purpose].format(code=code, lifetime=self._lifetime())
         try:
             identity = await adapter.resolve_identity()
             handle = deliver.build(
@@ -144,24 +155,29 @@ class OtpService:
             )
             sent = await handle.deliverer.deliver(
                 text, source=ONE_TIME_CODE,
-                record_text=_MESSAGES[purpose].format(code="······", minutes=minutes),
+                record_text=_MESSAGES[purpose].format(code="······", lifetime=self._lifetime()),
             )
         except Exception:
             log.exception("one-time code send raised (challenge=%s)", challenge_id)
             sent = False
         return "sent" if sent else "send_failed"
 
-    async def verify(self, *, challenge_id: str, code: str) -> str | None:
-        """The person a live code was sent to, when `code` is it; else None,
-        whatever the reason."""
+    async def verify(self, *, challenge_id: str, code: str, purpose: str) -> str | None:
+        """The person a live code for `purpose` was sent to, when `code` is it;
+        else None, whatever the reason.
+
+        # ponytail: a made-up id costs one SELECT and a real one several, so
+        # somebody holding the API token could tell the two apart by timing,
+        # and burn one of the person's attempts doing so. The token is the
+        # control; a per-client limit in the portal is the upgrade path."""
         person_id = None
         try:
             parsed = uuid.UUID(challenge_id)
         except (ValueError, AttributeError, TypeError):
             parsed = None
-        if parsed is not None and isinstance(code, str) and _CODE.match(code):
+        if parsed is not None and isinstance(code, str) and _CODE.fullmatch(code):
             person_id = await self._store.attempt(
-                challenge_id=parsed, code_hash=self._hash(parsed, code),
+                challenge_id=parsed, purpose=purpose, code_hash=self._hash(parsed, code),
                 now=self._clock(), max_attempts=self._max_attempts,
             )
         self._metrics.inc(

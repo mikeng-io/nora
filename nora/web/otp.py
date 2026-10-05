@@ -1,7 +1,10 @@
 """`register_otp_routes` — the one-time code API (`nora.app.otp`).
 
     POST /app/v1/otp/request  {"identifier", "platform", "purpose"} -> 202 {"challengeId"}
-    POST /app/v1/otp/verify   {"challengeId", "code"}               -> 200 {"personId"} | 401
+    POST /app/v1/otp/verify   {"challengeId", "code", "purpose"?}   -> 200 {"personId"} | 401
+
+`purpose` defaults to `sign_in` on both; a code is good only for the purpose it
+was asked for.
 
 **A bearer token, unlike every other `/app/v1` route.** Those trust the private
 docker network and the portal proxy in front of them, which is enough for reads
@@ -73,9 +76,10 @@ def register_otp_routes(app: web.Application, *, otp: Any, api_token: str) -> No
             return web.json_response({"error": "unauthorized"}, status=401)
         body = await _body(request) or {}
         challenge_id, code = body.get("challengeId"), body.get("code")
-        if not isinstance(challenge_id, str) or not isinstance(code, str):
+        purpose = body.get("purpose", "sign_in")
+        if not all(isinstance(f, str) for f in (challenge_id, code, purpose)):
             return web.json_response({"error": "bad_request"}, status=400)
-        person_id = await otp.verify(challenge_id=challenge_id, code=code)
+        person_id = await otp.verify(challenge_id=challenge_id, code=code, purpose=purpose)
         if person_id is None:
             return web.json_response(_REFUSED, status=401)
         return web.json_response({"personId": person_id})

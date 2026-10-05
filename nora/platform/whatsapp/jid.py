@@ -112,9 +112,11 @@ def conversation_id_for(chat_jid: str, resolved_phone: str | None) -> str:
       the room's one name.
     - 1:1: `<phone>@s.whatsapp.net` when the chat's phone is known (a direct
       phone JID, or a LID JID the bridge resolved through its map); the raw
-      `@lid` JID otherwise. Deny-by-default either way this phase — the form
-      matters because admission is exact-string, not because a DM is
-      answered.
+      `@lid` JID otherwise. The form matters because admission is
+      exact-string, and because it is the address a 1:1 send goes back to:
+      `nora.persons.Persons.direct_target` builds the same two forms, and the
+      sender takes only the ones that belong to somebody in identity.toml
+      (R-101).
     """
     if is_group_jid(chat_jid):
         return chat_jid

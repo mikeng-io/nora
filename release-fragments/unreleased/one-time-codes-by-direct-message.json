@@ -5,10 +5,12 @@
     "A code goes only to someone listed in identity.toml, at the account listed there; nobody else can be sent one.",
     "A code lasts five minutes, stops working after five wrong tries or once a newer code is asked for, and works once. One person can be sent at most five codes an hour.",
     "Codes are never stored, only a keyed hash of them, and Nora's own record of the message has the code blanked out.",
-    "Nora also refuses to send a direct message to, or keep one from, anyone who is not in identity.toml."
+    "Nora also refuses to send a direct message to, or keep one from, anyone who is not in identity.toml.",
+    "Signal and WhatsApp can now carry a 1:1 message at all, so a direct chat with someone in identity.toml that policy.toml lists would now be answered; nothing lists one by default."
   ],
   "limitations": [
     "The portal does not use it yet: signing in still needs Discord until the portal's login page is built on top of this.",
-    "Confirming someone before adopting them is reserved as a purpose but has no flow yet."
+    "Confirming someone before adopting them is reserved as a purpose but has no flow yet.",
+    "A WhatsApp code is a message to someone who may not have written to Nora first, which the WhatsApp setup otherwise avoids to keep the number from being restricted; it is capped at a few codes an hour per person, each one asked for by that person."
   ]
 }

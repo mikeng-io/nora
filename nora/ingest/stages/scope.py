@@ -65,11 +65,14 @@ async def run(
     if policy.conversation(message.platform, message.conversation_id) is not None:
         return True
     metrics.inc("nora_denied_conversations_total", platform=message.platform)
+    # A 1:1 chat's id is the person's number, so it is named "dm" here: the
+    # operator admits a known person's DM by the id identity.toml already holds.
+    where = "dm" if message.conversation_type == "dm" else message.conversation_id
     log.warning(
         "message from a conversation that is not in policy.toml "
         "(platform=%s conversation_id=%s) — not recorded, not answered. "
         "Run `nora groups` to see its name beside this id.",
         message.platform,
-        message.conversation_id,
+        where,
     )
     return False

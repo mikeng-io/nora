@@ -68,7 +68,8 @@ class SqlOtpStore:
             return int((await conn.execute(stmt)).scalar_one())
 
     async def attempt(
-        self, *, challenge_id: uuid.UUID, code_hash: str, now: datetime, max_attempts: int,
+        self, *, challenge_id: uuid.UUID, purpose: str, code_hash: str, now: datetime,
+        max_attempts: int,
     ) -> str | None:
         """Check one code. The person it was for when it matches a live code,
         else None — and None tells the caller nothing about why.
@@ -84,7 +85,9 @@ class SqlOtpStore:
                 .where(c.c.challenge_id == challenge_id)
                 .with_for_update()
             )).one_or_none()
-            if row is None or row.expires_at <= now:
+            # A code is good only for what it was asked for: an `adopt` code
+            # does not sign anybody in.
+            if row is None or row.purpose != purpose or row.expires_at <= now:
                 return None
             newer = (await conn.execute(
                 sa.select(sa.func.count()).select_from(c).where(

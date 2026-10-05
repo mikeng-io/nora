@@ -171,7 +171,9 @@ is correct. To tell "quiet" from "broken":
    curl -s http://127.0.0.1:9100/metrics | grep -E 'nora_denied_(conversations|senders)_total'
    ```
 
-   - `nora_denied_conversations_total` rising → the conversation is not in `policy.toml`.
+   - `nora_denied_conversations_total` rising → the conversation is not in `policy.toml`,
+     or a direct message came from somebody who is not in `identity.toml` (R-101; the log
+     line says which, and never carries the number).
      Nothing from it is recorded either (the room gate runs before the audit write), so
      the audit DB will show no trace of it at all. Run `nora groups` to see the group's
      name beside the id you need to add.

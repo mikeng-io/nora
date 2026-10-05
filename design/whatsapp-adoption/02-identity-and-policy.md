@@ -118,6 +118,10 @@ acceptable:
 2. **Reply-only, conversational.** No bulk sends, no broadcasts, no
    outbound to people who have not messaged Nora first. The ambient design
    already enforces this shape: Nora is silent by default.
+   **One bounded exception (DEC-287, 2026-10-05):** a one-time code the person
+   asked for, to their own account in `identity.toml`, at most `[otp]
+   max_per_hour` an hour. Nobody outside `identity.toml` is ever messaged
+   (R-101).
 3. **No scheduled/bulk campaigns** through the bridge, ever. If a future
    feature wants to push notifications to many people, that is a Business
    API conversation, not this one.

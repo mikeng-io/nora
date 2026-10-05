@@ -21,8 +21,8 @@ class _Otp:
         self.requests.append((identifier, platform, purpose))
         return "c-1"
 
-    async def verify(self, *, challenge_id: str, code: str) -> str | None:
-        return "miles" if (challenge_id, code) == ("c-1", "123456") else None
+    async def verify(self, *, challenge_id: str, code: str, purpose: str) -> str | None:
+        return "miles" if (challenge_id, code, purpose) == ("c-1", "123456", "sign_in") else None
 
 
 @pytest.fixture

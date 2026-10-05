@@ -335,6 +335,15 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "document_state": lambda n: {
         "document_id": _uuid("doc", n), "state": "archived", "set_by": "ken",
     },
+    # 0097_otp (DEC-287): a one-time code, and one check of it.
+    "otp_challenge": lambda n: {
+        "challenge_id": _uuid("otp", n), "person_id": "ken", "purpose": "sign_in",
+        "platform": "signal", "code_hash": f"{n:064x}", "issued_at": T0,
+        "expires_at": T0 + timedelta(minutes=5),
+    },
+    "otp_attempt": lambda n: {
+        "challenge_id": _uuid("otp", n), "ok": False, "attempted_at": T0,
+    },
     # design/sandbox-runtime §6 (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",

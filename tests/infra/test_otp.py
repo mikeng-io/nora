@@ -91,8 +91,8 @@ async def test_a_code_goes_to_the_persons_own_account_and_verifies_once(parts):
     # The audit row says a code went out, never which code.
     assert code not in records.rows[-1]["body"]
     assert metrics.get("nora_otp_requests_total", platform="signal", outcome="sent") == 1
-    assert await service.verify(challenge_id=challenge, code=code) == "miles"
-    assert await service.verify(challenge_id=challenge, code=code) is None
+    assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") == "miles"
+    assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") is None
 
 
 async def test_somebody_not_in_identity_toml_is_sent_nothing_and_answered_the_same(parts):
@@ -105,7 +105,7 @@ async def test_somebody_not_in_identity_toml_is_sent_nothing_and_answered_the_sa
     assert adapter.sent == []
     assert metrics.get("nora_otp_requests_total", platform="signal", outcome="unknown") == 1
     assert metrics.get("nora_otp_requests_total", platform="signal", outcome="no_account") == 1
-    assert await service.verify(challenge_id=challenge, code="000000") is None
+    assert await service.verify(challenge_id=challenge, code="000000", purpose="sign_in") is None
 
 
 async def test_a_code_dies_after_the_attempt_limit_even_when_then_right(parts):
@@ -114,8 +114,8 @@ async def test_a_code_dies_after_the_attempt_limit_even_when_then_right(parts):
     code = _code(adapter)
     wrong = f"{(int(code) + 1) % 10**6:06d}"
     for _ in range(3):
-        assert await service.verify(challenge_id=challenge, code=wrong) is None
-    assert await service.verify(challenge_id=challenge, code=code) is None
+        assert await service.verify(challenge_id=challenge, code=wrong, purpose="sign_in") is None
+    assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") is None
 
 
 async def test_a_code_expires_and_a_newer_one_supersedes_it(parts):
@@ -124,9 +124,9 @@ async def test_a_code_expires_and_a_newer_one_supersedes_it(parts):
     first_code = _code(adapter)
     second = await service.request(identifier="miles", platform="signal", purpose="sign_in")
     second_code = _code(adapter)
-    assert await service.verify(challenge_id=first, code=first_code) is None
+    assert await service.verify(challenge_id=first, code=first_code, purpose="sign_in") is None
     clock.now = T0 + timedelta(minutes=6)
-    assert await service.verify(challenge_id=second, code=second_code) is None
+    assert await service.verify(challenge_id=second, code=second_code, purpose="sign_in") is None
 
 
 async def test_a_person_is_sent_at_most_max_per_hour_codes(parts):
@@ -150,7 +150,26 @@ async def test_two_right_answers_at_once_sign_in_only_once(store):
         code_hash="a" * 64, issued_at=T0, expires_at=T0 + timedelta(minutes=5),
     )
     results = await asyncio.gather(*(
-        store.attempt(challenge_id=challenge, code_hash="a" * 64, now=T0, max_attempts=5)
+        store.attempt(challenge_id=challenge, purpose="sign_in", code_hash="a" * 64, now=T0,
+                      max_attempts=5)
         for _ in range(5)
     ))
     assert results.count("miles") == 1
+
+
+async def test_a_code_is_good_only_for_the_purpose_it_was_asked_for(parts):
+    service, adapter, _, _, _ = parts
+    challenge = await service.request(identifier="miles", platform="signal", purpose="adopt")
+    code = _code(adapter)
+    assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") is None
+    assert await service.verify(challenge_id=challenge, code=code, purpose="adopt") == "miles"
+
+
+async def test_a_code_with_anything_but_six_ascii_digits_is_refused_unread(parts):
+    service, adapter, _, _, _ = parts
+    challenge = await service.request(identifier="miles", platform="signal", purpose="sign_in")
+    code = _code(adapter)
+    for bad in (code + "\n", "１２３４５６", code[:5]):
+        assert await service.verify(challenge_id=challenge, code=bad, purpose="sign_in") is None
+    # None of those used up an attempt: the right code still works.
+    assert await service.verify(challenge_id=challenge, code=code, purpose="sign_in") == "miles"
