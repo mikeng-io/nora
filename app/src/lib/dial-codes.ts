@@ -43,12 +43,23 @@ export function flag(region: string): string {
  * from anywhere) or is not a phone number at all (a Signal ACI).
  *
  * A local number loses its punctuation, and its one trunk `0` where the
- * country has one; Hong Kong has none, so its numbers pass unchanged. */
+ * country has one; Hong Kong has none, so its numbers pass unchanged. A
+ * number dialled the way people dial abroad is read that way too: `00` (and
+ * `011` from the US or Canada) is the international prefix, and an 11-digit
+ * North American number starting with `1` already holds its country code.
+ * The `(0)` some write after a country code (`+44 (0)7700 900123`) is not
+ * dialled, so it goes. */
 export function fullNumber(region: string, typed: string): string {
   const value = typed.trim();
-  if (value.startsWith("+")) return value;
+  if (value.startsWith("+")) return value.replace(/^(\+[0-9]{1,3})\s*\(0\)\s*/, "$1 ");
   const digits = value.replace(/[\s\-().]/g, "");
   if (!/^[0-9]+$/.test(digits)) return value;
   const { dial, trunk } = safeRegion(region);
+  // No country code starts with 0, so `00` then a 0 is a local number.
+  if (/^00[1-9]/.test(digits)) return `+${digits.slice(2)}`;
+  if (dial === "1") {
+    if (digits.startsWith("011")) return `+${digits.slice(3)}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  }
   return `+${dial}${trunk ? digits.replace(/^0/, "") : digits}`;
 }

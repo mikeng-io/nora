@@ -27,6 +27,20 @@ describe("dial codes", () => {
     expect(fullNumber("HK", "+44 7700 900123")).toBe("+44 7700 900123");
   });
 
+  it("drops the (0) written after a country code", () => {
+    expect(fullNumber("HK", "+44 (0)7700 900123")).toBe("+44 7700 900123");
+  });
+
+  it("reads an international prefix as a whole number", () => {
+    expect(fullNumber("HK", "00852 9123 4567")).toBe("+85291234567");
+    expect(fullNumber("US", "011 852 9123 4567")).toBe("+85291234567");
+  });
+
+  it("does not add a second 1 to a North American number typed with it", () => {
+    expect(fullNumber("US", "1 415 555 0100")).toBe("+14155550100");
+    expect(fullNumber("US", "(415) 555-0100")).toBe("+14155550100");
+  });
+
   it("passes a Signal ACI through untouched", () => {
     const aci = "0b1d0f6e-1c2d-4e3f-8a9b-0c1d2e3f4a5b";
     expect(fullNumber("HK", aci)).toBe(aci);
