@@ -2210,6 +2210,34 @@ export function handleDocumentState(pathname, sp, payload) {
   return { status: 200, body: docSummary(doc) };
 }
 
+// One-time codes (DEC-287, nora/web/otp.py), dev only. The real routes need a
+// bearer token and send a real message; this stands in for both. The
+// identifier is a dev person_id ("miles", "ken", ...), the code is always
+// 123456, and it is printed to the console as if it had been sent. An unknown
+// identifier still gets a challenge, as the real API answers, and its code
+// never verifies.
+const DEV_CODE = "123456";
+const OTP_CHALLENGES = new Map();
+
+export function handleOtp(pathname, payload) {
+  if (pathname === "/app/v1/otp/request") {
+    const challengeId = `dev-${OTP_CHALLENGES.size + 1}`;
+    const person = ROSTER_BY_ID.get(String(payload?.identifier ?? "").trim());
+    OTP_CHALLENGES.set(challengeId, person?.personId ?? null);
+    if (person) console.log(`[mock-nora] one-time code for ${person.personId}: ${DEV_CODE}`);
+    return { status: 202, body: { challengeId } };
+  }
+  if (pathname === "/app/v1/otp/verify") {
+    const personId = OTP_CHALLENGES.get(String(payload?.challengeId ?? ""));
+    if (personId && payload?.code === DEV_CODE) {
+      OTP_CHALLENGES.delete(payload.challengeId);
+      return { status: 200, body: { personId } };
+    }
+    return { status: 401, body: { error: "refused" } };
+  }
+  return null;
+}
+
 function startServer() {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -2228,6 +2256,7 @@ function startServer() {
         : req.method === "POST"
           ? await readJson(req).then(
               (payload) =>
+                handleOtp(url.pathname, payload) ??
                 handleDocumentRestore(url.pathname, url.searchParams, payload) ??
                 handleDocumentState(url.pathname, url.searchParams, payload),
             )

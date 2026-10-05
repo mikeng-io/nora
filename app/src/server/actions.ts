@@ -1,7 +1,9 @@
 "use server";
 
+import { AuthError } from "next-auth";
 import { DEV_LOGIN_ENABLED, signIn, signOut } from "@/auth";
 import { routing } from "@/i18n/routing";
+import { CODE_PLATFORMS, type CodePlatform, requestCode } from "./otp";
 
 const safeLocale = (l: string) =>
   (routing.locales as readonly string[]).includes(l) ? l : routing.defaultLocale;
@@ -27,4 +29,51 @@ export async function signInAsDev(locale: string, discordId: string, next?: stri
 
 export async function signOutAction(locale: string) {
   await signOut({ redirectTo: `/${safeLocale(locale)}/login?signedOut=1` });
+}
+
+/** Where the code sign-in is (DEC-287). `ask` takes a platform and a number;
+ * `code` takes the six digits Nora sent. `error` names what to say, never
+ * whether the number belongs to anybody: Nora answers that the same way. */
+export type CodeState = {
+  step: "ask" | "code";
+  platform: CodePlatform;
+  identifier: string;
+  challengeId?: string;
+  error?: "unavailable" | "invalid" | "wrong";
+};
+
+/** One action for both steps, chosen by the submit button's `intent`. */
+export async function codeSignInAction(prev: CodeState, form: FormData): Promise<CodeState> {
+  const intent = String(form.get("intent") ?? "");
+  const locale = safeLocale(String(form.get("locale") ?? ""));
+  if (intent === "back") return { step: "ask", platform: prev.platform, identifier: prev.identifier };
+
+  if (intent === "send") {
+    const raw = String(form.get("platform") ?? "");
+    const platform = (CODE_PLATFORMS as readonly string[]).includes(raw)
+      ? (raw as CodePlatform)
+      : prev.platform;
+    const identifier = String(form.get("identifier") ?? "").trim().slice(0, 64);
+    if (!identifier) return { step: "ask", platform, identifier, error: "invalid" };
+    const challengeId = await requestCode({ identifier, platform });
+    if (!challengeId) return { step: "ask", platform, identifier, error: "unavailable" };
+    return { step: "code", platform, identifier, challengeId };
+  }
+
+  // intent === "verify"
+  const code = String(form.get("code") ?? "").replace(/\s/g, "");
+  if (!prev.challengeId || !/^[0-9]{6}$/.test(code)) return { ...prev, error: "invalid" };
+  try {
+    await signIn("otp", {
+      challengeId: prev.challengeId,
+      code,
+      redirectTo: safeNext(locale, String(form.get("next") ?? "") || null),
+    });
+  } catch (error) {
+    // A refused code is an AuthError; a successful sign-in throws Next's
+    // redirect, which must keep travelling.
+    if (error instanceof AuthError) return { ...prev, error: "wrong" };
+    throw error;
+  }
+  return prev;
 }

@@ -9,6 +9,8 @@ import { NoraMark, Wordmark } from "@/components/ui/avatar";
 import { discordPeople } from "@/server/allowlist";
 import { checkSession, readIdentityToml } from "@/server/session";
 import { signInAsDev, signInWithDiscord, signOutAction } from "@/server/actions";
+import { codeSignInEnabled } from "@/server/otp";
+import { CodeSignIn } from "./code-sign-in";
 import { ForgetDevice } from "./forget-device";
 import { LoginControls } from "./login-controls";
 import { SubmitButton } from "./submit-button";
@@ -80,7 +82,9 @@ export default async function LoginPage({
               <h1 className="text-[2rem] leading-[1.08] font-[650] tracking-[-0.03em] text-ink sm:text-[2.5rem] lang-zh:tracking-normal">
                 {t("title")}
               </h1>
-              <p className="text-lead text-ink-soft">{t("lede")}</p>
+              <p className="text-lead text-ink-soft">
+                {t(codeSignInEnabled() ? "ledeWithCode" : "lede")}
+              </p>
             </div>
 
             {refused ? (
@@ -138,8 +142,17 @@ export default async function LoginPage({
                 <DiscordGlyph />
                 {refused ? t("tryAnother") : t("discord")}
               </SubmitButton>
-              <p className="text-meta text-ink-muted">{t("footnote")}</p>
+              {codeSignInEnabled() ? null : (
+                <p className="text-meta text-ink-muted">{t("footnote")}</p>
+              )}
             </form>
+
+            {codeSignInEnabled() ? (
+              <>
+                <CodeSignIn locale={locale} next={next} />
+                <p className="text-meta text-ink-muted">{t("footnote")}</p>
+              </>
+            ) : null}
 
             {devPeople.length > 0 ? (
               <section className="grid gap-3 rounded-panel border border-dashed border-seam p-4">

@@ -460,6 +460,10 @@ services:
       - AUTH_DISCORD_SECRET=${DISCORD_CLIENT_SECRET:?set DISCORD_CLIENT_SECRET in the host environment first}
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET in the host environment first}
       - AUTH_URL=${AUTH_URL:?set AUTH_URL (the public origin, e.g. https://nora.67.zone) in the host environment first}
+      # One-time code sign-in (DEC-287): the SAME value `nora` gets above, the
+      # bearer its /app/v1/otp/* routes require. Empty, the login page offers
+      # Discord alone.
+      - NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}
     volumes:
       # Same file, same read-only mount as `nora`/`presence` below — the web
       # portal's whitelist can never drift from Nora's own roster because it

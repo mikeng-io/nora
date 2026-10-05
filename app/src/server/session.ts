@@ -1,7 +1,7 @@
 import "server-only";
 import fs from "node:fs";
 import { auth } from "@/auth";
-import { resolveDiscordPerson, type Person } from "./allowlist";
+import { personById, resolveDiscordPerson, type Person } from "./allowlist";
 
 // identity.toml is bind-mounted read-only into this container
 // (docker-compose.yml's `app` service): the SAME bytes Nora's own process
@@ -9,7 +9,7 @@ import { resolveDiscordPerson, type Person } from "./allowlist";
 export const IDENTITY_TOML_PATH = process.env.IDENTITY_TOML_PATH ?? "/app/identity.toml";
 
 export type SessionCheck =
-  | ({ status: "ok"; discordId: string; image: string | null } & Person)
+  | ({ status: "ok"; image: string | null; via: "discord" | "code" } & Person)
   | { status: "no-session" }
   | { status: "denied"; name: string | null; image: string | null };
 
@@ -32,12 +32,24 @@ export function readIdentityToml(): string {
 // page gate) and every /api/v1 read call it: a page gate alone never
 // protected the routes the pages fetch from (the original portal shipped
 // GET /api/memory open to any request until a review caught it).
+//
+// Every sign-in ends as ONE identity.toml person: Discord through the
+// account's `user_id`, a one-time code through the person_id Nora verified it
+// for (DEC-287). Both are re-read against the file on every check, so somebody
+// removed from it is out on their next request, whichever way they came in.
 export async function checkSession(): Promise<SessionCheck> {
   const session = await auth();
-  const discordId = session?.user?.discordId;
+  const user = session?.user;
+  const image = user?.image ?? null;
+  if (user?.personId) {
+    const person = personById(readIdentityToml(), user.personId);
+    return person
+      ? { status: "ok", image, via: "code", ...person }
+      : { status: "denied", name: null, image };
+  }
+  const discordId = user?.discordId;
   if (!discordId) return { status: "no-session" };
-  const image = session.user?.image ?? null;
   const person = resolveDiscordPerson(readIdentityToml(), discordId);
-  if (!person) return { status: "denied", name: session.user?.name ?? null, image };
-  return { status: "ok", discordId, image, ...person };
+  if (!person) return { status: "denied", name: user?.name ?? null, image };
+  return { status: "ok", image, via: "discord", ...person };
 }

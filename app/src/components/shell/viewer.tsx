@@ -6,6 +6,9 @@ export interface Viewer {
   personId: string;
   displayName: string;
   image: string | null;
+  // How they signed in, for the account chip: the person is the same either
+  // way (DEC-287).
+  via: "discord" | "code";
 }
 
 const ViewerContext = createContext<Viewer | null>(null);

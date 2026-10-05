@@ -2,8 +2,10 @@
 
 The circle's side of Nora: where everyone is, what is planned, the game
 servers, and Nora herself (whether she is listening, what she remembers about
-you, how she behaves, what she can do). Behind a Discord sign-in, open only to
-people in `identity.toml`. An installable PWA for phones and desktops.
+you, how she behaves, what she can do). Behind a sign-in, open only to people
+in `identity.toml`: Discord, or a one-time code Nora sends to the person's own
+Signal or WhatsApp account (DEC-287). Either way the session is the same
+identity.toml person. An installable PWA for phones and desktops.
 
 The public page at `/` and `/en/` is a different thing: `site/`. They share
 the hostname; the site owns exactly `/`, `/en/`, `/_astro/`, `/_site/`,
@@ -24,7 +26,7 @@ own files sit under paths the site does not claim (`/sw.js`,
 | `/documents`, `/documents/<id>` | what Nora has written up for the rooms you are in, newest first; one document drawn from its stored spec in the portal theme. Pictures come through `/api/v1/documents/<id>/media/<sha>` (raster only) |
 | `/games`, `/games/<id>`, `/games/<id>/players/<key>` | servers; a server's overview, players, activity, insights and world; a player's character, body, combat and playtime |
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
-| `/login` | Discord sign-in, and the refusal when an account is not on the list |
+| `/login` | Discord sign-in, the code sign-in when `NORA_OTP_API_TOKEN` is set, and the refusal when an account is not on the list |
 
 On a phone the bottom bar holds Today, Map, Plans and Games; People is one
 tap from Today and the map, and Nora is her own mark in the top bar
@@ -93,7 +95,9 @@ one is stale, one has sharing off. `MOCK_LATENCY_MS`, `MOCK_FAIL=games,presence`
 and `MOCK_EMPTY=events` exercise loading, unavailable and empty states. With
 `NORA_DEV_LOGIN=1` the login page offers the people in
 `dev/identity.dev.toml`; a production build has no such sign-in whatever the
-environment says.
+environment says. With `NORA_OTP_API_TOKEN` set (any value against the mock),
+the code sign-in takes a dev person_id (`miles`) as the number and `123456` as
+the code.
 
 ## Check it
 

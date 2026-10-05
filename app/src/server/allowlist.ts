@@ -31,6 +31,16 @@ export function resolveDiscordPerson(identityToml: string, discordUserId: string
   return null;
 }
 
+/** The person a one-time code was verified for (DEC-287), re-read from the
+ * file on every check so somebody removed from identity.toml is out at once,
+ * whichever way they signed in. */
+export function personById(identityToml: string, personId: string): Person | null {
+  const persons = (parse(identityToml) as IdentityToml).persons ?? {};
+  // `hasOwn`, so an id like "constructor" is not found on the prototype.
+  if (!Object.hasOwn(persons, personId)) return null;
+  return { personId, displayName: persons[personId].name ?? personId };
+}
+
 /** Everyone in the file who can sign in (has a Discord block): the dev
  * sign-in's picker. */
 export function discordPeople(identityToml: string): Array<Person & { discordId: string }> {
