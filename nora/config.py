@@ -2363,6 +2363,35 @@ class ComputerConfig(BaseModel):
         return self
 
 
+class OtpConfig(BaseModel):
+    """One-time codes sent in a direct message on Signal or WhatsApp
+    (`nora.app.otp`): the substrate the portal's sign-in, and later adopting
+    somebody, check a person against.
+
+    Ships INERT (`enabled = false`): off, no service is built and the two
+    `/app/v1/otp/*` routes are not mounted. A code goes only to somebody in
+    `identity.toml`, whatever this section says.
+
+    `secret_env` NAMES the env var holding the HMAC key the codes are hashed
+    under (DEC-8), so the table cannot be turned back into codes; `api_token_env`
+    names the bearer token the portal sends, because `/app/v1` otherwise trusts
+    whoever reaches the port. `nora.app.composition` refuses to start when
+    `enabled` is true and either is unset or empty.
+
+    `ttl_seconds` is how long a code lives, `max_attempts` how many wrong codes
+    kill it, `max_per_hour` how many codes one person can be sent in an hour.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    secret_env: str = "NORA_OTP_SECRET"  # noqa: S105 — names an env var, not a secret
+    api_token_env: str = "NORA_OTP_API_TOKEN"  # noqa: S105 — names an env var, not a secret
+    ttl_seconds: int = Field(default=300, gt=0, le=3600)
+    max_attempts: int = Field(default=5, gt=0, le=20)
+    max_per_hour: int = Field(default=5, gt=0, le=60)
+
+
 class VersionConfig(BaseModel):
     """The startup upgrade note (DEC-97, `nora.app.announce`).
 
@@ -3915,6 +3944,9 @@ class Config(BaseModel):
     # (`enabled = false`): no runtime is built and every computer tool answers
     # `unavailable`.
     computer: ComputerConfig = ComputerConfig()
+    # Optional and defaulted, see `OtpConfig`. Ships INERT (`enabled = false`):
+    # no service is built and no `/app/v1/otp/*` route is mounted.
+    otp: OtpConfig = OtpConfig()
     # Optional and defaulted — see `ImageGenConfig`. Ships INERT
     # (`enabled = false`); a config.toml written before DEC-137 keeps loading
     # unchanged, and a misconfigured lane degrades the tool to `unavailable`

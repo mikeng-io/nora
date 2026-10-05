@@ -18,6 +18,7 @@ Nora saw.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -26,7 +27,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .domain.identity import ACCOUNT_LABEL_KEY, metadata_keys
-from .domain.models import NormalizedMessage, PersonRef, TranscriptRow
+from .domain.models import ConversationTarget, NormalizedMessage, PersonRef, TranscriptRow
 from .persons_file import PLATFORM_FIELDS, _PersonsFile
 
 
@@ -53,6 +54,35 @@ def sanitize_unmapped(sender_id: str) -> str:
     if len(digits) <= 6:
         return sender_id.lstrip("+") or sender_id
     return f"{digits[:3]}…{digits[-3:]}"
+
+
+_UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_E164 = re.compile(r"^\+\d{6,15}$")
+_DIGITS = re.compile(r"^\d{6,20}$")
+
+#: The platforms a direct message can be addressed on. Anything else has no
+#: direct address, so `direct_target` answers None for it.
+DIRECT_PLATFORMS = ("signal", "whatsapp")
+
+
+def _direct_address(platform: str, id_value: str) -> str | None:
+    """The address a direct message to this one `identity.toml` id goes to, or
+    None when the id is not one the platform takes as a recipient.
+
+    Signal: an ACI or an E.164 number, as written (signal-cli's `recipient`
+    takes either); a username is not a recipient without its `u:` prefix, so it
+    has none. WhatsApp: a phone number becomes `<digits>@s.whatsapp.net` and a
+    LID `<digits>@lid`, the two JID forms the bridge's `/send` takes and the
+    forms `nora.platform.whatsapp.jid.conversation_id_for` gives an inbound
+    1:1 chat."""
+    if platform == "signal":
+        return id_value if _UUID.match(id_value) or _E164.match(id_value) else None
+    if platform == "whatsapp":
+        if _E164.match(id_value):
+            return f"{id_value[1:]}@s.whatsapp.net"
+        if _DIGITS.match(id_value):
+            return f"{id_value}@lid"
+    return None
 
 
 @dataclass(frozen=True)
@@ -168,6 +198,42 @@ class Persons:
             value for (plat, value), pid in self.index.items()
             if plat == platform and pid == person_id
         )
+
+    def direct_addresses(self, platform: str) -> frozenset[str]:
+        """Every direct-message address on `platform` that belongs to somebody
+        in `identity.toml` — the whole set a sender may send a 1:1 message to.
+
+        The senders hold this and refuse any other direct address
+        (`nora.platform.signal.send`, `nora.platform.whatsapp.send`), so a
+        direct message to somebody outside `identity.toml` cannot leave,
+        whichever path asked for it (operator rule 2026-10-05)."""
+        return frozenset(
+            address for (plat, value) in self.index
+            if plat == platform and (address := _direct_address(platform, value))
+        )
+
+    def direct_target(self, platform: str, person_id: str) -> ConversationTarget | None:
+        """The 1:1 conversation with this person on `platform`, or None when
+        they hold no account there that takes a direct message.
+
+        Built from `identity.toml` alone: there is no other way to name a
+        direct conversation, so a person who is not in the file has none.
+        Signal prefers the ACI (stable under sealed sender, the form
+        `nora.agent.outbound` prefers for the same reason), then the number;
+        WhatsApp prefers the phone JID, the form an inbound 1:1 chat is
+        recorded under, then the LID. Sorted within each kind, so a person with
+        two accounts gets the same answer on every call."""
+        ids = sorted(self.platform_ids(platform, person_id))
+        if platform == "signal":
+            ranked = [i for i in ids if _UUID.match(i)] + [i for i in ids if _E164.match(i)]
+        else:
+            ranked = [i for i in ids if _E164.match(i)] + [i for i in ids if _DIGITS.match(i)]
+        for value in ranked:
+            if address := _direct_address(platform, value):
+                return ConversationTarget(
+                    platform=platform, conversation_id=address, conversation_type="dm",
+                )
+        return None
 
     def instagram_handle(self, fbid: str) -> str | None:
         """The Instagram `username` the operator recorded beside `fbid`, or

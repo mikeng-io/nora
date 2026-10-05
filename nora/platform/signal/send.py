@@ -259,7 +259,15 @@ ATTACHMENT_TIMEOUT_SECONDS = 60.0
 
 
 class SignalSender:
-    def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self, base_url: str, *, timeout: float = 10.0,
+        dm_recipients: frozenset[str] = frozenset(),
+    ) -> None:
+        # The direct-message addresses this sender may reach: every Signal id
+        # in `identity.toml` (`Persons.direct_addresses`). Empty by default, so
+        # a sender nobody handed the set to refuses every direct message, which
+        # is how it behaved before 1:1 sends existed.
+        self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         # A SECOND budget rather than one raised for everything: a text send
@@ -282,13 +290,24 @@ class SignalSender:
         quote: OutboundQuote | None = None,
         request_id: str = "",
     ) -> SendResult:
-        if target.conversation_type != "group":
-            log.error("refusing to send to conversation_type=%r (v2 is groups only)",
-                      target.conversation_type)
+        # A direct message goes only to somebody in `identity.toml` (operator
+        # rule 2026-10-05): any other address is refused here, before a byte
+        # leaves, whatever path asked. Its logs name it "dm", never the
+        # number or ACI, which would be an identifier at rest in a log file.
+        where = target.conversation_id
+        if target.conversation_type == "dm":
+            where = "dm"
+            if target.conversation_id not in self._dm_recipients:
+                log.error("refusing a direct message to an address not in identity.toml")
+                return SendResult(ok=False)
+            params: dict[str, object] = {
+                "recipient": [target.conversation_id], "message": text,
+            }
+        elif target.conversation_type == "group":
+            params = {"groupId": target.conversation_id, "message": text}
+        else:
+            log.error("refusing to send to conversation_type=%r", target.conversation_type)
             return SendResult(ok=False)
-        params: dict[str, object] = {
-            "groupId": target.conversation_id, "message": text,
-        }
         # Every decoration key is ABSENT when there is nothing to say, never
         # present and empty. An empty `mention: []` is harmless today, but the
         # whole point of a plain message's payload being exactly two keys is
@@ -337,11 +356,11 @@ class SignalSender:
                 if resp.status == 429:
                     retry_after = _retry_after_seconds(resp.headers.get("Retry-After"))
                     log.error("send rate-limited: HTTP 429 (conversation=%s, id=%s)",
-                              target.conversation_id, request_id)
+                              where, request_id)
                     return SendResult(ok=False, retryable=True, retry_after=retry_after)
                 if resp.status != 200:
                     log.error("send failed: HTTP %s (conversation=%s, id=%s)",
-                              resp.status, target.conversation_id, request_id)
+                              resp.status, where, request_id)
                     return SendResult(ok=False)
                 body = await resp.json()
         except TimeoutError:
@@ -363,12 +382,12 @@ class SignalSender:
                 "this is not evidence it did not (conversation=%s, id=%s, "
                 "attachments=%d)",
                 (timeout.total if timeout else None),
-                target.conversation_id, request_id, len(attachments),
+                where, request_id, len(attachments),
             )
             return SendResult(ok=False)
         except Exception as exc:               # noqa: BLE001 — a send failure is never fatal
             log.error("send failed: %s (conversation=%s, id=%s)",
-                      type(exc).__name__, target.conversation_id, request_id)
+                      type(exc).__name__, where, request_id)
             return SendResult(ok=False)
         if isinstance(body, dict) and body.get("error"):
             # RETRY ONCE, UNDECORATED, and this is the one retry in the send path
@@ -393,13 +412,13 @@ class SignalSender:
             decorated = any(k in params for k in _DECORATION_KEYS)
             log.error(
                 "send rejected by signal-cli (conversation=%s, id=%s, decorated=%s)",
-                target.conversation_id, request_id, decorated,
+                where, request_id, decorated,
             )
             if not decorated:
                 return SendResult(ok=False)
             log.warning(
                 "retrying the send UNDECORATED (conversation=%s, id=%s) — the "
-                "reply matters, the card does not", target.conversation_id, request_id,
+                "reply matters, the card does not", where, request_id,
             )
             return await self.send(target, text, attachments=attachments, request_id=request_id)
         # A COUNT of mentions, never the recipients — the same rule
@@ -407,6 +426,6 @@ class SignalSender:
         # identifier at rest in a file the operator greps, which R-18 is about
         # as much as it is about the group.
         log.info("sent %d chars to %s (id=%s, mentions=%d, styles=%d, preview=%s)",
-                 len(text), target.conversation_id, request_id,
+                 len(text), where, request_id,
                  len(mentions), len(styles), preview is not None)
         return SendResult(ok=True, timestamp=_sent_timestamp(body))

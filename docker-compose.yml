@@ -308,6 +308,12 @@ services:
       #   2026-09-30 and the first enable crash-looped nora for about three
       #   minutes. tests/test_env_template.py now checks every *_env name.
       - NORA_COMPUTER_TOKEN=${NORA_COMPUTER_TOKEN:-}
+      #   NORA_OTP_SECRET / NORA_OTP_API_TOKEN — [otp].secret_env (the HMAC
+      #   key one-time codes are hashed under) and [otp].api_token_env (the
+      #   bearer the portal sends to /app/v1/otp/*). Nora refuses to start
+      #   with [otp] enabled and either empty.
+      - NORA_OTP_SECRET=${NORA_OTP_SECRET:-}
+      - NORA_OTP_API_TOKEN=${NORA_OTP_API_TOKEN:-}
       #   HKGOV_MAPS_TOKEN      — [presence].hkgov_token_env, the optional
       #   HK-government reverse geocoder that `where_is` uses (reverse-geocoding
       #   runs here, not in the collector). Found unpassed on 2026-09-30 by the

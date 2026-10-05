@@ -1,0 +1,14 @@
+{
+  "type": "feature",
+  "summary": "Nora can send a six-digit one-time code to someone's own Signal or WhatsApp account and check it, the groundwork for signing in to the portal with Signal or WhatsApp instead of Discord. It is off until the operator turns it on.",
+  "details": [
+    "A code goes only to someone listed in identity.toml, at the account listed there; nobody else can be sent one.",
+    "A code lasts five minutes, stops working after five wrong tries or once a newer code is asked for, and works once. One person can be sent at most five codes an hour.",
+    "Codes are never stored, only a keyed hash of them, and Nora's own record of the message has the code blanked out.",
+    "Nora also refuses to send a direct message to, or keep one from, anyone who is not in identity.toml."
+  ],
+  "limitations": [
+    "The portal does not use it yet: signing in still needs Discord until the portal's login page is built on top of this.",
+    "Confirming someone before adopting them is reserved as a purpose but has no flow yet."
+  ]
+}

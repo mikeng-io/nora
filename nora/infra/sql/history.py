@@ -139,6 +139,10 @@ APPEND_ONLY: dict[str, str] = {
     # 0087_document_state: a document's lifecycle, one row per change; the current
     # state is the latest row, so archive, delete and restore never update anything.
     "document_state": "recorded_at",
+    # 0097_otp: a one-time code and the attempts against it; spending, failing and
+    # superseding a code are all rows, so nothing is updated.
+    "otp_challenge": "recorded_at",
+    "otp_attempt": "recorded_at",
     "standing_revision": "recorded_at",
     "culture_revision": "recorded_at",
     "decision_log": "recorded_at",

@@ -20,6 +20,8 @@ from nora.domain.cues import CUES
 from nora.domain.culture import CULTURE_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
+from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
 from nora.domain.reasoning_strip import (
     PATHS_HELP,
     STRIP_OUTCOMES,
@@ -2060,6 +2062,20 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "check that never finished, not one that finished and found a "
         "violation.",
         ("check",),
+    ),
+    # One-time codes (`nora.app.otp`). The API answers every request the same
+    # way, so these are where "sent", "nobody by that name" and "rate limited"
+    # can be told apart.
+    _CounterSpec(
+        "nora_otp_requests_total",
+        "Requests for a one-time code, by platform and outcome ("
+        + " / ".join(OTP_REQUEST_OUTCOMES) + ").",
+        ("platform", "outcome"),
+    ),
+    _CounterSpec(
+        "nora_otp_checks_total",
+        "Checks of a one-time code, by outcome (" + " / ".join(OTP_CHECK_OUTCOMES) + ").",
+        ("outcome",),
     ),
 )
 

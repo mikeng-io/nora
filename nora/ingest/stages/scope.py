@@ -22,6 +22,13 @@ Discovery does not depend on auditing denied rooms: `nora groups` reads
 signal-cli's `listGroups` directly, so a new group's id is still printable
 without Nora having stored a word of it.
 
+A DIRECT MESSAGE is in scope only from somebody in `identity.toml` (operator
+rule 2026-10-05: Nora never receives a message from a person who is not in the
+file). A 1:1 chat's only member besides her is its sender, so "is this room
+allowed" and "is this person known" are the same question there, and it is
+asked before the audit write for the room's reason: an unknown sender's words
+are not kept at all.
+
 A denial is COUNTED. A silently-denied Nora is indistinguishable from a
 working one under R-5, and "she stopped answering in that group" needs to be
 answerable without attaching a debugger.
@@ -33,13 +40,28 @@ import logging
 from typing import Any
 
 from nora.domain.models import NormalizedMessage
+from nora.persons import Persons
 from nora.policy import Policy
 
 log = logging.getLogger("nora.ingest.scope")
 
 
-async def run(*, message: NormalizedMessage, policy: Policy, metrics: Any) -> bool:
+async def run(
+    *, message: NormalizedMessage, policy: Policy, persons: Persons, metrics: Any,
+) -> bool:
     """Return True if this conversation is allowlisted and ingest may continue."""
+    if (
+        message.conversation_type == "dm"
+        and persons.resolve(message.platform, message.sender_id) is None
+    ):
+        metrics.inc("nora_denied_conversations_total", platform=message.platform)
+        # No sender id in the line: it is somebody's number, and they are
+        # nobody Nora knows.
+        log.warning(
+            "direct message from somebody not in identity.toml (platform=%s) — "
+            "not recorded, not answered", message.platform,
+        )
+        return False
     if policy.conversation(message.platform, message.conversation_id) is not None:
         return True
     metrics.inc("nora_denied_conversations_total", platform=message.platform)

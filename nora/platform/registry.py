@@ -41,7 +41,7 @@ Nora?" and "which person is this sender?" are answered by the same flattening.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -159,6 +159,7 @@ class AdapterRegistry:
         voice_guild_ids: frozenset[str] = frozenset(),
         resolve_music_channel: ResolveMusicChannel = no_music_channel,
         instagram_summons: SummonsSink | None = None,
+        dm_recipients: Mapping[str, frozenset[str]] | None = None,
     ) -> AdapterRegistry:
         """Build+resolve every enabled platform — Signal, Discord, WhatsApp,
         Instagram; each one more `if platforms.<x>.enabled:` block, not a
@@ -201,7 +202,13 @@ class AdapterRegistry:
         `instagram_summons` (design/instagram-adoption/19) is where the
         Instagram adapter hands a `summons` SSE event, built by composition
         (`nora.app.summons_inbox.SummonsInbox`). Threaded, never consulted
-        here — same posture as `music_manager`."""
+        here — same posture as `music_manager`.
+
+        `dm_recipients` maps a platform to every direct-message address its
+        people hold in `identity.toml` (`Persons.direct_addresses`). Signal's
+        and WhatsApp's senders refuse a 1:1 message to any other address; a
+        platform missing from it refuses every 1:1 message."""
+        dms = dm_recipients or {}
         adapters: dict[str, PlatformAdapter] = {}
         identities: dict[str, PlatformIdentity] = {}
 
@@ -214,7 +221,10 @@ class AdapterRegistry:
             except AccountError as exc:
                 raise AdapterRegistryError(f"signal account error: {exc}") from exc
 
-            adapter = SignalAdapter(signal_cfg.base_url, account, metrics=metrics)
+            adapter = SignalAdapter(
+                signal_cfg.base_url, account, metrics=metrics,
+                dm_recipients=dms.get("signal", frozenset()),
+            )
             try:
                 identity = await adapter.resolve_identity()
             except Exception as exc:
@@ -257,7 +267,9 @@ class AdapterRegistry:
             # here is identity — an unpaired or unreachable bridge must fail
             # startup, not produce a deaf adapter (fail-fast is the point —
             # this module's own docstring).
-            whatsapp_adapter = WhatsAppAdapter(whatsapp_cfg.base_url)
+            whatsapp_adapter = WhatsAppAdapter(
+                whatsapp_cfg.base_url, dm_recipients=dms.get("whatsapp", frozenset()),
+            )
             try:
                 whatsapp_identity = await whatsapp_adapter.resolve_identity()
             except Exception as exc:

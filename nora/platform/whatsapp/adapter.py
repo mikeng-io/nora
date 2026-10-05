@@ -37,10 +37,12 @@ from .send import WhatsAppSender
 class WhatsAppAdapter:
     platform = "whatsapp"
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, dm_recipients: frozenset[str] = frozenset()) -> None:
+        """`dm_recipients` is every direct address in `identity.toml`; the
+        sender refuses a 1:1 message to any other JID."""
         self._base_url = base_url
         self._listener = WhatsAppListener(base_url)
-        self._sender = WhatsAppSender(base_url)
+        self._sender = WhatsAppSender(base_url, dm_recipients=dm_recipients)
         self._reactor = WhatsAppReactor(base_url)
         self._identity: PlatformIdentity | None = None
 

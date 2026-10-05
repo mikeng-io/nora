@@ -151,12 +151,31 @@ async def test_send_does_not_log_the_message_body(rpc_server, caplog):
     assert "sent 21 chars" in caplog.text          # the line IS being captured
 
 
-async def test_a_dm_target_is_refused_in_v2(rpc_server):
-    sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
+async def test_a_dm_to_an_address_not_in_identity_toml_is_refused(rpc_server, caplog):
+    """Operator rule 2026-10-05: a direct message goes only to somebody in
+    identity.toml. A sender handed no addresses refuses every one, and one
+    handed some refuses the rest, before any call to signal-cli — and the log
+    line does not carry the number it refused."""
+    url = str(rpc_server.make_url("")).rstrip("/")
     dm = ConversationTarget("signal", "+85212345678", "dm")
-    result = await sender.send(dm, "hi")
-    assert result.ok is False
+    caplog.set_level(logging.INFO, logger="nora.signal.send")
+    assert (await SignalSender(url).send(dm, "hi")).ok is False
+    other = SignalSender(url, dm_recipients=frozenset({ACI}))
+    assert (await other.send(dm, "hi")).ok is False
     assert rpc_server.calls == []
+    assert "85212345678" not in caplog.text
+
+
+async def test_a_dm_to_a_known_address_goes_to_the_recipient_not_a_group(rpc_server, caplog):
+    sender = SignalSender(
+        str(rpc_server.make_url("")).rstrip("/"), dm_recipients=frozenset({ACI}),
+    )
+    caplog.set_level(logging.INFO)
+    result = await sender.send(ConversationTarget("signal", ACI, "dm"), "hi")
+    assert result.ok is True
+    params = rpc_server.calls[0]["params"]
+    assert params == {"recipient": [ACI], "message": "hi"}
+    assert ACI not in caplog.text            # logged as "dm", not as the ACI
 
 
 # ── the platform's own sent-timestamp (design/11 §2.3, Bug B) ────────────────

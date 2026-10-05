@@ -671,3 +671,62 @@ def test_name_transcript_resolves_per_platform(tmp_path):
     persons = load_persons(_write(tmp_path, TOML))
     out = persons.name_transcript([_t_row(1, "+85212345678", "Miles")], platform="whatsapp")
     assert out[0].person_name is None
+
+
+# ── direct messages: addressed from identity.toml alone (operator rule 2026-10-05) ──
+
+_DIRECT_TOML = """
+[persons.miles]
+name = "Miles"
+[[persons.miles.signal]]
+phone = "+85212345678"
+uuid = "8185b8fa-359a-4c0a-c6ed-24814dc655bb"
+[[persons.miles.whatsapp]]
+phone = "+85212345678"
+lid = "60000000000001"
+
+[persons.ada]
+name = "Ada"
+[[persons.ada.signal]]
+phone = "+85287654321"
+[[persons.ada.whatsapp]]
+lid = "14924244741244"
+"""
+
+
+@pytest.fixture
+def direct(tmp_path):
+    p = tmp_path / "identity.toml"
+    p.write_text(_DIRECT_TOML)
+    return load_persons(p)
+
+
+def test_a_direct_target_prefers_the_aci_on_signal_and_the_phone_on_whatsapp(direct):
+    signal = direct.direct_target("signal", "miles")
+    assert (signal.conversation_id, signal.conversation_type) == (
+        "8185b8fa-359a-4c0a-c6ed-24814dc655bb", "dm",
+    )
+    assert direct.direct_target("signal", "ada").conversation_id == "+85287654321"
+    assert direct.direct_target("whatsapp", "miles").conversation_id == (
+        "85212345678@s.whatsapp.net"
+    )
+    assert direct.direct_target("whatsapp", "ada").conversation_id == "14924244741244@lid"
+
+
+def test_somebody_not_in_identity_toml_has_no_direct_target(direct):
+    assert direct.direct_target("signal", "stranger") is None
+    assert direct.direct_target("discord", "miles") is None
+
+
+def test_the_direct_addresses_are_every_account_in_the_file_and_nothing_else(direct):
+    assert direct.direct_addresses("signal") == {
+        "+85212345678", "8185b8fa-359a-4c0a-c6ed-24814dc655bb", "+85287654321",
+    }
+    assert direct.direct_addresses("whatsapp") == {
+        "85212345678@s.whatsapp.net", "60000000000001@lid", "14924244741244@lid",
+    }
+    # Every target `direct_target` builds is one the senders will accept.
+    for platform in ("signal", "whatsapp"):
+        for person in ("miles", "ada"):
+            target = direct.direct_target(platform, person)
+            assert target.conversation_id in direct.direct_addresses(platform)

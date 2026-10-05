@@ -66,13 +66,28 @@ async def test_a_200_without_a_timestamp_degrades_to_none(aiohttp_server):
     assert result == SendResult(ok=True, timestamp=None)
 
 
-async def test_a_dm_target_is_refused_without_an_http_call(bridge):
-    """1:1 is deny-by-default this phase — the same posture Signal v2 and
-    Discord v1 shipped with (design 02 §Open decisions)."""
+async def test_a_dm_to_a_jid_not_in_identity_toml_is_refused_without_an_http_call(bridge):
+    """Operator rule 2026-10-05: a 1:1 message goes only to somebody in
+    identity.toml. A sender handed no JIDs refuses every one; one handed some
+    refuses the rest."""
     dm = ConversationTarget("whatsapp", "85202411020@s.whatsapp.net", "dm")
-    result = await _sender(bridge).send(dm, "hi")
-    assert result.ok is False
+    assert (await _sender(bridge).send(dm, "hi")).ok is False
+    url = str(bridge.make_url("")).rstrip("/")
+    other = WhatsAppSender(url, dm_recipients=frozenset({"85250000000@s.whatsapp.net"}))
+    assert (await other.send(dm, "hi")).ok is False
     assert bridge.calls == []
+
+
+async def test_a_dm_to_a_known_jid_is_sent_to_that_jid(bridge, caplog):
+    jid = "85202411020@s.whatsapp.net"
+    url = str(bridge.make_url("")).rstrip("/")
+    caplog.set_level("INFO")
+    result = await WhatsAppSender(url, dm_recipients=frozenset({jid})).send(
+        ConversationTarget("whatsapp", jid, "dm"), "hi",
+    )
+    assert result.ok is True
+    assert bridge.calls == [("/send", {"jid": jid, "text": "hi"})]
+    assert "85202411020" not in caplog.text
 
 
 async def test_http_503_is_retryable_because_the_socket_reconnects(aiohttp_server):
