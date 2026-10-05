@@ -9,10 +9,11 @@ bridge answers 503 `{"error": "not_connected"}` while the WhatsApp socket is
 down, and a socket reconnecting is transient), where signal-cli's failures
 are not.
 
-1:1 sends are REFUSED — `conversation_type != "group"` logs an error and
-returns `SendResult(ok=False)` without an HTTP call. Deny-by-default this
-phase, exactly like Signal v2 and Discord v1: the DM-study session owns
-whether that posture changes (design/whatsapp-adoption/02 §Open decisions).
+A 1:1 send goes only to a JID in `dm_recipients` — the direct addresses of
+the people in `identity.toml` (`nora.persons.Persons.direct_addresses`). Any
+other 1:1 JID is refused without an HTTP call (operator rule 2026-10-05:
+Nora never messages somebody who is not in `identity.toml`), and a sender
+built without the set refuses every 1:1 send, as it did before.
 
 `mentions`/`styles`/`preview` are the port's DECORATION parameters
 (`nora.domain.ports.PlatformAdapter.send`'s own docstring: "a platform with
@@ -104,7 +105,11 @@ def _sent_timestamp(body: object) -> int | None:
 
 
 class WhatsAppSender:
-    def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self, base_url: str, *, timeout: float = 10.0,
+        dm_recipients: frozenset[str] = frozenset(),
+    ) -> None:
+        self._dm_recipients = dm_recipients
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
 
@@ -146,9 +151,16 @@ class WhatsAppSender:
         attachments: tuple[OutboundAttachment, ...] = (),
         request_id: str = "",
     ) -> SendResult:
-        if target.conversation_type != "group":
-            log.error("refusing to send to conversation_type=%r (1:1 is deny-by-default "
-                      "this phase)", target.conversation_type)
+        # Logs name a 1:1 chat "dm", never its JID: a phone number in a log
+        # line is an identifier at rest in a file the operator greps.
+        where = target.conversation_id
+        if target.conversation_type == "dm":
+            where = "dm"
+            if target.conversation_id not in self._dm_recipients:
+                log.error("refusing a direct message to a JID not in identity.toml")
+                return SendResult(ok=False)
+        elif target.conversation_type != "group":
+            log.error("refusing to send to conversation_type=%r", target.conversation_type)
             return SendResult(ok=False)
 
         if attachments:
@@ -167,19 +179,19 @@ class WhatsAppSender:
                 if i == 0 and text:
                     payload["caption"] = text
                 result = await self._post(
-                    "/send-media", payload, conversation_id=target.conversation_id,
+                    "/send-media", payload, conversation_id=where,
                 )
                 if not result.ok:
                     return result
             log.info("sent %d attachment(s) to %s (id=%s)",
-                     len(attachments), target.conversation_id, request_id)
+                     len(attachments), where, request_id)
             return result
 
         result = await self._post(
             "/send", {"jid": target.conversation_id, "text": text},
-            conversation_id=target.conversation_id,
+            conversation_id=where,
         )
         if result.ok:
             log.info("sent %d chars to %s (id=%s)",
-                     len(text), target.conversation_id, request_id)
+                     len(text), where, request_id)
         return result

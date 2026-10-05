@@ -1099,11 +1099,21 @@ def test_the_self_account_says_who_can_reach_the_web_view_and_who_cannot(
     # enforcement moves to a pre-commit concern; the gate's deletion is
     # tracked, the placeholder convention stays).
     assert "block.user_id === discordUserId" in allowlist
-    # ONE account kind decides it, on both sides of the gate. The day a second
-    # one is accepted, «not everyone in a room has one» weakens and this is what
-    # says so — the sentence is true because of this line, not in spite of it.
-    assert "session?.user?.discordId" in gate
+    # WHICH account kinds decide it. Until 2026-10-05 this pinned ONE (Discord),
+    # and said «the day a second one is accepted, this is what says so». It is
+    # that day: DEC-287 adds a one-time code sent to the person's own Signal or
+    # WhatsApp account. «Not everyone in a room has one» still holds, because
+    # both ways in end at the roster and nowhere else: Discord through the
+    # person's own `discord` block, a code only through a person_id Nora
+    # verified for an account the roster lists (`Persons.direct_target`). The
+    # set of kinds is pinned here so a third one is noticed the same way.
+    assert "user?.discordId" in gate and "user?.personId" in gate
+    assert "personById" in gate
     assert re.findall(r"person\.(\w+) \?\? \[\]", allowlist) == ["discord"]
+    persons = (ROOT / "nora" / "persons.py").read_text()
+    assert 'DIRECT_PLATFORMS = ("signal", "whatsapp")' in persons
+    auth = (ROOT / "app" / "src" / "auth.ts").read_text()
+    assert sorted(re.findall(r'account\?\.provider === "(\w+)"', auth)) == ["dev", "discord", "otp"]
 
 
 def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):

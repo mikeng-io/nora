@@ -22,7 +22,7 @@ def test_config_example_exists_and_parses():
     assert set(data) == {
         "agent",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
-        "analytics", "shortener", "compute", "computer",
+        "analytics", "shortener", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
         "notes", "culture", "standing", "music", "image_gen",

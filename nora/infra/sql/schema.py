@@ -4482,3 +4482,51 @@ DOCUMENT_STATE = sa.Table(
 IDX_DOCUMENT_STATE_LATEST = sa.Index(
     "idx_document_state_latest", DOCUMENT_STATE.c.document_id, DOCUMENT_STATE.c.id,
 )
+
+# `otp_challenge` / `otp_attempt` (migration `0097_otp`): one-time codes sent to a
+# person in a direct message (`nora.app.otp`). Both APPEND-ONLY: a challenge is never
+# updated, and what happened to it is the attempts recorded against it. A challenge
+# is spent once an attempt is `ok`, dead after `max_attempts` failed ones or past
+# `expires_at`, and superseded by a later challenge for the same person and purpose.
+# The code itself is never stored: `code_hash` is an HMAC-SHA256 under a server
+# secret, so these rows cannot be turned back into a code.
+OTP_CHALLENGE = sa.Table(
+    "otp_challenge",
+    METADATA,
+    sa.Column("challenge_id", pg.UUID(as_uuid=True), primary_key=True),
+    sa.Column("person_id", sa.Text, nullable=False),
+    sa.Column("purpose", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("code_hash", sa.Text, nullable=False),
+    sa.Column("issued_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("purpose IN ('sign_in', 'adopt')", name="ck_otp_challenge_purpose"),
+    sa.CheckConstraint(
+        "platform IN ('signal', 'whatsapp')", name="ck_otp_challenge_platform",
+    ),
+    sa.CheckConstraint("code_hash ~ '^[0-9a-f]{64}$'", name="ck_otp_challenge_code_hash"),
+    sa.CheckConstraint("expires_at > issued_at", name="ck_otp_challenge_expiry"),
+)
+IDX_OTP_CHALLENGE_PERSON = sa.Index(
+    "idx_otp_challenge_person",
+    OTP_CHALLENGE.c.person_id, OTP_CHALLENGE.c.purpose, OTP_CHALLENGE.c.issued_at,
+)
+
+OTP_ATTEMPT = sa.Table(
+    "otp_attempt",
+    METADATA,
+    sa.Column("id", sa.Integer, sa.Identity(always=False), primary_key=True),
+    # No foreign key, for the reason `documents` gives: a restore copies the
+    # append-only tables in no particular order.
+    sa.Column("challenge_id", pg.UUID(as_uuid=True), nullable=False),
+    sa.Column("ok", sa.Boolean, nullable=False),
+    sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=False),
+    _recorded_at(),
+)
+# One successful attempt per challenge, decided by Postgres: two requests carrying
+# the right code at the same moment cannot both sign in.
+UQ_OTP_ATTEMPT_OK = sa.Index(
+    "uq_otp_attempt_ok", OTP_ATTEMPT.c.challenge_id,
+    unique=True, postgresql_where=OTP_ATTEMPT.c.ok,
+)

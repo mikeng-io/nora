@@ -309,7 +309,7 @@ class IngestPipeline:
         # operator has not allowlisted is not recorded at all.
         with span("ingest.scope"):
             admitted = await scope_stage.run(
-                message=message, policy=self._allowlist, metrics=m
+                message=message, policy=self._allowlist, persons=self._persons, metrics=m,
             )
         if not admitted:
             # Ends here, and ENDS VISIBLY: without the attribute an unallowlisted

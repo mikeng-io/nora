@@ -67,4 +67,13 @@ GATE_SHADOW = "relevance-gate-shadow"
 #: an unknown string.
 SHADOW_AUDIENCES: tuple[str, ...] = (SHADOW, GATE_SHADOW)
 
-AUDIENCES: tuple[str, ...] = SPEAKING_AUDIENCES + SHADOW_AUDIENCES
+#: A one-time code sent to one person (`nora.app.otp`): a fixed template, no
+#: model, into a direct message. It goes through `deliver.build` so every guard
+#: and the audit-first write apply, and it never invokes an agent.
+ONE_TIME_CODE = "one-time-code"
+
+#: Audiences that send a fixed notice rather than speech: through
+#: `deliver.build`, never a model loop, and not review traffic either.
+NOTICE_AUDIENCES: tuple[str, ...] = (ONE_TIME_CODE,)
+
+AUDIENCES: tuple[str, ...] = SPEAKING_AUDIENCES + SHADOW_AUDIENCES + NOTICE_AUDIENCES

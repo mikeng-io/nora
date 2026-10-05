@@ -33,6 +33,7 @@ from .obs.health import build_health_app, serve
 from .obs.logging import heartbeat, setup_logging
 from .obs.tracing import build_sampler
 from .web.api import register_web_routes
+from .web.otp import register_otp_routes
 from .web.voice import register_voice
 
 PRUNE_INTERVAL_SECONDS = 300.0
@@ -166,6 +167,11 @@ class App:
             documents=deps.documents, rooms_of=deps.rooms_of, blobs=deps.blobs,
             room_label=deps.room_label,
         )
+        # One-time codes (`nora.app.otp`): mounted only when `[otp] enabled`,
+        # and then only behind the bearer token composition refused to start
+        # without.
+        if deps.otp is not None:
+            register_otp_routes(health_app, otp=deps.otp, api_token=deps.otp_api_token)
         # The voice channel's text entry point (design/voice-channel/, stage
         # 3): the wake service POSTs transcripts here, and they enter through
         # the dispatcher exactly like a typed Discord message — same adapter

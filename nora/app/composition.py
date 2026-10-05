@@ -90,6 +90,7 @@ from nora.app.memory_routing import (
     build_workspace_router,
     workspaces_of_person,
 )
+from nora.app.otp import OtpService
 from nora.app.source_health import AdapterHealthRecorder
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.subagent_wiring import build_subagent_backend
@@ -167,6 +168,7 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
 from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.participation_state import SqlParticipationStateStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
@@ -208,7 +210,7 @@ from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
-from nora.persons import Persons, PersonsError, load_persons
+from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError, load_persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.media import DiscordMediaSource
 from nora.platform.discord.music_manager import MusicPlayerManager
@@ -848,6 +850,23 @@ def _describe_max_bytes(cfg: Config) -> dict[str, int]:
     return resolved
 
 
+def _otp_secrets(cfg: Config) -> tuple[bytes, str]:
+    """The HMAC key and the API bearer token, checked at BOOT when `[otp]
+    enabled`, for `_computer_token`'s reason: an empty key would hash every
+    code under nothing, and an empty token would leave the sign-in endpoint
+    open to anything on the network. Refuse to start instead."""
+    values = []
+    for name in (cfg.otp.secret_env, cfg.otp.api_token_env):
+        value = os.environ.get(name, "").strip()
+        if not value:
+            raise StartupError(
+                f"[otp] enabled = true but {name} is unset or empty (the value "
+                "lives in .env, DEC-8); refusing to start"
+            )
+        values.append(value)
+    return values[0].encode(), values[1]
+
+
 def _computer_token(cfg: Config) -> str:
     """computerd's bearer token, checked at BOOT when `[computer] enabled`:
     the R-5 discipline (refuse to start rather than
@@ -1119,6 +1138,10 @@ class Dependencies:
     # for the span» must be answerable for the whole history, not only from
     # the day an operator flipped a flag.
     health_recorder: AdapterHealthRecorder | None = None
+    # One-time codes (`nora.app.otp`): `None` unless `[otp] enabled`, and then
+    # `nora/__main__.py` mounts `/app/v1/otp/*` behind `otp_api_token`.
+    otp: OtpService | None = None
+    otp_api_token: str = ""
 
 
 def wall_clock() -> datetime:
@@ -1645,6 +1668,9 @@ async def build_dependencies(
             voice_guild_ids=voice_guild_ids,
             resolve_music_channel=resolve_music_channel,
             instagram_summons=summons_inbox,
+            # A 1:1 message goes only to somebody in identity.toml (operator
+            # rule 2026-10-05); the senders hold this set and refuse the rest.
+            dm_recipients={p: persons.direct_addresses(p) for p in DIRECT_PLATFORMS},
         )
     except AdapterRegistryError as exc:
         raise StartupError(str(exc)) from exc
@@ -4019,6 +4045,19 @@ async def build_dependencies(
     except RuntimeError as exc:
         raise StartupError(str(exc)) from exc
 
+    otp: OtpService | None = None
+    otp_api_token = ""
+    if cfg.otp.enabled:
+        otp_secret, otp_api_token = _otp_secrets(cfg)
+        otp = OtpService(
+            store=SqlOtpStore(engine), persons=persons, adapters=dict(registry.adapters),
+            records=audit, doctrine_store=doctrine_store, canary=cfg.doctrine.canary,
+            metrics=metrics, secret=otp_secret,
+            ttl=timedelta(seconds=cfg.otp.ttl_seconds),
+            max_attempts=cfg.otp.max_attempts, max_per_hour=cfg.otp.max_per_hour,
+            max_per_day=cfg.otp.max_per_day,
+            clock=lambda: datetime.now(UTC),
+        )
     return Dependencies(
         audit=audit, memory=memory, persons=persons, metrics=metrics,
         media_join=media_join,
@@ -4079,6 +4118,8 @@ async def build_dependencies(
             log=SqlSourceHealthLog(engine), metrics=metrics,
             timeout_seconds=cfg.cognition.store_timeout_seconds,
         ),
+        otp=otp,
+        otp_api_token=otp_api_token,
     )
 
 

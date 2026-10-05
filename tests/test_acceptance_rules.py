@@ -562,6 +562,8 @@ RULE_TESTS = {
     # with the carrier armed and asserts the made-up link never reaches the adapter while the
     # rest of what she said does, and it is counted.
     "R-100": "test_a_reply_with_a_made_up_link_is_sent_without_it_and_counted",
+    # Nobody outside identity.toml is sent, or recorded from, a direct message.
+    "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
 }
 
 

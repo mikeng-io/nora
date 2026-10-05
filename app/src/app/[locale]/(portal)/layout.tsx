@@ -21,7 +21,9 @@ export default async function PortalLayout({
   if (check.status === "no-session") redirect(`/${locale}/login`);
   if (check.status === "denied") redirect(`/${locale}/login?denied=1`);
 
-  const viewer = { personId: check.personId, displayName: check.displayName, image: check.image };
+  const viewer = {
+    personId: check.personId, displayName: check.displayName, image: check.image, via: check.via,
+  };
   return (
     <ViewerProvider viewer={viewer}>
       <QueryProvider personId={check.personId}>

@@ -1997,3 +1997,34 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
         assert len(recorder.launched) == 1
     finally:
         await deps.background.cancel_all()
+
+
+@pytest.mark.parametrize("missing", ["secret_env", "api_token_env"])
+async def test_otp_refuses_to_start_without_both_secrets(cfg, monkeypatch, missing):
+    """DEC-287: `[otp] enabled` with the HMAC key or the API token unset
+    refuses to start. An empty key would hash every code under nothing; an
+    empty token would leave the sign-in routes open to the network."""
+    on = override_config(cfg, {"otp.enabled": True, "heartbeat.enabled": False})
+    monkeypatch.setenv(cfg.otp.secret_env, "k" * 32)
+    monkeypatch.setenv(cfg.otp.api_token_env, "t")
+    monkeypatch.delenv(getattr(cfg.otp, missing))
+
+    with pytest.raises(StartupError, match=getattr(cfg.otp, missing)):
+        await build_dependencies(on)
+
+
+async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
+    cfg, monkeypatch,
+):
+    """R-101's wiring: without `dm_recipients` reaching the adapter, every
+    direct message (every one-time code included) would be refused, quietly.
+    The fixture's identity.toml holds one Signal number, and that is the
+    whole set."""
+    on = override_config(cfg, {"otp.enabled": True, "heartbeat.enabled": False})
+    monkeypatch.setenv(cfg.otp.secret_env, "k" * 32)
+    monkeypatch.setenv(cfg.otp.api_token_env, "t")
+
+    deps = await build_dependencies(on)
+
+    assert deps.otp is not None and deps.otp_api_token == "t"  # noqa: S105 — the fixture's token
+    assert deps.registry.adapters["signal"]._sender._dm_recipients == frozenset({"+852111"})

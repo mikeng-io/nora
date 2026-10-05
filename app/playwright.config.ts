@@ -31,6 +31,8 @@ export default defineConfig({
       url: `http://localhost:${PORT}/en/login`,
       reuseExistingServer: true,
       timeout: 120_000,
+      // Turns the one-time code sign-in on against the mock (code-sign-in.spec.ts).
+      env: { NORA_OTP_API_TOKEN: "dev" },
     },
   ],
 });

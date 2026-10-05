@@ -66,6 +66,12 @@ CALLERS = {
     # and `tests/architecture/test_the_summons_writes_in_one_place.py` pins
     # the one call that publishes what it held.
     "nora/app/summons.py",
+    # DEC-287 (operator 2026-10-05) amends R-1b: a one-time code is a
+    # fourth sending path. A fixed template, no model, into a direct message
+    # to somebody in identity.toml only; it goes through `deliver.build` so
+    # every guard and the audit-first write still stand between it and the
+    # wire (`nora.app.otp`).
+    "nora/app/otp.py",
 }
 
 
@@ -126,7 +132,7 @@ def test_only_the_tag_path_and_the_fire_path_can_send():
         "the tag path's"
     )
     assert _modules_where(_is_deliver_build) == CALLERS, (
-        "the tag path, the fire path and the public summons are the only "
-        "senders; another caller of deliver.build is another way for Nora to "
-        "speak unprompted"
+        "the tag path, the fire path, the public summons and the one-time code "
+        "are the only senders; another caller of deliver.build is another way "
+        "for Nora to speak unprompted"
     )

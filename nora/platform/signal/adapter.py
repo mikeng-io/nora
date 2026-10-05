@@ -27,15 +27,21 @@ from .send import SignalSender
 class SignalAdapter:
     platform = "signal"
 
-    def __init__(self, base_url: str, account: str, *, metrics: MetricsSink) -> None:
+    def __init__(
+        self, base_url: str, account: str, *, metrics: MetricsSink,
+        dm_recipients: frozenset[str] = frozenset(),
+    ) -> None:
         """`metrics` is required, not optional with a null default: identity
         enrichment degrading uncounted is R-17's entire subject, and an optional
-        collaborator is how it stayed uncounted before."""
+        collaborator is how it stayed uncounted before.
+
+        `dm_recipients` is every direct address in `identity.toml`; the sender
+        refuses a direct message to anything else."""
         self._base_url = base_url
         self._account = account
         self._metrics = metrics
         self._listener = SignalListener(base_url)
-        self._sender = SignalSender(base_url)
+        self._sender = SignalSender(base_url, dm_recipients=dm_recipients)
         self._reactor = SignalReactor(base_url)
         self._identity: PlatformIdentity | None = None
 
