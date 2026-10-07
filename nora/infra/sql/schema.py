@@ -4543,3 +4543,81 @@ UQ_OTP_ATTEMPT_OK = sa.Index(
     "uq_otp_attempt_ok", OTP_ATTEMPT.c.challenge_id,
     unique=True, postgresql_where=OTP_ATTEMPT.c.ok,
 )
+
+# `lesson` / `lesson_revision` (migration `0100_lessons`): practice induced from the
+# outcomes of her acts, per unit (design/self-growth/40-lessons.md, L1). Both
+# APPEND-ONLY. A `lesson` row is an identity and never changes; every change to what
+# a lesson says or whether it is in force (reinforcing, rewording, retiring, an
+# operator's rollback) is one more `lesson_revision`, so the head is the highest
+# `seq` and nothing is overwritten or deleted. No foreign key between them, for the
+# reason `documents` gives. `retired_by` and `relearn_after` carry the operator's
+# "no re-learn": the newest Record id the lesson was learned from or that existed
+# when the operator retired it.
+LESSON = sa.Table(
+    "lesson",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_lesson_has_a_unit"),
+)
+IDX_LESSON_UNIT = sa.Index("idx_lesson_unit", LESSON.c.unit)
+
+#: The database ceiling on a lesson body, above the writer's cap
+#: (`nora.domain.lessons.LESSON_BODY_MAX_CHARS`) the way `CULTURE_BODY_CEILING_CHARS`
+#: is above `BODY_MAX_CHARS`: this number says "the row is corrupt".
+LESSON_BODY_CEILING_CHARS = 2_000
+
+LESSON_REVISION = sa.Table(
+    "lesson_revision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("lesson_id", pg.UUID(as_uuid=False), nullable=False),
+    sa.Column("seq", sa.Integer, nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("retired_by", sa.Text),
+    sa.Column("relearn_after", sa.BigInteger),
+    sa.Column("note", sa.Text),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("instruction_sha256", sa.Text),
+    sa.Column("model", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("seq >= 1", name="ck_lesson_revision_seq"),
+    sa.CheckConstraint("length(btrim(body)) > 0", name="ck_lesson_revision_has_a_body"),
+    sa.CheckConstraint(
+        f"length(body) <= {LESSON_BODY_CEILING_CHARS}", name="ck_lesson_revision_body_ceiling",
+    ),
+    sa.CheckConstraint(
+        "cardinality(citations) >= 1", name="ck_lesson_revision_cites_something",
+    ),
+    sa.CheckConstraint("state IN ('active', 'retired')", name="ck_lesson_revision_state"),
+    sa.CheckConstraint(
+        "(state = 'retired') = (retired_by IS NOT NULL)", name="ck_lesson_revision_retired_by",
+    ),
+    sa.CheckConstraint(
+        "retired_by IS NULL OR retired_by IN ('session', 'operator')",
+        name="ck_lesson_revision_retired_by_who",
+    ),
+    sa.CheckConstraint(
+        "(retired_by = 'operator') = (relearn_after IS NOT NULL)",
+        name="ck_lesson_revision_relearn_after",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0", name="ck_lesson_revision_names_its_writer",
+    ),
+    sa.CheckConstraint(
+        "instruction_sha256 IS NULL OR instruction_sha256 ~ '^[0-9a-f]{64}$'",
+        name="ck_lesson_revision_instruction_sha256",
+    ),
+)
+# One revision per (lesson, seq), decided by Postgres: two writers appending to one
+# lesson at the same moment cannot both take the next `seq`.
+UQ_LESSON_REVISION_SEQ = sa.Index(
+    "uq_lesson_revision_seq", LESSON_REVISION.c.lesson_id, LESSON_REVISION.c.seq, unique=True,
+)

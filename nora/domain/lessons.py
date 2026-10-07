@@ -1,0 +1,212 @@
+"""A lesson: practice induced from the outcomes of many of her acts, kept per
+unit as a revision chain (design/self-growth/40-lessons.md, step L1).
+
+The types and the pure checks. Nothing here touches a store, a model or a
+clock: `check_lesson` is handed everything it judges, so every refusal is
+testable without a database. The verbs that apply it are
+`nora.language.lesson_book.LessonBook`; the table is
+`nora.infra.sql.lessons.SqlLessonStore`.
+
+**One lesson is one chain of revisions, never overwritten and never deleted.**
+Reinforcing, rewording and retiring a lesson each append a revision; the head
+(the highest `seq`) is what it says now. A retirement is a revision whose
+`state` is `retired`, so an operator's rollback is one more revision that
+copies an earlier one back (the same shape as Character's chain, DEC-183, but
+a lesson, unlike an account, does retire: practice that stopped being true
+must be able to stop being rendered).
+
+**What a write must clear** (`check_lesson`), each a `LESSON_REFUSALS` reason
+the model reads with a `detail` saying what to do instead:
+
+- the citation check, reused from `character_revise` (`check_revision`): at
+  least one citation, each a Record id or `response:<n>` episode the session
+  was handed, and not only her own sends (the echo rule on evidence);
+- the identifier screen (R-18/R-28), the Dreamer's own predicate;
+- the doctrine echo and the lesson echo (`echoes`, defined once, below);
+- no re-learn: an operator's retirement is not undone by the same outcomes;
+- the cap, per lesson and per unit.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+
+from nora.domain.culture import Citable, Refusal, check_revision
+
+__all__ = [
+    "ECHO_COVERAGE",
+    "ECHO_GRAM",
+    "LESSON_BODY_MAX_CHARS",
+    "LESSON_MAX_ACTIVE",
+    "LESSON_REFUSALS",
+    "LESSON_UNIT_MAX_CHARS",
+    "Lesson",
+    "LessonRevision",
+    "check_lesson",
+    "echoes",
+    "evidence_ceiling",
+]
+
+#: **Sizing, stated as what it is.** The design starts a unit at about 800
+#: tokens ([40](design/self-growth/40-lessons.md) §4), and
+#: `50-readback-and-sizing.md` measures no lesson, so there is nothing to size
+#: from: no lesson has ever been written. 800 tokens is about 700 characters of
+#: the dense Cantonese this deployment writes (`OUTPUT_TOKENS_PER_CHAR`, 1.15),
+#: which is two lessons. These are about three times that, on purpose: a cap is
+#: a refusal threshold, never a reservation (`BODY_MAX_CHARS`' history, a 55%
+#: refusal rate on a cap that sat inside the emission range), and a cap that
+#: refuses the second lesson would teach her nothing. The lessons block is
+#: prefill on every turn, so L5's before/after measure is what tightens it.
+#: Re-size on the first month of lessons that exist, never on one sample.
+LESSON_BODY_MAX_CHARS = 400
+
+#: Active lessons a unit holds at once, and the characters they hold together.
+LESSON_MAX_ACTIVE = 12
+LESSON_UNIT_MAX_CHARS = 2_400
+
+#: The echo test, defined once. Both texts are NORMALISED (case-folded, every
+#: character that is not a letter or digit dropped, so spacing, punctuation and
+#: a re-wrap change nothing, and CJK, whose characters are letters, is kept),
+#: then cut into overlapping runs of `ECHO_GRAM` characters. A lesson ECHOES a
+#: text when at least `ECHO_COVERAGE` of the lesson's runs also occur in that
+#: text: it adds almost nothing the text did not already say. Five characters is
+#: a phrase in Cantonese and a word or two in English, so a lesson that merely
+#: quotes a rule (or a sibling lesson) is caught and one that shares a topic
+#: word is not. A lesson shorter than one run is compared whole.
+#:
+#: This is a restatement test, not a contradiction test: a lesson that CONTRADICTS
+#: law shares no runs with it and is the doctrine check's job (L3).
+ECHO_GRAM = 5
+ECHO_COVERAGE = 0.8
+
+#: Why one `lesson_write` or `lesson_retire` call was refused, as the `reason`
+#: the model reads. The first five are `check_revision`'s, unchanged:
+#: `empty`, `uncited`, `unresolved_citation`, `echo` (every citation her own
+#: send), `thin_evidence` (unused here: `min_episodes` is 0), and
+#: `too_long` (this module's own, per lesson).
+LESSON_REFUSALS = frozenset({
+    "empty", "too_long", "uncited", "unresolved_citation", "echo", "thin_evidence",
+    "identifier", "coordinate",
+    "echoes_doctrine", "echoes_lesson", "relearn", "cap",
+    "unknown_lesson", "not_active",
+})
+
+
+@dataclass(frozen=True, slots=True)
+class LessonRevision:
+    """One revision of one lesson. `seq` counts from 1 and is the chain: the
+    head is the highest."""
+
+    id: str
+    lesson_id: str
+    seq: int
+    body: str
+    #: Record message ids (`"4812"`) and `response:<send id>` episodes, as
+    #: `check_revision` accepted them.
+    citations: tuple[str, ...]
+    #: `active`, or `retired` (then `retired_by` names who).
+    state: str
+    retired_by: str | None
+    #: Set on an OPERATOR retirement alone: the newest Record id the lesson was
+    #: learned from or that existed when the operator retired it. A new lesson
+    #: whose evidence is all at or below it is a re-learn (`check_lesson`).
+    relearn_after: int | None
+    #: Why this revision exists, in a sentence (a retirement's reason, a
+    #: rollback's target). Free text, never rendered to a model.
+    note: str | None
+    written_at: int
+    established_by: str
+    instruction_sha256: str | None = None
+    model: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Lesson:
+    """A lesson and its head revision."""
+
+    id: str
+    unit: str
+    created_at: int
+    head: LessonRevision
+
+    @property
+    def active(self) -> bool:
+        return self.head.state == "active"
+
+
+def _grams(text: str) -> frozenset[str]:
+    norm = "".join(ch for ch in text.casefold() if ch.isalnum())
+    if len(norm) <= ECHO_GRAM:
+        return frozenset({norm}) if norm else frozenset()
+    return frozenset(norm[i:i + ECHO_GRAM] for i in range(len(norm) - ECHO_GRAM + 1))
+
+
+def echoes(lesson: str, other: str) -> bool:
+    """Whether `lesson` restates `other` (see `ECHO_GRAM`, `ECHO_COVERAGE`)."""
+    mine = _grams(lesson)
+    if not mine:
+        return False
+    return len(mine & _grams(other)) / len(mine) >= ECHO_COVERAGE
+
+
+def _ids(citations: Iterable[str]) -> list[int]:
+    return [int(m.group()) for c in citations if (m := re.search(r"\d+", c)) is not None]
+
+
+def evidence_ceiling(citations: Iterable[str]) -> int:
+    """The newest Record id among `citations` (0 when none): an episode is
+    `response:<her send's id>`, a message is its id, and both are Record ids."""
+    return max(_ids(citations), default=0)
+
+
+def check_lesson(
+    *, body: str, citations: tuple[str, ...], citable: Citable,
+    law: Sequence[str], active: Sequence[Lesson], retired_by_operator: Sequence[Lesson],
+    replacing: Lesson | None,
+) -> Refusal | None:
+    """`None` when this lesson may be written, else why not.
+
+    `active` is the unit's active lessons now and `replacing` the one this write
+    revises (`None`: a new lesson). `retired_by_operator` is every lesson whose
+    head is an operator retirement (`LessonRevision.relearn_after`). The
+    identifier screen is the caller's (it is the Dreamer's predicate and this
+    module is pure); it runs before this.
+    """
+    text = body.strip()
+    if not text:
+        return Refusal("empty", "the lesson is empty; say what to do differently, or "
+                       "do not write one")
+    if len(text) > LESSON_BODY_MAX_CHARS:
+        return Refusal("too_long", f"the lesson is {len(text)} characters, past the "
+                       f"{LESSON_BODY_MAX_CHARS} cap; one practice, said short")
+    refused = check_revision(body=text, citations=citations, citable=citable)
+    if refused is not None:
+        return refused
+    for rule in law:
+        if echoes(text, rule):
+            return Refusal("echoes_doctrine", "this restates a law you already carry; a "
+                           "lesson is what the law leaves open. Write what is different "
+                           "in this unit, or write nothing")
+    others = [lesson for lesson in active if replacing is None or lesson.id != replacing.id]
+    for lesson in others:
+        if echoes(text, lesson.head.body):
+            return Refusal("echoes_lesson", f"this restates lesson {lesson.id} you already "
+                           "hold; reinforce that one (pass its id) instead of writing it twice")
+    if replacing is None:
+        newest = evidence_ceiling(citations)
+        for lesson in retired_by_operator:
+            floor = lesson.head.relearn_after or 0
+            if newest <= floor:
+                return Refusal("relearn", f"the operator retired lesson {lesson.id}, and "
+                               "everything you cite is no newer than that; a lesson the "
+                               "operator removed is only learned again from outcomes after it")
+    held = sum(len(lesson.head.body) for lesson in others)
+    if replacing is None and len(others) >= LESSON_MAX_ACTIVE:
+        return Refusal("cap", f"the unit holds {len(others)} lessons, the most it may; "
+                       "retire one (`lesson_retire`) or reinforce one before writing another")
+    if held + len(text) > LESSON_UNIT_MAX_CHARS:
+        return Refusal("cap", f"the unit's lessons would hold {held + len(text)} characters, "
+                       f"past the {LESSON_UNIT_MAX_CHARS} cap; retire or shorten one first")
+    return None
