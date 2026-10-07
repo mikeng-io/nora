@@ -251,13 +251,6 @@ class App:
             # natural key makes the append idempotent), slow, expensive, and it
             # looks exactly like a bug. Racing the loop against its own seeding
             # would leave which one won up to the scheduler.
-            if deps.character_heads_seed is not None:
-                # BEFORE the loop, for `seed_watermarks`' reason: a person key
-                # that wakes before its account was moved would write its first
-                # revision from nothing (`nora.app.character_heads`).
-                moved = await deps.character_heads_seed()
-                if moved:
-                    log.info("character: moved %d person account(s) to unit keys", moved)
             await runtime.seed_watermarks(
                 deps.language_store, deps.dream_adaptors,
                 # The schedules, so an adaptor can ask to seed at the RECORD

@@ -1333,9 +1333,9 @@ async def test_the_culture_adaptor_is_wired_with_its_grant_and_its_OWN_room(
 async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_path):
     """The property the grant exists for, measured at the seam rather than
     inferred from it: `RegistryToolSource.build` with the culture adaptor's own
-    name, key and grant returns the room-scoped verbs — including `where_been`,
-    which was in no adaptor's grant at all before this — over a room with a
-    real platform rather than the empty one.
+    name, key and grant returns the room-scoped verbs (`group_members`,
+    `ask_memory`; the presence verbs left the grant on 2026-10-07) over a room
+    with a real platform rather than the empty one.
 
     Without the scope-keyed resolution this returns the same NAMES built
     against `Room(platform="", roster_source=None)`, which is why the room is
@@ -1374,7 +1374,7 @@ async def test_the_granted_verbs_are_actually_BUILT_for_a_culture_key(cfg, tmp_p
         getattr(t, "tool_name", None) or getattr(t, "__name__", "") for t in built
     }
     assert names == set(culture.tools), sorted(set(culture.tools) - names)
-    assert "where_been" in names and "ask_memory" in names
+    assert "group_members" in names and "ask_memory" in names
     room = captured["room"]
     assert room.platform == "signal", "the verbs were built over the EMPTY room"
     assert room._roster_source is not None, "no roster: every verb is unavailable"
@@ -1939,7 +1939,6 @@ async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
     person = deps.dream_schedules["character-person"]
     assert person.wake_batch == 100
     assert person.min_interval_seconds == deps.dream_schedules["culture"].min_interval_seconds
-    assert deps.character_heads_seed is not None
     for adaptor in deps.dream_adaptors:
         assert adaptor.tools <= ceiling, adaptor.name
 

@@ -37,12 +37,13 @@ conversation_id = :key` in our own Postgres, hard-scoped by construction — is
 the batch. Beside it: the account written last time, the room's own `standing`
 (what her position here actually IS, rather than what a transcript implies), the
 note index (what the room has OPEN), the operator's description of the room, and
-nine read verbs through `CULTURE_TOOLS`. **The point is the join.** The
-transcript can say two people talked about going out for 宵夜; `where_been` can
-say three others were co-located that Saturday, so it was the group; `online_now`
-can say a fourth was at home gaming. The culture is not "those two eat late", it
-is "this group goes out on Saturdays, and that one stays home" — and no single
-store holds that (`design/dreamer-agent-loop/03-no-agent-loop §7.2`). Until
+seven read verbs through `CULTURE_TOOLS`. **The point is the join.** The
+transcript can say two people talked about going out for 宵夜; memory can say
+what the room has done before, the roster who a handle is. The two presence
+verbs that made `03-no-agent-loop §7.2`'s worked example (who was co-located,
+who was at home gaming) are withdrawn since 2026-10-07, because a room's culture
+now feeds accounts that render in rooms with other `location` flags (see
+`CULTURE_TOOLS`). Until
 2026-09-17 this adaptor shipped `tools = frozenset()` and rendered two things,
 so it was asked for a join and handed one table: §7.1's tautology, which passes
 every gate the runtime owns because a restated input leaves a row and a row is
@@ -196,26 +197,18 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # room's own nicknames («@熱咖啡☕少奶多糖») resolve against an index and
     # not against more occurrences of the same handle.
     "about", "lookup_person", "group_members",
-    # PRESENCE ANALYTICS — the operator's worked example, and the verb this
-    # grant exists for. The transcript shows two people talking about 宵夜;
-    # `where_been` shows three of them were co-located that Saturday, so it was
-    # the group. The conclusion is a property of the JOIN and no single store
-    # holds it (`03-no-agent-loop §7.2`). **It was in NO adaptor's grant at all
-    # before this** — presence analytics was closed to every Dreamer, which is
-    # why §7.2's example could be written and not run.
-    "where_been",
-    # LIVE STATE — the other half of that example: who is around, and doing
-    # what INSTEAD. Granted to the proactive adaptor on 2026-09-15 because of a
-    # measured live failure of exactly this shape
-    # (`nora/language/proactive.py:153-161`, design/online-status/04, #248): a
-    # note saying a member was unwell and wanted the evening off was raised
-    # into the home room while the group was mid-game, "because nothing in the
-    # turn could observe the state contradicting the note". A culture account
-    # inferring a habit from a transcript has the same blind spot one clock
-    # tick wider. Its input domain here is THIS ROOM's own roster — the
-    # widened decide-turn union is bound only for a unit-keyed build
-    # (`RegistryToolSource.build`).
-    "online_now",
+    # PRESENCE IS OUT (`where_been`, `online_now`), since the security review
+    # of design/self-growth C2-C3, 2026-10-07. They were granted 2026-09-17
+    # for the join `03-no-agent-loop §7.2` describes (who was co-located that
+    # Saturday) and used once in 14 days (50 §3.4: `where_been` 1,
+    # `online_now` 0). A room's culture is now INPUT to accounts that render
+    # beyond its room: every person session of the unit and the unit's own
+    # account read it, and those render in rooms whose `location` flags and
+    # DisclosureGuard outcomes differ. Accounts are prose with no sections
+    # (DEC-184), so nothing could drop a presence-derived line at render, and
+    # `[lineage]` is off by ruling. The rule that cannot leak is that no
+    # Character account rests on a presence read at all (R-31). Upgrade path:
+    # sectioned accounts with per-section presence lineage (10-tiers §3).
     # THE OPEN INTERNET — `01-the-adaptor §2`: these earn their place BECAUSE
     # the pass is slow (days, DEC-288). When a room leans on a reference nobody explains — a
     # game, a meme, a place — the loop can find out what it is, so the account
@@ -387,7 +380,7 @@ class CultureAdaptor(EntitySessions):
     #: Unread: this adaptor answers through `verbs`, never an envelope
     #: (`DreamerRuntime._sample`). Kept because `DreamAdaptor` declares it.
     envelope_key = "account"
-    #: NINE READ VERBS — see `CULTURE_TOOLS` for what each is for and what is
+    #: SEVEN READ VERBS — see `CULTURE_TOOLS` for what each is for and what is
     #: deliberately absent. `frozenset()` until 2026-09-17, which made this an
     #: objective asked for a join and handed one table.
     tools: frozenset[str] = CULTURE_TOOLS

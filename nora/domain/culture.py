@@ -444,8 +444,13 @@ def character_key(unit: str, person_id: str) -> str:
     `primary_id` carries no `#character:`), and nothing scans the table for
     every key. Until C2b the first half was the ROOM's `primary_id` (one
     account per person per room, DEC-278); those keys stay in the store
-    (nothing here retires, DEC-183) and are read by nothing but the one-time
-    move to these (`nora.app.character_heads.seed_unit_person_heads`).
+    (nothing here retires, DEC-183) and nothing reads them. They are NOT
+    copied to the unit key: an account written from one room's messages (and
+    possibly a presence read there) would then render in every room of the
+    unit that lists the person, a wider disclosure than it was written for.
+    Each person's unit account is written fresh by their first session, which
+    wakes on the first tick (a key never run has an infinitely old watermark
+    and a person with an old account has posted).
     """
     return f"{unit}#character:{person_id}"
 

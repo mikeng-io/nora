@@ -1877,7 +1877,7 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 max_tokens = 6000
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
-# adaptor stopped being tool-free: it now holds nine read verbs through an
+# adaptor stopped being tool-free: it now holds seven read verbs through an
 # `AdaptorGrant`, so its loop can spend turns researching before it writes, and
 # the field defaults (6 turns / 40,000 total) were sized for a pass that made
 # one model call and stopped.

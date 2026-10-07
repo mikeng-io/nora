@@ -28,11 +28,11 @@
     "target": "tests/unit/test_culture_adaptor.py -k declares_the_tools"
   },
   {
-    "name": "part 2a: where_been drops out of the grant",
+    "name": "R-31: a presence read comes back into the room fold's grant",
     "file": "nora/language/culture.py",
-    "old": "    \"where_been\",\n",
-    "new": "    \"who_said\",\n",
-    "target": "tests/unit/test_culture_adaptor.py -k the_join_the_operators_example"
+    "old": "    \"about\", \"lookup_person\", \"group_members\",\n",
+    "new": "    \"about\", \"lookup_person\", \"group_members\", \"where_been\",\n",
+    "target": "tests/unit/test_culture_adaptor.py -k no_presence_read_reaches"
   },
   {
     "name": "part 2a: a situational verb slips in",

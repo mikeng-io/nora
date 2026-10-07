@@ -5,11 +5,11 @@
     "A person's account is written by its own background pass from what they said across all of the group's rooms, about every 100 messages or weekly; it is shown in that group's rooms that list them.",
     "The pass may ask her memory about the person, but the account no longer depends on a memory answer fetched beforehand.",
     "She also keeps an account of each group as a whole, written from her accounts of its rooms when they change, and reads it in that group's rooms after the room's own.",
-    "Accounts that existed per room were carried over to the group's account on first start, the newest one for each person.",
+    "Accounts that existed per room are not carried over, because one room's account would then be shown in every room of the group; each person's group account is written fresh shortly after start.",
     "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried rather than spent."
   ],
   "limitations": [
     "A citation is per account, not per sentence: the check proves an account rests on real messages, not that each line does.",
-    "A person's pass does not read presence (where people were), because the account is shown in rooms whose location settings differ."
+    "No account reads presence (where people were or what they are doing now), the room's own included, because these accounts are shown in rooms whose location settings differ."
   ]
 }

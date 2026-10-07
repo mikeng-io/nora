@@ -480,8 +480,8 @@ def culture_grant() -> AdaptorGrant:
     `home_room=True` on a SCOPE-keyed adaptor resolves the adaptor's own
     conversation rather than a chosen one (`AdaptorGrant.home_room`,
     `RegistryToolSource.build`). Without it every room-scoped read the
-    adaptor declares — `ask_memory`, `about`, `group_members`, `where_been`,
-    `online_now` — answers `unavailable` off the empty `Room`, so the grant
+    adaptor declares — `ask_memory`, `about`, `group_members`, `lookup_person`,
+    `search_memory` — answers `unavailable` off the empty `Room`, so the grant
     is the difference between a declared tool set and a reachable one
     (`design/dreamer-agent-loop/03-no-agent-loop §7.4`).
 

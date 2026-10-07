@@ -693,12 +693,13 @@ def test_every_granted_verb_is_inside_the_dreamers_READ_ONLY_ceiling():
     assert outside == set(), f"granted verb(s) outside the ceiling: {outside}"
 
 
-def test_the_join_the_operators_example_needs_is_actually_granted():
-    """`03-no-agent-loop §7.2`: the transcript carries the intent, presence
-    carries who was actually there, live state carries who was elsewhere — and
-    the conclusion is a property of the JOIN. `where_been` was in no adaptor's
-    grant at all before this, so the example could be written and not run."""
-    assert {"where_been", "online_now"} <= CULTURE_TOOLS
+def test_no_presence_read_reaches_a_rooms_culture():
+    """R-31, since the security review of C2-C3 (2026-10-07): a room's culture
+    is input to the unit's person and unit accounts, which render in rooms
+    whose `location` flags differ, and an account is prose with nothing to
+    drop at render. So no Character account may rest on a presence read, and
+    the room fold holds none."""
+    assert CULTURE_TOOLS.isdisjoint({"where_been", "online_now", "where_is"})
 
 
 def test_the_situational_verbs_and_a_second_read_of_its_own_room_stay_OUT():

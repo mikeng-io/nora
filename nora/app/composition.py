@@ -60,7 +60,6 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
-from nora.app.character_heads import seed_unit_person_heads
 from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
@@ -1179,10 +1178,6 @@ class Dependencies:
     # `None` under `[cognition] enabled = false`, the shipped default. The
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
-    #: The one-time move of per-room person accounts to per-unit keys
-    #: (`nora.app.character_heads`), awaited before the dream loop starts;
-    #: `None` while `[culture]` or `[dreamer]` is off.
-    character_heads_seed: Callable[[], Awaitable[int]] | None = None
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker (design/subagent): `None` under `[subagent] enabled = false`, the
@@ -3600,9 +3595,6 @@ async def build_dependencies(
     # tier's passes were deleted 2026-10-03, DEC-277): `dream_loop` with an
     # empty tuple ticks the cursor and runs nothing.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
-    #: The one-time move of person accounts to unit keys, awaited by
-    #: `nora.__main__` before the dream loop starts (`nora.app.character_heads`).
-    character_heads_seed: Callable[[], Awaitable[int]] | None = None
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
     # ONE schedule-state store, shared by the loop's slots and
@@ -3793,11 +3785,6 @@ async def build_dependencies(
                     keys=unit_keys, metrics=metrics,
                 ),
             )
-
-            async def _seed_character_heads() -> int:
-                return await seed_unit_person_heads(culture=culture_store, keys=person_keys)
-
-            character_heads_seed = _seed_character_heads
 
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
@@ -4208,7 +4195,6 @@ async def build_dependencies(
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
         dream_schedule_clock=dream_schedule_clock,
-        character_heads_seed=character_heads_seed,
         revisions=SqlRevisionStore(engine),
         unit_scopes=unit_scopes,
         events=events,
