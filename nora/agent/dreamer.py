@@ -758,7 +758,7 @@ def tool_subset_faults(
         # check); no DreamAdaptor holds them, however its tools were derived.
         faults.append(
             f"Dreamer adaptor {adaptor.name!r} declares Cognition-only tools: "
-            f"{', '.join(sorted(loop_only))}. `rollup_read` and `standing_read` "
+            f"{', '.join(sorted(loop_only))}. {', '.join(sorted(DREAMER_LOOP_TOOLS))} "
             f"belong to the Cognition session's own surface, not to an adaptor."
         )
     if adaptor.key_kind == "unit" and not allowance.home_room:

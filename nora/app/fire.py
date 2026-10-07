@@ -86,6 +86,7 @@ from nora.agent.tools import turn_occasion
 from nora.doctrine.loader import DoctrineStore
 from nora.domain import audience as audience_names
 from nora.domain.blocks import RowStyle, render_rows
+from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision, unit_culture_key
@@ -364,6 +365,11 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
     turn. She may still decline: `SILENT` is reachable for this kind (D12).
     """
     row = rows[0]
+    # The brief's intent. Rows before 2026-10-03 hold free text here, so only exactly tell/ask
+    # counts; a batch that asks anything is an ask, since one answer is then expected.
+    intents = {
+        r.payload.get("intent") for r in rows if isinstance(r.payload, Mapping)
+    } & set(INTENTS)
     return Event(
         platform=row.platform,
         conversation_id=row.conversation_id,
@@ -372,6 +378,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
         body=RequestBody(tuple(r.text for r in rows)).render(),
         header=lambda tagger, now: ProactiveHeader(tuple(rows)).render(),
         kind="proactive",
+        intent="ask" if "ask" in intents else "tell" if intents else None,
     )
 
 
@@ -1790,6 +1797,7 @@ class FirePath:
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 param_names=self._registry.tool_param_names(),
                 audience=audience,
+                intent=occasion.intent,
                 cacheable_tools=self._registry.cacheable_tools(),
                 tool_call_log_store=self._tool_call_log_store,
                 reasoning_strip_store=self._reasoning_strip_store,

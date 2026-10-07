@@ -103,10 +103,15 @@ and line quoted, the evidence cited, and what the lesson would have said.
 - **Drift toward engagement.** She learns whatever earns reactions
   (`design/cognition-loop/80-prior-art.md` §4). The cap, decay, rollback and
   the Assess pass push against it.
-- **"Expected an answer" is thin.** Only a structured mention today; the
-  brief's `ask` intent on a send is still NULL
-  (`design/cognition-loop/25-rollup.md` §3). Until it is recorded, `silent` is
-  under-counted. Recording it is a prerequisite worth its own PR.
+- **"Expected an answer" is thin.** A structured mention, or since L0 a
+  fire turn whose brief was `ask` (its last part only). Tag replies carry no
+  brief, and on 2026-10-07 no proactive reminder had been created since the
+  Cognition cut-over, so `silent` stays rare until tag replies say whether
+  they expect an answer (a reply-tool change, the operator's call).
+- **An unquoted answer is invisible.** A response counts only as a quote, a
+  reaction or an edit of a reply; a member answering without quoting her is
+  not attached to her send, so an expected answer given that way reads as
+  `silent`. Measure how often before Lessons trusts `silent`.
 - **A labelled set before going live**, including lessons that would loosen
   law, which must become tension rows. The largest single effort here.
 
@@ -114,7 +119,7 @@ and line quoted, the evidence cited, and what the lesson would have said.
 
 | PR | content | check |
 |---|---|---|
-| L0 | record the brief's `ask` intent on each send; ships beside C1, not after Character, because the data needs weeks to accumulate | `silent` counted on expected asks |
+| L0 | done (#740): a fire turn's brief intent rides on its sends' `raw_json`, the turn's last send carries it | `silent` counted on expected asks |
 | L1 | `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, echo and cap checks; CLI rollback | write, cap refusal, rollback and no re-learn, in tests |
 | L2 | the Lessons adaptor, its objective and its wake (batch, stale, horizon) | wakes at threshold only; a session writes or closes |
 | L3 | the doctrine-check instrument on the law subset; tension rows, operator-only | a labelled set of loosening lessons all refused and written as tension |

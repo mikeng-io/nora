@@ -1724,10 +1724,16 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     ))
     assert "record_query" not in off.cognition_runner._read_only_tools
     assert "record_query" in on.cognition_runner._read_only_tools
+    # `character_read` follows `[culture] enabled` the same way (self-growth C4).
+    with_culture = await build_dependencies(override_config(
+        cfg, {**_SESSION_ON, "culture.enabled": True},
+    ))
+    assert "character_read" not in off.cognition_runner._read_only_tools
+    assert "character_read" in with_culture.cognition_runner._read_only_tools
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
-    assert not {"memo_read", "character_read", "social_items"} & wired  # not built yet
+    assert not {"memo_read", "social_items"} & wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
     names = {t.tool_name for t in built}

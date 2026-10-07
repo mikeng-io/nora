@@ -283,6 +283,9 @@ class RoomFacts:
     #: The operator's `policy.toml` label, or `""`: what a read tool calls
     #: the room to her (never an id, R-18).
     label: str = ""
+    #: The `culture` store's key for this room (`Conversation.primary_id`), or
+    #: `""` for a room built without one. Never shown to a model (R-18).
+    primary_id: str = ""
 
     def is_room(self, ref: str | None) -> bool:
         """Whether `ref`, a room key or a bare conversation id, names this

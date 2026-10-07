@@ -2842,6 +2842,8 @@ async def build_dependencies(
         # flag: no tag path is offered either.
         rollup=SqlRollupRead(engine),
         standing_head=standing_store,
+        # `character_read` (self-growth C4): withheld while `[culture]` is off.
+        culture=culture_reader,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
@@ -4014,7 +4016,10 @@ async def build_dependencies(
             # `[dreamer] enabled`), and write through the tag path's stores.
             surface = read_surface(
                 read_only=dream_tools.read_only(),
-                enabled_flags={"record_query.enabled"} if cfg.record_query.enabled else (),
+                enabled_flags=(
+                    *(("record_query.enabled",) if cfg.record_query.enabled else ()),
+                    *(("culture.enabled",) if cfg.culture.enabled else ()),
+                ),
             )
             log.info(
                 "cognition sessions: read tools wired=%s missing=%s withheld=%s",
