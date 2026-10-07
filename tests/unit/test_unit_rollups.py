@@ -270,7 +270,7 @@ def test_silence_is_only_called_when_an_answer_was_expected_and_the_room_was_up(
     assert (up[10].outcome, up[11].outcome, up[12].outcome) == ("unanswered", "silent", "silent")
     down = _respond([named], [], as_of=after, up=False)
     assert down[11].outcome == "unknown"  # an outage is not silence (R-27)
-    assert up[10].intent is None  # not recorded until step 3
+    assert up[10].intent is None  # no intent recorded: never read as `tell`
 
 
 # -- healthy sources (D3) ---------------------------------------------------
