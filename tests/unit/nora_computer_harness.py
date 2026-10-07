@@ -32,7 +32,8 @@ _SBX = r"""#!/bin/bash
 # A stub sbx. State lives in $STUB_DIR; every call is logged to calls.log.
 echo "sbx $*" >> "$STUB_DIR/calls.log"
 allowed="$STUB_DIR/allowed"
-touch "$allowed"
+denied_store="$STUB_DIR/denied"
+touch "$allowed" "$denied_store"
 case "$1 $2 $3" in
   "policy check network")
       shift 3
@@ -58,18 +59,47 @@ case "$1 $2 $3" in
         empty-exit-1)      exit 1 ;;
         crash)             echo "panic: policy daemon went away" >&2; exit 137 ;;
       esac
-      if grep -qxF "$target" "$allowed"; then
-          verdict Allowed "$target" ""; exit 0
-      else
-          denied; exit 1
-      fi ;;
+      # Decided like sbx 0.46.0 (measured on norty 2026-10-07): a deny rule
+      # whose CIDR holds the target's host wins, but ONLY when that host is an IP
+      # literal (a NAME is never CIDR-checked: the accepted limit, design
+      # browser-runtime S1 step 4); otherwise `**` or the exact target allowed
+      # is Allowed, and anything else is the default deny.
+      decision=$(python3 - "$target" "$allowed" "$denied_store" <<'PY'
+import ipaddress, sys
+target, allowed, denied = sys.argv[1:4]
+host = target.rsplit(":", 1)[0].strip("[]")
+allows = open(allowed).read().split()
+try:
+    ip = ipaddress.ip_address(host)
+except ValueError:
+    ip = None
+if ip is not None:
+    for cidr in open(denied).read().split():
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                print("deny-rule"); sys.exit(0)
+        except ValueError:
+            pass
+print("allow" if "**" in allows or target in allows else "default-deny")
+PY
+      )
+      case "$decision" in
+        deny-rule)
+            verdict Denied "$target" "denied by local rule rule \"local:3f6c1d0e-7a52-4b8e-9c14-2d5a8e0b6f71\""
+            exit 1 ;;
+        allow) verdict Allowed "$target" ""; exit 0 ;;
+        *) denied; exit 1 ;;
+      esac ;;
   "policy ls --json")
       [ "${STUB_LS_BROKEN:-}" = 1 ] && { echo "not json"; exit 0; }
-      python3 - "$allowed" <<'PY'
+      python3 - "$allowed" "$denied_store" <<'PY'
 import json, sys
-rules = [{"resource_type": "network", "decision": "allow", "resources": [r],
-          "scope": "sandbox", "applies_to": "nora-computer"}
-         for r in open(sys.argv[1]).read().split()]
+# The real shape (sbx 0.46.0): scope and applies_to are both "sandbox:<name>".
+def rule(decision, r):
+    return {"resource_type": "network", "decision": decision, "resources": [r],
+            "scope": "sandbox:nora-computer", "applies_to": "sandbox:nora-computer"}
+rules = [rule("allow", r) for r in open(sys.argv[1]).read().split()]
+rules += [rule("deny", r) for r in open(sys.argv[2]).read().split()]
 rules.append({"resource_type": "network", "decision": "deny", "resources": ["**"],
               "scope": "global", "applies_to": "all"})
 print(json.dumps({"rules": rules}))
@@ -80,6 +110,13 @@ PY
       [ "${STUB_ALLOW_FAILS:-}" = 1 ] && { echo "policy store is read-only" >&2; exit 1; }
       res=""; for a in "$@"; do res="$a"; done
       echo "$res" >> "$allowed"
+      exit 0 ;;
+  "policy deny network")
+      shift 3
+      [ "${STUB_DENY_FAILS:-}" = 1 ] && { echo "policy store is read-only" >&2; exit 1; }
+      res=""; for a in "$@"; do res="$a"; done
+      # Like sbx: a comma list is one rule per CIDR.
+      echo "$res" | tr ',' '\n' >> "$denied_store"
       exit 0 ;;
   "policy log "*)
       echo "policy-log-output"; exit 0 ;;
@@ -303,7 +340,7 @@ class Host:
         self.env_file.write_text(f"NORA_COMPUTER_TOKEN={token}\n")
 
     def run(
-        self, *args: str, stdin: str | None = None, **env: str,
+        self, *args: str, stdin: str | None = None, cwd: str | None = None, **env: str,
     ) -> subprocess.CompletedProcess[str]:
         full = {
             "PATH": f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -316,6 +353,7 @@ class Host:
         return subprocess.run(  # noqa: S603 - a fixed local script, stubbed PATH
             ["/bin/bash", str(SCRIPT), *args], env=full, capture_output=True,
             text=True, check=False, timeout=120, input=stdin if stdin is not None else "",
+            cwd=cwd,
         )
 
     # -- what the script did ------------------------------------------------
@@ -331,8 +369,15 @@ class Host:
         path = self.dir / "allowed"
         return set(path.read_text().split()) if path.exists() else set()
 
+    def denied(self) -> set[str]:
+        path = self.dir / "denied"
+        return set(path.read_text().split()) if path.exists() else set()
+
     def allow_calls(self) -> list[str]:
         return self.sbx_calls("policy allow network")
+
+    def deny_calls(self) -> list[str]:
+        return self.sbx_calls("policy deny network")
 
     @property
     def spool_path(self) -> Path:

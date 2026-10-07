@@ -454,6 +454,8 @@ computer_export(path, to="link", title, artifact_id?)
   `files.pythonhosted.org:443` and the Ubuntu archive (`archive.ubuntu.com` and
   `security.ubuntu.com`, :80 and :443), scoped to the `nora-computer` sandbox and
   applied by `deploy/computer/nora-computer` on every start; browsing is not on it.
+  **Superseded 2026-10-07 by DEC-289** (ADR 0022 Decision 2): the VM is allowed
+  the public web (`**`) with the private ranges denied; see `deploy/computer/README.md`.
 - **Credentials:** the mechanism is `sbx secret set-custom --sandbox
   nora-computer --host <host> --env <NAME> --value …`: the VM sees a
   placeholder, and sbx's proxy substitutes the real key only on requests to

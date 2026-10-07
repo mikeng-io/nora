@@ -33,7 +33,8 @@ Files:
   computerd as its only API and Nora as its only client (ADR 0019, DEC-243).
   Per-room folders `/workspace/<scope>` and a per-room system user.
   3 GB / 2 CPUs. Egress is deny-all plus PyPI and the Ubuntu archive
-  (DEC-260). Image: `deploy/computer/Dockerfile`.
+  (DEC-260; superseded 2026-10-07 by DEC-289, the public web with the
+  private ranges denied). Image: `deploy/computer/Dockerfile`.
 - **No browser in it.** The only Chromium is Puppeteer's, for mermaid-cli.
   No Xvfb, noVNC, Playwright or CDP proxy. The model's tools are
   `computer_run/read/write/edit/export/import/session_list`
