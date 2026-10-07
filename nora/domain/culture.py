@@ -336,11 +336,6 @@ class CultureProposal:
     """
 
     body: str
-    #: `None` is the ROOM's account. A `person_id` makes it that one person's
-    #: account in this room (`character_key`), written by the same fold from
-    #: Honcho's view of them and the room's culture. It comes from the roster
-    #: the prompt showed, never from an id the model typed.
-    person_id: str | None = None
     #: The citations `check_revision` accepted, in the model's order.
     citations: tuple[str, ...] = ()
 

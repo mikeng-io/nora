@@ -439,8 +439,8 @@ class CultureAdaptor(EntitySessions):
     # -- inputs ---------------------------------------------------------
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
-        """Which room this is, the account written last time, her position in
-        this room, what the room has open, and the room's own messages.
+        """Which room this is, the account written last time, what the room
+        has open, and the room's own messages.
 
         **The `<room>` block comes first** and frames everything under it: what
         the room is CALLED and what the operator says it IS. This is issue
@@ -700,11 +700,6 @@ class CultureAdaptor(EntitySessions):
                     f"CultureAdaptor.commit only accepts a CultureProposal "
                     f"payload, got {type(payload).__name__}"
                 )
-            if payload.person_id is not None:
-                # A room session writes the room alone since C2b (a person is
-                # `nora.language.character`'s, keyed by unit); a person here
-                # is a wiring fault, not a bad answer.
-                raise TypeError("CultureAdaptor.commit writes the room's account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
                 self._inc("unchanged")

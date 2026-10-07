@@ -363,7 +363,7 @@ class CharacterPersonAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterPersonAdaptor.commit takes its own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
@@ -499,7 +499,7 @@ class CharacterUnitAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterUnitAdaptor.commit takes its own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
@@ -672,7 +672,7 @@ class CharacterNoraAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterNoraAdaptor.commit takes her own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:

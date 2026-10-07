@@ -774,12 +774,14 @@ def _lineage(ctx: TagContext) -> DerivedView | None:
     off for this context (no target, or `[lineage] mode = "off"`): every
     block renders as it always has.
 
-    The pushed blocks that render DERIVED rows are four: `<notes>` (a row
-    each), `<standing>` and `<standing_working_set>` (Standing's two
-    sections today) and `<culture>` (its one section). Every other block is
-    authored, live, the Record of this room, or memory, and carries no
-    lineage. A section that fails is dropped whole, never cut inside its
-    prose; the rest of its row still renders.
+    The blocks this view GATES are four: `<notes>` (a row each), `<standing>`
+    and `<standing_working_set>` (Standing's two sections today) and
+    `<culture>` (its one section). `<unit_culture>` and `<character>` render
+    derived rows too but carry no lineage and pass through no view: their
+    guard is their unit key, and that no Character session reads presence
+    (R-31, DEC-290). Every other block is authored, live, the Record of this
+    room, or memory, and carries no lineage. A section that fails is dropped
+    whole, never cut inside its prose; the rest of its row still renders.
     """
     target = ctx.lineage_room
     if target is None or target.mode == "off":
@@ -1032,8 +1034,9 @@ def build_prefill(
         # Sub-millisecond in effect, and exactly the «interpret once» the
         # spine asks for: everything below computes on one fixed model of now.
         clock = now or local_now()
-        # Lineage, decided ONCE for the whole prefill: the four derived blocks
-        # below all read this one view.
+        # Lineage, decided ONCE for the whole prefill: the four blocks it
+        # gates (notes, culture, standing, standing_working_set) all read this
+        # one view; `<unit_culture>` and `<character>` read none (`_lineage`).
         view = _lineage(ctx)
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her, and the catalogue that introduces them, both come from

@@ -850,4 +850,4 @@ async def test_a_room_session_writes_the_room_and_no_person():
     assert (answer["status"], answer["reason"]) == ("refused", "unknown_entity")
     assert (await revise(entity="room", body="a games room", citations=["3"]))["status"] == "ok"
     (proposal,) = await adaptor.accept(key=KEY, items=())
-    assert proposal.person_id is None
+    assert proposal.body == "a games room"

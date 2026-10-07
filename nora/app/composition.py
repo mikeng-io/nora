@@ -3621,15 +3621,15 @@ async def build_dependencies(
         # how each room works and why, folded from that room's own messages
         # when it has said enough (DEC-288) and appended to a chain.
         #
-        # CONSUMED BY NOBODY, and that is step 4 of `02-measurement §5` rather
-        # than an unfinished wiring: the tier's one genuine contribution is the
-        # CHAIN, so a tier judged on its first snapshot is judged on the one
-        # thing it does not contribute. The prompt-facing step is separate and
-        # is gated on a measured improvement.
+        # READ BY THE PROMPT AND BY THE CHARACTER SESSIONS: `<culture>` renders
+        # a room's account on tag and fire turns (DEC-207), and the person and
+        # unit sessions below read it as evidence (cited accounts only,
+        # DEC-290). The chain is the contribution: a tier judged on its first
+        # snapshot is judged on the one thing it does not contribute.
         #
         # Gated on `[culture] enabled` alone — no note-tier dependency, unlike
-        # the (deleted, DEC-277) proactive adaptor: the corpus is `messages`, which every
-        # deployment has, and nothing it writes is read by another tier.
+        # the (deleted, DEC-277) proactive adaptor: the corpus is `messages`,
+        # which every deployment has.
         if cfg.culture.enabled:
             dream_schedules = {
                 **dream_schedules,
