@@ -30,15 +30,15 @@
   {
     "name": "an unreadable answer (empty output, a crash) is read as a denial",
     "file": "deploy/computer/nora-computer",
-    "old": "        *) echo unknown ;;\n    esac\n}\n\n# Is `$1` (host:port) ALREADY",
-    "new": "        *) echo denied ;;\n    esac\n}\n\n# Is `$1` (host:port) ALREADY",
+    "old": "        *) echo unknown ;;\n    esac\n}\n\n# Is `$2` ALREADY a rule",
+    "new": "        *) echo denied ;;\n    esac\n}\n\n# Is `$2` ALREADY a rule",
     "target": "tests/unit/test_nora_computer_script.py::test_an_unreadable_answer_is_unknown_never_a_verdict"
   },
   {
     "name": "an unreadable answer is read as an allow",
     "file": "deploy/computer/nora-computer",
-    "old": "        *) echo unknown ;;\n    esac\n}\n\n# Is `$1` (host:port) ALREADY",
-    "new": "        *) echo allowed ;;\n    esac\n}\n\n# Is `$1` (host:port) ALREADY",
+    "old": "        *) echo unknown ;;\n    esac\n}\n\n# Is `$2` ALREADY a rule",
+    "new": "        *) echo allowed ;;\n    esac\n}\n\n# Is `$2` ALREADY a rule",
     "target": "tests/unit/test_nora_computer_script.py::test_check_exit_codes_0_when_all_match_1_on_a_violation_2_only_when_unknown"
   },
   {
@@ -79,8 +79,8 @@
   {
     "name": "the fake sbx exits 0 for a denial again (the harness drifting back to the defect's blind spot)",
     "file": "tests/unit/nora_computer_harness.py",
-    "old": "denied; exit 1\n      fi ;;",
-    "new": "denied; exit 0\n      fi ;;",
+    "old": "        *) denied; exit 1 ;;",
+    "new": "        *) denied; exit 0 ;;",
     "target": "tests/unit/test_nora_computer_script.py::test_the_fake_sbx_exits_like_the_real_one"
   }
 ]

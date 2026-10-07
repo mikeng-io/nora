@@ -8,7 +8,7 @@
 #                          foreground (systemd supervises it)
 #   nora-computer status   one line: sandbox state, computerd health, egress policy
 #   nora-computer egress apply|check
-#                          the VM's network allowlist (below): add it, or read it back
+#                          the VM's network policy (below): add it, or read it back
 #   nora-computer policy-log [args]
 #                          sbx policy log for the VM, as an audited read
 #   nora-computer sync-events
@@ -48,25 +48,36 @@ SPOOL=$STATE_DIR/lifecycle-events.jsonl
 SPOOL_STATE=$STATE_DIR/lifecycle-events.synced     # the byte offset a sync has reached
 COMPOSE_DIR=${NORA_COMPOSE_DIR:-$(dirname "$ENV_FILE")}
 
-# The VM's egress, and the ONLY egress it has. sbx's policy is deny-all
-# (`default-deny-all`, network `**`); these are the allow rules on top of it,
-# scoped to this sandbox so no other sandbox on the host inherits them. The
-# operator's ruling (2026-10-01): the VM may fetch packages from PyPI and the
-# Ubuntu archive and nothing else, and nothing of Nora's own services: not
-# computerd's own published port, not Honcho, OmniRoute or the LAN (design
-# sandbox-runtime sec 1 and 8). Ports are part of each rule: pip is HTTPS only;
-# apt's default sources are plain HTTP on :80 (the policy log counted 424 refused
-# fetches of archive.ubuntu.com:80 and security.ubuntu.com:80 on 2026-10-01) and
-# fall back to :443. A constant, not an environment variable: the allowlist is
-# reproducible setup, and a host that edits it by environment is a host whose
-# policy nobody can read off this file.
-EGRESS_ALLOW=(
-    pypi.org:443
-    files.pythonhosted.org:443
-    archive.ubuntu.com:80
-    archive.ubuntu.com:443
-    security.ubuntu.com:80
-    security.ubuntu.com:443
+# The VM's egress. sbx's policy is deny-all (`default-deny-all`, network `**`);
+# these are the rules on top of it, scoped to this sandbox so no other sandbox
+# on the host inherits them. The operator's ruling (2026-10-07, ADR 0022
+# Decision 2) replaced the 2026-10-01 allowlist (PyPI and the Ubuntu archive
+# only, DEC-260): Nora's computer browses the public web, so it is allowed `**`
+# over TCP and the private ranges are denied, with no extra proxy. A deny rule
+# beats an allow rule in sbx, so the six ranges below are what keeps Nora's own
+# services out of reach: computerd's published port and OmniRoute on docker0
+# (172.16.0.0/12), Ollama on the host's loopback, the LAN and the tailnet.
+#
+# KNOWN, ACCEPTED LIMIT (measured, design/browser-runtime/04-s1-runbook.md
+# step 4): sbx applies a CIDR deny to IP LITERALS only. A public NAME that
+# resolves to a private address (127-0-0-1.sslip.io) still passes, because the
+# proxy decides on the name and then connects to whatever it resolves to. The
+# operator accepted that rather than add a guard; `egress check` probes IP
+# literals and says nothing about it. The network audit is `sbx policy log`.
+#
+# `**` is a glob to sbx and to bash alike: it is quoted here and everywhere it
+# is used, so the shell never expands it against the working directory. A
+# constant, not an environment variable: the policy is reproducible setup, and
+# a host that edits it by environment is a host whose policy nobody can read off
+# this file.
+EGRESS_ALLOW=( '**' )
+EGRESS_DENY=(
+    10.0.0.0/8
+    172.16.0.0/12
+    192.168.0.0/16
+    127.0.0.0/8
+    100.64.0.0/10
+    169.254.0.0/16
 )
 
 # The desktop keyring is locked on a headless host; point sbx at nothing and
@@ -197,45 +208,70 @@ egress_verdict() {
     esac
 }
 
-# Is `$1` (host:port) ALREADY an allow rule for this sandbox (or every sandbox)
-# in sbx's own rule list? 0 listed, 1 not listed, 2 the list could not be read.
-# This is the first thing egress_apply asks, because `sbx policy allow` is not
-# known to de-duplicate: a second add of the same rule must never be made.
+# Is `$2` ALREADY a rule of decision `$1` (allow|deny) for this sandbox (or every
+# sandbox) in sbx's own rule list? 0 listed, 1 not listed, 2 the list could not
+# be read. This is the first thing egress_apply asks, because `sbx policy
+# allow|deny` is not known to de-duplicate: a second add of the same rule must
+# never be made.
 egress_listed() {
     sbx policy ls --json </dev/null 2>/dev/null | python3 -c '
 import json, sys
-res, name = sys.argv[1], sys.argv[2]
+decision, res, name = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     rules = json.load(sys.stdin)["rules"]
 except (ValueError, KeyError, TypeError):
     sys.exit(2)
 for r in rules:
-    if (r.get("resource_type") == "network" and r.get("decision") == "allow"
+    if (r.get("resource_type") == "network" and r.get("decision") == decision
             and res in (r.get("resources") or [])
-            and (r.get("scope") == "global" or name in str(r.get("applies_to", "")))):
+            and (r.get("scope") == "global" or r.get("applies_to") == "sandbox:" + name)):
         sys.exit(0)
-sys.exit(1)' "$1" "$NAME"
+sys.exit(1)' "$1" "$2" "$NAME"
 }
 
-# Add every EGRESS_ALLOW rule that is not already there, then read each back.
-# "Already there" is the rule list first (egress_listed: nothing is ever added
-# twice, whatever `sbx policy allow` does with a duplicate) and the authorizer's
-# own verdict second. Returns 0 every rule is in place and reads back allowed,
-# 1 a rule could not be added or reads back denied, 2 a verdict sbx would not
-# give (the same codes as `egress check`).
+# Add every EGRESS_DENY and then every EGRESS_ALLOW rule that is not already
+# there, then read the policy back. "Already there" is the rule list first (egress_listed:
+# nothing is ever added twice, whatever sbx does with a duplicate).
+#   Allow rules: the authorizer's own verdict second (a host already allowed by
+#   another rule is not added), and each rule is read back as allowed.
+#   Deny rules: a CIDR is not a host:port, so the authorizer has no verdict "on
+#   the rule"; a deny rule is in place when it is listed or its add succeeded,
+#   and what it DOES is read back by egress_check, on IP literals.
+# Returns 0 every rule is in place and the allow rules read back allowed, 1 a
+# rule could not be added or an allow reads back denied, 2 a verdict sbx would
+# not give (the same codes as `egress check`).
 egress_apply() {
     local res out bad=0 unknown=0 verdict
+    # Denies FIRST, and the allow only once every deny is in place: `**` added
+    # before a deny that then fails would leave the private ranges open.
+    for res in "${EGRESS_DENY[@]}"; do
+        egress_listed deny "$res" && continue
+        out=$(sbx policy deny network --sandbox "$NAME" "$res" </dev/null 2>&1) \
+            || { log "egress: denying $res failed: $out"; bad=1; continue; }
+        log "egress: denied $res for $NAME"
+    done
+    # Read back from sbx's own list, not from the adds' exit codes: an add that
+    # exited 0 but did not land must not let `**` in.
+    for res in "${EGRESS_DENY[@]}"; do
+        egress_listed deny "$res" || bad=1
+    done
+    if [ "$bad" != 0 ]; then
+        log "egress: a private range is not denied, so the web is not allowed (an allow already in place stays until the deny is restored; egress check reports it)"
+        return 1
+    fi
     for res in "${EGRESS_ALLOW[@]}"; do
-        if egress_listed "$res"; then
+        if egress_listed allow "$res"; then
             :
-        elif [ "$(egress_verdict "$res")" = allowed ]; then
+        elif [ "$res" != '**' ] && [ "$(egress_verdict "$res")" = allowed ]; then
             continue
         else
             out=$(sbx policy allow network --sandbox "$NAME" "$res" </dev/null 2>&1) \
                 || { log "egress: allowing $res failed: $out"; bad=1; continue; }
             log "egress: allowed $res for $NAME"
         fi
-        verdict=$(egress_verdict "$res")
+        # `**` is a pattern, not a host:port sbx is known to check: it is read
+        # back through an ordinary public site.
+        if [ "$res" = '**' ]; then verdict=$(egress_verdict example.com:443); else verdict=$(egress_verdict "$res"); fi
         case "$verdict" in
             allowed) ;;
             unknown) log "egress: $res is in place but sbx would not say whether it is allowed"; unknown=2 ;;
@@ -246,19 +282,22 @@ egress_apply() {
     return "$unknown"
 }
 
-# The read-back, both halves: every allowlisted host is allowed, and what must
-# NOT be reachable is denied. The negative cover is computerd's own published
-# port (Nora's service: the VM has no business calling the thing that drives
-# it), the same host on OmniRoute's port, and two arbitrary public hosts.
+# The read-back, both halves, from sbx's own authorizer. Allowed: the package
+# hosts (the ports apt and pip use) and one ordinary public site. Denied, as IP
+# LITERALS (a CIDR deny applies to literals only, see EGRESS_ALLOW): computerd's
+# own published port (the VM has no business calling the thing that drives it),
+# OmniRoute's port on the same host, Ollama on the host's loopback, and one
+# address in every other EGRESS_DENY range, so a single missing deny shows.
 # Exit 0 all as required, 1 a violation, 2 a verdict sbx would not give.
 egress_check() {
     local violation=0 unreadable=0 res verdict
-    for res in "${EGRESS_ALLOW[@]}"; do
+    for res in pypi.org:443 archive.ubuntu.com:80 example.com:443; do
         verdict=$(egress_verdict "$res")
         echo "want allowed  $res  got $verdict"
         case "$verdict" in allowed) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
     done
-    for res in "$HOST_IP:$HOST_PORT" "$HOST_IP:20128" example.com:443 8.8.8.8:53; do
+    for res in "$HOST_IP:$HOST_PORT" "$HOST_IP:20128" 127.0.0.1:11434 10.0.0.1:80 \
+            192.168.1.1:80 100.64.0.1:80 169.254.169.254:80; do
         verdict=$(egress_verdict "$res")
         echo "want denied   $res  got $verdict"
         case "$verdict" in denied) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
@@ -276,7 +315,7 @@ cmd_egress() {
             egress_apply; rc=$?
             if [ "$rc" = 0 ]; then egress_check >/dev/null; rc=$?; fi
             if [ "$rc" = 0 ]; then
-                record_event egress_apply ok allowed="${EGRESS_ALLOW[*]}"
+                record_event egress_apply ok allowed="${EGRESS_ALLOW[*]}" denied="${EGRESS_DENY[*]}"
             else
                 record_event egress_apply failed rc="$rc"
             fi
@@ -564,13 +603,14 @@ prepare() {
             || echo "$out" | grep -q "already published" \
             || { log "publish failed: $out"; exit 7; }
     fi
-    # The egress allowlist is applied on EVERY prepare, not only on a create: a
+    # The egress policy is applied on EVERY prepare, not only on a create: a
     # rule lives in sbx's daemon, not in the VM, so a recreate or a reset of the
     # policy store loses it while the unit keeps running. NOT fatal: computerd
     # serves without package egress (deny-all just refuses the fetch), and a
     # crash-looping unit over a policy word would take the whole computer down
     # for a read-back problem. `status` and `egress check` say it is missing.
-    egress_apply || log "egress: the allowlist is NOT in place; run: nora-computer egress apply"
+    { egress_apply && egress_check >/dev/null; } \
+        || log "egress: the policy is NOT in place or does not read back; run: nora-computer egress check"
 }
 
 # The long-running mode systemd supervises (nora-computer.service,
@@ -612,7 +652,7 @@ cmd_status() {
     load_token
     healthy && health=up && authorised && health=healthy
     state=$(sandbox_state)
-    # ok only when every allowlisted host reads back allowed AND every denied
+    # ok only when every allowed probe reads back allowed AND every denied
     # probe reads back denied; `egress check` prints which one is not.
     if [ "$state" != absent ]; then
         egress_check >/dev/null

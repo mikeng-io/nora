@@ -38,28 +38,43 @@ depends on that session. `sbx run` needs a read-write primary workspace: an
 empty dedicated host directory under `~/.local/state/nora-computer/`, which
 nothing on the host reads.
 
-## Network egress: PyPI and the Ubuntu archive, nothing else
+## Network egress: the public web, the private ranges denied
 
 sbx's policy is deny-all (`sbx policy ls` shows `default-deny-all` and
-`local-policy`). The VM may fetch packages and nothing more (operator ruling,
-2026-10-01), so `nora-computer` adds these allow rules, **scoped to the
-`nora-computer` sandbox** (`--sandbox`), in its `EGRESS_ALLOW` list:
+`local-policy`). Nora's computer browses the public web (operator ruling,
+2026-10-07, ADR 0022 Decision 2, which replaced the 2026-10-01 PyPI-and-Ubuntu
+allowlist of DEC-260), so `nora-computer` adds these rules, **scoped to the
+`nora-computer` sandbox** (`--sandbox`), from its `EGRESS_ALLOW` and
+`EGRESS_DENY` lists, with no extra proxy:
 
-| host | port | for |
-|---|---|---|
-| `pypi.org` | 443 | pip: the index |
-| `files.pythonhosted.org` | 443 | pip: the wheels and sdists |
-| `archive.ubuntu.com` | 80, 443 | apt (its default sources are plain HTTP) |
-| `security.ubuntu.com` | 80, 443 | apt security updates |
+- **allow** `**` (every host, TCP). It is a glob to bash as well: the script
+  quotes it everywhere, and a test pins that sbx receives it as one literal argument.
+- **deny** these ranges, which a deny rule keeps out of the `**` allow:
 
-Nothing of Nora's own services is on it: not computerd's own port, Honcho,
-OmniRoute, Langfuse, the LAN or the tailnet. The list is part of `serve`
-(`prepare` applies it on every start, idempotently, because a rule lives in
-sbx's daemon and not in the VM, so a recreate or a policy reset loses it), and
-it is applied by hand with `nora-computer egress apply`.
+| range | what it keeps Nora's computer away from |
+|---|---|
+| `10.0.0.0/8` | private network |
+| `172.16.0.0/12` | docker0 (`172.17.0.1`): computerd's own published port, OmniRoute |
+| `192.168.0.0/16` | the LAN |
+| `127.0.0.0/8` | the host's loopback: Ollama, anything bound to localhost |
+| `100.64.0.0/10` | the tailnet (CGNAT) |
+| `169.254.0.0/16` | link-local, cloud metadata |
+
+**Known, accepted limit.** sbx applies a CIDR deny to **IP literals only**: a
+public NAME that resolves to a private address (`127-0-0-1.sslip.io`) still
+passes the deny and reaches the host's services. S1 measured it
+(`design/browser-runtime/04-s1-runbook.md`, step 4) and the operator accepted the
+risk rather than add a guard; there is none. `egress check` probes IP literals, so
+it cannot see this. The network audit is `sbx policy log`.
+
+The policy is part of `serve` (`prepare` applies it on every start, idempotently,
+because a rule lives in sbx's daemon and not in the VM, so a recreate or a policy
+reset loses it), and it is applied by hand with `nora-computer egress apply`.
 
 `nora-computer egress apply` reads sbx's rule list first and adds only what is missing
-(it never trusts `sbx policy allow` to de-duplicate), reads each rule back, and exits 0
+(it never trusts `sbx policy allow` or `deny` to de-duplicate), reads the allow rule
+back (a deny CIDR has no verdict of its own: `egress check` is what proves it works),
+and exits 0
 when every rule is in place and reads allowed, 1 when a rule could not be added or
 reads denied, 2 when sbx would not give a verdict; `egress check` has the same
 three codes.
@@ -71,8 +86,18 @@ at exit 0 as allowed, `Denied` at exit 0 or 1 as denied, and everything else
 (empty output, a crashed sbx, an `Allowed` line with a failing exit) as unknown,
 which is never an allow.
 
-Read it back, both halves (the allowlist reads **allowed**, what must stay shut
-reads **denied**), from sbx's own authorizer:
+Read it back, both halves, from sbx's own authorizer. Allowed: `pypi.org:443`,
+`archive.ubuntu.com:80`, `example.com:443`. Denied, as IP literals: computerd's own
+port (`172.17.0.1:18765`), OmniRoute (`172.17.0.1:20128`), Ollama on the loopback
+(`127.0.0.1:11434`), and one address in every other denied range (`10.0.0.1:80`,
+`192.168.1.1:80`, `100.64.0.1:80`, `169.254.169.254:80`), so one missing deny shows.
+
+**`apply` never adds `**` unless all six denies read back from `sbx policy ls` as
+this sandbox's own** (a rule of `nora-computer-eval` is not ours): an add that
+failed, one that reported success but did not land, or a rule list sbx will not
+print each leave the web closed and exit 1. A `**` already in place from an
+earlier apply is not removed by that; `egress check` and `status` report the
+missing deny. `serve` runs the check after every apply.
 
 ```bash
 nora-computer egress check; echo "RC=$?"     # 0 all as required, 1 a violation, 2 sbx would not say
@@ -81,10 +106,9 @@ sbx policy ls --wide                         # the rules themselves, with ids
 sbx policy log nora-computer                 # what the proxy allowed and refused, with counts
 ```
 
-A fetch from inside is the end-to-end proof (`pip download` of a small package
-as a scope user; a `curl` to `example.com` must get HTTP 403). `egress check` is
-the read-back that does not depend on a package existing. The policy log's
-refusals of `pypi.org` and the Ubuntu hosts stop appearing once the rules are in.
+A fetch from inside is the end-to-end proof (`curl` to `https://example.com` as a
+scope user must succeed; to `http://172.17.0.1:18765` it must be refused).
+`egress check` is the read-back that does not depend on a fetch.
 
 ## Lifecycle audit: who did what to the machine
 
@@ -292,6 +316,41 @@ through librsvg's `rsvg-convert`), and `mermaid` is mermaid-cli with its own
 Chromium, both in the image. Measured 2026-10-01 in a throwaway `docker run
 --network=none`. There is no map renderer, so the computer needs no Google
 host allowed and no Maps key.
+
+## The browser (B1, ADR 0022)
+
+Google Chrome stable (pinned by version and sha256 in the `Dockerfile`) and
+Xvfb are in the image. computerd starts one Chrome per room on the room's
+first connection to `GET /v1/browser?scope=<scope>`, a websocket behind the
+same bearer token: each text frame is one CDP message, relayed to Chrome's
+`--remote-debugging-pipe`.
+
+- **No debugging port.** Chrome runs headed on its own Xvfb display
+  (`-nolisten tcp`), both as the room's user, and computerd holds the pipe.
+  Read on a VM built from this image (2026-10-07): only port 80 listened,
+  and another room's command could read neither the room's display cookie
+  (`browser/.Xauthority`, `0600`), its profile (`browser/default`) nor
+  Chrome's file descriptors.
+- **One client per room's browser;** a second is `denied`. At most two rooms
+  have a browser at once (`MAX_BROWSERS`); a third stops the least recently
+  used idle one, or is `denied` when both have a client. A browser idle for
+  10 minutes with no client is stopped. `POST /v1/browser_stop` stops one,
+  and `/v1/state` reports `browser.running`.
+- **What a room's command could plant is never trusted.** `/tmp/.X11-unix`
+  is made by the image and checked at computerd's start without following a
+  link (one that is not root's own is refused, never adopted); leftover or
+  planted names at a display number are removed before it is used; our Xvfb
+  is ready only when its socket is a socket owned by the room's user;
+  `chrome.log` is created fresh and renamed into place, so a FIFO or link
+  there is replaced, never opened.
+- A client that reconnects to a running browser may receive late answers
+  and events meant for the previous client; CDP ids restart at 1, so a client
+  re-attaches to its targets rather than trusting an early answer.
+- Chrome's stderr is in the room's `browser/chrome.log`, emptied at each
+  start. `navigator.webdriver` reads `false`
+  (`--disable-blink-features=AutomationControlled`).
+- Nothing uses it yet: `computer_browse` is B2. Pages load only from hosts
+  the egress policy allows.
 
 ## Upgrading from the S2a timer (once)
 
