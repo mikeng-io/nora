@@ -1,6 +1,6 @@
 ---
 type: design
-title: "Experiment and handoff — prepared prerequisites, replay still pending"
+title: "Experiment and handoff — prerequisites landed, first replay blind, parked"
 description: "Exact implementation state, source/eval defects, verification, bounded three-arm replay and the context-transfer procedure."
 tags: [nora, context-plan, handoff, evals, implementation, verification]
 timestamp: '2026-10-07'
@@ -10,6 +10,48 @@ edges:
 ---
 
 # Experiment and handoff
+
+## 2026-10-07 result: the first replay was blind, and the bundle is parked
+
+The prerequisites landed as PR [732](https://github.com/mikeng-io/nora/pull/732)
+(merge `1320cf03`, gate 14,944 passed, issue 540 closed). The three-arm replay
+below then ran on norty at that ref: `tool_selection`, one draw each of the
+three cases, source not refreshed. Evidence is in [replay/](evidence/replay/):
+per-arm result lines and receipts, with no room text.
+
+| arm | pass | Nora in (fresh / cached) | selector |
+|---|---|---|---|
+| full | 2/3 | 113,315 / 192,244 | none |
+| rules | 3/3 | 115,695 / 255,422 | none |
+| flash | 2/3 | 93,883 / 232,312 | 0.74–1.03 s, 1,830–2,034 in / 13–16 out, provider cache header MISS (two reported ~290 cached prompt tokens), 0 errors |
+
+**No arm withheld anything in any draw**, so Nora's exposed prefill was
+identical in every arm (`exposed_chars == full_chars`). In the sandbox,
+`peer_history` is empty (each draw gets a fresh Honcho workspace), `computer`
+is empty (no VM state in the clone) and no subagent job is seeded. `documents`
+rendered only in the document case, and Flash kept it, the one consequential
+choice. The `route_computer_run_parse_csv` FAIL in full and flash is draw noise
+over identical inputs. These arms were not shown to differ on a populated block
+before the run; that check would have caught it without a model call.
+
+Live, the selectable blocks are populated. From Langfuse `agent.prefill`, 427 tag
+turns 2026-09-17 to 10-06: `peer_history` rendered in 384, `documents` in 28,
+`computer` in 43 and `subagents` in 0. Since 09-30, `documents` was in 28 of 70
+turns and `computer` in 43 of 70. All rendered blocks together were a median of
+13,978 characters (p90 22,781). Per-block sizes are not recorded. Counts are in
+[live-langfuse-counts.txt](evidence/replay/live-langfuse-counts.txt).
+
+Reading it: the selector costs about 2k fresh input tokens and one serial
+second per turn. The blocks it may withhold are a small part of a roughly 19k-
+token call, and they are fresh about once per turn under the prefix cache. A
+token or latency win is therefore unlikely. Any benefit would be reply quality
+(less distraction), and that is unmeasured. Measuring it needs cases with
+seeded `peer_history` and `computer` state, then the same three arms.
+
+**Parked by the operator, 2026-10-07.** The eval-only filter stays in the tree,
+inert unless `--context-arm` is passed. Reopen only with the seeded-case replay,
+or with a measured quality problem that the optional blocks cause. The sections
+below are the plan as it stood before the run.
 
 ## What is implemented
 
@@ -87,7 +129,7 @@ session must update against current master: the local branch began at `1a20c236`
 while `origin/master` advanced to `67520d7a` during this session. This checkpoint
 does not incorporate that later conversational-recall design bundle.
 
-## Replay has not run
+## Replay had not run (before 2026-10-07; superseded by the result above)
 
 No downstream Nora accuracy, reply-quality or net-latency benefit is established.
 All reported model accuracy numbers are the synthetic probes in node 07.
@@ -108,7 +150,7 @@ landed prerequisite ref before replay; development still happens on the MacBook.
 Live checkout `~/workspace/nora` and its ignored config were untouched. Existing
 untracked backups/scratch files on either machine belong to other work.
 
-## Smallest viable next measurement
+## Smallest viable next measurement (run 2026-10-07; result at the top)
 
 Select these anchored `tool_selection` cases, one draw each, on the same source
 and deployment main-model alias:
