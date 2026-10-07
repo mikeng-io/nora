@@ -17,11 +17,9 @@ exec "$(command -v git)" "$@"
 `$V fetch origin && $V switch -c mikeng-io/<slug> origin/master`, then `uv sync
 --extra evals`. Claude Code commits end with a `Claude-Session:` footer.
 
-## Choosing the model for a subagent (Claude Code)
+## Choosing the model and effort for a subagent
 
-The operator's rule (2026-09-24): **Sonnet does the work** (implementation,
-fixes, audits, sweeps), Opus only when the work itself is heavy or complex.
-**Opus reviews** (step 7's independent review), Fable only for heavy or
-extremely complex reviews. Name the model in every launch; never let one
-default for all agents. An explicit override from the operator for a session
-("only use sonnet") wins.
+`AGENTS.md`, «Delegating to a sub-agent: which model, and how much effort», is
+the one rule: a tier table for the model and an adaptive effort table. Name
+both in every launch. (The 2026-09-24 rule that stood here, «Opus reviews»,
+was superseded by that table on 2026-09-30.)
