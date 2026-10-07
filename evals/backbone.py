@@ -1390,7 +1390,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             nora_case = dataclasses.replace(
                 nora_case, moment=Moment(source_url=spec.source_url, rows=seeded.rows),
             )
-            outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
+            from nora.subject.context_filter import case_scope
+
+            with case_scope(case.name):
+                outcome = await port.drive(subject, nora_case, now_ms=seeded.now_ms)
             blocks_empty = _blocks_empty(exporter)
             # BEFORE the judge: these describe what the SUBJECT spent, and a
             # judge's draws are the eval layer's own cost.

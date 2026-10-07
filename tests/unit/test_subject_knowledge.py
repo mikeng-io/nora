@@ -27,6 +27,8 @@ from types import SimpleNamespace
 import pytest
 
 from nora.config import MemoryConfig
+from nora.domain.models import PersonRef
+from nora.persons import Persons
 from nora.subject.knowledge import Knowledge, Message, know
 from nora.testing import FakeRecordStore
 
@@ -70,7 +72,7 @@ class FakeMemory:
 class _FakeDeps:
     audit: FakeRecordStore = field(default_factory=FakeRecordStore)
     memory: FakeMemory = field(default_factory=FakeMemory)
-    persons: object = field(default_factory=object)
+    persons: Persons = field(default_factory=lambda: Persons(by_person={}, index={}))
 
 
 @dataclass
@@ -86,6 +88,32 @@ class _FakeSubject:
     cfg: _FakeCfg = field(default_factory=_FakeCfg)
     room: tuple[str, str] = ("signal", "g1")
     database_url: str = "postgresql+asyncpg://user:pass@localhost/db"
+
+
+async def test_know_seeds_roster_senders_for_production_name_projection() -> None:
+    subject = _FakeSubject()
+    subject.deps.persons = Persons(
+        by_person={"ada": PersonRef("ada", "Ada Roster", "ada"),
+                   "ben": PersonRef("ben", "Ben Roster", "ben")},
+        index={("signal", "+85222222222"): "ada", ("signal", "+852111"): "ben"},
+        _subject_aliases={"ada_before": "ada"},
+    )
+    await know(subject, Knowledge(transcript=(
+        Message("human", name="Profile", person="ada"),
+        Message("unknown", name="Miles", person=None),
+        Message("own", name="Profile", person="ada", is_nora=True),
+        Message("other platform", name="Elsewhere", person="no_account"),
+        Message("historical person id", name="Old Profile", person="ada_before"),
+    )))  # type: ignore[arg-type]
+    rows = await subject.deps.audit.recent(conversation_id="g1", limit=10)
+    named = subject.deps.persons.name_transcript(rows, platform="signal")
+    assert named[0].sender_id == "+85222222222"
+    assert named[0].person_name == "Ada Roster"
+    assert named[0].sender_name == "Profile"
+    assert named[1].person_id is None and named[1].person_name is None
+    assert named[2].is_nora and named[2].sender_id != "+85222222222"
+    assert named[3].person_id == "no_account" and named[3].person_name is None
+    assert named[4].person_id == "ada_before" and named[4].person_name == "Ada Roster"
 
 
 async def test_know_ensures_the_peer_before_concluding_about_them() -> None:

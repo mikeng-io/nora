@@ -55,6 +55,7 @@ from nora.subject import (
     sweep_stale_draw_workspaces,
     sweep_stale_private_blank_templates,
 )
+from nora.subject.context_filter import exposure
 
 #: Coarse S-class grouping for `--class`, per `10-the-scenario-map.md` §2/§15.
 #: Approximate on purpose where a corpus is not wholly one class — good enough
@@ -291,11 +292,20 @@ def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
     positions: bool = False,
+    context_receipts: list[dict] | None = None,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
     )
     report = experiment.run_evaluations(task=task)
+    context_complete = True
+    if context_receipts is not None:
+        missing = {c["name"] for c in report.cases} - {
+            r.get("case") for r in context_receipts
+        }
+        if missing:
+            print(f"context experiment ERROR: no measured prefill for {sorted(missing)}")
+            context_complete = False
     scope = f" [{len(experiment.cases)} selected]" if only else ""
     print(f"--- {name}: {census(name)}{scope} ---")
     _print_spend()
@@ -329,7 +339,7 @@ def _run_one(
             for reason in dict.fromkeys(reasons.get(case_name, ())):
                 print(f"      {reason}")
             ok = ok and r.verdict not in (FAIL, ERROR, UNSTABLE)
-        return ok
+        return ok and context_complete
     reading = read(report)
     print(f"  passed={reading.passed} failed={reading.failed} errored={reading.errored}")
     if reading.failed or reading.errored:
@@ -337,7 +347,7 @@ def _run_one(
             for out in outputs:
                 if getattr(out, "label", None) != PASS:
                     print(f"  {case_row['name']:40} {out.label:6} {out.reason}")
-    return reading.failed == 0 and reading.errored == 0
+    return reading.failed == 0 and reading.errored == 0 and context_complete
 
 
 def _print_input(name: str, case_name: str, *, source_url: str) -> int:
@@ -453,6 +463,10 @@ def main() -> int:
             "smoke run and says so"
         ),
     )
+    ap.add_argument("--context-arm", choices=("full", "rules", "flash"), default="full",
+                    help="experiment-only tag exposure filter; retrieval stays unchanged")
+    ap.add_argument("--context-report", type=Path,
+                    help="write selector receipts and exposure sizes, without room content")
     args = ap.parse_args()
 
     if args.list:
@@ -470,6 +484,11 @@ def main() -> int:
         return 2
     if not names:
         print("no corpus selected — pass names, --class, --all, or --list", file=sys.stderr)
+        return 2
+    if (args.context_arm != "full" or args.context_report) and (
+        len(names) != 1 or CORPUS_ENTRY[names[0]] != "tag" or args.print_input
+    ):
+        print("context experiment requires one tag corpus and no --print-input", file=sys.stderr)
         return 2
     if args.print_input and len(names) != 1:
         print("--print-input names a case OF ONE corpus", file=sys.stderr)
@@ -573,10 +592,15 @@ def main() -> int:
 
             ok = True
             for name in names:
-                ok = _run_one(
-                    name, source_url=source_url, judge=judge, sample=args.sample,
-                    only=only, all_reasons=args.reasons, positions=args.positions,
-                ) and ok
+                with exposure(args.context_arm, args.context_report) as receipts:
+                    ok = _run_one(
+                        name, source_url=source_url, judge=judge, sample=args.sample,
+                        only=only, all_reasons=args.reasons, positions=args.positions,
+                        context_receipts=(receipts if args.context_arm != "full"
+                                          or args.context_report else None),
+                    ) and ok
+                # Successful Nora replies under fallback cannot pass the selector experiment.
+                ok = ok and not any("selector_error" in r for r in receipts)
             return 0 if ok else 1
         finally:
             # Drop this run's own private blank template, if `_blank_template`

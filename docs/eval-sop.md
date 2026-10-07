@@ -131,3 +131,37 @@ deploy host, like every live corpus.
 
 **The loop:** a participation failure you fixed but did not add a case for is a
 failure you will ship again. Add the case (or tighten the twin).
+
+### Context exposure experiment
+
+The existing tag replay accepts `--context-arm full|rules|flash` (default `full`)
+with `--context-report /tmp/context-arm.json`. Select one tag corpus. Runtime
+never imports the filter: the eval temporarily patches the existing prefill
+assembly call and restores it when the run ends. Retrieval still assembles the
+whole `TagContext`. Culture, Standing, identity, notes, transcript depth and tool
+admission are unchanged. Only `peer_history`, `documents`, `computer` and
+`subagents` can be withheld.
+When history is withheld, the experiment clears the room's `about` short-circuit
+flag so the tool can retrieve it; retrieved history is not necessarily exposed.
+
+`rules` retains full context except for explicit arithmetic and simple split-bill
+questions. `flash` calls `ollamacloud/deepseek-v4.1-flash` through the host's
+OmniRoute endpoint, using `OMNIROUTE_API_KEY`. Its exact system instruction and
+input block table live in `nora/subject/context_filter.py`. Input uses the current
+message, tagger name, peer card, Culture, Standing, last eight transcript rows
+with ages, and candidate previews bounded to 600 characters. The selector emits
+only optional block names and the unchanged full transcript window. Invalid
+output or a transport failure retains full context, and makes the experiment
+unsuccessful even if Nora's fallback reply passes.
+
+Receipts bind exposure sizes, selected/withheld blocks, selector latency, complete
+turn latency, provider/cache identity and selector usage to each replay draw.
+They contain no room text. Existing prefill `blocks_rendered` still describes
+assembled material; `nora.context_filter.withheld` identifies the experiment's
+additional exposure restriction. Default full mode makes no selector call.
+
+Compare the same anchored cases and deployment model across all three arms.
+Use `--reasons` for tool routing. One draw is a smoke check, not an accuracy rate.
+Tool-route grades do not establish reply quality; judged corpora remain subject
+to the open judge-timeout defect. Static Nora instructions and tool schemas are
+unchanged, but per-turn context changes can still affect provider caching.
