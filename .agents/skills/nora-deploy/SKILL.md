@@ -58,7 +58,7 @@ Every locked script runs under `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.loc
 ## 3. Build, recreate, verify (one locked script)
 
 ```bash
-ssh norty "SHA=$SHA $LOCK bash -s" > deploy.log 2>&1 <<'EOF'
+ssh norty "SHA=$SHA ${LOCK:?set LOCK, step 2} bash -s" > deploy.log 2>&1 <<'EOF'
 set -u
 if pgrep -af 'docker( compose)? (build|up)'; then echo "UNLOCKED_DEPLOY_RUNNING"; exit 75; fi
 cd ~/workspace/nora || exit 1
@@ -129,7 +129,7 @@ the copy through the running container, and only then put it in place; a bad
 key reaches no process, and the backup comes back on any failure:
 
 ```bash
-ssh norty "$LOCK bash -s" > cfg.log 2>&1 <<'EOF'
+ssh norty "${LOCK:?set LOCK, step 2} bash -s" > cfg.log 2>&1 <<'EOF'
 set -u
 cd ~/workspace/nora || exit 1
 mkdir -p ~/nora-backups; B=~/nora-backups/config.toml.$(date +%Y%m%dT%H%M%S)
@@ -176,7 +176,7 @@ schema a newer deploy migrated: the script refuses and you roll FORWARD with a
 revert PR (nora-land, then step 3).
 
 ```bash
-ssh norty "$LOCK bash -s" > rollback.log 2>&1 <<'EOF'
+ssh norty "${LOCK:?set LOCK, step 2} bash -s" > rollback.log 2>&1 <<'EOF'
 set -u
 cd ~/workspace/nora || exit 1
 CUR=$(docker inspect -f '{{.Image}}' nora) || exit 1
