@@ -167,6 +167,5 @@ coordinate→mark adapter.
   images (V, <https://api-docs.deepseek.com/guides/vision>). Ollama's library
   page says `deepseek-v4-flash` "was retired on August 27, 2026" (V), yet
   Nora's live config still routes `ollama-cloud/deepseek-v4-flash:0731`
-  through OmniRoute. **What Nora's route does with an image is S1's to
-  measure** (`04-s1-runbook.md` §5), and no "v4.1" name was found on either
-  page.
+  through OmniRoute. **Measured 2026-10-07 (S1 step 5):** the route reads
+  images (5/5), and the upstream answers as `deepseek-v4.1-flash`.

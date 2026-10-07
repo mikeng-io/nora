@@ -119,16 +119,16 @@ and, at the moment of a fill, the one credential value the page needs.
   real user. Linux Chrome is x86-64 only, and norty is x86-64 (§0). Pin the version in the Dockerfile and update it on
   a schedule, since a stale Chrome is itself a signal.
 - **What actually decides blocks, in order:**
-  1. **Exit IP reputation.** norty's IP. A residential IP is the largest
-     single factor; a datacenter exit is the one we cannot fix in code.
+  1. **Exit IP reputation.** norty exits on a residential HKT Netvigator
+     address (AS4760, S1 step 6), the best case; Google still challenged a
+     fresh profile once.
   2. **CDP automation leaks** (`Runtime.enable`, `navigator.webdriver`).
      Every CDP driver has them; Patchright and nodriver patch them. The
      extension-based control OpenCLI uses avoids the class.
   3. **The sbx egress proxy.** If it terminated TLS, the site would see the
-     proxy's TLS fingerprint, not Chrome's: a strong bot signal. **For a
-     plain host rule it tunnels** (§0, two hosts read), so Chrome's own
-     ClientHello should reach the site; S1 confirms it with a JA4 echo
-     service. Two rules follow: **never put an sbx secret or an HTTP
+     proxy's TLS fingerprint, not Chrome's: a strong bot signal. **It does
+     not:** S1 measured the same JA4 for one Chrome build in the VM through
+     the proxy and on the host directly (`04-s1-runbook.md` step 3). Two rules follow: **never put an sbx secret or an HTTP
      method/path rule on a host the browser visits** (that host would be
      intercepted), and launch Chrome with `--proxy-server` pointing at the
      proxy rather than relying on env vars. QUIC is UDP and the rules are
@@ -140,29 +140,34 @@ and, at the moment of a fill, the one credential value the page needs.
 - **An anti-detect backend is an option, not the default:** Camoufox
   (Firefox, Juggler, not CDP) as a second engine for sites that block Chrome,
   measured as a spike arm (`03-open-questions.md`).
-- **Egress.** Browsing needs the public web. That is a new allowance on the
-  VM that also holds every room's files, so it is a decision (ADR 0022 Decision 2),
-  and **"allow `**`, deny the private ranges" does not do what it says.**
-  sbx checks a CIDR deny against an IP literal, not against what an allowed
-  hostname resolves to. A public name that resolves to `172.17.0.1` or the
-  LAN address (DNS rebinding, or a wildcard-DNS service) would then pass,
-  and on norty that address reaches Ollama (`:11434`, no auth), Langfuse,
-  Neo4j, Prometheus, OmniRoute and the social bridge (`:19826`, no auth),
-  all listening on `0.0.0.0` or docker0 (`ss -ltn`, 2026-10-07). So:
-  - S1 measures it: a name resolving to `172.17.0.1`, to the LAN IP and to
-    `127.0.0.1`, fetched through the proxy under a `**` rule, each by an
-    HTTP body (never a TCP connect, sandbox §9).
-  - If any of them reaches a service, wide egress needs a second fence
-    first: a host firewall rule that drops the proxy's connections to
-    private ranges, or a filtering resolver for the proxy. Which one is
-    possible depends on the user and namespace the proxy connects from
-    (S1 reads it).
-  - The vendor's help text is the stronger evidence: three probe names that
-    are refused show only that those names were refused. The fence is the
-    default answer, and S1 shows whether it is urgent.
-  - The logged-in profiles share this egress (one sandbox, §4); their own
-    fence is Chrome's URL policy.
-  - The network half of the audit stays `sbx policy log`.
+- **Egress.** Browsing needs the public web, a new allowance on the VM that
+  holds every room's files (ADR 0022 Decision 2). **S1 measured that sbx
+  cannot give it safely** (`04-s1-runbook.md` §Results, step 4): under `**`
+  with every private range denied, public names that resolve to
+  `127.0.0.1`, `172.17.0.1` and the LAN address reached the social bridge,
+  Ollama, Prometheus (bound to loopback only) and OmniRoute, by plain HTTP
+  and by CONNECT. A CIDR deny applies to IP literals only, and sbx's proxy
+  dials from the host's own network namespace. So **`nora-computer` never
+  gets `**`**, and the fence comes first (the operator's ruling, 2026-10-07):
+  - **A filtering egress proxy on the host,** which resolves the name
+    itself and refuses any private, loopback or link-local answer before it
+    connects. Stripe's Smokescreen is the published pattern (an MIT HTTP
+    CONNECT proxy that refuses non-public IPs by default; not yet evaluated
+    here). It listens on the docker0 address.
+  - **sbx allows exactly that proxy,** by IP literal and port
+    (`172.17.0.1:<port>`), which S1 showed sbx does enforce. Chrome is
+    launched with `--proxy-server` pointing at it, so every page load goes
+    VM → sbx → the filtering proxy → the site. TLS stays end to end (a
+    CONNECT tunnel; S1 step 3 showed tunnels keep Chrome's ClientHello).
+  - B1 measures the fence the way S1 measured its absence: the same
+    rebinding names through it return refusals, by body, with the same
+    controls.
+  - The filtering proxy is also where a per-room or per-domain policy and
+    its own log can live later. The network half of the audit is
+    `sbx policy log` plus that log.
+- **The Google challenge.** One search from a fresh profile on norty's
+  residential IP got `/sorry/` (S1 step 6, one page). Anti-bot is a real
+  cost here even with a good IP; B3's anti-detect arms measure it.
 
 ## 4. Where logged-in browsers live
 
@@ -284,10 +289,9 @@ speed (`02-research.md` §4):
   a vision answer is a ref, not a pixel coordinate. A coordinate-native model
   (Holo, Fara, UI-TARS) gets an adapter that maps a click to the mark under it.
 - DeepSeek v4.1 Flash reads it directly, if OmniRoute and the provider pass
-  images through: **verify before building on it** (the configured model is
-  `ollama-cloud/deepseek-v4-flash:0731` behind the `nora` alias; Ollama's
-  library page calls that model retired since 2026-08-27, `02-research.md`
-  §6, so S1 reads what the route actually does).
+  images through. **Measured, S1 step 5:** through the `nora` alias, 5/5
+  random numbers read exactly, an image costing about 200 prompt tokens at
+  400×120, and the upstream names itself `deepseek-v4.1-flash`.
 
 ### 5.3 Where the decision model runs
 
@@ -342,8 +346,8 @@ Two paths, both built eventually:
 | step | what | gate |
 |---|---|---|
 | **S1** | the runbook in `04-s1-runbook.md`: Chrome + Xvfb RSS, TLS fingerprint through the proxy, rebinding under a `**` rule, exit IP, Flash image passthrough | numbers recorded in `04-s1-runbook.md` §Results |
-| **B0** | ADR 0022 accepted; egress policy for browsing | operator |
-| **B1** | CDP over `--remote-debugging-pipe` in computerd, scoped per room; screencast relay | tests: a scope reaches only its own browser; no CDP port listens |
+| **B0** | ADR 0022 accepted (egress shape settled by S1, §3) | operator |
+| **B1** | the filtering egress proxy and its sbx rule (§3); CDP over `--remote-debugging-pipe` in computerd, scoped per room; screencast relay | S1's rebinding probe refused through the proxy, with its controls; a scope reaches only its own browser; no CDP port listens |
 | **B2** | `computer_browse` + sub-agent, tiers 4 and 5 only (Flash, hand-off) | nora-tool routing measurement |
 | **B3** | spike (`03-open-questions.md` §2): decision-model arms, Camoufox arm | measured, fail-closed |
 | **B4** | OpenBao + fill broker + redaction (`01-vault.md`); the `browser` user and its display; Nora's Google account | a room's shell cannot read `/var/lib/nora-browser` or its display; a credential reaches only a bound field on its bound origin; zero plaintext in traces |

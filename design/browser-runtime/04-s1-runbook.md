@@ -1,6 +1,7 @@
 # S1 runbook — measure before building (norty)
 
-Status (2026-10-07): **written, not run.** Every step below names its
+Status (2026-10-07): **run on norty 2026-10-07; results in §Results.**
+Step 4 FAILED, and that decides the egress design. Every step below names its
 reading and what counts as PASS, FAIL or ERROR. ERROR means the probe
 itself did not run cleanly, and it is never read as PASS. Results go in
 §Results with the date and the command's own output, nothing paraphrased.
@@ -28,6 +29,30 @@ Chrome stable installs); the proxy tunnels TLS for `pypi.org` and
 - The live social Chrome on the host (`nora-social-chrome.service`, DEC-201)
   is never launched, upgraded or reused by S1. The host reference in §3 is a
   separate Chrome for Testing build under `~/s1/`.
+
+## Corrections from the run (2026-10-07)
+
+Running the runbook as written hit four things; the steps below are
+correct as written only with these:
+
+- **`sbx create` auto-stops** a local sandbox 30 s after its last session
+  disconnects, killing Xvfb and Chrome between steps (`deploy/computer/
+  nora-computer` `prepare()` documents it). Create it detached:
+  `sbx run -d --name browser-s1 -m 3g --cpus 2 --pull never -t
+  nora-computer:latest shell ~/s1/ws` (an empty, mode-700 workspace).
+- **The Docker Hub template could not be pulled** ("docker login service
+  unavailable"). The local `nora-computer:latest` template needs no pull,
+  and matches production's base (Ubuntu 26.04.1, user `computer`). Root is
+  `sbx exec -u root`.
+- **Removing a rule** is `sbx policy rm network --sandbox browser-s1 --id
+  <id> --force`; without `--sandbox` it looks in the global policy, and
+  without `--force` it wants a terminal. Read the rule's effect back after
+  removing it.
+- **`sbx rm` needs** `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent` (the
+  keychain workaround from `nora-computer`), or it fails on "the OS keychain
+  is locked".
+- Chrome for Testing on the host needs `--no-sandbox` (Ubuntu 26.04 gives an
+  unprivileged user no usable Chrome sandbox); TLS is unaffected.
 
 ## 1. The sandbox and Chrome
 
@@ -293,15 +318,30 @@ remove each with `sbx policy rm` and note the behaviour.
 
 ## Results
 
-Not run. Fill in per step: date, the reading, PASS / FAIL / ERROR, and
-the log file it came from.
+Run 2026-10-07 on norty, sbx 0.46.0, in `browser-s1` built from
+`nora-computer:latest`. Logs in `~/s1/` on norty.
 
 | step | reading | verdict | log |
 |---|---|---|---|
-| 1 Chrome version | | | |
-| 2 RSS / MemAvailable at 1, 3, 5 tabs | | | |
-| 3 JA4 VM vs host, issuer | | | |
-| 4 rebinding, per name and port | | | |
-| 5 Flash image, 5 runs, token delta | | | |
-| 6 exit IP, ASN, reputation | | | |
-| 7 cleanup | | | |
+| 1 Chrome | Google Chrome 155.0.8059.39 from `dl.google.com`, with Xvfb, in the computer image | PASS | `1-install.log` |
+| 2 memory | before Chrome 2,775 MiB available. 1 tab: PSS 574 MiB, 2,605 available; 3 tabs: 679 / 2,510; 5 tabs (Wikipedia ×2, BBC, GitHub, YouTube, all titled): **885 MiB PSS, 2,294 MiB available**; no OOM. RSS sums (1,307–2,271) double-count shared pages | PASS | `2-tabs.log` |
+| 3 TLS | VM saw Let's Encrypt (real issuer). Chrome stable headed (A) = headless (B) = `t13d1517h2_8daaf6152771_cb7bf5808d99`. **Chrome for Testing 155.0.8059.39 gives `t13d1518h2_8daaf6152771_4980c97edce0` both in the VM through the sbx proxy (E) and on the host directly (C)**; a plain local CONNECT proxy changes nothing either (D). The proxy leaves the ClientHello intact; the stable-vs-CfT difference is one extension (4832) the build sends, not the path | PASS | `3-*.json/html` |
+| 4 rebinding | controls held (every target answers on the host; `example.com` 200 under the rules; norty's resolver returns the private answers). Under `**` + every private CIDR denied: **`127-0-0-1.sslip.io` reached the social bridge (`{"ok": true}`), Ollama (`0.35.0`), Prometheus (`127.0.0.1`-only, "Healthy") and OmniRoute (401)**; `172-17-0-1` and `192-168-1-219` names reached what listens there, by plain HTTP and by CONNECT alike. IP literals were denied (`403 Blocked by local rule`). The proxy dials from the host's own network namespace, loopback included | **FAIL** | `4d-rebind.log` |
+| 5 Flash vision | 5/5 random 6-digit numbers read exactly through OmniRoute's `nora` alias; prompt tokens 363 with the image vs 161 without, every run; upstream reports `deepseek-v4.1-flash` | PASS | `5-resp-*.json` |
+| 6 exit IP | `116.49.51.47`, AS4760 HKT Limited, NETVIGATOR "Mass Internet" (residential), Hong Kong; VM and host exit the same. **One Google search from the VM's fresh profile got `/sorry/` (CAPTCHA)**: an anecdote, not a rate | residential; challenged once | `6-*.json`, `6-google.log` |
+| 7 cleanup | `browser-s1` removed; `sbx policy ls` identical to the baseline (`DIFF_RC=0`); no pending approvals | PASS | `7-after.txt` |
+
+**What S1 decides:**
+
+- **Wide egress through sbx is ruled out** as designed: sbx's CIDR deny does
+  not apply to an allowed name, exactly as its help says, and the reach
+  includes loopback-only services. Under the operator's ruling ("open
+  after S1's probe, else fence first"), the fence comes first. Its shape is
+  in `00-design.md` §3.
+- Chrome fits: 5 tabs leave 2.2 GiB of the 3 GiB VM. A second, logged-in
+  Chrome beside room work is the next memory reading (B4).
+- The proxy is not a fingerprint problem. Exit IP is residential, and Google
+  still challenged a fresh CDP-driven profile once. B3's Patchright, nodriver
+  and Camoufox arms are where that gets measured.
+- Flash sees images through Nora's own route, so tier 4's vision needs no new
+  provider.

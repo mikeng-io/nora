@@ -1,21 +1,21 @@
 # Open questions and measurements
 
-Status (2026-10-07): six of seven rulings made; ADR acceptance and every
-measurement open. Nothing here is decided by argument.
+Status (2026-10-07): six of seven rulings made and S1 run; ADR acceptance
+is the one open ruling. Nothing here is decided by argument.
 
 ## 1. Rulings for the operator
 
 Ruled 2026-10-07 unless marked open. Each keeps the fact it rests on, so a
 later reading can reopen it.
 
-1. **Accept ADR 0022?** **Open.** It is accepted at B0, after S1, because
-   S1's rebinding and TLS readings can still change Decision 2.
-2. **Browsing egress: ruled, open after S1's probe.** `nora-computer` gets
-   `**` over TCP only once S1 shows names resolving to private or loopback
-   addresses are refused, or a host-side fence makes it so. sbx's help says
-   a CIDR deny is not checked against an allowed name's address (00 §0,
-   §3), so a PASS shows only that those names were refused, and the fence
-   remains the expected answer.
+1. **Accept ADR 0022?** **Open, and next (B0).** S1 has run, and its
+   readings are folded into Decision 2 (the filtering proxy) and the
+   Context.
+2. **Browsing egress: ruled, open after S1's probe; S1 failed, so fence
+   first.** Under `**` with private ranges denied, rebinding names reached
+   four host services (`04-s1-runbook.md` step 4). `nora-computer` never gets
+   `**`; browsing goes through a filtering egress proxy on the host that sbx
+   allows by IP literal (00 §3). B1 proves the fence with the same probe.
 3. **One sandbox or two: ruled, one.** The recommendation was two. Logged-in
    profiles live in `nora-computer` under a dedicated `browser` user, with
    the fences in 00 §4. What the choice costs is in ADR 0022 Worse. Reopen if
@@ -38,17 +38,13 @@ later reading can reopen it.
 
 ## 2. Measurements (S1 and the B3 spike)
 
-**S1, before any build:** the commands and their pass/fail readings are in
-`04-s1-runbook.md`. Answered already (2026-10-07, 00 §0): norty is x86-64,
-so Google Chrome; the sbx proxy tunnels TLS for a plain host rule (two hosts
-read; S1 confirms with a fingerprint echo).
+**S1: run 2026-10-07** (`04-s1-runbook.md` §Results). Chrome fits (5 tabs
+leave 2.2 GiB); the proxy keeps Chrome's TLS; rebinding FAILED; Flash reads
+images; residential exit, one Google challenge.
 
-- Chrome + Xvfb RSS at 1, 3, 5 tabs inside the 3 GB VM.
-- JA4 seen by a server through the sbx proxy, vs Chrome on the host.
-- Rebinding: a public name resolving to `172.17.0.1`, the LAN IP and
-  `127.0.0.1`, fetched through the proxy under `**`.
-- norty's exit IP: residential or datacenter, and its reputation.
-- Does OmniRoute → Ollama Cloud pass images to DeepSeek v4.1 Flash?
+**Still to measure:** the filtering proxy against the same rebinding probe
+(B1); RSS with a logged-in Chrome beside an anonymous one and room work
+(B4); Google's challenge rate across the B3 arms.
 
 **B3 spike.** Same six tasks as sandbox §14 (availability, form with
 validation errors, a table behind a login with the credential never shown,

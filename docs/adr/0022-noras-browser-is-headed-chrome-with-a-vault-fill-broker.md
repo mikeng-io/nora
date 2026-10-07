@@ -47,13 +47,14 @@ read of norty (`00-design.md` §0, 2026-10-07) found:
   one path its redactor did not cover, read it back out of the page into
   the state database (issue #112693, fixed by #113261). Redaction per tool
   is not a boundary.
-- **Blocks are decided mostly by exit IP and CDP leaks,** not headless mode.
-  The sbx proxy tunnels TLS for a plain host rule (two hosts read), so
-  Chrome's own fingerprint should reach the site; S1 confirms it.
-- **sbx cannot express "the web minus private ranges":** a CIDR deny is not
-  checked against an allowed hostname's resolved address (its own help
-  text), and Ollama, Langfuse, Neo4j, Prometheus, OmniRoute and the social
-  bridge listen where a rebinding name would land.
+- **S1, measured on norty 2026-10-07** (`04-s1-runbook.md` §Results):
+  Chrome with 5 tabs leaves 2.2 GiB of the 3 GiB VM; the sbx proxy keeps
+  Chrome's TLS fingerprint; Flash reads images through Nora's route; the
+  exit is residential, and Google still challenged a fresh profile once.
+- **sbx cannot give "the web minus private ranges":** under `**` with every
+  private range denied, rebinding names reached the social bridge, Ollama,
+  Prometheus (loopback only) and OmniRoute. A CIDR deny applies to IP
+  literals only.
 - **Small decision models** now exist that return a choice and a confidence
   in one pass (Strands Decider 2B, Tev1, Laya, cua-s1; Jev is hosted only).
   Each sees at most 10–26 options or a 4k-token context; a page has
@@ -65,12 +66,11 @@ read of norty (`00-design.md` §0, 2026-10-07) found:
 
 1. **Real Google Chrome, headed on Xvfb, inside sbx.** Not `--headless`.
    noVNC and a CDP screencast make the display watchable and takeable.
-2. **Browsing egress opens only after S1's rebinding probe** (operator,
-   2026-10-07). `nora-computer` reaches the public web over TCP once a
-   name resolving to a private or loopback address is shown refused, or
-   after a host-side fence makes it so. Because sbx's own help says a CIDR
-   deny is not checked against an allowed name's address, the fence is the
-   expected answer, and S1 decides whether it comes first. Logged-in
+2. **Browsing egress goes through a filtering proxy, never sbx `**`.** The
+   operator ruled egress opens after S1's probe, and S1 failed it. A proxy
+   on the host resolves each name and refuses private, loopback and
+   link-local answers (Smokescreen's pattern), and sbx allows only that
+   proxy, by IP literal. B1 proves it with S1's own probe. Logged-in
    profiles share this egress, and Chrome's URL policy limits them to
    exact hosts.
 3. **Credentials live in OpenBao and reach a page only through the fill
@@ -128,6 +128,8 @@ read of norty (`00-design.md` §0, 2026-10-07) found:
   by the browser, not the network.
 - **#678 (one VM per social unit) reopens this:** Nora's accounts would sit
   in one unit's VM, or be signed in once per VM.
+- **A filtering egress proxy is new infrastructure too,** on the host, and
+  every page load depends on it; if it is down, browsing is `unavailable`.
 - **OpenBao is new infrastructure to run:** unseal after every reboot (fills
   are `unavailable` until the operator unseals), upgrades, its own audit log.
 - **Credential values do enter the VM** at fill time, inside the page; a
