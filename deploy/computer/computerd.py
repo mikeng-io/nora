@@ -77,11 +77,11 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, TypeGuard
 
-from aiohttp import web
+from aiohttp import WSMsgType, web
 
 SCOPE_RE = re.compile(r"^[0-9a-f]{16,64}$")
 
@@ -231,7 +231,7 @@ class Computer:
         return hmac.compare_digest(header, f"Bearer {self._token}")
 
     @staticmethod
-    def valid_scope(scope: Any) -> bool:
+    def valid_scope(scope: Any) -> TypeGuard[str]:
         return isinstance(scope, str) and SCOPE_RE.match(scope) is not None
 
     @contextlib.contextmanager
@@ -641,6 +641,358 @@ class Computer:
         return {"status": "ok", **files, **tmux, **procs}
 
 
+def xauthority_entry(cookie: bytes) -> bytes:
+    """One Xauthority record with an MIT-MAGIC-COOKIE-1, matching any host
+    (FamilyWild) and any display (an empty number, which libXau's best-match
+    accepts): Xvfb picks the display itself (`-displayfd`), after the file is
+    written. The format is four length-prefixed fields after a 16-bit
+    family, all big-endian (Xau's `XauWriteAuth`)."""
+    def field(data: bytes) -> bytes:
+        return len(data).to_bytes(2, "big") + data
+    return (0xFFFF).to_bytes(2, "big") + field(b"") + field(b"") \
+        + field(b"MIT-MAGIC-COOKIE-1") + field(cookie)
+
+
+class Browser:
+    """One room's Chrome: headed on its own Xvfb display, both running as the
+    room's user, driven over `--remote-debugging-pipe` (design/browser-runtime
+    00 §4). There is no debugging TCP port, so no other room's command, and
+    no command at all, can attach: the pipe's two file descriptors are held
+    by computerd alone. The display needs the cookie in the room's own
+    `browser/.Xauthority` (`0o600`), so another room cannot read the screen.
+
+    Chrome speaks CDP on the pipe as NUL-terminated JSON: commands in on fd 3,
+    answers and events out on fd 4. One websocket client at a time; the
+    reader runs whether or not one is attached, so Chrome never blocks on a
+    full pipe."""
+
+    def __init__(self, scope: str, display: int) -> None:
+        self.scope = scope
+        self.display = display
+        self.chrome: asyncio.subprocess.Process | None = None
+        self.xvfb: asyncio.subprocess.Process | None = None
+        self.client: web.WebSocketResponse | None = None
+        self.last_used = time.monotonic()
+        self.started = time.time()
+        self._to_chrome: int | None = None
+        self._reader: asyncio.Task[None] | None = None
+        # One writer at a time: two frames written at once could interleave
+        # on the pipe and break its NUL framing.
+        self._write_lock = asyncio.Lock()
+
+    @property
+    def alive(self) -> bool:
+        return self.chrome is not None and self.chrome.returncode is None
+
+    async def send(self, message: str) -> None:
+        self.last_used = time.monotonic()
+        if self._to_chrome is None:
+            raise OSError("the browser's pipe is closed")
+        data = message.encode("utf-8") + b"\0"
+        async with self._write_lock:
+            await asyncio.to_thread(_write_all, self._to_chrome, data)
+
+    async def _read(self, fd: int) -> None:
+        """Forward every message Chrome writes to the attached client, and
+        drop it when there is none."""
+        buffer = bytearray()
+        try:
+            while True:
+                chunk = await asyncio.to_thread(os.read, fd, 1 << 16)
+                if not chunk:
+                    return
+                scan = len(buffer)  # a NUL can only be in what just arrived
+                buffer += chunk
+                if len(buffer) > MAX_TRANSFER_BYTES:
+                    # A room's command runs as Chrome's user and can write to
+                    # this pipe itself; an unframed flood must not grow root's
+                    # memory without end. Chrome is killed, and the reaper
+                    # frees its slot.
+                    if self.chrome is not None and self.chrome.returncode is None:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(self.chrome.pid, signal.SIGKILL)
+                    return
+                while (end := buffer.find(b"\0", scan)) != -1:
+                    message = bytes(buffer[:end])
+                    del buffer[:end + 1]
+                    scan = 0
+                    self.last_used = time.monotonic()
+                    client = self.client
+                    if client is not None and not client.closed:
+                        with contextlib.suppress(ConnectionResetError, RuntimeError):
+                            await client.send_str(message.decode("utf-8", errors="replace"))
+        finally:
+            os.close(fd)
+
+    async def stop(self) -> None:
+        for proc in (self.chrome, self.xvfb):
+            if proc is not None and proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                await proc.wait()
+        if self._to_chrome is not None:
+            with contextlib.suppress(OSError):
+                os.close(self._to_chrome)
+            self._to_chrome = None
+        if self._reader is not None:
+            self._reader.cancel()
+        if self.client is not None and not self.client.closed:
+            await self.client.close()
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
+# Browsers: at most this many rooms have one running at once (each Chrome with
+# a few tabs is about 0.6-0.9 GiB in the 3 GiB VM, design/browser-runtime 04
+# step 2); one idle this long, with no client attached, is stopped.
+MAX_BROWSERS = 2
+BROWSER_IDLE_SECONDS = 600.0
+CHROME_START_SECONDS = 10.0
+# X's own socket directory: a fixed path every X client looks in, so not a
+# temp file; the image makes it, root's and sticky (Browsers.ensure_x11_dir).
+X11_DIR = Path("/tmp/.X11-unix")  # noqa: S108
+# Chrome's own flags: headed (no --headless), the pipe and never a port, a
+# profile per room, no first-run UI. `--proxy-server` is added from the VM's
+# `https_proxy` when there is one (sbx's proxy; design 00 §3). Driven over the
+# pipe, Chrome sets `navigator.webdriver` to true, the plainest bot signal
+# there is (read in the VM 2026-10-07); AutomationControlled off clears it.
+CHROME_FLAGS = (
+    "--remote-debugging-pipe", "--no-first-run", "--no-default-browser-check",
+    "--password-store=basic", "--window-size=1280,800",
+    "--disable-blink-features=AutomationControlled",
+)
+
+
+class Browsers:
+    """Every room's browser, started on a room's first CDP connection."""
+
+    def __init__(
+        self, computer: Computer, *, chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
+        max_browsers: int = MAX_BROWSERS, idle_seconds: float = BROWSER_IDLE_SECONDS,
+        x11_dir: Path = X11_DIR,
+    ) -> None:
+        self.computer = computer
+        self.x11_dir = x11_dir
+        self.chrome_bin = chrome_bin
+        self.xvfb_bin = xvfb_bin
+        self.max_browsers = max_browsers
+        self.idle_seconds = idle_seconds
+        self.running: dict[str, Browser] = {}
+        self._lock = asyncio.Lock()
+
+    async def reap(self) -> None:
+        """Stop every browser that died, or sat idle past the limit with no
+        client attached."""
+        async with self._lock:
+            await self._reap()
+
+    async def _reap(self) -> None:
+        now = time.monotonic()
+        for scope, browser in list(self.running.items()):
+            idle = browser.client is None and now - browser.last_used > self.idle_seconds
+            if not browser.alive or idle:
+                await browser.stop()
+                self.running.pop(scope, None)
+
+    async def get(self, scope: str) -> Browser:
+        """The room's running browser, started if there is none. Raises
+        `RefusedError` when every slot holds a browser with a client attached
+        (nothing can be stopped for this one), `OSError` when it cannot start."""
+        async with self._lock:
+            await self._reap()
+            browser = self.running.get(scope)
+            if browser is not None:
+                browser.last_used = time.monotonic()
+                return browser
+            if len(self.running) >= self.max_browsers:
+                idle = [b for b in self.running.values() if b.client is None]
+                if not idle:
+                    raise RefusedError(
+                        f"{self.max_browsers} rooms are browsing now; try again shortly")
+                oldest = min(idle, key=lambda b: b.last_used)
+                await oldest.stop()
+                self.running.pop(oldest.scope, None)
+            browser = await self._start(scope)
+            self.running[scope] = browser
+            return browser
+
+    def ensure_x11_dir(self) -> None:
+        """The X socket directory, `1777` and root's: Xvfb runs as a room's
+        user and cannot make it. Nothing here follows a link: `mkdir` fails on
+        an existing name, the directory is opened `O_NOFOLLOW` and changed
+        through that descriptor. As root, one that is not root's own (made by
+        a room's command before computerd) is refused, never adopted: a room
+        could otherwise point it anywhere and have root open it to everyone.
+        The image makes it (Dockerfile) and computerd checks it at start."""
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(self.x11_dir, 0o700)
+        fd = os.open(self.x11_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            if os.geteuid() == 0:
+                if os.fstat(fd).st_uid != 0:
+                    raise OSError(f"{self.x11_dir} is not root's; refusing to use it")
+                os.fchmod(fd, 0o1777)
+        finally:
+            os.close(fd)
+
+    async def _read_display(self, fd: int, xvfb: asyncio.subprocess.Process) -> int:
+        """The display number Xvfb wrote to `-displayfd` once it was listening.
+        Xvfb picks it: it skips any number whose socket, lock or abstract
+        name is already taken, and then holds all of them itself, so a room
+        cannot predict the number, block it, or answer in its place. Raises
+        `OSError` when none comes before the deadline."""
+        os.set_blocking(fd, False)
+        data = b""
+        deadline = time.monotonic() + CHROME_START_SECONDS
+        while time.monotonic() < deadline and b"\n" not in data:
+            try:
+                chunk = os.read(fd, 64)
+            except BlockingIOError:
+                if xvfb.returncode is not None:
+                    break
+                await asyncio.sleep(0.05)
+                continue
+            if not chunk:
+                break
+            data += chunk
+        line = data.split(b"\n", 1)[0].strip()
+        if not line.isdigit():
+            raise OSError("Xvfb did not report a display")
+        return int(line)
+
+    def _display_is_ours(self, display: int, uid: int | None) -> bool:
+        """The display's socket is a socket and the room user's (when rooms
+        are isolated): what Chrome will connect to is our Xvfb's."""
+        try:
+            info = os.lstat(self.x11_dir / f"X{display}")
+        except FileNotFoundError:
+            return False
+        return stat.S_ISSOCK(info.st_mode) and (uid is None or info.st_uid == uid)
+
+    async def _start(self, scope: str) -> Browser:
+        await asyncio.to_thread(self.computer._ensure_scope, scope)
+        await asyncio.to_thread(self.ensure_x11_dir)
+        cookie = secrets.token_bytes(16)
+        auth = await asyncio.to_thread(self._write_xauthority, scope, cookie)
+        profile = self.computer.root / scope / "browser" / "default"
+        env = self.computer._env(scope)
+        env.update(XAUTHORITY=str(auth))
+        user = self.computer._user(scope)
+        browser = Browser(scope, display=-1)
+        display_r, display_w = os.pipe()
+        try:
+            browser.xvfb = await asyncio.create_subprocess_exec(
+                self.xvfb_bin, "-displayfd", str(display_w), "-screen", "0", "1280x800x24",
+                "-nolisten", "tcp", "-auth", str(auth), env=env, cwd="/",
+                pass_fds=(display_w,), stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True, **user,
+            )
+        finally:
+            os.close(display_w)
+        ids = self.computer.owner.ids(scope)
+        opened: list[int] = [display_r]
+        try:
+            browser.display = await self._read_display(display_r, browser.xvfb)
+            if not self._display_is_ours(browser.display, ids[0] if ids else None):
+                raise OSError(f"the display :{browser.display} is not our Xvfb's")
+            env.update(DISPLAY=f":{browser.display}")
+            log_fd = await asyncio.to_thread(self._open_log, scope)
+            opened.append(log_fd)
+            # fd 3 is what Chrome reads (our commands), fd 4 what it writes.
+            cmd_r, cmd_w = os.pipe()
+            opened += [cmd_r, cmd_w]
+            out_r, out_w = os.pipe()
+            opened += [out_r, out_w]
+            flags = [*CHROME_FLAGS, f"--user-data-dir={profile}"]
+            proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+            if proxy:
+                flags.append(f"--proxy-server={proxy}")
+            # bash, not sh: the pipe's descriptors are usually above 9, and
+            # dash (the VM's /bin/sh) only redirects single-digit ones, so it
+            # exits 2 before Chrome starts (measured on the VM, 2026-10-07).
+            browser.chrome = await asyncio.create_subprocess_exec(
+                "/bin/bash", "-c", f'exec "$0" "$@" 3<&{cmd_r} 4>&{out_w}',
+                self.chrome_bin, *flags, "about:blank",
+                env=env, cwd=str(self.computer.root / scope), pass_fds=(cmd_r, out_w),
+                stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
+                stderr=log_fd, start_new_session=True, **user,
+            )
+        except BaseException:
+            for fd in opened:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            await browser.stop()
+            raise
+        # Ours to keep: the write end to Chrome and the read end from it.
+        for fd in (display_r, log_fd, cmd_r, out_w):
+            os.close(fd)
+        browser._to_chrome = cmd_w
+        browser._reader = asyncio.create_task(browser._read(out_r))
+        return browser
+
+    def _open_log(self, scope: str) -> int:
+        """`<scope>/browser/chrome.log`, emptied at each start and the room
+        user's: Chrome's stderr, so a browser that dies leaves a reason.
+        A fresh file every time (`O_EXCL` under a temp name, then renamed over
+        the old one), so whatever a room's command left at that name, a FIFO
+        that would block the open or a link to another file, is replaced and
+        never opened."""
+        with self.computer._dir(scope, ["browser"], create=True) as dfd:
+            tmp = f".chrome.log.{secrets.token_hex(6)}"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
+                         dir_fd=dfd)
+            try:
+                self.computer.owner.chown_fd(fd, scope)
+                os.replace(tmp, "chrome.log", src_dir_fd=dfd, dst_dir_fd=dfd)
+            except BaseException:
+                os.close(fd)
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp, dir_fd=dfd)
+                raise
+        return fd
+
+    def _write_xauthority(self, scope: str, cookie: bytes) -> Path:
+        """The room's display cookie, in `<scope>/browser/.Xauthority`, `0o600`
+        and the room user's, written through the no-follow walk."""
+        with self.computer._dir(scope, ["browser", "default"], create=True):
+            pass
+        with self.computer._dir(scope, ["browser"], create=True) as dfd:
+            tmp = f".Xauthority.{secrets.token_hex(6)}"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
+                         dir_fd=dfd)
+            try:
+                os.write(fd, xauthority_entry(cookie))
+                self.computer.owner.chown_fd(fd, scope)
+            finally:
+                os.close(fd)
+            os.replace(tmp, ".Xauthority", src_dir_fd=dfd, dst_dir_fd=dfd)
+        return self.computer.root / scope / "browser" / ".Xauthority"
+
+    async def stop(self, scope: str) -> bool:
+        async with self._lock:
+            browser = self.running.pop(scope, None)
+        if browser is None:
+            return False
+        await browser.stop()
+        return True
+
+    async def stop_all(self) -> None:
+        for scope in list(self.running):
+            await self.stop(scope)
+
+    def status(self, scope: str) -> dict[str, Any]:
+        browser = self.running.get(scope)
+        if browser is None or not browser.alive:
+            return {"browser": {"running": False}}
+        return {"browser": {"running": True, "started": int(browser.started),
+                            "attached": browser.client is not None}}
+
+
 def _read_proc_file(pid_fd: int, name: str, limit: int = 65536) -> bytes:
     """One file under an opened `/proc/<pid>`, never through a link."""
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=pid_fd)
@@ -818,9 +1170,14 @@ def _limit(raw: Any, ceiling: int, *, default: int | None = None) -> int:
 def create_app(
     *, root: Path, token: str, isolate_scopes: bool = True,
     tmux_root: Path | None = None, tmux_bin: str = "tmux", proc_root: Path = Path("/proc"),
+    chrome_bin: str = "google-chrome", xvfb_bin: str = "Xvfb",
+    x11_dir: Path = X11_DIR, max_browsers: int = MAX_BROWSERS,
+    browser_idle_seconds: float = BROWSER_IDLE_SECONDS,
 ) -> web.Application:
     computer = Computer(root=root, token=token, isolate_scopes=isolate_scopes,
                         tmux_root=tmux_root, tmux_bin=tmux_bin, proc_root=proc_root)
+    browsers = Browsers(computer, chrome_bin=chrome_bin, xvfb_bin=xvfb_bin, x11_dir=x11_dir,
+                        max_browsers=max_browsers, idle_seconds=browser_idle_seconds)
     file_ops: dict[str, Callable[[str, dict[str, Any]], Any]] = {
         "read": computer.read, "write": computer.write, "edit": computer.edit,
         "files": computer.files, "fetch": computer.fetch,
@@ -865,7 +1222,10 @@ def create_app(
             if op == "run":
                 return answer(await computer.run(scope, body))
             if op == "state":
-                return answer(await computer.state(scope, body))
+                return answer({**await computer.state(scope, body), **browsers.status(scope)})
+            if op == "browser_stop":
+                stopped = await browsers.stop(scope)
+                return answer({"status": "ok" if stopped else "nothing_found"})
             handler = file_ops.get(op)
             if handler is None:
                 return web.json_response({"status": "unknown operation"}, status=404)
@@ -879,8 +1239,70 @@ def create_app(
             return web.json_response({"status": "unavailable",
                                       "reason": f"{type(exc).__name__}: {exc}"})
 
+    async def browser_cdp(request: web.Request) -> web.StreamResponse:
+        """The room's browser, as a CDP websocket: each text frame is one CDP
+        message, relayed to and from Chrome's pipe. The room's Chrome starts on
+        the first connection. Refusals happen before the upgrade, as JSON with
+        the usual statuses; a bad token is 401."""
+        if not computer.authorised(request):
+            return web.json_response({"status": "unauthorised"}, status=401)
+        scope = request.query.get("scope")
+        if not computer.valid_scope(scope):
+            return web.json_response({"status": "denied",
+                                      "reason": "scope must be a lowercase hex key"})
+        try:
+            browser = await browsers.get(scope)
+        except RefusedError as exc:
+            return web.json_response({"status": "denied", "reason": str(exc)})
+        except OSError as exc:
+            return web.json_response({"status": "unavailable",
+                                      "reason": f"the browser did not start: {exc}"})
+        if browser.client is not None and not browser.client.closed:
+            return web.json_response({"status": "denied",
+                                      "reason": "this room's browser already has a client"})
+        ws = web.WebSocketResponse(max_msg_size=MAX_TRANSFER_BYTES)
+        # Claimed before the first await, so two connects at once cannot
+        # both pass the check above.
+        browser.client = ws
+        try:
+            await ws.prepare(request)
+            async for msg in ws:
+                if msg.type is not WSMsgType.TEXT:
+                    await ws.close(code=1003, message=b"CDP messages are text frames")
+                    break
+                try:
+                    await browser.send(msg.data)
+                except OSError:
+                    break
+        finally:
+            if browser.client is ws:
+                browser.client = None
+            browser.last_used = time.monotonic()
+        return ws
+
+    async def reap_idle(app: web.Application) -> AsyncIterator[None]:
+        # The X directory exists and is root's before any room's command can
+        # make its own (Browsers.ensure_x11_dir); a failure is logged, and
+        # every browser start reports it as unavailable.
+        try:
+            await asyncio.to_thread(browsers.ensure_x11_dir)
+        except OSError as exc:
+            print(f"computerd: browsers unavailable: {exc}", flush=True)
+
+        async def loop() -> None:
+            while True:
+                await asyncio.sleep(30)
+                await browsers.reap()
+        task = asyncio.create_task(loop())
+        yield
+        task.cancel()
+        await browsers.stop_all()
+
     app = web.Application(client_max_size=MAX_TRANSFER_BYTES + 1024)
+    app["browsers"] = browsers
+    app.cleanup_ctx.append(reap_idle)
     app.router.add_get("/v1/health", health)
+    app.router.add_get("/v1/browser", browser_cdp)
     app.router.add_post("/v1/{op}", dispatch)
     return app
 

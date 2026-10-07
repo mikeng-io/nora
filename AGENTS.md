@@ -190,9 +190,10 @@ rules were written down and not read at the moment they applied.
 holds the skills of the agents that build her. `tests/architecture/test_agent_skills.py`
 keeps this table and that directory in step.
 
-## Delegating to a sub-agent: which model
+## Delegating to a sub-agent: which model, and how much effort
 
-Say the model in every launch; never let it default. Two tiers: the
+Say the model AND the effort in every launch; never let either
+default. Two tiers: the
 **default** tier (Claude: Sonnet) and the **strongest** tier (Claude: Opus).
 They are close in capability, so the strongest tier is spent only where a row
 below names it (operator ruling, 2026-09-30).
@@ -211,6 +212,26 @@ below names it (operator ruling, 2026-09-30).
 Every change still gets an independent review by a fresh agent, never the one
 that built it: resuming an agent keeps its model, so a follow-up that the table
 puts on another tier is a new launch with the old report pasted in.
+
+**Effort is adaptive: it follows the task's ambiguity and what a miss costs,
+not the tier** (operator, 2026-10-07). The tier picks the model; effort picks
+how long it thinks. Start at the row's level and move it on evidence:
+
+| the sub-agent's task | effort |
+|---|---|
+| lookup, search, read-back, rename or renumber, doc sync | low |
+| build to a finished spec, off by default or additive; fix findings that name a file and line; review of an off-by-default or additive change; merge conflicts, config edits | medium |
+| build that needs judgement inside a spec (a new key, a migration, a write verb); debugging after a first fix missed; review of a change live on merge | high |
+| build with no spec (design judgement); a design bundle or its audit; review of a change touching disclosure (R-18, R-28, R-31), a lock or concurrency path, a hot-table migration, or one that starts spending model calls | xhigh |
+| a round after two BLOCKERs or a data-loss finding in the same area; a security or disclosure audit before publication | max |
+
+- **Escalate effort before tier.** Each BLOCKER raises the next round in the
+  same area one level, and a second BLOCKER or any data-loss finding goes to
+  `max` directly; the tier table above still decides when the model changes.
+  Each new task starts at its row's level, whatever an earlier one needed.
+- **An explicit operator override for a session wins** («only use low»).
+- A resumed agent keeps its effort as it keeps its model: a different level
+  is a new launch with the old report pasted in.
 
 ## Reporting to the operator
 

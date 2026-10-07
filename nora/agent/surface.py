@@ -51,11 +51,14 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #:
 #: `rollup_read` supersedes `where_been`'s 90-day cap for the Dreamer's
 #: adaptors only (25 §5), and `standing_read` shows her own held position to
-#: the session that revises it (30 §2): neither is a tag-path tool, so a reply
+#: the session that revises it (30 §2). `character_read` (self-growth C4) shows
+#: the unit's accounts; it joins the tag path only after a `tool_selection`
+#: run (`nora-tool`). None is a tag-path tool, so a reply
 #: neither pays their prompt nor can route to them, and the Relevance Gate's
 #: capability digest does not offer them as something she can serve
 #: (`ToolRegistry.capability_digest`).
-DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read", "standing_read"})
+DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
+    {"rollup_read", "standing_read", "character_read"})
 DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | DREAMER_LOOP_TOOLS
 
 #: Tag-turn tools only (design/subagent §3): the four `subagent_*` tools are a person's

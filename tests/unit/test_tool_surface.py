@@ -379,7 +379,7 @@ async def test_a_name_off_the_shelf_is_left_unknown():
 
 # ---- the two Dreamer-only reads of PR B (DEC-246) -----------------------------------------
 
-_LOOP_ONLY = ("rollup_read", "standing_read")
+_LOOP_ONLY = ("rollup_read", "standing_read", "character_read")
 
 
 def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
@@ -398,7 +398,7 @@ def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
 def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
     from nora.agent.registry import ToolRegistry
 
-    wired = ToolRegistry(rollup=object(), standing_head=object())
+    wired = ToolRegistry(rollup=object(), standing_head=object(), culture=object())
     digest = wired.capability_digest()
     assert not any(n in digest for n in _LOOP_ONLY)
     assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
@@ -408,9 +408,14 @@ def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
     from nora.agent.registry import ToolRegistry
 
     assert set(_LOOP_ONLY) <= ToolRegistry()._withheld
-    assert ToolRegistry(rollup=object())._withheld & set(_LOOP_ONLY) == {"standing_read"}
-    assert ToolRegistry(standing_head=object())._withheld & set(_LOOP_ONLY) == {"rollup_read"}
-    assert not ToolRegistry(rollup=object(), standing_head=object())._withheld & set(_LOOP_ONLY)
+    both = {"rollup": object(), "standing_head": object(), "culture": object()}
+    for name, withheld in (
+        ("rollup", {"standing_read", "character_read"}),
+        ("standing_head", {"rollup_read", "character_read"}),
+        ("culture", {"rollup_read", "standing_read"}),
+    ):
+        assert ToolRegistry(**{name: both[name]})._withheld & set(_LOOP_ONLY) == withheld
+    assert not ToolRegistry(**both)._withheld & set(_LOOP_ONLY)
 
 
 # ---- 4. tools resident on one occasion (DEC-256) ---------------------------
