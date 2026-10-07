@@ -85,7 +85,8 @@ PY
       )
       case "$decision" in
         deny-rule)
-            verdict Denied "$target" "denied by local rule rule \"local:3f6c1d0e-7a52-4b8e-9c14-2d5a8e0b6f71\""
+            rid="local:3f6c1d0e-7a52-4b8e-9c14-2d5a8e0b6f71"
+            verdict Denied "$target" "denied by local rule rule \"$rid\""
             exit 1 ;;
         allow) verdict Allowed "$target" ""; exit 0 ;;
         *) denied; exit 1 ;;
