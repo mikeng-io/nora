@@ -67,3 +67,14 @@ equal `docker image inspect <svc-image> --format '{{.Id}}'`.
 the migration file (`0088_orphan_delete` is the live case): the database is already at
 that revision, and every container fails at start on a revision its image does not
 know. Revert the code that uses the table, never the file that creates it.
+
+## Lock
+
+Every locked script runs as `ssh norty "$LOCK bash -s"` with
+`LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.lock'`. `-o` closes the lock's
+descriptor before the script runs, so nothing it starts can inherit the lock:
+on 2026-10-07 an `exec 9>` lock was inherited by a long-lived `sbx` process and
+a containerd shim, and every later deploy timed out on a lock no deploy held.
+Exit 75 is a held lock. If no `docker build` or `docker compose up` is running
+and `fuser -v /tmp/nora-deploy.lock` names a long-lived process, the lock
+leaked from a script without `-o`: tell that process's owner; never kill it.
