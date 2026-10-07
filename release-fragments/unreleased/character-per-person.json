@@ -1,12 +1,11 @@
 {
   "type": "feature",
-  "summary": "Nora keeps a short account of what each person in a room is like, written daily from her memory of them and the room's culture, and reads it in every tag and fire turn.",
+  "summary": "Nora keeps a short account of what each person in a group is like, and reads it in every tag and fire turn in the rooms that list them.",
   "details": [
-    "The culture fold also asks her memory what each listed person's character is, combines that with the room's culture, and stores one account per person; every turn in that room carries them as <character>.",
-    "Runs on the same [culture] switch and daily clock as the room account; no new setting."
+    "Each listed person has one account per group, shown as <character> in that group's rooms that list them.",
+    "It is written by that person's own background pass from what they said across the group's rooms, on the same [culture] switch as the room account; no new setting."
   ],
   "limitations": [
-    "Memory's view of a person is not scoped to one room: a unit is treated as one circle of friends.",
-    "A person nothing could be said about, or whose memory read failed, gets no account that day."
+    "A person who has not said enough yet, or whose pass settled nothing, has no account and nothing is shown for them."
   ]
 }

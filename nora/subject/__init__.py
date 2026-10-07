@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from .dreaming import Pass, adaptor_names, dream
 from .knowledge import (
+    AccountSeed,
     Knowledge,
     Message,
     NoteSeed,
@@ -81,6 +82,7 @@ from .sandbox import (
 
 __all__ = [
     "DEFAULT_ROOM",
+    "AccountSeed",
     "ActPass",
     "DrawWorkspace",
     "Knowledge",

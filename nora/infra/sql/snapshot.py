@@ -138,6 +138,7 @@ nothing, and reads identically to a room that genuinely had neither.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -145,7 +146,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import CultureRevision
+from nora.domain.culture import CultureRevision, character_key, unit_culture_key
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
@@ -240,6 +241,17 @@ class Snapshot:
     #: silent `PENDING`.
     reminders: tuple[Reminder, ...]
 
+    #: The UNIT's own account as it stood at `before_ms` (`unit_culture_key`),
+    #: what `<unit_culture>` renders in every room of the unit; `None` when it
+    #: had none. Read as the room's account is, by `written_at`.
+    unit_culture: CultureRevision | None = None
+
+    #: Each requested person's account in this unit as it stood at
+    #: `before_ms` (`character_key(unit, person_id)`), as `(person_id,
+    #: account)` in the order asked, a person with none omitted. What
+    #: `<character>` renders for the persons the room lists.
+    characters: tuple[tuple[str, CultureRevision], ...] = ()
+
 
 async def snapshot(
     engine: AsyncEngine,
@@ -250,11 +262,17 @@ async def snapshot(
     unit: str,
     before_ms: int,
     transcript_limit: int | None = None,
+    person_ids: Sequence[str] = (),
 ) -> Snapshot:
     """Reconstruct what Nora knew about one room at `before_ms`.
 
     `culture_key` and `unit` are required and are NOT derived here — see the
-    module docstring. `transcript_limit` bounds the transcript to its newest
+    module docstring. `person_ids` are the persons the room LISTS (the caller
+    resolves them from the policy; this reads no policy): their per-unit
+    accounts are copied beside the room's and the unit's own, so a turn
+    rendered from the snapshot carries `<character>` and `<unit_culture>` as
+    production does (the same `_culture` read, so each is as of `before_ms`).
+    `transcript_limit` bounds the transcript to its newest
     `limit` rows (still returned oldest-first, `RecordStore.recent`'s
     semantics); `None`, the default, is every row up to the bound, because the
     honest answer to «what had been said by then» has no natural top-N and a
@@ -270,10 +288,11 @@ async def snapshot(
     Sequential is not the same as sharing a connection, and this does not share
     one: FIVE connections are opened and closed in turn, one per read —
     `_transcript`, `SqlStandingStore.read_as_of`, `_culture`, `_notes`,
-    `_reminders`. (This file carries five `engine.connect()` sites, not four,
-    because `_transcript` has a bounded and an unbounded branch; exactly one
-    of them runs. The remaining connection is `read_as_of`'s own.) One
-    connection
+    `_reminders`. (`_culture` runs once for the room, once for the unit and
+    once per listed person, each on its own connection in turn.) (This file
+    carries five `engine.connect()` sites, not four, because `_transcript`
+    has a bounded and an unbounded branch; exactly one of them runs. The
+    remaining connection is `read_as_of`'s own.) One connection
     for the whole reconstruction would mean threading it through every helper,
     and `read_as_of` is a store method that owns its own — a cost with nothing
     to buy, since a sequence of reads never contends with itself.
@@ -306,6 +325,16 @@ async def snapshot(
             platform=platform, conversation_id=conversation_id, before_ms=before_ms,
         )
         culture = await _culture(engine, culture_key=culture_key, before_ms=before_ms)
+        unit_culture = await _culture(
+            engine, culture_key=unit_culture_key(unit), before_ms=before_ms,
+        )
+        characters: list[tuple[str, CultureRevision]] = []
+        for person_id in person_ids:
+            account = await _culture(
+                engine, culture_key=character_key(unit, person_id), before_ms=before_ms,
+            )
+            if account is not None:
+                characters.append((person_id, account))
         notes = await _notes(engine, unit=unit, before_ms=before_ms)
         reminders = await _reminders(
             engine, platform=platform, conversation_id=conversation_id,
@@ -334,6 +363,8 @@ async def snapshot(
         culture=culture,
         notes=notes,
         reminders=reminders,
+        unit_culture=unit_culture,
+        characters=tuple(characters),
     )
 
 

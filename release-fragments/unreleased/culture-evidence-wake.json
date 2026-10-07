@@ -1,11 +1,10 @@
 {
   "type": "change",
-  "summary": "Nora's account of each room, and of the people who post there, is now revised when the room has said enough to revise from (200 new messages) or after a week with anything new, instead of every day.",
+  "summary": "Nora's account of each room is now revised when the room has said enough to revise from (200 new messages) or after a week with anything new, instead of every day.",
   "details": [
     "A busy room is revised about every four days; quieter rooms about weekly. A room with nothing new is still never revised.",
-    "The [culture] fold_interval_seconds setting is removed; wake_batch and stale_seconds replace it."
+    "The [culture] fold_interval_seconds setting is removed; wake_batch and stale_seconds replace it.",
+    "People's accounts and the group's account wake on their own counts, not the room's."
   ],
-  "limitations": [
-    "Person accounts slow down with their room until they get sessions of their own."
-  ]
+  "limitations": []
 }

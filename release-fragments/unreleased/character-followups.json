@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "The accounts Nora keeps of people, groups and herself are cheaper to write and no longer carry a stale presence line into other rooms.",
+  "details": [
+    "A room's pass no longer continues an account that cites nothing: those were written while the pass could read where people were, and are re-written from the room's own messages instead of being carried forward.",
+    "A person's pass reads only their newest 100 messages rather than 300, and has no web search or fetch.",
+    "Her own account in a group needs at least three responses to cite, and wakes only on responses that count as evidence.",
+    "Offline evals of a tag turn now carry the group's account and the listed people's accounts as of the moment, as production does."
+  ],
+  "limitations": [
+    "A room whose account predates citations has no account carried forward until its next pass writes one."
+  ]
+}

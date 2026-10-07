@@ -67,6 +67,7 @@ from nora.domain.blocks import (
 from nora.domain.culture import (
     CHARACTER_KINDS,
     CHARACTER_OUTCOMES,
+    NORA_MIN_EVIDENCE_EPISODES,
     Citable,
     CultureProposal,
     CultureRevision,
@@ -110,13 +111,13 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #:   citation (DEC-249) and never a pre-fetch (§3.3, #736).
 #: - `about`, `lookup_person`, `group_members`: who a name or handle in their
 #:   messages IS, against the room's roster.
-#: - `web_search`, `web_fetch`: a reference they lean on that nobody explains.
 #:
 #: Deliberately absent: `where_been`, `online_now` (presence, R-31; module
-#: docstring), and every act verb (the read-only ceiling).
+#: docstring), every act verb (the read-only ceiling), and `web_search`,
+#: `web_fetch`: the design never asked a person session to look a reference up,
+#: so they were the least that was not needed (DEC-290).
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "about", "lookup_person", "group_members",
-    "web_search", "web_fetch",
 })
 
 #: `inputs` holds two sites (the previous account; the rooms' cultures, one
@@ -362,7 +363,7 @@ class CharacterPersonAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterPersonAdaptor.commit takes its own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
@@ -498,7 +499,7 @@ class CharacterUnitAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterUnitAdaptor.commit takes its own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
@@ -634,6 +635,7 @@ class CharacterNoraAdaptor(EntitySessions):
         now = self._clock()
         labels = {r.key: r.label for r in nk.rooms}
         sends = frozenset(e.send_id for e in episodes)
+        evidence = frozenset(e.send_id for e in episodes if e.is_evidence)
         self._begin(
             key, citable=Citable(
                 messages=sends | frozenset(r.id for e in episodes for r in e.replies),
@@ -641,8 +643,11 @@ class CharacterNoraAdaptor(EntitySessions):
                 # Only an episode people DID something in may be cited: her own
                 # send, relabelled as an episode, would otherwise meet the echo
                 # rule with nothing anyone said.
-                episodes=frozenset(e.send_id for e in episodes if e.is_evidence),
+                episodes=evidence,
                 echo_rule=True,
+                # A floor, never above what this session was shown: a stale
+                # wake on one episode could not meet a bar of three.
+                min_episodes=min(NORA_MIN_EVIDENCE_EPISODES, len(evidence)),
             ),
             entities={"nora": None}, batch_start=self.evidence.held(key),
         )
@@ -667,7 +672,7 @@ class CharacterNoraAdaptor(EntitySessions):
         written = 0
         for proposal in proposals:
             payload = proposal.payload
-            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+            if not isinstance(payload, CultureProposal):
                 raise TypeError("CharacterNoraAdaptor.commit takes her own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:

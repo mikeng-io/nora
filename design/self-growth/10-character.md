@@ -195,8 +195,8 @@ Recommendation: design style. The response episodes already exist.
 | L0 (parallel) | record the brief's `ask` intent on each send ([40](40-lessons.md) §6) | `silent` appears in the Rollup; it needs weeks of data before C3 and Lessons read it |
 | C2a | `character_revise` write verb (citations resolve to Record ids, schema, provenance); the room case moves from envelope to verb | room render parity; refusal of an unresolvable citation in tests |
 | C2b | person sessions per (unit, person): unit-wide evidence count (their messages across the unit's rooms), own watermark, keys moved from room to unit, `<people_views>` pre-fetch removed, memory a tool | each poster's account written per key; tool calls per session read back |
-| C3a | Character · unit: evidence = new room revisions (5) and Register rows; its block | block declared in `_BLOCKS`, renders in the unit's rooms only |
-| C3b | Character · Nora: evidence = closed response episodes (100), echo rule in the verb | a revision citing only her sends is refused; labelled accounts judged against their citations (`nora-eval`) |
+| C3a | Character · unit: evidence = new room revisions (5) (Register rows deferred, DEC-290); its block | block declared in `_BLOCKS`, renders in the unit's rooms only |
+| C3b | Character · Nora: evidence = closed response episodes that are evidence (100; `Episode.is_evidence`), echo rule in the verb, at least three cited episodes (DEC-290 amended 2026-10-07) | a revision citing only her sends is refused; labelled accounts judged against their citations (`nora-eval`) |
 | C4 | `character_read` | `tool_selection` before and after (`nora-tool`) |
 
 Step 2 (the self block, [20](20-self-block.md)) follows C3b. New blocks
@@ -208,7 +208,8 @@ nothing here conflicts with it.
 
 ## 7. Open
 
-- Section schema for accounts (DEC-184 says prose, no schema; the cognition
-  design gives Character fixed sections). Decide at C2a.
+- ~~Section schema for accounts~~ SETTLED by DEC-290 (2026-10-07): prose, no
+  schema; DEC-184 stands. The cognition design's fixed Character sections are
+  not built.
 - Whether a stale wake needs a floor of a few items
   ([50](50-readback-and-sizing.md) §4).

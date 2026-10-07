@@ -142,9 +142,11 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   runtime's original bundle; `design/cognition-loop/` is what its adaptors
   become.
 
-  **The one live adaptor** is `culture` (below). Since 2026-10-03 (DEC-277)
-  the note-candidates, note-curation, note-merge and proactive adaptors are
-  deleted: the Cognition session is the one background writer of notes,
+  **The live adaptors** are the four that `[culture] enabled` turns on:
+  `culture` (a room's account), and `character-person`, `character-unit` and
+  `character-nora` (the Character sessions, below, DEC-290). Since 2026-10-03
+  (DEC-277) the note-candidates, note-curation, note-merge and proactive
+  adaptors are deleted: the Cognition session is the one background writer of notes,
   events, Standing and Nora's own reminders.
   Two earlier tiers — the knowledge tier (the "fact tier") and the
   language tier — were deprecated 2026-09-07 and their code deleted; a design
@@ -152,23 +154,25 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   that no longer exists.
 
 - **culture** — her account of what a room has BECOME: how they talk, how
-  things get decided, what they call themselves, and her own standing there
-  (design/culture-tier/, DEC-207). The `culture` adaptor reads the room's own
-  messages once a day and appends ONE short account to a chain
-  (`culture`/`culture_revision`, keyed on the room's `primary_id`). Every
+  things get decided, what they call themselves (design/culture-tier/,
+  DEC-207). The `culture` adaptor reads the room's own messages when it has
+  said enough (DEC-288: `[culture] wake_batch` new human messages, or any new
+  one once `stale_seconds` have passed; a silent room never fires) and appends
+  ONE short account to a chain (`culture`/`culture_revision`, keyed on the
+  room's `primary_id`). It writes through `character_revise`, citing the
+  messages it rests on, and reads no presence and no Standing: its account is
+  evidence for accounts that render in other rooms (R-31). Every
   occasion in a room reads it as `<culture>` except the Relevance Gate; the
   public summons reads no room and no culture. It is a
   baseline, not a rule: a window read against it becomes a deviation. Not
   `<room>`, which is the operator's statement of what a room is FOR.
 
-  **Superseded in shape, not yet in code**
-  (`design/cognition-loop/10-tiers.md` §5, `12-schemas.md` §4): culture IS
-  the Character tier's room case, not a separate thing, and "her own standing
-  there" above answers Standing's question, not Character's — it moves to
-  Standing when the Character adaptor ships (`70-migration.md` step 4). Keyed
-  today on the room's `primary_id`; the settled Character key is
-  `(unit, entity)` (`10-tiers.md` §2 rule 6), which this pass has not moved
-  onto. Described above as it runs today.
+  **Culture IS the Character tier's room case** (DEC-290,
+  `design/cognition-loop/10-tiers.md` §5): a room's account keeps its
+  `primary_id` key, and the person, unit and Nora cases hang off the unit
+  (**Character**, below). "Her own standing there", which this entry used to
+  claim, was Standing's question, not Character's, and the room fold no longer
+  reads it.
 
   **The deterministic check comes first.** Every adaptor's `inputs()` is a
   store read that returns `""` when there is nothing to reason about — no new
@@ -348,8 +352,32 @@ no entry.
 - **Character** — what a **person**, a **room** (culture's new home, above),
   the **unit** or **Nora** is like and how it behaves. **account** is the
   body of one Character row — always "platform account" for a login (the
-  *platform account* entry above). Written only by the Character adaptor,
-  through `character_revise`.
+  *platform account* entry above). Written only by the Character sessions,
+  through `character_revise`. Built as DEC-290 (design/self-growth/10): ONE
+  Dreamer session per (unit, entity), stored in the `culture` chain under four
+  key shapes: a room's `primary_id`, `{unit}#character:{person_id}`,
+  `{unit}#unit` and `{unit}#nora`.
+  - **person session** (`character-person`) — one person's account in one
+    unit, woken by `[culture] person_wake_batch` (100) of their messages across
+    the unit's rooms or the stale rule. Handed their newest messages, the
+    unit's CITED room cultures and its previous account; memory is a tool
+    (`ask_memory`, `search_memory`), never a pre-fetch and never a citation.
+    Renders as `<character>` in the rooms of the unit that list the person.
+  - **unit session** (`character-unit`) — what the unit is across its rooms,
+    woken by `unit_wake_batch` (5) new room revisions; reads only cited room
+    cultures and holds no read tool. Renders as **`<unit_culture>`** after
+    `<culture>` on tag and fire turns in the unit's rooms.
+  - **Nora session** (`character-nora`) — what she is like in the unit, woken
+    by `nora_wake_batch` (100) closed response episodes that are evidence
+    (`Episode.is_evidence`), citing at least three of them; the echo rule
+    refuses a revision resting on her own sends. Written only: no block renders
+    it yet.
+  - **`character_revise(entity, body, citations)`** — the one write verb. Code
+    checks the body (non-empty, within the cap, the R-18/R-28 screen) and that
+    every citation is a Record row id the session was shown or a
+    `response:<id>` episode it was shown; a refusal names its reason. **`character_no_change`**
+    closes an entity with its account unchanged. A session that settles
+    neither holds its batch and is given up on the third try.
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
   the Lessons adaptor, through `lesson_write`/`lesson_retire`. Not doctrine

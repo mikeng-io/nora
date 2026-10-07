@@ -133,7 +133,7 @@ def _row(body: str, *, ts: int = T0, name: str = "Ada", rid: int = 1) -> Transcr
 def _revision(body: str) -> CultureRevision:
     return CultureRevision(
         id="r1", culture_key=KEY, body=body, written_at=T0,
-        established_by="culture",
+        established_by="culture", citations=("7",),
     )
 
 
@@ -257,6 +257,21 @@ async def test_the_previous_account_comes_FIRST_when_there_is_one():
     )
     assert out.index("previous_account") < out.index("<room_messages ")
     assert "they decide by attrition" in out
+
+
+async def test_an_UNCITED_previous_account_is_not_handed_to_the_room_pass():
+    """R-31. An account with no citations was written while the pass read
+    `<standing>`, `where_been` and `online_now`. Continuing it would carry
+    those lines into a cited revision, which the person and unit sessions then
+    read, and they render in rooms with other `location` flags. The room is
+    re-written from its own messages."""
+    uncited = CultureRevision(
+        id="r0", culture_key=KEY, body="she was at the gym again",
+        written_at=T0, established_by="culture",
+    )
+    out = await _adaptor(_Store(uncited)).inputs(key=KEY, batch=[_row("hi")])
+    assert "previous_account" not in out
+    assert "she was at the gym again" not in out
 
 
 async def test_the_first_fold_of_a_room_renders_no_previous_block():
@@ -835,4 +850,4 @@ async def test_a_room_session_writes_the_room_and_no_person():
     assert (answer["status"], answer["reason"]) == ("refused", "unknown_entity")
     assert (await revise(entity="room", body="a games room", citations=["3"]))["status"] == "ok"
     (proposal,) = await adaptor.accept(key=KEY, items=())
-    assert proposal.person_id is None
+    assert proposal.body == "a games room"

@@ -39,8 +39,9 @@ __all__ = ["AccountNotRecordableError", "EntitySessions"]
 
 
 #: What one session's entity resolves to: `None` is the session's own entity
-#: (a room, a person, the unit, Nora), a string is a person written beside it
-#: (no session does that since C2b; the type keeps the room's old shape).
+#: (a room, a person, the unit, Nora). A string would name a person written
+#: beside it; no session does, and a `CultureProposal` carries no person to
+#: stage one (removed with the per-room person accounts, C2b).
 Entity = str | None
 
 
@@ -159,7 +160,7 @@ class EntitySessions:
             return self._refused(key, refusal)
         self._kept[key].discard(resolved)
         self._staged[key][resolved] = CultureProposal(
-            body=body.strip(), person_id=resolved, citations=citations,
+            body=body.strip(), citations=citations,
         )
         return {"status": "ok"}
 

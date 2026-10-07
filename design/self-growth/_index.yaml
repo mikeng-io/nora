@@ -14,9 +14,12 @@ description: >
   doctrine into law, practice and character without editing it, so the
   doctrine check reads law only; (4) Lessons, accumulated from closed response
   episodes, with an explicit-correction fast path; (5) cut the doctrine to
-  law. Nothing here is built. Every threshold is sized from a read-back on the
-  deploy host before code.
-status: proposed
+  law. Step (1) is built (DEC-290, #744 and its review follow-ups): room, unit,
+  person and Nora sessions, `character_revise`, the `<character>` and
+  `<unit_culture>` blocks, and `character_read`; Nora's own account is written
+  and not yet rendered. Steps (2) to (5) are not built. Every threshold is
+  sized from a read-back on the deploy host before code.
+status: in-progress
 governance: operator-directed
 timestamp: '2026-10-07'
 origin: >
