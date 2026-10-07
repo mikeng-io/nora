@@ -360,3 +360,27 @@ async def test_the_operator_can_set_the_floor_on_a_lesson_a_session_already_reti
     assert again["reason"] == "not_active"
     assert (await env.book.retire(unit=UNIT, lesson_id=lid, by="session", why="x",
                                   established_by="t"))["reason"] == "not_active"
+
+
+async def test_losing_the_unique_seq_race_is_a_conflict_and_other_integrity_errors_are_not(
+    env, monkeypatch,
+):
+    """Two writers can both pass the head check and meet at `uq_lesson_revision_seq`;
+    that loss is a conflict. Any other integrity error stays loud."""
+    from nora.domain.lessons import LessonConflictError
+    lid = (await _write(env))["lesson_id"]
+    kw = {"lesson_id": lid, "expected_seq": 1, "body": "another revision body",
+          "citations": ("110",), "state": "active", "retired_by": None, "relearn_after": None,
+          "note": None, "written_at": 1, "established_by": "t"}
+
+    def losing(constraint):
+        async def boom(**_):
+            raise sa.exc.IntegrityError("insert", {}, Exception(constraint))
+        return boom
+
+    monkeypatch.setattr(env.store, "_append", losing("duplicate key uq_lesson_revision_seq"))
+    with pytest.raises(LessonConflictError):
+        await env.store.append(**kw)
+    monkeypatch.setattr(env.store, "_append", losing("ck_lesson_revision_state"))
+    with pytest.raises(sa.exc.IntegrityError):
+        await env.store.append(**kw)
