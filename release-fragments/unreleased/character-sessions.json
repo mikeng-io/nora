@@ -7,10 +7,12 @@
     "She also keeps an account of each group as a whole, written from her accounts of its rooms when they change, and reads it in that group's rooms after the room's own.",
     "She also starts keeping an account of what she herself is like in each group, from how people responded to her messages there; it must rest on their responses, never on her own words alone, and nothing reads it yet.",
     "Accounts that existed per room are not carried over, because one room's account would then be shown in every room of the group; each person's group account is written fresh shortly after start.",
-    "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried rather than spent."
+    "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried up to three times on the same backlog and then skipped past, however much new evidence arrives meanwhile.",
+    "Only responses count as evidence of what she is like: an episode where nobody replied, reacted or edited, and no answer was expected, can be read but never cited, and one whose platform was not proved up is not shown at all."
   ],
   "limitations": [
     "A citation is per account, not per sentence: the check proves an account rests on real messages, not that each line does.",
-    "No account reads presence (where people were or what they are doing now), the room's own included, because these accounts are shown in rooms whose location settings differ."
+    "No account is written from a presence read (where people were or what they are doing now): a room's own pass no longer reads that room's standing position either, since it is folded from tool results that can include one and the room's account now feeds accounts shown in rooms whose location settings differ.",
+    "A room account written before this change cites no messages, so it is still shown in its own room but is not handed to a person's or a group's pass until its room's pass rewrites it."
   ]
 }

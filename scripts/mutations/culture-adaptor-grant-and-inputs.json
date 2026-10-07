@@ -42,24 +42,10 @@
     "target": "tests/unit/test_culture_adaptor.py -k situational_verbs"
   },
   {
-    "name": "part 2b: the standing position is read and never rendered",
-    "file": "nora/language/culture.py",
-    "old": "            if block is not None:\n                # RESTAMPED: `render_standing` is shared with the tag path\n                # and builds an unstamped block.\n                parts.append(restamp(block, _ROW))",
-    "new": "            if False:\n                # RESTAMPED: `render_standing` is shared with the tag path\n                # and builds an unstamped block.\n                parts.append(restamp(block, _ROW))",
-    "target": "tests/unit/test_culture_adaptor.py -k her_STANDING_in_this_room"
-  },
-  {
-    "name": "part 2b: standing is read with the adaptor's own key, not the policy's",
-    "file": "nora/language/culture.py",
-    "old": "            platform, conversation_id = standing_key",
-    "new": "            platform, conversation_id = standing_key[0], key",
-    "target": "tests/unit/test_culture_adaptor.py -k uses_the_key_the_POLICY"
-  },
-  {
     "name": "part 2b: the note index is read and never rendered",
     "file": "nora/language/culture.py",
-    "old": "            if index is not None:\n                # RESTAMPED, like `render_standing` above: `render_notes` is\n                # shared with the tag path and builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
-    "new": "            if False:\n                # RESTAMPED, like `render_standing` above: `render_notes` is\n                # shared with the tag path and builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
+    "old": "            if index is not None:\n                # RESTAMPED: `render_notes` is shared with the tag path and\n                # builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
+    "new": "            if False:\n                # RESTAMPED: `render_notes` is shared with the tag path and\n                # builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
     "target": "tests/unit/test_culture_adaptor.py -k what_the_room_has_OPEN"
   },
   {
@@ -72,7 +58,7 @@
   {
     "name": "part 2b: an unresolvable scope goes silent",
     "file": "nora/language/culture.py",
-    "old": "        if standing_key is None or unit is None:",
+    "old": "        if unit is None:",
     "new": "        if False:",
     "target": "tests/unit/test_culture_adaptor.py -k names_no_policy_conversation"
   },
@@ -119,10 +105,10 @@
     "target": "tests/unit/test_culture_adaptor.py -k ONE_shipped_completion"
   },
   {
-    "name": "the declared store-call bound stops covering the two new reads",
+    "name": "the declared store-call bound stops covering the two reads",
     "file": "nora/language/culture.py",
-    "old": "STORE_CALLS_PER_TICK = 5",
-    "new": "STORE_CALLS_PER_TICK = 3",
+    "old": "STORE_CALLS_PER_TICK = 4",
+    "new": "STORE_CALLS_PER_TICK = 2",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },
   {

@@ -31,7 +31,6 @@ from nora.domain.culture import (
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
-from nora.domain.standing import Standing
 from nora.infra.sql.schema import CULTURE_BODY_CEILING_CHARS
 from nora.language.culture import (
     _BLOCKS,
@@ -53,18 +52,16 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     """`design/context-assembly/01-the-registry.md` S1: what this pass
     carries is a table, not a trace through `inputs` and `_room_block`.
 
-    Two rows the design bundle's own survey missed: `00-overview.md`
-    counted `previous_account, room, room_messages` — three — because it
-    read `ContextBlock(name=...)` literals in this file alone, and missed
-    `standing` (`nora.language.standing_render.render_standing`) and `notes`
-    (`nora.language.note_render.render_notes`), both shared with other
-    occasions. `test_the_previous_account_precedes_standing_notes_AND_the_
-    batch` below exercises all five together.
+    A row the design bundle's own survey missed: `00-overview.md` counted
+    `previous_account, room, room_messages` — three — because it read
+    `ContextBlock(name=...)` literals in this file alone, and missed `notes`
+    (`nora.language.note_render.render_notes`), shared with other occasions.
+    `test_the_previous_account_precedes_the_notes_AND_the_batch` below
+    exercises all four together. There is NO `standing` row: see
+    `test_the_fold_does_not_read_the_rooms_standing`.
     """
     names = {name for name, _order, _key in _BLOCKS}
-    assert names == {
-        "room", "previous_account", "standing", "notes", "room_messages",
-    }
+    assert names == {"room", "previous_account", "notes", "room_messages"}
 
 
 class _Store(InMemoryCultureStore):
@@ -84,20 +81,6 @@ class _Store(InMemoryCultureStore):
         return await super().append(**kw)  # type: ignore[arg-type]
 
 
-class _StandingStore:
-    """The per-room `standing` tier, keyed as the real one is."""
-
-    def __init__(self, rows: dict[tuple[str, str], Standing] | None = None) -> None:
-        self.rows = rows or {}
-        self.reads: list[tuple[str, str]] = []
-
-    async def read(
-        self, *, platform: str, conversation_id: str,
-    ) -> Standing | None:
-        self.reads.append((platform, conversation_id))
-        return self.rows.get((platform, conversation_id))
-
-
 class _Notes:
     """The note tier's index, keyed by UNIT (DEC-105)."""
 
@@ -108,13 +91,6 @@ class _Notes:
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         self.reads.append(unit)
         return self._notes
-
-
-def _standing(body: str = "they ask me for routes and nothing else") -> Standing:
-    return Standing(
-        platform="discord", conversation_id="g1", body=body,
-        fold_count=1, updated_at=T0,
-    )
 
 
 def _note(title: str = "dinner on the 20th") -> Note:
@@ -130,19 +106,16 @@ def _adaptor(
     store: _Store,
     metrics: Metrics | None = None,
     *,
-    standing: _StandingStore | None = None,
     notes: _Notes | None = None,
     label: str | None = "Zone 42",
     description: str | None = "the games channel",
     unit: str | None = "friends",
-    standing_key: tuple[str, str] | None = ("discord", "g1"),
     platform_for=None,
     resolve_names=None,
 ) -> CultureAdaptor:
     return CultureAdaptor(
-        culture=store, standing=standing, notes=notes, metrics=metrics,
+        culture=store, notes=notes, metrics=metrics,
         unit_for=lambda _k: unit,
-        standing_key_for=lambda _k: standing_key,
         label_for=lambda _k: label,
         description_for=lambda _k: description,
         platform_for=platform_for,
@@ -338,30 +311,17 @@ async def test_the_room_block_NEVER_renders_the_conversation_id():
     assert "unnamed room" in out
 
 
-async def test_her_STANDING_in_this_room_reaches_the_fold():
-    """`01-the-adaptor §1.2`. The objective asks the model where she stands
-    with them while the `standing` tier holds precisely that, per room — so
-    without it the model infers from raw transcript a thing another store
-    states, and a guess in this tier is prose that reads like an observation."""
-    store = _StandingStore({("discord", "g1"): _standing()})
-    out = await _adaptor(_Store(), standing=store).inputs(
-        key=KEY, batch=[_row("hi")],
-    )
-    assert "they ask me for routes and nothing else" in out
-    assert "<standing" in out
+def test_the_fold_does_not_read_the_rooms_standing():
+    """`standing` is folded from the turn's raw tool results (a `where_been` or
+    `online_now` among them) and the debrief is told to record who is present.
+    This account is input to every person's and the unit's, which render in
+    rooms whose `location` flags differ, so a line that reached it through
+    `standing` would reach them (R-31). It was read from 2026-09-17 to the C2b
+    review, 2026-10-07; the fold has no parameter to read it with."""
+    import inspect
 
-
-async def test_the_standing_read_uses_the_key_the_POLICY_resolves():
-    """`standing` keys `(platform, conversation_id)` and this adaptor keys
-    `primary_id` (GLOSSARY.md). They are equal for every live conversation and
-    that is an accident of data (#229) — read with the adaptor's own key it
-    matches zero rows and renders as «this room has no standing», a real state
-    nothing anywhere reports as a miss."""
-    store = _StandingStore()
-    await _adaptor(
-        _Store(), standing=store, standing_key=("signal", "+8520000"),
-    ).inputs(key=KEY, batch=[_row("hi")])
-    assert store.reads == [("signal", "+8520000")]
+    params = inspect.signature(CultureAdaptor.__init__).parameters
+    assert "standing" not in params and "standing_key_for" not in params
 
 
 async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
@@ -375,36 +335,33 @@ async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
 
 
 async def test_a_scope_that_names_no_policy_conversation_is_LOGGED(caplog):
-    """A key that resolves to nothing renders neither block — and says so.
+    """A key that resolves to nothing renders no note index — and says so.
     Silence here is the #161 shape again: a plausible, thinner prompt that
     nothing counts."""
     import logging
 
     with caplog.at_level(logging.WARNING, logger="nora.language.culture"):
         out = await _adaptor(
-            _Store(), standing=_StandingStore(), notes=_Notes((_note(),)),
-            unit=None, standing_key=None,
+            _Store(), notes=_Notes((_note(),)), unit=None,
         ).inputs(key=KEY, batch=[_row("hi")])
 
-    assert "<standing" not in out and "<notes" not in out
+    assert "<notes" not in out
     assert any(
         "resolves to no policy conversation" in r.getMessage()
         for r in caplog.records
     )
 
 
-async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
+async def test_the_previous_account_precedes_the_notes_AND_the_batch():
     """`00-overview §5`: the previous account is how everything after it is
     meant to be read. A fold with no prior context writes a fresh snapshot
     every day, which is the thing the chain exists to be instead of."""
     out = await _adaptor(
         _Store(_revision("they decide by attrition")),
-        standing=_StandingStore({("discord", "g1"): _standing()}),
         notes=_Notes((_note(),)),
     ).inputs(key=KEY, batch=[_row("hi")])
     assert (
         out.index("previous_account")
-        < out.index("<standing")
         < out.index("<notes")
         < out.index("<room_messages ")
     ), out
@@ -412,26 +369,24 @@ async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
 
 async def test_a_quiet_room_reads_NO_store_at_all():
     """The runtime's fire condition is «did `inputs` render anything», so a
-    quiet room must cost nothing — including the three reads."""
-    culture, standing, notes = _Store(), _StandingStore(), _Notes((_note(),))
-    assert await _adaptor(
-        culture, standing=standing, notes=notes,
-    ).inputs(key=KEY, batch=()) == ""
-    assert standing.reads == [] and notes.reads == []
+    quiet room must cost nothing — including the reads."""
+    culture, notes = _Store(), _Notes((_note(),))
+    assert await _adaptor(culture, notes=notes).inputs(key=KEY, batch=()) == ""
+    assert notes.reads == []
 
 
-async def test_a_standing_store_that_RAISES_takes_the_fold_with_it():
-    """Fail-CLOSED, unlike proactive's `_standing_lines`. A run that folded
-    anyway would write an account that GUESSES at her standing, and the
-    runtime would report it `ok` — the §11 tautology with a store fault behind
-    it. Raising makes the run `unavailable` and HOLDS the watermark, so the
-    batch is folded tomorrow instead of being consumed wrong today."""
+async def test_a_note_store_that_RAISES_takes_the_fold_with_it():
+    """Fail-CLOSED. A run that folded anyway would write an account that
+    GUESSES at what the room has open, and the runtime would report it `ok`
+    — the §11 tautology with a store fault behind it. Raising makes the run
+    `unavailable` and HOLDS the watermark, so the batch is folded later instead
+    of being consumed wrong today."""
     class _Broken:
-        async def read(self, *, platform: str, conversation_id: str):
-            raise RuntimeError("standing store down")
+        async def standing(self, *, unit: str):
+            raise RuntimeError("note store down")
 
-    with pytest.raises(RuntimeError, match="standing store down"):
-        await _adaptor(_Store(), standing=_Broken()).inputs(  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="note store down"):
+        await _adaptor(_Store(), notes=_Broken()).inputs(  # type: ignore[arg-type]
             key=KEY, batch=[_row("hi")],
         )
 
@@ -860,13 +815,13 @@ def test_the_character_to_token_bridge_is_the_MEASURED_one():
             >= ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR)
 
 
-def test_the_declared_store_calls_cover_the_three_inputs_and_the_two_writes():
+def test_the_declared_store_calls_cover_the_two_inputs_and_the_two_writes():
     """`DreamerRuntime` bounds `inputs` and `commit` at this number x
     `[dreamer] store_timeout_seconds`, so a bound derived from a stale constant
     is a hold that is too wide — and a hold that is too wide looks exactly like
     a healthy one until something wedges. The architecture gate counts the
     awaits off the AST; this states what they ARE."""
-    assert STORE_CALLS_PER_TICK == 5  # three reads in `inputs`, two in `commit`
+    assert STORE_CALLS_PER_TICK == 4  # two reads in `inputs`, two in `commit`
     assert CultureAdaptor.store_calls_per_tick == STORE_CALLS_PER_TICK
 
 

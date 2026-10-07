@@ -34,9 +34,8 @@ call is not on this path.
 
 **What it reads.** `record.since(conversation_id=key, ...)` — `WHERE
 conversation_id = :key` in our own Postgres, hard-scoped by construction — is
-the batch. Beside it: the account written last time, the room's own `standing`
-(what her position here actually IS, rather than what a transcript implies), the
-note index (what the room has OPEN), the operator's description of the room, and
+the batch. Beside it: the account written last time, the note index (what the
+room has OPEN), the operator's description of the room, and
 seven read verbs through `CULTURE_TOOLS`. **The point is the join.** The
 transcript can say two people talked about going out for 宵夜; memory can say
 what the room has done before, the roster who a handle is. The two presence
@@ -103,10 +102,8 @@ from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
 from nora.domain.prompt import escape
-from nora.domain.standing import Standing
 from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.language.note_render import render_notes
-from nora.language.standing_render import render_standing
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -126,8 +123,8 @@ __all__ = [
 #: precedent — a name spelled in four places is a name that drifts in three).
 CULTURE_ADAPTOR_NAME = "culture"
 
-#: `DreamAdaptor.store_calls_per_tick`. `inputs` holds three — the previous
-#: account, the room's `standing` position, the note index — and `commit` two,
+#: `DreamAdaptor.store_calls_per_tick`. `inputs` holds two — the previous
+#: account and the note index — and `commit` two,
 #: a `head` and an `append`. `tests/architecture/test_dream_store_calls_are_
 #: declared.py` counts them off this module's AST and reddens when a call is
 #: added without this number moving.
@@ -135,7 +132,8 @@ CULTURE_ADAPTOR_NAME = "culture"
 #: 3 -> 5 on 2026-09-17, when `standing` and the notes joined the inputs.
 #: 5 -> 6 for the Character tier (DEC-278): ONE site, `memory.chat`, per person.
 #: 6 -> 5 at C2b: the person accounts left this pass, and that site with them.
-STORE_CALLS_PER_TICK = 5
+#: 5 -> 4 with `standing` out of the inputs (self-growth C2b review, 2026-10-07).
+STORE_CALLS_PER_TICK = 4
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
 #: hand-copied into the metric's help text — the deleted `note_candidates`' own precedent,
@@ -228,24 +226,6 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
 })
 
 
-class _StandingReader(Protocol):
-    """The per-room `standing` tier's one read (design/dreamer-agent-loop/26).
-
-    Keyed `(platform, conversation_id)` because the debrief that writes it is
-    handed the message that ARRIVED, while this adaptor is handed `scopes()`
-    and so keys `primary_id` (`GLOSSARY.md`, DEC-181 withdrawn). The two are
-    equal for every live conversation and that is an accident of data (#229),
-    so the caller resolves one to the other through the POLICY rather than
-    assuming they are one spelling — a read with the wrong key matches zero
-    rows and renders as «this room has no standing», a real state that nothing
-    anywhere reports as a miss.
-    """
-
-    async def read(
-        self, *, platform: str, conversation_id: str,
-    ) -> Standing | None: ...
-
-
 class _NoteStore(Protocol):
     """The note tier's index — what the room has OPEN. the deleted `NoteCandidateAdaptor`
     read exactly this, keyed exactly this way (DEC-105: notes are a UNIT
@@ -253,8 +233,8 @@ class _NoteStore(Protocol):
 
     Note the vocabulary trap this bundle has fallen into before
     (`01-the-adaptor §1.2`): `NoteStore.standing()` is the index of open notes,
-    a different thing from the per-room `standing` tier above. Two inputs, two
-    stores, similar spelling.
+    a different thing from the per-room `standing` tier, which this fold does
+    not read (`CultureAdaptor.inputs`). Similar spelling.
     """
 
     async def standing(self, *, unit: str) -> Sequence[Note]: ...
@@ -324,13 +304,12 @@ ROOM_ENTITY = "room"
 #: (`design/context-assembly/01-the-registry.md`) rather than left as the
 #: `parts` list `CultureAdaptor.inputs` builds by hand.
 #:
-#: **Two rows the design bundle's own survey missed.** `00-overview.md`'s
+#: **A row the design bundle's own survey missed.** `00-overview.md`'s
 #: table lists this occasion as `previous_account, room, room_messages` —
 #: three — because it read `ContextBlock(name=...)` literals in this file
-#: alone. `inputs` also renders `standing` (via
-#: `nora.language.standing_render.render_standing`) and `notes` (via
-#: `nora.language.note_render.render_notes`) when their inputs resolve, both
-#: shared with other occasions. The same gap was found in `proactive`
+#: alone. `inputs` also renders `notes` (via
+#: `nora.language.note_render.render_notes`) when its input resolves, shared
+#: with other occasions. The same gap was found in `proactive`
 #: (`loop_decisions`) and `note_candidates` (`notes`), both since deleted — a survey of literal
 #: `ContextBlock(name=...)` calls misses a block built by a call to a shared
 #: function.
@@ -344,7 +323,6 @@ ROOM_ENTITY = "room"
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("room", 10, "turn"),
     ("previous_account", 20, "turn"),
-    ("standing", 30, "turn"),
     ("notes", 40, "turn"),
     ("room_messages", 50, "turn"),
 )
@@ -400,22 +378,13 @@ class CultureAdaptor(EntitySessions):
         # wiring gap here renders a plausible, WRONG prompt and nothing counts
         # it. `label_for` was already a parameter on this class, typed `object`
         # and never read.
-        #
-        # `standing_key_for` carries the whole `(platform, conversation_id)`
-        # pair rather than a platform alone, so the translation from this
-        # adaptor's key to the `standing` tier's happens in ONE expression the
-        # composition root owns — see `_StandingReader` for why it is a
-        # translation and not an identity.
         unit_for: Callable[[str], str | None],
-        standing_key_for: Callable[[str], tuple[str, str] | None],
         label_for: Callable[[str], str | None],
         description_for: Callable[[str], str | None],
-        # `None` is a real configuration, not a gap: `[standing] enabled =
-        # false` and `[notes] enabled = false` are both supported, and an
-        # absent store renders no block rather than an empty one. The
-        # difference from a store that RAISES is the whole of R-27 and is
-        # handled in `inputs`.
-        standing: _StandingReader | None = None,
+        # `None` is a real configuration, not a gap: `[notes] enabled = false`
+        # is supported, and an absent store renders no block rather than an
+        # empty one. The difference from a store that RAISES is the whole of
+        # R-27 and is handled in `inputs`.
         notes: _NoteStore | None = None,
         metrics: Metrics | None = None,
         # The ROOM's zone, for the note index's distances — the same
@@ -440,10 +409,8 @@ class CultureAdaptor(EntitySessions):
         ) = None,
     ) -> None:
         self._culture = culture
-        self._standing = standing
         self._notes = notes
         self._unit_for = unit_for
-        self._standing_key_for = standing_key_for
         self._label_for = label_for
         self._description_for = description_for
         self._metrics = metrics
@@ -489,26 +456,27 @@ class CultureAdaptor(EntitySessions):
         fresh snapshot every day — exactly the thing the chain exists to be
         instead of.
 
-        **Then `standing` and the note index** (`01-the-adaptor §1.2`, added
-        2026-09-17). The objective asks the model for "where you stand with
-        them" while the `standing` tier holds precisely that, per room, written
-        by the debrief — `relevance_gate.py:266-272` calls it the only
-        authority on it — and this adaptor inferred it from raw transcript
-        instead. The note index is the same seam one over: an account of how a
-        room works that cannot see what the room currently has OPEN is
-        inferring a thing another store already states. **A question whose
-        input cannot ground it does not fail loudly** — the model answers
+        **Then the note index** (`01-the-adaptor §1.2`, added 2026-09-17): an
+        account of how a room works that cannot see what the room currently has
+        OPEN is inferring a thing another store already states. **A question
+        whose input cannot ground it does not fail loudly** — the model answers
         anyway, in prose, at a rate nothing reports.
 
-        **Both reads are UNGUARDED, and that is the fail-closed side.** A store
+        **NOT the room's `standing`** (read from 2026-09-17 until the C2b
+        review, 2026-10-07). `standing` is folded from the turn's raw tool
+        results (`nora.engagement.stages.debrief`), a `where_been` or
+        `online_now` among them, and the debrief is told to record who is
+        present. A room's account is now input to the accounts of every person
+        of the unit and to the unit's own, which render in rooms whose
+        `location` flags differ, so a line that reached the account through
+        `standing` would reach them (R-31). Prose carries no mark to drop it by
+        (DEC-184). The account rests on the room's own messages, which it cites.
+
+        **The read is UNGUARDED, and that is the fail-closed side.** A store
         that raises takes `inputs` with it, the runtime reports the run
         `unavailable`, and the watermark is HELD — the batch was not folded, so
-        it is folded tomorrow instead. The alternative (proactive's fail-soft
-        `_standing_lines`) is right for a pass that must still decide
-        something; here it would let a silent store fault produce accounts that
-        GUESS at her standing forever, which is the §1.2 defect re-created as a
-        supported degraded mode. `notes.standing` was unguarded in
-        the deleted `NoteCandidateAdaptor` for the same reason.
+        it is folded later instead. `notes.standing` was unguarded in the
+        deleted `NoteCandidateAdaptor` for the same reason.
 
         `batch` empty renders `""`. `DreamAdaptor` has no `should_fire` verb;
         the runtime's fire condition IS "did `inputs` render anything", so a
@@ -572,21 +540,6 @@ class CultureAdaptor(EntitySessions):
                     body=escape(previous.body),
                 )
             )
-        # HER POSITION IN THIS ROOM, through the shared renderer — which
-        # carries the block's own `note`, its not-an-instruction clause and,
-        # load-bearing here, `written=`: nothing in this tier retires, so a
-        # head account may legitimately be weeks old and a position beside it
-        # must say how stale it is.
-        standing_key = self._standing_key_for(key)
-        if self._standing is not None and standing_key is not None:
-            platform, conversation_id = standing_key
-            block = render_standing(await self._standing.read(
-                platform=platform, conversation_id=conversation_id,
-            ))
-            if block is not None:
-                # RESTAMPED: `render_standing` is shared with the tag path
-                # and builds an unstamped block.
-                parts.append(restamp(block, _ROW))
         # WHAT THE ROOM HAS OPEN. the deleted `NoteCandidateAdaptor.inputs`' read, same
         # verb and same key translation (DEC-105: the note store is keyed by
         # UNIT, so a scope key must be resolved and never guessed).
@@ -608,10 +561,10 @@ class CultureAdaptor(EntitySessions):
                 today=_batch_day(batch, tz=self._tz),
             )
             if index is not None:
-                # RESTAMPED, like `render_standing` above: `render_notes` is
-                # shared with the tag path and builds an unstamped block.
+                # RESTAMPED: `render_notes` is shared with the tag path and
+                # builds an unstamped block.
                 parts.append(restamp(index, _ROW))
-        if standing_key is None or unit is None:
+        if unit is None:
             # A key that names no policy conversation. Not silent — but not
             # counted here either, because `RegistryToolSource.build` counts
             # and logs a fault for this key on this same run
@@ -622,9 +575,9 @@ class CultureAdaptor(EntitySessions):
             # **MOSTLY, and the gap is stated rather than assumed away.** The
             # two resolutions read the SAME allowlist and build DIFFERENT KEY
             # SETS from it: `scope_rooms` is keyed by every id form a
-            # conversation answers to (`conv.ids`), while the four maps above
-            # — `unit_for`, `standing_key_for`, `label_for`,
-            # `description_for` — are keyed by `conv.primary_id` alone. So a
+            # conversation answers to (`conv.ids`), while the three maps above
+            # — `unit_for`, `label_for`, `description_for` — are keyed by
+            # `conv.primary_id` alone. So a
             # conversation reached by an `also_ids` form resolves a home room
             # and NO policy inputs, and only this `log.warning` would say so.
             # It cannot happen today because `language_scopes` emits
@@ -634,8 +587,7 @@ class CultureAdaptor(EntitySessions):
             # thing that reports it.
             log.warning(
                 "culture: scope=%s resolves to no policy conversation "
-                "(unit=%r standing_key=%r); folding without those inputs",
-                key, unit, standing_key,
+                "(unit=%r); folding without those inputs", key, unit,
             )
         # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained

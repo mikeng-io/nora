@@ -3662,17 +3662,16 @@ async def build_dependencies(
                 *dream_adaptors,
                 CultureAdaptor(
                     culture=SqlCultureStore(engine),
-                    # THE OTHER TWO STORES (design/culture-tier
-                    # `01-the-adaptor §1.2`). The objective asks the model
-                    # where she stands with this room while the `standing`
-                    # tier holds exactly that, per room; and an account of how
-                    # a room works that cannot see what the room has OPEN is
-                    # inferring a thing the note index already states. `None`
-                    # for either tier being off is a real configuration and
-                    # renders no block — not an empty one.
-                    standing=standing_store if cfg.standing.enabled else None,
+                    # THE NOTE INDEX (design/culture-tier `01-the-adaptor
+                    # §1.2`): an account of how a room works that cannot see
+                    # what the room has OPEN is inferring a thing the note
+                    # index already states. `None` for the tier being off is
+                    # a real configuration and renders no block, not an empty
+                    # one. NOT `standing`: it is folded from raw tool results
+                    # (a presence read among them) and this account is input
+                    # to ones shown in every room of the unit (R-31).
                     notes=note_store if cfg.notes.enabled else None,
-                    # The FOUR policy resolutions, every one of them the same
+                    # The THREE policy resolutions, every one of them the same
                     # `.get` over the allowlist keyed on `conv.primary_id` —
                     # which is this adaptor's own key, because a Dreamer
                     # adaptor is handed `scopes()` (GLOSSARY.md, DEC-181
@@ -3683,35 +3682,6 @@ async def build_dependencies(
                         conv.primary_id: conv.unit
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.unit
-                    }.get,
-                    # THE PLATFORM is resolved; the conversation_id half is
-                    # the key VERBATIM, and saying so is the point of this
-                    # comment. `standing` is keyed `(platform,
-                    # conversation_id)` because the debrief that writes it is
-                    # handed the message that arrived; this adaptor keys
-                    # `primary_id`. What the policy supplies is the PLATFORM —
-                    # which this adaptor has no other way to know, and guessing
-                    # would be a read against the wrong tier — while the second
-                    # element is `conv.primary_id`, i.e. the adaptor's own key
-                    # passed through unchanged. An earlier version of this
-                    # comment called the map "THE TRANSLATION, not an identity"
-                    # and that overclaims: half of it is an identity.
-                    #
-                    # It is still worth being a map rather than a
-                    # `(platform, key)` built at the call site, for the half it
-                    # does resolve and for the MEMBERSHIP test it carries: a
-                    # key absent from the allowlist resolves to `None` and the
-                    # adaptor logs it, instead of reading `standing` for a
-                    # conversation policy never named. The id half is #229's:
-                    # a conversation with a second id form may hold its standing
-                    # row under the other one, which that issue owns and this
-                    # map cannot decide. The failure both halves avoid is a read
-                    # that matches zero rows and renders as «this room has no
-                    # standing», a real state nothing reports as a miss.
-                    standing_key_for={
-                        conv.primary_id: (conv.platform, conv.primary_id)
-                        for conv in allowlist.conversations
-                        if conv.primary_id
                     }.get,
                     # What the room is CALLED and what the operator says it IS
                     # (`Conversation.label` / `.description`), for the `<room>`
