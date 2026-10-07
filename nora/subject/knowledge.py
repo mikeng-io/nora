@@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.culture import character_key, unit_culture_key
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.notes import Note
@@ -48,6 +49,7 @@ from .obtain import Subject
 #: way a real member's line does; any OTHER name gets an unmapped sender, which
 #: is a member `identity.toml` does not know — also a real case, and the one
 #: that produces `person_name=None`.
+_HOUR_MS = 3_600_000
 _KNOWN_SENDER = "+852111"
 _KNOWN_PERSON = "miles_novak"
 _KNOWN_NAME = "Miles"
@@ -223,6 +225,17 @@ class RoomSeed:
 
 
 @dataclass(frozen=True, slots=True)
+class AccountSeed:
+    """One Character account as the revision it was: its `body`, and how old it
+    was at the instant (`<character>` and `<unit_culture>` both render an AGE,
+    so a copy written as "just now" would show the model a different block than
+    production did)."""
+
+    body: str
+    age_hours: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class Knowledge:
     """Everything a case says she knows. Empty is legal and is the knowledge
     cut — the `-unknown` twin of a pair is this class with one field dropped,
@@ -302,6 +315,16 @@ class Knowledge:
     #: had never been folded, or silently key under a real other room, which is
     #: why this is pinned to a resolved refusal rather than to a convention.
     culture: str | None = None
+
+    #: The UNIT's own account (`unit_culture_key`), what `<unit_culture>`
+    #: renders in every room of the unit. Written for the subject's room only.
+    unit_culture: AccountSeed | None = None
+
+    #: Each listed person's account in the subject's unit, keyed by person id
+    #: (`character_key(unit, person_id)`), what `<character>` renders. A key
+    #: that is no listed person of the room renders nothing, so
+    #: `sandbox_from_snapshot` only ever fills the persons the room lists.
+    characters: Mapping[str, AccountSeed] = field(default_factory=dict)
 
 
 def _speakers(
@@ -888,6 +911,26 @@ async def know(
                 written_at=now_ms,
                 established_by="case-seed",
             )
+        if room is None:
+            # THE CHARACTER BLOCKS' ACCOUNTS, under the keys production reads
+            # them by (`unit_culture_key`, `character_key`) and each at the
+            # age it had, written only for the subject's own room: a unit's
+            # and a person's account is per unit, not per `room`.
+            culture_store = SqlCultureStore(engine)
+            if knowledge.unit_culture is not None:
+                await culture_store.append(
+                    key=unit_culture_key(subject.unit),
+                    body=knowledge.unit_culture.body,
+                    written_at=now_ms - round(knowledge.unit_culture.age_hours * _HOUR_MS),
+                    established_by="case-seed",
+                )
+            for person_id, account in knowledge.characters.items():
+                await culture_store.append(
+                    key=character_key(subject.unit, person_id),
+                    body=account.body,
+                    written_at=now_ms - round(account.age_hours * _HOUR_MS),
+                    established_by="case-seed",
+                )
     finally:
         await engine.dispose()
     return Written(now_ms=now_ms, rows=rows)

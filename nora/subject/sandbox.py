@@ -127,6 +127,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from nora.agent.prefill import render_transcript
 from nora.documents.check import check_document
+from nora.domain.culture import CultureRevision
 from nora.domain.documents import RevisionIn
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
@@ -145,7 +146,7 @@ from nora.infra.sql.snapshot import Snapshot, snapshot
 from nora.infra.sql.snapshot_at import SeedReport
 from nora.persons import Persons
 
-from .knowledge import Knowledge, Message, NoteSeed, ReminderSeed, know
+from .knowledge import AccountSeed, Knowledge, Message, NoteSeed, ReminderSeed, know
 from .memory_workspace import new_run_id
 from .obtain import Subject
 
@@ -721,6 +722,17 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
             else (shot.before_ms - shot.standing.updated_at) / _HOUR_MS
         ),
         culture=None if shot.culture is None else shot.culture.body,
+        # THE CHARACTER BLOCKS: the unit's account and each listed person's,
+        # each with the age it had, so `<unit_culture>` and `<character>`
+        # render as the recorded turn rendered them.
+        unit_culture=(
+            None if shot.unit_culture is None
+            else _account_seed(shot.unit_culture, before_ms=shot.before_ms)
+        ),
+        characters={
+            person_id: _account_seed(account, before_ms=shot.before_ms)
+            for person_id, account in shot.characters
+        },
         notes=tuple(_note_seed(note, revision) for note, revision in shot.notes),
         # OFFSETS measured against the instant itself, which is what keeps
         # the copy at the moment's own clock: `know()` is handed
@@ -734,6 +746,13 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
             _reminder_seed(r, before_ms=shot.before_ms)
             for r in _collapse_duplicate_proactive_notes(shot.reminders)
         ),
+    )
+
+
+def _account_seed(account: CultureRevision, *, before_ms: int) -> AccountSeed:
+    """One account as the seed that reproduces it, at the age it had."""
+    return AccountSeed(
+        body=account.body, age_hours=(before_ms - account.written_at) / _HOUR_MS,
     )
 
 
@@ -918,6 +937,12 @@ async def sandbox_from_snapshot(
             culture_key=subject.culture_key,
             unit=subject.unit,
             before_ms=before_ms,
+            # The persons the room LISTS, which is exactly whose accounts
+            # `<character>` renders in it (`Persons.room_members`).
+            person_ids=[
+                ref.person_id for ref in
+                subject.deps.persons.room_members(subject.listed_persons)
+            ],
         )
     finally:
         await engine.dispose()

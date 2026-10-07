@@ -321,6 +321,13 @@ class Subject:
     unit: str
     culture_key: str
 
+    #: The persons `policy.toml` LISTS for `room` (`Conversation.persons`;
+    #: `None` is a `persons = "*"` room, which lists nobody). Read by
+    #: `sandbox_from_snapshot` to copy the per-unit account of each (the
+    #: `<character>` block renders exactly these), so a snapshot asks the
+    #: source for the persons production would render and no others.
+    listed_persons: frozenset[str] | None = None
+
 
 def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
@@ -654,4 +661,5 @@ async def obtain(spec: SubjectSpec) -> Subject:
     return Subject(
         deps=deps, cfg=cfg, database_url=spec.database_url, room=spec.room,
         unit=convo.unit, culture_key=convo.primary_id,
+        listed_persons=convo.persons,
     )
