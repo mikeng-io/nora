@@ -43,7 +43,8 @@ class InMemoryCharacterEvidence:
 
     def _eps(self, unit: str, after: int) -> list[Episode]:
         return sorted(
-            (e for u, e, o in self._episodes if u == unit and not o and e.send_id > after),
+            (e for u, e, o in self._episodes if u == unit and not o
+             and e.outcome not in ("open", "unknown") and e.send_id > after),
             key=lambda e: e.send_id,
         )
 

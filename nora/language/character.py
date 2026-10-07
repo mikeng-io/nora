@@ -23,10 +23,11 @@ store and revision chain:
   linked, never cited, DEC-249, so the chain still ends in the Record). It
   holds no read tool. Rendered as `<unit_culture>` in the unit's rooms.
 - **Nora** (C3b), key `nora_character_key(unit)`: what she is like in this
-  unit, as its people have met her. Its evidence is CLOSED Rollup `response`
-  episodes of the current build: each of her sends paired with the replies
-  that quoted it, its reaction and edit counts and its outcome. It cites
-  episodes (`response:<id>`) or the replies, and the verb enforces the ECHO
+  unit, as its people have met her. Its evidence is Rollup `response`
+  episodes of the current build that are not `open` or `unknown`: each of her
+  sends paired with the replies that quoted it, its reaction and edit counts
+  and its outcome. It cites episodes people responded to (`response:<id>`,
+  outcome `responded` or `silent`) or the replies, and the verb enforces the ECHO
   RULE (10-tiers §2 rule 4): a revision resting only on her own sends is
   refused. Descriptive only, no read tool, and NO block yet: the self block
   is design/self-growth/20, a later step.
@@ -508,8 +509,8 @@ class _Episodes(Protocol):
 
 
 class NoraEvidence:
-    """The dream loop's count and read for a Nora key: closed response
-    episodes, by her send's Record id."""
+    """The dream loop's count and read for a Nora key: settled response
+    episodes (not `open`, not `unknown`), by her send's Record id."""
 
     def __init__(self, *, store: _Episodes, keys: Mapping[str, NoraKey]) -> None:
         self._store = store
@@ -588,10 +589,15 @@ class CharacterNoraAdaptor(EntitySessions):
         ], rows)
 
     async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
-        """Her previous account here and the closed episodes since. `""`
+        """Her previous account here and the settled episodes since. `""`
         with none: no model call."""
         nk = self._keys.get(key)
-        episodes = [e for e in batch if isinstance(e, Episode)]
+        # `open` is not yet an outcome and `unknown` is an outage, not
+        # silence (R-27): neither is shown, so neither can be cited. The SQL
+        # read already leaves them out; this is the boundary that holds
+        # whatever a store hands over.
+        episodes = [e for e in batch if isinstance(e, Episode)
+                    and e.outcome not in ("open", "unknown")]
         if nk is None or not episodes:
             return ""
         now = self._clock()
@@ -600,7 +606,12 @@ class CharacterNoraAdaptor(EntitySessions):
         self._begin(
             key, citable=Citable(
                 messages=sends | frozenset(r.id for e in episodes for r in e.replies),
-                nora=sends, episodes=sends, echo_rule=True,
+                nora=sends,
+                # Only an episode people DID something in may be cited: her own
+                # send, relabelled as an episode, would otherwise meet the echo
+                # rule with nothing anyone said.
+                episodes=frozenset(e.send_id for e in episodes if e.is_evidence),
+                echo_rule=True,
             ),
             entities={"nora": None}, batch_start=self.evidence.held(key),
         )

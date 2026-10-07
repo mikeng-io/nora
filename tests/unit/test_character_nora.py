@@ -120,3 +120,22 @@ async def test_the_evidence_is_closed_episodes_by_send_id_and_never_an_open_one(
     assert await evidence.count(key=KEY, after=100) == 1
     items, cursor = await evidence.newest(key=KEY, after=0, limit=1)
     assert [e.send_id for e in items] == [110] and cursor == 110
+
+
+UNKNOWN = Episode(send_id=120, room="room-a", text="anyone free sat?", outcome="unknown",
+                  reactions=0, edits=0)
+
+
+async def test_an_unknown_episode_with_no_response_cannot_meet_the_echo_rule():
+    """Her own send relabelled as an episode would be the cheapest way past the
+    echo rule: an `unknown` one holds nothing anyone did. It is not handed over
+    and cannot be cited, alone or beside her sends; nor can an `unanswered` one
+    (shown for context)."""
+    adaptor = _adaptor()
+    out = await adaptor.inputs(key=KEY, batch=(*EPISODES, UNKNOWN))
+    assert "response:120" not in out and "anyone free sat?" not in out
+    revise, _keep = adaptor.verbs(key=KEY)
+    for cited in (["response:120"], ["120", "response:120"], ["response:110"],
+                  ["110", "response:110"]):
+        answer = await revise(entity="nora", body="I make plans", citations=cited)
+        assert (answer["status"], answer["reason"]) == ("refused", "unresolved_citation"), cited

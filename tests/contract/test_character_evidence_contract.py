@@ -155,8 +155,9 @@ async def test_a_units_evidence_is_its_rooms_revisions_counted_in_write_order(re
 
 @pytest.fixture(params=["memory", "sql"])
 async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
-    """Three of her sends in `friends` (one still open, one whose reply came
-    after the window), one in another unit, and one in a superseded build."""
+    """Four of her sends in `friends` (one still open, one `unknown` because
+    the platform was not proved up, one whose reply came after the window), one
+    in another unit, and one in a superseded build."""
     from nora.domain.culture import Episode
 
     if request.param == "memory":
@@ -167,6 +168,8 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         fake.add_episode(unit="friends", episode=Episode(
             send_id=3, room="room-a", text="a list", outcome="unanswered",
             reactions=0, edits=0))
+        fake.add_episode(unit="friends", episode=Episode(
+            send_id=4, room="room-a", text="unk", outcome="unknown", reactions=0, edits=0))
         fake.add_episode(unit="friends", open_=True, episode=Episode(
             send_id=5, room="room-a", text="open", outcome="open", reactions=0, edits=0))
         fake.add_episode(unit="wedding", episode=Episode(
@@ -190,6 +193,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             await msg("reply", "room-a", 1500, "yes", False, quoted=1000)
             await msg("list", "room-a", 2000, "a list", True)
             await msg("late", "room-a", 99_000, "too late", False, quoted=2000)
+            await msg("unk", "room-a", 2500, "unk", True)
             await msg("open", "room-a", 3000, "open", True)
             await msg("w", "room-w", 3500, "w", True)
             old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
@@ -208,6 +212,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
                 ))
             await resp(cur, "friends", "dinner", 1000, "responded", reactions=1)
             await resp(cur, "friends", "list", 2000, "unanswered")
+            await resp(cur, "friends", "unk", 2500, "unknown")
             await resp(cur, "friends", "open", 3000, "open")
             await resp(cur, "wedding", "w", 3500, "responded")
             await resp(old, "friends", "w", 3500, "responded")
@@ -220,7 +225,9 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         await engine.dispose()
 
 
-async def test_nora_reads_closed_episodes_of_the_current_build_with_their_replies(episodes):
+async def test_nora_reads_settled_episodes_never_open_or_unknown_ones(episodes):
+    """`unknown` is an outage, not silence (R-27), and has nothing in it to
+    read; neither it nor an `open` one is counted, read or the cursor."""
     store, ids = episodes
     assert await store.episode_count(unit="friends", after=0) == 2
     assert await store.episode_count(unit="friends", after=ids["dinner"]) == 1

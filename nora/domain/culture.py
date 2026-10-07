@@ -368,6 +368,10 @@ REVISE_REFUSALS = frozenset({
 #: session the send id names it exactly, and it is what the session was shown.
 _EPISODE = re.compile(r"response:(\d+)")
 
+#: The outcomes that are evidence on their own, whatever the counts say
+#: (`Episode.is_evidence`).
+EPISODE_EVIDENCE_OUTCOMES = frozenset({"responded", "silent"})
+
 
 @dataclass(frozen=True, slots=True)
 class Refusal:
@@ -382,9 +386,9 @@ class Refusal:
 class Citable:
     """What one session may cite, built by CODE from what it handed the model.
 
-    `messages` are the Record ids it was shown (or loaded through a read it
-    holds); `nora` is the subset that are her own sends; `episodes` are the
-    Rollup response episodes it was shown, by her send's id. `echo_rule` is
+    `messages` are the Record ids it was shown; `nora` is the subset that are
+    her own sends; `episodes` are the Rollup response episodes it was shown
+    that are evidence (`Episode.is_evidence`), by her send's id. `echo_rule` is
     on for Character · Nora alone: a revision of HER account must rest on
     something other than her own words (10-tiers §2 rule 4)."""
 
@@ -425,13 +429,15 @@ def check_revision(
         elif text.isdigit() and int(text) in citable.messages:
             messages.add(int(text))
         else:
-            return Refusal("unresolved_citation", f"{text!r} is not a message or "
-                           "episode you were shown; cite only the `n` of a shown "
-                           "message or a shown `response:<n>` episode")
+            return Refusal("unresolved_citation", f"{text!r} is not something you "
+                           "can cite; cite only the `n` of a message you were "
+                           "shown, or the `response:<n>` of a shown episode "
+                           "someone responded to (outcome `responded` or `silent`)")
     if citable.echo_rule and not episodes and messages <= citable.nora:
         return Refusal("echo", "every citation is one of your own sends; your "
-                       "account must rest on how people responded: cite a "
-                       "`response:<n>` episode or a message someone else wrote")
+                       "account must rest on how people responded: cite the "
+                       "`response:<n>` of an episode whose outcome is `responded` "
+                       "or `silent`, or a message someone else wrote")
     return None
 
 
@@ -474,13 +480,15 @@ def nora_character_key(unit: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Episode:
-    """One CLOSED Rollup `response` episode as Character · Nora reads it
+    """One settled Rollup `response` episode as Character · Nora reads it
     (`nora.infra.sql.rollups`, 25 §3): her send, and what followed inside the
-    window. Cited as `response:<send_id>`.
+    window. Cited as `response:<send_id>`, when it `is_evidence`.
 
     `replies` are the Record rows that quoted her send inside the window;
     `reactions` and `edits` are the episode's own counts; `outcome` is
-    `responded`, `unanswered`, `silent` or `unknown` (never `open`)."""
+    `responded`, `unanswered` or `silent`. A store hands over neither `open` nor
+    `unknown` (`nora.infra.sql.character`), and the session drops both if one
+    arrives."""
 
     send_id: int
     room: str
@@ -489,6 +497,19 @@ class Episode:
     reactions: int
     edits: int
     replies: tuple[TranscriptRow, ...] = ()
+
+    @property
+    def is_evidence(self) -> bool:
+        """Whether this episode is something people DID: it drew a reply, a
+        reaction or an edit, or an answer was expected and none came
+        (`silent`). `unanswered` (none expected) and `unknown` (an outage, not
+        silence, R-27) are not, and `open` is not yet. Only an evidence episode
+        may be cited, so her own send relabelled as an episode cannot meet the
+        echo rule."""
+        return (
+            self.outcome in EPISODE_EVIDENCE_OUTCOMES
+            or bool(self.replies or self.reactions or self.edits)
+        )
 
 
 @dataclass(frozen=True, slots=True)

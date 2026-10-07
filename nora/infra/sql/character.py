@@ -7,9 +7,11 @@ for a room, generalised); a read is what the session is handed:
 
 - **a person** (C2b): their human messages across their unit's rooms, by
   Record id.
-- **Nora** (C3b): CLOSED `response` episodes of the current Rollup build for
-  the unit, by her send's Record id: her send's text, the replies that quoted
-  it inside the window, and the episode's counts and outcome.
+- **Nora** (C3b): `response` episodes of the current Rollup build for the
+  unit that are neither `open` (it can still change) nor `unknown` (an outage,
+  not silence, R-27, so nothing to read), by her send's Record id: her send's
+  text, the replies that quoted it inside the window, and the episode's counts
+  and outcome.
 - **a unit** (C3a): new revisions of its rooms' cultures, by COUNT: a culture
   revision's id is a uuid with no order, and the chain is append-only, so the
   number of revisions a unit's rooms hold only grows and is the cursor.
@@ -144,14 +146,15 @@ class SqlCharacterEvidence:
         return [
             ROLLUP_RESPONSE.c.build_id == current_build_id(),
             ROLLUP_RESPONSE.c.unit == unit,
-            ROLLUP_RESPONSE.c.outcome != "open",
+            ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
             ROLLUP_RESPONSE.c.message_id > after,
         ]
 
     async def episode_count(self, *, unit: str, after: int) -> int:
-        """Closed `response` episodes of the current build for `unit` whose
-        send is past Record id `after`. An `open` one is never counted: its
-        outcome can still change."""
+        """`response` episodes of the current build for `unit` whose send is
+        past Record id `after`. An `open` one is never counted (its outcome can
+        still change) and neither is an `unknown` one (nothing to read: no
+        reply, and no proof the platform was up)."""
         stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
             *self._closed(unit, after),
         )
