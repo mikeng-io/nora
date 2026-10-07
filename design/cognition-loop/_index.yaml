@@ -33,8 +33,8 @@ description: >
   kind, subject and origin room, per field, which decides at assembly the
   rooms each field may reach) and its age; small indices are pushed into
   prompts and everything else is queried. Cognition is the loop, never a
-  store; her identity is the slice of all state about her (doctrine given,
-  Record done, Character digested, Lessons learned, Standing held), and she
+  store; her identity is the slice of all state about her (doctrine's law given
+  (DEC-291), Record done, Character digested, Lessons learned, Standing held), and she
   grows by revising her own blocks below doctrine she never changes, with
   any disagreement recorded as tension for the operator. Every store is
   append-only in system time, so Nora as of any past moment can be restored

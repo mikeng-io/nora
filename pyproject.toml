@@ -70,6 +70,11 @@ include = ["nora*"]
 [tool.setuptools.package-data]
 nora = [
     "doctrine/*.md",
+    # The scope folders (core/, rooms/, public/, instruments/) and the side table
+    # that sorts the doctrine into law, practice and character (DEC-291). `*.md`
+    # alone ships none of them in a WHEEL.
+    "doctrine/**/*.md",
+    "doctrine/*.yaml",
     # `nora/dreamer/` has no `__init__.py` and must not get one — it is data,
     # not a package — so `packages.find` will not install it. Same failure mode
     # the migrations below are declared for: without these lines a WHEEL ships
