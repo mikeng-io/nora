@@ -21,10 +21,12 @@ edges:
 - **Assembly:** a row in `_BLOCKS` and a renderer, through context assembly
   like every other block.
 - **Lineage:** none at render, like `<unit_culture>`: the account is keyed by
-  the unit, the read boundary. Known risk, not guarded: Character · Nora reads
-  her sends from location-on rooms, so a location answer could reach the
-  account and render in a location-off room of the same unit; live accounts
-  place nobody today.
+  the unit, the read boundary, with one render rule for R-31: the account is
+  written from her sends in every room, location rooms included, so a room
+  shows it only if it has `location = true` or no room of its unit has
+  (`Policy.shows_self_in`); a Cognition session, whose sends can reach any
+  room, only if every room of the unit agrees (`Policy.shows_self_to_unit`).
+  Cost: a mixed unit's location-off rooms show no `<self>`.
 
 ## 2. What leaves
 

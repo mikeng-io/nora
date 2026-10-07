@@ -39,29 +39,74 @@ def _rev(body: str) -> CultureRevision:
     )
 
 
-class _Policy:
-    def conversation(self, platform, conversation_id):
-        return type("_Convo", (), {"primary_id": "g1", "unit": UNIT})()
+_POLICY_TOML = """
+default = "deny"
+
+[[conversations]]
+platform = "signal"
+id = "g1"
+label = "On"
+persons = "*"
+unit = "friends"
+location = true
+
+[[conversations]]
+platform = "whatsapp"
+id = "g2"
+label = "Off"
+persons = "*"
+unit = "friends"
+
+[[conversations]]
+platform = "signal"
+id = "w1"
+label = "Quiet one"
+persons = "*"
+unit = "quiet"
+
+[[conversations]]
+platform = "discord"
+id = "100000000000000001/100000000000000002"
+label = "Quiet two"
+persons = "*"
+unit = "quiet"
+
+[[conversations]]
+platform = "signal"
+id = "o1"
+label = "Open one"
+persons = "*"
+unit = "open"
+location = true
+"""
 
 
-def _fire_path(culture) -> FirePath:
+def _policy(tmp_path):
+    from nora.policy import load_policy
+
+    f = tmp_path / "policy.toml"
+    f.write_text(_POLICY_TOML)
+    return load_policy(f)
+
+
+def _fire_path(culture, policy) -> FirePath:
     path = object.__new__(FirePath)
     path._culture = culture
-    path._policy = _Policy()
+    path._policy = policy
     path._metrics = Metrics()
     path._standing_store_timeout_seconds = 5.0
     return path
 
 
-def _participation() -> Event:
+def _participation(platform: str = "signal", conversation_id: str = "g1") -> Event:
     return Event(
-        kind="participation", platform="signal", conversation_id="g1",
+        kind="participation", platform=platform, conversation_id=conversation_id,
         conversation_type="group", person_id=None, body="",
         header=lambda ref, now: "",
     )
 
 
-async def test_the_fire_path_reads_her_account_by_the_units_nora_key():
+async def test_the_fire_path_reads_her_account_by_the_units_nora_key(tmp_path):
     culture = InMemoryCultureStore()
     await culture.append(
         key=nora_character_key(UNIT), body="she keeps it short here",
@@ -74,16 +119,17 @@ async def test_the_fire_path_reads_her_account_by_the_units_nora_key():
         established_by="x")
     culture.reads.clear()
 
-    got = await _fire_path(culture)._read_self_account(_participation())
+    got = await _fire_path(culture, _policy(tmp_path))._read_self_account(_participation())
 
     assert got is not None and got.body == "she keeps it short here"
     assert culture.reads == [nora_character_key(UNIT)]
 
 
-async def test_a_unit_with_no_account_reads_none_on_the_fire_path():
-    assert await _fire_path(InMemoryCultureStore())._read_self_account(
+async def test_a_unit_with_no_account_reads_none_on_the_fire_path(tmp_path):
+    policy = _policy(tmp_path)
+    assert await _fire_path(InMemoryCultureStore(), policy)._read_self_account(
         _participation()) is None
-    assert await _fire_path(None)._read_self_account(_participation()) is None
+    assert await _fire_path(None, policy)._read_self_account(_participation()) is None
 
 
 def test_no_account_renders_no_block_not_an_empty_one():
@@ -174,3 +220,79 @@ def test_a_cognition_prompt_opens_with_her_account_before_the_clock():
 def test_a_cognition_prompt_has_no_self_block_without_an_account():
     assert "<self" not in _cognition_prompt(Grounding())
     assert "<self" not in _cognition_prompt(None)
+
+
+# ---- R-31: the account is unit-wide, so a room shows it only where it may -----
+
+
+def test_a_room_shows_her_account_only_where_it_may(tmp_path):
+    p = _policy(tmp_path)
+    # mixed unit: the location-ON room shows it, the location-OFF room does not
+    assert p.shows_self_in("signal", "g1") is True
+    assert p.shows_self_in("whatsapp", "g2") is False
+    # a unit with no location room at all shows it everywhere
+    assert p.shows_self_in("signal", "w1") is True
+    assert p.shows_self_in("discord", "100000000000000001/100000000000000002") is True
+    # a unit that is all location-on shows it
+    assert p.shows_self_in("signal", "o1") is True
+    # an unknown room never does
+    assert p.shows_self_in("signal", "nowhere") is False
+
+
+def test_a_unit_scoped_prompt_shows_it_only_when_every_room_agrees(tmp_path):
+    p = _policy(tmp_path)
+    assert p.shows_self_to_unit("friends") is False      # mixed
+    assert p.shows_self_to_unit("quiet") is True         # all off
+    assert p.shows_self_to_unit("open") is True          # all on
+    assert p.shows_self_to_unit("no-such-unit") is False
+
+
+async def test_a_location_off_room_of_a_mixed_unit_reads_no_account_on_fire(tmp_path):
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key=nora_character_key("friends"), body="she keeps it short here",
+        written_at=1, established_by="character-nora")
+    culture.reads.clear()
+    path = _fire_path(culture, _policy(tmp_path))
+
+    off = await path._read_self_account(_participation("whatsapp", "g2"))
+    on = await path._read_self_account(_participation("signal", "g1"))
+
+    assert off is None and culture.reads == [nora_character_key("friends")]
+    assert on is not None and on.body == "she keeps it short here"
+
+
+async def test_the_cognition_reader_withholds_a_mixed_units_account(tmp_path):
+    from nora.app.cognition_grounding import unit_self_reader
+
+    culture = InMemoryCultureStore()
+    for unit in ("friends", "quiet", "open"):
+        await culture.append(
+            key=nora_character_key(unit), body=f"{unit} account", written_at=1,
+            established_by="character-nora")
+    read = unit_self_reader(culture, _policy(tmp_path))
+    assert read is not None
+    assert read("friends") is None
+    assert (await read("quiet")).body == "quiet account"
+    assert (await read("open")).body == "open account"
+    assert unit_self_reader(None, _policy(tmp_path)) is None
+
+
+async def test_a_location_off_room_of_a_mixed_unit_reads_no_account_on_tag(tmp_path):
+    from nora.engagement.context import TranscriptInjection
+
+    culture = InMemoryCultureStore()
+    await culture.append(
+        key=nora_character_key("friends"), body="she keeps it short here",
+        written_at=1, established_by="character-nora")
+    assembler = object.__new__(TranscriptInjection)
+    assembler._culture_reader = culture
+    assembler._policy = _policy(tmp_path)
+    assembler._metrics = Metrics()
+
+    def msg(platform, cid):
+        return type("_Msg", (), {"platform": platform, "conversation_id": cid})()
+
+    assert await assembler._self_account(msg("whatsapp", "g2")) is None  # type: ignore[arg-type]
+    got = await assembler._self_account(msg("signal", "g1"))  # type: ignore[arg-type]
+    assert got is not None and got.body == "she keeps it short here"

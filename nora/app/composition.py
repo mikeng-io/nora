@@ -65,6 +65,7 @@ from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
     stay_context_reader,
+    unit_self_reader,
 )
 from nora.app.cognition_session import CognitionSessionRunner
 from nora.app.cognition_wiring import (
@@ -4116,10 +4117,9 @@ async def build_dependencies(
                 ),
                 # Her own account in the unit (design/self-growth/20), under
                 # `[culture] enabled` like every Character read.
-                self_account=(
-                    None if culture_reader is None
-                    else lambda unit: culture_reader.head(key=nora_character_key(unit))
-                ),
+                # Her own account in the unit, shown only where every room of the
+                # unit agrees on `location` (R-31; `unit_self_reader`).
+                self_account=unit_self_reader(culture_reader, allowlist),
                 metrics=metrics,
             )
 

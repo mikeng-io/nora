@@ -74,7 +74,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
-from nora.domain.culture import CultureRevision
+from nora.domain.culture import CultureRevision, nora_character_key
 from nora.domain.gatherings import Gathering
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
@@ -319,6 +319,28 @@ async def _own_sends(
     return out
 
 
+def unit_self_reader(
+    culture: Any | None, policy: Any,
+) -> Callable[[str], Awaitable[CultureRevision | None] | None] | None:
+    """`build_grounder`'s `self_account`: her account of the unit, or none.
+
+    A Cognition session is unit-scoped and what it sends can reach any room of
+    the unit, so the account (written from location rooms' sends too, R-31) is
+    read only when every room of the unit agrees on `location`
+    (`Policy.shows_self_to_unit`): never into a prompt whose audience could be
+    a location-off room. `None` while `[culture]` is off."""
+    if culture is None:
+        return None
+
+    def read(unit: str) -> Awaitable[CultureRevision | None] | None:
+        if not policy.shows_self_to_unit(unit):
+            return None
+        head: Awaitable[CultureRevision | None] = culture.head(key=nora_character_key(unit))
+        return head
+
+    return read
+
+
 def build_grounder(
     *,
     records: RecordRefSource,
@@ -336,7 +358,7 @@ def build_grounder(
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
-    self_account: Callable[[str], Awaitable[CultureRevision | None]] | None = None,
+    self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
     metrics: Any = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).

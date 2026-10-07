@@ -7,6 +7,7 @@
   ],
   "limitations": [
     "The old list carried what she had promised or agreed to in earlier days; the account describes how she comes across and does not state pending promises. Whether that loses anything could not be measured on the eval suite, which cannot give it the old list, so it is untested.",
+    "Because her account is written from her replies in every room of a group, a room that does not share location only shows it when no room of that group does: in groups that mix the two, those rooms (a WhatsApp and a Signal room today) see no account.",
     "The first three accounts were written on 7 October; before a group's first account lands the prompt carries neither."
   ]
 }

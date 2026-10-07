@@ -378,11 +378,15 @@ class TranscriptInjection:
         """Her own account in this room's UNIT (design/self-growth/20), keyed
         `nora_character_key(unit)`. Bounded, fail-soft and counted
         (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
-        when the unit has no account, so no `<self>` block renders."""
+        when the unit has no account or the room may not show it
+        (`Policy.shows_self_in`), so no `<self>` block renders."""
         if self._culture_reader is None or self._policy is None:
             return None
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
         if convo is None or not convo.unit:
+            return None
+        # R-31: unit-wide, written from location rooms' sends too.
+        if not self._policy.shows_self_in(msg.platform, msg.conversation_id):
             return None
         return await read_culture(
             traced_read("culture", "head", self._culture_reader.head(

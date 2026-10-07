@@ -1416,12 +1416,15 @@ class FirePath:
     async def _read_self_account(self, occasion: Event) -> CultureRevision | None:
         """Her own account in this room's UNIT (design/self-growth/20), keyed
         `nora_character_key(unit)`: `_read_unit_culture`'s bounds. `None` when
-        the tier is off or the unit has no account, so no `<self>` block
-        renders."""
+        the tier is off, the unit has no account or the room may not show it
+        (`Policy.shows_self_in`), so no `<self>` block renders."""
         if self._culture is None or self._policy is None:
             return None
         convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
         if convo is None or not convo.unit:
+            return None
+        # R-31: unit-wide, written from location rooms' sends too.
+        if not self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
             return None
         return await read_culture(
             self._culture.head(key=nora_character_key(convo.unit)),

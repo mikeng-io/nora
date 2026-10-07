@@ -314,6 +314,9 @@ class _Policy:
     thread resolves to a room whose `primary_id` DIFFERS from it, so a read by
     the thread id would miss (DEC-181)."""
 
+    def shows_self_in(self, platform, conversation_id):
+        return True
+
     def conversation(self, platform, conversation_id):
         if (platform, conversation_id) != ("signal", "room"):
             return None

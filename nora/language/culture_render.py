@@ -168,8 +168,9 @@ def render_self(
     empty block would say she looked and found herself blank. Lineage is not
     applied, as for `<unit_culture>` and `<character>`: the account is keyed
     by the UNIT, which is the read boundary (DEC-231), so every room of the
-    unit may read it (a known, unguarded risk: DEC-292). A body cut by the cap
-    says how much it dropped.
+    unit may read it; whether THIS room may is decided before the read
+    (`Policy.shows_self_in`, R-31, DEC-292). A body cut by the cap says how much
+    it dropped.
     """
     if account is None or not account.body.strip():
         return None
