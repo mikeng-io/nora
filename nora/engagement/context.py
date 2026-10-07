@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy
@@ -46,6 +47,7 @@ from nora.domain.quote_window import QuoteWindow
 from nora.domain.self_presence import Presence
 from nora.domain.standing import Standing
 from nora.domain.subagents_context import SubagentsView
+from nora.engagement.character_who import tag_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
@@ -227,14 +229,14 @@ class TranscriptInjection:
         # `<culture>` (DEC-207) is the eighth, and joins the OUTER gather for
         # the same overload reason `<presence>` does.
         (
-            (transcript, card, tagger_card, standing, notes),
+            ((transcript, character), card, tagger_card, standing, notes),
             presence,
             culture,
-            (character, unit_culture, self_account),
+            (unit_culture, self_account),
             (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
-                self._recent(msg),
+                self._recent_with_character(msg, ref),
                 self._peer_card(ref, msg),
                 self._recall_tagger(ref, msg),
                 self._standing(msg),
@@ -243,7 +245,7 @@ class TranscriptInjection:
             self._presence(msg),
             self._culture(msg),
             asyncio.gather(
-                self._character(msg), self._unit_culture(msg), self._self_account(msg),
+                self._unit_culture(msg), self._self_account(msg),
             ),
             asyncio.gather(
                 self._computer(msg),
@@ -340,13 +342,27 @@ class TranscriptInjection:
         )
         return found
 
+    async def _recent_with_character(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> tuple[tuple[TranscriptRow, ...], tuple[tuple[str, CultureRevision], ...]]:
+        """The transcript, then the accounts of the people in it. WHO needs the
+        window's speakers, so the character read cannot start before the
+        transcript; chained here it still overlaps every other read in the
+        gather instead of waiting for all of them. Its own bound
+        (`read_character`'s timeout) is added to the transcript's, not to the
+        whole gather's."""
+        transcript = await self._recent(msg)
+        return transcript, await self._character(msg, ref, transcript)
+
     async def _character(
-        self, msg: NormalizedMessage,
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+        transcript: Sequence[TranscriptRow],
     ) -> tuple[tuple[str, CultureRevision], ...]:
-        """Each listed person's account, keyed by this room's UNIT (one per
-        (unit, person) since C2b, design/self-growth/10 §3), for the persons
-        this room lists. Bounded, fail-soft and counted
-        (`stage="tag_character"`) by `read_character`."""
+        """The accounts of the listed persons who are IN this turn (the
+        tagger, the mentioned, the replied-to, the window's speakers:
+        `tag_character_people`), keyed by this room's UNIT (one per
+        (unit, person) since C2b, design/self-growth/10 §3). Bounded,
+        fail-soft and counted (`stage="tag_character"`) by `read_character`."""
         if self._culture_reader is None or self._policy is None:
             return ()
         convo = self._policy.conversation(msg.platform, msg.conversation_id)
@@ -354,8 +370,11 @@ class TranscriptInjection:
             return ()
         return await read_character(
             self._culture_reader, unit=convo.unit,
-            members=self._room_members(msg), stage="tag_character",
-            platform=msg.platform, metrics=self._metrics,
+            members=tag_character_people(
+                self._room_members(msg), persons=self._persons, message=msg,
+                tagger=ref, transcript=transcript,
+            ),
+            stage="tag_character", platform=msg.platform, metrics=self._metrics,
         )
 
     async def _unit_culture(self, msg: NormalizedMessage) -> CultureRevision | None:

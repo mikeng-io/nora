@@ -142,6 +142,7 @@ from nora.domain.standing import (
 from nora.domain.subagent import written_title
 from nora.domain.tool_call_log import ToolCallLogStore
 from nora.domain.turn_deadline import turn_deadline
+from nora.engagement.character_who import fire_character_people
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import StandingNotesReader
 from nora.engagement.documents_context import DocumentsContextReader
@@ -974,7 +975,7 @@ class FirePath:
                 self._read_computer(occasion),
             ),
             self._read_documents(occasion),
-            self._read_character(occasion),
+            self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
         )
@@ -1434,12 +1435,15 @@ class FirePath:
         )
 
     async def _read_character(
-        self, occasion: Event,
+        self, occasion: Event, ref: PersonRef | None,
+        transcript: Sequence[TranscriptRow],
     ) -> tuple[tuple[str, CultureRevision], ...]:
-        """Each listed person's account, keyed by this room's UNIT (one per
-        (unit, person) since C2b, design/self-growth/10 §3), for the persons
-        this room lists: `_read_culture`'s bounds, one head per person. `()`
-        when the tier is off."""
+        """The accounts of the listed persons who are IN this fire (the
+        window's speakers and the occasion's own person:
+        `fire_character_people`), keyed by this room's UNIT (one per
+        (unit, person) since C2b, design/self-growth/10 §3):
+        `_read_culture`'s bounds, one head per person. `()` when the tier is
+        off."""
         if self._culture is None or self._policy is None:
             return ()
         convo = self._policy.conversation(
@@ -1448,8 +1452,12 @@ class FirePath:
             return ()
         return await read_character(
             self._culture, unit=convo.unit,
-            members=self._room_members(occasion), stage="fire_character",
-            platform=occasion.platform, metrics=self._metrics,
+            members=fire_character_people(
+                self._room_members(occasion), persons=self._persons,
+                platform=occasion.platform, person=ref, transcript=transcript,
+            ),
+            stage="fire_character", platform=occasion.platform,
+            metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
 

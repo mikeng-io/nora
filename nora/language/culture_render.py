@@ -223,6 +223,32 @@ async def read_character(
     return tuple((ref.name, rev) for ref, rev in zip(members, found, strict=True) if rev)
 
 
+#: The most characters ONE person's account may carry in `<character>`, and the
+#: most the whole RENDERED block may be (wrapper tags, `written` ages, escaped
+#: bodies and markers all counted, so the cap bounds what is sent, not just the
+#: prose). The block rides every model call of a turn (median 5, heavy turns
+#: 20+) and nothing capped it: a revision may be `BODY_MAX_CHARS` (20,000) long.
+#: Measured 2026-10-07 on the live heads: the friends unit's seven accounts
+#: rendered 11,183 characters (~3,000 tokens) and the largest person account was
+#: 1,739. 2,500 is ~1.4x the largest account; 12,000 is above the whole roster
+#: rendered (11,183), so no live turn is cut and the block cannot grow past it
+#: however many accounts or however much escaping: a cap is not a reservation,
+#: so headroom costs nothing until an account uses it.
+#: ponytail: constants, not config; a knob only if a real account is cut.
+PERSON_ACCOUNT_MAX_CHARS = 2_500
+CHARACTER_BLOCK_MAX_CHARS = 12_000
+
+#: Room kept for the closing `[N more characters not shown]` line, so the block
+#: including it never exceeds `CHARACTER_BLOCK_MAX_CHARS` (N has at most 8 digits).
+_CLOSING_MARKER_RESERVE = len("\n[00000000 more characters not shown]")
+
+
+def _cut(body: str, room: int) -> str:
+    """`body` cut to `room` characters, saying how many it dropped."""
+    dropped = len(body) - room
+    return body if dropped <= 0 else f"{body[:room]}\n[{dropped} more characters not shown]"
+
+
 def render_character(
     accounts: Sequence[tuple[str, CultureRevision]], *, now: datetime | None = None,
 ) -> ContextBlock | None:
@@ -232,15 +258,55 @@ def render_character(
     empty block would say she looked and found them featureless. Each account
     carries its own `written` age, because nothing here retires and a head may
     be weeks old and still right.
+
+    Capped twice, each cut saying how many characters it dropped: one account
+    at `PERSON_ACCOUNT_MAX_CHARS`, and the RENDERED block (wrappers, ages,
+    escaped bodies and every marker included) at `CHARACTER_BLOCK_MAX_CHARS`.
+    Accounts are taken in the order given: the FIRST one the remaining budget
+    cannot hold whole is CUT to what is left, and every later one is left out
+    whole and counted in one closing `[N more characters not shown]` line, whose
+    room is reserved, so the whole block never exceeds the cap.
     """
     clock = now or datetime.now().astimezone()
-    rows = "\n".join(
-        ContextBlock(
+    budget = (
+        CHARACTER_BLOCK_MAX_CHARS
+        - len(ContextBlock(name="character", body="").render())
+        - _CLOSING_MARKER_RESERVE
+    )
+
+    def row(name: str, rev: CultureRevision, body: str) -> str:
+        return ContextBlock(
             name="person_account",
             attrs=(("name", name), ("written", _age(rev.written_at, clock))),
-            body=escape(rev.body),
+            body=escape(body),
         ).render()
-        for name, rev in accounts
-        if rev.body.strip()
-    )
-    return ContextBlock(name="character", body=rows) if rows else None
+
+    rows: list[str] = []
+    omitted = 0
+    closed = False  # once an account is cut or left out, every later one is left out whole
+    for name, rev in accounts:
+        body = rev.body.strip()
+        if not body:
+            continue
+        if closed:
+            omitted += len(body)
+            continue
+        room = min(len(body), PERSON_ACCOUNT_MAX_CHARS)
+        shown = row(name, rev, _cut(body, room))
+        # The first account the budget cannot hold whole is CUT to what is
+        # left (rendered, escaped, marker and wrapper included); none is
+        # left when even a bare wrapper does not fit.
+        while len(shown) + 1 > budget and room > 0:
+            room = min(room - 1, max(0, room - (len(shown) + 1 - budget)))
+            shown = row(name, rev, _cut(body, room))
+        if len(shown) + 1 > budget:
+            closed = True
+            omitted += len(body)
+            continue
+        rows.append(shown)
+        budget -= len(shown) + 1
+        if room < len(body):
+            closed = True
+    if omitted:
+        rows.append(f"[{omitted} more characters not shown]")
+    return ContextBlock(name="character", body="\n".join(rows)) if rows else None

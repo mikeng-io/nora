@@ -117,7 +117,8 @@ An account nobody sees cannot be corrected, so:
 
 Character and Standing are per unit and render only in that unit's rooms. A
 person's Character renders only in rooms where that person is a listed
-member. Within those rooms lineage decides per section ([10](10-tiers.md) §3):
+member, and on a turn only when that person is in it (the tagger, the mentioned,
+the replied-to, a speaker in the window; self-growth/10-character.md). Within those rooms lineage decides per section ([10](10-tiers.md) §3):
 a section resting on presence renders only where the room's `location` flag
 is on and the DisclosureGuard passes for the person; a section that fails is
 not shown, and the rest of the account is.

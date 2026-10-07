@@ -23,7 +23,7 @@ accounts in the culture store under `character_key(scope, person_id)`.
 |---|---|---|
 | room | the room's messages | `<culture>` (exists) |
 | unit | new room-culture revisions; Register rows (notes, memos, events) | a unit culture block (new) |
-| person | their messages; Rollup rows about them; Register rows naming them; memory as a hint, never cited | `<character>` (exists) |
+| person | their messages; Rollup rows about them; Register rows naming them; memory as a hint, never cited | `<character>` (exists), the accounts of the people in the turn, capped (below) |
 | Nora | closed `response` episodes: her send paired with what followed; never her sends alone | `self` ([20](20-self-block.md)) |
 
 The adaptor and the store are shared. Each entity kind has its own evidence
@@ -47,6 +47,22 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
   pre-fetching one `memory.chat("What is the character of X?")` per poster,
   handed in as `<people_views>`. One envelope carries the room account and
   every person's account.
+
+> **What renders, 2026-10-07 (character-who).** `<character>` carries the accounts
+> of the people IN the turn, not one per listed person. Tag: the tagger, anyone
+> the tag message @-mentions, the replied-to message's author and mentions, and
+> every listed person who speaks in the transcript window. Fire: the window's
+> speakers and the occasion's own person. Listed persons only, roster order,
+> from resolved person ids (`nora/engagement/character_who.py`). Measured the
+> same day: friends' seven accounts were 9,065 characters of prose, 11,183 rendered
+> (~3,000 tokens), re-sent on every model call. Each account is capped at 2,500
+> characters and the rendered block at 12,000 (`PERSON_ACCOUNT_MAX_CHARS`,
+> `CHARACTER_BLOCK_MAX_CHARS`): the first account the budget cannot hold whole
+> is cut, later ones are left out whole and counted in one closing marker, each
+> cut saying how many it dropped. `character_read` (C4) would serve anyone
+> else's account, but it is Dreamer-loop only until a `tool_selection` run, so a
+> tag or fire turn cannot reach an absent person's account. DEC-278 and DEC-290
+> are narrowed in the decision index.
 
 > **As built, branch `mikeng-io/character-sessions` (C2a, C2b), 2026-10-07.**
 > The list above is what ran before it. The room session now writes through
