@@ -646,6 +646,11 @@ with who, when, how and what, as a full trail for auditing.**
 
 ## 14. Browser: agent-as-tool, not a tool per click
 
+**Proposed 2026-10-07:** `design/browser-runtime/` and ADR 0022 make S4
+concrete (headed Chrome, a tiered driver, an OpenBao fill broker) and ask to
+supersede decision 3 for Nora's own accounts. Until accepted, this section
+stands.
+
 **Status (2026-10-01): not built (S4).** There is no `computer_browse`, no
 browser in the image and no CDP proxy in computerd. **No browser logins are
 allowed for now** (decision 3), so the spike's task 3 below (a table behind a
