@@ -298,7 +298,7 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     # handle the model can READ — not an id it has to produce.
     assert set(
         wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"text", "reply_to"}
+    ) == {"text", "reply_to", "more"}
 
 
 _DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
@@ -377,7 +377,7 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
         # that the two CONVERSATION keys were dropped, not that the result has
         # exactly one key.
         ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
-                        "text": "hi"}, {"text": "hi", "reply_to": None}),
+                        "text": "hi"}, {"text": "hi", "reply_to": None, "more": False}),
         ("load_transcript", {"conversation_id": "gEVIL", "limit": 5},
          {"limit": 5, "before": None}),
     ):

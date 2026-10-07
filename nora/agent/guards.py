@@ -1285,6 +1285,33 @@ class ReplyGuard(HookProvider):
             self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
         )
 
+    @staticmethod
+    def _reply_closes_turn(name: str, tool_input: Any, result: Any) -> bool:
+        """True when a `send_reply` that LANDED said it was the last (DEC-42, amended).
+
+        After her first message the relaxed loop made one more FULL model call
+        so she could send a second, and measured live (77 engagement traces,
+        2026-09-30..10-07) that call almost always ended with nothing: 2 of 45
+        replying turns sent more than one message, and each wasted call
+        re-sent ~24k input tokens. So the turn now ends after a `send_reply`
+        unless she passed `more=true`, which keeps the relaxed path.
+
+        Fail-open on purpose: only the tool's own `sent` or `held_for_review`
+        word ends the turn. A `refused` send (R-6, R-18, an audit or send
+        failure) is not the last word, she may retry with different text, so
+        it keeps today's path. A result this cannot read is also today's path.
+        Only `send_reply` has the argument; `send_gif` is not covered here.
+        """
+        if name != "send_reply":
+            return False
+        if isinstance(tool_input, dict) and tool_input.get("more") is True:
+            return False
+        try:
+            text = result["content"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            return False
+        return isinstance(text, str) and text.strip() in ("sent", "held_for_review")
+
     def _before_model(self, event: BeforeModelCallEvent) -> None:
         """Relax `tool_choice` once she has spoken; end the turn at the cap.
 
@@ -1539,6 +1566,12 @@ class ReplyGuard(HookProvider):
                 # is precisely why collapsing them would look correct today and
                 # cap her at one message forever.
                 self._spoke = True
-                self._turn_is_over = self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                self._turn_is_over = (
+                    self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                    or self._reply_closes_turn(
+                        name, (tool_use.get("input") or {}),
+                        getattr(event, "result", None),
+                    )
+                )
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")
