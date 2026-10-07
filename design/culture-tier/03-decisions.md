@@ -117,6 +117,8 @@ sits *around* the text. Here the runtime supplies that provenance itself.
 
 ## DEC-185 — the watermark is BOTH the gate and the cursor, and the two are sized together
 
+> **2026-10-07, DEC-288: the clock clause is superseded.** Culture no longer fires on «new messages AND a day»; it fires on `[culture] wake_batch` new human messages, or on any new one once the last fold is `[culture] stale_seconds` old. The watermark, batch-is-the-corpus and head-seeding clauses below stand.
+
 `uses_watermark = True`, `min_interval_seconds = 86400`, **`batch_limit` sized
 for a real read**, watermark seeded at the record head on first run.
 

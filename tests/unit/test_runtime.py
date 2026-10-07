@@ -1041,6 +1041,38 @@ async def test_a_scheduled_watermark_bearing_adaptor_still_needs_backlog_and_age
     assert ("facts", "g1", 2) in runner.calls
 
 
+async def test_an_evidence_wake_fires_at_the_batch_or_when_stale_and_never_on_silence():
+    """DEC-288 (design/self-growth/10-character.md §3.2): with `wake_batch`
+    set, a key fires on `lag >= wake_batch` whatever the watermark's age, or on
+    any backlog once the watermark is `min_interval_seconds` old; one message
+    short of the batch on a young watermark does not fire, and a key with
+    nothing new never fires however old its watermark."""
+    schedules = {"culture": AdaptorSchedule(
+        min_interval_seconds=1000.0, batch_limit=300, wake_batch=200)}
+
+    async def fired(*, lag: int, age: float) -> bool:
+        runner = _RecordingRunner()
+        await _tick(dream_loop(
+            _FakeRecord({"g1": [_row(1)]} if lag else {}),
+            _KeyedLanguage(lag=lag, age=age), Metrics(),
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[_StubAdaptor("culture")], runtime=runner,
+            schedules=schedules,
+        ))
+        return any(c[0] == "culture" for c in runner.calls)
+
+    assert not await fired(lag=199, age=0.0)       # one short, young watermark
+    assert await fired(lag=200, age=0.0)           # the batch, at any age
+    assert await fired(lag=1, age=1000.0)          # stale, with one new message
+    assert not await fired(lag=0, age=1e9)         # silent: never
+
+
+def test_an_evidence_wake_refuses_a_batch_below_one():
+    with pytest.raises(ValueError):
+        AdaptorSchedule(min_interval_seconds=1.0, batch_limit=1, wake_batch=0)
+
+
 async def test_a_scheduled_watermark_free_adaptor_tracks_last_fired_per_key():
     """The clock is keyed `(adaptor.name, key)` (33 §5 N1a) — one unit's
     curator firing must never hold back or advance another's. Both scopes fire

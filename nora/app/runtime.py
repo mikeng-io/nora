@@ -853,7 +853,10 @@ async def _dream_adaptor_once(
         # The `else` latch-reset below stays mandatory here too:
         # `watermark_age_seconds` reads `updated_at`, and only the batch arm
         # writes it, so an interval-only fire would otherwise latch on forever.
-        fires = lag > 0 and age >= sched.min_interval_seconds
+        stale = lag > 0 and age >= sched.min_interval_seconds
+        # The evidence wake (design/self-growth/10-character.md §3.2): enough
+        # new human messages fire at once, whatever the watermark's age.
+        fires = stale or (sched.wake_batch is not None and lag >= sched.wake_batch)
     else:
         fires = (
             lag > safety_lag

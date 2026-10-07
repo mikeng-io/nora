@@ -3567,13 +3567,14 @@ async def build_dependencies(
             dream_schedules = {
                 **dream_schedules,
                 "culture": AdaptorSchedule(
-                    # DEC-185. `uses_watermark = True`, so this reads as «new
-                    # human messages in this room AND a day since the last
-                    # fold» — a SILENT ROOM DOES NOT FIRE, which is correct
-                    # rather than a defect: nothing in this tier retires, so a
-                    # quiet room's account is accurate and there is nothing to
-                    # refresh it against.
-                    min_interval_seconds=cfg.culture.fold_interval_seconds,
+                    # DEC-288, replacing DEC-185's daily clock: fire on
+                    # `wake_batch` new human messages, or on any new one once
+                    # the last fold is `stale_seconds` old. A SILENT ROOM STILL
+                    # NEVER FIRES, which is correct rather than a defect:
+                    # nothing in this tier retires, so a quiet room's account
+                    # is accurate and there is nothing to refresh it against.
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.wake_batch,
                     # THE BATCH IS THE CORPUS — see `CultureConfig.batch_limit`.
                     # This is how much of the room the model gets to see, not a
                     # throttle, and an earlier draft of the design pinned it at

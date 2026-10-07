@@ -147,7 +147,7 @@ Characters), and writes one revision through `character_revise`, or none.
 Every revision of Character · Nora passes the same doctrine check as a lesson
 (below); where it finds the evidence pulling against doctrine, a tension row
 is written ([55](55-self.md) §4). It replaces the culture adaptor's daily clock
-(`[culture] fold_interval_seconds`).
+(`[culture] fold_interval_seconds`; done for rooms by DEC-288, 2026-10-07).
 
 **The Lessons adaptor** — per unit. It reads the outcomes of her acts since
 its last session, which are the `response` episodes of the Rollup
