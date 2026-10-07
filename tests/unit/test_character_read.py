@@ -56,7 +56,7 @@ unit = "u1"
 platform = "signal"
 id = "ROOM-X"
 label = "Room X"
-persons = ["p1", "p3"]
+persons = ["p1", "p3", "p4"]
 unit = "u2"
 '''
 
@@ -75,6 +75,11 @@ phone = "+85200000002"
 name = "Cy"
 [[persons.p3.signal]]
 phone = "+85200000003"
+
+[persons.p4]
+name = "Ada"
+[[persons.p4.signal]]
+phone = "+85200000004"
 '''
 
 _UNREACHABLE = TransitClient(
@@ -160,6 +165,24 @@ async def test_an_out_of_unit_room_or_person_reads_exactly_like_a_name_nobody_us
     assert await _call(tool, "person", "Cy") == await _call(tool, "person", "Nobody At All")
     assert (await _call(tool, "person", "Cy"))["status"] == "nothing_found"
     assert store.reads == []         # never a candidate, so never read
+
+
+async def test_a_namesake_in_another_unit_neither_resolves_nor_makes_the_name_ambiguous(tmp_path):
+    """p4 is also named Ada but listed only in the other unit: «Ada» here is p1."""
+    store = InMemoryCultureStore()
+    await _seed(store, character_key("ROOM-A", "p1"), "Ada organises.")
+    got = await _call(_tool(tmp_path, store), "person", "Ada")
+    assert got["status"] == "ok"
+    assert [a["account"] for a in got["accounts"]] == ["Ada organises."]
+    assert character_key("ROOM-X", "p4") not in store.reads
+
+
+async def test_an_account_carrying_an_identifier_is_withheld_whole(tmp_path):
+    store = InMemoryCultureStore()
+    await _seed(store, "ROOM-A", "Call them on +85291234567 to sort it out.")
+    got = await _call(_tool(tmp_path, store), "room", "Room A")
+    assert got["status"] == "nothing_found" and got["withheld"] == 1
+    assert "+852" not in str(got)
 
 
 async def test_a_store_failure_is_unavailable_never_nothing_found(tmp_path):

@@ -3108,6 +3108,10 @@ _STANDING_NONE = (
 _CHARACTER_OFF = (
     "I can't read accounts of this group right now. Say so; do not guess one."
 )
+_CHARACTER_WITHHELD = (
+    "An account is held but carries something that can't be repeated here. "
+    "Work from what you already know."
+)
 _CHARACTER_NONE = (
     "No account is held of that room or person in this group. Say so, and do "
     "not describe them from memory as if one were."
@@ -5516,7 +5520,14 @@ def build_tool_specs(
             found = room_named(unit_rooms, subject)
             wanted = [(found, None)] if found is not None else []
         elif entity == "person":
-            person_id = person_named(persons.by_person, subject)
+            # Names resolve among THIS unit's listed people only: a namesake in
+            # another unit must neither be a candidate nor make the name
+            # ambiguous here (a false nothing_found, R-27).
+            unit_people = {
+                pid: ref for pid, ref in persons.by_person.items()
+                if rooms_listing(unit_rooms, pid)
+            }
+            person_id = person_named(unit_people, subject)
             if person_id is not None:
                 wanted = [(r, person_id) for r in rooms_listing(unit_rooms, person_id)]
         else:
@@ -5529,18 +5540,32 @@ def build_tool_specs(
             log.exception("character_read failed")
             _record(metrics, "character_read", "unavailable", reason="store")
             return {"status": "unavailable", "note": _CHARACTER_OFF}
+        held = [
+            (r, head) for (r, _), head in zip(keyed, heads, strict=True)
+            if head is not None and head.body.strip()
+        ]
+        # R-18 fails closed on the WHOLE reply, so an account carrying an
+        # identifier is withheld whole here, as `ask_memory` withholds an
+        # answer: nothing screened these bodies when they were written.
         accounts = [
             {"room": r.label or platform_name(r.platform), "account": head.body,
              "as_of": rollup_iso(head.written_at), "revision": head.id}
-            for (r, _), head in zip(keyed, heads, strict=True)
-            if head is not None and head.body.strip()
+            for r, head in held if scan_identifiers(head.body) is None
         ]
+        withheld = len(held) - len(accounts)
+        if not accounts and withheld:
+            _record(metrics, "character_read", "nothing_found", entity=entity, withheld=withheld)
+            return {"status": "nothing_found", "withheld": withheld,
+                    "note": _CHARACTER_WITHHELD}
         if not accounts:
             _record(metrics, "character_read", "nothing_found", entity=entity)
             return {"status": "nothing_found", "note": _CHARACTER_NONE}
         _record(metrics, "character_read", "ok", entity=entity, accounts=len(accounts))
-        return {"status": "ok", "entity": entity, "accounts": accounts,
-                "note": _CHARACTER_OK}
+        result = {"status": "ok", "entity": entity, "accounts": accounts,
+                  "note": _CHARACTER_OK}
+        if withheld:
+            result["withheld"] = withheld
+        return result
 
     # ---- the three room-scoped tools -------------------------------------
     #
