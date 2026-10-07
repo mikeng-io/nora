@@ -53,6 +53,14 @@ No tool registry change, no roster question, no 25s dialectic call, and no
 
 ## 1.2 `standing` and `notes` are inputs, and this bundle never said so
 
+**AMENDED 2026-10-07 (self-growth C2b, PR #744): `standing` is no longer an
+input; `notes` still is.** Standing is folded from the turn's raw tool results,
+a presence read among them, and a room's account is now input to every person's
+and the unit's account, which render in rooms whose `location` flags differ
+(R-31); prose carries no mark to drop such a line by (DEC-184). The room account
+rests on the room's own messages and the note index. The text below is the
+2026-09-17 record of why it was added.
+
 Added 2026-09-17. It is the plainest instance of the general finding in
 `design/dreamer-agent-loop/03-no-agent-loop §7`, and it was sitting inside this
 file's own §2 the whole time.
