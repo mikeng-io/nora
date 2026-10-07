@@ -674,6 +674,9 @@ class Browser:
         self.started = time.time()
         self._to_chrome: int | None = None
         self._reader: asyncio.Task[None] | None = None
+        # One writer at a time: two frames written at once could interleave
+        # on the pipe and break its NUL framing.
+        self._write_lock = asyncio.Lock()
 
     @property
     def alive(self) -> bool:
@@ -684,20 +687,24 @@ class Browser:
         if self._to_chrome is None:
             raise OSError("the browser's pipe is closed")
         data = message.encode("utf-8") + b"\0"
-        await asyncio.to_thread(_write_all, self._to_chrome, data)
+        async with self._write_lock:
+            await asyncio.to_thread(_write_all, self._to_chrome, data)
 
     async def _read(self, fd: int) -> None:
         """Forward every message Chrome writes to the attached client, and
         drop it when there is none."""
-        buffer = b""
+        buffer = bytearray()
         try:
             while True:
                 chunk = await asyncio.to_thread(os.read, fd, 1 << 16)
                 if not chunk:
                     return
+                scan = len(buffer)  # a NUL can only be in what just arrived
                 buffer += chunk
-                while b"\0" in buffer:
-                    message, buffer = buffer.split(b"\0", 1)
+                while (end := buffer.find(b"\0", scan)) != -1:
+                    message = bytes(buffer[:end])
+                    del buffer[:end + 1]
+                    scan = 0
                     self.last_used = time.monotonic()
                     client = self.client
                     if client is not None and not client.closed:
@@ -736,7 +743,7 @@ BROWSER_IDLE_SECONDS = 600.0
 FIRST_DISPLAY = 100
 CHROME_START_SECONDS = 10.0
 # X's own socket directory: a fixed path every X client looks in, so not a
-# temp file; computerd makes it root's and sticky (Browsers._ensure_x11_dir).
+# temp file; the image makes it, root's and sticky (Browsers.ensure_x11_dir).
 X11_DIR = Path("/tmp/.X11-unix")  # noqa: S108
 # Chrome's own flags: headed (no --headless), the pipe and never a port, a
 # profile per room, no first-run UI. `--proxy-server` is added from the VM's
@@ -768,15 +775,30 @@ class Browsers:
         self._lock = asyncio.Lock()
 
     def _free_display(self) -> int:
-        """A display number no browser of ours holds and no X server already
-        listens on (a socket left in the X directory is someone's display)."""
+        """A display number no browser of ours holds. Whatever else sits at
+        that number (a socket or lock file left over, or planted by a room's
+        command: the directory is world-writable) is removed first, so it can
+        neither block the number nor pass for our Xvfb. `unlink` removes a
+        link, never its target. Raises `OSError` when none can be cleared."""
         taken = {b.display for b in self.running.values()}
-        return next(n for n in range(FIRST_DISPLAY, FIRST_DISPLAY + 1000)
-                    if n not in taken and not (self.x11_dir / f"X{n}").exists())
+        for n in range(FIRST_DISPLAY, FIRST_DISPLAY + 1000):
+            if n in taken:
+                continue
+            leftovers = (self.x11_dir / f"X{n}", self.x11_dir.parent / f".X{n}-lock")
+            for path in leftovers:
+                with contextlib.suppress(FileNotFoundError, PermissionError):
+                    os.unlink(path)
+            if not any(os.path.lexists(path) for path in leftovers):
+                return n
+        raise OSError("no free X display")
 
     async def reap(self) -> None:
         """Stop every browser that died, or sat idle past the limit with no
         client attached."""
+        async with self._lock:
+            await self._reap()
+
+    async def _reap(self) -> None:
         now = time.monotonic()
         for scope, browser in list(self.running.items()):
             idle = browser.client is None and now - browser.last_used > self.idle_seconds
@@ -789,9 +811,10 @@ class Browsers:
         `RefusedError` when every slot holds a browser with a client attached
         (nothing can be stopped for this one), `OSError` when it cannot start."""
         async with self._lock:
-            await self.reap()
+            await self._reap()
             browser = self.running.get(scope)
             if browser is not None:
+                browser.last_used = time.monotonic()
                 return browser
             if len(self.running) >= self.max_browsers:
                 idle = [b for b in self.running.values() if b.client is None]
@@ -805,30 +828,50 @@ class Browsers:
             self.running[scope] = browser
             return browser
 
-    def _ensure_x11_dir(self) -> None:
-        """The X socket directory, `1777` and root's when computerd is root:
-        Xvfb runs as a room's user and cannot make it, and `/tmp` may be
-        fresh after a boot."""
-        self.x11_dir.mkdir(parents=True, exist_ok=True)
-        if os.geteuid() == 0:
-            os.chown(self.x11_dir, 0, 0)
-            os.chmod(self.x11_dir, 0o1777)  # noqa: S103 - X's socket directory, sticky
+    def ensure_x11_dir(self) -> None:
+        """The X socket directory, `1777` and root's: Xvfb runs as a room's
+        user and cannot make it. Nothing here follows a link: `mkdir` fails on
+        an existing name, the directory is opened `O_NOFOLLOW` and changed
+        through that descriptor. As root, one that is not root's own (made by
+        a room's command before computerd) is refused, never adopted: a room
+        could otherwise point it anywhere and have root open it to everyone.
+        The image makes it (Dockerfile) and computerd checks it at start."""
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(self.x11_dir, 0o700)
+        fd = os.open(self.x11_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            if os.geteuid() == 0:
+                if os.fstat(fd).st_uid != 0:
+                    raise OSError(f"{self.x11_dir} is not root's; refusing to use it")
+                os.fchmod(fd, 0o1777)
+        finally:
+            os.close(fd)
 
-    async def _display_ready(self, display: int, xvfb: asyncio.subprocess.Process) -> bool:
+    async def _display_ready(
+        self, display: int, xvfb: asyncio.subprocess.Process, uid: int | None,
+    ) -> bool:
+        """Our Xvfb is listening: the display's socket exists, is a socket,
+        belongs to the room's user (when rooms are isolated), and Xvfb is
+        still running. A socket another user binds at that path is not it."""
         socket_path = self.x11_dir / f"X{display}"
         deadline = time.monotonic() + CHROME_START_SECONDS
         while time.monotonic() < deadline:
-            if socket_path.exists():
-                return True
             if xvfb.returncode is not None:
                 return False
-            await asyncio.sleep(0.05)
+            try:
+                info = os.lstat(socket_path)
+            except FileNotFoundError:
+                await asyncio.sleep(0.05)
+                continue
+            if not stat.S_ISSOCK(info.st_mode) or (uid is not None and info.st_uid != uid):
+                return False
+            return xvfb.returncode is None
         return False
 
     async def _start(self, scope: str) -> Browser:
         await asyncio.to_thread(self.computer._ensure_scope, scope)
-        await asyncio.to_thread(self._ensure_x11_dir)
-        display = self._free_display()
+        await asyncio.to_thread(self.ensure_x11_dir)
+        display = await asyncio.to_thread(self._free_display)
         cookie = secrets.token_bytes(16)
         auth = await asyncio.to_thread(self._write_xauthority, scope, display, cookie)
         profile = self.computer.root / scope / "browser" / "default"
@@ -842,18 +885,22 @@ class Browsers:
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True, **user,
         )
-        if not await self._display_ready(display, browser.xvfb):
-            await browser.stop()
-            raise OSError(f"the display :{display} did not come up")
-        # fd 3 is what Chrome reads (our commands), fd 4 what it writes.
-        cmd_r, cmd_w = os.pipe()
-        out_r, out_w = os.pipe()
-        flags = [*CHROME_FLAGS, f"--user-data-dir={profile}"]
-        proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
-        if proxy:
-            flags.append(f"--proxy-server={proxy}")
-        log_fd = await asyncio.to_thread(self._open_log, scope)
+        ids = self.computer.owner.ids(scope)
+        opened: list[int] = []
         try:
+            if not await self._display_ready(display, browser.xvfb, ids[0] if ids else None):
+                raise OSError(f"the display :{display} did not come up")
+            log_fd = await asyncio.to_thread(self._open_log, scope)
+            opened.append(log_fd)
+            # fd 3 is what Chrome reads (our commands), fd 4 what it writes.
+            cmd_r, cmd_w = os.pipe()
+            opened += [cmd_r, cmd_w]
+            out_r, out_w = os.pipe()
+            opened += [out_r, out_w]
+            flags = [*CHROME_FLAGS, f"--user-data-dir={profile}"]
+            proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+            if proxy:
+                flags.append(f"--proxy-server={proxy}")
             # bash, not sh: the pipe's descriptors are usually above 9, and
             # dash (the VM's /bin/sh) only redirects single-digit ones, so it
             # exits 2 before Chrome starts (measured on the VM, 2026-10-07).
@@ -864,26 +911,36 @@ class Browsers:
                 stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
                 stderr=log_fd, start_new_session=True, **user,
             )
-        except OSError:
-            for fd in (cmd_r, cmd_w, out_r, out_w):
-                os.close(fd)
+        except BaseException:
+            for fd in opened:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
             await browser.stop()
             raise
-        finally:
-            os.close(log_fd)
-        os.close(cmd_r)
-        os.close(out_w)
+        # Ours to keep: the write end to Chrome and the read end from it.
+        for fd in (log_fd, cmd_r, out_w):
+            os.close(fd)
         browser._to_chrome = cmd_w
         browser._reader = asyncio.create_task(browser._read(out_r))
         return browser
 
     def _open_log(self, scope: str) -> int:
         """`<scope>/browser/chrome.log`, emptied at each start and the room
-        user's: Chrome's stderr, so a browser that dies leaves a reason."""
+        user's: Chrome's stderr, so a browser that dies leaves a reason.
+        A fresh file every time (`O_EXCL` under a temp name, then renamed over
+        the old one), so whatever a room's command left at that name, a FIFO
+        that would block the open or a link to another file, is replaced and
+        never opened."""
         with self.computer._dir(scope, ["browser"], create=True) as dfd:
-            fd = os.open("chrome.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                         0o600, dir_fd=dfd)
-        self.computer.owner.chown_fd(fd, scope)
+            tmp = f".chrome.log.{secrets.token_hex(6)}"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600,
+                         dir_fd=dfd)
+            try:
+                self.computer.owner.chown_fd(fd, scope)
+                os.replace(tmp, "chrome.log", src_dir_fd=dfd, dst_dir_fd=dfd)
+            except BaseException:
+                os.close(fd)
+                raise
         return fd
 
     def _write_xauthority(self, scope: str, display: int, cookie: bytes) -> Path:
@@ -1191,12 +1248,15 @@ def create_app(
             return web.json_response({"status": "denied",
                                       "reason": "this room's browser already has a client"})
         ws = web.WebSocketResponse(max_msg_size=MAX_TRANSFER_BYTES)
-        await ws.prepare(request)
+        # Claimed before the first await, so two connects at once cannot
+        # both pass the check above.
         browser.client = ws
         try:
+            await ws.prepare(request)
             async for msg in ws:
                 if msg.type is not WSMsgType.TEXT:
-                    continue
+                    await ws.close(code=1003, message=b"CDP messages are text frames")
+                    break
                 try:
                     await browser.send(msg.data)
                 except OSError:
@@ -1208,6 +1268,14 @@ def create_app(
         return ws
 
     async def reap_idle(app: web.Application) -> AsyncIterator[None]:
+        # The X directory exists and is root's before any room's command can
+        # make its own (Browsers.ensure_x11_dir); a failure is logged, and
+        # every browser start reports it as unavailable.
+        try:
+            await asyncio.to_thread(browsers.ensure_x11_dir)
+        except OSError as exc:
+            print(f"computerd: browsers unavailable: {exc}", flush=True)
+
         async def loop() -> None:
             while True:
                 await asyncio.sleep(30)

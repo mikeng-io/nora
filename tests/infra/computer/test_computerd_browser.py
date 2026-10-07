@@ -10,6 +10,7 @@ what computerd waits for."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from aiohttp import ClientSession, WSMsgType
+from aiohttp import ClientSession, WSMsgType, web
 from aiohttp.test_utils import TestServer
 
 from nora.domain.computer import computer_scope
@@ -50,9 +51,16 @@ while True:
         outbox.write(json.dumps(reply).encode() + b"\\0")
 """
 
-FAKE_XVFB = """#!/bin/sh
-touch "$FAKE_X11_DIR/X${1#:}"
-exec sleep 3600
+FAKE_XVFB = """#!{python}
+import os, socket, sys, time
+here, n = os.environ["FAKE_X11_DIR"], sys.argv[1].lstrip(":")
+path = os.path.join(here, "X" + n)
+open(os.path.join(here, "argv-" + n), "w").write(" ".join(sys.argv[1:]))
+open(os.path.join(here, "pid-" + n), "w").write(str(os.getpid()))
+sock = socket.socket(socket.AF_UNIX)
+sock.bind(path)
+sock.listen()
+time.sleep(3600)
 """
 
 
@@ -72,7 +80,7 @@ def fakes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setenv("https_proxy", "http://gateway.docker.internal:3128")
     return {
         "chrome": _executable(bin_dir / "chrome", FAKE_CHROME.format(python=sys.executable)),
-        "xvfb": _executable(bin_dir / "xvfb", FAKE_XVFB),
+        "xvfb": _executable(bin_dir / "xvfb", FAKE_XVFB.format(python=sys.executable)),
         "x11": x11,
         "root": tmp_path / "workspace",
     }
@@ -156,13 +164,10 @@ async def test_the_display_cookie_is_the_rooms_alone(server, fakes):
     assert b"MIT-MAGIC-COOKIE-1" in data and len(data) > 30
 
 
-async def test_xvfb_is_started_without_tcp_and_with_the_cookie(server, fakes, tmp_path):
-    record = tmp_path / "xvfb-argv"
-    fakes["xvfb"].write_text(
-        f'#!/bin/sh\necho "$@" > {record}\ntouch "$FAKE_X11_DIR/X${{1#:}}"\nexec sleep 3600\n')
+async def test_xvfb_is_started_without_tcp_and_with_the_cookie(server, fakes):
     async with ClientSession() as session:
-        await _ask(session, server, SCOPE)
-    argv = record.read_text().split()
+        display = (await _ask(session, server, SCOPE))["result"]["display"]
+    argv = (fakes["x11"] / f"argv-{display.lstrip(':')}").read_text().split()
     assert argv[argv.index("-nolisten") + 1] == "tcp"
     assert argv[argv.index("-auth") + 1].endswith(f"{SCOPE}/browser/.Xauthority")
 
@@ -216,18 +221,21 @@ async def test_stop_kills_the_rooms_chrome_and_state_says_so(server, fakes):
 
 
 async def test_past_the_cap_the_least_recent_idle_browser_is_stopped(fakes):
+    """SCOPE starts first but is used again after OTHER, so OTHER is the least
+    recently used: eviction by start order would stop the wrong one."""
     srv = await _serve(fakes, max_browsers=2)
     try:
         async with ClientSession() as session:
-            first = (await _ask(session, srv, SCOPE))["result"]["pid"]
-            await _ask(session, srv, OTHER)
+            await _ask(session, srv, SCOPE)
+            other = (await _ask(session, srv, OTHER))["result"]["pid"]
+            await _ask(session, srv, SCOPE)
             await _ask(session, srv, THIRD)
             running = set(srv.app["browsers"].running)
     finally:
         await srv.close()
-    assert running == {OTHER, THIRD}
+    assert running == {SCOPE, THIRD}
     with pytest.raises(ProcessLookupError):
-        os.kill(first, 0)
+        os.kill(other, 0)
 
 
 async def test_past_the_cap_with_every_browser_attached_the_new_room_is_denied(fakes):
@@ -268,13 +276,30 @@ def test_the_xauthority_record_has_the_xau_layout():
     assert record[29:31] == b"\x00\x10" and record[31:] == cookie
 
 
-async def test_a_display_whose_socket_already_exists_is_skipped(server, fakes):
-    """Another X server's socket (left over, or someone else's) is never
-    taken as ours: Chrome would draw on that server's screen."""
-    (fakes["x11"] / "X100").touch()
+async def test_files_planted_at_a_display_number_are_cleared_not_obeyed(server, fakes):
+    """The X directory is world-writable: a room can plant a file or a lock at
+    every display number. Planted names are removed, so they can neither
+    exhaust the numbers nor stand in for our Xvfb."""
+    for n in range(100, 1100):
+        (fakes["x11"] / f"X{n}").touch()
     async with ClientSession() as session:
         display = (await _ask(session, server, SCOPE))["result"]["display"]
-    assert display != ":100"
+    assert display == ":100"
+    assert stat.S_ISSOCK(os.lstat(fakes["x11"] / "X100").st_mode)
+
+
+async def test_something_at_the_socket_path_that_is_not_a_socket_is_not_our_display(fakes):
+    fakes["xvfb"].write_text(
+        "#!/bin/sh\ntouch \"$FAKE_X11_DIR/X${1#:}\"\nexec sleep 3600\n")
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            resp = await session.get(srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
+            body = await resp.json()
+        assert body["status"] == "unavailable"
+        assert srv.app["browsers"].running == {}
+    finally:
+        await srv.close()
 
 
 async def test_chromes_stderr_lands_in_the_rooms_own_log(server, fakes):
@@ -296,3 +321,110 @@ async def test_chrome_is_started_without_the_automation_flag_pages_can_read(serv
         argv = (await _ask(session, server, SCOPE))["result"]["argv"]
     assert "--disable-blink-features=AutomationControlled" in argv
     assert "--enable-automation" not in argv
+
+
+async def test_two_clients_connecting_at_once_get_one_browser_between_them(
+    server, fakes, monkeypatch,
+):
+    """The slot is claimed before the upgrade's first await: two connects in
+    the same instant cannot both pass the check."""
+    url = server.make_url(f"/v1/browser?scope={SCOPE}")
+    # Widen the window between the check and the upgrade finishing, so a
+    # claim made only after `prepare` would let both through.
+    original = web.WebSocketResponse.prepare
+
+    async def slow_prepare(self, request):
+        await asyncio.sleep(0.2)
+        return await original(self, request)
+
+    monkeypatch.setattr(web.WebSocketResponse, "prepare", slow_prepare)
+    async with ClientSession() as session:
+        await _ask(session, server, SCOPE)  # the browser is running
+
+        async def connect() -> str:
+            try:
+                ws = await session.ws_connect(url, headers=AUTH)
+            except Exception:  # noqa: BLE001 - a refused upgrade is the outcome under test
+                return "refused"
+            await asyncio.sleep(0.3)
+            await ws.close()
+            return "connected"
+
+        outcomes = await asyncio.gather(connect(), connect())
+    assert sorted(outcomes) == ["connected", "refused"]
+
+
+async def test_a_binary_frame_closes_the_socket_instead_of_hanging(server, fakes):
+    url = server.make_url(f"/v1/browser?scope={SCOPE}")
+    async with ClientSession() as session, session.ws_connect(url, headers=AUTH) as ws:
+        await ws.send_bytes(b"\x00\x01")
+        msg = await ws.receive(timeout=10)
+    assert msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.CLOSING)
+
+
+async def test_a_fifo_planted_at_the_log_cannot_hang_computerd(server, fakes):
+    """A room owns its browser/ directory: a FIFO at chrome.log would block a
+    plain open forever, under the lock every room's browser needs."""
+    browser_dir = fakes["root"] / SCOPE / "browser"
+    browser_dir.mkdir(parents=True)
+    os.mkfifo(browser_dir / "chrome.log")
+    async with ClientSession() as session:
+        answer = await asyncio.wait_for(_ask(session, server, SCOPE), 10)
+        await asyncio.wait_for(_ask(session, server, OTHER), 10)
+    assert answer["id"] == 7
+    assert stat.S_ISREG(os.lstat(browser_dir / "chrome.log").st_mode)
+
+
+async def test_a_link_planted_at_the_log_is_replaced_not_written_through(server, fakes, tmp_path):
+    victim = tmp_path / "victim"
+    victim.write_text("keep me")
+    browser_dir = fakes["root"] / SCOPE / "browser"
+    browser_dir.mkdir(parents=True)
+    (browser_dir / "chrome.log").symlink_to(victim)
+    async with ClientSession() as session:
+        await _ask(session, server, SCOPE)
+    assert victim.read_text() == "keep me"
+    assert not (browser_dir / "chrome.log").is_symlink()
+
+
+async def test_a_linked_x11_directory_is_refused_and_its_target_untouched(
+    fakes, tmp_path, monkeypatch,
+):
+    """The X directory is made and checked without following a link: a room
+    that points it at /etc must not get root to open /etc to everyone."""
+    target = tmp_path / "etc"
+    target.mkdir(mode=0o755)
+    linked = Path(short_tmux_root()) / "x11"
+    linked.symlink_to(target)
+    fakes["x11"] = linked
+    # The fake Xvfb binds where computerd looks, so only the link refusal can
+    # make this unavailable (not a display that never appears).
+    monkeypatch.setenv("FAKE_X11_DIR", str(linked))
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            resp = await session.get(srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
+            body = await resp.json()
+    finally:
+        await srv.close()
+    assert body["status"] == "unavailable"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o755
+
+
+async def test_a_start_that_fails_after_xvfb_leaves_no_xvfb_or_slot_behind(fakes):
+    """A directory planted at browser/chrome.log makes the start fail after
+    Xvfb is already running: Xvfb must be stopped and no slot kept."""
+    log = fakes["root"] / SCOPE / "browser" / "chrome.log"
+    log.mkdir(parents=True)
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            resp = await session.get(srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
+            body = await resp.json()
+        assert body["status"] == "unavailable", body
+        assert srv.app["browsers"].running == {}
+    finally:
+        await srv.close()
+    pid = int((fakes["x11"] / "pid-100").read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)

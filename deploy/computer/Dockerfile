@@ -66,7 +66,8 @@ RUN curl -fsSLo /tmp/chrome.deb \
     && echo "${CHROME_SHA256}  /tmp/chrome.deb" | sha256sum -c - \
     && apt-get update && apt-get install -y --no-install-recommends /tmp/chrome.deb xvfb \
     && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
-    && rm -f /etc/apt/sources.list.d/google-chrome.list
+    && rm -f /etc/apt/sources.list.d/google-chrome.list \
+    && mkdir -p /tmp/.X11-unix && chown root:root /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 # The operator's user, for an interactive `sbx exec`. /workspace is root-owned
 # so a command cannot swap a room's directory for a link; computerd creates

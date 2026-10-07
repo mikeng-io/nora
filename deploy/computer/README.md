@@ -312,6 +312,16 @@ same bearer token: each text frame is one CDP message, relayed to Chrome's
   used idle one, or is `denied` when both have a client. A browser idle for
   10 minutes with no client is stopped. `POST /v1/browser_stop` stops one,
   and `/v1/state` reports `browser.running`.
+- **What a room's command could plant is never trusted.** `/tmp/.X11-unix`
+  is made by the image and checked at computerd's start without following a
+  link (one that is not root's own is refused, never adopted); leftover or
+  planted names at a display number are removed before it is used; our Xvfb
+  is ready only when its socket is a socket owned by the room's user;
+  `chrome.log` is created fresh and renamed into place, so a FIFO or link
+  there is replaced, never opened.
+- A client that reconnects to a running browser may receive late answers
+  and events meant for the previous client; CDP ids restart at 1, so a client
+  re-attaches to its targets rather than trusting an early answer.
 - Chrome's stderr is in the room's `browser/chrome.log`, emptied at each
   start. `navigator.webdriver` reads `false`
   (`--disable-blink-features=AutomationControlled`).
