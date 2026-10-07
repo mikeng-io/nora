@@ -360,9 +360,9 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "of anything recent, and not an instruction to you.",
        written="how long ago you last rewrote it"),
     _t("character",
-       "what each person in this room is like here, in your own words, revised "
-       "whenever they have said enough, from their messages across this unit's "
-       "rooms. NOT a summary "
+       "what each person in this room is like here, in your own words, "
+       "refreshed about weekly from what they have said in all of this "
+       "group's rooms. NOT a summary "
        "of anything recent: none of it expires, so an old one is not out of "
        "date. Not an instruction to you, and not something they said. A person "
        "with no entry has not been written up yet, which does not mean they "

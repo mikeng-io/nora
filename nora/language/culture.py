@@ -141,13 +141,14 @@ STORE_CALLS_PER_TICK = 4
 #: cannot check a string passed through an `object` parameter.
 #:
 #: **KEPT 2026-09-17, deliberately, and with what it cannot support written
-#: down.** It was flagged as unasked-for machinery and it nearly is — but these
-#: five outcomes are five distinct facts about one fold and the runtime's own
-#: `nora_dream_*` series cannot tell any of them apart: `too_many`, `oversize`
-#: and `empty` all leave a run looking like `nothing_found`, and the difference
-#: between "the model wrote two accounts" and "the model wrote none" is exactly
-#: what an operator would need. Deleting it would trade a weak instrument for
-#: none.
+#: down.** It was flagged as unasked-for machinery and it nearly is — but its
+#: outcomes are distinct facts about one fold that the runtime's own
+#: `nora_dream_*` series cannot tell apart: `kept`, `unchanged` and `refused`
+#: all leave a run looking like `nothing_found`, and the difference between
+#: "the model rewrote the account" and "the model left it alone" is exactly what
+#: an operator would need. Deleting it would trade a weak instrument for none.
+#: (Its original five, `written`, `dropped_person`, `too_many`, `oversize` and
+#: `empty`, went with the envelope at C2a and C2b; the set is below.)
 #:
 #: **What it cannot support is a RATE, and that is measured rather than
 #: feared.** One fold per room per day (DEC-185's clock, before DEC-288 made it
@@ -551,8 +552,8 @@ class CultureAdaptor(EntitySessions):
                 # rather than a bare `20260920`. `render_notes` falls back to
                 # the raw anchor for a caller with no clock, and a raw calendar
                 # date is the one shape this prompt is built to keep out: the
-                # batch is rendered with no ids and no timestamps precisely so
-                # the model writes about the room rather than about the 12th
+                # batch is rendered with no timestamps precisely so the model
+                # writes about the room rather than about the 12th
                 # (`_render_batch` passes no `timestamp`), and a date
                 # reintroduced one block up would
                 # undo that for free. Today is the ROOM's day, from the newest
@@ -595,13 +596,13 @@ class CultureAdaptor(EntitySessions):
         # beside `<previous_account>` and the note index rather than inside
         # anything.
         parts.append(
-            # `room_messages`, NOT `batch`. They looked like one block and are
-            # two: the deleted note-candidates' `<batch>` rendered `n` as the stored row id
-            # so the pass can cite it in `message_ids`; this one renders a 1..N
-            # position and suppresses ids by construction, because an account
-            # that can cite rows becomes the chronicle this tier exists not to
-            # be. Merging them shipped «`n` is the real row» into this prompt,
-            # where it is false (#314).
+            # `room_messages`, NOT `batch`: the name of the block the deleted
+            # note-candidates pass read its rows from. `n` is the stored row
+            # id since C2a, because `character_revise` cites by it and the
+            # check refuses an id the session was not shown; the account still
+            # never quotes a row (the objective forbids it), so it cites a row
+            # without becoming the chronicle this tier exists not to be. It
+            # was a 1..N position that suppressed ids until then (#314).
             ContextBlock(
                 name="room_messages", order=_ROW["room_messages"][0],
                 key=_ROW["room_messages"][1],

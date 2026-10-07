@@ -1886,11 +1886,13 @@ max_tokens = 6000
 # one model call and stopped.
 #
 # **The arithmetic, because the failure it avoids is silent and
-# self-perpetuating.** A cut loop emits no envelope; `parse_envelope` reads
-# nothing; the run is `unavailable`; the watermark is HELD; the SAME batch is
-# re-read and re-cut on the next fire, forever. `[culture] batch_limit` is 300
-# messages, ~7-9k tokens of context with the room block, the previous account,
-# the standing position and the note index — and every turn RE-SENDS it, so the
+# self-perpetuating.** A cut loop never calls `character_revise` or
+# `character_no_change`; the session is unsettled and the run is `unavailable`;
+# the watermark is HELD; the SAME batch is re-read and re-cut on the next fire,
+# until the third in a row is skipped past (DEC-280), which loses that batch.
+# `[culture] batch_limit` is 300
+# messages, ~7-9k tokens of context with the room block, the previous account
+# and the note index — and every turn RE-SENDS it, so the
 # loop's running total is roughly context x turns. At the 40,000 default that
 # buys four turns, and the fourth is where the fold is still reading rather
 # than writing. This is the reading that the `[dreamer.budgets.proactive]`
