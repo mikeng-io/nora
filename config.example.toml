@@ -1034,6 +1034,10 @@ enabled = false
 # colocation_radius_m = 150.0          # step 2 — two members' stays within this are together
 # colocation_min_overlap_seconds = 600 #   ...for at least this long (a co-location)
 # response_window_seconds = 3600       #   how long after her send an answer still counts
+# follow_window_seconds = 120          #   ...an UNQUOTED member message this soon after her
+#                                      #   send, mentioning no one else, answers it; later it
+#                                      #   must name her (her account, or a follow_names word)
+# follow_names = ["nora"]              #   the words that name her in a body, whole-word
 # stimulus_horizon_seconds = 3600      #   a Rollup stimulus only for a row this recent
 # deviation_silence_days = 2           #   silent in every room and never home, N days
 # deviation_stimuli_per_person_per_day = 1  #   D3: a cap until `rollup_read` exists

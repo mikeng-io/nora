@@ -43,6 +43,8 @@ from nora.domain.mobility import Stay
 from nora.domain.ports import StimulusStore
 from nora.domain.presence import haversine_distance_m
 from nora.domain.rollup import (
+    FOLLOW_NAMES,
+    FOLLOW_WINDOW_SECONDS,
     Colocation,
     Daybook,
     Deviation,
@@ -74,6 +76,10 @@ class UnitConfig:
     colocation_radius_m: float = 150.0
     colocation_min_overlap_seconds: float = 600.0
     response_window_seconds: float = 3600.0
+    #: An unquoted member message this soon after her send, mentioning no one
+    #: else, answers it; later it must name her (`FOLLOW_NAMES`). 25 §3.
+    follow_window_seconds: float = FOLLOW_WINDOW_SECONDS
+    follow_names: tuple[str, ...] = FOLLOW_NAMES
     stimulus_horizon_seconds: float = 3600.0
     deviation_silence_days: int = 2
     #: D3 (DEC-245): at most this many deviation stimuli per person per local
@@ -172,6 +178,8 @@ class UnitRollups:
         homes = await self._store.homes(build_id=build_id, subjects=members)
         messages, reactions, sends, evidence = await self._store.message_facts(
             unit=unit, mark=mark, subject_of=self._subject_of,
+            follow_window_ms=int(self._cfg.follow_window_seconds * 1000),
+            nora_names=self._cfg.follow_names,
         )
         # The unit's clock: the newest time its Record shows — its members'
         # folds (fixes and polls) and its rooms' messages — never the wall

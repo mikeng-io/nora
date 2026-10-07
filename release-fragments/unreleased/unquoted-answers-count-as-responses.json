@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "An internal change to how the Rollup reads whether people answered one of Nora's sends; it feeds Lessons and Character, neither of which users see directly yet.",
+  "details": [],
+  "limitations": []
+}

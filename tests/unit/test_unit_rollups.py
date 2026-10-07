@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from nora.domain.rollup import (
     Citation,
+    FollowCandidate,
     HealthRow,
     Home,
     MessageFact,
@@ -28,6 +29,7 @@ from nora.domain.rollup import (
     responses,
     silent_runs,
     ties,
+    unquoted_follows,
 )
 
 _HKT = ZoneInfo("Asia/Hong_Kong")
@@ -271,6 +273,88 @@ def test_silence_is_only_called_when_an_answer_was_expected_and_the_room_was_up(
     down = _respond([named], [], as_of=after, up=False)
     assert down[11].outcome == "unknown"  # an outage is not silence (R-27)
     assert up[10].intent is None  # no intent recorded: never read as `tell`
+
+
+def test_a_follow_is_a_response_and_is_counted_apart_from_a_quoted_reply():
+    evidence = [
+        ResponseEvidence(send_id=10, person_id="a", ts=_t(22, 10.01), kind="follow"),
+        ResponseEvidence(send_id=10, person_id="b", ts=_t(22, 10.2), kind="reply"),
+    ]
+    r = _respond([SEND], evidence, as_of=_t(22, 13))[10]
+    assert (r.outcome, r.replies, r.follows, r.responders) == ("responded", 1, 1, ("a", "b"))
+    only = _respond([SEND], evidence[:1], as_of=_t(22, 13))[10]
+    assert (only.outcome, only.replies, only.follows) == ("responded", 0, 1)
+    # Late is `responses()`'s call, by its own window: a follow after it is nothing.
+    late = [ResponseEvidence(send_id=10, person_id="a", ts=_t(22, 12), kind="follow")]
+    assert _respond([SEND], late, as_of=_t(22, 13))[10].outcome == "unanswered"
+
+
+# -- unquoted follows (25 §3) ------------------------------------------------
+
+_S = 1000  # ms per second
+_ROOM = "signal:g1"
+
+
+def _send(id, at_s, turn=None, room=_ROOM):
+    return SendFact(id=id, room=room, platform="signal", conversation_id="g1",
+                    ts=at_s * _S, turn=turn)
+
+
+def _msg(id, at_s, *, names=False, other=False, person="a", room=_ROOM):
+    return FollowCandidate(id=id, person_id=person, room=room, ts=at_s * _S,
+                           names_nora=names, mentions_other=other)
+
+
+def _follows(sends, candidates):
+    return [(e.send_id, e.person_id, e.ts, e.kind)
+            for e in unquoted_follows(sends, candidates, follow_window_ms=120 * _S)]
+
+
+def test_an_unquoted_message_soon_after_her_send_follows_it():
+    assert _follows([_send(1, 0)], [_msg(5, 30)]) == [(1, "a", 30 * _S, "follow")]
+    assert _follows([_send(1, 0)], [_msg(5, 120)]) == [(1, "a", 120 * _S, "follow")]
+
+
+def test_an_unquoted_message_after_the_window_follows_only_when_it_names_her():
+    assert _follows([_send(1, 0)], [_msg(5, 300)]) == []
+    assert _follows([_send(1, 0)], [_msg(5, 300, names=True)]) == [(1, "a", 300 * _S, "follow")]
+
+
+def test_a_message_mentioning_someone_else_soon_after_is_not_a_follow():
+    assert _follows([_send(1, 0)], [_msg(5, 30, other=True)]) == []
+    # ...unless it also names her.
+    assert len(_follows([_send(1, 0)], [_msg(5, 30, other=True, names=True)])) == 1
+
+
+def test_a_message_before_any_send_or_in_another_room_follows_nothing():
+    assert _follows([_send(1, 100)], [_msg(5, 50)]) == []
+    assert _follows([_send(1, 0)], [_msg(5, 30, room="signal:other")]) == []
+    assert _follows([_send(1, 0)], [_msg(5, 30, names=True, room="signal:other")]) == []
+
+
+def test_a_message_after_her_next_send_of_another_turn_attaches_to_that_send_only():
+    sends = [_send(1, 0, "t1"), _send(2, 50, "t2")]
+    assert _follows(sends, [_msg(5, 60)]) == [(2, "a", 60 * _S, "follow")]
+    # Naming her late still counts for the LATEST send, never the earlier one.
+    assert _follows(sends, [_msg(5, 900, names=True)]) == [(2, "a", 900 * _S, "follow")]
+
+
+def test_a_multi_part_turn_is_answered_at_its_last_part():
+    sends = [_send(1, 0, "t"), _send(2, 5, "t"), _send(3, 8, "t")]
+    assert _follows(sends, [_msg(5, 40)]) == [(3, "a", 40 * _S, "follow")]
+    # Between the parts it still answers the turn, stamped at the last part.
+    assert _follows(sends, [_msg(5, 6)]) == [(3, "a", 8 * _S, "follow")]
+
+
+def test_a_send_with_no_turn_is_its_own_turn():
+    sends = [_send(1, 0), _send(2, 5)]
+    assert _follows(sends, [_msg(5, 3)]) == [(1, "a", 3 * _S, "follow")]
+    assert _follows(sends, [_msg(5, 7)]) == [(2, "a", 7 * _S, "follow")]
+
+
+def test_every_message_counts_for_one_send_and_each_is_its_own_evidence():
+    out = _follows([_send(1, 0)], [_msg(5, 10), _msg(6, 20, person="b")])
+    assert out == [(1, "a", 10 * _S, "follow"), (1, "b", 20 * _S, "follow")]
 
 
 # -- healthy sources (D3) ---------------------------------------------------

@@ -1446,6 +1446,13 @@ class AnalyticsConfig(BaseModel):
     # 25 §3's `response_window_seconds`: how long after one of her sends a
     # reply, reaction or edit still counts as answering it.
     response_window_seconds: float = Field(default=3600.0, gt=0)
+    # ...and a member's message that QUOTES nothing counts as answering her
+    # latest send when it comes this soon after it and mentions no one else;
+    # later it counts only when it names her (a mention of her account, or a
+    # word of `follow_names` in the body). Measured 2026-10-07: 14 days of the
+    # friends unit, 60 labelled follow-ups, one labeller (design 25 §3).
+    follow_window_seconds: float = Field(default=120.0, ge=0)
+    follow_names: list[str] = Field(default_factory=lambda: ["nora"])
     # A Rollup stimulus (co-location start, arrival, deviation) is raised
     # only for a row whose start is this recent on the Record's clock, so a
     # rebuild over months does not raise a stimulus per historical row.
