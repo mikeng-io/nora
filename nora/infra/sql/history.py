@@ -145,6 +145,9 @@ APPEND_ONLY: dict[str, str] = {
     "otp_attempt": "recorded_at",
     "standing_revision": "recorded_at",
     "culture_revision": "recorded_at",
+    # 0100_lessons: a lesson is an identity, and every change to it a revision.
+    "lesson": "recorded_at",
+    "lesson_revision": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",

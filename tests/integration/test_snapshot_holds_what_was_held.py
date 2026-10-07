@@ -344,6 +344,13 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
     "otp_attempt": lambda n: {
         "challenge_id": _uuid("otp", n), "ok": False, "attempted_at": T0,
     },
+    # 0100_lessons (design/self-growth/40-lessons.md, L1): a lesson, and one revision of it.
+    "lesson": lambda n: {"id": _uuid("ls", n), "unit": "friends", "created_at": MS0 + n},
+    "lesson_revision": lambda n: {
+        "id": _uuid("lr", n), "lesson_id": _uuid("ls", n), "seq": 1, "body": f"lesson {n}",
+        "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
+        "established_by": "test",
+    },
     # design/sandbox-runtime §6 (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",

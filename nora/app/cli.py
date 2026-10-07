@@ -51,7 +51,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from nora.agent.egress import scan_identifiers
-from nora.app import config_cli, report
+from nora.app import config_cli, lessons_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
@@ -73,6 +73,7 @@ from nora.app.participation_measures import gather as gather_measures
 from nora.app.participation_measures import measure as compute_measures
 from nora.app.pending import correlate
 from nora.config import Config, ConfigError, load
+from nora.domain.lessons import Lesson
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
@@ -85,6 +86,7 @@ from nora.infra.sql import (
     snapshot_at,
 )
 from nora.infra.sql.gatherings import SqlGatheringStore
+from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.obs.metrics import Metrics
@@ -238,6 +240,46 @@ def add_subcommands(
         help="report what would be copied and what was in force; write nothing",
     )
     snap.set_defaults(func=cmd_snapshot)
+
+    # `lessons` (design/self-growth/40-lessons.md §4): the operator's list, show,
+    # retire and rollback of Nora's lessons. `list` and `show` read through the
+    # read-only engine; `retire` and `rollback` WRITE one revision each, only with
+    # `--apply` (`nora.app.lessons_cli`). No model can call these.
+    lessons = subparsers.add_parser(
+        "lessons", parents=[parent], help="Nora's lessons per unit (operator only)",
+    )
+    lessons_sub = lessons.add_subparsers(dest="lessons_command", required=True)
+    lessons_list = lessons_sub.add_parser(
+        "list", parents=[parent], help="a unit's lessons, active ones unless --all",
+    )
+    lessons_list.add_argument("--unit", required=True, help="the unit")
+    lessons_list.add_argument(
+        "--all", action="store_true", help="include retired lessons",
+    )
+    lessons_list.set_defaults(func=cmd_lessons_list)
+    lessons_show = lessons_sub.add_parser(
+        "show", parents=[parent], help="one lesson, every revision, newest first",
+    )
+    lessons_show.add_argument("lesson_id")
+    lessons_show.set_defaults(func=cmd_lessons_show)
+    lessons_retire = lessons_sub.add_parser(
+        "retire", parents=[parent],
+        help="retire a lesson as the operator; it is not learned again from "
+             "outcomes no newer than now (a dry run unless --apply)",
+    )
+    lessons_retire.add_argument("lesson_id")
+    lessons_retire.add_argument("--why", required=True, help="one sentence, kept with it")
+    lessons_retire.add_argument("--apply", action="store_true", help="write")
+    lessons_retire.set_defaults(func=cmd_lessons_retire)
+    lessons_rollback = lessons_sub.add_parser(
+        "rollback", parents=[parent],
+        help="put an earlier revision back as the newest one (also undoes a "
+             "retirement; a dry run unless --apply)",
+    )
+    lessons_rollback.add_argument("lesson_id")
+    lessons_rollback.add_argument("--to", required=True, type=int, help="the revision")
+    lessons_rollback.add_argument("--apply", action="store_true", help="write")
+    lessons_rollback.set_defaults(func=cmd_lessons_rollback)
 
     presence = subparsers.add_parser(
         "presence", parents=[parent], help="Life360 presence helpers",
@@ -729,6 +771,84 @@ async def cmd_events_backfill_units(args: argparse.Namespace) -> int:
     for line in render_events_backfill(result):
         print(line)
     return 1 if result.failed else 0
+
+
+async def _lesson_of(store: SqlLessonStore, lesson_id: str) -> Lesson:
+    lesson = await store.get(lesson_id=lesson_id)
+    if lesson is None:
+        raise CliError(f"no lesson {lesson_id}")
+    return lesson
+
+
+async def cmd_lessons_list(args: argparse.Namespace) -> int:
+    """`nora lessons list --unit U [--all]`, READ ONLY."""
+    engine = create_readonly_sql_engine(_database_url(_config(args)))
+    try:
+        found = await SqlLessonStore(engine).lessons(unit=args.unit)
+    finally:
+        await engine.dispose()
+    for line in lessons_cli.render_list(args.unit, found, everything=bool(args.all)):
+        print(line)
+    return 0
+
+
+async def cmd_lessons_show(args: argparse.Namespace) -> int:
+    """`nora lessons show ID`, READ ONLY."""
+    engine = create_readonly_sql_engine(_database_url(_config(args)))
+    try:
+        store = SqlLessonStore(engine)
+        lesson = await _lesson_of(store, args.lesson_id)
+        chain = await store.revisions(lesson_id=lesson.id)
+    finally:
+        await engine.dispose()
+    for line in lessons_cli.render_chain(lesson, chain):
+        print(line)
+    return 0
+
+
+def _now_ms() -> int:
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
+async def cmd_lessons_retire(args: argparse.Namespace) -> int:
+    """`nora lessons retire ID --why TEXT [--apply]`: a WRITABLE engine, one
+    revision, a dry run without `--apply`."""
+    engine = create_sql_engine(_database_url(_config(args)))
+    try:
+        lesson = await _lesson_of(SqlLessonStore(engine), args.lesson_id)
+        if not args.apply:
+            print(f"would retire {lesson.id} (unit {lesson.unit}, rev {lesson.head.seq}, "
+                  f"{lesson.head.state}); nothing written")
+            return 0
+        result = await lessons_cli.book_for(engine, _now_ms).retire(
+            unit=lesson.unit, lesson_id=lesson.id, by="operator", why=args.why,
+            established_by=lessons_cli.OPERATOR,
+            record_head=await lessons_cli.record_head(engine),
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps(result))
+    return 0 if result["status"] == "ok" else 1
+
+
+async def cmd_lessons_rollback(args: argparse.Namespace) -> int:
+    """`nora lessons rollback ID --to N [--apply]`: a WRITABLE engine, one
+    revision, a dry run without `--apply`."""
+    engine = create_sql_engine(_database_url(_config(args)))
+    try:
+        lesson = await _lesson_of(SqlLessonStore(engine), args.lesson_id)
+        if not args.apply:
+            print(f"would put revision {args.to} of {lesson.id} back as the newest "
+                  f"(now rev {lesson.head.seq}, {lesson.head.state}); nothing written")
+            return 0
+        result = await lessons_cli.book_for(engine, _now_ms).rollback(
+            unit=lesson.unit, lesson_id=lesson.id, to_seq=int(args.to),
+            established_by=lessons_cli.OPERATOR,
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps(result))
+    return 0 if result["status"] == "ok" else 1
 
 
 async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:

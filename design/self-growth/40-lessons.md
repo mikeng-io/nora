@@ -33,10 +33,10 @@ lessons held) and checks only it carries (cap, doctrine check, tension).
 
 | part | where |
 |---|---|
-| adaptor | a new module beside `nora/language/culture.py` (lessons.py, not built) |
+| adaptor | a new module beside `nora/language/culture.py` (lessons.py, not built; L2) |
 | objective | a new lessons.md beside `nora/dreamer/objectives/culture.md` (not built) |
-| store | a `lesson` table and revision chain, a new SQL store |
-| write verbs | `lesson_write`, `lesson_retire`, granted to this adaptor only |
+| store | built (L1): `lesson` and `lesson_revision`, `nora/infra/sql/lessons.py`; the verbs are `nora/language/lesson_book.py` |
+| write verbs | built (L1) as `LessonBook.verbs`; L2 grants them to this adaptor only |
 | block | a `lessons` row in `_BLOCKS` and a renderer |
 | registration | `nora/app/composition.py`, beside culture |
 
@@ -82,13 +82,16 @@ it) is decided in the PR.
 - **Citations:** a lesson cites the `response` episodes (or the correction)
   that taught it. Her own sends alone are refused (the echo rule).
 - **Size cap** per unit, about 800 tokens to start; a write past it is refused
-  until the session consolidates or retires.
+  until the session consolidates or retires. L1 sized it without data (no lesson
+  exists to measure): 400 characters a lesson, 12 active and 2,400 characters a
+  unit, about three times the start (DEC-293); L5's measure tightens it.
 - **Doctrine check:** a separate instrument call reads the lesson and the law
   subset ([30](30-doctrine-sort.md) §2). A lesson that would loosen or
   contradict law is refused and written as a tension row. An instrument error
   is a refusal, counted, never a pass.
-- **Rollback by id:** `lesson_retire`, reachable by the operator. A CLI first;
-  the portal page later.
+- **Rollback by id:** `lesson_retire`, reachable by the operator. A CLI first
+  (`nora lessons retire|rollback`, L1); the portal page later. An operator's
+  retirement is not learned again from outcomes no newer than it (DEC-293).
 
 ## 5. Tension rows
 
@@ -143,7 +146,7 @@ and line quoted, the evidence cited, and what the lesson would have said.
 | PR | content | check |
 |---|---|---|
 | L0 | done (#740): a fire turn's brief intent rides on its sends' `raw_json`, the turn's last send carries it | `silent` counted on expected asks |
-| L1 | `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, echo and cap checks; CLI rollback | write, cap refusal, rollback and no re-learn, in tests |
+| L1 | **done (DEC-293, migration `0100_lessons`):** `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, identifier, echo, no-re-learn and cap checks; `nora lessons list|show|retire|rollback`. Registered on no model surface: L2's adaptor hands the verbs to its session | write, cap refusal, rollback and no re-learn, in tests (`tests/infra/test_lessons.py`, `tests/unit/test_lessons_checks.py`) |
 | L2 | the Lessons adaptor, its objective and its wake (batch, stale, horizon); each episode is handed with her send's text, so the session can judge whether an `unanswered` send asked something | wakes at threshold only; a session writes or closes; a labelled set of `unanswered` sends, questions and not, judged correctly |
 | L3 | the doctrine-check instrument on the law subset; tension rows, operator-only | a labelled set of loosening lessons all refused and written as tension |
 | L4 | the correction fast path | a correction wakes Lessons within the cue quiet |
