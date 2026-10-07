@@ -141,6 +141,12 @@ _NOT_A_RAW_READER = {
     "nora/infra/sql/record_query.py": (
         "a store read; its one caller, record_query, joins the rows it returns"
     ),
+    # The Rollup reads a member's body only to ask whether it names her
+    # (`nora.tag.is_tagged`, for `rollup_response.follows`); the text is not
+    # stored and no model sees it, so there is nothing to media-join.
+    "nora/infra/sql/rollups.py": (
+        "matches a member's body against her name and keeps a boolean, renders no transcript"
+    ),
     # `idx_messages_body_trgm` names `MESSAGES.c.body` in an index; it reads
     # nothing.
     "nora/infra/sql/schema.py": "declares an index over the column, reads nothing",
