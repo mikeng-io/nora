@@ -23,6 +23,11 @@ Chrome stable installs); the proxy tunnels TLS for `pypi.org` and
   (sandbox §9: every connect "succeeds" under sbx).
 - Cleanup (§7) is part of the run. S1 is not done while `browser-s1` or its
   rules exist.
+- **Baseline first:** `sbx policy ls > ~/s1/0-before.txt` and
+  `sbx ls --json > ~/s1/0-sandboxes.json` before step 1. §7 diffs them.
+- The live social Chrome on the host (`nora-social-chrome.service`, DEC-201)
+  is never launched, upgraded or reused by S1. The host reference in §3 is a
+  separate Chrome for Testing build under `~/s1/`.
 
 ## 1. The sandbox and Chrome
 
@@ -35,16 +40,23 @@ sbx exec browser-s1 sh -c '
   curl -fsSLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb &&
   sudo apt-get update && sudo apt-get install -y /tmp/chrome.deb xvfb x11-utils jq &&
   google-chrome --version' > 1-install.log 2>&1; echo "RC=$?"
+V=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' 1-install.log | tail -1); echo "V=$V" > 1-version.txt
 ```
 
 PASS: `RC=0` and a `Google Chrome <version>` line. Record the version: the
-Dockerfile pins it later. (If the default `shell` template has no `sudo`,
-run as root through `sbx exec -u root` and note it.)
+Dockerfile pins it later. If the default `shell` template has no `sudo`,
+install as root through `sbx exec -u root` and note it. Chrome itself runs
+as the unprivileged user; if it has to run as root, it needs `--no-sandbox`,
+which is recorded as a deviation, since production never runs it that way.
+Every `curl localhost:9222` below takes `--noproxy '*'`: the VM's
+`http_proxy` must not route the debugging port.
 
 ## 2. RSS at 1, 3 and 5 tabs
 
 Chrome is launched headed on Xvfb, as the design runs it, with a fresh
-profile and the proxy given explicitly.
+profile and the proxy given explicitly. S1 uses a TCP debugging port for convenience in a
+throwaway sandbox; production uses `--remote-debugging-pipe` (`00-design.md`
+§4), and B1 measures that RSS is unchanged by it.
 
 ```bash
 sbx policy allow network --sandbox browser-s1 \
@@ -56,11 +68,11 @@ sbx exec browser-s1 sh -c '
     --proxy-server=http://gateway.docker.internal:3128 \
     --remote-debugging-port=9222 --no-first-run --no-default-browser-check \
     about:blank >/tmp/chrome.log 2>&1 &
-  sleep 5; curl -s localhost:9222/json/version'
+  sleep 5; curl -s --noproxy "*" localhost:9222/json/version'
 ```
 
 Then for N in 1, 3, 5, open the first N of these URLs (one tab each) with
-`curl -s -X PUT "localhost:9222/json/new?<url>"`, wait 20 s, and read:
+`curl -s --noproxy '*' -X PUT "localhost:9222/json/new?<url>"`, wait 20 s, and read:
 
 ```bash
 sbx exec browser-s1 sh -c '
@@ -81,73 +93,126 @@ title over `localhost:9222/json`).
 
 ## 3. TLS fingerprint through the proxy
 
+Three readings of `https://tls.peet.ws/api/all`, so that each difference
+has one cause:
+
+| arm | where | mode | path |
+|---|---|---|---|
+| A | VM | headed (the design) | through the proxy |
+| B | VM | `--headless=new`, same binary | through the proxy |
+| C | host | Chrome for Testing, same version, `--headless=new` | direct |
+
+A vs B measures headed against headless. B vs C measures the proxy.
+
 ```bash
-sbx policy allow network --sandbox browser-s1 "tls.peet.ws:443"
-# In the VM, through the proxy, the same headed Chrome:
+sbx policy allow network --sandbox browser-s1 \
+  "tls.peet.ws:443,pypi.org:443,files.pythonhosted.org:443"
+# A: the headed Chrome from §2, read back over CDP with a tiny client
 sbx exec browser-s1 sh -c '
-  curl -s -X PUT "localhost:9222/json/new?https://tls.peet.ws/api/all"; sleep 5
-  curl -sv https://tls.peet.ws/api/all -o /dev/null 2>&1 | grep -i issuer'
-# Read the page body back over CDP (Runtime.evaluate document.body.innerText),
-# or open it once over noVNC and copy the JSON.
-# On the host, the same Chrome version, direct:
-google-chrome --headless=new --user-data-dir="$(mktemp -d)" \
-  --dump-dom https://tls.peet.ws/api/all > 3-host.json
+  python3 -m venv /tmp/cdp && /tmp/cdp/bin/pip -q install websocket-client &&
+  curl -sv https://tls.peet.ws/api/all -o /dev/null 2>&1 | grep -i issuer
+  WS=$(curl -s --noproxy "*" -X PUT "localhost:9222/json/new?https://tls.peet.ws/api/all" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"webSocketDebuggerUrl\"])")
+  sleep 6
+  /tmp/cdp/bin/python - "$WS" <<PY
+import json, sys, websocket
+ws = websocket.create_connection(sys.argv[1], suppress_origin=True)
+ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
+                    "params": {"expression": "document.body.innerText", "returnByValue": True}}))
+print(json.loads(ws.recv())["result"]["result"]["value"])
+PY' > 3-A.json 2> 3-A.err; echo "A RC=$?"
+# B: same binary, headless, through the proxy
+sbx exec browser-s1 sh -c 'google-chrome --headless=new --user-data-dir=$(mktemp -d) \
+  --proxy-server=http://gateway.docker.internal:3128 --dump-dom https://tls.peet.ws/api/all' > 3-B.html; echo "B RC=$?"
+# C: on the host, Chrome for Testing of the version step 1 recorded
+cd ~/s1 && . ./1-version.txt && curl -fsSLO "https://storage.googleapis.com/chrome-for-testing-public/$V/linux64/chrome-linux64.zip" &&
+  unzip -qo chrome-linux64.zip && ./chrome-linux64/chrome --headless=new --user-data-dir="$(mktemp -d)" \
+  --dump-dom https://tls.peet.ws/api/all > 3-C.html; echo "C RC=$?"
 ```
 
-Reading: `tls.ja4` and the HTTP/2 Akamai fingerprint from both, and the
+Reading: `tls.ja4` and the HTTP/2 Akamai fingerprint from each arm, and the
 certificate issuer the VM saw (`curl -v`).
 
-- PASS: the issuer is a public CA (not the sbx proxy CA), and the two JA4
-  strings are equal. JA3 is randomised per connection by Chrome's
-  extension order, so compare JA4, not JA3.
-- FAIL: the issuer is the proxy's CA, or the JA4 strings differ (the proxy
-  re-originates TLS); browsing needs a different egress path.
-- ERROR: a version mismatch between host and VM Chrome; fix and re-run. A
-  headless host read differs from headed only in the HTTP layer, not in JA4.
+- PASS: the issuer is a public CA (not the sbx proxy CA), and B's JA4
+  equals C's. JA3 is randomised per connection by Chrome's extension
+  order, so compare JA4, not JA3. A against B is recorded as its own
+  reading, not assumed equal.
+- FAIL: the issuer is the proxy's CA, or B and C differ (the proxy
+  re-originates TLS). Browsing then needs a different egress path.
+- ERROR: an arm did not produce JSON, or the versions differ (Chrome for
+  Testing publishes every stable version; fetch the exact one).
 
 ## 4. Rebinding under a `**` rule
 
 This is the reading ADR 0022 Decision 2 waits on. It needs a `**` rule
-(temporary, `browser-s1` only) and the private-range denies the draft
-proposed, so it tests exactly what the draft would have shipped.
+(temporary, `browser-s1` only; `sbx policy deny network --help` lists
+`--sandbox`) and the private-range denies the draft proposed, so it tests
+exactly what the draft would have shipped. The targets are services that
+answer an unauthenticated GET with a recognisable body, at their real
+bindings (`ss -ltn`, 2026-10-07; `docker-compose.yml`):
+
+| target | binding | body that proves a reach |
+|---|---|---|
+| social bridge `/health` | `172.17.0.1:19826` | `{"ok": true}` |
+| Ollama `/api/version` | `*:11434` | `{"version": ...}` |
+| Prometheus `/-/healthy` | `127.0.0.1:9190` | `Healthy` |
+| OmniRoute `/v1/models` | `*:20128` | JSON (401 also proves a reach) |
 
 ```bash
+cd ~/s1
 LAN_IP=$(ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+NAMES="172-17-0-1.sslip.io 127-0-0-1.sslip.io $(echo "$LAN_IP" | tr . -).sslip.io"
+# 4a. Positive control on the host, by IP: each target answers (else the
+# probe below cannot tell a deny from a dead service).
+for t in 172.17.0.1:19826/health 127.0.0.1:11434/api/version 127.0.0.1:9190/-/healthy 127.0.0.1:20128/v1/models; do
+  printf "%s -> " "$t"; curl -s -m 5 -o /tmp/b -w "%{http_code} " "http://$t"; head -c 60 /tmp/b; echo
+done > 4a-host.log
+# 4b. The resolver: Control D may filter these names (a blocked name
+# resolves to 0.0.0.0 and looks like a refusal).
+for n in $NAMES; do echo "$n host=$(getent ahosts "$n" | head -1) public=$(dig +short @1.1.1.1 "$n")"; done > 4b-dns.log
+# 4c. The rules, then a public positive control under them.
 sbx policy allow network --sandbox browser-s1 "**"
 sbx policy deny network --sandbox browser-s1 \
   "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,100.64.0.0/10,169.254.0.0/16"
-# The host's resolver first: Control D may filter these names (memory:
-# a blocked name resolves to 0.0.0.0 and looks like a refusal).
-for n in 172-17-0-1.sslip.io 127-0-0-1.sslip.io "$(echo $LAN_IP | tr . -).sslip.io"; do
-  getent ahosts "$n" | head -1; dig +short @1.1.1.1 "$n"
-done > 4-dns.log
-# Then each through the proxy, from the VM, by body:
+sbx exec browser-s1 sh -c 'curl -s -m 10 -o /dev/null -w "%{http_code}\n" https://example.com/' > 4c-control.log
+# 4d. Every name x target, by plain HTTP through the proxy AND by CONNECT (-p).
 sbx exec browser-s1 sh -c '
-  for h in 172-17-0-1.sslip.io 127-0-0-1.sslip.io; do
-    for p in 19826/health 11434/api/version 9090/-/healthy; do
-      printf "%s:%s -> " $h $p; curl -s -m 10 -o /tmp/b -w "%{http_code} " "http://$h:$p"; head -c 80 /tmp/b; echo
+  for h in '"$NAMES"'; do
+    for p in 19826/health 11434/api/version 9190/-/healthy 20128/v1/models; do
+      for mode in http connect; do
+        f=""; [ $mode = connect ] && f="-p"
+        printf "%s %s:%s -> " $mode $h $p
+        curl -s -m 10 $f -o /tmp/b -w "%{http_code} " "http://$h:$p"; head -c 80 /tmp/b; echo
+      done
     done
-  done' > 4-rebind.log 2>&1
-# And the IP literals, for comparison (the deny must hold for these):
-sbx exec browser-s1 sh -c 'curl -s -m 10 -w "%{http_code}\n" http://172.17.0.1:19826/health' >> 4-rebind.log
-sbx policy log --json > 4-policy.json
+  done
+  for ip in 172.17.0.1:19826/health 127.0.0.1:9190/-/healthy; do
+    printf "literal %s -> " $ip; curl -s -m 10 -o /tmp/b -w "%{http_code} " "http://$ip"; head -c 80 /tmp/b; echo
+  done' > 4d-rebind.log 2>&1
+sbx policy log --json > 4e-policy.json
+ss -tnp | grep -E ':(19826|11434|9190|20128) ' > 4f-proxy-owner.log   # run during 4d
 ```
 
-Also probe the LAN IP's name with the same ports.
+Reading: for each name, target and mode, the HTTP status, the first 80
+bytes, and the matching `sbx policy log` entry.
 
-Reading: for each name and port, the HTTP status and the first 80 bytes.
+- PASS, per probe: status 403 from the proxy **and** a `denied` entry for
+  that host and port in `4e-policy.json`. All probes must pass, and both
+  controls (4a: every target answers on the host; 4c: `200` from
+  example.com) must hold. Without the controls a dead service or a broken
+  rule set reads as a pass.
+- FAIL: any body from a target (the bodies in the table above), or any
+  `allowed` log entry for a private address.
+- ERROR: status `000` (no answer: DNS, timeout, or the proxy dropped it,
+  which is not the same as a deny), a control that fails, or a name the
+  host's resolver answers with `0.0.0.0` or nothing (4b). An ERROR is
+  repeated with another wildcard-DNS service or a name of our own; it is
+  never read as PASS.
 
-- PASS: every name gets the proxy's 403 (or an empty reply) and
-  `sbx policy log` records it as denied. The draft's deny list holds.
-- FAIL: any body from a service (`{"ok": true}` from the bridge, an Ollama
-  version JSON, Prometheus's `Healthy`). Wide egress then waits for a
-  host-side fence (`00-design.md` §3), and this log is the reason.
-- ERROR: the host's resolver answers `0.0.0.0` or nothing for a name (the
-  filter, not sbx, refused it). Repeat with another wildcard-DNS service
-  or a name of our own; a filtered resolver is not evidence that sbx holds.
-
-Also record which user and network namespace the proxy connects from
-(`ss -tnp` on the host during a fetch); a host firewall fence depends on it.
+Even a full PASS shows only that these names were refused today. The
+vendor's help text says otherwise for allowed names in general, so a host
+fence stays the expected answer (`03-open-questions.md` §1.2). `4f` records
+which user and namespace the proxy connects from, which decides how the
+fence is built.
 
 ## 5. Flash image passthrough
 
@@ -219,11 +284,11 @@ is an anecdote, so record it as one.
 sbx rm -f browser-s1; echo "RC=$?"
 sbx policy ls | grep -c browser-s1        # expect 0
 sbx ls --json | jq -r '.sandboxes[].name' # expect nora-computer only
-sbx policy ls | grep nora-computer        # expect "network: 6 allow", unchanged
+sbx policy ls > 7-after.txt; diff 0-before.txt 7-after.txt; echo "DIFF_RC=$?"   # 0 = unchanged
 ```
 
-PASS: no `browser-s1` sandbox or rule is left, and `nora-computer`'s rule
-count is what it was before S1. If `sbx rm` leaves scoped rules behind,
+PASS: no `browser-s1` sandbox or rule is left, and `DIFF_RC=0`: the policy
+list reads exactly as it did before S1. If `sbx rm` leaves scoped rules behind,
 remove each with `sbx policy rm` and note the behaviour.
 
 ## Results

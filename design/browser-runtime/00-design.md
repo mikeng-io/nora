@@ -116,8 +116,7 @@ and, at the moment of a fill, the one credential value the page needs.
   human hand-off (§6) and a stream (§7) possible. Xvfb costs tens of MB; S1
   measures the whole.
 - **Google Chrome stable, not Chromium,** for the fingerprint closest to a
-  real user. Linux Chrome is x86-64 only; if norty is ARM, Chromium and the
-  difference is recorded. Pin the version in the Dockerfile and update it on
+  real user. Linux Chrome is x86-64 only, and norty is x86-64 (§0). Pin the version in the Dockerfile and update it on
   a schedule, since a stale Chrome is itself a signal.
 - **What actually decides blocks, in order:**
   1. **Exit IP reputation.** norty's IP. A residential IP is the largest
@@ -142,7 +141,7 @@ and, at the moment of a fill, the one credential value the page needs.
   (Firefox, Juggler, not CDP) as a second engine for sites that block Chrome,
   measured as a spike arm (`03-open-questions.md`).
 - **Egress.** Browsing needs the public web. That is a new allowance on the
-  VM that also holds every room's files, so it is a decision (ADR 0022 §2),
+  VM that also holds every room's files, so it is a decision (ADR 0022 Decision 2),
   and **"allow `**`, deny the private ranges" does not do what it says.**
   sbx checks a CIDR deny against an IP literal, not against what an allowed
   hostname resolves to. A public name that resolves to `172.17.0.1` or the
@@ -158,45 +157,72 @@ and, at the moment of a fill, the one credential value the page needs.
     private ranges, or a filtering resolver for the proxy. Which one is
     possible depends on the user and namespace the proxy connects from
     (S1 reads it).
-  - The logged-in sandbox does not need the open web at all: its egress is
-    the allowlist of its accounts' hosts (§4).
+  - The vendor's help text is the stronger evidence: three probe names that
+    are refused show only that those names were refused. The fence is the
+    default answer, and S1 shows whether it is urgent.
+  - The logged-in profiles share this egress (one sandbox, §4); their own
+    fence is Chrome's URL policy.
   - The network half of the audit stays `sbx policy log`.
 
 ## 4. Where logged-in browsers live
 
-Two trust domains, because a logged-in profile is a credential store and the
-VM has a shell the model drives:
+**Ruled 2026-10-07 (operator): one sandbox.** Logged-in profiles live in
+`nora-computer` beside the anonymous ones; there is no `nora-browser` VM.
+The second VM was the recommendation (`03-open-questions.md` §1.3) and was
+declined. A logged-in profile is still a credential store next to a shell
+the model drives, so the boundary that a second kernel would have given
+becomes a boundary of Unix users and file descriptors inside the one VM, the
+way computerd already separates rooms (ADR 0019 Decision 2):
 
-| domain | what | where |
+| domain | what | where, and who can touch it |
 |---|---|---|
-| **anonymous** | per-scope profiles, no logins, wiped freely | `nora-computer` VM, `/workspace/<scope>/browser/<profile>`, owned by the scope's user |
-| **logged in** | Nora's own accounts (Google, later X/Instagram/LinkedIn via OpenCLI) | a second sbx sandbox, `nora-browser`, which no `computer_run` shell can reach; only computerd's CDP proxy and the broker talk to it |
+| **anonymous** | per-scope profiles, no logins, wiped freely | `/workspace/<scope>/browser/<profile>`, owned by the scope's user |
+| **logged in** | Nora's own accounts (Google first; X/LinkedIn via OpenCLI at B7, conditionally) | `/var/lib/nora-browser/<account>`, mode 0700, owned by a dedicated system user `browser` that no `computer_run` command runs as |
 
-- **Against sandbox decision 2** (one VM per social unit, #678, not
-  built): anonymous profiles follow the room's VM, whichever grain that
-  is. `nora-browser` is not per unit. It holds Nora's own accounts, so
-  there is one, and its sessions are used for any room under the
-  credential's `scopes` (`01-vault.md` §3).
-- **`nora-browser`'s egress is an allowlist,** not the open web: the hosts
-  its accounts need (for Google, `accounts.google.com` and the
-  `*.google.com` / `*.gstatic.com` / `*.googleusercontent.com` families; B4
-  reads the real list from `sbx policy log` during the hand sign-in). A
-  logged-in browser that cannot reach an attacker's host cannot be steered
-  into handing a session to one.
-- The OpenCLI daemon listens on localhost with no auth. Put it in a VM that a
-  room's shell shares and that shell can call it, bypass the bridge's
-  allowlist and post as the account. **So OpenCLI moves last, and only into
-  `nora-browser`**, with `bridge_server.py` still the one door. Until then
-  the host social Chrome stays as it is, and `session_probe` keeps reading it.
-  At B7 the bridge stays on the host and only its runner changes: today it
-  spawns `opencli` locally (`_spawn_opencli`); then it runs the same argv in
-  `nora-browser` (through `sbx exec`, 0.67 s warm in the sandbox spike, or a
-  small agent there). The allowlist still builds the argv host-side, so
-  R-86's three layers hold unchanged. `session_probe` then has to read the
-  cookie file inside the VM.
-- Profiles are never in the nightly tar backup (sandbox §7). A logged-in
-  profile's cookies may be snapshotted encrypted through OpenBao transit
-  (`01-vault.md` §5), so a recreate is a restore, not a re-login.
+What makes that boundary hold, each a B1/B4 test, not a hope:
+
+- **No TCP debugging port.** `--remote-debugging-port` binds localhost with
+  no auth, so any room's shell could connect and drive or read any Chrome,
+  logged in or not. Every Chrome is started by computerd (root) with
+  `--remote-debugging-pipe`, and computerd holds the pipe. The test: a
+  `computer_run` in any scope finds no listening CDP port and cannot attach.
+- **One X display per domain,** each Xvfb with `-nolisten tcp` and an
+  `-auth` cookie readable only by its owner, so a room's shell cannot
+  screenshot or key-log the logged-in display. x11vnc for the logged-in
+  display listens on a socket only computerd relays.
+- **Chrome's password manager is off by policy** (`PasswordManagerEnabled`
+  false) in every profile, so a filled password is never saved into the
+  profile's `Login Data`.
+- **What the one VM costs:** a local privilege escalation from any room's
+  shell to root reads every logged-in cookie. A second VM would have made
+  that a VM escape. ADR 0022 Worse records it.
+- **Egress is per sandbox in sbx,** so the logged-in profiles share
+  `nora-computer`'s egress and cannot have an allowlist of their own at the
+  network. Their own fence is Chrome's `URLAllowlist`/`URLBlocklist`
+  policy on the logged-in profiles, listing exact hosts only (no
+  `*.google.com`; `script.google.com`, `sites.google.com` and
+  `*.googleusercontent.com` serve content an attacker controls). That fence
+  is enforced by the browser, not the network, and it is the weaker one.
+- **Against sandbox decision 2** (one VM per social unit, #678, not built):
+  when #678 lands, Nora's accounts have to live in one unit's VM, beside
+  that unit's shells, or be signed in once per VM. The ruling is reopened
+  then.
+- **OpenCLI's daemon** listens on localhost with no auth, so in the one VM
+  a room's shell could call it, bypass the bridge's allowlist and post as
+  the account. **OpenCLI moves only if** a firewall rule inside the VM
+  (owner match: only `browser` may connect to the daemon's port) makes a
+  room's shell get refused, measured from a `computer_run`. Otherwise it
+  stays on the host, and so does the social Chrome. If it moves, the bridge
+  stays on the host and only its runner changes: today it spawns `opencli`
+  locally (`_spawn_opencli`); then it runs the same argv in the VM as
+  `browser` (through `sbx exec`, 0.67 s warm in the sandbox spike). The
+  allowlist still builds the argv host-side, so R-86's three layers hold
+  unchanged. `session_probe` then reads the cookie file inside the VM.
+- Profiles are never in the nightly tar backup (sandbox §7; DEC-263 leaves
+  out each room's `browser/`, and `/var/lib/nora-browser` is outside
+  `/workspace`). A logged-in profile's cookies may be snapshotted encrypted
+  through OpenBao transit (`01-vault.md` §5), so a recreate is a restore,
+  not a re-login.
 
 ## 5. The driver: `computer_browse` and four tiers
 
@@ -223,8 +249,9 @@ ladder and pays model calls only where the cheaper tier failed:
 
 What the model sees is the **accessibility snapshot with `@eN` refs**
 (agent-browser), diffed between steps. Extraction is DOM/JS, not the model.
-Nora's own script tier (a Playwright script through `computer_run`) stays
-for the anonymous VM.
+Nora's own script tier (a Playwright script through `computer_run`) stays,
+for anonymous profiles only: it runs as the room's user, which cannot reach
+a logged-in profile (§4).
 
 ### 5.1 The step-picker contract (any decision model)
 
@@ -299,11 +326,16 @@ Two paths, both built eventually:
 | **CDP screencast** (`Page.startScreencast`) | JPEG frames on change, relayed computerd → Nora → portal websocket; works headless too; one tab | the view-only "watch Nora browse" panel |
 | **noVNC over x11vnc** | the whole Xvfb display, view-only or interactive | the hand-off (§6) |
 
-- Access: portal sign-in, limited to the room's owner and the operator; it
-  shows logged-in pages.
+- Access: portal sign-in. An anonymous profile's stream is limited to its
+  room's owner and the operator. A logged-in profile serves every room its
+  credential's `scopes` name, so its stream is shown only for the task the
+  viewer's own room started, and only while that task runs. **noVNC on a
+  logged-in display is the operator's only**: interactive control of it is
+  control of Nora's accounts.
 - **The stream blurs or pauses while the broker fills** a credential field.
-- Recording (rrweb or frames) for audit is a separate decision: storage, and
-  recordings hold personal data.
+- **No recordings** (operator, 2026-10-07). Steps are audited as
+  `computer_events` rows. Revisit when a failure cannot be explained from
+  them.
 
 ## 8. Sequence
 
@@ -311,10 +343,10 @@ Two paths, both built eventually:
 |---|---|---|
 | **S1** | the runbook in `04-s1-runbook.md`: Chrome + Xvfb RSS, TLS fingerprint through the proxy, rebinding under a `**` rule, exit IP, Flash image passthrough | numbers recorded in `04-s1-runbook.md` §Results |
 | **B0** | ADR 0022 accepted; egress policy for browsing | operator |
-| **B1** | CDP proxy in computerd, scoped per room; screencast relay | tests: a scope reaches only its own browser |
+| **B1** | CDP over `--remote-debugging-pipe` in computerd, scoped per room; screencast relay | tests: a scope reaches only its own browser; no CDP port listens |
 | **B2** | `computer_browse` + sub-agent, tiers 4 and 5 only (Flash, hand-off) | nora-tool routing measurement |
 | **B3** | spike (`03-open-questions.md` §2): decision-model arms, Camoufox arm | measured, fail-closed |
-| **B4** | OpenBao + fill broker + redaction (`01-vault.md`); `nora-browser` sandbox; Nora's Google account | a credential reaches only its bound origin; zero plaintext in traces |
+| **B4** | OpenBao + fill broker + redaction (`01-vault.md`); the `browser` user and its display; Nora's Google account | a room's shell cannot read `/var/lib/nora-browser` or its display; a credential reaches only a bound field on its bound origin; zero plaintext in traces |
 | **B5** | tier 2 cache + tier 3 picker as chosen by B3 | second-run cost |
 | **B6** | portal stream view-only, then noVNC hand-off | access test |
-| **B7** | OpenCLI into `nora-browser` behind the bridge; retire host social Chrome | R-86 still holds at three layers |
+| **B7** | only if the owner-match rule holds (§4): OpenCLI into the VM as `browser`, behind the bridge; retire host social Chrome | a room's shell is refused by the daemon; R-86 still holds at three layers |

@@ -1,7 +1,7 @@
 # Nora Vault — OpenBao and a fill broker
 
 Status (2026-10-07): **proposed, not built.** Part of `00-design.md`; the
-decision is ADR 0022 §3.
+decision is ADR 0022 Decision 3.
 
 ## 1. The problem
 
@@ -51,24 +51,47 @@ PR #113261; `02-research.md` §1). The store is the easy part.
 | `kind` | `password` / `totp` / `api_key` / `cookie_snapshot` |
 | `origins` | the top-level origins a fill may happen on (`https://x.com`, `https://accounts.google.com`) |
 | `scopes` | which rooms (scope hashes) may use it; empty means operator only |
-| `approval` | `auto` / `ask` (per-use Signal prompt to the operator) |
+| `approval` | `auto` / `ask` (per-use Signal prompt to the operator); `auto` only where `read_only` is set |
+| `read_only` | set by the operator when the record is made: the account is used to read, never to post, buy or send. Never set by a model |
 | `fields` | username, password ciphertext (transit), TOTP key ref |
 | `created_by`, `rotated_at` | provenance |
 
 - **Origin binding is the defence against injection:** a page that talks the
   model into "log in here" on `evil.example` gets `unavailable`, because the
-  broker checks the top-level origin of the target frame at fill time, not
-  the model's claim. Password managers match URLs for the same reason.
-- `ask` is the default for anything that can post, buy or send.
+  broker checks origins at fill time, not the model's claim. Password
+  managers match URLs for the same reason. **Both** the top-level origin and
+  the origin of the frame that owns the field must be in `origins`, so a
+  cross-origin iframe (an ad, an embed) on a bound page gets nothing.
+- **Origin is not enough on its own:** a prompt-injected post on `x.com`
+  could ask for the password to be "filled" into the post composer, and the
+  origin check would pass. So the broker also checks **what it is filling**
+  (§4), and the scrubber cannot help here, because this is a write, not a
+  read.
+- **Approval (operator, 2026-10-07):** `auto` for credentials the operator
+  marks `read_only`; `ask` for every other, that is anything that can post,
+  buy or send.
 
 ## 4. The fill broker
 
 - Lives in Nora's process (or a host sidecar), never in the VM.
 - **The only path a credential takes into a page:** the sub-agent emits
   `fill_credential cred:<handle> @eN`; the broker resolves the handle, checks
-  scope, origin and approval, decrypts through transit, and types the value
-  into the element through the CDP proxy (`Input.insertText` after focusing
-  the node). The result to the model is `filled` or `unavailable(reason)`.
+  scope, origins and approval, decrypts through transit, and types the value
+  into the element over CDP (`Input.insertText` after focusing the node).
+  The result to the model is `filled` or `unavailable(reason)`.
+- **The element is checked, not trusted.** A password goes only into an
+  `input[type=password]`, a username only into an input whose `autocomplete`
+  is `username` or `email`, and a TOTP code only into an input with
+  `autocomplete="one-time-code"` or a numeric input inside a login form. In
+  every case the input must sit in a `<form>` whose action resolves to a
+  bound origin. Anything else is `unavailable(not_a_login_field)`. The
+  decrypt row records the element's tag, type, autocomplete and frame.
+- **Checked twice.** Frame id, origins and focus are read again immediately
+  before `Input.insertText`, and the fill aborts if the frame navigated or
+  focus moved in between.
+- **Only the logged-in profiles.** The broker fills only into a Chrome that
+  computerd started as the `browser` user (`00-design.md` §4), never into a
+  room's anonymous profile, whose files the room's own shell can read.
 - **Two kinds of secret, two paths:**
   - **API keys over HTTP**: sbx `secret set-custom` placeholder substitution
     on the host proxy (sandbox design §8). Unchanged.
@@ -105,7 +128,9 @@ hits, or the build fails.
   flag automated accounts. Losing it must be cheap.
 - Its own phone number; 2FA by authenticator, seed in OpenBao TOTP; recovery
   codes printed and offline, not in OpenBao.
-- **Sign in by hand** over noVNC (00 §6) in `nora-browser`; Google rejects
+- **Sign in by hand** over noVNC (00 §6) on the `browser` user's display,
+  operator only; Google rejects
   sign-in from a browser it reads as automated.
 - Google web sign-in only; **Chrome Sync off** (it would sync history and
-  passwords across devices).
+  passwords across devices), and the password manager off by policy
+  (00 §4).
