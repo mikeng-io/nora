@@ -21,7 +21,7 @@ description: >
   `<unit_culture>` blocks, and `character_read`. Step (2) is built (DEC-292):
   the `<self>` block renders Nora's own account first on tag, fire and
   Cognition turns and `self_card` is deleted; its before/after eval could not
-  be run on the suite (see 20-self-block.md §5). Steps (4) and (5) are not built. Every threshold is
+  be run on the suite (see 20-self-block.md §5). Step (4) Lessons: L0 (the `ask` brief on a send) and L1 (the `lesson` store, `lesson_write` and `lesson_retire` behind citation, identifier, echo, no-re-learn and cap checks, and `nora lessons`, DEC-293) are built and on no model's tool surface; L2 to L5 are not. Step (5) is not built. Every threshold is
   sized from a read-back on the deploy host before code.
 status: in-progress
 governance: operator-directed

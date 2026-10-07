@@ -130,6 +130,8 @@ $$;
 );
 );
 );
+);
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -185,6 +187,8 @@ ADD CONSTRAINT instagram_summons_message_id_key UNIQUE (message_id);
 ADD CONSTRAINT instagram_summons_pkey PRIMARY KEY (id);
 ADD CONSTRAINT language_observation_message_id_canonical_form_sense_key UNIQUE (message_id, canonical_form, sense);
 ADD CONSTRAINT language_observation_pkey PRIMARY KEY (id);
+ADD CONSTRAINT lesson_pkey PRIMARY KEY (id);
+ADD CONSTRAINT lesson_revision_pkey PRIMARY KEY (id);
 ADD CONSTRAINT media_objects_pkey PRIMARY KEY (sha256);
 ADD CONSTRAINT message_delete_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
 ADD CONSTRAINT message_delete_pkey PRIMARY KEY (id);
@@ -307,6 +311,8 @@ ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.instagram_summons
 ALTER TABLE ONLY public.language_observation
 ALTER TABLE ONLY public.language_observation
+ALTER TABLE ONLY public.lesson
+ALTER TABLE ONLY public.lesson_revision
 ALTER TABLE ONLY public.media_objects
 ALTER TABLE ONLY public.message_delete
 ALTER TABLE ONLY public.message_delete
@@ -495,6 +501,17 @@ CONSTRAINT ck_events_reasoning_is_a_mode CHECK (((reasoning IS NULL) OR (reasoni
 CONSTRAINT ck_events_status CHECK ((status = ANY (ARRAY['staged'::text, 'proposed'::text, 'confirmed'::text, 'happened'::text, 'cancelled'::text, 'lapsed'::text, 'evicted'::text])))
 CONSTRAINT ck_instagram_summons_mode CHECK ((mode = ANY (ARRAY['dry_run'::text, 'live'::text]))),
 CONSTRAINT ck_instagram_summons_state CHECK ((state = ANY (ARRAY['claimed'::text, 'unresolved'::text, 'ignored_summoner'::text, 'stale'::text, 'unreadable'::text, 'silent'::text, 'staged'::text, 'flushing'::text, 'published'::text, 'refused'::text, 'capped'::text, 'duplicate'::text, 'ambiguous'::text, 'failed'::text])))
+CONSTRAINT ck_lesson_has_a_unit CHECK ((length(btrim(unit)) > 0))
+CONSTRAINT ck_lesson_revision_body_ceiling CHECK ((length(body) <= 2000)),
+CONSTRAINT ck_lesson_revision_cites_something CHECK ((cardinality(citations) >= 1)),
+CONSTRAINT ck_lesson_revision_has_a_body CHECK ((length(btrim(body)) > 0)),
+CONSTRAINT ck_lesson_revision_instruction_sha256 CHECK (((instruction_sha256 IS NULL) OR (instruction_sha256 ~ '^[0-9a-f]{64}$'::text))),
+CONSTRAINT ck_lesson_revision_names_its_writer CHECK ((length(btrim(established_by)) > 0)),
+CONSTRAINT ck_lesson_revision_relearn_after CHECK (((retired_by = 'operator'::text) = (relearn_after IS NOT NULL))),
+CONSTRAINT ck_lesson_revision_retired_by CHECK (((state = 'retired'::text) = (retired_by IS NOT NULL))),
+CONSTRAINT ck_lesson_revision_retired_by_who CHECK (((retired_by IS NULL) OR (retired_by = ANY (ARRAY['session'::text, 'operator'::text])))),
+CONSTRAINT ck_lesson_revision_seq CHECK ((seq >= 1)),
+CONSTRAINT ck_lesson_revision_state CHECK ((state = ANY (ARRAY['active'::text, 'retired'::text])))
 CONSTRAINT ck_music_queue_position_non_negative CHECK (("position" >= 0))
 CONSTRAINT ck_music_session_volume_range CHECK (((volume >= (0.0)::double precision) AND (volume <= (2.0)::double precision)))
 CONSTRAINT ck_occupancy_how CHECK (((hour_of_week >= 0) AND (hour_of_week < 168)))
@@ -658,6 +675,7 @@ CREATE INDEX idx_fact_premise_premise_fact_id ON public.fact_premise USING btree
 CREATE INDEX idx_fact_standing ON public.fact USING btree (unit, subject_id) WHERE (superseded_at IS NULL);
 CREATE INDEX idx_instagram_summons_state ON public.instagram_summons USING btree (state, mode);
 CREATE INDEX idx_language_observation_scope ON public.language_observation USING btree (scope_id);
+CREATE INDEX idx_lesson_unit ON public.lesson USING btree (unit);
 CREATE INDEX idx_message_delete_message ON public.message_delete USING btree (message_id);
 CREATE INDEX idx_message_edit_message_ts ON public.message_edit USING btree (message_id, ts);
 CREATE INDEX idx_message_reaction_message ON public.message_reaction USING btree (message_id);
@@ -739,6 +757,8 @@ CREATE TABLE public.fact_premise (
 CREATE TABLE public.geocode_cache (
 CREATE TABLE public.instagram_summons (
 CREATE TABLE public.language_observation (
+CREATE TABLE public.lesson (
+CREATE TABLE public.lesson_revision (
 CREATE TABLE public.media_objects (
 CREATE TABLE public.message_delete (
 CREATE TABLE public.message_edit (
@@ -877,6 +897,7 @@ CREATE TRIGGER nora_row_history_truncate BEFORE TRUNCATE ON public.video_reading
 CREATE UNIQUE INDEX note_candidate_create_anchor_key ON public.note_candidate USING btree (unit, anchor_date, anchor_entity_ids, lower(btrim(title))) WHERE (kind = 'create'::text);
 CREATE UNIQUE INDEX uq_cognition_wake_outcome_wake ON public.cognition_wake_outcome USING btree (wake_id);
 CREATE UNIQUE INDEX uq_computer_sessions_open_scope ON public.computer_sessions USING btree (scope) WHERE (status = 'open'::text);
+CREATE UNIQUE INDEX uq_lesson_revision_seq ON public.lesson_revision USING btree (lesson_id, seq);
 CREATE UNIQUE INDEX uq_otp_attempt_ok ON public.otp_attempt USING btree (challenge_id) WHERE ok;
 CREATE UNIQUE INDEX uq_reminders_proactive_open_note ON public.reminders USING btree (((payload ->> 'note_id'::text))) WHERE ((kind = 'proactive'::text) AND (state = ANY (ARRAY['pending'::text, 'firing'::text])));
 CREATE UNIQUE INDEX uq_rollup_build_current ON public.rollup_build USING btree (status) WHERE (status = 'current'::text);
@@ -1167,6 +1188,7 @@ body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
 body text NOT NULL,
+body text NOT NULL,
 body text,
 body text,
 body text,
@@ -1201,6 +1223,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 citations text[] DEFAULT '{}'::text[] NOT NULL,
+citations text[] NOT NULL,
 closing_condition text NOT NULL,
 closing_condition text,
 code_hash text NOT NULL,
@@ -1260,6 +1283,7 @@ corpus text NOT NULL,
 corridor_id integer NOT NULL,
 corridor_id integer,
 created_at bigint NOT NULL
+created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
 created_at bigint NOT NULL,
@@ -1325,6 +1349,7 @@ ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
 error text,
+established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -1444,6 +1469,8 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1460,6 +1487,7 @@ image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
+instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
@@ -1517,6 +1545,7 @@ lat double precision NOT NULL,
 lat double precision NOT NULL,
 lat_rounded double precision NOT NULL,
 late_fixes integer DEFAULT 0 NOT NULL,
+lesson_id uuid NOT NULL,
 lexeme_basis text[] DEFAULT '{}'::text[] NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
 lineage jsonb DEFAULT '[]'::jsonb NOT NULL,
@@ -1588,6 +1617,7 @@ model text,
 model text,
 model text,
 model text,
+model text,
 model_calls integer NOT NULL,
 model_id text,
 model_route text,
@@ -1598,6 +1628,7 @@ new_image := to_jsonb(NEW);
 new_image jsonb;
 new_key := new_key || jsonb_build_object(col, new_image -> col);
 new_key jsonb := '{}'::jsonb;
+note text,
 note_id text,
 note_id uuid NOT NULL,
 note_id uuid NOT NULL,
@@ -1780,6 +1811,8 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -1789,6 +1822,7 @@ recurrence_until timestamp with time zone,
 ref text CONSTRAINT signal_ref_not_null NOT NULL,
 refusal_detail text,
 refusal_reason text,
+relearn_after bigint,
 reminder_id uuid,
 reminder_id uuid,
 removed integer DEFAULT 0 NOT NULL,
@@ -1814,6 +1848,7 @@ result_url text,
 results jsonb DEFAULT '[]'::jsonb NOT NULL,
 retire_reason text,
 retired_at bigint,
+retired_by text,
 revised boolean DEFAULT false NOT NULL,
 revision integer NOT NULL,
 revisit_at bigint,
@@ -1848,6 +1883,7 @@ sender_name text,
 sense text NOT NULL,
 sense text NOT NULL,
 sent_ts bigint NOT NULL,
+seq integer NOT NULL,
 sequence jsonb NOT NULL,
 sequence jsonb,
 series_anchor_at timestamp with time zone,
@@ -1890,6 +1926,7 @@ started_ts bigint NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'live'::text NOT NULL,
 state text DEFAULT 'pending'::text NOT NULL,
+state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
 state text NOT NULL,
@@ -2005,6 +2042,7 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text NOT NULL,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
@@ -2077,6 +2115,7 @@ with_persons text[] DEFAULT '{}'::text[] NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 writer text NOT NULL,
+written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at timestamp with time zone NOT NULL,
