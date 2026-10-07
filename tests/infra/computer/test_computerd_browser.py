@@ -53,13 +53,18 @@ while True:
 
 FAKE_XVFB = """#!{python}
 import os, socket, sys, time
-here, n = os.environ["FAKE_X11_DIR"], sys.argv[1].lstrip(":")
-path = os.path.join(here, "X" + n)
-open(os.path.join(here, "argv-" + n), "w").write(" ".join(sys.argv[1:]))
-open(os.path.join(here, "pid-" + n), "w").write(str(os.getpid()))
+argv = sys.argv[1:]
+here = os.environ["FAKE_X11_DIR"]
+report = int(argv[argv.index("-displayfd") + 1])
+n = 0
+while os.path.lexists(os.path.join(here, "X%d" % n)):
+    n += 1  # like Xvfb: a taken number is skipped
+open(os.path.join(here, "argv-%d" % n), "w").write(" ".join(argv))
+open(os.path.join(here, "pid-%d" % n), "w").write(str(os.getpid()))
 sock = socket.socket(socket.AF_UNIX)
-sock.bind(path)
+sock.bind(os.path.join(here, "X%d" % n))
 sock.listen()
+os.write(report, b"%d\\n" % n)
 time.sleep(3600)
 """
 
@@ -254,7 +259,7 @@ async def test_past_the_cap_with_every_browser_attached_the_new_room_is_denied(f
 
 
 async def test_an_xvfb_that_never_comes_up_is_unavailable(fakes, monkeypatch):
-    fakes["xvfb"].write_text("#!/bin/sh\nexit 1\n")
+    fakes["xvfb"].write_text("#!/bin/sh\nsleep 1\nexit 1\n")
     srv = await _serve(fakes)
     try:
         async with ClientSession() as session:
@@ -266,31 +271,39 @@ async def test_an_xvfb_that_never_comes_up_is_unavailable(fakes, monkeypatch):
 
 
 def test_the_xauthority_record_has_the_xau_layout():
+    """FamilyWild, no address, NO display number (libXau matches an empty
+    number to any display, which Xvfb chooses after the file is written)."""
     computerd = load_computerd()
     cookie = bytes(range(16))
-    record = computerd.xauthority_entry(101, cookie)
+    record = computerd.xauthority_entry(cookie)
     assert record[:2] == b"\xff\xff"  # FamilyWild
     assert record[2:4] == b"\x00\x00"  # no address
-    assert record[4:6] == b"\x00\x03" and record[6:9] == b"101"
-    assert record[9:11] == b"\x00\x12" and record[11:29] == b"MIT-MAGIC-COOKIE-1"
-    assert record[29:31] == b"\x00\x10" and record[31:] == cookie
+    assert record[4:6] == b"\x00\x00"  # no display number
+    assert record[6:8] == b"\x00\x12" and record[8:26] == b"MIT-MAGIC-COOKIE-1"
+    assert record[26:28] == b"\x00\x10" and record[28:] == cookie
 
 
-async def test_files_planted_at_a_display_number_are_cleared_not_obeyed(server, fakes):
-    """The X directory is world-writable: a room can plant a file or a lock at
-    every display number. Planted names are removed, so they can neither
-    exhaust the numbers nor stand in for our Xvfb."""
-    for n in range(100, 1100):
+async def test_xvfb_picks_the_display_and_computerd_uses_the_one_it_reports(server, fakes):
+    """computerd never chooses a number a room could predict and squat: Xvfb
+    is started with `-displayfd`, skips taken numbers, and holds the one it
+    reports. Chrome is pointed at that one."""
+    for n in range(0, 5):
         (fakes["x11"] / f"X{n}").touch()
     async with ClientSession() as session:
         display = (await _ask(session, server, SCOPE))["result"]["display"]
-    assert display == ":100"
-    assert stat.S_ISSOCK(os.lstat(fakes["x11"] / "X100").st_mode)
+    assert display == ":5"
+    argv = (fakes["x11"] / "argv-5").read_text().split()
+    assert "-displayfd" in argv
+    assert not [a for a in argv if a.startswith(":")]
 
 
 async def test_something_at_the_socket_path_that_is_not_a_socket_is_not_our_display(fakes):
-    fakes["xvfb"].write_text(
-        "#!/bin/sh\ntouch \"$FAKE_X11_DIR/X${1#:}\"\nexec sleep 3600\n")
+    binds = ('sock = socket.socket(socket.AF_UNIX)\n'
+             'sock.bind(os.path.join(here, "X%d" % n))\nsock.listen()')
+    plain_file = 'open(os.path.join(here, "X%d" % n), "w").close()'
+    fake = FAKE_XVFB.format(python=sys.executable)
+    assert binds in fake
+    fakes["xvfb"].write_text(fake.replace(binds, plain_file))
     srv = await _serve(fakes)
     try:
         async with ClientSession() as session:
@@ -425,6 +438,32 @@ async def test_a_start_that_fails_after_xvfb_leaves_no_xvfb_or_slot_behind(fakes
         assert srv.app["browsers"].running == {}
     finally:
         await srv.close()
-    pid = int((fakes["x11"] / "pid-100").read_text())
+    (pid_file,) = fakes["x11"].glob("pid-*")
     with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+        os.kill(int(pid_file.read_text()), 0)
+
+
+async def test_an_unframed_flood_from_the_pipe_kills_that_browser_not_computerd(fakes):
+    """A room's command runs as its Chrome's user and could write to Chrome's
+    output pipe itself: bytes without a NUL must not grow root's memory."""
+    computerd = load_computerd()
+    computerd.MAX_TRANSFER_BYTES = 10_000
+    fakes["chrome"].write_text(FAKE_CHROME.format(python=sys.executable).replace(
+        "buffer = b\"\"", "outbox.write(b\"x\" * 50_000)\nbuffer = b\"\""))
+    fakes["root"].mkdir(exist_ok=True)
+    app = computerd.create_app(
+        root=fakes["root"], token=TOKEN, tmux_root=short_tmux_root(),
+        chrome_bin=str(fakes["chrome"]), xvfb_bin=str(fakes["xvfb"]), x11_dir=fakes["x11"])
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        async with ClientSession() as session:
+            await session.ws_connect(srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
+            browser = srv.app["browsers"].running[SCOPE]
+            for _ in range(100):
+                if not browser.alive:
+                    break
+                await asyncio.sleep(0.05)
+        assert not browser.alive
+    finally:
+        await srv.close()
