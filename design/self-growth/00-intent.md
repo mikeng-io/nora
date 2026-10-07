@@ -73,7 +73,7 @@ Read from master at 67520d7.
 | Character · person | simplified | DEC-278/280: the same room pass pre-fetches one `memory.chat` answer per person who posted and writes their account in the same store; rendered as `<character>` |
 | Character · unit | no | |
 | Character · Nora | no | one line of "Nora's own standing" inside each room account |
-| `self` block | no | `self_card` stands in: Honcho's digest of her (`nora/language/self_card_render.py`) |
+| `self` block | no | `self_card` is the nearest thing: Honcho's record of what she said and did before, episodic continuity rather than self-description (`nora/language/self_card_render.py`) |
 | Lessons, doctrine check, tension | no | |
 | Standing · room | yes | live since DEC-239 and the step 4 cut-over (DEC-277) |
 | Standing · unit, person | no | |

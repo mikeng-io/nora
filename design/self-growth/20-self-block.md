@@ -25,16 +25,22 @@ edges:
 
 ## 2. What leaves
 
-`self_card` (Honcho's digest of her, `nora/language/self_card_render.py`)
-leaves the tag and fire turns in the same PR. Two accounts of her in one prompt
-would disagree, and Honcho's is not grounded in responses.
+`self_card` leaves the tag and fire turns in the same PR
+(`design/cognition-loop/55-self.md` §3 schedules it). It is not a second
+account of who she is: `self_card_render.py` and `_self_card_block` in
+`nora/agent/prefill.py` frame it as episodic continuity, what she said and
+did before, not self-description. So what is lost is that continuity (what
+she said, offered or agreed to earlier), and the eval must measure that loss,
+not only how she sounds. If it is lost, the continuity moves to a pulled
+read or to Standing, not back into a pushed Honcho block.
 
 ## 3. Check
 
 - Architecture: the block is declared and assembled (ADR 0021's enforcer).
 - A unit with no Character · Nora yet renders no block, not an empty one.
-- Behaviour: a before/after eval run (`nora-eval`). Removing `self_card`
-  changes how she sounds, so a green gate is not enough.
+- Behaviour: a before/after eval run (`nora-eval`), with cases that turn on
+  something she said or agreed to earlier, since that is what `self_card`
+  carried. A green gate is not enough.
 
 ## 4. Effort
 

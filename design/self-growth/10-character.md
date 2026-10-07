@@ -58,8 +58,8 @@ code, continuously (no model)
 
 wake (code, the dream scheduler's tick, one count per key)
   wake (unit, entity) when:
-      new evidence ≥ character_batch[kind]
-   or account older than character_stale_seconds AND any new evidence
+      new evidence ≥ wake_batch for its kind
+   or account older than stale_seconds AND any new evidence
   never for a key with nothing new
 
 Character session (Dreamer agent loop), one per woken key
@@ -84,8 +84,10 @@ Differences from today:
    pre-fetched `<people_views>` goes away.
 3. **A write verb, not an envelope.** The same move Cognition made at the
    step 4 cut-over: code validates each write as it happens.
-4. **Ordering.** A person session reads the room's culture through
-   `character_read` rather than writing beside it in one envelope.
+4. **Ordering.** A person session is handed the current cultures of the
+   unit's rooms as input (code reads the store) rather than writing beside
+   them in one envelope. `character_read` (C4) is the pulled read for turns
+   and Cognition; C2b does not wait for it.
 5. **Unit-keyed persons.** Today a person's account is keyed per ROOM
    (`character_key(scope, person_id)` in `nora/domain/culture.py`, `scope`
    the room). The target is one account per (unit, person); C2 moves them.
@@ -117,10 +119,19 @@ On the **dream scheduler** (`AdaptorSchedule` in `nora/agent/dreamer.py`,
 evaluated in `_dream_adaptor_once` in `nora/app/runtime.py`), not on
 Cognition's wake evaluator (`nora/app/wake.py`). The dream scheduler already
 runs culture with per-key watermarks; today it fires on `lag > 0 and age >=
-min_interval_seconds`. C1 replaces that with a count-or-stale rule. Cognition's
+min_interval_seconds`, which with a 7-day interval is already the stale
+wake; C1 adds `or lag >= wake_batch`. **C1 is rooms only.** The scheduler's
+one count is `language.lag(scope_id=key)`, human messages in one
+conversation, and it lists keys of kind `scope` or `unit` only. Person keys
+(C2b), Nora's episode count (C3b) and Lessons each need their own key kind
+and their own count; C1 must not hard-code `lag` as the only evidence. Cognition's
 evaluator carries stimuli kinds, brakes and floors built for fast group
 thinking, which none of the slow adaptors need. Lessons uses the same rule
-([40](40-lessons.md) §2). This holds unless the dream scheduler cannot run one
+([40](40-lessons.md) §2), once the scheduler takes a count per key kind.
+Per-kind batches (100 persons, 5 units, 100 Nora) and moving the wake off
+Cognition's evaluator amend `design/cognition-loop/20-observe.md` §3, which
+sets one `character_batch` of 200 for every entity; DEC-288 records the room
+part with C1, and each later kind's PR records its own. This holds unless the dream scheduler cannot run one
 session per key concurrently or cannot be woken mid-cycle for a correction.
 
 ### 3.3 Memory is a hint, never a dependency
@@ -140,8 +151,8 @@ that, so a later merge or sunset of Honcho (#736) changes no Character code.
   citing only her own sends is refused by the write verb.
 - **Descriptive only.** What she has learned to *do* is a lesson
   ([40](40-lessons.md)), not a line of her Character.
-- **Doctrine check.** Every revision runs it once [30](30-doctrine-sort.md)
-  exists; an instrument error writes no tension row and is counted. Until
+- **Doctrine check.** Every revision runs it once the instrument exists
+  (Lessons L3, on the law subset of [30](30-doctrine-sort.md)); an instrument error writes no tension row and is counted. Until
   then the revision commits without it, which is safe because Character is
   descriptive and renders below the doctrine.
 
@@ -158,7 +169,8 @@ Recommendation: design style. The response episodes already exist.
 
 | PR | content | check |
 |---|---|---|
-| C1 | count-or-stale wake on `AdaptorSchedule`; `[culture]` gets `wake_batch` (200) and `stale_seconds` (7 days); the daily `fold_interval_seconds` goes | a test wakes a key at the threshold and not below, a stale key with one new item, never a key with none; read back fires per room per day for a week |
+| C1 | rooms only: count-or-stale wake on `AdaptorSchedule`; `[culture]` gets `wake_batch` (200) and `stale_seconds` (7 days); the daily `fold_interval_seconds` goes | a test wakes a key at the threshold and not below, a stale key with one new item, never a key with none; read back fires per room for a week (expected: Friends about twice, quiet rooms once) |
+| (C1 side effect) | person accounts are still written in the room pass (DEC-278) until C2b, so they slow with their room, from daily to about weekly | named in DEC-288 |
 | L0 (parallel) | record the brief's `ask` intent on each send ([40](40-lessons.md) §6) | `silent` appears in the Rollup; it needs weeks of data before C3 and Lessons read it |
 | C2a | `character_revise` write verb (citations resolve to Record ids, schema, provenance); the room case moves from envelope to verb | room render parity; refusal of an unresolvable citation in tests |
 | C2b | person sessions per (unit, person): unit-wide evidence count (their messages across the unit's rooms), own watermark, keys moved from room to unit, `<people_views>` pre-fetch removed, memory a tool | each poster's account written per key; tool calls per session read back |
@@ -168,7 +180,9 @@ Recommendation: design style. The response episodes already exist.
 
 Step 2 (the self block, [20](20-self-block.md)) follows C3b. New blocks
 follow `_BLOCKS` and context assembly; `design/context-plan/` (on master) is
-an experiment-only selector that keeps Culture and character mandatory, so
+an experiment-only selector: it classes `culture` and `character` as
+selectable, and its experiment filter keeps Culture visible. New blocks
+declare themselves in `_BLOCKS` the same way, so the selector can see them;
 nothing here conflicts with it.
 
 ## 7. Open

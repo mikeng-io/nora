@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Read-back and sizing: the numbers that set every threshold, measured before code"
-description: "Before C1 and L2, read back from the deploy host how much evidence each entity and unit produces per day and what one culture pass costs today. Those numbers set character_batch per kind, character_stale_seconds, lessons_batch and the cost per day of many small sessions."
+description: "Before C1 and L2, read back from the deploy host how much evidence each entity and unit produces per day and what one culture pass costs today. Those numbers set wake_batch per entity kind, stale_seconds, lessons_batch and the cost per day of many small sessions."
 tags: [nora, readback, sizing, langfuse, postgres]
 timestamp: '2026-10-07'
 edges:
@@ -19,8 +19,8 @@ are in this node with their window and n.
 
 | number | source | sets |
 |---|---|---|
-| messages per person per day (median, p90) | Postgres, the Record | `character_batch` for persons |
-| messages per room per day | Postgres | `character_batch` for rooms |
+| messages per person per day (median, p90) | Postgres, the Record | `wake_batch` for persons |
+| messages per room per day | Postgres | `wake_batch` for rooms |
 | her sends per unit per day | Postgres | expected `response` episodes |
 | closed `response` episodes per unit per day, by outcome (with replies or reactions, `silent`, `unknown`, `unanswered`) | Postgres, the Rollup | `lessons_batch`; how often `silent` is real |
 | culture passes per day, tokens and model calls per pass, tool calls per pass | Langfuse, culture adaptor traces | cost of one Character session |
@@ -31,8 +31,8 @@ are in this node with their window and n.
 - Sessions per day per unit ≈ Σ over entities (evidence per day ÷ batch) plus
   stale wakes. With the prefix cached, cost per session is mostly the
   evidence. Compare against today's one pass per room per day.
-- If a unit closes about 5 response episodes a day, `lessons_batch = 30` means
-  a lesson pass about once a week. The operator decides whether that is right.
+- If a unit closes about 11 response episodes a day (friends, §3.3), `lessons_batch = 30` means
+  a lesson pass about every 3 days. The operator decides whether that is right.
 
 ## 3. Results
 
@@ -131,7 +131,7 @@ Each key wakes on the first of: new evidence ≥ batch, or account older than
 
 | key | batch | wakes in practice | sessions a day |
 |---|---|---|---|
-| room | **200 messages** (the cognition design's value) | Friends ~4 days, Zone 42 ~6, wedding ~8 (sooner on a burst day); every other room by the 7-day stale wake | friends ~0.7, ridgeline ~0.4, wedding ~0.15 |
+| room | **200 messages** (the cognition design's value) | Friends ~4 days, Zone 42 ~6; wedding and every other room by the 7-day stale wake | friends ~0.7, ridgeline ~0.4, wedding ~0.15 |
 | person | **100 messages** | P1 ~4 days, P2/P3 ~5; everyone else weekly | friends ~1.2, wedding ~0.7, ridgeline ~0.15 |
 | unit | **5 new room revisions** | about weekly in friends; Register rows not measured here | ~0.15 each |
 | Nora | **100 closed episodes** | friends ~9 days, so in practice weekly everywhere by the stale wake | ~0.15 each |
@@ -153,6 +153,9 @@ Each key wakes on the first of: new evidence ≥ batch, or account older than
   days, so their account would be rewritten weekly from 3 or 4 messages.
   Left as decided (any new evidence); a floor of a few items is the upgrade
   if those revisions prove to be noise.
+- **Person accounts slow too, until C2b.** They are written in the room
+  pass (DEC-278), so from C1 they move with their room: from 11–19
+  revisions a day (§3.4) to about weekly in most rooms.
 - **The room cadence slows.** Today a room with any new message folds daily;
   under 200, only Friends folds more than weekly. Room culture is the
   slowest thing here, so this is the intent, but the participation turn

@@ -40,8 +40,9 @@ lessons held) and checks only it carries (cap, doctrine check, tension).
 | block | a `lessons` row in `_BLOCKS` and a renderer |
 | registration | `nora/app/composition.py`, beside culture |
 
-Its wake is the dream scheduler's count-or-stale rule built in C1
-([10](10-character.md) §3.2), counting closed episodes per unit; a
+Its wake is the dream scheduler's count-or-stale rule from C1
+([10](10-character.md) §3.2), which counts only room messages; L2 adds a
+unit key kind whose count is closed episodes; a
 correction counts as enough to cross the threshold at once (§3).
 
 ## 2. How lessons accumulate
@@ -68,7 +69,8 @@ correction counts as enough to cross the threshold at once (§3).
 ## 3. The correction fast path (new)
 
 The cognition design gives Character a fast path (a dispute) and Lessons none.
-When someone tells her directly how to act ("唔好成日俾五個選擇", "你講少啲啦"),
+When someone tells her directly how to act (for example: stop offering five
+options; say less),
 waiting for 30 episodes is wrong. Ingest marks a message that addresses her
 with an instruction about her own behaviour as a strong cue; it wakes Lessons
 for that unit after the usual cue quiet. The correction is a Record item the
