@@ -201,6 +201,7 @@ CONVERTED = (
     "nora/language/culture.py",
     "nora/domain/summons.py",
     "nora/skills/loader.py",
+    "nora/subject/context_filter.py",
 )
 
 
