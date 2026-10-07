@@ -21,10 +21,10 @@ edges:
 - **Assembly:** a row in `_BLOCKS` and a renderer, through context assembly
   like every other block.
 - **Lineage:** none at render, like `<unit_culture>`: the account is keyed by
-  the unit, the read boundary. The disclosure line is on the write side: the
-  Nora session is handed only episodes whose send came from a room with
-  `location` off (`NoraKey.readable`), so a location-room send is never
-  evidence for an account every room of the unit reads (R-31).
+  the unit, the read boundary. Known risk, not guarded: Character · Nora reads
+  her sends from location-on rooms, so a location answer could reach the
+  account and render in a location-off room of the same unit; live accounts
+  place nobody today.
 
 ## 2. What leaves
 

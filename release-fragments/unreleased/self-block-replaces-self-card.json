@@ -2,7 +2,7 @@
   "type": "change",
   "summary": "Nora now opens each turn with her own account of herself in that group, written from how its members have responded to her, in place of the list of things she had said or done before that she used to be handed.",
   "details": [
-    "The account is the one the new character-nora session writes for each group; a group with no account yet shows her nothing in its place, and her account is written only from her replies in rooms that do not share anyone's location.",
+    "The account is the one the new character-nora session writes for each group; a group with no account yet shows her nothing in its place.",
     "It sits first, straight after her doctrine, on messages that tag her, on turns she starts herself, and on her background thinking passes, and is cut at 4,000 characters."
   ],
   "limitations": [

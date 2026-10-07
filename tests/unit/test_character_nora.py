@@ -26,8 +26,7 @@ T0 = 1_790_000_000_000
 NOW = datetime.fromtimestamp((T0 + 86_400_000) / 1000, tz=UTC)
 KEY = nora_character_key("friends")
 NK = NoraKey(unit="friends", rooms=(CharacterRoom(key="room-a", platform="signal",
-                                                  label="Friends"),),
-             readable=("room-a",))
+                                                  label="Friends"),))
 
 
 def _reply(rid: int, body: str) -> TranscriptRow:
@@ -191,33 +190,3 @@ def test_an_episode_whose_only_responses_are_follows_is_not_evidence():
                    reactions=1, edits=0, follows=3).is_evidence
     assert Episode(send_id=1, room="r", text="t", outcome="responded",
                    reactions=0, edits=0).is_evidence  # no follows: unchanged
-
-
-async def test_a_send_from_a_location_room_is_not_evidence_for_her_account():
-    """R-31, write side: `<self>` renders in every room of the unit, so a send
-    from a room whose `location` flag is on is never counted or handed to the
-    session. `character_nora_readable` is what builds `NoraKey.readable`."""
-    from types import SimpleNamespace
-
-    from nora.app.composition import character_nora_readable
-
-    ns = SimpleNamespace
-    allowlist = ns(conversations=[
-        ns(primary_id="room-a", unit="friends", location=False),
-        ns(primary_id="room-loc", unit="friends", location=True),
-        ns(primary_id="room-w", unit="wedding", location=False),
-        ns(primary_id="", unit="friends", location=False),
-    ])
-    assert character_nora_readable(allowlist, "friends") == ("room-a",)
-
-    store = InMemoryCharacterEvidence()
-    for send_id, room in ((200, "room-a"), (201, "room-loc")):
-        store.add_episode(unit="friends", episode=Episode(
-            send_id=send_id, room=room, text="x", outcome="responded",
-            reactions=1, edits=0))
-    nk = NoraKey(unit="friends", rooms=NK.rooms,
-                 readable=character_nora_readable(allowlist, "friends"))
-    evidence = NoraEvidence(store=store, keys={KEY: nk})
-    assert await evidence.count(key=KEY, after=0) == 1
-    shown, _ = await evidence.newest(key=KEY, after=0, limit=10)
-    assert [e.send_id for e in shown] == [200]
