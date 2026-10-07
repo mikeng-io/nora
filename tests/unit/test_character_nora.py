@@ -88,13 +88,13 @@ async def test_an_episode_or_someone_elses_reply_grounds_a_revision():
     assert await revise(entity="nora", body="a plan from me lands",
                         citations=["response:100"]) == {"status": "ok"}
     assert await revise(entity="nora", body="a plan from me lands",
-                        citations=["100", "101"]) == {"status": "ok"}
+                        citations=["response:100", "101"]) == {"status": "ok"}
     proposals = await adaptor.accept(key=KEY, items=())
     await adaptor.commit(key=KEY, now_ms=T0, proposals=[Proposal(
         payload=p, instruction_sha256="a" * 64, model="m", established_by="r",
     ) for p in proposals])
     head = await store.head(key=KEY)
-    assert head is not None and head.citations == ("100", "101")
+    assert head is not None and head.citations == ("response:100", "101")
 
 
 async def test_an_episode_it_was_not_shown_is_refused():
@@ -107,19 +107,25 @@ async def test_no_closed_episode_calls_no_model():
     assert await _adaptor().inputs(key=KEY, batch=()) == ""
 
 
-async def test_the_evidence_is_closed_episodes_by_send_id_and_never_an_open_one():
+async def test_the_evidence_is_evidence_episodes_by_send_id_never_an_open_or_unanswered_one():
+    """DEC-290 (4): the wake counts closed episodes THAT ARE EVIDENCE. An
+    `unanswered` one holds nothing anyone did, so it neither counts toward the
+    wake nor is read."""
     store = InMemoryCharacterEvidence()
     store.add_episode(unit="friends", episode=EPISODES[0])
     store.add_episode(unit="friends", episode=EPISODES[1])
     store.add_episode(unit="friends", open_=True, episode=Episode(
         send_id=120, room="room-a", text="open", outcome="open", reactions=0, edits=0))
+    store.add_episode(unit="friends", episode=Episode(
+        send_id=125, room="room-a", text="who is in?", outcome="silent",
+        reactions=0, edits=0))
     store.add_episode(unit="wedding", episode=Episode(
         send_id=130, room="room-w", text="x", outcome="responded", reactions=1, edits=0))
     evidence = NoraEvidence(store=store, keys={KEY: NK})
     assert await evidence.count(key=KEY, after=0) == 2
     assert await evidence.count(key=KEY, after=100) == 1
     items, cursor = await evidence.newest(key=KEY, after=0, limit=1)
-    assert [e.send_id for e in items] == [110] and cursor == 110
+    assert [e.send_id for e in items] == [125] and cursor == 125
 
 
 UNKNOWN = Episode(send_id=120, room="room-a", text="anyone free sat?", outcome="unknown",
@@ -139,3 +145,38 @@ async def test_an_unknown_episode_with_no_response_cannot_meet_the_echo_rule():
                   ["110", "response:110"]):
         answer = await revise(entity="nora", body="I make plans", citations=cited)
         assert (answer["status"], answer["reason"]) == ("refused", "unresolved_citation"), cited
+
+
+def _evidence_episode(send_id: int) -> Episode:
+    return Episode(send_id=send_id, room="room-a", text=f"plan {send_id}",
+                   outcome="responded", reactions=1, edits=0)
+
+
+FOUR = tuple(_evidence_episode(n) for n in (200, 210, 220, 230))
+
+
+async def test_a_revision_must_cite_three_evidence_episodes_when_it_was_shown_that_many():
+    """DEC-290 (4): the wedding account rested on four citations of mostly
+    non-evidence. A floor of three DIFFERENT evidence episodes, stated in the
+    refusal; a repeated one counts once."""
+    adaptor = _adaptor()
+    await adaptor.inputs(key=KEY, batch=FOUR)
+    revise, _keep = adaptor.verbs(key=KEY)
+    for cited in (["response:200"], ["response:200", "response:210"],
+                  ["response:200", "response:200", "response:210"],
+                  ["response:200", "200", "210", "220"]):
+        answer = await revise(entity="nora", body="I plan well", citations=cited)
+        assert (answer["status"], answer["reason"]) == ("refused", "thin_evidence"), cited
+        assert "at least 3" in str(answer["detail"])
+    assert await revise(entity="nora", body="I plan well", citations=[
+        "response:200", "response:210", "response:220"]) == {"status": "ok"}
+
+
+async def test_the_floor_never_exceeds_the_evidence_the_session_was_shown():
+    """A stale wake on one episode is not given a bar of three it cannot meet:
+    that session would be held and given up on."""
+    adaptor = _adaptor()
+    await adaptor.inputs(key=KEY, batch=(EPISODES[0], EPISODES[1]))
+    revise, _keep = adaptor.verbs(key=KEY)
+    assert await revise(entity="nora", body="a plan lands",
+                        citations=["response:100"]) == {"status": "ok"}

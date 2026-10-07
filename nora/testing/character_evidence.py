@@ -38,13 +38,15 @@ class InMemoryCharacterEvidence:
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
-        window has not closed (never counted, never read)."""
+        window has not closed (never counted, never read). Only an evidence
+        episode (`Episode.is_evidence`) is counted or read, as in the SQL."""
         self._episodes.append((unit, episode, open_))
 
     def _eps(self, unit: str, after: int) -> list[Episode]:
         return sorted(
             (e for u, e, o in self._episodes if u == unit and not o
-             and e.outcome not in ("open", "unknown") and e.send_id > after),
+             and e.outcome not in ("open", "unknown") and e.is_evidence
+             and e.send_id > after),
             key=lambda e: e.send_id,
         )
 

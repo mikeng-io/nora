@@ -67,6 +67,7 @@ from nora.domain.blocks import (
 from nora.domain.culture import (
     CHARACTER_KINDS,
     CHARACTER_OUTCOMES,
+    NORA_MIN_EVIDENCE_EPISODES,
     Citable,
     CultureProposal,
     CultureRevision,
@@ -634,6 +635,7 @@ class CharacterNoraAdaptor(EntitySessions):
         now = self._clock()
         labels = {r.key: r.label for r in nk.rooms}
         sends = frozenset(e.send_id for e in episodes)
+        evidence = frozenset(e.send_id for e in episodes if e.is_evidence)
         self._begin(
             key, citable=Citable(
                 messages=sends | frozenset(r.id for e in episodes for r in e.replies),
@@ -641,8 +643,11 @@ class CharacterNoraAdaptor(EntitySessions):
                 # Only an episode people DID something in may be cited: her own
                 # send, relabelled as an episode, would otherwise meet the echo
                 # rule with nothing anyone said.
-                episodes=frozenset(e.send_id for e in episodes if e.is_evidence),
+                episodes=evidence,
                 echo_rule=True,
+                # A floor, never above what this session was shown: a stale
+                # wake on one episode could not meet a bar of three.
+                min_episodes=min(NORA_MIN_EVIDENCE_EPISODES, len(evidence)),
             ),
             entities={"nora": None}, batch_start=self.evidence.held(key),
         )
