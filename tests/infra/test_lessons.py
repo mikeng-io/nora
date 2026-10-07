@@ -283,3 +283,80 @@ async def test_a_lesson_id_that_is_not_a_uuid_names_no_lesson(env):
                                     established_by="t"))["reason"] == "unknown_lesson"
     assert await env.store.get(lesson_id="x") is None
     assert await env.store.revisions(lesson_id="x") == ()
+
+
+class _RacingStore:
+    """The store, except that right after `lessons` is read once, `between` runs:
+    the interleaving of a writer that has judged a head and an operator who then
+    moves it."""
+
+    def __init__(self, inner, between):
+        self._inner, self._between, self._armed = inner, between, True
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    async def lessons(self, *, unit):
+        held = await self._inner.lessons(unit=unit)
+        if self._armed:
+            self._armed = False
+            await self._between()
+        return held
+
+
+async def test_an_operator_retirement_between_a_read_and_a_reinforce_is_not_undone(env):
+    first = await _write(env)
+    lid = first["lesson_id"]
+
+    async def operator_retires():
+        await env.book.retire(unit=UNIT, lesson_id=lid, by="operator", why="wrong",
+                              established_by="operator:cli", record_head=120)
+
+    racing = LessonBook(store=_RacingStore(env.store, operator_retires), law=lambda: LAW,
+                        screen=offence, clock_ms=_Clock())
+    out = await racing.learn(
+        unit=UNIT, citable=CITABLE, body=ONE + ", and say why", citations=("110", "112"),
+        lesson_id=lid, established_by="dreamer:lessons")
+    assert (out["status"], out["reason"]) == ("refused", "conflict")
+    head = (await env.store.revisions(lesson_id=lid))[0]
+    assert (head.seq, head.state, head.retired_by, head.relearn_after) == (2, "retired",
+                                                                           "operator", 120)
+
+
+async def test_a_raced_seq_is_a_conflict_not_a_raw_integrity_error(env):
+    """Two appends that both read head 1: the second loses to
+    `uq_lesson_revision_seq` and says so as a conflict."""
+    import asyncio
+
+    from nora.domain.lessons import LessonConflictError
+    lid = (await _write(env))["lesson_id"]
+
+    async def one(n):
+        return await env.store.append(
+            lesson_id=lid, expected_seq=1, body=f"revision body number {n}", citations=("110",),
+            state="active", retired_by=None, relearn_after=None, note=None, written_at=n,
+            established_by="t")
+
+    results = await asyncio.gather(one(1), one(2), return_exceptions=True)
+    assert sum(isinstance(r, LessonConflictError) for r in results) == 1
+    assert sum(not isinstance(r, BaseException) for r in results) == 1
+    assert [r.seq for r in await env.store.revisions(lesson_id=lid)] == [2, 1]
+
+
+async def test_the_operator_can_set_the_floor_on_a_lesson_a_session_already_retired(env):
+    lid = (await _write(env, citations=("110", "111")))["lesson_id"]
+    await env.book.retire(unit=UNIT, lesson_id=lid, by="session", why="merged",
+                          established_by="t")
+    # The session's retirement set no floor: the same evidence may be learned again.
+    out = await env.book.retire(unit=UNIT, lesson_id=lid, by="operator", why="still wrong",
+                                established_by="operator:cli", record_head=120)
+    assert out["status"] == "ok" and out["revision"] == 3
+    head = (await env.store.revisions(lesson_id=lid))[0]
+    assert (head.state, head.retired_by, head.relearn_after) == ("retired", "operator", 120)
+    assert (await _write(env, body=TWO, citations=("110", "111")))["reason"] == "relearn"
+    # Nothing retires twice beyond that.
+    again = await env.book.retire(unit=UNIT, lesson_id=lid, by="operator", why="x",
+                                  established_by="o", record_head=130)
+    assert again["reason"] == "not_active"
+    assert (await env.book.retire(unit=UNIT, lesson_id=lid, by="session", why="x",
+                                  established_by="t"))["reason"] == "not_active"

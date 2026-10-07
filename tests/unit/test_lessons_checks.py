@@ -59,6 +59,7 @@ def test_a_cited_lesson_that_echoes_nothing_passes():
 def test_every_refusal_reason_is_in_the_vocabulary():
     reasons = {
         _check(body="  ").reason,
+        _check(body="say less!!").reason,
         _check(body="x" * (LESSON_BODY_MAX_CHARS + 1)).reason,
         _check(citations=()).reason,
         _check(citations=("999",)).reason,
@@ -70,7 +71,7 @@ def test_every_refusal_reason_is_in_the_vocabulary():
         _check(active=[_lesson(i, f"distinct practice number {i} " * 3)
                        for i in range(LESSON_MAX_ACTIVE)]).reason,
     }
-    assert reasons == {"empty", "too_long", "uncited", "unresolved_citation", "echo",
+    assert reasons == {"empty", "too_short", "too_long", "uncited", "unresolved_citation", "echo",
                        "echoes_doctrine", "echoes_lesson", "relearn", "cap"}
     assert reasons <= LESSON_REFUSALS
 
@@ -168,3 +169,11 @@ def test_no_model_can_call_the_lesson_verbs_yet():
         if "from nora.language.lesson_book import" in p.read_text(encoding="utf-8")
     }
     assert users == {"nora/app/lessons_cli.py"}
+
+
+def test_a_lesson_too_short_to_say_anything_is_refused_before_it_can_pass_echo():
+    for body in ("ok", "!!!!!!!!!!!!!!!!", "say less.", "a b c d e f g"):
+        refusal = _check(body=body)
+        assert refusal is not None and refusal.reason == "too_short", body
+    assert _check(body="stop offering five options; say less") is None
+    assert _check(body="唔好每次都畀五個選擇，講少啲") is None

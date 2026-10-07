@@ -20,7 +20,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.lessons import Lesson, LessonRevision
+from nora.domain.lessons import Lesson, LessonConflictError, LessonRevision
 from nora.infra.sql.schema import LESSON, LESSON_REVISION
 
 __all__ = ["SqlLessonStore"]
@@ -119,13 +119,36 @@ class SqlLessonStore:
         return Lesson(id=lesson_id, unit=unit, created_at=written_at, head=_revision(row))
 
     async def append(
-        self, *, lesson_id: str, body: str, citations: tuple[str, ...], state: str,
+        self, *, lesson_id: str, expected_seq: int, body: str, citations: tuple[str, ...],
+        state: str,
         retired_by: str | None, relearn_after: int | None, note: str | None,
         written_at: int, established_by: str, instruction_sha256: str | None = None,
         model: str | None = None,
     ) -> LessonRevision:
-        """The next revision of an existing lesson. Raises `LookupError` when
-        the lesson is not there."""
+        """The next revision of an existing lesson, compare-and-set on the head:
+        `expected_seq` is the head the caller judged its write against. Raises
+        `LookupError` when the lesson is not there and `LessonConflictError` when
+        its head is no longer `expected_seq` (or a racing writer took the next
+        `seq` first)."""
+        try:
+            return await self._append(
+                lesson_id=lesson_id, expected_seq=expected_seq, body=body,
+                citations=citations, state=state, retired_by=retired_by,
+                relearn_after=relearn_after, note=note, written_at=written_at,
+                established_by=established_by, instruction_sha256=instruction_sha256,
+                model=model,
+            )
+        except sa.exc.IntegrityError as exc:
+            if "uq_lesson_revision_seq" not in str(exc):
+                raise
+            raise LessonConflictError(f"lesson {lesson_id} was revised concurrently") from exc
+
+    async def _append(
+        self, *, lesson_id: str, expected_seq: int, body: str, citations: tuple[str, ...],
+        state: str, retired_by: str | None, relearn_after: int | None, note: str | None,
+        written_at: int, established_by: str, instruction_sha256: str | None,
+        model: str | None,
+    ) -> LessonRevision:
         async with self._engine.begin() as conn:
             top = (await conn.execute(
                 sa.select(sa.func.max(LESSON_REVISION.c.seq))
@@ -133,6 +156,9 @@ class SqlLessonStore:
             )).scalar_one()
             if top is None:
                 raise LookupError(f"no lesson {lesson_id}")
+            if top != expected_seq:
+                raise LessonConflictError(f"lesson {lesson_id} is at revision {top}, "
+                                          f"not {expected_seq}")
             row = (await conn.execute(
                 sa.insert(LESSON_REVISION).values(
                     lesson_id=lesson_id, seq=top + 1, body=body, citations=list(citations),

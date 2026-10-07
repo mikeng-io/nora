@@ -39,10 +39,12 @@ __all__ = [
     "ECHO_COVERAGE",
     "ECHO_GRAM",
     "LESSON_BODY_MAX_CHARS",
+    "LESSON_BODY_MIN_CHARS",
     "LESSON_MAX_ACTIVE",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
     "Lesson",
+    "LessonConflictError",
     "LessonRevision",
     "check_lesson",
     "echoes",
@@ -61,6 +63,19 @@ __all__ = [
 #: prefill on every turn, so L5's before/after measure is what tightens it.
 #: Re-size on the first month of lessons that exist, never on one sample.
 LESSON_BODY_MAX_CHARS = 400
+
+#: The least a lesson says, in NORMALISED characters (letters and digits, see
+#: `ECHO_GRAM`). Below one echo run the echo test compares a fragment, so a
+#: few characters or bare punctuation would pass it trivially. 12 is two runs
+#: and a clause: the spec's own example, "stop offering five options; say
+#: less", is 29, and a Cantonese practice of a short clause is 12 or more.
+LESSON_BODY_MIN_CHARS = 12
+
+
+class LessonConflictError(Exception):
+    """The lesson's head moved between a writer's read and its append (the
+    operator retired it, or another writer revised it): the write was judged
+    against a head that is no longer the head, so it is not made."""
 
 #: Active lessons a unit holds at once, and the characters they hold together.
 LESSON_MAX_ACTIVE = 12
@@ -89,7 +104,7 @@ ECHO_COVERAGE = 0.8
 LESSON_REFUSALS = frozenset({
     "empty", "too_long", "uncited", "unresolved_citation", "echo", "thin_evidence",
     "identifier", "coordinate",
-    "echoes_doctrine", "echoes_lesson", "relearn", "cap",
+    "echoes_doctrine", "echoes_lesson", "relearn", "cap", "too_short", "conflict",
     "unknown_lesson", "not_active",
 })
 
@@ -136,8 +151,12 @@ class Lesson:
         return self.head.state == "active"
 
 
+def _norm(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
 def _grams(text: str) -> frozenset[str]:
-    norm = "".join(ch for ch in text.casefold() if ch.isalnum())
+    norm = _norm(text)
     if len(norm) <= ECHO_GRAM:
         return frozenset({norm}) if norm else frozenset()
     return frozenset(norm[i:i + ECHO_GRAM] for i in range(len(norm) - ECHO_GRAM + 1))
@@ -181,6 +200,9 @@ def check_lesson(
     if len(text) > LESSON_BODY_MAX_CHARS:
         return Refusal("too_long", f"the lesson is {len(text)} characters, past the "
                        f"{LESSON_BODY_MAX_CHARS} cap; one practice, said short")
+    if len(_norm(text)) < LESSON_BODY_MIN_CHARS:
+        return Refusal("too_short", f"the lesson is under {LESSON_BODY_MIN_CHARS} letters "
+                       "and digits; say what to do differently in a clause")
     refused = check_revision(body=text, citations=citations, citable=citable)
     if refused is not None:
         return refused

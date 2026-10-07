@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from nora.domain.culture import Citable, Refusal
 from nora.domain.lessons import (
     Lesson,
+    LessonConflictError,
     LessonRevision,
     check_lesson,
     evidence_ceiling,
@@ -59,8 +60,8 @@ class LessonStore(Protocol):
     ) -> Lesson: ...
 
     async def append(
-        self, *, lesson_id: str, body: str, citations: tuple[str, ...], state: str,
-        retired_by: str | None, relearn_after: int | None, note: str | None,
+        self, *, lesson_id: str, expected_seq: int, body: str, citations: tuple[str, ...],
+        state: str, retired_by: str | None, relearn_after: int | None, note: str | None,
         written_at: int, established_by: str, instruction_sha256: str | None = ...,
         model: str | None = ...,
     ) -> LessonRevision: ...
@@ -192,12 +193,15 @@ class LessonBook:
                 model=model,
             )
             return {"status": "ok", "lesson_id": made.id, "revision": 1}
-        revision = await self._store.append(
-            lesson_id=replacing.id, body=text, citations=citations, state="active",
+        revision = await self._append(
+            unit, lesson_id=replacing.id, expected_seq=replacing.head.seq, body=text,
+            citations=citations, state="active",
             retired_by=None, relearn_after=None, note=None, written_at=now,
             established_by=established_by, instruction_sha256=instruction_sha256,
             model=model,
         )
+        if isinstance(revision, dict):
+            return revision
         return {"status": "ok", "lesson_id": replacing.id, "revision": revision.seq}
 
     async def retire(
@@ -214,11 +218,14 @@ class LessonBook:
         if lesson is None or lesson.unit != unit:
             return self._refused(unit, Refusal(
                 "unknown_lesson", f"{lesson_id!r} is not a lesson of this unit"))
-        if not lesson.active:
+        # An operator may set the no-re-learn floor on a lesson a session already
+        # retired (one more revision, still retired); nothing else retires twice.
+        if not lesson.active and not (by == "operator" and lesson.head.retired_by == "session"):
             return self._refused(unit, Refusal("not_active", "that lesson is already retired"))
         head = lesson.head
-        revision = await self._store.append(
-            lesson_id=lesson.id, body=head.body, citations=head.citations,
+        revision = await self._append(
+            unit, lesson_id=lesson.id, expected_seq=head.seq, body=head.body,
+            citations=head.citations,
             state="retired", retired_by=by,
             relearn_after=(max(evidence_ceiling(head.citations), record_head)
                            if by == "operator" else None),
@@ -226,6 +233,8 @@ class LessonBook:
             established_by=established_by, instruction_sha256=instruction_sha256,
             model=model,
         )
+        if isinstance(revision, dict):
+            return revision
         return {"status": "ok", "lesson_id": lesson.id, "revision": revision.seq}
 
     async def rollback(
@@ -247,14 +256,31 @@ class LessonBook:
         if target.seq == lesson.head.seq:
             return self._refused(unit, Refusal(
                 "not_active", f"revision {to_seq} is already the head"))
-        revision = await self._store.append(
-            lesson_id=lesson.id, body=target.body, citations=target.citations,
+        revision = await self._append(
+            unit, lesson_id=lesson.id, expected_seq=lesson.head.seq, body=target.body,
+            citations=target.citations,
             state=target.state, retired_by=target.retired_by,
             relearn_after=target.relearn_after,
             note=f"rollback to revision {target.seq}", written_at=self._clock(),
             established_by=established_by,
         )
+        if isinstance(revision, dict):
+            return revision
         return {"status": "ok", "lesson_id": lesson.id, "revision": revision.seq}
+
+    async def _append(
+        self, unit: str, **fields: Any,
+    ) -> LessonRevision | dict[str, object]:
+        """The store's compare-and-set append, or a `conflict` refusal when the
+        lesson's head moved after this write was judged (an operator's
+        retirement, or another writer). The write is not retried: it was judged
+        against a head that is gone."""
+        try:
+            return await self._store.append(**fields)
+        except LessonConflictError:
+            return self._refused(unit, Refusal(
+                "conflict", "this lesson changed while you were writing; read it "
+                "again before changing it"))
 
     def _refused(self, unit: str, refusal: Refusal) -> dict[str, object]:
         log.warning("lessons: unit=%s write refused: %s", unit, refusal.reason)
