@@ -111,13 +111,13 @@ CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
 #:   citation (DEC-249) and never a pre-fetch (§3.3, #736).
 #: - `about`, `lookup_person`, `group_members`: who a name or handle in their
 #:   messages IS, against the room's roster.
-#: - `web_search`, `web_fetch`: a reference they lean on that nobody explains.
 #:
 #: Deliberately absent: `where_been`, `online_now` (presence, R-31; module
-#: docstring), and every act verb (the read-only ceiling).
+#: docstring), every act verb (the read-only ceiling), and `web_search`,
+#: `web_fetch`: the design never asked a person session to look a reference up,
+#: so they were the least that was not needed (DEC-290).
 CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
     "ask_memory", "search_memory", "about", "lookup_person", "group_members",
-    "web_search", "web_fetch",
 })
 
 #: `inputs` holds two sites (the previous account; the rooms' cultures, one
