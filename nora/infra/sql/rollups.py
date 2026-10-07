@@ -24,6 +24,7 @@ arithmetic is pure (`nora.domain.rollup`).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.domain.cognition_remind import INTENTS
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import (
     Citation,
@@ -286,6 +288,8 @@ class SqlRollupStore:
                 quoted.c.person_id.label("quoted_person"),
                 quoted.c.is_nora.label("quoted_is_nora"),
                 quoted.c.id.label("quoted_id"),
+                # Only Nora's own rows: the raw envelope of a person's message is not read here.
+                sa.case((MESSAGES.c.is_nora == 1, MESSAGES.c.raw_json)).label("send_raw"),
             )
             .select_from(MESSAGES.outerjoin(quoted, sa.and_(
                 quoted.c.conversation_id == MESSAGES.c.conversation_id,
@@ -354,6 +358,7 @@ class SqlRollupStore:
                 sends[r.id] = SendFact(
                     id=r.id, room=room, platform=r.platform,
                     conversation_id=r.conversation_id, ts=r.ts, named=mentioned,
+                    intent=_send_intent(r.send_raw),
                 )
                 continue
             person = subject_of.get(r.person_id) if r.person_id else None
@@ -631,3 +636,14 @@ async def _diff_apply(
             )
             changed += 1
     return changed
+
+
+def _send_intent(raw_json: str | None) -> str | None:
+    """The brief's intent a fire turn's Deliverer wrote into the send's raw_json, or None.
+
+    Exactly `tell` or `ask`; a tag reply, an older row or anything else is None, never `tell`."""
+    try:
+        intent = json.loads(raw_json).get("intent") if raw_json else None
+    except (ValueError, AttributeError):
+        return None
+    return intent if intent in INTENTS else None

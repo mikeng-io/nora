@@ -164,8 +164,11 @@ a closed window, `silent` only when an answer was expected AND the room's
 platform was proved up for the window (`source_health` transitions),
 `unknown` when expected but unproved, `unanswered` when nothing was
 expected. **Expected** is a structured mention of a member today; the
-brief's `ask` intent is read when step 3 records it on the send (`intent`
-is NULL until then — pending).
+brief's `ask` intent is read from the send's own Record row: a fire turn's
+Deliverer writes `intent` (`tell`/`ask`) into the `raw_json` of every message
+it sends (self-growth L0, 2026-10-07). `intent` is NULL for a tag reply (it has
+no brief), for a send before L0, and for a proactive row whose payload holds
+free text instead of `tell`/`ask`.
 
 ## 4. Stimuli the Rollup raises
 

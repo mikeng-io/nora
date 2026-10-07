@@ -87,6 +87,7 @@ def build(
     send_permitted: bool = True,
     lookups: Collection[str] | None = None,
     param_names: Mapping[str, frozenset[str]] | None = None,
+    intent: str | None = None,
 ) -> DeliveryHandle:
     """Build the pair `invoke` needs.
 
@@ -162,6 +163,7 @@ def build(
         composer=composer,
         links=links,
         send_permitted=send_permitted,
+        intent=intent,
     )
     # `budgets` and `terminal` travel together and come from the same place
     # (`ToolRegistry`) — what a tool costs and whether calling it ends the turn

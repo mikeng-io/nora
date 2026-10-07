@@ -128,13 +128,14 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
             at_ms=_START - _H, recorded_at=_ts(_START - _H),
         ))
 
-        async def message(ts, *, person=None, nora=False, quoted=None, mentions=frozenset()):
+        async def message(ts, *, person=None, nora=False, quoted=None, mentions=frozenset(),
+                          raw=None):
             result = await conn.execute(sa.insert(MESSAGES).values(
                 platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
                 sender_id="nora" if nora else f"acct-{person}", person_id=person,
                 ts=ts, body="…", is_nora=int(nora), delivery_status="sent",
                 quoted_ts=quoted, mentions_json=mentions_json(frozenset(mentions)),
-                created_at=_ts(ts + 1_000).isoformat(),
+                raw_json=raw, created_at=_ts(ts + 1_000).isoformat(),
             ).returning(MESSAGES.c.id))
             return int(result.scalar_one())
 
@@ -156,6 +157,11 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
                 recorded_at=_ts(_t(day, 10.3)),
             ))
             await message(_t(day, 12), nora=True, mentions={"acct-a"})  # nobody answers
+            if day == 0:
+                # Two sends naming nobody that nobody answers: only the one whose brief asked is
+                # `silent`. Inside the day loop so their ids stay below the post-watermark rows.
+                await message(_t(0, 14), nora=True, raw='{"tag_id": "t", "intent": "ask"}')
+                await message(_t(0, 15), nora=True, raw='{"tag_id": "t"}')
 
 
 def _runner(engine, stimuli=None, events=None) -> RollupRunner:
@@ -226,6 +232,11 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
     assert (responses[_t(0, 10)]["replies"], responses[_t(0, 10)]["reactions"],
             responses[_t(0, 10)]["edits"]) == (1, 1, 1)
     assert responses[_t(0, 12)]["outcome"] == "silent"
+    # The brief's intent rides on the send's own Record row (L0): `ask` expected an answer.
+    assert (responses[_t(0, 14)]["intent"], responses[_t(0, 14)]["outcome"]) == ("ask", "silent")
+    assert (responses[_t(0, 15)]["intent"], responses[_t(0, 15)]["outcome"]) == (
+        None, "unanswered",
+    )
     assert _t(2, 10) not in responses  # recorded after the watermark: not read
     ties = await rollups.rows(table=ROLLUP_TIE, build_id=b)
     assert sum(t["replies_ba"] for t in ties) == 2 and sum(t["colocation_ms"] for t in ties) > 0
