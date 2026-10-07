@@ -7,6 +7,9 @@ for a room, generalised); a read is what the session is handed:
 
 - **a person** (C2b): their human messages across their unit's rooms, by
   Record id.
+- **a unit** (C3a): new revisions of its rooms' cultures, by COUNT: a culture
+  revision's id is a uuid with no order, and the chain is append-only, so the
+  number of revisions a unit's rooms hold only grows and is the cursor.
 
 Every read here is a SELECT. Nothing is folded, cached or written.
 
@@ -28,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import RoomMessage
 from nora.infra.sql.audit import transcript_row, transcript_select
-from nora.infra.sql.schema import MESSAGES
+from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES
 
 __all__ = ["SqlCharacterEvidence"]
 
@@ -98,3 +101,35 @@ class SqlCharacterEvidence:
         out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
         out.reverse()
         return out, int(cursor or after)
+
+    # -- a unit --------------------------------------------------------------
+
+    async def revision_count(self, *, keys: Sequence[str]) -> int:
+        """How many culture revisions the rooms `keys` hold, ever. The cursor
+        of a unit key: append-only, so it only grows (DEC-183)."""
+        if not keys:
+            return 0
+        stmt = sa.select(sa.func.count()).select_from(CULTURE_REVISION).where(
+            CULTURE_REVISION.c.culture_key.in_(list(keys)),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def revisions_after(
+        self, *, keys: Sequence[str], after: int, limit: int,
+    ) -> tuple[list[str], int]:
+        """The room keys of the newest `limit` revisions past the first `after`
+        (in the order they were written), oldest first, and the cursor: how
+        many revisions the rooms hold now."""
+        total = await self.revision_count(keys=keys)
+        if limit <= 0 or total <= after or not keys:
+            return [], max(total, after)
+        stmt = (
+            sa.select(CULTURE_REVISION.c.culture_key)
+            .where(CULTURE_REVISION.c.culture_key.in_(list(keys)))
+            .order_by(CULTURE_REVISION.c.written_at, CULTURE_REVISION.c.id)
+            .offset(max(after, total - limit))
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [r.culture_key for r in rows], total

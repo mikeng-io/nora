@@ -107,7 +107,7 @@ from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
-from nora.domain.culture import character_key
+from nora.domain.culture import character_key, unit_culture_key
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
@@ -211,10 +211,14 @@ from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.character import (
     CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
     CharacterPersonAdaptor,
     CharacterRoom,
+    CharacterUnitAdaptor,
     PersonEvidence,
     PersonKey,
+    UnitEvidence,
+    UnitKey,
 )
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
@@ -896,7 +900,23 @@ def _computer_token(cfg: Config) -> str:
 
 
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
-CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (CHARACTER_PERSON_ADAPTOR_NAME,)
+CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
+    CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
+)
+
+
+def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
+    """One key per unit, with its rooms in policy order (C3a)."""
+    rooms_of: dict[str, list[CharacterRoom]] = {}
+    for conv in allowlist.conversations:
+        if conv.primary_id and conv.unit:
+            rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
+                key=conv.primary_id, platform=conv.platform, label=conv.label,
+            ))
+    return {
+        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))
+        for unit, rooms in rooms_of.items()
+    }
 
 
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
@@ -3749,6 +3769,28 @@ async def build_dependencies(
                         store=SqlCharacterEvidence(engine), keys=person_keys,
                     ),
                     keys=person_keys, metrics=metrics,
+                ),
+            )
+
+            # CHARACTER · UNIT (C3a): one session per unit, woken by new
+            # revisions of its rooms' cultures.
+            unit_keys = character_unit_keys(allowlist)
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.unit_wake_batch,
+                    batch_limit=cfg.culture.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterUnitAdaptor(
+                    culture=culture_store,
+                    evidence=UnitEvidence(
+                        store=SqlCharacterEvidence(engine), keys=unit_keys,
+                    ),
+                    keys=unit_keys, metrics=metrics,
                 ),
             )
 

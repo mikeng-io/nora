@@ -32,6 +32,29 @@ class _Message:
 class InMemoryCharacterEvidence:
     def __init__(self) -> None:
         self._messages: list[_Message] = []
+        #: Culture revisions, as (room key, written_at), in write order.
+        self._revisions: list[tuple[str, int]] = []
+
+    def add_revision(self, *, key: str, written_at: int) -> None:
+        self._revisions.append((key, written_at))
+
+    def _of(self, keys: Sequence[str]) -> list[str]:
+        wanted = set(keys)
+        return [k for k, _at in sorted(
+            (r for r in self._revisions if r[0] in wanted), key=lambda r: r[1],
+        )]
+
+    async def revision_count(self, *, keys: Sequence[str]) -> int:
+        return len(self._of(keys))
+
+    async def revisions_after(
+        self, *, keys: Sequence[str], after: int, limit: int,
+    ) -> tuple[list[str], int]:
+        found = self._of(keys)
+        total = len(found)
+        if limit <= 0 or total <= after:
+            return [], max(total, after)
+        return found[max(after, total - limit):], total
 
     def add_message(
         self, *, id: int, platform: str, room: str, person_id: str | None,

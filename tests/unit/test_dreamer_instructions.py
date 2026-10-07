@@ -621,6 +621,8 @@ NATIVELY_AUTHORED = {
     # section of `culture`, which asked for an account from a pre-fetched
     # memory answer (DEC-278).
     "character-person",
+    # The unit's Character session (C3a): new, written for it.
+    "character-unit",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

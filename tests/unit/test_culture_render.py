@@ -320,3 +320,26 @@ def test_a_room_label_rides_on_the_block_only_when_given():
     assert plain is not None and named is not None
     assert "room" not in dict(plain.attrs)
     assert dict(named.attrs)["room"] == "Zone 42"
+
+
+class _UnitPolicy:
+    def conversation(self, platform, conversation_id):
+        return type("_Convo", (), {"primary_id": "g1", "unit": "friends"})()
+
+
+async def test_both_paths_read_the_units_culture_by_the_rooms_UNIT():
+    """C3a: `<unit_culture>` is keyed `unit_culture_key(convo.unit)`, so a room
+    reads its own unit's account and no other."""
+    from nora.domain.culture import unit_culture_key
+    from nora.engagement.context import TranscriptInjection
+
+    culture = _culture()
+    path = _fire_path(culture=culture, policy=_UnitPolicy())
+    assert await path._read_unit_culture(_participation()) is None
+    assembler = object.__new__(TranscriptInjection)
+    assembler._culture_reader = culture
+    assembler._policy = _UnitPolicy()
+    assembler._metrics = Metrics()
+    msg = type("_Msg", (), {"platform": "discord", "conversation_id": "x"})()
+    assert await assembler._unit_culture(msg) is None  # type: ignore[arg-type]
+    assert culture.reads == [unit_culture_key("friends")] * 2

@@ -1482,6 +1482,9 @@ stale_seconds = 604800
 # account at once. Sized from 14 days on the deploy host: the busiest poster
 # reaches 100 about every 4 days; everyone else is woken by stale_seconds.
 person_wake_batch = 100
+# New revisions of a unit's room cultures that wake the unit's own account
+# (what the group is across its rooms, read as <unit_culture> in its rooms).
+unit_wake_batch = 5
 # Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300

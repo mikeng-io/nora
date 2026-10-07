@@ -22,7 +22,7 @@ without being a stranger. That is the whole test.
 
 ## What you are reading
 
-- `<person>`: who this is, and the other names the group calls them.
+- `<about_person>`: who this is, and the other names the group calls them.
 - `<previous_character>`: the account you wrote of them last time, if there is
   one.
 - `<room_cultures>`: what each room of this group is like, in your own words.
@@ -69,7 +69,7 @@ where it disagrees with their messages, trust the messages.
 
 You write with `character_revise`, never in your reply:
 
-- `entity`: the person's name exactly as `<person>` shows it.
+- `entity`: the person's name exactly as `<about_person>` shows it.
 - `body`: the account, in prose, one short paragraph. Give the whole account,
   not a change to it.
 - `citations`: the `n` of every message the account rests on, at least one.

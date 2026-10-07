@@ -57,6 +57,7 @@ __all__ = [
     "RoomMessage",
     "character_key",
     "check_revision",
+    "unit_culture_key",
 ]
 
 #: **MEASURED, 2026-09-17** — what one character of a culture account costs in
@@ -181,7 +182,7 @@ CULTURE_OUTCOMES = frozenset({
 #: The entity kinds a Character session writes besides a room
 #: (`nora.language.character`), the `kind` label of
 #: `nora_character_session_total`.
-CHARACTER_KINDS = frozenset({"person"})
+CHARACTER_KINDS = frozenset({"person", "unit"})
 
 #: That metric's `outcome` vocabulary: the room's own, which every session
 #: shares (`nora.language.character_session.EntitySessions`).
@@ -447,6 +448,14 @@ def character_key(unit: str, person_id: str) -> str:
     move to these (`nora.app.character_heads.seed_unit_person_heads`).
     """
     return f"{unit}#character:{person_id}"
+
+
+def unit_culture_key(unit: str) -> str:
+    """The `culture` key of a UNIT's own account, what the unit is across its
+    rooms (design/self-growth/10 §1, C3a): one per unit, written by the
+    unit's Character session from its rooms' cultures. No room's
+    `primary_id` and no person key ends in `#unit`."""
+    return f"{unit}#unit"
 
 
 @dataclass(frozen=True, slots=True)

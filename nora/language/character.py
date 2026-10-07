@@ -16,6 +16,12 @@ store and revision chain:
   code from the store. Memory is a tool it MAY call (`ask_memory`,
   `search_memory`), never a pre-fetch: the account must not depend on Honcho
   (#736). Its citations are the ids of the messages it was handed.
+- **the unit** (C3a), key `unit_culture_key(unit)`: what the unit is across
+  its rooms. Its evidence is new revisions of its rooms' cultures. It is
+  handed its previous account and each room's current culture with the
+  Record ids that culture cites; it cites from those (a room's culture is
+  linked, never cited, DEC-249, so the chain still ends in the Record). It
+  holds no read tool. Rendered as `<unit_culture>` in the unit's rooms.
 
 **Code at the edges, an agent loop in the middle** (§3.1): code counts the
 evidence, wakes the key, hands over the previous account and what is new, and
@@ -67,10 +73,14 @@ log = logging.getLogger(__name__)
 __all__ = [
     "CHARACTER_PERSON_ADAPTOR_NAME",
     "CHARACTER_PERSON_TOOLS",
+    "CHARACTER_UNIT_ADAPTOR_NAME",
     "CharacterPersonAdaptor",
     "CharacterRoom",
+    "CharacterUnitAdaptor",
     "PersonEvidence",
     "PersonKey",
+    "UnitEvidence",
+    "UnitKey",
 ]
 
 #: The person adaptor's `name`: its watermark identity, schedule, budget and
@@ -101,7 +111,8 @@ PERSON_STORE_CALLS_PER_TICK = 4
 #: What each session carries, in the order the model reads it
 #: (`design/context-assembly/04-every-occasion.md` §6).
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    ("person", 10, "turn"),
+    ("about_unit", 5, "turn"),
+    ("about_person", 10, "turn"),
     ("previous_character", 20, "turn"),
     ("room_cultures", 30, "turn"),
     ("person_messages", 40, "turn"),
@@ -191,10 +202,11 @@ class _CultureStore(Protocol):
 
 def _room_cultures(
     rooms: Sequence[CharacterRoom], heads: Sequence[CultureRevision | None],
-    now: datetime,
+    now: datetime, *, cites: bool = False,
 ) -> ContextBlock | None:
     """`<room_cultures>`: each room of the unit that has an account, labelled,
-    with its age. `None` when no room has one yet."""
+    with its age, and with `cites` the Record ids it rests on (a unit session
+    cites through them). `None` when no room has one yet."""
     rows = [(room, head) for room, head in zip(rooms, heads, strict=True)
             if head is not None and head.body.strip()]
     if not rows:
@@ -204,6 +216,7 @@ def _room_cultures(
         attrs=lambda pair, _i: (
             ("room", pair[0].label or "unnamed room"),
             ("written", age(pair[1].written_at, now)),
+            ("cites", (", ".join(pair[1].citations) or None) if cites else None),
         ),
         body=lambda pair: pair[1].body,
     ))
@@ -266,7 +279,7 @@ class CharacterPersonAdaptor(EntitySessions):
         heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
         parts: list[ContextBlock | None] = [
             ContextBlock(
-                name="person", **_at("person"), body="", when_empty="self_close",
+                name="about_person", **_at("about_person"), body="", when_empty="self_close",
                 attrs=(("name", pk.person.name),) + (
                     (("aliases", ", ".join(pk.person.aliases)),)
                     if pk.person.aliases else ()
@@ -297,6 +310,142 @@ class CharacterPersonAdaptor(EntitySessions):
             payload = proposal.payload
             if not isinstance(payload, CultureProposal) or payload.person_id is not None:
                 raise TypeError("CharacterPersonAdaptor.commit takes its own account only")
+            previous = await self._culture.head(key=key)
+            if previous is not None and previous.body == payload.body:
+                self._count("unchanged")
+                continue
+            await self._culture.append(
+                key=key, body=payload.body, written_at=now_ms,
+                established_by=proposal.established_by,
+                instruction_sha256=proposal.instruction_sha256,
+                model=proposal.model, citations=payload.citations,
+            )
+            self._count("written")
+            written += 1
+        return written
+
+
+CHARACTER_UNIT_ADAPTOR_NAME = "character-unit"
+
+#: `inputs` holds two sites (the previous account; the rooms' cultures) and
+#: `commit` two.
+UNIT_STORE_CALLS_PER_TICK = 4
+
+
+@dataclass(frozen=True)
+class UnitKey:
+    """What a unit key names: the unit and its rooms, in policy order."""
+
+    unit: str
+    rooms: tuple[CharacterRoom, ...]
+
+
+class _RoomRevisions(Protocol):
+    """`nora.infra.sql.character.SqlCharacterEvidence`'s unit reads."""
+
+    async def revision_count(self, *, keys: Sequence[str]) -> int: ...
+
+    async def revisions_after(
+        self, *, keys: Sequence[str], after: int, limit: int,
+    ) -> tuple[list[str], int]: ...
+
+
+class UnitEvidence:
+    """The dream loop's count and read for a unit key: new revisions of its
+    rooms' cultures, counted (the cursor is how many there are)."""
+
+    def __init__(self, *, store: _RoomRevisions, keys: Mapping[str, UnitKey]) -> None:
+        self._store = store
+        self._keys = keys
+
+    async def count(self, *, key: str, after: int) -> int:
+        rooms = [r.key for r in self._keys[key].rooms]
+        return max(await self._store.revision_count(keys=rooms) - after, 0)
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[str], int]:
+        rooms = [r.key for r in self._keys[key].rooms]
+        return await self._store.revisions_after(keys=rooms, after=after, limit=limit)
+
+
+class CharacterUnitAdaptor(EntitySessions):
+    """The unit's own account, per wake of new room cultures (C3a)."""
+
+    name = CHARACTER_UNIT_ADAPTOR_NAME
+    key_kind = "entity"
+    uses_watermark = True
+    objective = CHARACTER_UNIT_ADAPTOR_NAME
+    envelope_key = "account"
+    #: None: everything it reasons over is handed to it (its rooms' cultures).
+    tools: frozenset[str] = frozenset()
+    store_calls_per_tick = UNIT_STORE_CALLS_PER_TICK
+
+    def __init__(
+        self, *, culture: _CultureStore, evidence: UnitEvidence,
+        keys: Mapping[str, UnitKey], metrics: Metrics | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._culture = culture
+        #: Read by the dream loop, never awaited here.
+        self.evidence = evidence
+        self._keys = keys
+        self._population = tuple(sorted(keys))
+        self._metrics = metrics
+        self._clock = clock or (lambda: datetime.now().astimezone())
+        self._sessions_init()
+
+    def keys(self) -> Sequence[str]:
+        return self._population
+
+    def _count(self, outcome: str) -> None:
+        _inc_session(self._metrics, "unit", outcome)
+
+    async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
+        """The unit's name and rooms, its previous account, and each room's
+        current culture with what it cites. `""` with no new revision, or when
+        no room culture cites anything (written before the verb): an account
+        with nothing it could cite is not worth a model call."""
+        uk = self._keys.get(key)
+        if uk is None or not batch:
+            return ""
+        now = self._clock()
+        previous = await self._culture.head(key=key)
+        heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in uk.rooms))
+        citable = frozenset(
+            int(c) for h in heads if h is not None for c in h.citations if c.isdigit()
+        )
+        if not citable:
+            return ""
+        self._begin(
+            key, citable=Citable(messages=citable), entities={"unit": None},
+            # No item names a unit's batch (its evidence is a count), so a
+            # rejection run is any three unsettled sessions in a row.
+            batch_start=None,
+        )
+        parts: list[ContextBlock | None] = [
+            ContextBlock(
+                name="about_unit", **_at("about_unit"), body="", when_empty="self_close",
+                attrs=(("rooms", ", ".join(r.label or "unnamed room" for r in uk.rooms)),),
+            ),
+            None if previous is None else ContextBlock(
+                name="previous_character", **_at("previous_character"),
+                body=escape(previous.body),
+                attrs=(("written", age(previous.written_at, now)),),
+            ),
+            _room_cultures(uk.rooms, heads, now, cites=True),
+        ]
+        return assemble([p for p in parts if p is not None], sep="\n\n")
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """`CharacterPersonAdaptor.commit`'s rule, under the unit key."""
+        written = 0
+        for proposal in proposals:
+            payload = proposal.payload
+            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+                raise TypeError("CharacterUnitAdaptor.commit takes its own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
                 self._count("unchanged")

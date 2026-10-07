@@ -555,6 +555,10 @@ class TagContext:
     # has one (the Character tier, DEC-278), read through `read_character` on
     # the same occasions and under the same `[culture] enabled` as `culture`.
     character: tuple[tuple[str, CultureRevision], ...] = ()
+    # What this room's UNIT is like across its rooms (design/self-growth/10,
+    # C3a), read through `read_culture` on the same occasions as `culture`,
+    # keyed `unit_culture_key(unit)`. `None` until the unit has an account.
+    unit_culture: CultureRevision | None = None
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a

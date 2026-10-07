@@ -56,6 +56,10 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
 > session (`nora/language/character.py`), keyed `{unit}#character:{person}`,
 > woken by `[culture] person_wake_batch` (100) or `stale_seconds`. The per-room
 > person heads were moved once at startup (`nora/app/character_heads.py`).
+> C3a: `character-unit` (key `{unit}#unit`), woken by `[culture]
+> unit_wake_batch` (5) new room-culture revisions or `stale_seconds`, cites
+> through the Record ids its rooms' cultures cite (Register rows are not read
+> yet), rendered as `<unit_culture>` after `<culture>` on tag and fire turns.
 
 ## 3. The target workflow
 

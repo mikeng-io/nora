@@ -130,6 +130,22 @@ def render_culture(
     )
 
 
+def render_unit_culture(
+    culture: CultureRevision | None, *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """The `<unit_culture>` block: what the room's whole unit is like
+    (design/self-growth/10 §1, C3a). `None` while the unit has no account,
+    for `render_culture`'s reason: an empty block would say she looked and
+    found nothing."""
+    if culture is None or not culture.body.strip():
+        return None
+    return ContextBlock(
+        name="unit_culture",
+        attrs=(("written", _age(culture.written_at, now or datetime.now().astimezone())),),
+        body=escape(culture.body),
+    )
+
+
 class _HeadReader(Protocol):
     def head(self, *, key: str) -> Awaitable[CultureRevision | None]: ...
 

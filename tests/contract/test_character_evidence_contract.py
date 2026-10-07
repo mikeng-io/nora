@@ -115,3 +115,39 @@ async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_n
         rooms=ROOMS, person_id="ada", after=ids[6], limit=5,
     )
     assert nothing == [] and unmoved == ids[6]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def revisions(request: Any) -> AsyncIterator[Any]:
+    rows = [("room-a", 1), ("room-b", 2), ("room-c", 3), ("room-a", 4)]
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for key, at in rows:
+            fake.add_revision(key=key, written_at=at)
+        yield fake
+        return
+    from nora.infra.sql.culture import SqlCultureStore
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    try:
+        culture = SqlCultureStore(engine)
+        for key, at in rows:
+            await culture.append(key=key, body=f"{key} {at}", written_at=at,
+                                 established_by="test")
+        yield SqlCharacterEvidence(engine)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate culture, culture_revision cascade"))
+        await engine.dispose()
+
+
+async def test_a_units_evidence_is_its_rooms_revisions_counted_in_write_order(revisions):
+    keys = ["room-a", "room-b"]
+    assert await revisions.revision_count(keys=keys) == 3
+    assert await revisions.revision_count(keys=[]) == 0
+    got, cursor = await revisions.revisions_after(keys=keys, after=1, limit=5)
+    assert got == ["room-b", "room-a"] and cursor == 3
+    newest, cursor = await revisions.revisions_after(keys=keys, after=0, limit=1)
+    assert newest == ["room-a"] and cursor == 3
+    assert await revisions.revisions_after(keys=keys, after=3, limit=5) == ([], 3)

@@ -25,7 +25,7 @@ from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision
+from nora.domain.culture import CultureRevision, unit_culture_key
 from nora.domain.documents_context import DocumentsView
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -232,7 +232,7 @@ class TranscriptInjection:
             (transcript, card, self_card, tagger_card, standing, notes),
             presence,
             culture,
-            character,
+            (character, unit_culture),
             (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
@@ -245,7 +245,7 @@ class TranscriptInjection:
             ),
             self._presence(msg),
             self._culture(msg),
-            self._character(msg),
+            asyncio.gather(self._character(msg), self._unit_culture(msg)),
             asyncio.gather(
                 self._computer(msg),
                 self._documents(msg),
@@ -287,6 +287,7 @@ class TranscriptInjection:
             presence=presence,
             culture=culture,
             character=character,
+            unit_culture=unit_culture,
             computer=computer,
             documents=documents,
             subagents=subagents,
@@ -356,6 +357,22 @@ class TranscriptInjection:
             self._culture_reader, unit=convo.unit,
             members=self._room_members(msg), stage="tag_character",
             platform=msg.platform, metrics=self._metrics,
+        )
+
+    async def _unit_culture(self, msg: NormalizedMessage) -> CultureRevision | None:
+        """What this room's UNIT is like (design/self-growth/10, C3a), keyed
+        `unit_culture_key(unit)`, so it is read only in that unit's rooms.
+        Bounded, fail-soft and counted (`stage="tag_unit_culture"`) by
+        `read_culture`, like `_culture`."""
+        if self._culture_reader is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.unit:
+            return None
+        return await read_culture(
+            traced_read("culture", "head", self._culture_reader.head(
+                key=unit_culture_key(convo.unit))),
+            stage="tag_unit_culture", platform=msg.platform, metrics=self._metrics,
         )
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
