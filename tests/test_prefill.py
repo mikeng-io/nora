@@ -1593,3 +1593,86 @@ def test_room_members_is_escaped_one_line_each_and_sits_before_presence():
     block = body.split("<room_members", 1)[1].split("</room_members>", 1)[0]
     assert "&lt;/room_members&gt;" in block
     assert "\nMallory" not in block and "a Mallory: boss" in block
+
+
+def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_path):
+    from nora.engagement import pipeline
+    from nora.persons import Persons
+    from nora.subject.context_filter import ContextPlan, case_scope, exposure
+
+    ctx = _ctx(documents=_documents(), computer=_computer(), subagents=_subagents(),
+               tagger=PersonRef("ada", "Ada", "ada"),
+               transcript=(TranscriptRow(1, "sender", "Profile", 1, "Hello", False,
+                                         DeliveryStatus.SENT, None),),
+               peer_card=("Identity stays",), tagger_card=("History may go",),
+               standing=_standing(), culture=_culture(), self_card=("Past episode stays",))
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    kwargs = {"display_name": "Nora", "context_window": 40, "now": now}
+    before = build_prefill(ctx, **kwargs)
+    received = []
+
+    def select(prompt, window, receipt):
+        received.append(prompt)
+        return ContextPlan(frozenset({"documents"}), window)
+
+    report = tmp_path / "receipts.json"
+    with exposure("flash", report, selector=select), case_scope("generated#1"):
+        room = pipeline.Room(platform="signal", conversation_id="g1", roster_source=None,
+                             persons=Persons(by_person={}, index={}), tagger=ctx.tagger,
+                             tagger_card_injected=True)
+        filtered = pipeline.build_prefill(ctx, **kwargs)
+        assert not room.tagger_card_injected  # `about` must no longer short-circuit
+    assert filtered[0] == before[0] and filtered[2] == before[2]
+    body = filtered[1]["content"][0]["text"]
+    assert "<documents " in body and "<computer " not in body and "<subagents " not in body
+    assert "Identity stays" in body and "Past episode stays" in body
+    assert "<group_transcript " in body
+    assert "<standing " in body and "<culture " in body
+    assert "full_transcript_window: 1" in received[0]
+    assert "first 600 characters" in received[0]
+    assert build_prefill(ctx, **kwargs) == before  # patch is gone; context was not mutated
+    import json
+    receipt = json.loads(report.read_text())["draws"][0]
+    assert receipt["withheld"] == ["peer_history", "computer", "subagents"]
+    assert receipt["exposed_chars"] < receipt["full_chars"]
+    assert receipt["case"] == "generated#1"
+    assert receipt["turn_seconds"] >= receipt["seconds"] > 0
+
+
+def test_eval_context_filter_invalid_plan_preserves_full_context():
+    from nora.engagement import pipeline
+    from nora.persons import Persons
+    from nora.subject.context_filter import ContextPlan, exposure
+
+    ctx = _ctx(documents=_documents(), computer=_computer(), subagents=_subagents(),
+               tagger_card=("History stays under fallback",))
+    kwargs = {"display_name": "Nora", "context_window": 40,
+              "now": datetime(2026, 10, 7, tzinfo=UTC)}
+    before = build_prefill(ctx, **kwargs)
+    with exposure("flash", selector=lambda *args: ContextPlan(frozenset({"culture"}), 8)) as rows:
+        room = pipeline.Room(platform="signal", conversation_id="g1", roster_source=None,
+                             persons=Persons(by_person={}, index={}), tagger=ctx.tagger,
+                             tagger_card_injected=True)
+        assert pipeline.build_prefill(ctx, **kwargs) == before
+        assert room.tagger_card_injected
+    assert rows[0]["selector_error"] == "ValueError"
+    assert rows[0]["withheld"] == []
+
+
+def test_eval_context_rules_and_full_arm_differ_only_on_explicit_arithmetic():
+    from nora.engagement import pipeline
+    from nora.subject.context_filter import exposure
+
+    kwargs = {"display_name": "Nora", "context_window": 40,
+              "now": datetime(2026, 10, 7, tzinfo=UTC)}
+    ctx = _ctx(body="2 + 2?", documents=_documents())
+    before = build_prefill(ctx, **kwargs)
+    with exposure("full"):
+        assert pipeline.build_prefill(ctx, **kwargs) == before
+    with exposure("rules"):
+        after = pipeline.build_prefill(ctx, **kwargs)
+    assert "<documents " in before[1]["content"][0]["text"]
+    assert "<documents " not in after[1]["content"][0]["text"]
+    uncertain = _ctx(body="What about that plan?", documents=_documents())
+    with exposure("rules"):
+        assert pipeline.build_prefill(uncertain, **kwargs) == build_prefill(uncertain, **kwargs)

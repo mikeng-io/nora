@@ -68,9 +68,10 @@ def with_roster_senders(
     """The batch with each member's row carrying a sender id the roster
     resolves, as production's rows do (design 42 S1a).
 
-    The sandbox MINTS sender ids (`nora.subject.sandbox`, «Sender ids are
-    MINTED, never copied») and copies the real `person_id`. Production's
-    rows carry the member's real account id, and a scope-keyed adaptor names
+    The sandbox now seeds known humans with loaded roster accounts. This
+    projection also supports older or generated batches with minted sender ids
+    and a copied `person_id`. Production's rows carry the member's real account
+    id, and a scope-keyed adaptor names
     its batch through `Persons.name_transcript`, which keys on
     `(platform, sender_id)`, never on `person_id`. Against minted ids that
     projection resolves nobody, so an eval run would render the self-set

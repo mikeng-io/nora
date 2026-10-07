@@ -39,11 +39,11 @@ yet a port; it is one now (`01-boundaries.md` §3).
 
 WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
 
-- **Sender ids are MINTED, never copied.** `Message` has no `sender_id`
-  field, so `_speakers()` assigns synthetic ones and a real member's E.164
-  cannot reach the sandbox through here. `person_id` IS copied, because it is
-  an `identity.toml` handle rather than an account, and it is the key the
-  transcript renders a canonical name from.
+- **Source sender ids are never copied.** `Message` has no `sender_id` field.
+  Known human speakers use an account from the subject's loaded roster, so
+  production's platform-account name projection works. Unknown speakers and
+  Nora's own rows retain minted ids. `person_id` is copied to identify the
+  roster person; it is not itself the name projection's lookup key.
 - **Media is NOT reconstructed.** `snapshot.py` returns `messages.body` as
   stored, which since issue #116 carries a handle (`[image a3f2c1]`) rather
   than a description; `Message.media` would synthesise a `MediaBlob` with a
@@ -842,8 +842,9 @@ def judge_source(
     third-party model call and R-18 applies to it as to her.
 
     `rows` are the SANDBOX's rows, read back after seeding — not the source's.
-    The sandbox mints sender ids (see the module docstring), and a speaker
-    resolved from the real id could name somebody the model was never shown.
+    The sandbox uses its loaded roster for known humans (see the module
+    docstring); projecting the source's rows instead could still name somebody
+    the model was never shown.
 
     Fails closed on a split that does not come back one element per row,
     rather than handing the judge a source whose lines have shifted speakers.

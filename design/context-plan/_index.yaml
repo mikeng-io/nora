@@ -1,0 +1,85 @@
+---
+kind: design_index
+title: Context plan — what the tag turn is allowed to look at, and whether a decision model should decide
+  it
+description: 'Dynamic context exposure for accepted tag turns: current source-grounded contract, October
+  7 iGPU/T4/DeepSeek probes, fixed eval sender-name projection and experiment-only replay filter. Historical
+  October 5 CPU-only conclusions are marked superseded. Downstream Nora replay and production benefit
+  are not yet measured.'
+tags:
+- nora
+- context
+- prompt-blocks
+- decision-model
+- jev
+- laya
+- benchmark
+- evals
+- tev1
+- deepseek
+- igpu
+- context-transfer
+timestamp: '2026-10-07'
+status: proposed
+governance: operator-directed
+origin: "Operator 2026-10-05 (Discord, #nora thread, \"strand decision 2b - benchmark the performance\
+  \ on this machine with ollama cloud with iGPU\"). Two asks in one message: (1) inspect the CURRENT\
+  \ Nora source and design docs, challenge the idea, and produce a design recommendation for a dynamic\
+  \ context selection / context planning layer before the main turn, with a fast Decision API such as\
+  \ JEV or Laya as the selector — do NOT implement; (2) benchmark what a decision model actually does\
+  \ on this machine, ollama-cloud with iGPU, for reference.\n Operator 2026-10-07 subsequently authorized\
+  \ DeepSeek V4.1 Flash through OmniRoute/Ollama Cloud, fixing eval sender-name projection and adding\
+  \ an experiment-only context filter. Latest instruction: save all as a design bundle, commit the isolated\
+  \ worktree and provide a context-transfer prompt."
+members:
+- 00-overview.md
+- 01-the-seam.md
+- 02-what-is-selectable.md
+- 03-measurement-decision-models.md
+- 04-sequencing.md
+- 05-open-for-the-operator.md
+- 06-current-recommendation.md
+- 07-current-measurements.md
+- 08-experiment-and-handoff.md
+edges:
+- src: 00-overview
+  dst: 01-the-seam
+  rel: sequences
+  provenance: asserted
+- src: 00-overview
+  dst: 03-measurement-decision-models
+  rel: informs
+  provenance: asserted
+- src: 01-the-seam
+  dst: 02-what-is-selectable
+  rel: constrained_by
+  provenance: asserted
+- src: 02-what-is-selectable
+  dst: ../context-assembly/04-every-occasion.md
+  rel: extends
+  provenance: asserted
+- src: 03-measurement-decision-models
+  dst: 04-sequencing
+  rel: informs
+  provenance: asserted
+- src: 06-current-recommendation
+  dst: 07-current-measurements
+  rel: constrained_by
+  provenance: asserted
+- src: 06-current-recommendation
+  dst: 08-experiment-and-handoff
+  rel: sequences
+  provenance: asserted
+scope:
+  v1:
+  - current source-grounded architecture and separate ContextPlan/EngageDecision responsibilities
+  - complete synthetic probe evidence, including cache/warmup exclusions
+  - existing eval sender-name fix and opt-in full/rules/Flash exposure comparison
+  - full retrieval/transcript and mandatory context preserved; peer-history exposure aligns with about
+  - local committed checkpoint and continuation instructions; replay not yet run
+  deferred:
+  - production router wiring, contract and config
+  - dynamic transcript extent and reference remapping
+  - selective retrieval pending measured critical-path benefit
+  - reply-quality conclusions pending a functioning judge
+  - hardware purchase and shared ASR/TTS/gate contention benchmarks
