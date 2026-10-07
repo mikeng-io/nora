@@ -160,8 +160,11 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
             if day == 0:
                 # Two sends naming nobody that nobody answers: only the one whose brief asked is
                 # `silent`. Inside the day loop so their ids stay below the post-watermark rows.
+                # The `ask` turn sends two parts, both carrying the intent as
+                # the Deliverer writes it; only the turn's last part keeps it.
                 await message(_t(0, 14), nora=True, raw='{"tag_id": "t", "intent": "ask"}')
-                await message(_t(0, 15), nora=True, raw='{"tag_id": "t"}')
+                await message(_t(0, 14.5), nora=True, raw='{"tag_id": "t", "intent": "ask"}')
+                await message(_t(0, 15), nora=True, raw='{"tag_id": "u"}')
 
 
 def _runner(engine, stimuli=None, events=None) -> RollupRunner:
@@ -233,7 +236,13 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
             responses[_t(0, 10)]["edits"]) == (1, 1, 1)
     assert responses[_t(0, 12)]["outcome"] == "silent"
     # The brief's intent rides on the send's own Record row (L0): `ask` expected an answer.
-    assert (responses[_t(0, 14)]["intent"], responses[_t(0, 14)]["outcome"]) == ("ask", "silent")
+    # One expectation per turn: the last part of a two-part `ask` is silent, the first is not.
+    assert (responses[_t(0, 14.5)]["intent"], responses[_t(0, 14.5)]["outcome"]) == (
+        "ask", "silent",
+    )
+    assert (responses[_t(0, 14)]["intent"], responses[_t(0, 14)]["outcome"]) == (
+        None, "unanswered",
+    )
     assert (responses[_t(0, 15)]["intent"], responses[_t(0, 15)]["outcome"]) == (
         None, "unanswered",
     )

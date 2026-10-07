@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -342,6 +342,8 @@ class SqlRollupStore:
         members = set(unit.members)
         messages: list[MessageFact] = []
         sends: dict[int, SendFact] = {}
+        #: Sends grouped by the turn (`tag_id`) that delivered them.
+        turn_sends: dict[str, list[int]] = {}
         evidence: list[ResponseEvidence] = []
         reply_to_send: dict[int, int] = {}
         seen: set[int] = set()
@@ -360,6 +362,9 @@ class SqlRollupStore:
                     conversation_id=r.conversation_id, ts=r.ts, named=mentioned,
                     intent=_send_intent(r.send_raw),
                 )
+                turn = _send_tag(r.send_raw)
+                if turn is not None:
+                    turn_sends.setdefault(turn, []).append(r.id)
                 continue
             person = subject_of.get(r.person_id) if r.person_id else None
             if person is None or person not in members:
@@ -402,6 +407,13 @@ class SqlRollupStore:
                     send_id=send_id, person_id=by_reply[r.message_id].person_id,
                     ts=r.ts, kind="edit",
                 ))
+        # ONE expectation per turn: a multi-part fire turn writes its brief's
+        # intent on every part, but only its LAST send carries it here, so
+        # the earlier parts of one `ask` are not each counted `silent`.
+        for ids in turn_sends.values():
+            for earlier in sorted(ids)[:-1]:
+                if sends[earlier].intent is not None:
+                    sends[earlier] = replace(sends[earlier], intent=None)
         return messages, reactions, list(sends.values()), evidence
 
     async def health_rows(
@@ -636,6 +648,15 @@ async def _diff_apply(
             )
             changed += 1
     return changed
+
+
+def _send_tag(raw_json: str | None) -> str | None:
+    """The `tag_id` of the turn that delivered a send, from its raw_json, or None."""
+    try:
+        tag = json.loads(raw_json).get("tag_id") if raw_json else None
+    except (ValueError, AttributeError):
+        return None
+    return tag if isinstance(tag, str) and tag else None
 
 
 def _send_intent(raw_json: str | None) -> str | None:
