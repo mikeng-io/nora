@@ -326,6 +326,13 @@ def test_a_message_mentioning_someone_else_soon_after_is_not_a_follow():
     assert len(_follows([_send(1, 0)], [_msg(5, 30, other=True, names=True)])) == 1
 
 
+def test_a_quote_of_another_members_message_is_read_like_a_mention_of_them():
+    """The store sets `mentions_other` for a quote of any non-Nora message."""
+    assert _follows([_send(1, 0)], [_msg(5, 30, other=True)]) == []
+    assert _follows([_send(1, 0)], [_msg(5, 300, other=True, names=True)]) == [
+        (1, "a", 300 * _S, "follow")]
+
+
 def test_a_message_before_any_send_or_in_another_room_follows_nothing():
     assert _follows([_send(1, 100)], [_msg(5, 50)]) == []
     assert _follows([_send(1, 0)], [_msg(5, 30, room="signal:other")]) == []

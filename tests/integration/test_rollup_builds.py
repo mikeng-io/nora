@@ -292,6 +292,13 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url)
         await message(5030, person="b", body="sure")                    # answers its last part
         await message(6000, nora=True, tag="t9")
         await message(6020, person="a", body="sure", quoted=6000)       # a quote: a reply
+        await message(6500, person="b", body="anyone?")                 # 500 s: no send's follow
+        await message(7000, nora=True, tag="t10")
+        await message(7030, person="a", body="yes", quoted=6500)        # a reply to b: not a follow
+        await message(8000, nora=True, tag="t11")
+        await message(8030, person="a", body="thanks nora", quoted=6500)  # quotes b, names her
+        await message(9000, nora=True, tag="t12")
+        await message(9500, person="b", body="hi", mentions={"nora"})   # 500 s, her account
         await message(4 * 3600, person="b", body="later")               # the Record's clock
 
     rollups = SqlRollupStore(engine)
@@ -319,6 +326,9 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url)
         5000: ("unanswered", 0, 0, []),
         5005: ("responded", 0, 1, ["b"]),
         6000: ("responded", 1, 0, ["a"]),
+        7000: ("unanswered", 0, 0, []),
+        8000: ("responded", 0, 1, ["a"]),
+        9000: ("responded", 0, 1, ["b"]),
     }
     await engine.dispose()
 

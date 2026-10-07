@@ -366,7 +366,7 @@ class SqlRollupStore:
         #: Her own account ids per platform, and the members' messages that
         #: quote none of her sends (what `unquoted_follows` reads).
         nora_ids: dict[str, set[str]] = {}
-        unquoted: list[tuple[Any, str, frozenset[str]]] = []
+        unquoted: list[tuple[Any, str, frozenset[str]]] = []  # (row, person, mentions)
         seen: set[int] = set()
         for r in rows:
             if r.id in seen:
@@ -438,7 +438,10 @@ class SqlRollupStore:
                 ts=r.ts,
                 names_nora=bool(ids & nora_ids.get(r.platform, set()))
                 or any(is_tagged(r.body or "", word) for word in nora_names),
-                mentions_other=bool(ids) and not ids & nora_ids.get(r.platform, set()),
+                # A quote of anyone else's message is a reply to THEM, like a
+                # mention of someone else: never a follow inside the window.
+                mentions_other=r.quoted_ts is not None
+                or (bool(ids) and not ids & nora_ids.get(r.platform, set())),
             )
             for r, person, ids in unquoted
         ]

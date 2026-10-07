@@ -767,7 +767,8 @@ class FollowCandidate:
     her sends (a quote is a `reply`, counted once). `names_nora` is the
     message naming her: a structured mention that resolves to her own account,
     or one of `FOLLOW_NAMES` in its body. `mentions_other` is a structured
-    mention that does not resolve to her."""
+    mention that does not resolve to her, or a quote of someone else's
+    message (a reply to that person)."""
 
     id: int
     person_id: str

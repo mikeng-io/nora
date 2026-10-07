@@ -174,8 +174,10 @@ free text instead of `tell`/`ask`.
 without quoting her, so a quote-only response left answered sends `unanswered`
 (and an `ask` `silent`). A member's message in the same room counts as a
 `follow` of her send when it quotes none of her sends and either (a) comes
-within `follow_window_seconds` (120 s) of her latest send in that room and
-carries no structured mention of anyone but her, or (b) at any time before the
+within `follow_window_seconds` (120 s) of her latest send in that room, carries
+no structured mention of anyone but her and does not quote anyone else's
+message (a quote of another member is a reply to that member, like a mention of
+them), or (b) at any time before the
 response window closes names her: a structured mention resolving to her own
 account in that room, or one of `follow_names` (`nora`) as a whole word,
 case-insensitive, in the body (`nora.tag.is_tagged`'s rules). It counts for ONE
@@ -195,7 +197,7 @@ message that mentions only her under such an id reads as mentioning someone
 else. The rule is a measurement, not a law: 14 days of the friends unit and 60
 labelled follow-up messages, one labeller; inside 120 s without a mention of
 anyone else 33 answered her, 3 did not and 11 were ambiguous (design
-self-growth/40 §6). Changing it bumps `CODE_VERSION` (`rollup-2a.2`) and the
+self-growth/40 §6). Changing it bumps `CODE_VERSION` (`rollup-2a.3`) and the
 parameters hash, so the next start rebuilds.
 
 ## 4. Stimuli the Rollup raises
