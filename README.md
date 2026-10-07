@@ -192,7 +192,8 @@ Notable knobs:
   conversation.
 - `store.max_per_conversation` (500) — rolling window per conversation; older rows are
   pruned after each insert.
-- `store.context_window` (40) — how many recent messages go into the LLM prompt.
+- `store.context_window` (40) — how many recent messages are read: `who_said` searches all of them and a reply's quote grows the read from it.
+- `store.prompt_window` (20) — how many of those the tag prompt's `<group_transcript>` shows; never cuts below a quoted parent.
 - `doctrine.dir` (`nora/doctrine`) — where the doctrine `.md` files live.
 - `doctrine.reload` (`mtime`) — `mtime` re-stats doctrine files on every tag and reparses on
   change; `startup` parses once and never again.

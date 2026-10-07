@@ -101,6 +101,9 @@ class MentionRenderer:
             ctx,
             message=message,
             transcript=tuple(self._row(row, platform) for row in ctx.transcript),
+            lookup_transcript=tuple(
+                self._row(row, platform) for row in ctx.lookup_transcript
+            ),
         )
 
     def _row(self, row: TranscriptRow, platform: str) -> TranscriptRow:

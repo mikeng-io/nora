@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "A tagged turn now shows Nora the last 20 messages of the room instead of 40, so each model call carries a smaller prompt.",
+  "details": [
+    "A reply to a message further back than 20 still shows that message, and still reads past the old window to find it.",
+    "Who-said lookups still search the last 40 messages.",
+    "The depth is the new `[store] prompt_window` key (default 20, never above `context_window`)."
+  ],
+  "limitations": [
+    "Casual references to something said 21 to 40 messages ago are no longer in front of her unless she loads the transcript."
+  ]
+}

@@ -472,6 +472,11 @@ database_url_env = "DATABASE_URL"
 data_dir = "~/workspace/nora/data"
 max_per_conversation = 500
 context_window = 40
+# How many of those rows the tag prompt's <group_transcript> shows (default 20,
+# so leaving it out is the same). `context_window` stays the read depth that
+# `who_said` searches; a quoted parent inside it is never cut off. Must be
+# <= context_window.
+prompt_window = 20
 # How far a reply's quote may pull the transcript window back, past
 # `context_window`, when the quoted message would otherwise fall outside it
 # (design/11 §2.5, amended 2026-09-22). The window is re-sized to reach the
