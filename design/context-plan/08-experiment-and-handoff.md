@@ -208,3 +208,29 @@ No production contract, transcript reduction, selective retrieval, deployment or
 GPU installation is authorized by this checkpoint. Reopen those choices only on
 new measurements. The next session must first read the current source and this
 bundle; previous chat architecture is not an authority.
+
+## 2026-10-07 live replay result, and what shipped instead
+
+Replay on norty (`~/replay-router`, recorded tag turns against the deployed
+alias), two selector arms over the 216 turns:
+
+| arm | withheld something | first-call input | notes |
+|---|---|---|---|
+| default-include selector | 11 / 216 | about unchanged | nearly nothing cut |
+| inverted (default-exclude) | 189 / 216 | 18.5k to 15.6k tokens (-16%) | costs about 2.6k selector tokens and 1.7 s serially |
+
+The inverted arm cuts first-call input, but the selector call is paid in series
+and later calls in the turn hit the prefix cache either way, so the net is a
+wash. **A model router does not pay at this volume; a rule-based cut does.**
+Two rule-based cuts follow from it and ship without a selector: the WHO speaker
+set of `<character>` (#753) and this node's transcript depth.
+
+**Shipped: `[store] prompt_window = 20`** (default in code). The tag prompt's
+`<group_transcript>` shows the newest 20 rows of the 40 read, reaching further
+back only to include a quoted parent. `context_window` stays the read depth, so
+`who_said` still searches 40 and DEC-195's quote growth (cap
+`context_window * quote_window_multiplier`) is unchanged. Measured the same day
+on norty: median `<group_transcript>` 5,331 characters at 40 rows against 2,513
+at the newest 20 (119 recent `engagement` traces, all full at 40; about 2,800
+characters, 52% of the block, of a ~63k-character first call); 11 of 622
+recorded replies in 30 days (1.8%) quote a row more than 20 back, 5 more than 40.

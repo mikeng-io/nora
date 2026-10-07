@@ -2026,3 +2026,17 @@ def test_subagent_on_refuses_to_load_without_the_poller_or_the_dreamer(toml_path
     toml_path.write_text(head + sep + tail)
     with pytest.raises(ConfigError, match=r"\[subagent\] enabled = true needs"):
         load(toml_path)
+
+
+def test_prompt_window_defaults_to_20_clamps_to_a_small_read_and_refuses_an_explicit_excess():
+    from nora.config import StoreConfig
+
+    def store(**extra):
+        raw = {"data_dir": "data", "max_per_conversation": 500, "context_window": 40, **extra}
+        return StoreConfig.model_validate(raw, context={"base": Path("base")})
+
+    assert store().effective_prompt_window == 20
+    assert store(context_window=10).effective_prompt_window == 10   # omitted key still loads
+    assert store(prompt_window=8).effective_prompt_window == 8
+    with pytest.raises(ValueError, match="prompt_window"):
+        store(prompt_window=41)
