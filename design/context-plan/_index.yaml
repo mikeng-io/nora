@@ -4,8 +4,8 @@ title: Context plan — what the tag turn is allowed to look at, and whether a d
   it
 description: 'Dynamic context exposure for accepted tag turns: current source-grounded contract, October
   7 iGPU/T4/DeepSeek probes, fixed eval sender-name projection and experiment-only replay filter. Historical
-  October 5 CPU-only conclusions are marked superseded. Downstream Nora replay and production benefit
-  are not yet measured.'
+  October 5 CPU-only conclusions are marked superseded. PARKED 2026-10-07 by the operator after the
+  first replay: no arm withheld anything in the sandbox, so Nora benefit is unmeasured (node 08).'
 tags:
 - nora
 - context
@@ -20,7 +20,7 @@ tags:
 - igpu
 - context-transfer
 timestamp: '2026-10-07'
-status: proposed
+status: parked
 governance: operator-directed
 origin: "Operator 2026-10-05 (Discord, #nora thread, \"strand decision 2b - benchmark the performance\
   \ on this machine with ollama cloud with iGPU\"). Two asks in one message: (1) inspect the CURRENT\
@@ -76,7 +76,7 @@ scope:
   - complete synthetic probe evidence, including cache/warmup exclusions
   - existing eval sender-name fix and opt-in full/rules/Flash exposure comparison
   - full retrieval/transcript and mandatory context preserved; peer-history exposure aligns with about
-  - local committed checkpoint and continuation instructions; replay not yet run
+  - local committed checkpoint and continuation instructions; first replay run 2026-10-07, blind (no block withheld); parked
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
