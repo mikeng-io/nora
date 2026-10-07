@@ -48,7 +48,10 @@ Outside these, and neither the Record, the Rollup nor a tier:
 
 - **Doctrine** — authored by the operator (`nora/doctrine/`). Never derived,
   never changed by Nora in whole or in part, changed only when the humans
-  all agree, and it wins over anything derived about her.
+  all agree, and it wins over anything derived about her. **AMENDED 2026-10-07
+  (DEC-291):** what is *given* narrows to its law bucket; until the cut the whole
+  doctrine is still served and still wins, and the law subset is what the
+  doctrine check reads ([self-growth/31](../self-growth/31-doctrine-audit.md)).
 - **Memory** — Honcho, and only Honcho: a third party's derived model of
   people. Read as a hint, never cited. `remember` still writes a person's own
   settled claim about themselves into it.

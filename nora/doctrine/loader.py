@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..domain.prompt import escape_attr
 from ..instructions.frontmatter import parse_document
 from ..instructions.reload import DirectoryWatcher, Loaded
@@ -570,6 +572,189 @@ def check_authority_graph(sections: Sequence[DoctrineSection]) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# The sort: law, practice, character (design/self-growth/30-doctrine-sort.md).
+#
+# Every doctrine section is classified in a SIDE TABLE, `classification.yaml`, kept
+# in the doctrine folder and read only here. A side table rather than a marker in
+# the `.md` files because the assembled doctrine her turns read must not move: the
+# scan above is `**/*.md`, so the table is never parsed as doctrine, and no body,
+# `description` or digest changes. Nothing in the running process reads the table
+# unless `DoctrineStore.law_rules` is called, and a reload never validates it: a
+# live edit to a `.md` on the deploy host must not be refused because the table
+# lags it. The gate is `tests/architecture/test_doctrine_is_classified.py`.
+# ---------------------------------------------------------------------------
+
+CLASSIFICATION_FILE = "classification.yaml"
+BUCKETS = ("law", "practice", "character")
+LAW = "law"
+
+# Audiences with no unit behind them: the `self` block (Character) and Lessons are
+# per unit, so neither reaches these, and what the doctrine says there about
+# character or practice stays as an authored minimum.
+_NO_UNIT_AUDIENCES = frozenset({"summons"})
+
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+
+
+@dataclass(frozen=True)
+class Rule:
+    """One classified stretch of doctrine text: a whole section, or one part of it."""
+
+    file: str                  # path under the doctrine folder, posix: `rooms/conduct.md`
+    section: str               # the heading's text
+    bucket: str                # one of BUCKETS
+    text: str                  # exactly the doctrine text, a substring of the file
+    line: int                  # 1-based line in `file` where `text` starts
+    reason: str
+    no_unit_surface: bool      # non-law text in a file that also reaches a surface with no unit
+
+
+def _section_blocks(body: str) -> dict[str, str]:
+    """Heading text -> the text under it, up to the next heading, stripped.
+
+    Headings with no text of their own are left out: they carry no rule. Raises
+    `DoctrineError` on a repeated heading, which would make an entry ambiguous, and
+    on text before the first heading, which no entry could name.
+    """
+    blocks: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw in body.splitlines():
+        match = _HEADING_RE.match(raw)
+        if match:
+            current = match.group(1)
+            if current in blocks:
+                raise DoctrineError(f"heading {current!r} appears twice in one file")
+            blocks[current] = []
+        elif current is not None:
+            blocks[current].append(raw)
+        elif raw.strip():
+            raise DoctrineError("text before the first heading belongs to no section")
+    return {h: t for h, lines in blocks.items() if (t := "\n".join(lines).strip())}
+
+
+def _load_table(path: Path) -> dict[str, Any]:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise DoctrineError(f"{path.name}: cannot read the classification: {exc}") from exc
+    files = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(files, dict):
+        raise DoctrineError(f"{path.name}: expected a top-level `files:` mapping")
+    return files
+
+
+def classify(
+    doctrine_dir: Path, sections: Sequence[DoctrineSection]
+) -> tuple[Rule, ...]:
+    """Every section of every file, cut into `Rule`s by the side table.
+
+    **Fail-closed and exhaustive, reporting every gap at once.** A section with no
+    entry, an entry whose heading or anchor no longer resolves (a reworded rule), a
+    file the table does not know, an unknown bucket and an empty reason are all one
+    `DoctrineError`. A partial answer would read as "the law is X" when it is
+    "the law is X, as far as the table reaches".
+    """
+    root = Path(doctrine_dir)
+    table = _load_table(root / CLASSIFICATION_FILE)
+    problems: list[str] = []
+    rules: list[Rule] = []
+    seen: set[str] = set()
+    for section in sections:
+        rel = section.path.relative_to(root).as_posix()
+        seen.add(rel)
+        entries = table.get(rel)
+        if not isinstance(entries, dict):
+            problems.append(f"{rel}: no entry in {CLASSIFICATION_FILE}")
+            continue
+        raw = section.path.read_text(encoding="utf-8")
+        try:
+            blocks = _section_blocks(section.body)
+        except DoctrineError as exc:
+            problems.append(f"{rel}: {exc}")
+            continue
+        no_unit = bool(_NO_UNIT_AUDIENCES & set(section.applies_to))
+        for heading in blocks.keys() - entries.keys():
+            problems.append(f"{rel} § {heading}: not classified")
+        for heading in entries.keys() - blocks.keys():
+            problems.append(f"{rel} § {heading}: classified, but no such section text")
+        for heading, block in blocks.items():
+            entry = entries.get(heading)
+            if not isinstance(entry, dict):
+                continue
+            parts = entry.get("parts")
+            if parts is None:
+                parts = [{"starts": None, **entry}]
+            elif "bucket" in entry or not isinstance(parts, list) or not parts:
+                problems.append(f"{rel} § {heading}: use `bucket` or `parts`, not both or neither")
+                continue
+            cuts: list[tuple[int, dict[str, Any]]] = []
+            last = -1
+            for part in parts:
+                starts = part.get("starts")
+                if starts is None:
+                    at = 0
+                elif block.count(str(starts)) != 1:
+                    problems.append(
+                        f"{rel} § {heading}: anchor {str(starts)[:40]!r} occurs "
+                        f"{block.count(str(starts))} times, not once"
+                    )
+                    break
+                else:
+                    at = block.index(str(starts))
+                if not cuts and at != 0:
+                    problems.append(
+                        f"{rel} § {heading}: the first part must start at the section's start"
+                    )
+                    break
+                if at <= last:
+                    problems.append(f"{rel} § {heading}: part {str(starts)[:40]!r} is out of order")
+                    break
+                last = at
+                cuts.append((at, part))
+            else:
+                heading_at = re.search(
+                    rf"^#{{1,6}}\s+{re.escape(heading)}\s*$", raw, re.MULTILINE
+                ).start()  # type: ignore[union-attr]
+                for i, (at, part) in enumerate(cuts):
+                    end = cuts[i + 1][0] if i + 1 < len(cuts) else len(block)
+                    text = block[at:end].strip()
+                    bucket = part.get("bucket")
+                    reason = str(part.get("reason") or "").strip()
+                    if bucket not in BUCKETS:
+                        problems.append(
+                            f"{rel} § {heading}: bucket {bucket!r} is not one of {BUCKETS}"
+                        )
+                        continue
+                    if not reason:
+                        problems.append(f"{rel} § {heading}: no reason given")
+                        continue
+                    start_at = raw.index(text, heading_at)
+                    rules.append(Rule(
+                        file=rel, section=heading, bucket=bucket, text=text,
+                        line=raw.count("\n", 0, start_at) + 1, reason=reason,
+                        no_unit_surface=no_unit and bucket != LAW,
+                    ))
+    for rel in table.keys() - seen:
+        problems.append(f"{rel}: in {CLASSIFICATION_FILE}, but no such doctrine file")
+    if problems:
+        raise DoctrineError(
+            "the doctrine is not fully classified:\n  " + "\n  ".join(sorted(problems))
+        )
+    return tuple(rules)
+
+
+def law_text(rules: Iterable[Rule]) -> str:
+    """The law subset as one string, each rule headed by where it lives.
+
+    The header (`file:line § section`) is what a tension row quotes (55-self §4);
+    the text under it is the doctrine's own words, unedited.
+    """
+    return "\n\n".join(
+        f"[{r.file}:{r.line} § {r.section}]\n{r.text}" for r in rules if r.bucket == LAW
+    )
+
+
 class DoctrineStore:
     def __init__(self, dir: Path, *, strict: bool = True, reload: str = "mtime",
                  canary: str = "", display_name: str = "Nora", trigger: str = "",
@@ -694,6 +879,17 @@ class DoctrineStore:
             f"canary: {self._canary}\n"
             "</runtime_context>"
         )
+
+    def rules(self) -> tuple[Rule, ...]:
+        """Every doctrine rule with its bucket. Raises `DoctrineError` if any
+        section is unclassified. Reads the side table on each call: nothing calls
+        this on a hot path (ponytail: cache on the watcher generation if one does)."""
+        return classify(self._dir, self._current_sections())
+
+    def law_rules(self) -> tuple[Rule, ...]:
+        """The law subset: what the doctrine check (design/self-growth/40-lessons
+        §4) reads. Nothing in a turn calls this yet."""
+        return tuple(r for r in self.rules() if r.bucket == LAW)
 
     def get(self, *, applies_to: str = "tag") -> Doctrine:
         sections = self._current_sections()
