@@ -721,8 +721,18 @@ class StoreConfig(BaseModel):
     # parent inside the read window is never cut off: the render reaches back
     # to it. Measured live: the 40-row block is ~5.3k characters of a ~63k
     # prompt, and a selector over it kept 8 rows on 206 of 216 turns. The
-    # default lives in code, so a config.toml that omits the key gets 20.
-    prompt_window: int = Field(default=20, ge=1)
+    # default (20, clamped to `context_window`) lives in code, so a config.toml
+    # that omits the key gets it; an explicit value above `context_window` is refused.
+    prompt_window: int | None = Field(default=None, ge=1)
+
+    @property
+    def effective_prompt_window(self) -> int:
+        """Rows the tag prompt shows: the configured `prompt_window`, or 20 when
+        the key is omitted, never more than `context_window` (so a config that
+        sets only a small `context_window` still loads). An EXPLICIT value above
+        `context_window` is refused at load."""
+        return min(20 if self.prompt_window is None else self.prompt_window,
+                   self.context_window)
     # Whether the retention sweep runs AT ALL. `max_per_conversation` is the
     # window when it does; this is the switch, and the two are separate keys on
     # purpose — «keep everything» is not expressible as a number. Widening the
@@ -746,7 +756,7 @@ class StoreConfig(BaseModel):
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> StoreConfig:
         _resolve_context_field(self, "data_dir", info)
-        if self.prompt_window > self.context_window:
+        if self.prompt_window is not None and self.prompt_window > self.context_window:
             raise ValueError(
                 f"[store] prompt_window ({self.prompt_window}) cannot exceed "
                 f"context_window ({self.context_window}): it is a slice of what "

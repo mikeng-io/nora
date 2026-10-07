@@ -3125,7 +3125,8 @@ async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
 
     class _Spy(ToolRegistry):
         def surface(self, **kw):
-            seen["lookup"] = tuple(r.body for r in kw["transcript"])
+            seen["bound"] = tuple(r.body for r in kw["transcript"])
+            seen["lookup"] = tuple(r.body for r in kw["lookup_window"])
             return super().surface(**kw)
 
     audit = FakeRecordStore()
@@ -3149,4 +3150,5 @@ async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
     await _drain(background)
 
     assert runner.seen_transcripts[0] == ("m8", "m9", "m10", "m11")      # the prompt: 4
+    assert seen["bound"] == ("m8", "m9", "m10", "m11")                   # #n / reply_to: shown
     assert seen["lookup"] == tuple(f"m{i}" for i in range(2, 12))        # who_said: all 10

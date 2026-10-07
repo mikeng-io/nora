@@ -957,4 +957,4 @@ def test_the_composition_root_hands_the_configured_prompt_window_to_the_assemble
         example_config, audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
         metrics=Metrics(), policy=permissive_policy(),
     )
-    assert assembler._prompt_window == example_config.store.prompt_window == 20
+    assert assembler._prompt_window == example_config.store.effective_prompt_window == 20

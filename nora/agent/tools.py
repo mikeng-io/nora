@@ -4475,6 +4475,7 @@ def build_tool_specs(
     question: str = "",
     context_window: int = 40,
     transcript: tuple[TranscriptRow, ...] | None = None,
+    lookup_window: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     fire_turn: bool = False,
     dream_adaptor: str = "",
@@ -4636,10 +4637,12 @@ def build_tool_specs(
     `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
     a room policy cannot name, which is `unavailable` rather than a guess.
 
-    `transcript` is `who_said`'s whole world (DEC-146): the window the prefill
-    was read from (`TagContext.lookup_transcript` when `[store] prompt_window`
-    shows fewer rows than were read, else the `TagContext.transcript` tuple
-    `nora.agent.prefill._transcript_block` rendered `<group_transcript>` from),
+    `transcript` is the window the prefill SHOWED (`TagContext.transcript`,
+    what `nora.agent.prefill._transcript_block` numbered `#1..#N`): `send_reply`'s
+    `reply_to` and a note's `[#n]` index exactly these rows and nothing deeper.
+    `lookup_window` is the deeper read (`TagContext.lookup_transcript`, when
+    `[store] prompt_window` shows fewer rows than were read) and is `who_said`'s
+    alone, DEC-146's whole world, falling back to `transcript`. Both are
     passed in rather than re-read. That is
     comprehend-once — the window is interpreted at assembly and every consumer
     computes on that one fixed model, so the tool cannot disagree with the block
@@ -4710,6 +4713,11 @@ def build_tool_specs(
     # collapse here because they answer identically (see the docstring) — the
     # branch that tells them apart would be a distinction with no consequence.
     bound_window: tuple[TranscriptRow, ...] = tuple(transcript or ())
+    # What `who_said` searches: the deeper read when `[store] prompt_window`
+    # shows fewer rows than were read, else the shown rows. NEVER what `#n` /
+    # `reply_to` / a note citation index: those number the SHOWN rows, and
+    # resolving them against a deeper tuple quotes an unrelated older message.
+    lookup_rows: tuple[TranscriptRow, ...] = tuple(lookup_window or bound_window)
 
     def _now_ms() -> int:
         """Epoch milliseconds off the SAME clock every other tool here reads.
@@ -4739,7 +4747,7 @@ def build_tool_specs(
         """
         # `words`, not `query`/`text`, and one argument only (DEC-24). Which
         # conversation, which messages, how far back and how many to return are
-        # all values Nora already holds — `bound_window` IS the answer to every
+        # all values Nora already holds — `lookup_rows` IS the answer to every
         # one of them — so none of them appears in the schema. A `limit` here
         # would be the shape DEC-24 exists to forbid: a number the model must
         # invent on every call, that nothing downstream could honour better than
@@ -4762,9 +4770,9 @@ def build_tool_specs(
         # speech. Counts and a length are what re-derive the call.
         with span(
             "tool.who_said",
-            **{"nora.tool": "who_said", "nora.who_said.window_rows": len(bound_window)},
+            **{"nora.tool": "who_said", "nora.who_said.window_rows": len(lookup_rows)},
         ):
-            if not bound_window:
+            if not lookup_rows:
                 # `unavailable`, and this is the R-27 branch that matters most
                 # here. An empty window is not «nobody said that» — it is «there
                 # was nothing to read», and the two are indistinguishable at this
@@ -4797,7 +4805,7 @@ def build_tool_specs(
             hits = [
                 {"who": _speaker(row), "line": row.body}
                 | ({"was": row.edit.was} if row.edit is not None else {})
-                for row in bound_window
+                for row in lookup_rows
                 if needle and (
                     needle in _said(row.body)
                     or (row.edit is not None and needle in _said(row.edit.was or ""))
@@ -4805,13 +4813,13 @@ def build_tool_specs(
             ]
             if not hits:
                 # `nothing_found` is a real claim here and it is safe to make:
-                # the window was READ (`bound_window` is non-empty) and the words
+                # the window was READ (`lookup_rows` is non-empty) and the words
                 # are not in it. That is the whole difference from the branch
                 # above, and it is why the emptiness check comes first.
                 annotate(**{
                     "nora.tool.status": "nothing_found", "nora.who_said.matches": 0,
                 })
-                _record(metrics, "who_said", "nothing_found", rows=len(bound_window))
+                _record(metrics, "who_said", "nothing_found", rows=len(lookup_rows))
                 return {
                     "status": "nothing_found", **_asked_about(words),
                     "note": "Nobody in the messages you can see said that. Do not put "
@@ -4821,7 +4829,7 @@ def build_tool_specs(
                 }
             annotate(**{"nora.tool.status": "ok", "nora.who_said.matches": len(hits)})
             _record(metrics, "who_said", "ok",
-                    rows=len(bound_window), matches=len(hits))
+                    rows=len(lookup_rows), matches=len(hits))
             # `_memory_result`, because `line` is verbatim group-authored text —
             # the same class `load_transcript`'s `messages` and `search_memory`'s
             # `results` carry, and it gets the same demotion rather than a fourth
@@ -15282,6 +15290,7 @@ def build_tools(
     question: str = "",
     context_window: int = 40,
     transcript: tuple[TranscriptRow, ...] | None = None,
+    lookup_window: tuple[TranscriptRow, ...] | None = None,
     ai_peer: str = "nora",
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
@@ -15332,6 +15341,7 @@ def build_tools(
         geocoder=geocoder,
         shortener=shortener,
         question=question, context_window=context_window, transcript=transcript,
+        lookup_window=lookup_window,
         ai_peer=ai_peer,
         links=links, giphy_source=giphy_source, reaction_picker=reaction_picker,
         notes=notes, note_unit=note_unit,
