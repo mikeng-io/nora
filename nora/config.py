@@ -2277,6 +2277,32 @@ class ComputerSessionsConfig(BaseModel):
     idle_after_minutes: int = Field(default=30, gt=0)
 
 
+class ComputerBrowseConfig(BaseModel):
+    """`[computer.browse]`: `computer_browse`, a whole browser task handed to a
+    sub-agent in the room's own browser (design/browser-runtime 00 §5, ADR 0022,
+    B2). INERT by default: the tool answers `unavailable` until `enabled`, and
+    `[computer] enabled` must be on too (the browser is the computer's).
+
+    `model` is the sub-agent's (empty: `[llm] model`); `max_steps` counts page
+    actions, past which the agent is told to finish; `timeout_seconds` bounds
+    the whole task; `turns`, `output_tokens` and `total_tokens` are its loop's
+    three caps (`build_limits`); `read_chars` cuts one page's text.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = ""
+    max_tokens: int = Field(default=4096, gt=0)
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_steps: int = Field(default=25, gt=0)
+    timeout_seconds: float = Field(default=240.0, gt=0)
+    turns: int = Field(default=40, gt=0)
+    output_tokens: int = Field(default=12000, gt=0)
+    total_tokens: int = Field(default=400_000, gt=0)
+    read_chars: int = Field(default=6000, gt=0)
+
+
 class ComputerContextConfig(BaseModel):
     """`[computer.context]`: the `<computer>` block (design/sandbox-runtime
     §15.3), a deterministic window rebuilt each tag and fire turn from the
@@ -2353,6 +2379,7 @@ class ComputerConfig(BaseModel):
     limits: ComputerLimitsConfig = ComputerLimitsConfig()
     sessions: ComputerSessionsConfig = ComputerSessionsConfig()
     context: ComputerContextConfig = ComputerContextConfig()
+    browse: ComputerBrowseConfig = ComputerBrowseConfig()
 
     @model_validator(mode="after")
     def _default_run_within_max(self) -> ComputerConfig:

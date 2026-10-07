@@ -18,7 +18,7 @@ from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS, S
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeSandboxRuntime
+from nora.testing import FakeBrowserRunner, FakeMemoryStore, FakeSandboxRuntime
 from tests.fakes import SinkSender
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -127,7 +127,12 @@ def test_the_computer_tools_are_offered_only_when_a_computer_is_wired(defer):
     assert COMPUTER_TOOLS.isdisjoint(off.admitted | catalogued(off))
     assert COMPUTER_TOOLS.isdisjoint(set(off.shelf.names()))
     assert "computer_read" not in ToolRegistry().capability_digest()
-    on_registry = ToolRegistry(computer=FakeSandboxRuntime())
+    # A computer without a browser runner (`[computer.browse]` off) offers
+    # every computer tool but `computer_browse`; with one, all of them.
+    no_browser = _surface(ToolRegistry(computer=FakeSandboxRuntime()), defer=defer)
+    assert no_browser.admitted >= COMPUTER_TOOLS - {"computer_browse"}
+    assert "computer_browse" not in no_browser.admitted | catalogued(no_browser)
+    on_registry = ToolRegistry(computer=FakeSandboxRuntime(), browser=FakeBrowserRunner())
     on = _surface(on_registry, defer=defer)
     assert on.admitted >= COMPUTER_TOOLS
     assert catalogued(on) >= COMPUTER_TOOLS
@@ -155,7 +160,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
-        computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
+        computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     assert {t.tool_name for t in tools} == {
         # DEC-146: the window-scoped rung below `load_transcript`.
@@ -216,6 +221,8 @@ def test_the_registry_exposes_every_declared_tool():
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
+        # design/browser-runtime B2: a whole browser task, by a sub-agent.
+        "computer_browse",
         # design/artifact §26: a document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
         # (the four `subagent_*` tools are tag-turn only: this Dreamer-path build omits them,
@@ -324,6 +331,7 @@ def test_budgets_match_todays_table():
         # one session tool reads. One call answers «what were you doing»; a
         # second is a different status filter.
         "computer_session_list": 2,
+        "computer_browse": 2,
         # design/artifact §26: no-spec catalog read, publish, a fix, an edit; a read.
         "document_publish": 6, "document_read": 2,
         # Archive, delete or restore one document; a second call is an undo or
@@ -532,7 +540,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     )
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
-        computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
+        computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     agent = factory.create_agent(
         model=model, system_prompt="p", tools=tools, pre_fill=[],
@@ -816,6 +824,8 @@ ACT_VERBS = frozenset({
     # design/sandbox-runtime §4: a command, a file write and a file edit all
     # change the room's workspace.
     "computer_run", "computer_write", "computer_edit",
+    # design/browser-runtime B2: the sub-agent clicks and types in a page.
+    "computer_browse",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",

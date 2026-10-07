@@ -42,6 +42,7 @@ from strands.agent.conversation_manager import (
 from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
+from strands.tools.executors import SequentialToolExecutor
 from strands.types.exceptions import MaxTokensReachedException
 from strands.vended_plugins.skills import AgentSkills
 
@@ -618,6 +619,52 @@ def create_subagent(
         conversation_manager=SlidingWindowConversationManager(
             window_size=SUBAGENT_WINDOW_MESSAGES, per_turn=True, pin_first=1,
         ),
+        session_manager=None,
+        callback_handler=None,
+        load_tools_from_directory=False,
+        trace_attributes=trace_attributes,
+    )
+
+
+#: How many messages the browse sub-agent keeps: each page snapshot is a few
+#: thousand tokens, so a long task keeps its brief and its recent pages only.
+BROWSE_WINDOW_MESSAGES = 24
+
+
+def create_browse_agent(
+    *, model: OpenAIModel, system_prompt: str, tools: list, trace_attributes: dict,
+    retry: RetryPolicy, agent_name: str = "browse",
+) -> Agent:
+    """The browse sub-agent (design/browser-runtime 00 §5, B2): one browser task
+    for Nora, in her own computer's browser, with page tools only.
+
+    Built here because this module is the only one that constructs Strands
+    objects (spec C.7). Unlike `create_subagent` it has no skills, no guard and
+    no progress hook: its tools are the whole of what it can do, its step
+    budget is counted inside those tools (`nora.agent.browse`), and the loop's
+    three caps come from `build_limits` at `invoke`. The window keeps the brief
+    pinned and the most recent pages, as `create_subagent`'s does for long jobs.
+    `tool_choice` belongs to the model (`AFTER_SPEAKING`): the loop ends when the
+    model, having called `browse_done`, stops calling tools.
+    """
+    return Agent(
+        model=model,
+        name=agent_name,
+        agent_id=agent_name,
+        retry_strategy=ModelRetryStrategy(
+            max_attempts=retry.max_attempts,
+            initial_delay=retry.initial_delay,
+            max_delay=retry.max_delay,
+        ),
+        system_prompt=system_prompt,
+        tools=tools,
+        conversation_manager=SlidingWindowConversationManager(
+            window_size=BROWSE_WINDOW_MESSAGES, per_turn=True, pin_first=1,
+        ),
+        # One action at a time: every page tool acts on the ONE page, so two
+        # `page_type`s from one response would interleave their focus and
+        # typing, and a click batched after `browse_done` would still run.
+        tool_executor=SequentialToolExecutor(),
         session_manager=None,
         callback_handler=None,
         load_tools_from_directory=False,

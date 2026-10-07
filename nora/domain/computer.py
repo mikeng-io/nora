@@ -123,6 +123,24 @@ class BytesResult:
 
 
 @dataclass(frozen=True)
+class BrowseOutcome:
+    """What one delegated browser task came back with (design/browser-runtime
+    00 §5, B2). `status` is the R-27 shape the tool reports: `ok` (done, with
+    an `answer`), `nothing_found` (the pages were read and the thing asked
+    for is not there), `unavailable` (the browser could not be used, the
+    budget ran out, or a person must take over: `reason` says which, and
+    `needs_human` is set for the last). `steps` counts the browser actions
+    taken; `url` is where the page ended."""
+
+    status: str
+    answer: str = ""
+    reason: str = ""
+    url: str = ""
+    steps: int = 0
+    needs_human: bool = False
+
+
+@dataclass(frozen=True)
 class OpResult:
     """`sha256` is what the file holds after the write; `previous_sha256`
     what it held just before (None: there was no regular file there). The

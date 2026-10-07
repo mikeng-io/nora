@@ -281,9 +281,11 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     document, a short question), less the 40 cases of the
     `note_candidates` and `proactive_decide` corpora (2026-10-03, DEC-277: the Dreamer passes they
     measured are deleted with their adaptors, the cognition session owns
-    notes and reminders now); a change to it
+    notes and reminders now), plus 2 `tool_selection` cases for `computer_browse`
+    (2026-10-07, design/browser-runtime B2: a search box to operate and a page
+    to click through; browse-on arm only); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 255
-    assert sum(c.active + c.parked for c in totals) == 255
+    assert sum(c.total for c in totals) == 257
+    assert sum(c.active + c.parked for c in totals) == 257

@@ -207,6 +207,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from nora.domain.cognition_pace import PendingSelfWake
+from nora.domain.computer import BrowseOutcome as BrowseOutcome
 from nora.domain.computer import BytesResult as BytesResult
 from nora.domain.computer import FileResult as FileResult
 from nora.domain.computer import ListResult as ListResult
@@ -1885,6 +1886,18 @@ class ComputeBackend(Protocol):
     async def cancel(self, *, job_id: str) -> None:
         """Stop a running job. A job already finished, or unknown, is a no-op."""
         ...
+
+
+@runtime_checkable
+class BrowserRunner(Protocol):
+    """A whole browser task done for Nora by a sub-agent in this room's browser
+    (design/browser-runtime 00 §5, B2): one call in, one `BrowseOutcome` out,
+    however many page actions happen in between. `scope` is
+    `computer_scope(...)`, chosen by Nora's code. It never raises: every
+    failure is an outcome with status `unavailable` and a reason."""
+
+    async def browse(self, *, scope: str, objective: str,
+                     start_url: str | None = None) -> BrowseOutcome: ...
 
 
 @runtime_checkable

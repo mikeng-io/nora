@@ -292,7 +292,27 @@ cases:
     expect: reply
     mention: true
     input: 睇下呢頁講咩，簡單講俾我知 https://en.wikipedia.org/wiki/Victoria_Harbour
-    metadata: {tools: [web_fetch], not_tools: [computer_run]}
+    metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
+    snapshot: *room_a
+
+  # computer_browse (design/browser-runtime 00 §5, ADR 0022, B2): a task that
+  # needs a page operated, not read. Offered only under `[computer.browse]`
+  # enabled, so these measure only an arm whose deployment config has it on;
+  # the control above keeps a plain link with web_fetch.
+  - name: route_computer_browse_search_box
+    entry: tag
+    expect: reply
+    mention: true
+    input: 去 Wikipedia 用佢個搜尋框搵「維多利亞港」，入咗篇文之後話我知面積幾大
+    metadata: {tools: [computer_browse], not_tools: [web_search, computer_run]}
+    snapshot: *room_a
+
+  - name: route_computer_browse_click_through
+    entry: tag
+    expect: reply
+    mention: true
+    input: 喺 https://www.timeanddate.com/worldclock/ 度撳入東京嗰格，睇下而家東京幾點同埋係咪夏令時間
+    metadata: {tools: [computer_browse], not_tools: [computer_run]}
     snapshot: *room_a
 
   - name: route_generate_image_not_the_computer
