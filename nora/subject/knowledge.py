@@ -309,10 +309,9 @@ def _speakers(
 ) -> dict[str | None, tuple[str, str | None]]:
     """name -> (sender_id, person_id), stable within one case.
 
-    **The sender id is MINTED here and never copied from anywhere.** That is
-    what keeps `sandbox.py` from carrying a real member's E.164 into an eval
-    workspace: the real row's `sender_id` is not one of `Message`'s fields, so
-    there is no path by which it could.
+    Source account ids are never copied: `Message` has no `sender_id` field.
+    These are initial synthetic ids; `know` substitutes a loaded roster account
+    for a known human so production's name projection can resolve the row.
     """
     out: dict[str | None, tuple[str, str | None]] = {}
     for msg in transcript:
@@ -663,6 +662,17 @@ async def know(
         sender_id, person_id = speakers[msg.name]
         if msg.person != "":
             person_id = msg.person
+        # Production projects names by platform account, not person_id (#540).
+        # Use the loaded roster; never copy source account ids into a fixture.
+        ids = (subject.deps.persons.platform_ids(
+                   platform, subject.deps.persons.subject_id_for(person_id))
+               if not msg.is_nora and person_id else frozenset())
+        if ids:
+            sender_id = sorted(ids)[0]
+        else:
+            # A synthetic account must not accidentally name a roster person.
+            while subject.deps.persons.resolve(platform, sender_id) is not None:
+                sender_id += "0"
         row_id = await subject.deps.audit.append(
             message=NormalizedMessage(
                 platform=platform,
