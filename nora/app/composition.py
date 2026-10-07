@@ -3727,7 +3727,11 @@ async def build_dependencies(
                 CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
                     min_interval_seconds=cfg.culture.stale_seconds,
                     wake_batch=cfg.culture.person_wake_batch,
-                    batch_limit=cfg.culture.batch_limit,
+                    # THE WAKE BATCH, as Nora's session reads its own: a
+                    # person's session reads their newest `person_wake_batch`
+                    # messages, not a room's `batch_limit` (300), which sized
+                    # a room's whole corpus and tripled this read's cost.
+                    batch_limit=cfg.culture.person_wake_batch,
                 ),
             }
             dream_adaptors = (

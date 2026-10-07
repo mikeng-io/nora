@@ -1950,6 +1950,20 @@ async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
         assert adaptor.tools <= ceiling, adaptor.name
 
 
+async def test_a_person_session_reads_its_wake_batch_not_a_rooms_batch_limit(cfg, tmp_path):
+    """Cost: a person session read `[culture] batch_limit` (300, sized for a
+    whole room's corpus) messages. It reads the newest `person_wake_batch`,
+    as Nora's session reads its own wake batch."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "culture.enabled": True,
+        "culture.person_wake_batch": 40, "culture.batch_limit": 300,
+    }))
+    assert deps.dream_schedules["character-person"].batch_limit == 40
+    assert deps.dream_schedules["character-nora"].batch_limit == 100
+    assert deps.dream_schedules["culture"].batch_limit == 300
+
+
 async def test_culture_resolves_a_mapped_senders_canonical_name(cfg):
     """#200 follow-up: `CultureAdaptor` names its `<room_messages>` through
     `Persons.name_transcript` (`identity.toml`'s `[persons.miles]` maps signal
