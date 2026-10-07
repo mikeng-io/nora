@@ -223,6 +223,26 @@ async def read_character(
     return tuple((ref.name, rev) for ref, rev in zip(members, found, strict=True) if rev)
 
 
+#: The most characters ONE person's account may carry in `<character>`, and the
+#: most the whole block may carry. The block rides every model call of a turn
+#: (median 5, heavy turns 20+) and nothing capped it: a revision may be
+#: `BODY_MAX_CHARS` (20,000) long. Measured 2026-10-07 on the live heads: the
+#: friends unit's seven accounts were 9,065 characters (~3,000 tokens) and the
+#: largest person account 1,739. 2,500 is ~1.4x the largest and 8,000 is ~4.6x
+#: it, so a turn that names three or four people is never cut: a cap is not a
+#: reservation, so headroom costs nothing until an account uses it. Rendered
+#: text, so counted before escaping, like `SELF_MAX_CHARS`.
+#: ponytail: constants, not config; a knob only if a real account is cut.
+PERSON_ACCOUNT_MAX_CHARS = 2_500
+CHARACTER_BLOCK_MAX_CHARS = 8_000
+
+
+def _cut(body: str, room: int) -> str:
+    """`body` cut to `room` characters, saying how many it dropped."""
+    dropped = len(body) - room
+    return body if dropped <= 0 else f"{body[:room]}\n[{dropped} more characters not shown]"
+
+
 def render_character(
     accounts: Sequence[tuple[str, CultureRevision]], *, now: datetime | None = None,
 ) -> ContextBlock | None:
@@ -232,15 +252,30 @@ def render_character(
     empty block would say she looked and found them featureless. Each account
     carries its own `written` age, because nothing here retires and a head may
     be weeks old and still right.
+
+    Capped twice (`PERSON_ACCOUNT_MAX_CHARS`, `CHARACTER_BLOCK_MAX_CHARS`),
+    each cut saying how many characters it dropped. Accounts are taken in the
+    order given; one that no longer fits the block's remaining budget is left
+    out whole and counted in a closing marker.
     """
     clock = now or datetime.now().astimezone()
-    rows = "\n".join(
-        ContextBlock(
+    budget = CHARACTER_BLOCK_MAX_CHARS
+    rows: list[str] = []
+    omitted = 0
+    for name, rev in accounts:
+        body = rev.body.strip()
+        if not body:
+            continue
+        if budget <= 0:
+            omitted += len(body)
+            continue
+        shown = _cut(body, min(PERSON_ACCOUNT_MAX_CHARS, budget))
+        budget -= min(len(body), PERSON_ACCOUNT_MAX_CHARS, budget)
+        rows.append(ContextBlock(
             name="person_account",
             attrs=(("name", name), ("written", _age(rev.written_at, clock))),
-            body=escape(rev.body),
-        ).render()
-        for name, rev in accounts
-        if rev.body.strip()
-    )
-    return ContextBlock(name="character", body=rows) if rows else None
+            body=escape(shown),
+        ).render())
+    if omitted:
+        rows.append(f"[{omitted} more characters not shown]")
+    return ContextBlock(name="character", body="\n".join(rows)) if rows else None
