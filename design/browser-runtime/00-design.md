@@ -9,7 +9,8 @@ status: accepted
 
 # Nora's browser
 
-Status (2026-10-07): **accepted (ADR 0022), not built.** This bundle is the design for
+Status (2026-10-07): **accepted (ADR 0022); B1a built** (Chrome in the image, a per-room
+browser in computerd over the pipe; `deploy/computer/README.md` «The browser»). B1b (egress) and B2 on are not built. This bundle is the design for
 S4 of `design/sandbox-runtime/00-design.md` (§14) plus the credential store
 that S4 needs and the sandbox design deferred (§8, decision 3). It is written
 from an operator conversation on 2026-10-06/07 and three research passes

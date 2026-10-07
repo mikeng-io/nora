@@ -55,6 +55,20 @@ COPY render/nora_render.py render/nora-render render/mmdc /opt/nora-render/
 RUN ln -s /opt/nora-render/nora-render /usr/local/bin/nora-render \
     && ln -s /opt/nora-render/mmdc /usr/local/bin/mmdc
 
+# The browser (design/browser-runtime, ADR 0022, B1): Google Chrome stable,
+# headed on Xvfb, one per room, started by computerd over
+# --remote-debugging-pipe. Pinned by version and sha256; bump both together,
+# deliberately, since a stale Chrome is itself a bot signal (design 00 §3).
+ARG CHROME_VERSION=155.0.8059.39-1
+ARG CHROME_SHA256=c58aa0f2cd66179c9f050e062c882d27aa9b9f8c2b7c73fee3498560b5ed0b38
+RUN curl -fsSLo /tmp/chrome.deb \
+        "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
+    && echo "${CHROME_SHA256}  /tmp/chrome.deb" | sha256sum -c - \
+    && apt-get update && apt-get install -y --no-install-recommends /tmp/chrome.deb xvfb \
+    && rm -rf /var/lib/apt/lists/* /tmp/chrome.deb \
+    && rm -f /etc/apt/sources.list.d/google-chrome.list \
+    && mkdir -p /tmp/.X11-unix && chown root:root /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
 # The operator's user, for an interactive `sbx exec`. /workspace is root-owned
 # so a command cannot swap a room's directory for a link; computerd creates
 # each room's directory 0700, owned by that room's own system user
