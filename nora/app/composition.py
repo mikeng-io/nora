@@ -924,6 +924,15 @@ def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     }
 
 
+def character_nora_readable(allowlist: Any, unit: str) -> tuple[str, ...]:
+    """The `primary_id`s of `unit`'s rooms with `location` off: the only rooms
+    whose sends may be evidence for her account (`NoraKey.readable`)."""
+    return tuple(
+        conv.primary_id for conv in allowlist.conversations
+        if conv.primary_id and conv.unit == unit and not conv.location
+    )
+
+
 def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
     """One key per (unit, person listed in any of that unit's rooms), from
     `policy.toml` and `identity.toml` (design/self-growth/10 §3, C2b). A
@@ -3781,7 +3790,10 @@ async def build_dependencies(
             # response episodes; read back as the `self` block
             # (design/self-growth/20).
             nora_keys = {
-                nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
+                nora_character_key(uk.unit): NoraKey(
+                    unit=uk.unit, rooms=uk.rooms,
+                    readable=character_nora_readable(allowlist, uk.unit),
+                )
                 for uk in unit_keys.values()
             }
             dream_schedules = {
@@ -4120,6 +4132,7 @@ async def build_dependencies(
                     None if culture_reader is None
                     else lambda unit: culture_reader.head(key=nora_character_key(unit))
                 ),
+                metrics=metrics,
             )
 
             try:

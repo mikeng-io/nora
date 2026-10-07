@@ -81,6 +81,7 @@ from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
 from nora.domain.rollup import room_key
 from nora.domain.stimuli import Stimulus
+from nora.language.culture_render import read_culture
 
 log = logging.getLogger("nora.app.cognition_grounding")
 
@@ -336,6 +337,7 @@ def build_grounder(
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
     self_account: Callable[[str], Awaitable[CultureRevision | None]] | None = None,
+    metrics: Any = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -492,12 +494,12 @@ def build_grounder(
         # Her own account of herself in this unit (design/self-growth/20). Unlike
         # the reads above it is background, never the ground for a claim, so a
         # failed read costs the `self` block and not the session.
-        account: CultureRevision | None = None
-        if self_account is not None:
-            try:
-                account = await self_account(unit)
-            except Exception:
-                log.exception("cognition grounding: self account read failed; continuing")
+        # Bounded and counted like the tag and fire reads (`read_culture`,
+        # `stage="cognition_self"`).
+        account = await read_culture(
+            None if self_account is None else self_account(unit),
+            stage="cognition_self", platform="cognition", metrics=metrics,
+        )
         return Grounding(
             records=records_out, notes=notes, events=tuple(events), rollups=rollups,
             own_sends=own_sends, room_labels=labels, self_account=account,

@@ -42,21 +42,21 @@ class InMemoryCharacterEvidence:
         episode (`Episode.is_evidence`) is counted or read, as in the SQL."""
         self._episodes.append((unit, episode, open_))
 
-    def _eps(self, unit: str, after: int) -> list[Episode]:
+    def _eps(self, unit: str, after: int, rooms: Sequence[str]) -> list[Episode]:
         return sorted(
             (e for u, e, o in self._episodes if u == unit and not o
              and e.outcome not in ("open", "unknown") and e.is_evidence
-             and e.send_id > after),
+             and e.send_id > after and e.room in rooms),
             key=lambda e: e.send_id,
         )
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
-        return len(self._eps(unit, after))
+    async def episode_count(self, *, unit: str, after: int, rooms: Sequence[str]) -> int:
+        return len(self._eps(unit, after, rooms))
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, rooms: Sequence[str],
     ) -> tuple[list[Episode], int]:
-        found = self._eps(unit, after)
+        found = self._eps(unit, after, rooms)
         cursor = found[-1].send_id if found else after
         return (found[-limit:] if limit > 0 else []), cursor
 

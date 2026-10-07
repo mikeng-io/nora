@@ -166,8 +166,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and stage=\"fire_culture\" — a room's account that exists and could "
         "not be read (a raise, or the bounded read timing out). A room never "
         "folded is not an error and moves nothing. The <self> read "
-        "(design/self-growth/20) is stage=\"tag_self\" and "
-        "stage=\"fire_self\", on the same terms.",
+        "(design/self-growth/20) is stage=\"tag_self\", "
+        "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms.",
         ("stage", "platform"),
     ),
     _CounterSpec(

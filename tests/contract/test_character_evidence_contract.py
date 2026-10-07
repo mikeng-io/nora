@@ -189,7 +189,10 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         fake.add_episode(unit="friends", episode=Episode(
             send_id=9, room="room-a", text="follow and reaction", outcome="responded",
             reactions=1, edits=0, follows=1))
-        yield fake, {"dinner": 1, "list": 3, "reply": 2, "ask": 7, "fonly": 8, "fmix": 9}
+        fake.add_episode(unit="friends", episode=Episode(
+            send_id=10, room="room-loc", text="where is Miles", outcome="responded",
+            reactions=3, edits=0))
+        yield fake, {"loc": 10, "dinner": 1, "list": 3, "reply": 2, "ask": 7, "fonly": 8, "fmix": 9}
         return
     from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_RESPONSE
 
@@ -214,6 +217,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             await msg("ask", "room-a", 3600, "who is free?", True)
             await msg("fonly", "room-a", 3700, "follow only", True)
             await msg("fmix", "room-a", 3800, "follow and reaction", True)
+            await msg("loc", "room-loc", 3900, "where is Miles", True)
             old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
                 code_version="v0", params_sha256="p", status="superseded",
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
@@ -221,11 +225,12 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
                 code_version="v1", params_sha256="p", status="current",
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
 
-            async def resp(build, unit, name, ts, outcome, reactions=0, follows=0):
+            async def resp(build, unit, name, ts, outcome, reactions=0, follows=0,
+                           room="room-a"):
                 await conn.execute(sa.insert(ROLLUP_RESPONSE).values(
                     build_id=build, unit=unit, lineage=[], valid_from_ms=ts,
                     valid_to_ms=ts + 3600, as_of_ms=ts + 3600, message_id=ids[name],
-                    platform="signal", conversation_id="room-a", sent_ts=ts,
+                    platform="signal", conversation_id=room, sent_ts=ts,
                     replies=0, reactions=reactions, edits=0, follows=follows, outcome=outcome,
                 ))
             await resp(cur, "friends", "dinner", 1000, "responded", reactions=1)
@@ -235,6 +240,8 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             await resp(cur, "friends", "ask", 3600, "silent")
             await resp(cur, "friends", "fonly", 3700, "responded", follows=2)
             await resp(cur, "friends", "fmix", 3800, "responded", reactions=1, follows=1)
+            await resp(cur, "friends", "loc", 3900, "responded", reactions=3,
+                       room="room-loc")
             await resp(cur, "wedding", "w", 3500, "responded")
             await resp(old, "friends", "w", 3500, "responded")
         yield SqlCharacterEvidence(engine), ids
@@ -246,17 +253,20 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         await engine.dispose()
 
 
+R = ("room-a",)
+
+
 async def test_nora_counts_and_reads_evidence_episodes_only(episodes):
     """DEC-290 (4): her wake counts closed episodes that are EVIDENCE
     (`Episode.is_evidence`): `responded`, `silent`, or with a reply, reaction or
     edit. An `unanswered` one (none was expected), an `unknown` one (an outage,
     R-27) and an `open` one are neither counted, read, nor the cursor."""
     store, ids = episodes
-    assert await store.episode_count(unit="friends", after=0) == 3
-    assert await store.episode_count(unit="friends", after=ids["dinner"]) == 2
-    assert await store.episode_count(unit="friends", after=ids["ask"]) == 1
-    assert await store.episode_count(unit="friends", after=ids["fmix"]) == 0
-    got, cursor = await store.episodes(unit="friends", after=0, limit=5)
+    assert await store.episode_count(unit="friends", after=0, rooms=R) == 3
+    assert await store.episode_count(unit="friends", after=ids["dinner"], rooms=R) == 2
+    assert await store.episode_count(unit="friends", after=ids["ask"], rooms=R) == 1
+    assert await store.episode_count(unit="friends", after=ids["fmix"], rooms=R) == 0
+    got, cursor = await store.episodes(unit="friends", after=0, limit=5, rooms=R)
     assert [(e.send_id, e.text, e.outcome) for e in got] == [
         (ids["dinner"], "dinner?", "responded"),
         (ids["ask"], "who is free?", "silent"),
@@ -266,7 +276,7 @@ async def test_nora_counts_and_reads_evidence_episodes_only(episodes):
     if isinstance(store, SqlCharacterEvidence):
         assert [r.body for r in got[0].replies] == ["yes"]
         assert got[1].replies == ()
-    newest, _ = await store.episodes(unit="friends", after=0, limit=1)
+    newest, _ = await store.episodes(unit="friends", after=0, limit=1, rooms=R)
     assert [e.send_id for e in newest] == [ids["fmix"]]
 
 
@@ -274,7 +284,25 @@ async def test_an_episode_answered_only_by_follows_is_not_evidence_in_either_sto
     """The session is not shown the follow messages, so `follows` alone is not
     counted, not read and does not move the cursor; beside a reaction it is."""
     store, ids = episodes
-    got, _ = await store.episodes(unit="friends", after=0, limit=10)
+    got, _ = await store.episodes(unit="friends", after=0, limit=10, rooms=R)
     assert ids["fonly"] not in [e.send_id for e in got]
-    only, cursor = await store.episodes(unit="friends", after=ids["ask"], limit=10)
+    only, cursor = await store.episodes(unit="friends", after=ids["ask"], limit=10, rooms=R)
     assert [e.send_id for e in only] == [ids["fmix"]] and cursor == ids["fmix"]
+
+
+async def test_a_send_from_a_room_not_named_is_never_counted_or_read_in_either_store(episodes):
+    """R-31, write side of her account: `<self>` renders in every room of the
+    unit, so a send from a room whose `location` flag is on (`room-loc`) is not
+    evidence for it. `rooms` is what the caller (`NoraKey.readable`) allows; a
+    room not in it is neither counted, nor read, nor the cursor, and an empty
+    `rooms` reads nothing."""
+    store, ids = episodes
+    got, cursor = await store.episodes(unit="friends", after=0, limit=10, rooms=R)
+    assert ids["loc"] not in [e.send_id for e in got]
+    assert cursor != ids["loc"]
+    assert await store.episode_count(unit="friends", after=0, rooms=R) == 3
+    both = await store.episodes(unit="friends", after=0, limit=10, rooms=(*R, "room-loc"))
+    assert ids["loc"] in [e.send_id for e in both[0]]
+    assert await store.episode_count(unit="friends", after=0, rooms=(*R, "room-loc")) == 4
+    assert await store.episode_count(unit="friends", after=0, rooms=()) == 0
+    assert await store.episodes(unit="friends", after=0, limit=10, rooms=()) == ([], 0)

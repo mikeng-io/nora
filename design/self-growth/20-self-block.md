@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The self block: Character · Nora rendered below the doctrine, self_card retired"
-description: "One block, one PR (built, DEC-292): her whole Character · Nora for this unit, capped in lines, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. The before/after eval could not be run on the suite (section 5); self_card had been in nearly every prompt."
+description: "One block, one PR (built, DEC-292): her whole Character · Nora for this unit, capped in characters, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. The before/after eval could not be run on the suite (section 5); self_card had been in nearly every prompt."
 tags: [nora, self, context-assembly, self-card]
 timestamp: '2026-10-07'
 edges:
@@ -13,15 +13,18 @@ edges:
 ## 1. What it is
 
 - **Content:** the current Character · Nora account for the turn's unit
-  ([10](10-character.md) §4), capped in lines.
+  ([10](10-character.md) §4), capped in characters.
 - **Position:** directly after the doctrine and before every other block, so
   the doctrine is read first and wins (`design/cognition-loop/55-self.md` §3).
 - **Occasions:** tag, fire and Cognition. Not the relevance gate, not the
   public surface or summons, which have no unit.
 - **Assembly:** a row in `_BLOCKS` and a renderer, through context assembly
   like every other block.
-- **Lineage:** each section renders only where its lineage passes for the
-  room (`design/cognition-loop/10-tiers.md` §3).
+- **Lineage:** none at render, like `<unit_culture>`: the account is keyed by
+  the unit, the read boundary. The disclosure line is on the write side: the
+  Nora session is handed only episodes whose send came from a room with
+  `location` off (`NoraKey.readable`), so a location-room send is never
+  evidence for an account every room of the unit reads (R-31).
 
 ## 2. What leaves
 
@@ -50,8 +53,9 @@ One PR. The plumbing is small; the eval is the cost.
 
 **Built.** `self` is the first row of the tag and fire prefill `_BLOCKS` (order
 1, key `unit`) and of the Cognition prompt's (order 5, before the clock);
-`render_self` in `nora/language/culture_render.py` caps it at 40 lines and says
-how many it dropped. Tag and fire read `nora_character_key(unit)`
+`render_self` in `nora/language/culture_render.py` caps it at 4,000 characters
+(`SELF_MAX_CHARS`; accounts are prose in 1 to 3 lines, so a line cap bounds
+nothing, and the longest live head is 1,797) and says how many it dropped. Tag and fire read `nora_character_key(unit)`
 (`TranscriptInjection._self_account`, `FirePath._read_self_account`); the
 Cognition grounder reads it into `Grounding.self_account`. No account, no
 block. No lineage filter, like `<unit_culture>`: the unit is the read boundary.

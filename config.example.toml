@@ -1473,8 +1473,10 @@ enabled = false
 # and fire turn then carries a <character> block of the accounts of the people
 # that room lists, and a <unit_culture> block (what the unit is across its
 # rooms, written by the unit's own session). Nora's own account per unit is
-# written too, from the episodes people responded to (at least three cited),
-# and nothing renders it yet. No separate switch: `enabled` turns on all.
+# written too, from the episodes people responded to (at least three cited;
+# only her sends in rooms with `location` off count), and rendered as a <self>
+# block first in every tag, fire and Cognition prompt. No separate switch:
+# `enabled` turns on all, so it also adds <self> to every one of those prompts.
 enabled = false
 # New human messages in a room that wake its fold at once (DEC-288). Sized
 # from 14 days on the deploy host: the busiest room reaches 200 about every 4

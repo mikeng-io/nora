@@ -1013,15 +1013,17 @@ def test_self_block_is_first_of_every_block_after_the_clock():
     assert body.index("<self ") < body.index("<tool_catalogue") < body.index("<peer_card")
 
 
-def test_self_block_is_capped_in_lines_and_says_what_it_dropped():
-    from nora.language.culture_render import SELF_MAX_LINES
+def test_self_block_is_capped_in_characters_and_says_what_it_dropped():
+    """Accounts are prose in one to three lines, so the cap is on characters:
+    a one-paragraph body past it must not render whole."""
+    from nora.language.culture_render import SELF_MAX_CHARS
 
-    account = _culture("\n".join(f"line {i}" for i in range(SELF_MAX_LINES + 7)))
+    account = _culture("x" * (SELF_MAX_CHARS + 7))
     block = build_prefill(_ctx(self_account=account), display_name="Nora",
                           context_window=40)[1]["content"][0]["text"]
-    assert f"line {SELF_MAX_LINES - 1}" in block
-    assert f"line {SELF_MAX_LINES}\n" not in block
-    assert "[7 more lines not shown]" in block
+    assert "x" * SELF_MAX_CHARS in block
+    assert "x" * (SELF_MAX_CHARS + 1) not in block
+    assert "[7 more characters not shown]" in block
 
 
 def test_a_tag_prompt_never_carries_a_self_card():

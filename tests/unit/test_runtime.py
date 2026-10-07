@@ -2358,7 +2358,8 @@ async def test_new_evidence_between_retries_does_not_reset_noras_count():
     arrived = iter(range(1000, 2000))
     key = nora_character_key("friends")
     nk = NoraKey(unit="friends", rooms=(CharacterRoom(key="room-a", platform="signal",
-                                                      label="Friends"),))
+                                                      label="Friends"),),
+                 readable=("room-a",))
     adaptor = CharacterNoraAdaptor(
         culture=InMemoryCultureStore(), evidence=NoraEvidence(store=store, keys={key: nk}),
         keys={key: nk}, name_of=lambda _pid: "someone",

@@ -29,8 +29,10 @@ store and revision chain:
   and its outcome. It cites episodes people responded to (`response:<id>`,
   outcome `responded` or `silent`) or the replies, and the verb enforces the ECHO
   RULE (10-tiers §2 rule 4): a revision resting only on her own sends is
-  refused. Descriptive only, no read tool, and NO block yet: the self block
-  is design/self-growth/20, a later step.
+  refused. Only sends from rooms with `location` off are evidence
+  (`NoraKey.readable`): her account renders as `<self>` in every room of the
+  unit (design/self-growth/20), so a location-room send must not be in it.
+  Descriptive only, no read tool.
 
 **Code at the edges, an agent loop in the middle** (§3.1): code counts the
 evidence, wakes the key, hands over the previous account and what is new, and
@@ -524,19 +526,30 @@ NORA_STORE_CALLS_PER_TICK = 3
 
 @dataclass(frozen=True)
 class NoraKey:
-    """What a Nora key names: the unit, and its rooms' labels by `primary_id`."""
+    """What a Nora key names: the unit, its rooms' labels by `primary_id`, and
+    `readable`, the `primary_id`s of the rooms whose sends may be evidence.
+
+    **`readable` is the write-side half of R-31 for her account.** The account
+    renders in every room of the unit (`<self>`), so a room whose `location`
+    flag is on, where she may have answered where someone is, is not evidence
+    for it: its sends are neither counted nor shown to the session. Presence
+    is not recorded per send (`tool_call_log` holds cacheable tools only), so
+    the room's flag, which is exact, is the line rather than a per-turn join."""
 
     unit: str
     rooms: tuple[CharacterRoom, ...]
+    readable: tuple[str, ...]
 
 
 class _Episodes(Protocol):
     """`nora.infra.sql.character.SqlCharacterEvidence`'s episode reads."""
 
-    async def episode_count(self, *, unit: str, after: int) -> int: ...
+    async def episode_count(
+        self, *, unit: str, after: int, rooms: Sequence[str],
+    ) -> int: ...
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, rooms: Sequence[str],
     ) -> tuple[list[Episode], int]: ...
 
 
@@ -554,18 +567,24 @@ class NoraEvidence:
         return self._held.get(key)
 
     async def count(self, *, key: str, after: int) -> int:
-        return await self._store.episode_count(unit=self._keys[key].unit, after=after)
+        nk = self._keys[key]
+        return await self._store.episode_count(
+            unit=nk.unit, after=after, rooms=nk.readable,
+        )
 
     async def newest(
         self, *, key: str, after: int, limit: int,
     ) -> tuple[Sequence[Episode], int]:
         self._held[key] = after
-        return await self._store.episodes(unit=self._keys[key].unit, after=after, limit=limit)
+        nk = self._keys[key]
+        return await self._store.episodes(
+            unit=nk.unit, after=after, limit=limit, rooms=nk.readable,
+        )
 
 
 class CharacterNoraAdaptor(EntitySessions):
     """Her own account in one unit, from how its people responded to her
-    (C3b). Writes only; nothing renders it yet."""
+    (C3b). Writes only; `<self>` renders it (design/self-growth/20)."""
 
     name = CHARACTER_NORA_ADAPTOR_NAME
     key_kind = "entity"

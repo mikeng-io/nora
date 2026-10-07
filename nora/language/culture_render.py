@@ -146,38 +146,42 @@ def render_unit_culture(
     )
 
 
-#: The most lines of her own account the `<self>` block carries. It rides
-#: first in every tag and fire prompt and is re-sent on each model call of a
-#: loop, so it is capped on what is rendered, whatever the store holds
-#: (`BODY_MAX_CHARS` is what a revision may be). The longest account observed
-#: is `ACCOUNT_CHARS_OBSERVED_MAX` characters, a few dozen lines at most.
+#: The most characters of her own account the `<self>` block carries. It rides
+#: first in every tag, fire and Cognition prompt and is re-sent on each model
+#: call of a loop, so it is capped on what is rendered, whatever the store
+#: holds (`BODY_MAX_CHARS` is what a revision may be). Accounts are prose in
+#: one to three lines, so a cap on LINES bounds nothing; the live heads on
+#: 2026-10-07 were 482, 553 and 1,797 characters and the longest observed is
+#: `ACCOUNT_CHARS_OBSERVED_MAX`. 4,000 is more than twice the longest: a cap is
+#: not a reservation, so headroom costs nothing until an account uses it.
 #: ponytail: one number for every unit; a config knob if a real account is cut.
-SELF_MAX_LINES = 40
+SELF_MAX_CHARS = 4_000
 
 
 def render_self(
     account: CultureRevision | None, *, now: datetime | None = None,
 ) -> ContextBlock | None:
     """The `<self>` block: her own Character · Nora for this unit
-    (design/self-growth/20), capped at `SELF_MAX_LINES` lines.
+    (design/self-growth/20), capped at `SELF_MAX_CHARS` characters.
 
     `None` while the unit has no account, for `render_culture`'s reason: an
     empty block would say she looked and found herself blank. Lineage is not
     applied, as for `<unit_culture>` and `<character>`: the account is keyed
     by the UNIT, which is the read boundary (DEC-231), so every room of the
-    unit may read it. A body cut by the cap says how many lines it dropped.
+    unit may read it; what keeps a location-room send out of it is the write
+    side (`NoraKey.readable`). A body cut by the cap says how much it dropped.
     """
     if account is None or not account.body.strip():
         return None
-    lines = account.body.strip().splitlines()
-    shown = lines[:SELF_MAX_LINES]
-    dropped = len(lines) - len(shown)
-    if dropped:
-        shown.append(f"[{dropped} more lines not shown]")
+    body = account.body.strip()
+    dropped = len(body) - SELF_MAX_CHARS
+    if dropped > 0:
+        kept = body[:SELF_MAX_CHARS]
+        body = f"{kept}\n[{dropped} more characters not shown]"
     return ContextBlock(
         name="self",
         attrs=(("written", _age(account.written_at, now or datetime.now().astimezone())),),
-        body=escape("\n".join(shown)),
+        body=escape(body),
     )
 
 

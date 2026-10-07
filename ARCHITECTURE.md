@@ -191,7 +191,8 @@ Signal / Discord / WhatsApp / Instagram room
    character-nora  (per unit on 100 closed response episodes, or weekly) → her
                     own account there, from her sends paired with what followed;
                     a revision citing only her own sends is refused (echo rule);
-                    written only, no block reads it yet
+                    read back as `<self>`, first in every tag, fire and Cognition prompt;
+                    only sends from rooms with `location` off count as evidence
    Notes, events, Standing and Nora's own reminders are no longer adaptors
    (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
    enabled`), with the verbs `note_retire` and `note_merge` and a

@@ -150,10 +150,15 @@ class SqlCharacterEvidence:
 
     # -- Nora ----------------------------------------------------------------
 
-    def _closed(self, unit: str, after: int) -> list[Any]:
+    def _closed(self, unit: str, after: int, rooms: Sequence[str]) -> list[Any]:
         return [
             ROLLUP_RESPONSE.c.build_id == current_build_id(),
             ROLLUP_RESPONSE.c.unit == unit,
+            # ONLY the rooms the caller names (`NoraKey.readable`): her account
+            # renders in every room of the unit, so a send from a room whose
+            # `location` flag is on (where she may have answered where someone
+            # is, R-31) must not be evidence for it.
+            ROLLUP_RESPONSE.c.conversation_id.in_(list(rooms)),
             # EVIDENCE ONLY, `Episode.is_evidence` in SQL (DEC-290 (4)): people
             # answered, or silence was proved against an expected answer.
             # `unanswered` (none expected) is neither, and `open`/`unknown`
@@ -177,25 +182,30 @@ class SqlCharacterEvidence:
             ROLLUP_RESPONSE.c.message_id > after,
         ]
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
+    async def episode_count(self, *, unit: str, after: int, rooms: Sequence[str]) -> int:
         """`response` episodes of the current build for `unit` whose send is
         past Record id `after` that ARE EVIDENCE (`Episode.is_evidence`). An
         `open` one is never counted (its outcome can still change), nor an
         `unknown` one (no proof the platform was up), nor an `unanswered` one
-        (none was expected, so nothing happened)."""
+        (none was expected, so nothing happened). `rooms` are the `primary_id`s
+        whose sends may count; none, none counted."""
+        if not rooms:
+            return 0
         stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
-            *self._closed(unit, after),
+            *self._closed(unit, after, rooms),
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, rooms: Sequence[str],
     ) -> tuple[list[Episode], int]:
-        """The newest `limit` of those evidence episodes, oldest first, each with her
-        send's text and the replies that quoted it inside its window, and the
-        cursor: the newest send id among all of them."""
-        where = self._closed(unit, after)
+        """The newest `limit` of those evidence episodes (sent in `rooms` only),
+        oldest first, each with her send's text and the replies that quoted it
+        inside its window, and the cursor: the newest send id among all of them."""
+        if not rooms:
+            return [], after
+        where = self._closed(unit, after, rooms)
         head = sa.select(sa.func.max(ROLLUP_RESPONSE.c.message_id)).where(*where)
         send = MESSAGES.alias("send")
         stmt = (
