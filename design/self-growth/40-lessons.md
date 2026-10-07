@@ -103,11 +103,16 @@ and line quoted, the evidence cited, and what the lesson would have said.
 - **Drift toward engagement.** She learns whatever earns reactions
   (`design/cognition-loop/80-prior-art.md` §4). The cap, decay, rollback and
   the Assess pass push against it.
-- **"Expected an answer" is thin.** A structured mention, or since L0 a
-  fire turn whose brief was `ask` (its last part only). Tag replies carry no
-  brief, and on 2026-10-07 no proactive reminder had been created since the
-  Cognition cut-over, so `silent` stays rare until tag replies say whether
-  they expect an answer (a reply-tool change, the operator's call).
+- **"Expected an answer" is read from her words, not flagged** (operator,
+  2026-10-07). The Rollup's `silent` stays narrow: a structured mention, or
+  since L0 a fire turn whose brief was `ask` (its last part only). Tag
+  replies carry no brief and get no flag: a reply-tool argument saying "I
+  asked" was considered and dropped, because a flag that disagrees with the
+  wording would make lessons diverge from what she actually said. The
+  Lessons session is handed each send's text with its outcome and judges
+  whether an `unanswered` send was a question. This holds unless the
+  labelled set (§7, before going live) shows it misreading which sends asked
+  something.
 - **An unquoted answer is inferred, not seen.** Until 2026-10-07 a response
   counted only as a quote, a reaction or an edit of a reply, and most people in
   a group answer without quoting, so an answered send read `unanswered` (and an
