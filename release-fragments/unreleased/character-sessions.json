@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "Nora's background account of each room now has to point at the messages it rests on: she writes it through a checked step that refuses a citation she was never shown, and every revision keeps what it cites.",
+  "details": [
+    "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried rather than spent.",
+    "What the room account renders as is unchanged."
+  ],
+  "limitations": [
+    "A citation is per account, not per sentence: the check proves the account rests on real messages, not that each line does."
+  ]
+}

@@ -116,6 +116,19 @@ async def test_an_appended_account_is_the_head(store):
     assert head.parent_revision_id is None
 
 
+async def test_the_citations_a_revision_rests_on_are_kept(store):
+    """`character_revise` checked them; the store keeps them so the revision
+    can be re-derived (`0098_culture_citations`), and a row written without
+    any reads back as none, never as something invented."""
+    await store.append(
+        key=KEY, body="they decide by attrition", written_at=NOW,
+        established_by="dream:culture", citations=("4812", "response:4790"),
+    )
+    assert (await store.head(key=KEY)).citations == ("4812", "response:4790")
+    await _append(store, "uncited", at=NOW + 1)
+    assert (await store.head(key=KEY)).citations == ()
+
+
 async def test_a_second_account_names_the_first_as_its_parent(store):
     """DEC-183: the old account becomes history, it is not overwritten."""
     first = await _append(store, "first account")

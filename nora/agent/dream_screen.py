@@ -73,7 +73,7 @@ from ..obs.metrics import Metrics
 from .egress import scan_identifiers
 from .security import looks_like_coordinate
 
-__all__ = ["Rejection", "screen"]
+__all__ = ["Rejection", "offence", "screen"]
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +167,13 @@ def _offence(item: Mapping[str, object]) -> tuple[str, str] | None:
         if looks_like_coordinate(text) or _LABELLED_COORD.search(text):
             return "coordinate", path
     return None
+
+
+def offence(item: Mapping[str, object]) -> tuple[str, str] | None:
+    """`_offence` under a public name, for the runtime's screen on an
+    adaptor's own write verbs (`DreamerRuntime._screened`): one predicate for
+    an envelope item and a verb's arguments, never a second copy."""
+    return _offence(item)
 
 
 def screen(

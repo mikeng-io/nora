@@ -2246,3 +2246,82 @@ async def test_an_adaptor_with_no_saw_gets_the_unchanged_build(monkeypatch):
     )
     await runtime.run(adaptor=_Adaptor(sink=_Sink()), key="g1", batch=())
     assert tools.on_rows_given == [False]
+
+
+# ---------------------------------------------------------------------------
+# an adaptor's own write verbs (design/self-growth/10 §3, `character_revise`)
+# ---------------------------------------------------------------------------
+
+
+class _VerbAdaptor(_Adaptor):
+    """Answers through a verb, never an envelope: `stage` validates nothing
+    and stages its text; `accept` returns what was staged."""
+
+    def __init__(self, *, sink: _Sink) -> None:
+        super().__init__(sink=sink)
+        self.staged: list[str] = []
+
+    def verbs(self, *, key: str):
+        async def stage(text: str) -> dict[str, object]:
+            """Stage one thing.
+
+            Args:
+                text: What to stage.
+            """
+            self.staged.append(text)
+            return {"status": "ok"}
+
+        return [stage]
+
+    async def accept(self, *, key, items):
+        self.accepted.append(items)
+        return tuple(self.staged)
+
+
+async def test_a_verb_adaptor_holds_its_verbs_screened_and_needs_no_envelope(monkeypatch):
+    """The verb is offered beside the read tools, under a budget (R-7's
+    default-deny would veto a name with none), a call carrying an identifier is
+    REFUSED before the verb runs (the envelope screen, applied to arguments),
+    and a loop that returned with no envelope at all is a readable answer:
+    what the verb staged is committed with the run's provenance, `ok`."""
+    sink = _Sink()
+    adaptor = _VerbAdaptor(sink=sink)
+    answers: list[dict[str, object]] = []
+    built: dict[str, Any] = {}
+
+    async def _invoke(agent, prompt, **_kw):
+        (verb,) = [t for t in built["tools"] if t.tool_name == "stage"]
+        answers.append(await verb(text="they decide by attrition"))
+        answers.append(await verb(text="ring her on +85291234567"))
+        return _Result()
+
+    runtime, metrics = _runtime(monkeypatch, invoke=_invoke, raw="prose, no envelope")
+    monkeypatch.setattr(
+        factory, "create_dream_agent",
+        lambda **kw: built.update(tools=kw["tools"], guard=kw["guard"]) or object(),
+    )
+
+    outcome = await runtime.run(adaptor=adaptor, key="g1", batch=())
+
+    assert outcome.status == "ok" and outcome.written == 1
+    assert answers[0] == {"status": "ok"}
+    assert answers[1]["status"] == "refused" and answers[1]["reason"] == "identifier"
+    assert adaptor.staged == ["they decide by attrition"]
+    ((_key, (proposal,)),) = sink.commits
+    assert proposal.payload == "they decide by attrition"
+    assert proposal.instruction_sha256 == SHA
+    assert built["guard"].evaluate("stage", {"text": "x"}) is None
+    assert metrics.get(
+        "nora_dream_screened_total", adaptor="test-adaptor", reason="identifier",
+    ) == 1
+
+
+async def test_a_verb_adaptor_that_staged_nothing_is_nothing_found(monkeypatch):
+    """No envelope and nothing staged: the loop read the batch and wrote
+    nothing, «I looked and there was nothing». Whether that settles what it
+    was asked is the adaptor's `accept` to judge (it may raise)."""
+    sink = _Sink()
+    runtime, _ = _runtime(monkeypatch, raw="")
+    outcome = await runtime.run(adaptor=_VerbAdaptor(sink=sink), key="g1", batch=())
+    assert outcome.status == "nothing_found"
+    assert sink.commits == [("g1", ())]

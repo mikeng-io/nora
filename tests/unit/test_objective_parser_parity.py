@@ -251,8 +251,21 @@ def _read_sites(cls, module) -> list:
     return sites
 
 
+def _verbs_of(cls) -> dict[str, list[str]]:
+    """Each write verb an adaptor offers (the `async def`s nested in its
+    `verbs` method) and the parameters the model fills in."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(cls.verbs)))
+    return {
+        node.name: [a.arg for a in node.args.args + node.args.kwonlyargs]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name != "verbs"
+    }
+
+
 def _cases():
     for module, cls in _adaptors():
+        if getattr(cls, "verbs", None) is not None:
+            continue  # answers through its verbs, never an envelope
         yield pytest.param(
             cls.objective, cls.envelope_key, _read_sites(cls, module),
             id=cls.__name__,
@@ -261,21 +274,48 @@ def _cases():
 
 CASES = list(_cases())
 
+#: The adaptors that answer through their own write verbs (design/self-growth/
+#: 10 §3): their contract with the objective is the verbs and their
+#: parameters, not an envelope's fields.
+VERB_CASES = [
+    pytest.param(cls.objective, _verbs_of(cls), id=cls.__name__)
+    for _module, cls in _adaptors()
+    if getattr(cls, "verbs", None) is not None
+]
+
 
 def test_the_case_list_is_derived_and_not_empty():
     """The run-that-ran control for the derivation itself. An empty or
     silently-shrinking `CASES` makes every parametrized test below vacuous, and
     a hand-written list was exactly the hand-copied vocabulary this file's own
     docstring outlaws."""
-    assert len(CASES) >= 1
-    assert {c.id for c in CASES} >= {"CultureAdaptor"}
+    assert len(CASES) + len(VERB_CASES) >= 1
+    assert {c.id for c in VERB_CASES} >= {"CultureAdaptor"}
+
+
+@pytest.mark.parametrize(("objective", "verbs"), VERB_CASES)
+def test_the_objective_names_every_verb_and_every_argument_the_model_fills(
+    objective, verbs,
+):
+    """The verb adaptor's parity: a verb the objective never names is one the
+    model is not told to call, and an argument it never names is one the model
+    fills by guessing. Both are a tier that runs and writes nothing."""
+    text = (OBJECTIVES / f"{objective}.md").read_text(encoding="utf-8")
+    assert verbs, f"{objective}: no verbs found"
+    missing = [
+        f"{verb}({arg})" if arg else verb
+        for verb, args in verbs.items()
+        for arg in ("", *args)
+        if f"`{arg or verb}`" not in text
+    ]
+    assert not missing, f"{objective}.md never names: {missing}"
 
 
 def test_every_shipped_adaptor_is_covered():
     """A new adaptor with a new objective must not arrive with zero coverage —
     including one in a module nobody added to a list, which is the case the
     previous hand-written tuple could not see."""
-    covered = {c.values[0] for c in CASES}
+    covered = {c.values[0] for c in (*CASES, *VERB_CASES)}
     for _module, cls in _adaptors():
         assert cls.objective in covered, (
             f"{cls.__name__} declares objective={cls.objective!r} and no case "
@@ -399,7 +439,13 @@ def test_the_worked_example_survives_the_egress_screen():
 
     offences: dict[str, list[tuple[str, str]]] = {}
     for module, cls in _adaptors():
-        items = _return_examples(cls.objective, cls.envelope_key)
+        if getattr(cls, "verbs", None) is not None:
+            # No envelope to copy: what it is shown is the whole text, and
+            # whatever example it holds is what a verb call will copy.
+            items: list[dict[str, object]] = [{"objective": (
+                OBJECTIVES / f"{cls.objective}.md").read_text(encoding="utf-8")}]
+        else:
+            items = _return_examples(cls.objective, cls.envelope_key)
         assert items, f"{cls.objective}.md shows no example items"
         _, rejected = screen(
             adaptor=cls.name, items=items, metrics=Metrics(),

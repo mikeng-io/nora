@@ -126,11 +126,11 @@
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },
   {
-    "name": "F1: the oversize account is discarded AND the batch is spent (the defect)",
-    "file": "nora/language/culture.py",
-    "old": "                self._reject(\n                    key,\n                    f\"culture account for scope={key} is {len(parsed.body)} chars, \"\n                    f\"past the {BODY_MAX_CHARS} cap\",\n                )\n                return ()",
-    "new": "                return ()",
-    "target": "tests/unit/test_culture_adaptor.py -k oversize_account_RAISES"
+    "name": "F1: an account past the cap is staged rather than refused",
+    "file": "nora/domain/culture.py",
+    "old": "    if len(body) > BODY_MAX_CHARS:\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_culture_adaptor.py -k each_malformed_revision"
   },
   {
     "name": "F1: the runtime treats an accept that raises as an ordinary empty run",

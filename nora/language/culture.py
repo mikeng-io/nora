@@ -61,8 +61,20 @@ cache shape (ask once, store the answer verbatim) is still not what this is:
 the model combines memory's view with the room's culture and the fold is the
 author. Rendered as `<character>` by `nora.language.culture_render`.
 
+**It writes through a verb, not an envelope** (design/self-growth/10 §3, C2a).
+The session calls `character_revise(entity, body, citations)`; code checks the
+write AS IT IS MADE (every citation is a row id of the batch it was shown, the
+body is within `BODY_MAX_CHARS`, the runtime's identifier and coordinate screen
+on every argument) and answers a refusal the model can act on, or stages it.
+`character_no_change` is the other way to settle the room. The runtime stamps
+what was staged exactly as it stamped an envelope's items, and `commit`
+appends it with its citations. A session that settles nothing holds its batch.
+
 **Nothing here retires (DEC-183)** and **`body` is prose with no section schema
-(DEC-184)** — both are stated where they bite, in `nora.domain.culture`.
+(DEC-184)** — both are stated where they bite, in `nora.domain.culture`. DEC-184
+stands under the verb: a citation is per ACCOUNT, not per line, so nothing in
+the write needs a section to hang it on, and no section has yet been shown to
+be needed.
 
 **Consumed by nobody, on purpose.** `02-measurement §5` sequences this as step
 4: writing only, no behaviour change, so the chain accumulates real revisions
@@ -75,24 +87,26 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Protocol
 
 from nora.domain.blocks import (
     BlockKey,
     ContextBlock,
     assemble,
-    render_messages,
+    render_row_window,
     restamp,
     speaker_name,
 )
 from nora.domain.culture import (
-    BODY_MAX_CHARS,
     CULTURE_OUTCOMES,
     MAX_CONSECUTIVE_REJECTIONS,
+    Citable,
     CultureProposal,
     CultureRevision,
+    Refusal,
     character_key,
+    check_revision,
 )
 from nora.domain.errors import NoraError
 from nora.domain.models import PersonRef, TranscriptRow
@@ -330,28 +344,18 @@ class _CultureStore(Protocol):
     async def append(
         self, *, key: str, body: str, written_at: int, established_by: str,
         instruction_sha256: str | None = ..., model: str | None = ...,
+        citations: tuple[str, ...] = ...,
     ) -> CultureRevision: ...
 
 
-#: NO row ids and NO timestamps, unlike every other adaptor's batch style.
-#: Both are deliberate and both serve the objective's load-bearing clause —
-#: "not dated observations". A model handed `[482] 2026-09-12 14:03` writes
-#: about the 12th; handed a name and a line it writes about the room. The
-#: chronicle this tier exists to not be is exactly `[when] what happened`, so
-#: the rendering must not hand that shape over and then ask for its opposite.
-#:
-#: Nothing downstream needs the ids either: the account cites no messages, and
-#: `accept` therefore has no id set to validate against — which is why this
-#: adaptor has no `_message_ids` channel between `inputs` and `accept`.
-#:
-#: **The id and the clock are suppressed by CONSTRUCTION now** (#292). This
-#: used to be defence in depth between a `RowStyle` saying `none` and accessors
-#: that were never passed. `render_messages` has no `row_id` or `timestamp`
-#: seam to leave unpassed: the only attributes it writes are the ones its
-#: caller's accessors produce, and this one passes no `timestamp`, so no `age`
-#: is rendered. `n` IS written and is safe — it is a per-render position in a
-#: closed 1..N set, never a row id, so nothing this fold could cite back
-#: resolves to a stored row.
+#: NO timestamps, and since `character_revise` (design/self-growth/10 §3)
+#: the stored ROW ID as `n`. The clock stays out for the objective's
+#: load-bearing clause, «not dated observations»: a model handed
+#: `2026-09-12 14:03` writes about the 12th; handed a name and a line it
+#: writes about the room. The id is in because an account now CITES what it
+#: rests on and the verb refuses a citation that is not a row it was shown
+#: (`nora.domain.culture.check_revision`), so the handle must be the row's own
+#: id, never a position (`render_row_window`'s rule, #314).
 
 
 def _batch_day(batch: Sequence[TranscriptRow], *, tz: _dt.tzinfo) -> int | None:
@@ -369,42 +373,24 @@ def _batch_day(batch: Sequence[TranscriptRow], *, tz: _dt.tzinfo) -> int | None:
 
 
 def _render_batch(batch: Sequence[TranscriptRow]) -> str:
-    """One message, one element — `render_messages`, like every other
-    transcript a model reads (#292). No `timestamp`, so no `age` attribute:
-    the culture fold reads a batch for how a room TALKS, and a clock on each
-    line invited it to reason about when instead."""
-    return render_messages(
+    """One message, one element, `n` its stored row id — `render_row_window`,
+    the renderer every pass that cites rows back uses. No `age`: the culture
+    fold reads a batch for how a room TALKS, and a clock on each line invited
+    it to reason about when instead."""
+    return render_row_window(
         batch,
+        row_id=lambda r: r.id,
         # `or "unknown"`, NEVER `or row.sender_id` — the raw id is an E.164 or
         # an ACI and this block is a prompt (R-18, DEC-80).
-        speaker=lambda r: speaker_name(r.person_name, r.sender_name),
+        attrs=lambda r: (("from", speaker_name(r.person_name, r.sender_name)),),
         body=lambda r: r.body or "",
-        timestamp=lambda _r: None,
     )
 
 
-def _parse(item: Mapping[str, object]) -> CultureProposal | None:
-    """One envelope item -> a proposal, or `None` for anything malformed.
-
-    Dropping rather than raising is `DreamAdaptor.accept`'s own contract, and
-    this function keeps it: malformed is `None`, never an exception.
-
-    **The length cap is NOT applied here.** It is applied in `accept`, on the
-    parsed body, because a body past `BODY_MAX_CHARS` is not malformed — it is
-    a well-formed account that must not be written AND must not cost the batch,
-    and only `accept` can raise for that (see `AccountNotRecordableError`).
-    `BODY_MAX_CHARS` says "no writer should produce that"; the database ceiling
-    above it (`CULTURE_BODY_CEILING_CHARS`) says "this row is corrupt", and
-    neither says anything about what could be emitted — the budgets are sized
-    on `ACCOUNT_CHARS_OBSERVED_MAX`, which is the number that does.
-    """
-    body = item.get("body")
-    if not isinstance(body, str):
-        return None
-    body = body.strip()
-    if not body:
-        return None
-    return CultureProposal(body=body)
+#: The entity name a room session writes its own account under
+#: (`character_revise(entity="room", ...)`); a person is written under the name
+#: the prompt showed for them.
+ROOM_ENTITY = "room"
 
 
 #: What this pass carries, declared as data
@@ -466,6 +452,8 @@ class CultureAdaptor:
     #: chain carries.
     uses_watermark = True
     objective = "culture"
+    #: Unread: this adaptor answers through `verbs`, never an envelope
+    #: (`DreamerRuntime._sample`). Kept because `DreamAdaptor` declares it.
     envelope_key = "account"
     #: NINE READ VERBS — see `CULTURE_TOOLS` for what each is for and what is
     #: deliberately absent. `frozenset()` until 2026-09-17, which made this an
@@ -568,6 +556,13 @@ class CultureAdaptor:
         self._shown: dict[str, frozenset[str]] = {}
         self._batch_start: dict[str, int] = {}
         self._rejections: dict[str, tuple[int | None, int]] = {}
+        # What the run in flight may cite (the batch's row ids), what its
+        # `character_revise` calls staged per entity (`None` is the room), and
+        # which entities it closed unchanged. Set by `inputs`, read by the
+        # verbs and drained by `accept`.
+        self._citable: dict[str, Citable] = {}
+        self._staged: dict[str, dict[str | None, CultureProposal]] = {}
+        self._kept: dict[str, set[str | None]] = {}
 
     def _inc(self, outcome: str) -> None:
         if outcome not in CULTURE_OUTCOMES:
@@ -630,6 +625,9 @@ class CultureAdaptor:
             return ""
         self._batch_start[key] = batch[0].id
         self._shown[key] = frozenset()
+        self._citable[key] = Citable(messages=frozenset(row.id for row in batch))
+        self._staged[key] = {}
+        self._kept[key] = set()
         # RESOLVE NAMES (issue #200), the same projection the deleted `NoteCandidateAdaptor`
         # applied before its own batch renders. Every row this fold gets from
         # `record.since` carries `person_name=None` — nothing on this path
@@ -888,120 +886,155 @@ class CultureAdaptor:
             when_empty="render" if description else "self_close",
         )
 
+    # -- the write verbs --------------------------------------------------
+
+    def verbs(self, *, key: str) -> list[Callable[..., Awaitable[dict[str, object]]]]:
+        """`character_revise` and `character_no_change`, bound to this run's
+        `key` (design/self-growth/10 §3, the Cognition session's verb shape).
+
+        Each VALIDATES as the model calls it and answers `ok` or `refused`
+        with a reason it can act on (`nora.domain.culture.check_revision`);
+        nothing is written here. What was staged is returned by `accept`, the
+        runtime stamps the provenance on it and `commit` appends it, so a
+        refused write never reaches the store and an accepted one carries the
+        same provenance an envelope account did."""
+
+        async def character_revise(
+            entity: str, body: str, citations: list[str],
+        ) -> dict[str, object]:
+            """Write the new account of one entity: this room, or one person
+            shown in `<people_views>`. Give the WHOLE account, not a change to
+            it. Call it once per entity; a later call for the same entity
+            replaces the earlier one.
+
+            Returns `status`: ok, or refused with a `reason` and a `detail`
+            saying what to do instead.
+
+            Args:
+                entity: `room` for this room's account, or a person's name
+                    exactly as `<people_views>` shows it.
+                body: The account, in prose. No headings, no bullet points,
+                    no dates.
+                citations: The `n` of every message the account rests on, as
+                    strings, at least one. Only messages you were shown.
+            """
+            return self._revise(key, entity, body, tuple(str(c) for c in citations))
+
+        async def character_no_change(entity: str, why: str) -> dict[str, object]:
+            """Close one entity with its account unchanged. Call this when the
+            messages add nothing the account does not already say, or when
+            there is nothing you can point at. The previous account stands.
+
+            Returns `status`: ok, or refused with a `reason` and a `detail`.
+
+            Args:
+                entity: `room`, or a person's name exactly as `<people_views>`
+                    shows it.
+                why: One short sentence: why nothing changes.
+            """
+            return self._keep(key, entity, why)
+
+        return [character_revise, character_no_change]
+
+    def _entity(self, key: str, entity: str) -> str | Refusal | None:
+        """`None` for the room, a `person_id` for a person shown this run, or
+        the refusal. The id comes from the roster the prompt showed, never
+        from anything the model typed."""
+        name = entity.strip()
+        if name.casefold() == ROOM_ENTITY:
+            return None
+        shown = self._shown.get(key, frozenset())
+        for ref in self._roster(key):
+            if ref.name == name and ref.name in shown:
+                return ref.person_id
+        allowed = ", ".join([ROOM_ENTITY, *sorted(shown)])
+        return Refusal("unknown_entity", f"{entity!r} is not an entity of this "
+                       f"session; write one of: {allowed}")
+
+    def _refused(self, key: str, refusal: Refusal) -> dict[str, object]:
+        log.warning("culture: scope=%s write refused: %s", key, refusal.reason)
+        self._inc("refused")
+        return {"status": "refused", "reason": refusal.reason, "detail": refusal.detail}
+
+    def _revise(
+        self, key: str, entity: str, body: str, citations: tuple[str, ...],
+    ) -> dict[str, object]:
+        if key not in self._staged:
+            return {"status": "unavailable", "reason": "no_session",
+                    "detail": "this session is over; nothing was written"}
+        resolved = self._entity(key, entity)
+        if isinstance(resolved, Refusal):
+            return self._refused(key, resolved)
+        refusal = check_revision(
+            body=body, citations=citations, citable=self._citable[key],
+        )
+        if refusal is not None:
+            return self._refused(key, refusal)
+        self._kept[key].discard(resolved)
+        self._staged[key][resolved] = CultureProposal(
+            body=body.strip(), person_id=resolved, citations=citations,
+        )
+        return {"status": "ok"}
+
+    def _keep(self, key: str, entity: str, why: str) -> dict[str, object]:
+        if key not in self._staged:
+            return {"status": "unavailable", "reason": "no_session",
+                    "detail": "this session is over; nothing was written"}
+        resolved = self._entity(key, entity)
+        if isinstance(resolved, Refusal):
+            return self._refused(key, resolved)
+        self._staged[key].pop(resolved, None)
+        self._kept[key].add(resolved)
+        log.info("culture: scope=%s entity=%s unchanged: %s", key, entity, why[:200])
+        return {"status": "ok"}
+
     # -- accept ---------------------------------------------------------
 
     async def accept(
         self, *, key: str, items: Sequence[Mapping[str, object]]
     ) -> Sequence[object]:
-        """At most ONE account, and more than one is refused entirely.
+        """What this run's `character_revise` calls staged, or a refusal to
+        spend the batch.
 
-        A room has one account. Two or more is not a partial answer, it is a
-        misread of the task — and picking one of them would be an arbitrary
-        choice made silently, on the row that claims to say how the room works.
-        Refusing is visible (`outcome="too_many"`); picking is not.
+        `items` is empty: this adaptor answers through its verbs, never an
+        envelope (`DreamerRuntime._sample`). Every staged account was checked
+        when it was written, so nothing is re-judged here; what is judged is
+        whether the session SETTLED the room: revised it, or closed it
+        unchanged. A session that did neither (it ran out of turns, or every
+        write was refused and it stopped) is `unsettled` and RAISES
+        `AccountNotRecordableError`, so the runtime reports `unavailable` and
+        HOLDS the watermark: the batch was not folded, so it is folded again.
+        A person is optional: one shown and neither revised nor kept keeps
+        the account they had.
 
-        **Fail-closed, split by kind (DEC-280, 2026-10-03).** `empty` returns
-        `()`: the model said nothing usable, so «I looked and there was
-        nothing» is true and the batch is spent honestly. `too_many` and
-        `oversize` RAISE (`AccountNotRecordableError`): the model wrote
-        something, it was read and it is being thrown away, so the runtime
-        reports `unavailable` and HOLDS the watermark. Until DEC-280 `too_many`
-        returned `()`, and the batch was consumed with no account written from
-        it. A person's item naming someone the fold was not SHOWN (not on the
-        roster, or no view of them this pass) drops only that item
-        (`dropped_person`); the room's account and the other people's stand.
-
-        **A rejection run is bounded.** The `MAX_CONSECUTIVE_REJECTIONS`-th
-        rejection in a row of the same batch for one key (the batch named by
-        its first row, which a shrunk retry keeps) does not raise: it is logged
-        at WARNING, counted `abandoned`, and returns `()`, so the fold advances
-        past a batch the model keeps misreading instead of re-reading it for
-        ever. The run is in memory (a restart starts it again).
-
-        **The cap is enforced HERE, after the model has already emitted, and
-        the model is never told it.** `BODY_MAX_CHARS` appears in no prompt and
-        cannot: `nora/dreamer/objectives/culture.md` is
-        `change_policy: operator-only`, and stating a hard cap to a model has
-        its own measured failure anyway (`DreamBudgetConfig.max_memory_calls`:
-        a model told a ceiling in words declined the work rather than spending
-        less, 5/5 -> 1/5 on one case). So this module cannot stop a long
-        account being WRITTEN; it can only stop one being written AND the
-        batch being lost with it, and that is exactly what the raise buys.
-
-        **Which is why the raise is now nearly unreachable, and that is the
-        point** (operator, 2026-09-18). `BODY_MAX_CHARS` is 20,000 against a
-        measured emission maximum of 1,876, so `oversize` has gone from a
-        refusal that fired on 6 of 11 live draws — 55%, each one costing a
-        model call and a re-fold — to one that should never fire at all.
-        `nora_culture_fold_total{outcome="oversize"}` reading zero is the
-        EXPECTED state now, not evidence the branch is dead — and if it
-        ever fires it means a body 10x anything observed, which is the
-        corruption the ceiling is for.
-
-        **The quality guard this used to pretend to be belongs to the
-        operator.** The objective would have to ask for the length it wants in
-        terms the model can act on — its own worked example is 739 characters,
-        and the instruction around it says "one paragraph or two" without ever
-        saying what that is in prose it has not yet written. A line in "What to
-        write" naming the worked example AS the target length ("about as long
-        as the example below, and never more than twice it") is the change; it
-        is a prompt change, so it needs the arm that measures it, not an
-        assertion here. Until that lands, nothing stops an account drifting
-        back into chronicle, and refusing 13%-over prose was never the thing
-        that would have.
+        **A run of unsettled sessions is bounded** (DEC-280): the
+        `MAX_CONSECUTIVE_REJECTIONS`-th in a row of the same batch for one key
+        (the batch named by its first row, which a shrunk retry keeps) does not
+        raise; it is logged, counted `abandoned`, and returns `()`, so the fold
+        advances instead of re-reading a batch for ever. The run is in memory
+        (a restart starts it again).
         """
-        # A person's item carries a `person` NAME the prompt showed in
-        # `<people_views>`; the id is resolved HERE, so a model never supplies
-        # one. A name not shown this pass, a repeat and a malformed item are
-        # dropped, and only that item.
-        shown = self._shown.get(key, frozenset())
-        by_name = {ref.name: ref.person_id for ref in self._roster(key) if ref.name in shown}
-        room_items = [i for i in items if "person" not in i]
-        if len(room_items) > 1:
+        staged = self._staged.pop(key, {})
+        kept = self._kept.pop(key, set())
+        self._citable.pop(key, None)
+        if None not in staged and None not in kept:
             log.warning(
-                "culture: %d accounts proposed for scope=%s; a room has one, "
-                "so the whole reply is refused", len(room_items), key,
+                "culture: scope=%s ended without revising or keeping the room's "
+                "account; HOLDING the watermark", key,
             )
-            self._inc("too_many")
-            self._reject(key, f"{len(room_items)} room accounts for scope={key}; a room has one")
+            self._inc("unsettled")
+            self._reject(key, f"the session for scope={key} did not settle the room")
             return ()
-        out: list[CultureProposal] = []
-        seen: set[str] = set()
-        for item in items:
-            parsed = _parse(item)
-            if parsed is None:
-                continue
-            if "person" in item:
-                person_id = by_name.get(str(item["person"]))
-                if person_id is None or person_id in seen:
-                    log.warning("character: dropped an account for %r in scope=%s",
-                                item["person"], key)
-                    self._inc("dropped_person")
-                    continue
-                seen.add(person_id)
-                parsed = CultureProposal(body=parsed.body, person_id=person_id)
-            if len(parsed.body) > BODY_MAX_CHARS:
-                log.warning(
-                    "culture: account for scope=%s is %d chars, past the %d cap — "
-                    "almost certainly drifted back into chronicle; HOLDING the "
-                    "watermark, this batch is folded again rather than spent",
-                    key, len(parsed.body), BODY_MAX_CHARS,
-                )
-                self._inc("oversize")
-                self._reject(
-                    key,
-                    f"culture account for scope={key} is {len(parsed.body)} chars, "
-                    f"past the {BODY_MAX_CHARS} cap",
-                )
-                return ()
-            out.append(parsed)
         self._rejections.pop(key, None)
-        if not out:
-            self._inc("empty")
-        return tuple(out)
+        for _ in kept:
+            self._inc("kept")
+        # The room's account first, then the people, in the order written.
+        room = [p for entity, p in staged.items() if entity is None]
+        people = [p for entity, p in staged.items() if entity is not None]
+        return (*room, *people)
 
     def _reject(self, key: str, why: str) -> None:
-        """Refuse this reply. RAISES `AccountNotRecordableError` (the runtime
+        """Refuse this run. RAISES `AccountNotRecordableError` (the runtime
         reports `unavailable` and holds the watermark) unless this is the
         `MAX_CONSECUTIVE_REJECTIONS`-th rejection in a row of the same batch for
         `key`: then it RETURNS, after a WARNING and `abandoned`, and the caller
@@ -1076,6 +1109,7 @@ class CultureAdaptor:
                 established_by=proposal.established_by,
                 instruction_sha256=proposal.instruction_sha256,
                 model=proposal.model,
+                citations=payload.citations,
             )
             self._inc("written")
             written += 1

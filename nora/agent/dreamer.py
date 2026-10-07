@@ -77,6 +77,7 @@ what was actually SENT.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import time
@@ -97,7 +98,8 @@ from ..obs.metrics import Metrics
 from ..obs.tracing import TRACE_KIND, annotate, span
 from . import factory
 from .dream_guard import DreamGuard
-from .dream_screen import screen
+from .dream_screen import offence, screen
+from .ports import ToolSpec, adapt
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .surface import DREAMER_LOOP_TOOLS
@@ -1484,8 +1486,14 @@ class DreamerRuntime:
             # adaptor with no `saw` grounds on its prompt alone, as before.
             saw = getattr(adaptor, "saw", None)
             loaded: list[TranscriptRow] = []
+            # WHICH ROOM the read tools resolve through. A scope-keyed
+            # adaptor's key IS its room; an adaptor keyed on something else
+            # (a Character entity, design/self-growth/10 §3) names the room
+            # its reads stand in through `tool_room`, or none (closed).
+            tool_room = getattr(adaptor, "tool_room", None)
             tools = self._tools.build(
-                key=key, names=frozenset(adaptor.tools),
+                key=(tool_room(key) or key) if tool_room is not None else key,
+                names=frozenset(adaptor.tools),
                 # A unit-keyed adaptor's key IS the unit (32 §3.4):
                 # supply it so the unit-scoped verbs resolve it directly
                 # instead of asking `unit_for` to name a room that does
@@ -1496,6 +1504,19 @@ class DreamerRuntime:
                 # Only for an adaptor that grounds on what it loaded
                 # (`saw`, design 43 §3): every other build is unchanged.
                 **({"on_rows": loaded.extend} if saw is not None else {}),
+            )
+            # THE ADAPTOR'S OWN WRITE VERBS (design/self-growth/10 §3,
+            # `character_revise`): typed closures that VALIDATE a write as
+            # the model makes it and answer a refusal it can act on, the shape
+            # the Cognition session's verbs have (`nora.app.cognition_session`).
+            # They stage; they never touch a store. What they staged comes
+            # back through `accept`, the runtime stamps it, and `commit`
+            # writes it, so «the model proposes, code disposes» and the
+            # provenance are exactly what an envelope adaptor gets.
+            verbs = getattr(adaptor, "verbs", None)
+            own = (
+                [_as_tool(self._screened(adaptor.name, v)) for v in verbs(key=key)]
+                if verbs is not None else []
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a
             # `CallLedger`, and a ledger is SPENT STATE — build one per run
@@ -1519,6 +1540,9 @@ class DreamerRuntime:
                 # for the same question to be answered differently.
                 budget.tool_calls,
             )
+            for verb in own:
+                tool_budgets[_tool_name(verb)] = VERB_CALLS
+            tools = [*tools, *own]
         except Exception:
             log.exception(
                 "dream run failed (adaptor=%s key=%s)", adaptor.name, key,
@@ -1680,8 +1704,8 @@ class DreamerRuntime:
         # how many rows survived: a batch whose every item was screened out, or
         # whose every verdict was `not_covered`, was still a batch that was
         # read. Collapsing them would make a working screen look like a silent
-        # model.
-        status: DreamStatus = "ok" if items else "nothing_found"
+        # model. A verb adaptor returns no items; what it staged is its answer.
+        status: DreamStatus = "ok" if items or proposals else "nothing_found"
         return self._finish(adaptor, status, written, sha, stop_reason, started)
 
     async def _sample(
@@ -1794,6 +1818,13 @@ class DreamerRuntime:
                 "nora_dream_stop_reason_total",
                 adaptor=adaptor.name, reason=str(stop_reason),
             )
+        if getattr(adaptor, "verbs", None) is not None:
+            # A VERB ADAPTOR'S ANSWER IS ITS CALLS, not an envelope: its writes
+            # were validated and staged as they were made, and `accept` reads
+            # what was staged. A loop that RETURNED is a readable sample; one
+            # that timed out or raised is not (above), and whether it settled
+            # what it was asked to is the adaptor's to judge in `accept`.
+            return (), stop_reason
         raw = factory.final_text(result)
         items = parse_envelope(raw, key=adaptor.envelope_key)
         if items is None:
@@ -1803,6 +1834,37 @@ class DreamerRuntime:
             )
             return None, stop_reason
         return items, stop_reason
+
+    def _screened(
+        self, adaptor: str, verb: Callable[..., Any],
+    ) -> Callable[..., Any]:
+        """`verb`, refusing any call whose arguments carry an identifier or a
+        coordinate (R-18/R-28) BEFORE it runs: the same screen, the same
+        reasons and the same counter an envelope item meets (`dream_screen`),
+        because a verb's text reaches a store that renders into later prompts
+        exactly as an item's does. Refused, not dropped: the model reads the
+        reason and can write the account without it."""
+        @functools.wraps(verb)
+        async def screened(*args: Any, **kwargs: Any) -> dict[str, object]:
+            found = offence(kwargs)
+            if found is not None:
+                reason, path = found
+                self._metrics.inc(
+                    "nora_dream_screened_total", adaptor=adaptor, reason=reason,
+                )
+                log.warning(
+                    "dream_screened: adaptor=%s verb=%s reason=%s path=%s",
+                    adaptor, verb.__name__, reason, path,
+                )
+                return {
+                    "status": "refused", "reason": reason,
+                    "detail": f"`{path}` carries an {reason}; nothing that "
+                              "identifies or locates a person may be written. "
+                              "Write it without that",
+                }
+            result: dict[str, object] = await verb(*args, **kwargs)
+            return result
+        return screened
 
     def _finish(
         self, adaptor: DreamAdaptor, status: DreamStatus, written: int,
@@ -1845,6 +1907,26 @@ def _dedupe_items(
         seen.add(fingerprint)
         out.append(item)
     return tuple(out)
+
+
+#: Calls ONE pass may make of each of an adaptor's own write verbs. A write
+#: that is refused answers a reason the model can act on, so it needs room to
+#: correct and call again; a session writes one entity, so six is a ceiling on
+#: a loop that keeps being refused, not on the work.
+VERB_CALLS = 6
+
+
+def _tool_name(tool: Any) -> str:
+    return str(getattr(tool, "tool_name", None) or getattr(tool, "__name__", "") or "")
+
+
+def _as_tool(verb: Callable[..., Any]) -> Any:
+    """An adaptor's write verb (a typed closure) as a Strands tool, through
+    `nora.agent.ports.adapt`, the one place a `ToolSpec` becomes one (ADR
+    0015: the schema comes from the closure's signature and docstring)."""
+    return adapt(ToolSpec(
+        name=verb.__name__, description="", schema={}, call=verb, budget=VERB_CALLS,
+    ))
 
 
 def _tool_budgets(

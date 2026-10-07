@@ -29,6 +29,7 @@ DEC-184).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from math import ceil
 
@@ -41,10 +42,14 @@ __all__ = [
     "CULTURE_OUTCOMES",
     "MAX_CONSECUTIVE_REJECTIONS",
     "OUTPUT_TOKENS_PER_CHAR",
+    "REVISE_REFUSALS",
+    "Citable",
     "Culture",
     "CultureProposal",
     "CultureRevision",
+    "Refusal",
     "character_key",
+    "check_revision",
 ]
 
 #: **MEASURED, 2026-09-17** — what one character of a culture account costs in
@@ -151,19 +156,25 @@ BODY_MAX_CHARS = 20_000
 #: Every value `nora_culture_fold_total{outcome}` may carry: the label
 #: vocabulary the adaptor checks at runtime (`CultureAdaptor._inc`) and the
 #: metric's help text reads (`nora.obs.metric_specs`). Here, in the domain,
-#: so the metric spec can import it. `dropped_person`: one person's account
-#: named someone the fold was not shown, and only that item was dropped.
-#: `abandoned`: the same batch was rejected `MAX_CONSECUTIVE_REJECTIONS`
-#: times in a row for one key, and the fold advanced past it (DEC-280).
+#: so the metric spec can import it.
+#:
+#: Since the write verb (`character_revise`, design/self-growth/10 §3) the
+#: outcomes are about what a SESSION did with its entity, not about an
+#: envelope: `written` (a revision appended), `unchanged` (a revision
+#: byte-identical to the head, not appended), `kept` (the session closed its
+#: entity «no change»), `refused` (one call of the verb was refused, with a
+#: reason the model read), `unsettled` (the session ended with its entity
+#: neither revised nor kept, so the run holds its watermark) and `abandoned`
+#: (the same batch was unsettled `MAX_CONSECUTIVE_REJECTIONS` times in a row
+#: for one key, and the fold advanced past it, DEC-280).
 CULTURE_OUTCOMES = frozenset({
-    "written", "empty", "too_many", "unchanged", "oversize", "dropped_person",
-    "abandoned",
+    "written", "unchanged", "kept", "refused", "unsettled", "abandoned",
 })
 
-#: How many consecutive rejections (`too_many`, `oversize`) of the same batch a
-#: key takes before the fold gives up on it and advances (DEC-280). Each
-#: rejection holds the watermark, so without a bound a batch the model keeps
-#: misreading is re-read for ever.
+#: How many consecutive unsettled sessions of the same batch a key takes
+#: before the fold gives up on it and advances (DEC-280). Each one holds the
+#: watermark, so without a bound a batch the model keeps failing to settle is
+#: re-read for ever.
 MAX_CONSECUTIVE_REJECTIONS = 3
 
 #: **MEASURED, 2026-09-17/18** — the longest account this deployment's model has
@@ -285,6 +296,12 @@ class CultureRevision:
     # fail-closed side.
     lineage: Lineage = field(default=Lineage(), compare=False)
     exclude_persons: tuple[str, ...] = field(default=(), compare=False)
+    #: What this revision rests on, as `character_revise` checked it: Record
+    #: message ids (`"4812"`) and Rollup response episodes
+    #: (`"response:4790"`, by her send's id). Empty on every row written
+    #: before the verb (migration `0098_culture_citations`). Provenance, so
+    #: `compare=False` like `lineage`.
+    citations: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +321,99 @@ class CultureProposal:
     #: Honcho's view of them and the room's culture. It comes from the roster
     #: the prompt showed, never from an id the model typed.
     person_id: str | None = None
+    #: The citations `check_revision` accepted, in the model's order.
+    citations: tuple[str, ...] = ()
+
+
+#: Why one `character_revise` call was refused, as the `reason` the model
+#: reads (each with a `detail` saying what to do instead):
+#:
+#: - `unknown_entity`: the entity is not one this session writes;
+#: - `empty`: no body;
+#: - `too_long`: the body is past `BODY_MAX_CHARS`;
+#: - `uncited`: no citation at all; an account rests on what it read;
+#: - `unresolved_citation`: a citation that is not one of the rows or
+#:   episodes this session was handed;
+#: - `echo`: a Character · Nora revision whose citations are only her own
+#:   sends (design/cognition-loop/10-tiers.md §2 rule 4, the echo rule);
+#: - `identifier`, `coordinate`: R-18/R-28, the Dreamer's egress screen
+#:   (`nora.agent.dream_screen`), applied to the body before it is staged.
+REVISE_REFUSALS = frozenset({
+    "unknown_entity", "empty", "too_long", "uncited", "unresolved_citation",
+    "echo", "identifier", "coordinate",
+})
+
+#: `response:<her send's message id>`: how a session cites a Rollup response
+#: episode. The episode's own Rollup key is `(response, <unit>|<id>,
+#: <interval>)` (`nora.infra.sql.rollups._citation_scope`); inside one unit's
+#: session the send id names it exactly, and it is what the session was shown.
+_EPISODE = re.compile(r"response:(\d+)")
+
+
+@dataclass(frozen=True, slots=True)
+class Refusal:
+    """One refused write: the `reason` (a `REVISE_REFUSALS` member) and a
+    `detail` the model can act on."""
+
+    reason: str
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class Citable:
+    """What one session may cite, built by CODE from what it handed the model.
+
+    `messages` are the Record ids it was shown (or loaded through a read it
+    holds); `nora` is the subset that are her own sends; `episodes` are the
+    Rollup response episodes it was shown, by her send's id. `echo_rule` is
+    on for Character · Nora alone: a revision of HER account must rest on
+    something other than her own words (10-tiers §2 rule 4)."""
+
+    messages: frozenset[int] = frozenset()
+    nora: frozenset[int] = frozenset()
+    episodes: frozenset[int] = frozenset()
+    echo_rule: bool = False
+
+
+def check_revision(
+    *, body: str, citations: tuple[str, ...], citable: Citable,
+) -> Refusal | None:
+    """`None` when this revision may be staged, else why not.
+
+    Every citation must resolve to something this session was HANDED: a
+    citation the session cannot have read is a claim nobody can re-derive,
+    which is the whole point of a citation (AGENTS.md, re-derivable). At
+    least one is required: an account that rests on nothing it read is a
+    guess. The body is prose (DEC-184): its length is checked, its shape is
+    not.
+    """
+    if not body.strip():
+        return Refusal("empty", "the body is empty; write the account, or close "
+                       "this entity as unchanged")
+    if len(body) > BODY_MAX_CHARS:
+        return Refusal("too_long", f"the body is {len(body)} characters, past the "
+                       f"{BODY_MAX_CHARS} cap; write it shorter")
+    if not citations:
+        return Refusal("uncited", "cite at least one message id (`n` of a message "
+                       "you were shown) that the account rests on")
+    messages: set[int] = set()
+    episodes: set[int] = set()
+    for raw in citations:
+        text = str(raw).strip()
+        episode = _EPISODE.fullmatch(text)
+        if episode is not None and int(episode.group(1)) in citable.episodes:
+            episodes.add(int(episode.group(1)))
+        elif text.isdigit() and int(text) in citable.messages:
+            messages.add(int(text))
+        else:
+            return Refusal("unresolved_citation", f"{text!r} is not a message or "
+                           "episode you were shown; cite only the `n` of a shown "
+                           "message or a shown `response:<n>` episode")
+    if citable.echo_rule and not episodes and messages <= citable.nora:
+        return Refusal("echo", "every citation is one of your own sends; your "
+                       "account must rest on how people responded: cite a "
+                       "`response:<n>` episode or a message someone else wrote")
+    return None
 
 
 def character_key(scope: str, person_id: str) -> str:
