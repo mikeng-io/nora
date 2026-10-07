@@ -623,6 +623,8 @@ NATIVELY_AUTHORED = {
     "character-person",
     # The unit's Character session (C3a): new, written for it.
     "character-unit",
+    # Her own Character session (C3b): new, written for it.
+    "character-nora",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

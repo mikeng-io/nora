@@ -53,10 +53,12 @@ __all__ = [
     "Culture",
     "CultureProposal",
     "CultureRevision",
+    "Episode",
     "Refusal",
     "RoomMessage",
     "character_key",
     "check_revision",
+    "nora_character_key",
     "unit_culture_key",
 ]
 
@@ -182,7 +184,7 @@ CULTURE_OUTCOMES = frozenset({
 #: The entity kinds a Character session writes besides a room
 #: (`nora.language.character`), the `kind` label of
 #: `nora_character_session_total`.
-CHARACTER_KINDS = frozenset({"person", "unit"})
+CHARACTER_KINDS = frozenset({"person", "unit", "nora"})
 
 #: That metric's `outcome` vocabulary: the room's own, which every session
 #: shares (`nora.language.character_session.EntitySessions`).
@@ -461,6 +463,32 @@ def unit_culture_key(unit: str) -> str:
     unit's Character session from its rooms' cultures. No room's
     `primary_id` and no person key ends in `#unit`."""
     return f"{unit}#unit"
+
+
+def nora_character_key(unit: str) -> str:
+    """The `culture` key of Nora's own account in `unit` (design/self-growth/10
+    §4, C3b): what she is like HERE, as its people have met her. Per unit,
+    never per room. No room, person or unit key ends in `#nora`."""
+    return f"{unit}#nora"
+
+
+@dataclass(frozen=True, slots=True)
+class Episode:
+    """One CLOSED Rollup `response` episode as Character · Nora reads it
+    (`nora.infra.sql.rollups`, 25 §3): her send, and what followed inside the
+    window. Cited as `response:<send_id>`.
+
+    `replies` are the Record rows that quoted her send inside the window;
+    `reactions` and `edits` are the episode's own counts; `outcome` is
+    `responded`, `unanswered`, `silent` or `unknown` (never `open`)."""
+
+    send_id: int
+    room: str
+    text: str
+    outcome: str
+    reactions: int
+    edits: int
+    replies: tuple[TranscriptRow, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

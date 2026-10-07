@@ -75,7 +75,7 @@ async def test_the_session_is_handed_its_account_its_rooms_and_its_messages_by_i
     await store.append(key="room-b", body="a games room that plays late",
                        written_at=T0, established_by="dream:culture:x")
     out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
-    names = [name for name, _o, _k in _BLOCKS if name != "about_unit"]
+    names = [name for name, _o, _k in _BLOCKS if name not in ("about_unit", "episodes")]
     positions = [out.index(f"<{name} ") for name in names]
     assert positions == sorted(positions), out
     assert 'name="Ada"' in out and "阿Ada" in out

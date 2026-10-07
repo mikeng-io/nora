@@ -173,5 +173,12 @@
     "old": "        elif text.isdigit() and int(text) in citable.messages:\n",
     "new": "        elif text.isdigit():\n",
     "target": "tests/unit/test_culture_adaptor.py::test_a_citation_of_a_row_the_session_was_NOT_shown_is_refused"
+  },
+  {
+    "name": "C3b: the echo rule is gone, a revision citing only her sends is staged",
+    "file": "nora/domain/culture.py",
+    "old": "    if citable.echo_rule and not episodes and messages <= citable.nora:\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_character_nora.py::test_a_revision_citing_only_her_own_sends_is_refused_by_the_echo_rule"
   }
 ]

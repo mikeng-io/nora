@@ -22,6 +22,14 @@ store and revision chain:
   Record ids that culture cites; it cites from those (a room's culture is
   linked, never cited, DEC-249, so the chain still ends in the Record). It
   holds no read tool. Rendered as `<unit_culture>` in the unit's rooms.
+- **Nora** (C3b), key `nora_character_key(unit)`: what she is like in this
+  unit, as its people have met her. Its evidence is CLOSED Rollup `response`
+  episodes of the current build: each of her sends paired with the replies
+  that quoted it, its reaction and edit counts and its outcome. It cites
+  episodes (`response:<id>`) or the replies, and the verb enforces the ECHO
+  RULE (10-tiers §2 rule 4): a revision resting only on her own sends is
+  refused. Descriptive only, no read tool, and NO block yet: the self block
+  is design/self-growth/20, a later step.
 
 **Code at the edges, an agent loop in the middle** (§3.1): code counts the
 evidence, wakes the key, hands over the previous account and what is new, and
@@ -52,6 +60,7 @@ from nora.domain.blocks import (
     ContextBlock,
     assemble,
     render_elements,
+    render_group,
     render_row_window,
 )
 from nora.domain.culture import (
@@ -60,6 +69,7 @@ from nora.domain.culture import (
     Citable,
     CultureProposal,
     CultureRevision,
+    Episode,
     RoomMessage,
 )
 from nora.domain.models import PersonRef
@@ -71,12 +81,16 @@ from nora.obs.metrics import Metrics
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "CHARACTER_NORA_ADAPTOR_NAME",
     "CHARACTER_PERSON_ADAPTOR_NAME",
     "CHARACTER_PERSON_TOOLS",
     "CHARACTER_UNIT_ADAPTOR_NAME",
+    "CharacterNoraAdaptor",
     "CharacterPersonAdaptor",
     "CharacterRoom",
     "CharacterUnitAdaptor",
+    "NoraEvidence",
+    "NoraKey",
     "PersonEvidence",
     "PersonKey",
     "UnitEvidence",
@@ -116,6 +130,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_character", 20, "turn"),
     ("room_cultures", 30, "turn"),
     ("person_messages", 40, "turn"),
+    ("episodes", 50, "turn"),
 )
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
@@ -446,6 +461,159 @@ class CharacterUnitAdaptor(EntitySessions):
             payload = proposal.payload
             if not isinstance(payload, CultureProposal) or payload.person_id is not None:
                 raise TypeError("CharacterUnitAdaptor.commit takes its own account only")
+            previous = await self._culture.head(key=key)
+            if previous is not None and previous.body == payload.body:
+                self._count("unchanged")
+                continue
+            await self._culture.append(
+                key=key, body=payload.body, written_at=now_ms,
+                established_by=proposal.established_by,
+                instruction_sha256=proposal.instruction_sha256,
+                model=proposal.model, citations=payload.citations,
+            )
+            self._count("written")
+            written += 1
+        return written
+
+
+CHARACTER_NORA_ADAPTOR_NAME = "character-nora"
+
+#: `inputs` holds one site (the previous account) and `commit` two.
+NORA_STORE_CALLS_PER_TICK = 3
+
+
+@dataclass(frozen=True)
+class NoraKey:
+    """What a Nora key names: the unit, and its rooms' labels by `primary_id`."""
+
+    unit: str
+    rooms: tuple[CharacterRoom, ...]
+
+
+class _Episodes(Protocol):
+    """`nora.infra.sql.character.SqlCharacterEvidence`'s episode reads."""
+
+    async def episode_count(self, *, unit: str, after: int) -> int: ...
+
+    async def episodes(
+        self, *, unit: str, after: int, limit: int,
+    ) -> tuple[list[Episode], int]: ...
+
+
+class NoraEvidence:
+    """The dream loop's count and read for a Nora key: closed response
+    episodes, by her send's Record id."""
+
+    def __init__(self, *, store: _Episodes, keys: Mapping[str, NoraKey]) -> None:
+        self._store = store
+        self._keys = keys
+
+    async def count(self, *, key: str, after: int) -> int:
+        return await self._store.episode_count(unit=self._keys[key].unit, after=after)
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[Episode], int]:
+        return await self._store.episodes(unit=self._keys[key].unit, after=after, limit=limit)
+
+
+class CharacterNoraAdaptor(EntitySessions):
+    """Her own account in one unit, from how its people responded to her
+    (C3b). Writes only; nothing renders it yet."""
+
+    name = CHARACTER_NORA_ADAPTOR_NAME
+    key_kind = "entity"
+    uses_watermark = True
+    objective = CHARACTER_NORA_ADAPTOR_NAME
+    envelope_key = "account"
+    #: None: the episodes are handed to it whole.
+    tools: frozenset[str] = frozenset()
+    store_calls_per_tick = NORA_STORE_CALLS_PER_TICK
+
+    def __init__(
+        self, *, culture: _CultureStore, evidence: NoraEvidence,
+        keys: Mapping[str, NoraKey], name_of: Callable[[str | None], str],
+        metrics: Metrics | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._culture = culture
+        #: Read by the dream loop, never awaited here.
+        self.evidence = evidence
+        self._keys = keys
+        self._population = tuple(sorted(keys))
+        #: A reply's author by `person_id` (the roster's name, never a
+        #: platform id or a self-set profile name).
+        self._name_of = name_of
+        self._metrics = metrics
+        self._clock = clock or (lambda: datetime.now().astimezone())
+        self._sessions_init()
+
+    def keys(self) -> Sequence[str]:
+        return self._population
+
+    def _count(self, outcome: str) -> None:
+        _inc_session(self._metrics, "nora", outcome)
+
+    def _episode(self, e: Episode, labels: Mapping[str, str]) -> str:
+        """One `<episode>`: her send and what quoted it, each an `m` with its
+        Record id, inside one element carrying the episode's handle, room,
+        outcome and counts."""
+        rows = render_row_window(
+            [(e.send_id, "you", e.text), *(
+                (r.id, self._name_of(r.person_id), r.body or "") for r in e.replies
+            )],
+            row_id=lambda m: m[0],
+            attrs=lambda m: (("from", m[1]),),
+            body=lambda m: m[2],
+        )
+        return render_group("episode", [
+            ("n", f"response:{e.send_id}"),
+            ("room", labels.get(e.room) or "unnamed room"),
+            ("outcome", e.outcome),
+            ("reactions", str(e.reactions)),
+            ("edits", str(e.edits)),
+        ], rows)
+
+    async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
+        """Her previous account here and the closed episodes since. `""`
+        with none: no model call."""
+        nk = self._keys.get(key)
+        episodes = [e for e in batch if isinstance(e, Episode)]
+        if nk is None or not episodes:
+            return ""
+        now = self._clock()
+        labels = {r.key: r.label for r in nk.rooms}
+        sends = frozenset(e.send_id for e in episodes)
+        self._begin(
+            key, citable=Citable(
+                messages=sends | frozenset(r.id for e in episodes for r in e.replies),
+                nora=sends, episodes=sends, echo_rule=True,
+            ),
+            entities={"nora": None}, batch_start=episodes[0].send_id,
+        )
+        previous = await self._culture.head(key=key)
+        parts: list[ContextBlock | None] = [
+            None if previous is None else ContextBlock(
+                name="previous_character", **_at("previous_character"),
+                body=escape(previous.body),
+                attrs=(("written", age(previous.written_at, now)),),
+            ),
+            ContextBlock(
+                name="episodes", **_at("episodes"),
+                body="\n".join(self._episode(e, labels) for e in episodes),
+            ),
+        ]
+        return assemble([p for p in parts if p is not None], sep="\n\n")
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """`CharacterPersonAdaptor.commit`'s rule, under her unit key."""
+        written = 0
+        for proposal in proposals:
+            payload = proposal.payload
+            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+                raise TypeError("CharacterNoraAdaptor.commit takes her own account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
                 self._count("unchanged")

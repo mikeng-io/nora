@@ -7,6 +7,9 @@ for a room, generalised); a read is what the session is handed:
 
 - **a person** (C2b): their human messages across their unit's rooms, by
   Record id.
+- **Nora** (C3b): CLOSED `response` episodes of the current Rollup build for
+  the unit, by her send's Record id: her send's text, the replies that quoted
+  it inside the window, and the episode's counts and outcome.
 - **a unit** (C3a): new revisions of its rooms' cultures, by COUNT: a culture
   revision's id is a uuid with no order, and the chain is append-only, so the
   number of revisions a unit's rooms hold only grows and is the cursor.
@@ -29,9 +32,10 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import RoomMessage
+from nora.domain.culture import Episode, RoomMessage
 from nora.infra.sql.audit import transcript_row, transcript_select
-from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES
+from nora.infra.sql.mobility import current_build_id
+from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES, ROLLUP_RESPONSE
 
 __all__ = ["SqlCharacterEvidence"]
 
@@ -133,3 +137,70 @@ class SqlCharacterEvidence:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(stmt)).all()
         return [r.culture_key for r in rows], total
+
+    # -- Nora ----------------------------------------------------------------
+
+    def _closed(self, unit: str, after: int) -> list[Any]:
+        return [
+            ROLLUP_RESPONSE.c.build_id == current_build_id(),
+            ROLLUP_RESPONSE.c.unit == unit,
+            ROLLUP_RESPONSE.c.outcome != "open",
+            ROLLUP_RESPONSE.c.message_id > after,
+        ]
+
+    async def episode_count(self, *, unit: str, after: int) -> int:
+        """Closed `response` episodes of the current build for `unit` whose
+        send is past Record id `after`. An `open` one is never counted: its
+        outcome can still change."""
+        stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
+            *self._closed(unit, after),
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(stmt)).scalar_one())
+
+    async def episodes(
+        self, *, unit: str, after: int, limit: int,
+    ) -> tuple[list[Episode], int]:
+        """The newest `limit` of those episodes, oldest first, each with her
+        send's text and the replies that quoted it inside its window, and the
+        cursor: the newest send id among all of them."""
+        where = self._closed(unit, after)
+        head = sa.select(sa.func.max(ROLLUP_RESPONSE.c.message_id)).where(*where)
+        send = MESSAGES.alias("send")
+        stmt = (
+            sa.select(
+                ROLLUP_RESPONSE.c.message_id, ROLLUP_RESPONSE.c.platform,
+                ROLLUP_RESPONSE.c.conversation_id, ROLLUP_RESPONSE.c.sent_ts,
+                ROLLUP_RESPONSE.c.valid_to_ms, ROLLUP_RESPONSE.c.outcome,
+                ROLLUP_RESPONSE.c.reactions, ROLLUP_RESPONSE.c.edits,
+                send.c.body,
+            )
+            .select_from(ROLLUP_RESPONSE.outerjoin(
+                send, send.c.id == ROLLUP_RESPONSE.c.message_id,
+            ))
+            .where(*where)
+            .order_by(ROLLUP_RESPONSE.c.message_id.desc())
+            .limit(max(limit, 0))
+        )
+        async with self._engine.connect() as conn:
+            cursor = (await conn.execute(head)).scalar_one_or_none()
+            rows = (await conn.execute(stmt)).all() if limit > 0 else []
+            out: list[Episode] = []
+            for r in reversed(rows):
+                replies = (await conn.execute(
+                    transcript_select().where(
+                        MESSAGES.c.platform == r.platform,
+                        MESSAGES.c.conversation_id == r.conversation_id,
+                        MESSAGES.c.quoted_ts == r.sent_ts,
+                        MESSAGES.c.is_nora == 0,
+                        MESSAGES.c.ts >= r.sent_ts,
+                        MESSAGES.c.ts <= r.valid_to_ms,
+                    ).order_by(MESSAGES.c.id)
+                )).all()
+                out.append(Episode(
+                    send_id=int(r.message_id), room=r.conversation_id,
+                    text=r.body or "", outcome=r.outcome,
+                    reactions=int(r.reactions), edits=int(r.edits),
+                    replies=tuple(transcript_row(x) for x in replies),
+                ))
+        return out, int(cursor or after)

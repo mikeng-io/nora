@@ -1485,6 +1485,9 @@ person_wake_batch = 100
 # New revisions of a unit's room cultures that wake the unit's own account
 # (what the group is across its rooms, read as <unit_culture> in its rooms).
 unit_wake_batch = 5
+# Closed response episodes (her messages, each with how people responded) that
+# wake her own account in a unit. Written only: nothing reads it yet.
+nora_wake_batch = 100
 # Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300

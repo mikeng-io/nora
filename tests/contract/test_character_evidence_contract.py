@@ -151,3 +151,86 @@ async def test_a_units_evidence_is_its_rooms_revisions_counted_in_write_order(re
     newest, cursor = await revisions.revisions_after(keys=keys, after=0, limit=1)
     assert newest == ["room-a"] and cursor == 3
     assert await revisions.revisions_after(keys=keys, after=3, limit=5) == ([], 3)
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
+    """Three of her sends in `friends` (one still open, one whose reply came
+    after the window), one in another unit, and one in a superseded build."""
+    from nora.domain.culture import Episode
+
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        fake.add_episode(unit="friends", episode=Episode(
+            send_id=1, room="room-a", text="dinner?", outcome="responded",
+            reactions=1, edits=0, replies=()))
+        fake.add_episode(unit="friends", episode=Episode(
+            send_id=3, room="room-a", text="a list", outcome="unanswered",
+            reactions=0, edits=0))
+        fake.add_episode(unit="friends", open_=True, episode=Episode(
+            send_id=5, room="room-a", text="open", outcome="open", reactions=0, edits=0))
+        fake.add_episode(unit="wedding", episode=Episode(
+            send_id=6, room="room-w", text="w", outcome="responded", reactions=0, edits=0))
+        yield fake, {"dinner": 1, "list": 3, "reply": 2}
+        return
+    from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_RESPONSE
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    ids: dict[str, int] = {}
+    try:
+        async with engine.begin() as conn:
+            async def msg(name, room, ts, body, nora, quoted=None):
+                ids[name] = int((await conn.execute(sa.insert(MESSAGES).values(
+                    platform="signal", conversation_id=room, conversation_type="group",
+                    sender_id="+85200000000", sender_name="x", ts=ts, body=body,
+                    is_nora=int(nora), person_id=None if nora else "ada",
+                    quoted_ts=quoted,
+                ).returning(MESSAGES.c.id))).scalar_one())
+            await msg("dinner", "room-a", 1000, "dinner?", True)
+            await msg("reply", "room-a", 1500, "yes", False, quoted=1000)
+            await msg("list", "room-a", 2000, "a list", True)
+            await msg("late", "room-a", 99_000, "too late", False, quoted=2000)
+            await msg("open", "room-a", 3000, "open", True)
+            await msg("w", "room-w", 3500, "w", True)
+            old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="v0", params_sha256="p", status="superseded",
+            ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+            cur = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+                code_version="v1", params_sha256="p", status="current",
+            ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+
+            async def resp(build, unit, name, ts, outcome, reactions=0):
+                await conn.execute(sa.insert(ROLLUP_RESPONSE).values(
+                    build_id=build, unit=unit, lineage=[], valid_from_ms=ts,
+                    valid_to_ms=ts + 3600, as_of_ms=ts + 3600, message_id=ids[name],
+                    platform="signal", conversation_id="room-a", sent_ts=ts,
+                    replies=0, reactions=reactions, edits=0, outcome=outcome,
+                ))
+            await resp(cur, "friends", "dinner", 1000, "responded", reactions=1)
+            await resp(cur, "friends", "list", 2000, "unanswered")
+            await resp(cur, "friends", "open", 3000, "open")
+            await resp(cur, "wedding", "w", 3500, "responded")
+            await resp(old, "friends", "w", 3500, "responded")
+        yield SqlCharacterEvidence(engine), ids
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text(
+                "truncate messages, rollup_response, rollup_build cascade"))
+        await engine.dispose()
+
+
+async def test_nora_reads_closed_episodes_of_the_current_build_with_their_replies(episodes):
+    store, ids = episodes
+    assert await store.episode_count(unit="friends", after=0) == 2
+    assert await store.episode_count(unit="friends", after=ids["dinner"]) == 1
+    got, cursor = await store.episodes(unit="friends", after=0, limit=5)
+    assert [(e.send_id, e.text, e.outcome) for e in got] == [
+        (ids["dinner"], "dinner?", "responded"), (ids["list"], "a list", "unanswered"),
+    ]
+    assert cursor == ids["list"]
+    if isinstance(store, SqlCharacterEvidence):
+        assert [r.body for r in got[0].replies] == ["yes"]
+        assert got[1].replies == ()
+    newest, _ = await store.episodes(unit="friends", after=0, limit=1)
+    assert [e.send_id for e in newest] == [ids["list"]]

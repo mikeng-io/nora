@@ -106,7 +106,7 @@ from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
-from nora.domain.culture import character_key, unit_culture_key
+from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
@@ -209,11 +209,15 @@ from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
 from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
     CHARACTER_PERSON_ADAPTOR_NAME,
     CHARACTER_UNIT_ADAPTOR_NAME,
+    CharacterNoraAdaptor,
     CharacterPersonAdaptor,
     CharacterRoom,
     CharacterUnitAdaptor,
+    NoraEvidence,
+    NoraKey,
     PersonEvidence,
     PersonKey,
     UnitEvidence,
@@ -901,6 +905,7 @@ def _computer_token(cfg: Config) -> str:
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
 CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
     CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
+    CHARACTER_NORA_ADAPTOR_NAME,
 )
 
 
@@ -3775,6 +3780,35 @@ async def build_dependencies(
                     batch_limit=cfg.culture.batch_limit,
                 ),
             }
+            # CHARACTER · NORA (C3b): her own account per unit, from closed
+            # response episodes. Writes only: no block reads it yet (the self
+            # block is design/self-growth/20).
+            nora_keys = {
+                nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
+                for uk in unit_keys.values()
+            }
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.nora_wake_batch,
+                    batch_limit=cfg.culture.nora_wake_batch,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterNoraAdaptor(
+                    culture=culture_store,
+                    evidence=NoraEvidence(
+                        store=SqlCharacterEvidence(engine), keys=nora_keys,
+                    ),
+                    keys=nora_keys, metrics=metrics,
+                    name_of=lambda pid: (
+                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                        else "someone"
+                    ),
+                ),
+            )
             dream_adaptors = (
                 *dream_adaptors,
                 CharacterUnitAdaptor(

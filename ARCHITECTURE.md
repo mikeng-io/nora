@@ -188,6 +188,10 @@ Signal / Discord / WhatsApp / Instagram room
    character-unit  (per unit on 5 new room-culture revisions, or weekly) → what
                     the unit is across its rooms, read as `<unit_culture>` after
                     `<culture>` in that unit's rooms
+   character-nora  (per unit on 100 closed response episodes, or weekly) → her
+                    own account there, from her sends paired with what followed;
+                    a revision citing only her own sends is refused (echo rule);
+                    written only, no block reads it yet
    Notes, events, Standing and Nora's own reminders are no longer adaptors
    (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
    enabled`), with the verbs `note_retire` and `note_merge` and a

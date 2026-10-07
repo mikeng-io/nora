@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from nora.domain.culture import RoomMessage
+from nora.domain.culture import Episode, RoomMessage
 from nora.domain.models import DeliveryStatus, TranscriptRow
 
 
@@ -34,6 +34,28 @@ class InMemoryCharacterEvidence:
         self._messages: list[_Message] = []
         #: Culture revisions, as (room key, written_at), in write order.
         self._revisions: list[tuple[str, int]] = []
+        self._episodes: list[tuple[str, Episode, bool]] = []
+
+    def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
+        """One `response` episode of the current build; `open_` is one whose
+        window has not closed (never counted, never read)."""
+        self._episodes.append((unit, episode, open_))
+
+    def _eps(self, unit: str, after: int) -> list[Episode]:
+        return sorted(
+            (e for u, e, o in self._episodes if u == unit and not o and e.send_id > after),
+            key=lambda e: e.send_id,
+        )
+
+    async def episode_count(self, *, unit: str, after: int) -> int:
+        return len(self._eps(unit, after))
+
+    async def episodes(
+        self, *, unit: str, after: int, limit: int,
+    ) -> tuple[list[Episode], int]:
+        found = self._eps(unit, after)
+        cursor = found[-1].send_id if found else after
+        return (found[-limit:] if limit > 0 else []), cursor
 
     def add_revision(self, *, key: str, written_at: int) -> None:
         self._revisions.append((key, written_at))

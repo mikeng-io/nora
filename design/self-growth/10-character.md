@@ -63,6 +63,11 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
 > unit_wake_batch` (5) new room-culture revisions or `stale_seconds`, cites
 > through the Record ids its rooms' cultures cite (Register rows are not read
 > yet), rendered as `<unit_culture>` after `<culture>` on tag and fire turns.
+> C3b: `character-nora` (key `{unit}#nora`), woken by `[culture]
+> nora_wake_batch` (100) closed episodes of the current Rollup build or
+> `stale_seconds`, handed each send with the replies that quoted it, its
+> counts and outcome; the verb refuses a revision whose citations are only her
+> sends. No block (the self block is [20](20-self-block.md)).
 
 ## 3. The target workflow
 

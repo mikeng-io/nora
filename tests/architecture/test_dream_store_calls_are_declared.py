@@ -423,6 +423,9 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CharacterPersonAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
+    "CharacterNoraAdaptor": frozenset({
+        "self._culture.head", "self._culture.append",
+    }),
     "CharacterUnitAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
