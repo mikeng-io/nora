@@ -72,6 +72,14 @@ VERBS: tuple[str, ...] = (
     # neither says that the result is now for other people to open, which is
     # the point and the reason the model must be told what it may put in it.
     "publish",
+    # The browser (design/browser-runtime 00 §5, ADR 0022, B2): `browse` hands a
+    # whole task in a web browser to a sub-agent, many page actions behind one
+    # call. `fetch` reads one known thing into the turn (`web_fetch` is one
+    # page's text); `search` asks an index; `run` executes a command. None names
+    # an interactive session that navigates, clicks and fills, which is what the
+    # model must know it is choosing. sandbox-runtime §14 named the tool
+    # `computer_browse` on 2026-09-30.
+    "browse",
 )
 
 

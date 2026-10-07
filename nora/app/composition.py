@@ -34,6 +34,7 @@ from openai.types.shared.reasoning_effort import ReasoningEffort
 from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
+from nora.agent.browse import BrowseAgentRunner, BrowseSettings
 from nora.agent.dreamer import (
     TOOL_RESULT_CAPS,
     AdaptorBudget,
@@ -2072,6 +2073,26 @@ async def build_dependencies(
             reasoning_effort=tier.reasoning_effort,
         ),
     )
+    # `computer_browse` (design/browser-runtime 00 §5, ADR 0022, B2): a sub-agent
+    # in the room's own browser, with a model source of its own (one model per
+    # task, the tag path's reason above). `None` unless `[computer]` AND
+    # `[computer.browse]` are on, so the registry withholds the tool.
+    browser: BrowseAgentRunner | None = None
+    if computer is not None and cfg.computer.browse.enabled:
+        browse_cfg = cfg.computer.browse
+        browser = BrowseAgentRunner(
+            model_source=factory.ModelSource(client=client, spec=factory.ModelSpec(
+                model=browse_cfg.model or cfg.llm.model, max_tokens=browse_cfg.max_tokens,
+                temperature=browse_cfg.temperature, tool_choice=tool_choice.AFTER_SPEAKING,
+            )),
+            retry=factory.build_retry_policy(timeout_seconds=browse_cfg.timeout_seconds),
+            base_url=cfg.computer.base_url, token=_computer_token(cfg),
+            settings=BrowseSettings(
+                max_steps=browse_cfg.max_steps, timeout_seconds=browse_cfg.timeout_seconds,
+                read_chars=browse_cfg.read_chars, turns=browse_cfg.turns,
+                output_tokens=browse_cfg.output_tokens, total_tokens=browse_cfg.total_tokens,
+            ),
+        )
     runner = LiveAgentRunner(
         models=models,
         # Derived from the same `timeout_seconds` the invoke stage enforces, so
@@ -2902,6 +2923,7 @@ async def build_dependencies(
         computer_settings=computer_settings,
         computer_sessions=computer_sessions, computer_leases=computer_leases,
         computer_exports=computer_exports, artifact_ingest=artifact_ingest,
+        browser=browser,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
         # comment for why they must not be two separately constructed copies.

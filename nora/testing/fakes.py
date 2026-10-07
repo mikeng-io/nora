@@ -20,6 +20,7 @@ from nora.domain.compute import (
     normalise_compute_job,
 )
 from nora.domain.computer import (
+    BrowseOutcome,
     BytesResult,
     FileEntry,
     FileResult,
@@ -2123,6 +2124,20 @@ class FakeInstagramAccountLookup:
             return UsernameLookup("unavailable")
         igid = self.accounts.get(username.strip().removeprefix("@").lower())
         return UsernameLookup("found", igid) if igid else UsernameLookup("none")
+
+
+class FakeBrowserRunner:
+    """`BrowserRunner` that answers a set outcome and records every call
+    (scope, objective, start_url), for the `computer_browse` tool's tests."""
+
+    def __init__(self, outcome: BrowseOutcome | None = None) -> None:
+        self.outcome = outcome or BrowseOutcome(status="ok", answer="done", steps=1)
+        self.calls: list[tuple[str, str, str | None]] = []
+
+    async def browse(self, *, scope: str, objective: str,
+                     start_url: str | None = None) -> BrowseOutcome:
+        self.calls.append((scope, objective, start_url))
+        return self.outcome
 
 
 class FakeSandboxRuntime:

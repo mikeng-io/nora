@@ -200,6 +200,8 @@ def test_every_declared_tool_is_built(wiring):
         # Nora's computer (design/sandbox-runtime §4, DEC-243).
         "computer_run", "computer_read", "computer_write", "computer_edit",
         "computer_export", "computer_import", "computer_session_list",
+        # design/browser-runtime B2: built here; offered only with a browser runner.
+        "computer_browse",
         # design/artifact §26: a document is published to the web app, read back to edit.
         "document_publish", "document_read", "document_set_status",
         # design/subagent §3 (DEC-283).
