@@ -7,7 +7,6 @@ in the turn, and each account and the whole block are capped.
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 
 from nora.domain.culture import CultureRevision, character_key
@@ -143,13 +142,56 @@ def test_an_account_under_the_cap_is_untouched():
 
 
 def test_the_block_is_capped_and_an_account_that_no_longer_fits_is_counted():
-    accounts = [(f"P{i}", _rev("c" * PERSON_ACCOUNT_MAX_CHARS)) for i in range(5)]
+    """The cap bounds the RENDERED block: wrappers, ages, markers included. The
+    first account the budget cannot hold is cut; later ones are left out whole
+    and counted in one closing marker, which is inside the cap."""
+    accounts = [(f"P{i}", _rev("c" * PERSON_ACCOUNT_MAX_CHARS)) for i in range(6)]
     out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
-    kept = sum(len(run) for run in re.findall(r"c{50,}", out))
-    assert kept <= CHARACTER_BLOCK_MAX_CHARS
-    assert out.count("<person_account") == 4  # 3 x 2,500 + 500 of the fourth; fifth left out
-    assert "[2000 more characters not shown]" in out  # the fourth, cut to what was left
-    assert out.rstrip().endswith("[2500 more characters not shown]\n</character>")  # the fifth
+    assert len(out) <= CHARACTER_BLOCK_MAX_CHARS
+    assert out.count("<person_account") == 5  # four whole, the fifth cut
+    assert out.count("more characters not shown]") == 2  # the cut one and the closing line
+    assert "P5" not in out  # the sixth is left out whole
+    closing = f"[{PERSON_ACCOUNT_MAX_CHARS} more characters not shown]\n</character>"
+    assert out.rstrip().endswith(closing)
+
+
+def test_an_escape_heavy_block_is_still_bounded_as_rendered():
+    """`escape()` multiplies `<`, so a cap on raw characters would not bound it."""
+    accounts = [(f"P{i}", _rev("<" * PERSON_ACCOUNT_MAX_CHARS)) for i in range(6)]
+    out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
+    assert len(out) <= CHARACTER_BLOCK_MAX_CHARS
+    assert "<<<" not in out
+    assert "more characters not shown]" in out
+
+
+def test_the_whole_live_friends_roster_is_not_cut():
+    sizes = (1739, 1241, 994, 1116, 1088, 1717, 1170)  # the live heads, 2026-10-07
+    accounts = [(f"P{i}", _rev("d" * n)) for i, n in enumerate(sizes)]
+    out = render_character(accounts, now=NOW).render()  # type: ignore[union-attr]
+    assert "more characters" not in out and len(out) <= CHARACTER_BLOCK_MAX_CHARS
+
+
+def test_an_unmapped_tagger_does_not_fall_back_to_the_whole_roster():
+    got = tag_character_people(
+        ROSTER, persons=PERSONS, message=_msg("ada"), tagger=None, transcript=[],
+    )
+    assert got == ()
+
+
+def test_a_mention_added_by_an_edit_counts():
+    import json
+    from dataclasses import replace
+
+    from nora.domain.models import RowEdit
+
+    def env(ids):
+        return json.dumps({"envelope": {"dataMessage": {"message": "\ufffc", "mentions": [
+            {"start": 0, "length": 1, "number": i} for i in ids]}}})
+
+    row = replace(_row("bo", 5), raw_json=env([]), edit=RowEdit(
+        ts=6, raw_json=env([IDS["di"]]), was="x"))  # type: ignore[call-arg]
+    quote = Quote(author_id="", text="", quoted_ts=5)
+    assert _who(_msg("ada", quote=quote), [row]) == ["ada", "bo", "di"]
 
 
 class _UnitPolicy:

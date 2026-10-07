@@ -54,10 +54,12 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
 > every listed person who speaks in the transcript window. Fire: the window's
 > speakers and the occasion's own person. Listed persons only, roster order,
 > from resolved person ids (`nora/engagement/character_who.py`). Measured the
-> same day: friends' seven accounts were 9,065 characters (~3,000 tokens),
-> re-sent on every model call. Each account is capped at 2,500 characters and
-> the block at 8,000 (`PERSON_ACCOUNT_MAX_CHARS`, `CHARACTER_BLOCK_MAX_CHARS`),
-> each cut saying how many it dropped. `character_read` (C4) would serve anyone
+> same day: friends' seven accounts were 9,065 characters of prose, 11,183 rendered
+> (~3,000 tokens), re-sent on every model call. Each account is capped at 2,500
+> characters and the rendered block at 12,000 (`PERSON_ACCOUNT_MAX_CHARS`,
+> `CHARACTER_BLOCK_MAX_CHARS`): the first account the budget cannot hold whole
+> is cut, later ones are left out whole and counted in one closing marker, each
+> cut saying how many it dropped. `character_read` (C4) would serve anyone
 > else's account, but it is Dreamer-loop only until a `tool_selection` run, so a
 > tag or fire turn cannot reach an absent person's account. DEC-278 and DEC-290
 > are narrowed in the decision index.

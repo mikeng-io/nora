@@ -229,14 +229,14 @@ class TranscriptInjection:
         # `<culture>` (DEC-207) is the eighth, and joins the OUTER gather for
         # the same overload reason `<presence>` does.
         (
-            (transcript, card, tagger_card, standing, notes),
+            ((transcript, character), card, tagger_card, standing, notes),
             presence,
             culture,
             (unit_culture, self_account),
             (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
-                self._recent(msg),
+                self._recent_with_character(msg, ref),
                 self._peer_card(ref, msg),
                 self._recall_tagger(ref, msg),
                 self._standing(msg),
@@ -253,11 +253,6 @@ class TranscriptInjection:
                 self._subagents(msg),
             ),
         )
-
-        # AFTER the gather, because WHO is read depends on the transcript's
-        # speakers: only the people in this turn get an account in
-        # `<character>` (`character_who`), one bounded concurrent head read each.
-        character = await self._character(msg, ref, transcript)
 
         # One name space for the whole prompt (DEC-80) — see `Persons.name_transcript`.
         transcript = self._persons.name_transcript(transcript, platform=msg.platform)
@@ -346,6 +341,18 @@ class TranscriptInjection:
             stage="tag_culture", platform=msg.platform, metrics=self._metrics,
         )
         return found
+
+    async def _recent_with_character(
+        self, msg: NormalizedMessage, ref: PersonRef | None,
+    ) -> tuple[tuple[TranscriptRow, ...], tuple[tuple[str, CultureRevision], ...]]:
+        """The transcript, then the accounts of the people in it. WHO needs the
+        window's speakers, so the character read cannot start before the
+        transcript; chained here it still overlaps every other read in the
+        gather instead of waiting for all of them. Its own bound
+        (`read_character`'s timeout) is added to the transcript's, not to the
+        whole gather's."""
+        transcript = await self._recent(msg)
+        return transcript, await self._character(msg, ref, transcript)
 
     async def _character(
         self, msg: NormalizedMessage, ref: PersonRef | None,
