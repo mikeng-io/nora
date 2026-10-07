@@ -23,7 +23,7 @@ per-arm result lines and receipts, with no room text.
 |---|---|---|---|
 | full | 2/3 | 113,315 / 192,244 | none |
 | rules | 3/3 | 115,695 / 255,422 | none |
-| flash | 2/3 | 93,883 / 232,312 | 0.74–1.03 s, 1,830–2,034 in / 13–16 out, MISS, 0 errors |
+| flash | 2/3 | 93,883 / 232,312 | 0.74–1.03 s, 1,830–2,034 in / 13–16 out, provider cache header MISS (two reported ~290 cached prompt tokens), 0 errors |
 
 **No arm withheld anything in any draw**, so Nora's exposed prefill was
 identical in every arm (`exposed_chars == full_chars`). In the sandbox,
@@ -38,7 +38,8 @@ Live, the selectable blocks are populated. From Langfuse `agent.prefill`, 427 ta
 turns 2026-09-17 to 10-06: `peer_history` rendered in 384, `documents` in 28,
 `computer` in 43 and `subagents` in 0. Since 09-30, `documents` was in 28 of 70
 turns and `computer` in 43 of 70. All rendered blocks together were a median of
-13,978 characters (p90 22,781). Per-block sizes are not recorded.
+13,978 characters (p90 22,781). Per-block sizes are not recorded. Counts are in
+[live-langfuse-counts.txt](evidence/replay/live-langfuse-counts.txt).
 
 Reading it: the selector costs about 2k fresh input tokens and one serial
 second per turn. The blocks it may withhold are a small part of a roughly 19k-
@@ -149,7 +150,7 @@ landed prerequisite ref before replay; development still happens on the MacBook.
 Live checkout `~/workspace/nora` and its ignored config were untouched. Existing
 untracked backups/scratch files on either machine belong to other work.
 
-## Smallest viable next measurement
+## Smallest viable next measurement (run 2026-10-07; result at the top)
 
 Select these anchored `tool_selection` cases, one draw each, on the same source
 and deployment main-model alias:

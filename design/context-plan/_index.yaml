@@ -76,7 +76,7 @@ scope:
   - complete synthetic probe evidence, including cache/warmup exclusions
   - existing eval sender-name fix and opt-in full/rules/Flash exposure comparison
   - full retrieval/transcript and mandatory context preserved; peer-history exposure aligns with about
-  - local committed checkpoint and continuation instructions; replay not yet run
+  - local committed checkpoint and continuation instructions; first replay run 2026-10-07, blind (no block withheld); parked
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
