@@ -299,6 +299,14 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
         for node in ast.walk(ast.parse(path.read_text())):
             if not isinstance(node, ast.Dict):
                 continue
+            # A Strands `ToolResult` (`status` beside a `content` LIST) speaks
+            # Strands' own two words, `success` and `error`, to a sub-agent's
+            # model, not R-27 to Nora's: the browse sub-agent returns one to
+            # hand its model a screenshot (nora/agent/browse.py `page_look`).
+            if any(isinstance(k, ast.Constant) and k.value == "content"
+                   and isinstance(v, ast.List)
+                   for k, v in zip(node.keys, node.values, strict=True)):
+                continue
             for key, value in zip(node.keys, node.values, strict=True):
                 if not (isinstance(key, ast.Constant) and key.value == "status"):
                     continue

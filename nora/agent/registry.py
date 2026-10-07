@@ -44,6 +44,7 @@ from ..domain.models import TranscriptRow
 from ..domain.ports import (
     ArtifactIngest,
     BlobStore,
+    BrowserRunner,
     CultureReader,
     DiscordPresenceSource,
     GifSource,
@@ -227,6 +228,8 @@ class ToolRegistry:
         # by the composition root) and its link destination, Drop (`None`
         # without Drop's token: a link export then answers `unavailable`).
         computer_exports: ComputerExportStore | None = None,
+        # `computer_browse` (B2): None while `[computer.browse]` is off.
+        browser: BrowserRunner | None = None,
         artifact_ingest: ArtifactIngest | None = None,
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
@@ -283,6 +286,7 @@ class ToolRegistry:
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if culture is not None else frozenset({"character_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
+            | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
         )
@@ -465,6 +469,7 @@ class ToolRegistry:
         self._computer_sessions = computer_sessions
         self._computer_leases = computer_leases
         self._computer_exports = computer_exports
+        self._browser = browser
         self._artifact_ingest = artifact_ingest
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
@@ -1077,6 +1082,7 @@ class ToolRegistry:
             computer_sessions=self._computer_sessions,
             computer_leases=self._computer_leases,
             computer_exports=self._computer_exports,
+            browser=self._browser,
             artifact_ingest=self._artifact_ingest,
             music=self._music,
             online_source=self._online, voice_source=self._voice,

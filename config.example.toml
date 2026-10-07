@@ -911,6 +911,23 @@ enabled = false
 # read_timeout_seconds = 1.5
 # state_cache_seconds = 30
 
+# computer_browse (design/browser-runtime 00 §5, ADR 0022): a whole browser
+# task handed to a sub-agent in the room's own Chrome, reached through
+# computerd's CDP websocket. Off by default; needs [computer] enabled too.
+# model empty means [llm] model. max_steps counts page actions; timeout_seconds
+# bounds the whole task; turns/output_tokens/total_tokens are its loop caps.
+# [computer.browse]
+# enabled = false
+# model = ""
+# max_tokens = 4096
+# temperature = 0.2
+# max_steps = 25
+# timeout_seconds = 240
+# turns = 40
+# output_tokens = 12000
+# total_tokens = 400000
+# read_chars = 6000
+
 # The presence collector (design/19, DEC-54/55) — a SEPARATE process,
 # `python -m nora.presence`, that records circle members' distinct location
 # fixes into the same `nora` database (PLAINTEXT). The WHOLE SECTION IS OPTIONAL
