@@ -335,7 +335,8 @@ async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill
     ctx = await assembler.assemble(
         request=EngagementRequest(message=_msg(), decision=None, tag_id="t"))
 
-    assert culture.reads == ["room-primary"]
+    # The room's account by its `primary_id`, and its unit's (C3a) by the unit.
+    assert sorted(culture.reads) == ["room-primary", "u#unit"]
     assert ctx.culture is not None
     blob = str(build_prefill(ctx, display_name="Nora", context_window=10))
     assert "<culture" in blob and "they decide by attrition" in blob

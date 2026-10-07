@@ -106,6 +106,7 @@ from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
+from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
@@ -151,6 +152,7 @@ from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
+from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
@@ -206,6 +208,21 @@ from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
+from nora.language.character import (
+    CHARACTER_NORA_ADAPTOR_NAME,
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CHARACTER_UNIT_ADAPTOR_NAME,
+    CharacterNoraAdaptor,
+    CharacterPersonAdaptor,
+    CharacterRoom,
+    CharacterUnitAdaptor,
+    NoraEvidence,
+    NoraKey,
+    PersonEvidence,
+    PersonKey,
+    UnitEvidence,
+    UnitKey,
+)
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.obs.health import LLMState
@@ -883,6 +900,54 @@ def _computer_token(cfg: Config) -> str:
             "refusing to start"
         )
     return token
+
+
+#: Every Character adaptor that is not the room fold, by name (budgets, grants).
+CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
+    CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
+    CHARACTER_NORA_ADAPTOR_NAME,
+)
+
+
+def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
+    """One key per unit, with its rooms in policy order (C3a)."""
+    rooms_of: dict[str, list[CharacterRoom]] = {}
+    for conv in allowlist.conversations:
+        if conv.primary_id and conv.unit:
+            rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
+                key=conv.primary_id, platform=conv.platform, label=conv.label,
+            ))
+    return {
+        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))
+        for unit, rooms in rooms_of.items()
+    }
+
+
+def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
+    """One key per (unit, person listed in any of that unit's rooms), from
+    `policy.toml` and `identity.toml` (design/self-growth/10 §3, C2b). A
+    person's evidence and room cultures are the unit's rooms, in policy order;
+    their read tools stand in the first of those that lists them. A `*` room
+    lists nobody by name and adds no person."""
+    rooms_of: dict[str, list[CharacterRoom]] = {}
+    listing: dict[tuple[str, str], list[str]] = {}
+    refs: dict[str, Any] = {}
+    for conv in allowlist.conversations:
+        if not conv.primary_id or not conv.unit:
+            continue
+        rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
+            key=conv.primary_id, platform=conv.platform, label=conv.label,
+        ))
+        for ref in persons.room_members(conv.persons):
+            refs[ref.person_id] = ref
+            listing.setdefault((conv.unit, ref.person_id), []).append(conv.primary_id)
+    return {
+        character_key(unit, person_id): PersonKey(
+            unit=unit, person=refs[person_id], rooms=tuple(rooms_of[unit]),
+            home=homes[0],
+        )
+        for (unit, person_id), homes in listing.items()
+    }
 
 
 @dataclass(frozen=True)
@@ -3597,17 +3662,16 @@ async def build_dependencies(
                 *dream_adaptors,
                 CultureAdaptor(
                     culture=SqlCultureStore(engine),
-                    # THE OTHER TWO STORES (design/culture-tier
-                    # `01-the-adaptor §1.2`). The objective asks the model
-                    # where she stands with this room while the `standing`
-                    # tier holds exactly that, per room; and an account of how
-                    # a room works that cannot see what the room has OPEN is
-                    # inferring a thing the note index already states. `None`
-                    # for either tier being off is a real configuration and
-                    # renders no block — not an empty one.
-                    standing=standing_store if cfg.standing.enabled else None,
+                    # THE NOTE INDEX (design/culture-tier `01-the-adaptor
+                    # §1.2`): an account of how a room works that cannot see
+                    # what the room has OPEN is inferring a thing the note
+                    # index already states. `None` for the tier being off is
+                    # a real configuration and renders no block, not an empty
+                    # one. NOT `standing`: it is folded from raw tool results
+                    # (a presence read among them) and this account is input
+                    # to ones shown in every room of the unit (R-31).
                     notes=note_store if cfg.notes.enabled else None,
-                    # The FOUR policy resolutions, every one of them the same
+                    # The THREE policy resolutions, every one of them the same
                     # `.get` over the allowlist keyed on `conv.primary_id` —
                     # which is this adaptor's own key, because a Dreamer
                     # adaptor is handed `scopes()` (GLOSSARY.md, DEC-181
@@ -3618,35 +3682,6 @@ async def build_dependencies(
                         conv.primary_id: conv.unit
                         for conv in allowlist.conversations
                         if conv.primary_id and conv.unit
-                    }.get,
-                    # THE PLATFORM is resolved; the conversation_id half is
-                    # the key VERBATIM, and saying so is the point of this
-                    # comment. `standing` is keyed `(platform,
-                    # conversation_id)` because the debrief that writes it is
-                    # handed the message that arrived; this adaptor keys
-                    # `primary_id`. What the policy supplies is the PLATFORM —
-                    # which this adaptor has no other way to know, and guessing
-                    # would be a read against the wrong tier — while the second
-                    # element is `conv.primary_id`, i.e. the adaptor's own key
-                    # passed through unchanged. An earlier version of this
-                    # comment called the map "THE TRANSLATION, not an identity"
-                    # and that overclaims: half of it is an identity.
-                    #
-                    # It is still worth being a map rather than a
-                    # `(platform, key)` built at the call site, for the half it
-                    # does resolve and for the MEMBERSHIP test it carries: a
-                    # key absent from the allowlist resolves to `None` and the
-                    # adaptor logs it, instead of reading `standing` for a
-                    # conversation policy never named. The id half is #229's:
-                    # a conversation with a second id form may hold its standing
-                    # row under the other one, which that issue owns and this
-                    # map cannot decide. The failure both halves avoid is a read
-                    # that matches zero rows and renders as «this room has no
-                    # standing», a real state nothing reports as a miss.
-                    standing_key_for={
-                        conv.primary_id: (conv.platform, conv.primary_id)
-                        for conv in allowlist.conversations
-                        if conv.primary_id
                     }.get,
                     # What the room is CALLED and what the operator says it IS
                     # (`Conversation.label` / `.description`), for the `<room>`
@@ -3679,18 +3714,81 @@ async def build_dependencies(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
                     ),
-                    # THE CHARACTER TIER (DEC-278): the room's listed persons
-                    # (the same `persons.room_members` the tag prompt's
-                    # `<room_members>` uses), Nora's memory and observer peer,
-                    # and R-18's screen on what memory answers.
-                    members_for={
-                        conv.primary_id: persons.room_members(conv.persons)
-                        for conv in allowlist.conversations
-                        if conv.primary_id
-                    }.get,
-                    memory=memory,
-                    ai_peer=cfg.memory.ai_peer,
-                    screen=scan_identifiers,
+                ),
+            )
+            # CHARACTER · PERSON (design/self-growth/10 §3, C2b): one session
+            # per (unit, person listed in that unit's rooms), woken by that
+            # person's own messages across the unit's rooms. Same store,
+            # same chain, the stale rule `[culture] stale_seconds` shares.
+            person_keys = character_person_keys(allowlist, persons)
+            culture_store = SqlCultureStore(engine)
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.person_wake_batch,
+                    batch_limit=cfg.culture.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterPersonAdaptor(
+                    culture=culture_store,
+                    evidence=PersonEvidence(
+                        store=SqlCharacterEvidence(engine), keys=person_keys,
+                    ),
+                    keys=person_keys, metrics=metrics,
+                ),
+            )
+
+            # CHARACTER · UNIT (C3a): one session per unit, woken by new
+            # revisions of its rooms' cultures.
+            unit_keys = character_unit_keys(allowlist)
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_UNIT_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.unit_wake_batch,
+                    batch_limit=cfg.culture.batch_limit,
+                ),
+            }
+            # CHARACTER · NORA (C3b): her own account per unit, from closed
+            # response episodes. Writes only: no block reads it yet (the self
+            # block is design/self-growth/20).
+            nora_keys = {
+                nora_character_key(uk.unit): NoraKey(unit=uk.unit, rooms=uk.rooms)
+                for uk in unit_keys.values()
+            }
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_NORA_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.nora_wake_batch,
+                    batch_limit=cfg.culture.nora_wake_batch,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterNoraAdaptor(
+                    culture=culture_store,
+                    evidence=NoraEvidence(
+                        store=SqlCharacterEvidence(engine), keys=nora_keys,
+                    ),
+                    keys=nora_keys, metrics=metrics,
+                    name_of=lambda pid: (
+                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                        else "someone"
+                    ),
+                ),
+            )
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterUnitAdaptor(
+                    culture=culture_store,
+                    evidence=UnitEvidence(
+                        store=SqlCharacterEvidence(engine), keys=unit_keys,
+                    ),
+                    keys=unit_keys, metrics=metrics,
                 ),
             )
 
@@ -3810,6 +3908,10 @@ async def build_dependencies(
             # adaptor that is not wired is never read, and `[culture] enabled
             # = false` is what keeps the adaptor out of `dream_adaptors`.
             CULTURE_ADAPTOR_NAME: culture_grant(),
+            # A person session's read tools stand in the first of its unit's
+            # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
+            # resolved through `scope_rooms` exactly as the room fold's are.
+            CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the
@@ -3818,6 +3920,13 @@ async def build_dependencies(
         dream_budgets = {
             name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()
         }
+        # A Character session with no block of its own runs on the room
+        # fold's numbers when the deployment set them: the same loop shape (a
+        # handed batch, a few reads, one account written), and a live config
+        # needs no new block for it.
+        if "culture" in dream_budgets:
+            for name in CHARACTER_ADAPTOR_NAMES:
+                dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a
         # module-level instance), so an adaptor added later is BOUNDED by

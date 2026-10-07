@@ -103,6 +103,14 @@ _NOT_A_BUILDER = {
 #: if the module stops reading `messages` (stale entry — delete it) and red if
 #: it starts joining (limitation closed — delete it).
 _UNJOINED_BY_OWN_SQL = {
+    "nora/infra/sql/character.py": (
+        "a person's Character session (design/self-growth/10 §3) reads that "
+        "person's own lines across their unit's rooms by its own SQL; a photo "
+        "or file they posted renders as its stored body (the bare handle), not "
+        "as what it showed. The session is writing what the person is like from "
+        "what they SAY; joining media is the upgrade if an account is seen to "
+        "miss what someone only ever shows."
+    ),
     "nora/infra/sql/snapshot.py": (
         "the point-in-time reconstruction reads `messages` directly and returns "
         "`body` as stored, so a row that had media shows the bare "

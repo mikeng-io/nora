@@ -3389,6 +3389,13 @@ CULTURE_REVISION = sa.Table(
     sa.Column("established_by", sa.Text, nullable=False),
     sa.Column("instruction_sha256", sa.Text),
     sa.Column("model", sa.Text),
+    # What the revision rests on, as `character_revise` checked it (migration
+    # `0098_culture_citations`): Record message ids and `response:<id>`
+    # episodes. Empty on every row written before the verb.
+    sa.Column(
+        "citations", pg.ARRAY(sa.Text), nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    ),
     _recorded_at(),
     sa.CheckConstraint(
         "instruction_sha256 is null or instruction_sha256 ~ '^[0-9a-f]{64}$'",

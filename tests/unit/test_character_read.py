@@ -127,27 +127,27 @@ async def test_a_rooms_account_comes_back_with_its_time_and_revision(tmp_path):
     assert store.reads == ["ROOM-A"]
 
 
-async def test_a_persons_account_is_read_from_each_room_that_lists_them(tmp_path):
+async def test_a_persons_account_is_read_once_from_their_units_key(tmp_path):
+    """One account per (unit, person) since C2b (design/self-growth/10 §3): Ada
+    is listed in two rooms of u1 and her account is read once, from the unit
+    key; the pre-C2b per-room keys and the other unit's are never read."""
     store = InMemoryCultureStore()
-    await _seed(store, character_key("ROOM-A", "p1"), "Ada organises.")
-    await _seed(store, character_key("ROOM-B", "p1"), "Ada is terse here.")
-    await _seed(store, character_key("ROOM-X", "p1"), "OTHER UNIT")
+    await _seed(store, character_key("u1", "p1"), "Ada organises.")
+    await _seed(store, character_key("ROOM-A", "p1"), "OLD PER-ROOM")
+    await _seed(store, character_key("u2", "p1"), "OTHER UNIT")
     got = await _call(_tool(tmp_path, store), "person", "Ada")
     assert got["status"] == "ok"
-    assert {a["room"]: a["account"] for a in got["accounts"]} == {
-        "Room A": "Ada organises.", "Room B": "Ada is terse here."}
-    # The other unit's room was never asked; nor was the `*` room (lists nobody).
-    assert sorted(store.reads) == sorted(
-        [character_key("ROOM-A", "p1"), character_key("ROOM-B", "p1")])
+    assert [a["account"] for a in got["accounts"]] == ["Ada organises."]
+    assert store.reads == [character_key("u1", "p1")]
 
 
-async def test_a_person_not_listed_in_the_room_gets_no_account_from_it(tmp_path):
+async def test_a_person_listed_in_one_room_is_read_from_the_unit_key(tmp_path):
     store = InMemoryCultureStore()
-    await _seed(store, character_key("ROOM-A", "p2"), "Ben keeps score.")
-    await _seed(store, character_key("ROOM-B", "p2"), "MUST NOT SHOW")
+    await _seed(store, character_key("u1", "p2"), "Ben keeps score.")
     got = await _call(_tool(tmp_path, store), "person", "p2")     # an id works too
-    assert [a["room"] for a in got["accounts"]] == ["Room A"]
-    assert character_key("ROOM-B", "p2") not in store.reads
+    assert [(a["room"], a["account"]) for a in got["accounts"]] == [
+        ("Room A", "Ben keeps score.")]
+    assert store.reads == [character_key("u1", "p2")]
 
 
 async def test_no_account_is_nothing_found_not_unavailable(tmp_path):
@@ -158,7 +158,7 @@ async def test_no_account_is_nothing_found_not_unavailable(tmp_path):
 async def test_an_out_of_unit_room_or_person_reads_exactly_like_a_name_nobody_uses(tmp_path):
     store = InMemoryCultureStore()
     await _seed(store, "ROOM-X", "OTHER UNIT ROOM")
-    await _seed(store, character_key("ROOM-X", "p3"), "OTHER UNIT PERSON")
+    await _seed(store, character_key("u2", "p3"), "OTHER UNIT PERSON")
     tool = _tool(tmp_path, store)
     nobody = await _call(tool, "room", "No Such Room")
     assert await _call(tool, "room", "Room X") == nobody
@@ -170,11 +170,11 @@ async def test_an_out_of_unit_room_or_person_reads_exactly_like_a_name_nobody_us
 async def test_a_namesake_in_another_unit_neither_resolves_nor_makes_the_name_ambiguous(tmp_path):
     """p4 is also named Ada but listed only in the other unit: «Ada» here is p1."""
     store = InMemoryCultureStore()
-    await _seed(store, character_key("ROOM-A", "p1"), "Ada organises.")
+    await _seed(store, character_key("u1", "p1"), "Ada organises.")
     got = await _call(_tool(tmp_path, store), "person", "Ada")
     assert got["status"] == "ok"
     assert [a["account"] for a in got["accounts"]] == ["Ada organises."]
-    assert character_key("ROOM-X", "p4") not in store.reads
+    assert character_key("u2", "p4") not in store.reads
 
 
 async def test_an_account_carrying_an_identifier_is_withheld_whole(tmp_path):

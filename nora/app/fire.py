@@ -89,7 +89,7 @@ from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision
+from nora.domain.culture import CultureRevision, unit_culture_key
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     PROACTIVE_ACT_DECISION_WRITERS,
@@ -965,6 +965,7 @@ class FirePath:
             (standing, culture, notes, decisions, presence, computer),
             documents,
             character,
+            unit_culture,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -976,6 +977,7 @@ class FirePath:
             ),
             self._read_documents(occasion),
             self._read_character(occasion),
+            self._read_unit_culture(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -989,6 +991,7 @@ class FirePath:
             standing=standing,
             culture=culture,
             character=character,
+            unit_culture=unit_culture,
             notes=notes,
             decisions=decisions,
             presence=presence,
@@ -1439,19 +1442,37 @@ class FirePath:
         )
         return found
 
+    async def _read_unit_culture(self, occasion: Event) -> CultureRevision | None:
+        """What this room's UNIT is like (design/self-growth/10, C3a), keyed
+        `unit_culture_key(unit)`: `_read_culture`'s bounds. `None` when the
+        tier is off or the unit has no account."""
+        if self._culture is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.unit:
+            return None
+        return await read_culture(
+            self._culture.head(key=unit_culture_key(convo.unit)),
+            stage="fire_unit_culture", platform=occasion.platform,
+            metrics=self._metrics,
+            timeout_seconds=self._standing_store_timeout_seconds,
+        )
+
     async def _read_character(
         self, occasion: Event,
     ) -> tuple[tuple[str, CultureRevision], ...]:
-        """Each listed person's account in this room (DEC-278): `_read_culture`'s
-        key and bounds, one head per person. `()` when the tier is off."""
+        """Each listed person's account, keyed by this room's UNIT (one per
+        (unit, person) since C2b, design/self-growth/10 §3), for the persons
+        this room lists: `_read_culture`'s bounds, one head per person. `()`
+        when the tier is off."""
         if self._culture is None or self._policy is None:
             return ()
         convo = self._policy.conversation(
             occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.primary_id:
+        if convo is None or not convo.unit:
             return ()
         return await read_character(
-            self._culture, scope=convo.primary_id,
+            self._culture, unit=convo.unit,
             members=self._room_members(occasion), stage="fire_character",
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,

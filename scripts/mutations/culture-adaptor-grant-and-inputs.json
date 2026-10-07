@@ -28,11 +28,11 @@
     "target": "tests/unit/test_culture_adaptor.py -k declares_the_tools"
   },
   {
-    "name": "part 2a: where_been drops out of the grant",
+    "name": "R-31: a presence read comes back into the room fold's grant",
     "file": "nora/language/culture.py",
-    "old": "    \"where_been\",\n",
-    "new": "    \"who_said\",\n",
-    "target": "tests/unit/test_culture_adaptor.py -k the_join_the_operators_example"
+    "old": "    \"about\", \"lookup_person\", \"group_members\",\n",
+    "new": "    \"about\", \"lookup_person\", \"group_members\", \"where_been\",\n",
+    "target": "tests/unit/test_culture_adaptor.py -k no_presence_read_reaches"
   },
   {
     "name": "part 2a: a situational verb slips in",
@@ -42,37 +42,23 @@
     "target": "tests/unit/test_culture_adaptor.py -k situational_verbs"
   },
   {
-    "name": "part 2b: the standing position is read and never rendered",
-    "file": "nora/language/culture.py",
-    "old": "            if block is not None:\n                # RESTAMPED: `render_standing` is shared with the tag path\n                # and builds an unstamped block.\n                parts.append(restamp(block, _ROW))",
-    "new": "            if False:\n                # RESTAMPED: `render_standing` is shared with the tag path\n                # and builds an unstamped block.\n                parts.append(restamp(block, _ROW))",
-    "target": "tests/unit/test_culture_adaptor.py -k her_STANDING_in_this_room"
-  },
-  {
-    "name": "part 2b: standing is read with the adaptor's own key, not the policy's",
-    "file": "nora/language/culture.py",
-    "old": "            platform, conversation_id = standing_key",
-    "new": "            platform, conversation_id = standing_key[0], key",
-    "target": "tests/unit/test_culture_adaptor.py -k uses_the_key_the_POLICY"
-  },
-  {
     "name": "part 2b: the note index is read and never rendered",
     "file": "nora/language/culture.py",
-    "old": "            if index is not None:\n                # RESTAMPED, like `render_standing` above: `render_notes` is\n                # shared with the tag path and builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
-    "new": "            if False:\n                # RESTAMPED, like `render_standing` above: `render_notes` is\n                # shared with the tag path and builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
+    "old": "            if index is not None:\n                # RESTAMPED: `render_notes` is shared with the tag path and\n                # builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
+    "new": "            if False:\n                # RESTAMPED: `render_notes` is shared with the tag path and\n                # builds an unstamped block.\n                parts.append(restamp(index, _ROW))",
     "target": "tests/unit/test_culture_adaptor.py -k what_the_room_has_OPEN"
   },
   {
     "name": "part 2b: a quiet room starts paying for the reads",
     "file": "nora/language/culture.py",
-    "old": "        if not batch:\n            return \"\"\n        self._batch_start[key] = batch[0].id",
-    "new": "        self._batch_start[key] = batch[0].id if batch else 0",
+    "old": "        if not batch:\n            return \"\"\n        # THE RUN",
+    "new": "        # THE RUN",
     "target": "tests/unit/test_culture_adaptor.py -k quiet_room_reads_NO_store"
   },
   {
     "name": "part 2b: an unresolvable scope goes silent",
     "file": "nora/language/culture.py",
-    "old": "        if standing_key is None or unit is None:",
+    "old": "        if unit is None:",
     "new": "        if False:",
     "target": "tests/unit/test_culture_adaptor.py -k names_no_policy_conversation"
   },
@@ -119,18 +105,18 @@
     "target": "tests/unit/test_culture_adaptor.py -k ONE_shipped_completion"
   },
   {
-    "name": "the declared store-call bound stops covering the two new reads",
+    "name": "the declared store-call bound stops covering the two reads",
     "file": "nora/language/culture.py",
-    "old": "STORE_CALLS_PER_TICK = 6",
-    "new": "STORE_CALLS_PER_TICK = 3",
+    "old": "STORE_CALLS_PER_TICK = 4",
+    "new": "STORE_CALLS_PER_TICK = 2",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },
   {
-    "name": "F1: the oversize account is discarded AND the batch is spent (the defect)",
-    "file": "nora/language/culture.py",
-    "old": "                self._reject(\n                    key,\n                    f\"culture account for scope={key} is {len(parsed.body)} chars, \"\n                    f\"past the {BODY_MAX_CHARS} cap\",\n                )\n                return ()",
-    "new": "                return ()",
-    "target": "tests/unit/test_culture_adaptor.py -k oversize_account_RAISES"
+    "name": "F1: an account past the cap is staged rather than refused",
+    "file": "nora/domain/culture.py",
+    "old": "    if len(body) > BODY_MAX_CHARS:\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_culture_adaptor.py -k each_malformed_revision"
   },
   {
     "name": "F1: the runtime treats an accept that raises as an ordinary empty run",

@@ -27,12 +27,10 @@ from nora.domain.culture import (
     OUTPUT_TOKENS_PER_CHAR,
     CultureProposal,
     CultureRevision,
-    character_key,
 )
-from nora.domain.models import DeliveryStatus, PersonRef, TranscriptRow
+from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note
 from nora.domain.ports import Proposal
-from nora.domain.standing import Standing
 from nora.infra.sql.schema import CULTURE_BODY_CEILING_CHARS
 from nora.language.culture import (
     _BLOCKS,
@@ -54,19 +52,16 @@ def test_the_registered_blocks_are_exactly_what_this_pass_carries():
     """`design/context-assembly/01-the-registry.md` S1: what this pass
     carries is a table, not a trace through `inputs` and `_room_block`.
 
-    Two rows the design bundle's own survey missed: `00-overview.md`
-    counted `previous_account, room, room_messages` — three — because it
-    read `ContextBlock(name=...)` literals in this file alone, and missed
-    `standing` (`nora.language.standing_render.render_standing`) and `notes`
-    (`nora.language.note_render.render_notes`), both shared with other
-    occasions. `test_the_previous_account_precedes_standing_notes_AND_the_
-    batch` below exercises all five together.
+    A row the design bundle's own survey missed: `00-overview.md` counted
+    `previous_account, room, room_messages` — three — because it read
+    `ContextBlock(name=...)` literals in this file alone, and missed `notes`
+    (`nora.language.note_render.render_notes`), shared with other occasions.
+    `test_the_previous_account_precedes_the_notes_AND_the_batch` below
+    exercises all four together. There is NO `standing` row: see
+    `test_the_fold_does_not_read_the_rooms_standing`.
     """
     names = {name for name, _order, _key in _BLOCKS}
-    assert names == {
-        "room", "previous_account", "standing", "notes", "people_views",
-        "person_view", "room_messages",
-    }
+    assert names == {"room", "previous_account", "notes", "room_messages"}
 
 
 class _Store(InMemoryCultureStore):
@@ -86,20 +81,6 @@ class _Store(InMemoryCultureStore):
         return await super().append(**kw)  # type: ignore[arg-type]
 
 
-class _StandingStore:
-    """The per-room `standing` tier, keyed as the real one is."""
-
-    def __init__(self, rows: dict[tuple[str, str], Standing] | None = None) -> None:
-        self.rows = rows or {}
-        self.reads: list[tuple[str, str]] = []
-
-    async def read(
-        self, *, platform: str, conversation_id: str,
-    ) -> Standing | None:
-        self.reads.append((platform, conversation_id))
-        return self.rows.get((platform, conversation_id))
-
-
 class _Notes:
     """The note tier's index, keyed by UNIT (DEC-105)."""
 
@@ -110,13 +91,6 @@ class _Notes:
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         self.reads.append(unit)
         return self._notes
-
-
-def _standing(body: str = "they ask me for routes and nothing else") -> Standing:
-    return Standing(
-        platform="discord", conversation_id="g1", body=body,
-        fold_count=1, updated_at=T0,
-    )
 
 
 def _note(title: str = "dinner on the 20th") -> Note:
@@ -132,19 +106,16 @@ def _adaptor(
     store: _Store,
     metrics: Metrics | None = None,
     *,
-    standing: _StandingStore | None = None,
     notes: _Notes | None = None,
     label: str | None = "Zone 42",
     description: str | None = "the games channel",
     unit: str | None = "friends",
-    standing_key: tuple[str, str] | None = ("discord", "g1"),
     platform_for=None,
     resolve_names=None,
 ) -> CultureAdaptor:
     return CultureAdaptor(
-        culture=store, standing=standing, notes=notes, metrics=metrics,
+        culture=store, notes=notes, metrics=metrics,
         unit_for=lambda _k: unit,
-        standing_key_for=lambda _k: standing_key,
         label_for=lambda _k: label,
         description_for=lambda _k: description,
         platform_for=platform_for,
@@ -168,7 +139,7 @@ def _revision(body: str) -> CultureRevision:
 
 def _proposal(body: str) -> Proposal:
     return Proposal(
-        payload=CultureProposal(body=body), instruction_sha256="a" * 64,
+        payload=CultureProposal(body=body, citations=("7",)), instruction_sha256="a" * 64,
         model="flash", established_by="culture-run-1",
     )
 
@@ -293,11 +264,12 @@ async def test_the_first_fold_of_a_room_renders_no_previous_block():
     assert "previous_account" not in out
 
 
-async def test_the_batch_carries_NO_row_ids_and_NO_timestamps():
-    """The objective's load-bearing clause is «not dated observations». A model
-    handed `[482] 2026-09-12 14:03` writes about the 12th; handed a name and a
-    line it writes about the room. Handing over the chronicle shape and then
-    asking for its opposite is the failure this rendering avoids."""
+async def test_the_batch_carries_its_ROW_IDS_and_NO_timestamps():
+    """The objective's load-bearing clause is «not dated observations»: a model
+    handed `2026-09-12 14:03` writes about the 12th, so no clock reaches it.
+    The ROW ID does, as `n`, because an account now cites the rows it rests on
+    and `character_revise` resolves each citation against exactly these ids: a
+    per-render position would fail that join silently (#314)."""
     import re
 
     out = await _adaptor(_Store()).inputs(
@@ -305,17 +277,10 @@ async def test_the_batch_carries_NO_row_ids_and_NO_timestamps():
     )
     batch = out.split("<room_messages ")[1].split("</room_messages>")[0]
     body = batch.split(">", 1)[1]
-    # THE ROW ID, still absent. `n` is a per-render position (1..N), never
-    # `row.id` — the culture fold cites nothing back, so a real id here would be
-    # a handle to a stored row for no reader.
-    assert "482" not in body, "a row id reached the prompt"
     assert not re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}|\bago\b", body), (
         f"a date, a clock time or an age reached the prompt: {body!r}"
     )
-    # Exact bytes, so «no time» cannot rot into «a time nobody grepped for».
-    # `n` and `from` are the only attributes: no `age`, because `_render_batch`
-    # passes no `timestamp` accessor and `render_elements` drops what is None.
-    assert body.strip() == '<m n="1" from="Ada">開車喇</m>', body
+    assert body.strip() == '<m n="482" from="Ada">開車喇</m>', body
 
 
 async def test_the_room_block_names_the_room_and_carries_the_operators_words():
@@ -346,30 +311,17 @@ async def test_the_room_block_NEVER_renders_the_conversation_id():
     assert "unnamed room" in out
 
 
-async def test_her_STANDING_in_this_room_reaches_the_fold():
-    """`01-the-adaptor §1.2`. The objective asks the model where she stands
-    with them while the `standing` tier holds precisely that, per room — so
-    without it the model infers from raw transcript a thing another store
-    states, and a guess in this tier is prose that reads like an observation."""
-    store = _StandingStore({("discord", "g1"): _standing()})
-    out = await _adaptor(_Store(), standing=store).inputs(
-        key=KEY, batch=[_row("hi")],
-    )
-    assert "they ask me for routes and nothing else" in out
-    assert "<standing" in out
+def test_the_fold_does_not_read_the_rooms_standing():
+    """`standing` is folded from the turn's raw tool results (a `where_been` or
+    `online_now` among them) and the debrief is told to record who is present.
+    This account is input to every person's and the unit's, which render in
+    rooms whose `location` flags differ, so a line that reached it through
+    `standing` would reach them (R-31). It was read from 2026-09-17 to the C2b
+    review, 2026-10-07; the fold has no parameter to read it with."""
+    import inspect
 
-
-async def test_the_standing_read_uses_the_key_the_POLICY_resolves():
-    """`standing` keys `(platform, conversation_id)` and this adaptor keys
-    `primary_id` (GLOSSARY.md). They are equal for every live conversation and
-    that is an accident of data (#229) — read with the adaptor's own key it
-    matches zero rows and renders as «this room has no standing», a real state
-    nothing anywhere reports as a miss."""
-    store = _StandingStore()
-    await _adaptor(
-        _Store(), standing=store, standing_key=("signal", "+8520000"),
-    ).inputs(key=KEY, batch=[_row("hi")])
-    assert store.reads == [("signal", "+8520000")]
+    params = inspect.signature(CultureAdaptor.__init__).parameters
+    assert "standing" not in params and "standing_key_for" not in params
 
 
 async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
@@ -383,36 +335,33 @@ async def test_what_the_room_has_OPEN_reaches_the_fold_at_the_UNIT_key():
 
 
 async def test_a_scope_that_names_no_policy_conversation_is_LOGGED(caplog):
-    """A key that resolves to nothing renders neither block — and says so.
+    """A key that resolves to nothing renders no note index — and says so.
     Silence here is the #161 shape again: a plausible, thinner prompt that
     nothing counts."""
     import logging
 
     with caplog.at_level(logging.WARNING, logger="nora.language.culture"):
         out = await _adaptor(
-            _Store(), standing=_StandingStore(), notes=_Notes((_note(),)),
-            unit=None, standing_key=None,
+            _Store(), notes=_Notes((_note(),)), unit=None,
         ).inputs(key=KEY, batch=[_row("hi")])
 
-    assert "<standing" not in out and "<notes" not in out
+    assert "<notes" not in out
     assert any(
         "resolves to no policy conversation" in r.getMessage()
         for r in caplog.records
     )
 
 
-async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
+async def test_the_previous_account_precedes_the_notes_AND_the_batch():
     """`00-overview §5`: the previous account is how everything after it is
     meant to be read. A fold with no prior context writes a fresh snapshot
     every day, which is the thing the chain exists to be instead of."""
     out = await _adaptor(
         _Store(_revision("they decide by attrition")),
-        standing=_StandingStore({("discord", "g1"): _standing()}),
         notes=_Notes((_note(),)),
     ).inputs(key=KEY, batch=[_row("hi")])
     assert (
         out.index("previous_account")
-        < out.index("<standing")
         < out.index("<notes")
         < out.index("<room_messages ")
     ), out
@@ -420,26 +369,24 @@ async def test_the_previous_account_precedes_standing_notes_AND_the_batch():
 
 async def test_a_quiet_room_reads_NO_store_at_all():
     """The runtime's fire condition is «did `inputs` render anything», so a
-    quiet room must cost nothing — including the three reads."""
-    culture, standing, notes = _Store(), _StandingStore(), _Notes((_note(),))
-    assert await _adaptor(
-        culture, standing=standing, notes=notes,
-    ).inputs(key=KEY, batch=()) == ""
-    assert standing.reads == [] and notes.reads == []
+    quiet room must cost nothing — including the reads."""
+    culture, notes = _Store(), _Notes((_note(),))
+    assert await _adaptor(culture, notes=notes).inputs(key=KEY, batch=()) == ""
+    assert notes.reads == []
 
 
-async def test_a_standing_store_that_RAISES_takes_the_fold_with_it():
-    """Fail-CLOSED, unlike proactive's `_standing_lines`. A run that folded
-    anyway would write an account that GUESSES at her standing, and the
-    runtime would report it `ok` — the §11 tautology with a store fault behind
-    it. Raising makes the run `unavailable` and HOLDS the watermark, so the
-    batch is folded tomorrow instead of being consumed wrong today."""
+async def test_a_note_store_that_RAISES_takes_the_fold_with_it():
+    """Fail-CLOSED. A run that folded anyway would write an account that
+    GUESSES at what the room has open, and the runtime would report it `ok`
+    — the §11 tautology with a store fault behind it. Raising makes the run
+    `unavailable` and HOLDS the watermark, so the batch is folded later instead
+    of being consumed wrong today."""
     class _Broken:
-        async def read(self, *, platform: str, conversation_id: str):
-            raise RuntimeError("standing store down")
+        async def standing(self, *, unit: str):
+            raise RuntimeError("note store down")
 
-    with pytest.raises(RuntimeError, match="standing store down"):
-        await _adaptor(_Store(), standing=_Broken()).inputs(  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="note store down"):
+        await _adaptor(_Store(), notes=_Broken()).inputs(  # type: ignore[arg-type]
             key=KEY, batch=[_row("hi")],
         )
 
@@ -451,113 +398,147 @@ async def test_a_raw_sender_id_never_reaches_the_prompt():
     assert "u1" not in out and "unknown" in out
 
 
-# --- accept: one account, or none ------------------------------------------
+# --- the write verbs: validated as written, staged, settled ----------------
 
 
-async def test_one_well_formed_account_is_accepted():
-    got = await _adaptor(_Store()).accept(key=KEY, items=[{"body": " an account "}])
-    assert got == (CultureProposal(body="an account"),)
+async def _session(adaptor: CultureAdaptor, batch=None):
+    """`inputs` for one batch, then this run's two verbs."""
+    await adaptor.inputs(key=KEY, batch=batch or (_row("dinner?", rid=7),))
+    revise, keep = adaptor.verbs(key=KEY)
+    return revise, keep
 
 
-async def test_TWO_accounts_are_refused_ENTIRELY_and_the_batch_is_HELD():
-    """A room has one account. Picking one of two would be an arbitrary choice
-    made silently, on the row that claims to say how the room works. And the
-    refusal RAISES (DEC-280): returning `()` consumed the batch with no
-    account written from it; raising makes the run `unavailable`, which holds
-    the watermark (`tests/unit/test_dreamer_runtime.py::
-    test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit`)."""
-    m = Metrics()
-    with pytest.raises(AccountNotRecordableError):
-        await _adaptor(_Store(), m).accept(
-            key=KEY, items=[{"body": "one"}, {"body": "two"}],
-        )
-    assert m.get("nora_culture_fold_total", outcome="too_many") == 1
-    assert m.get("nora_culture_fold_total", outcome="abandoned") == 0
+async def test_a_cited_revision_is_staged_and_returned_by_accept():
+    adaptor = _adaptor(_Store())
+    revise, _keep = await _session(adaptor)
+    assert await revise(entity="room", body=" an account ", citations=["7"]) == {
+        "status": "ok",
+    }
+    got = await adaptor.accept(key=KEY, items=())
+    assert got == (CultureProposal(body="an account", citations=("7",)),)
 
 
-async def test_the_third_rejection_of_one_batch_in_a_row_advances_past_it():
-    """Each rejection holds the watermark, so a batch the model keeps misreading
-    would be re-read for ever. The third in a row of the SAME batch (named by its
-    first row) returns `()` instead, so the batch is consumed, counted
-    `abandoned` and logged; a different batch, or a reply that is not
-    rejected, starts the run again."""
+async def test_a_citation_of_a_row_the_session_was_NOT_shown_is_refused():
+    """THE CHECK THIS VERB EXISTS FOR (design/self-growth/10 §3): every
+    citation resolves to a row the session was handed, or the write is refused
+    with a reason the model can act on, and nothing is staged. A citation
+    nobody can resolve is a claim nobody can re-derive."""
     m = Metrics()
     adaptor = _adaptor(_Store(), m)
-    two = [{"body": "one"}, {"body": "two"}]
-    for _ in range(2):
-        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
-        with pytest.raises(AccountNotRecordableError):
-            await adaptor.accept(key=KEY, items=two)
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=7),))
-    assert await adaptor.accept(key=KEY, items=two) == ()
-    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
-    # The run starts again on a new batch: two rejections of one batch and
-    # then one of another is a first rejection, not a third.
-    for rid in (7, 7, 8):
-        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=rid),))
-        with pytest.raises(AccountNotRecordableError):
-            await adaptor.accept(key=KEY, items=two)
-    # ...and after an accepted reply.
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
-    assert await adaptor.accept(key=KEY, items=[{"body": "fine"}])
-    for _ in range(2):
-        await adaptor.inputs(key=KEY, batch=(_row("dinner?", rid=8),))
-        with pytest.raises(AccountNotRecordableError):
-            await adaptor.accept(key=KEY, items=two)
-    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
-
-
-async def test_an_empty_envelope_is_a_real_answer_and_writes_nothing():
-    """«I looked and found nothing» leaves the previous account standing, which
-    the objective says is usually right."""
-    m = Metrics()
-    assert await _adaptor(_Store(), m).accept(key=KEY, items=[]) == ()
-    assert m.get("nora_culture_fold_total", outcome="empty") == 1
-
-
-@pytest.mark.parametrize("item", [{}, {"body": 7}, {"body": "   "}, {"account": "x"}])
-async def test_a_malformed_item_is_dropped_not_raised(item):
-    assert await _adaptor(_Store()).accept(key=KEY, items=[item]) == ()
-
-
-async def test_an_oversize_account_RAISES_so_the_batch_is_not_spent_too():
-    """**The refusal must not cost the batch as well**, and returning `()`
-    here did exactly that.
-
-    Traced: no proposal -> `commit(key, ())` -> status `ok` ->
-    `_dream_once` advances the watermark. The account was discarded, the
-    messages it was written from were consumed, and the only record was a
-    counter whose label is destroyed at every process restart — so a room whose
-    fold habitually runs long wrote nothing, forever, and nothing durable said
-    so. Raising makes the run `unavailable`, which is the one status that HOLDS
-    the cursor, so the same batch is folded again tomorrow.
-
-    `unavailable` and not `nothing_found`: the model DID return an account, so
-    «there was nothing in this batch» is a claim this run is not entitled to
-    make (R-27, and the module docstring's own line about a batch that will not
-    parse)."""
-    m = Metrics()
+    revise, _keep = await _session(adaptor)
+    answer = await revise(entity="room", body="an account", citations=["7", "999"])
+    assert answer["status"] == "refused"
+    assert answer["reason"] == "unresolved_citation"
+    assert "999" in str(answer["detail"])
+    assert m.get("nora_culture_fold_total", outcome="refused") == 1
     with pytest.raises(AccountNotRecordableError):
-        await _adaptor(_Store(), m).accept(
-            key=KEY, items=[{"body": "x" * (BODY_MAX_CHARS + 1)}],
-        )
-    assert m.get("nora_culture_fold_total", outcome="oversize") == 1
+        await adaptor.accept(key=KEY, items=())
 
 
-async def test_an_empty_answer_still_returns_and_lets_the_batch_advance():
-    """`empty` is «I looked and there was nothing usable», true, and the
-    previous account stands, so holding the cursor for it would re-fold a batch
-    that has already been answered. `too_many` and `oversize` hold (DEC-280)."""
+@pytest.mark.parametrize(
+    ("body", "citations", "reason"),
+    [
+        ("an account", [], "uncited"),
+        ("   ", ["7"], "empty"),
+        ("x" * (BODY_MAX_CHARS + 1), ["7"], "too_long"),
+        ("an account", ["response:7"], "unresolved_citation"),
+    ],
+)
+async def test_each_malformed_revision_is_refused_by_name(body, citations, reason):
     adaptor = _adaptor(_Store())
-    assert await adaptor.accept(key=KEY, items=[]) == ()
-    assert await adaptor.accept(key=KEY, items=[{"body": "  "}]) == ()
+    revise, _keep = await _session(adaptor)
+    answer = await revise(entity="room", body=body, citations=citations)
+    assert (answer["status"], answer["reason"]) == ("refused", reason)
 
 
 async def test_an_account_exactly_at_the_cap_is_accepted():
     """The boundary is inclusive — an off-by-one here silently discards the
-    longest legitimate account and counts it as drift."""
-    got = await _adaptor(_Store()).accept(key=KEY, items=[{"body": "x" * BODY_MAX_CHARS}])
-    assert len(got) == 1
+    longest legitimate account."""
+    adaptor = _adaptor(_Store())
+    revise, _keep = await _session(adaptor)
+    answer = await revise(entity="room", body="x" * BODY_MAX_CHARS, citations=["7"])
+    assert answer == {"status": "ok"}
+
+
+async def test_an_entity_this_session_does_not_write_is_refused():
+    adaptor = _adaptor(_Store())
+    revise, keep = await _session(adaptor)
+    for answer in (
+        await revise(entity="Nobody", body="x", citations=["7"]),
+        await keep(entity="Nobody", why="x"),
+    ):
+        assert (answer["status"], answer["reason"]) == ("refused", "unknown_entity")
+        assert "room" in str(answer["detail"])
+
+
+async def test_no_change_is_a_valid_close_and_writes_nothing():
+    """«The messages add nothing» settles the room: the batch is spent and the
+    previous account stands, which the objective says is usually right."""
+    m = Metrics()
+    adaptor = _adaptor(_Store(), m)
+    _revise, keep = await _session(adaptor)
+    assert await keep(entity="room", why="dinner talk, nothing new") == {"status": "ok"}
+    assert await adaptor.accept(key=KEY, items=()) == ()
+    assert m.get("nora_culture_fold_total", outcome="kept") == 1
+
+
+async def test_a_later_revision_of_one_entity_replaces_the_earlier():
+    adaptor = _adaptor(_Store())
+    revise, _keep = await _session(adaptor)
+    await revise(entity="room", body="first", citations=["7"])
+    await revise(entity="room", body="second", citations=["7"])
+    (got,) = await adaptor.accept(key=KEY, items=())
+    assert got.body == "second"
+
+
+async def test_a_session_that_never_settles_the_room_RAISES_and_HOLDS():
+    """Ran out of turns, or stopped after a refusal: the room was neither
+    revised nor kept, so the batch was not folded. Raising makes the run
+    `unavailable`, which holds the watermark (`tests/unit/test_dreamer_runtime.
+    py::test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit`)."""
+    m = Metrics()
+    adaptor = _adaptor(_Store(), m)
+    await _session(adaptor)
+    with pytest.raises(AccountNotRecordableError):
+        await adaptor.accept(key=KEY, items=())
+    assert m.get("nora_culture_fold_total", outcome="unsettled") == 1
+
+
+async def test_the_third_unsettled_session_of_one_batch_in_a_row_advances_past_it():
+    """Each unsettled session holds the watermark, so a batch the model keeps
+    failing would be re-read for ever. The third in a row of the SAME batch
+    (named by its first row) returns `()` instead, counted `abandoned`; a
+    different batch, or a settled session, starts the run again."""
+    m = Metrics()
+    adaptor = _adaptor(_Store(), m)
+    for _ in range(2):
+        await _session(adaptor)
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=())
+    await _session(adaptor)
+    assert await adaptor.accept(key=KEY, items=()) == ()
+    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
+    for rid in (7, 7, 8):
+        await _session(adaptor, (_row("dinner?", rid=rid),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=())
+    _revise, keep = await _session(adaptor, (_row("dinner?", rid=8),))
+    await keep(entity="room", why="nothing")
+    assert await adaptor.accept(key=KEY, items=()) == ()
+    for _ in range(2):
+        await _session(adaptor, (_row("dinner?", rid=8),))
+        with pytest.raises(AccountNotRecordableError):
+            await adaptor.accept(key=KEY, items=())
+    assert m.get("nora_culture_fold_total", outcome="abandoned") == 1
+
+
+async def test_a_verb_called_after_its_session_ended_writes_nothing():
+    adaptor = _adaptor(_Store())
+    revise, keep = await _session(adaptor)
+    await keep(entity="room", why="nothing")
+    await adaptor.accept(key=KEY, items=())
+    answer = await revise(entity="room", body="late", citations=["7"])
+    assert answer["status"] == "unavailable"
 
 
 # --- commit: the chain only grows when it says something new ---------------
@@ -577,6 +558,7 @@ async def test_commit_appends_with_the_RUNTIMES_provenance():
     assert call["model"] == "flash"
     assert call["established_by"] == "culture-run-1"
     assert call["written_at"] == T0
+    assert call["citations"] == ("7",)
 
 
 async def test_a_BYTE_IDENTICAL_account_is_not_appended():
@@ -639,8 +621,7 @@ def test_every_declared_outcome_is_reachable():
     """A vocabulary member nothing produces is a label that renders as a series
     which is always zero."""
     assert {
-        "written", "empty", "too_many", "unchanged", "oversize", "dropped_person",
-        "abandoned",
+        "written", "unchanged", "kept", "refused", "unsettled", "abandoned",
     } == CULTURE_OUTCOMES
 
 
@@ -667,12 +648,13 @@ def test_every_granted_verb_is_inside_the_dreamers_READ_ONLY_ceiling():
     assert outside == set(), f"granted verb(s) outside the ceiling: {outside}"
 
 
-def test_the_join_the_operators_example_needs_is_actually_granted():
-    """`03-no-agent-loop §7.2`: the transcript carries the intent, presence
-    carries who was actually there, live state carries who was elsewhere — and
-    the conclusion is a property of the JOIN. `where_been` was in no adaptor's
-    grant at all before this, so the example could be written and not run."""
-    assert {"where_been", "online_now"} <= CULTURE_TOOLS
+def test_no_presence_read_reaches_a_rooms_culture():
+    """R-31, since the security review of C2-C3 (2026-10-07): a room's culture
+    is input to the unit's person and unit accounts, which render in rooms
+    whose `location` flags differ, and an account is prose with nothing to
+    drop at render. So no Character account may rest on a presence read, and
+    the room fold holds none."""
+    assert CULTURE_TOOLS.isdisjoint({"where_been", "online_now", "where_is"})
 
 
 def test_the_situational_verbs_and_a_second_read_of_its_own_room_stay_OUT():
@@ -833,139 +815,24 @@ def test_the_character_to_token_bridge_is_the_MEASURED_one():
             >= ACCOUNT_CHARS_OBSERVED_MAX * OUTPUT_TOKENS_PER_CHAR)
 
 
-def test_the_declared_store_calls_cover_the_three_inputs_and_the_two_writes():
+def test_the_declared_store_calls_cover_the_two_inputs_and_the_two_writes():
     """`DreamerRuntime` bounds `inputs` and `commit` at this number x
     `[dreamer] store_timeout_seconds`, so a bound derived from a stale constant
     is a hold that is too wide — and a hold that is too wide looks exactly like
     a healthy one until something wedges. The architecture gate counts the
     awaits off the AST; this states what they ARE."""
-    assert STORE_CALLS_PER_TICK == 6  # five reads/writes plus ONE `memory.chat` site
+    assert STORE_CALLS_PER_TICK == 4  # two reads in `inputs`, two in `commit`
     assert CultureAdaptor.store_calls_per_tick == STORE_CALLS_PER_TICK
 
 
-# --- the Character tier (DEC-278) --------------------------------------------
-
-
-class _Memory:
-    """`MemoryStore.chat` and nothing else: what each person's view answers."""
-
-    def __init__(self, answers: dict[str, str | None]) -> None:
-        self.answers = answers
-        self.asked: list[tuple[str, str, str | None]] = []
-
-    async def chat(self, *, peer_id, query, target=None, unit=None, **_kw):
-        self.asked.append((target, query, unit))
-        return self.answers.get(target)
-
-
-_MILES = PersonRef(person_id="miles", name="Miles", honcho_peer_id="miles")
-_ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
-
-
-def _character_adaptor(
-    store: _Store, memory: _Memory, metrics: Metrics | None = None,
-) -> CultureAdaptor:
-    return CultureAdaptor(
-        culture=store, unit_for=lambda _k: "friends", metrics=metrics,
-        standing_key_for=lambda _k: None, label_for=lambda _k: "Zone 42",
-        description_for=lambda _k: None,
-        members_for=lambda _k: (_MILES, _ADA), memory=memory, ai_peer="nora",
-        screen=lambda text: "id" if "+852" in text else None,
-    )
-
-
-async def test_the_people_views_are_asked_per_listed_person_and_screened():
-    """One question per listed person who wrote in the batch, routed by the
-    unit; a person memory has nothing for gets no entry, and an answer carrying
-    an identifier (R-18) is withheld whole."""
-    memory = _Memory({"miles": "dry, loyal, late to everything", "ada": "call +852 5555"})
-    out = await _character_adaptor(_Store(), memory).inputs(
-        key=KEY, batch=(_row("dinner?", name="Miles"), _row("yes", name="Ada", rid=2)),
-    )
-    assert memory.asked == [
-        ("miles", "What is the character of Miles?", "friends"),
-        ("ada", "What is the character of Ada?", "friends"),
-    ]
-    assert "<person_view" in out and "dry, loyal, late to everything" in out
-    views = out.split("<room_messages")[0].split("<people_views")[1]
-    assert "+852" not in out and "Ada" not in views
-
-
-async def test_a_person_account_is_written_under_its_own_key():
-    """The model names a person from the roster; `accept` resolves the id, and
-    `commit` stores it in the same store under `character_key`, leaving the
-    room's own head alone."""
-    store = _Store()
-    adaptor = _character_adaptor(store, _Memory({"miles": "dry and loyal"}))
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
-    proposals = await adaptor.accept(key=KEY, items=[
-        {"body": "a games room"},
-        {"person": "Miles", "body": "dry and loyal"},
-        {"person": "Nobody", "body": "dropped"},
-    ])
-    assert [(p.person_id, p.body) for p in proposals] == [
-        (None, "a games room"), ("miles", "dry and loyal"),
-    ]
-    await adaptor.commit(
-        key=KEY,
-        proposals=[Proposal(payload=p, instruction_sha256="a" * 64,
-                            model="flash", established_by="culture-run-1")
-                   for p in proposals],
-        now_ms=T0,
-    )
-    assert (await store.head(key=KEY)).body == "a games room"
-    assert (await store.head(key=character_key(KEY, "miles"))).body == "dry and loyal"
-
-
-async def test_only_the_batchs_senders_are_asked_and_a_silent_persons_account_stands():
-    """DEC-280. Live 2026-10-03: eight dialectic calls on a pass where two
-    people had posted. A listed person who wrote nothing in the batch is not
-    asked, gets no `<person_view>`, and their existing account is neither
-    rewritten nor removed, even when the model names them anyway."""
-    store = _Store(head=CultureRevision(
-        id="c1", culture_key=character_key(KEY, "ada"), body="steady and kind",
-        written_at=T0, established_by="culture",
-    ))
-    memory = _Memory({"miles": "dry, loyal", "ada": "steady"})
-    m = Metrics()
-    adaptor = _character_adaptor(store, memory, m)
-    out = await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
-    assert [target for target, _q, _u in memory.asked] == ["miles"]
-    views = out.split("<room_messages")[0].split("<people_views")[1]
-    assert 'name="Miles"' in views and 'name="Ada"' not in views
-    proposals = await adaptor.accept(key=KEY, items=[
-        {"body": "a games room"},
-        {"person": "Miles", "body": "dry and loyal"},
-        {"person": "Ada", "body": "rewritten from nothing"},
-    ])
-    assert [(p.person_id, p.body) for p in proposals] == [
-        (None, "a games room"), ("miles", "dry and loyal"),
-    ]
-    assert m.get("nora_culture_fold_total", outcome="dropped_person") == 1
-    await adaptor.commit(
-        key=KEY,
-        proposals=[Proposal(payload=p, instruction_sha256="a" * 64,
-                            model="flash", established_by="culture-run-1")
-                   for p in proposals],
-        now_ms=T0 + 1,
-    )
-    assert (await store.head(key=character_key(KEY, "ada"))).body == "steady and kind"
-    assert (await store.head(key=character_key(KEY, "miles"))).body == "dry and loyal"
-
-
-async def test_a_person_not_on_the_roster_drops_only_that_item():
-    """A person's item naming nobody the fold was shown drops that item alone:
-    the room's account and the other person's stand, and it is counted."""
-    m = Metrics()
-    adaptor = _character_adaptor(_Store(), _Memory({"miles": "dry"}), m)
-    await adaptor.inputs(key=KEY, batch=(_row("dinner?", name="Miles"),))
-    proposals = await adaptor.accept(key=KEY, items=[
-        {"body": "a games room"},
-        {"person": "Nobody", "body": "dropped"},
-        {"person": "Miles", "body": "dry"},
-    ])
-    assert [(p.person_id, p.body) for p in proposals] == [
-        (None, "a games room"), ("miles", "dry"),
-    ]
-    assert m.get("nora_culture_fold_total", outcome="dropped_person") == 1
-    assert m.get("nora_culture_fold_total", outcome="too_many") == 0
+async def test_a_room_session_writes_the_room_and_no_person():
+    """Since C2b a person is their own session (`nora.language.character`): a
+    room session's one entity is `room`, so a write naming a person is
+    refused and the room's account alone is staged."""
+    adaptor = _adaptor(_Store())
+    revise, _keep = await _session(adaptor, (_row("dinner?", name="Miles", rid=3),))
+    answer = await revise(entity="Miles", body="dry and loyal", citations=["3"])
+    assert (answer["status"], answer["reason"]) == ("refused", "unknown_entity")
+    assert (await revise(entity="room", body="a games room", citations=["3"]))["status"] == "ok"
+    (proposal,) = await adaptor.accept(key=KEY, items=())
+    assert proposal.person_id is None

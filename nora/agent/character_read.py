@@ -17,9 +17,10 @@ built from one carries no lineage of its own.
 `tests/unit/test_tool_surface.py::_LOOP_ONLY` pins it off the tag and fire
 paths. Account bodies are screened for identifiers on the way out (R-18).
 
-**`account_key` is the ONE place a store key is built.** Accounts are keyed per
-room today; the per-unit key for a person (C2b) changes this function and no
-caller.
+**`account_key` is the ONE place a store key is built.** A room's account is
+keyed by the room; a person's by their UNIT since C2b (one account per (unit,
+person), design/self-growth/10 §3), so every room of the unit that lists them
+names the same key and `character_read` reads it once.
 """
 
 from __future__ import annotations
@@ -34,13 +35,16 @@ __all__ = ["account_key", "person_named", "room_named", "rooms_listing"]
 
 
 def account_key(room: RoomFacts, person_id: str | None = None) -> str | None:
-    """The `culture` key of `room`'s account, or of `person_id`'s account in it.
-    `None` for a room built without a `primary_id`: nothing was written there."""
+    """The `culture` key of `room`'s account, or of `person_id`'s account in
+    `room`'s unit. `None` for a room built without a `primary_id` (nothing was
+    written there) or, for a person, without a unit."""
     if not room.primary_id:
         return None
     if person_id is None:
         return room.primary_id
-    return character_key(room.primary_id, person_id)
+    if not room.unit:
+        return None
+    return character_key(room.unit, person_id)
 
 
 def _fold(text: str) -> str:

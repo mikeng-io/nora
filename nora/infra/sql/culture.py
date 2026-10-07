@@ -49,6 +49,7 @@ def _revision(row: sa.Row[Any]) -> CultureRevision:
         model=row.model,
         lineage=Lineage.from_json(row.lineage, origin=row.culture_key),
         exclude_persons=tuple(row.exclude_persons or ()),
+        citations=tuple(row.citations or ()),
     )
 
 
@@ -87,6 +88,7 @@ class SqlCultureStore:
         established_by: str,
         instruction_sha256: str | None = None,
         model: str | None = None,
+        citations: tuple[str, ...] = (),
     ) -> CultureRevision:
         """Write the new account and make it the head, atomically.
 
@@ -137,6 +139,9 @@ class SqlCultureStore:
                         established_by=established_by,
                         instruction_sha256=instruction_sha256,
                         model=model,
+                        # What `character_revise` checked it rests on
+                        # (`0098_culture_citations`).
+                        citations=list(citations),
                         # design/cognition-loop/10-tiers.md §3, migration
                         # `0073_lineage`: the fold reads this room and is
                         # shown the unit's note index, which it does not cite.
@@ -173,6 +178,7 @@ class SqlCultureStore:
             instruction_sha256=instruction_sha256,
             model=model,
             lineage=lineage,
+            citations=tuple(citations),
         )
 
     async def chain(self, *, key: str, limit: int = 10) -> tuple[CultureRevision, ...]:
