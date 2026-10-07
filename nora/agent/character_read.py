@@ -9,6 +9,13 @@ refused after being found: it was never a candidate, and lands on the same
 list them: a `persons = "*"` room lists nobody (`Persons.room_members`'s rule),
 so it is the fail-closed side.
 
+**No room lineage filter, on purpose, and only while the tool is loop-only.**
+Its callers (the Cognition session, dream adaptors) work for the whole unit,
+and lineage (`[lineage]`, design/cognition-loop/10-tiers.md §3) decides what
+renders INTO A ROOM. `tests/unit/test_tool_surface.py::_LOOP_ONLY` pins it off
+the tag and fire paths. # ponytail: exposing it on a room's turn must first
+filter each account through that room's derived view, as `<culture>` is.
+
 **`account_key` is the ONE place a store key is built.** Accounts are keyed per
 room today; the per-unit key for a person (C2b) changes this function and no
 caller.
