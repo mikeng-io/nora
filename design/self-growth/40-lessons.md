@@ -18,6 +18,32 @@ sends plus the replies, reactions and edits inside `response_window_seconds`
 up, or `unknown` where it was expected but not proved. One episode is one data
 point. A lesson is a pattern across many.
 
+**Closed** means the window has ended against the unit's Record clock (its
+newest Record row), so the outcome can no longer change. An `open` episode is
+never counted. In a unit that goes fully quiet an episode stays open until a
+later row arrives. Read back 2026-10-07: 260 of 260 sends in 14 days had
+closed episodes, none `silent` ([50](50-readback-and-sizing.md) §3.3).
+
+### 1.1 Its own adaptor
+
+Lessons is a Dreamer adaptor of its own, not part of Cognition or of the
+Character adaptor: one writer per tier (DEC-249), a slower pace than
+Cognition, its own key (the unit), its own inputs (closed episodes and the
+lessons held) and checks only it carries (cap, doctrine check, tension).
+
+| part | where |
+|---|---|
+| adaptor | a new module beside `nora/language/culture.py` (lessons.py, not built) |
+| objective | a new lessons.md beside `nora/dreamer/objectives/culture.md` (not built) |
+| store | a `lesson` table and revision chain, a new SQL store |
+| write verbs | `lesson_write`, `lesson_retire`, granted to this adaptor only |
+| block | a `lessons` row in `_BLOCKS` and a renderer |
+| registration | `nora/app/composition.py`, beside culture |
+
+Its wake is the dream scheduler's count-or-stale rule built in C1
+([10](10-character.md) §3.2), counting closed episodes per unit; a
+correction counts as enough to cross the threshold at once (§3).
+
 ## 2. How lessons accumulate
 
 1. **She sends.** The Rollup opens a `response` episode.
@@ -25,7 +51,8 @@ point. A lesson is a pattern across many.
 3. **Episodes pile up.** Nothing runs; inducing from one episode would rewrite
    her practice from noise.
 4. **The Lessons adaptor wakes** for the unit on the first of:
-   - closed episodes since its watermark ≥ `lessons_batch` (design start: 30);
+   - closed episodes since its watermark ≥ `lessons_batch` (design start: 30;
+     proposed 50 from the read-back, [50](50-readback-and-sizing.md) §4);
    - `lessons_stale_seconds` (7 days) with at least one new episode;
    - a lesson reaching its horizon (60 days);
    - **an explicit correction aimed at her** (new, §3).
@@ -85,7 +112,7 @@ and line quoted, the evidence cited, and what the lesson would have said.
 
 | PR | content | check |
 |---|---|---|
-| L0 | record the brief's `ask` intent on each send | `silent` counted on expected asks |
+| L0 | record the brief's `ask` intent on each send; ships beside C1, not after Character, because the data needs weeks to accumulate | `silent` counted on expected asks |
 | L1 | `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, echo and cap checks; CLI rollback | write, cap refusal, rollback and no re-learn, in tests |
 | L2 | the Lessons adaptor, its objective and its wake (batch, stale, horizon) | wakes at threshold only; a session writes or closes |
 | L3 | the doctrine-check instrument on the law subset; tension rows, operator-only | a labelled set of loosening lessons all refused and written as tension |

@@ -56,7 +56,7 @@ code, continuously (no model)
   Rollup ──▶ episodes (stays, co-location, tie, response)
   evidence counter: per (unit, entity), citable items since that key's watermark
 
-wake evaluator (code, the existing ~30 s tick, one query)
+wake (code, the dream scheduler's tick, one count per key)
   wake (unit, entity) when:
       new evidence ≥ character_batch[kind]
    or account older than character_stale_seconds AND any new evidence
@@ -86,6 +86,49 @@ Differences from today:
    step 4 cut-over: code validates each write as it happens.
 4. **Ordering.** A person session reads the room's culture through
    `character_read` rather than writing beside it in one envelope.
+5. **Unit-keyed persons.** Today a person's account is keyed per ROOM
+   (`character_key(scope, person_id)` in `nora/domain/culture.py`, `scope`
+   the room). The target is one account per (unit, person); C2 moves them.
+
+### 3.1 Code at the edges, an agent loop in the middle (operator, 2026-10-07)
+
+Code does what must be the same every time: count evidence, wake the key,
+hand over the previous account and pointers to what is new, validate every
+write. The model does the judgement: what to look up and what the account
+now says.
+
+An agent loop is not research by itself. Today's culture pass is an agent
+loop, and the median run calls no tool ([50](50-readback-and-sizing.md)
+§3.4): everything it could look up was handed in. So the session is handed
+less (no pre-fetched `<people_views>`, pointers rather than full text where
+the batch is large), every changed line must cite a Record id or Rollup key
+the write verb can resolve, and tool calls per session and the share of
+lines with a citation are read back after C2. A median of zero tool calls
+after C2 means it is still a pipeline.
+
+Research matters by entity: a room needs little beyond its own messages; a
+person needs their messages across rooms, presence patterns and ties; Nora
+needs her sends joined to their responses. One adaptor and one session shape
+serve all four; the evidence query and the objective section differ.
+
+### 3.2 Where the wake lives
+
+On the **dream scheduler** (`AdaptorSchedule` in `nora/agent/dreamer.py`,
+evaluated in `_dream_adaptor_once` in `nora/app/runtime.py`), not on
+Cognition's wake evaluator (`nora/app/wake.py`). The dream scheduler already
+runs culture with per-key watermarks; today it fires on `lag > 0 and age >=
+min_interval_seconds`. C1 replaces that with a count-or-stale rule. Cognition's
+evaluator carries stimuli kinds, brakes and floors built for fast group
+thinking, which none of the slow adaptors need. Lessons uses the same rule
+([40](40-lessons.md) §2). This holds unless the dream scheduler cannot run one
+session per key concurrently or cannot be woken mid-cycle for a correction.
+
+### 3.3 Memory is a hint, never a dependency
+
+Honcho is a read tool the session may call (`ask_memory`, `search_memory`),
+never a pre-fetch the account depends on. Today DEC-278 makes every person
+account depend on a `memory.chat` answer fetched before the pass. C2 removes
+that, so a later merge or sunset of Honcho (#736) changes no Character code.
 
 ## 4. Character · Nora
 
@@ -111,20 +154,26 @@ Differences from today:
 
 Recommendation: design style. The response episodes already exist.
 
-## 6. Work, in PRs
+## 6. Work, in PRs (Character finished before Lessons, operator 2026-10-07)
 
 | PR | content | check |
 |---|---|---|
-| C1 | evidence counter and per-key wake for the Character adaptor; daily clock removed | a test wakes a key at the threshold and not below; a quiet key never wakes |
-| C2 | `character_revise` write verb with citation and echo checks; the room case moved onto it; person accounts become their own sessions | room render parity; person accounts written per key |
-| C3 | Character · unit and Character · Nora; objective sections; blocks | a labelled set of accounts judged against the Record they cite (`nora-eval`) |
-| C4 | `character_read` | `tool_selection` rows before and after (`nora-tool`) |
+| C1 | count-or-stale wake on `AdaptorSchedule`; `[culture]` gets `wake_batch` (200) and `stale_seconds` (7 days); the daily `fold_interval_seconds` goes | a test wakes a key at the threshold and not below, a stale key with one new item, never a key with none; read back fires per room per day for a week |
+| L0 (parallel) | record the brief's `ask` intent on each send ([40](40-lessons.md) §6) | `silent` appears in the Rollup; it needs weeks of data before C3 and Lessons read it |
+| C2a | `character_revise` write verb (citations resolve to Record ids, schema, provenance); the room case moves from envelope to verb | room render parity; refusal of an unresolvable citation in tests |
+| C2b | person sessions per (unit, person): unit-wide evidence count (their messages across the unit's rooms), own watermark, keys moved from room to unit, `<people_views>` pre-fetch removed, memory a tool | each poster's account written per key; tool calls per session read back |
+| C3a | Character · unit: evidence = new room revisions (5) and Register rows; its block | block declared in `_BLOCKS`, renders in the unit's rooms only |
+| C3b | Character · Nora: evidence = closed response episodes (100), echo rule in the verb | a revision citing only her sends is refused; labelled accounts judged against their citations (`nora-eval`) |
+| C4 | `character_read` | `tool_selection` before and after (`nora-tool`) |
+
+Step 2 (the self block, [20](20-self-block.md)) follows C3b. New blocks
+follow `_BLOCKS` and context assembly; `design/context-plan/` (on master) is
+an experiment-only selector that keeps Culture and character mandatory, so
+nothing here conflicts with it.
 
 ## 7. Open
 
-- Thresholds per entity kind. The cognition design starts at 200 items and 7
-  days; 200 is too high for one person in a small group. Sized by
-  [50](50-readback-and-sizing.md).
-- Whether `<people_views>` survives as one input among the tools, or goes.
 - Section schema for accounts (DEC-184 says prose, no schema; the cognition
-  design gives Character fixed sections). Decide at C2.
+  design gives Character fixed sections). Decide at C2a.
+- Whether a stale wake needs a floor of a few items
+  ([50](50-readback-and-sizing.md) §4).

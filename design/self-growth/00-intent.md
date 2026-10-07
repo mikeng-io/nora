@@ -80,6 +80,11 @@ Read from master at 67520d7.
 | `response` episodes | yes | Rollup step 2a (`nora/infra/sql/rollups.py`): each of her sends with the replies, reactions and edits inside the window, or `silent` |
 | `character_read` | no | in the Cognition catalogue, marked "not built yet" (`nora/app/cognition_wiring.py`) |
 
+Character (step 1) is finished before Lessons starts (operator, 2026-10-07):
+Lessons reuses its wake, its write-verb checks and its pairing of sends with
+responses. Only recording the brief's `ask` intent (Lessons L0) runs beside
+step 1, because `silent` needs weeks of data.
+
 ## 5. Parked
 
 - Recommendations as a runtime skill, and whether personalisation goes back to
@@ -89,3 +94,19 @@ Read from master at 67520d7.
   bundle does not need it.
 - The portal correction page, `character_dispute` and the rebuild-drift
   metric. No harm is shown yet (AGENTS.md, "A guard needs a consequence").
+
+## 6. After the cognition loop: Honcho, and one search over every tier
+
+Operator, 2026-10-07, tracked in #736. Character, culture and Lessons rebuild
+most of what Honcho derives, cited and per unit. Once they are live, Honcho
+is merged or retired. What it does that nothing here replaces: search over
+history, a question-answering path (`ask_memory`), and stated person facts
+(`remember`). The first two become one central retrieval over every tier,
+WeMM-Embedding-2B the model candidate (`design/conversational-recall/`):
+each hit carries its tier (evidence may be cited; state and derived rows are
+linked, never cited; tension rows are operator-only), the caller's
+permissions are applied inside the query before ranking (unit partition,
+room lineage and the DisclosureGuard, caller kind, egress screens), and the
+index is a rebuildable projection. This bundle's only obligation now:
+memory stays a tool the Character session may call, never a dependency
+([10](10-character.md) §3.3).
