@@ -349,6 +349,14 @@ fixed schedule, and none is woken by a single message, except a
 | **Lessons** | unit | `response` episodes ([25](25-rollup.md) §3) closed since its watermark reach `lessons_batch`; or `lessons_stale_seconds` with any new one; or a lesson passes its horizon ([12](12-schemas.md) §4a) | 30 episodes; 7 days; 60 days |
 | **Assess** | a finished session; the unit, nightly | a session of any adaptor ends; the nightly clock | — |
 
+**As built (DEC-290, 2026-10-07), the wake batch is per kind**, in `[culture]`:
+room `wake_batch` 200 (new human messages in the room), person
+`person_wake_batch` 100 (their messages across the unit's rooms), unit
+`unit_wake_batch` 5 (new revisions of its rooms' cultures) and Nora
+`nora_wake_batch` 100 (closed episodes that are evidence,
+`Episode.is_evidence`); `stale_seconds` (7 days) is shared. A person's session
+reads at most its wake batch of their newest messages, and Nora's at most hers.
+
 The Character adaptor replaces the culture adaptor's daily clock
 (`[culture] fold_interval_seconds = 86400`; done for rooms by DEC-288, 2026-10-07). The same week of shadow sizes
 these values.

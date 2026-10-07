@@ -8,7 +8,7 @@
     "She also starts keeping an account of what she herself is like in each group, from how people responded to her messages there; it must rest on their responses, never on her own words alone, and nothing reads it yet.",
     "Accounts that existed per room are not carried over, because one room's account would then be shown in every room of the group; each person's group account is written fresh shortly after start.",
     "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried up to three times on the same backlog and then skipped past, however much new evidence arrives meanwhile.",
-    "Only responses count as evidence of what she is like: an episode where nobody replied, reacted or edited, and no answer was expected, can be read but never cited, and one whose platform was not proved up is not shown at all."
+    "Only responses count as evidence of what she is like: an episode where nobody replied, reacted or edited, and no answer was expected, or whose platform was not proved up, is neither shown to her nor counted toward waking her pass, and her account must cite at least three that are evidence."
   ],
   "limitations": [
     "A citation is per account, not per sentence: the check proves an account rests on real messages, not that each line does.",

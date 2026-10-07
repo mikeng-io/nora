@@ -1439,8 +1439,9 @@ enabled = false
 # The culture tier (design/culture-tier). ON, a background pass reads each
 # room's own messages and writes ONE SHORT ACCOUNT of what that room
 # is and why it became so — how they talk, how decisions get made, what they
-# call themselves, and Nora's own standing there — appending it to a chain of
-# every account before it.
+# call themselves — appending it to a chain of every account before it. It
+# cites the messages it rests on and reads no presence and no Standing
+# (R-31: the account is evidence for ones that render in other rooms).
 #
 # WHY IT EXISTS. The Relevance Gate admitted about 1% of windows over seven
 # days, measured twice. That is not a threshold to tune: a window judged
@@ -1450,12 +1451,13 @@ enabled = false
 # model with no reasoning budget because the reasoning already happened
 # offline.
 #
-# ON ALSO MEANS EVERY RUNTIME READS IT. The room's current account rides as a
-# <culture> block in the tag turn, every fire occasion, the proactive pass, both
-# note passes and both standing folds (DEC-207, 2026-09-25) — never in the
-# Relevance Gate. There is no separate read switch: turning the fold on changes
-# live prompts on the next deploy. A room never folded renders no block, so the
-# change arrives room by room over the first day.
+# ON ALSO MEANS THE PROMPT READS IT. The room's current account rides as a
+# <culture> block in the tag turn, every fire occasion and the Standing fold
+# (DEC-207), and the Cognition session reads accounts through `character_read`
+# — never in the Relevance Gate. There is no separate read switch: turning the fold on
+# changes live prompts on the next deploy. A room never folded renders no
+# block, so the change arrives room by room, as each room reaches wake_batch
+# new messages or stale_seconds.
 #
 # NOTHING IN IT RETIRES. No TTL, no closing condition, no supersede: a quiet
 # room's culture is not stale, it is accurate, and an old name does not become
@@ -1469,7 +1471,10 @@ enabled = false
 # memory, but nothing it writes rests on memory. Every account cites the
 # messages it rests on, and a citation it was not shown is refused. Every tag
 # and fire turn then carries a <character> block of the accounts of the people
-# that room lists. No separate switch: `enabled` turns on both.
+# that room lists, and a <unit_culture> block (what the unit is across its
+# rooms, written by the unit's own session). Nora's own account per unit is
+# written too, from the episodes people responded to (at least three cited),
+# and nothing renders it yet. No separate switch: `enabled` turns on all.
 enabled = false
 # New human messages in a room that wake its fold at once (DEC-288). Sized
 # from 14 days on the deploy host: the busiest room reaches 200 about every 4
@@ -1485,10 +1490,12 @@ person_wake_batch = 100
 # New revisions of a unit's room cultures that wake the unit's own account
 # (what the group is across its rooms, read as <unit_culture> in its rooms).
 unit_wake_batch = 5
-# Closed response episodes (her messages, each with how people responded) that
-# wake her own account in a unit. Written only: nothing reads it yet.
+# Closed response episodes that ARE evidence (people replied, reacted or edited,
+# or a question drew silence; an `unanswered` one is not) that wake her own
+# account in a unit. Written only: nothing reads it yet.
 nora_wake_batch = 100
-# Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
+# Messages read per ROOM fold (a person's session reads person_wake_batch, and
+# Nora's reads nora_wake_batch). THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300
 
