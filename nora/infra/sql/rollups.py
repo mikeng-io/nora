@@ -36,9 +36,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import (
+    FOLLOW_NAMES,
+    FOLLOW_WINDOW_SECONDS,
     Citation,
     Colocation,
     Daybook,
+    FollowCandidate,
     HealthRow,
     Home,
     MessageFact,
@@ -54,6 +57,7 @@ from nora.domain.rollup import (
     resolve_by_overlap,
     room_key,
     stay_from_json,
+    unquoted_follows,
 )
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
@@ -72,6 +76,7 @@ from nora.infra.sql.schema import (
     ROLLUP_TIE,
     SOURCE_HEALTH,
 )
+from nora.tag import is_tagged
 
 
 def _at(ms: int) -> datetime:
@@ -274,11 +279,22 @@ class SqlRollupStore:
 
     async def message_facts(
         self, *, unit: UnitRooms, mark: RecordMark, subject_of: dict[str, str],
+        follow_window_ms: int = int(FOLLOW_WINDOW_SECONDS * 1000),
+        nora_names: Sequence[str] = FOLLOW_NAMES,
     ) -> tuple[list[MessageFact], list[ReactionFact], list[SendFact], list[ResponseEvidence]]:
         """The unit's person-authored messages (with the person each one
         replies to and the members it mentions), the reactions of members
         to members' messages, Nora's sends, and every reply, reaction or edit
-        of a reply that answered a send — all at or below `mark`."""
+        of a reply that answered a send, and the unquoted messages read as
+        answering one (`unquoted_follows`) — all at or below `mark`.
+
+        Her own account ids are the `sender_id` of her rows in the unit's
+        rooms, per platform: what her sends were written under, which is the
+        platform's own answer to who she is (`PlatformIdentity.primary`). The
+        analytics process has no platform registry, so this is the one place
+        it can read them from; a mention of her under an id form that never
+        wrote a row (a Signal ACI alone) does not resolve here, and the
+        message is then read by what it says."""
         quoted = MESSAGES.alias("quoted")
         stmt = (
             sa.select(
@@ -288,6 +304,7 @@ class SqlRollupStore:
                 quoted.c.person_id.label("quoted_person"),
                 quoted.c.is_nora.label("quoted_is_nora"),
                 quoted.c.id.label("quoted_id"),
+                MESSAGES.c.sender_id, MESSAGES.c.body,
                 # Only Nora's own rows: the raw envelope of a person's message is not read here.
                 sa.case((MESSAGES.c.is_nora == 1, MESSAGES.c.raw_json)).label("send_raw"),
             )
@@ -346,6 +363,10 @@ class SqlRollupStore:
         turn_sends: dict[str, list[int]] = {}
         evidence: list[ResponseEvidence] = []
         reply_to_send: dict[int, int] = {}
+        #: Her own account ids per platform, and the members' messages that
+        #: quote none of her sends (what `unquoted_follows` reads).
+        nora_ids: dict[str, set[str]] = {}
+        unquoted: list[tuple[Any, str, frozenset[str]]] = []  # (row, person, mentions)
         seen: set[int] = set()
         for r in rows:
             if r.id in seen:
@@ -360,8 +381,10 @@ class SqlRollupStore:
                 sends[r.id] = SendFact(
                     id=r.id, room=room, platform=r.platform,
                     conversation_id=r.conversation_id, ts=r.ts, named=mentioned,
-                    intent=_send_intent(r.send_raw),
+                    intent=_send_intent(r.send_raw), turn=_send_tag(r.send_raw),
                 )
+                if r.sender_id:
+                    nora_ids.setdefault(r.platform, set()).add(r.sender_id)
                 turn = _send_tag(r.send_raw)
                 if turn is not None:
                     turn_sends.setdefault(turn, []).append(r.id)
@@ -382,6 +405,8 @@ class SqlRollupStore:
                 evidence.append(ResponseEvidence(
                     send_id=r.quoted_id, person_id=person, ts=r.ts, kind="reply",
                 ))
+            else:
+                unquoted.append((r, person, parse_mentions_json(r.mentions_json) or frozenset()))
         reactions: list[ReactionFact] = []
         for r in reaction_rows:
             person = subject_of.get(r.person_id)
@@ -407,6 +432,22 @@ class SqlRollupStore:
                     send_id=send_id, person_id=by_reply[r.message_id].person_id,
                     ts=r.ts, kind="edit",
                 ))
+        candidates = [
+            FollowCandidate(
+                id=r.id, person_id=person, room=room_key(r.platform, r.conversation_id),
+                ts=r.ts,
+                names_nora=bool(ids & nora_ids.get(r.platform, set()))
+                or any(is_tagged(r.body or "", word) for word in nora_names),
+                # A quote of anyone else's message is a reply to THEM, like a
+                # mention of someone else: never a follow inside the window.
+                mentions_other=r.quoted_ts is not None
+                or (bool(ids) and not ids & nora_ids.get(r.platform, set())),
+            )
+            for r, person, ids in unquoted
+        ]
+        evidence.extend(unquoted_follows(
+            list(sends.values()), candidates, follow_window_ms=follow_window_ms,
+        ))
         # ONE expectation per turn: a multi-part fire turn writes its brief's
         # intent on every part, but only its LAST send carries it here, so
         # the earlier parts of one `ask` are not each counted `silent`.
@@ -611,7 +652,8 @@ def _response_values(r: Response) -> dict[str, Any]:
         **_common(r), "message_id": r.message_id, "platform": r.platform,
         "conversation_id": r.conversation_id, "sent_ts": r.sent_ts,
         "replies": r.replies, "reactions": r.reactions, "edits": r.edits,
-        "responders": list(r.responders), "named_persons": list(r.named_persons),
+        "follows": r.follows, "responders": list(r.responders),
+        "named_persons": list(r.named_persons),
         "intent": r.intent, "outcome": r.outcome,
     }
 

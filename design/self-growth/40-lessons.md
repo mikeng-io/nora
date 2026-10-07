@@ -13,8 +13,8 @@ edges:
 ## 1. The unit of evidence
 
 A `response` episode (`nora/infra/sql/rollups.py`, Rollup step 2a): one of her
-sends plus the replies, reactions and edits inside `response_window_seconds`
-(3600 s), or `silent` where an answer was expected and the platform was proved
+sends plus the replies, reactions, edits and unquoted follows (§6) inside
+`response_window_seconds` (3600 s), or `silent` where an answer was expected and the platform was proved
 up, or `unknown` where it was expected but not proved. One episode is one data
 point. A lesson is a pattern across many.
 
@@ -108,10 +108,28 @@ and line quoted, the evidence cited, and what the lesson would have said.
   brief, and on 2026-10-07 no proactive reminder had been created since the
   Cognition cut-over, so `silent` stays rare until tag replies say whether
   they expect an answer (a reply-tool change, the operator's call).
-- **An unquoted answer is invisible.** A response counts only as a quote, a
-  reaction or an edit of a reply; a member answering without quoting her is
-  not attached to her send, so an expected answer given that way reads as
-  `silent`. Measure how often before Lessons trusts `silent`.
+- **An unquoted answer is inferred, not seen.** Until 2026-10-07 a response
+  counted only as a quote, a reaction or an edit of a reply, and most people in
+  a group answer without quoting, so an answered send read `unanswered` (and an
+  expected answer read `silent`). The Rollup now also counts a `follow`
+  (`rollup_response.follows`, design 25 §3): a member's message in her room
+  within 120 s of her latest send that mentions no one else, or at any time
+  inside the response window one that names her (a structured mention of her
+  account, or the word "nora"); it counts for one send, the last of the turn
+  that delivered it. Measured on 14 days of the friends unit, 60 labelled
+  follow-up messages: inside 120 s with no mention of anyone else, 33 answered
+  her, 3 did not and 11 were ambiguous (about 92% of the clear ones). The
+  limits: one labeller, n = 60, one unit, and a rule fitted to what that
+  labeller saw. A member replying to another member inside her window reads as
+  answering her (the 3), and a quoted-nothing answer after 120 s that does not
+  name her is still missed. `follows` is stored apart from `replies`, so a
+  lesson can weigh an inferred answer less than a quoted one; Character · Nora's
+  episode still shows only the quoted replies, not the messages behind a
+  `follow`, so an episode whose ONLY responses are follows (`follows > 0`,
+  no reply, reaction or edit) is NOT evidence for the Nora session: it is not
+  counted, not read and not citable (`Episode.is_evidence`, in SQL and in the
+  in-memory twin) until the follow messages are shown (a prompt change that
+  needs an eval). Re-measure on more units before trusting `silent`.
 - **A labelled set before going live**, including lessons that would loosen
   law, which must become tension rows. The largest single effort here.
 

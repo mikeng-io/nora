@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -732,17 +733,90 @@ class SendFact:
     ts: int
     named: tuple[str, ...] = ()
     intent: str | None = None
+    #: The turn that delivered it (raw_json `tag_id`); None is «not recorded»,
+    #: and a send with no turn is its own turn (`unquoted_follows`).
+    turn: str | None = None
 
 
 @dataclass(frozen=True)
 class ResponseEvidence:
     """One person's response to a send: a reply quoting it, a reaction on
-    it, or an edit of a reply to it."""
+    it, an edit of a reply to it, or `follow`: a message that quoted nothing
+    and is read as answering it (`unquoted_follows`, 25 §3)."""
 
     send_id: int
     person_id: str
     ts: int
-    kind: Literal["reply", "reaction", "edit"]
+    kind: Literal["reply", "reaction", "edit", "follow"]
+
+
+#: How long after her send an unquoted message answers it without naming her
+#: (25 §3). Measured 2026-10-07 on 14 days of the friends unit, 60 labelled
+#: follow-ups (one labeller): 33 answered her, 3 did not, 11 were ambiguous.
+FOLLOW_WINDOW_SECONDS = 120.0
+
+#: The words that name her in a message body, matched whole-word and
+#: case-insensitively (`nora.tag.is_tagged`'s rules): after the follow window
+#: a message answers her only when it names her.
+FOLLOW_NAMES: tuple[str, ...] = ("nora",)
+
+
+@dataclass(frozen=True)
+class FollowCandidate:
+    """One member's message as `unquoted_follows` reads it. It quotes none of
+    her sends (a quote is a `reply`, counted once). `names_nora` is the
+    message naming her: a structured mention that resolves to her own account,
+    or one of `FOLLOW_NAMES` in its body. `mentions_other` is a structured
+    mention that does not resolve to her, or a quote of someone else's
+    message (a reply to that person)."""
+
+    id: int
+    person_id: str
+    room: str
+    ts: int
+    names_nora: bool
+    mentions_other: bool
+
+
+def unquoted_follows(
+    sends: Sequence[SendFact], candidates: Sequence[FollowCandidate], *,
+    follow_window_ms: int,
+) -> list[ResponseEvidence]:
+    """The `follow` evidence: member messages that answered one of her sends
+    without quoting it (25 §3).
+
+    A message answers her when it names her, or when it comes within
+    `follow_window_ms` of her latest send in its room and mentions someone
+    else not at all. It counts for ONE send: the last send of the turn that
+    delivered her latest send before it (a multi-part turn is one thing said;
+    a send with no turn is its own turn). Whether the answer is late is
+    `responses()`'s call, by its own window. A message between the parts of
+    one turn is stamped at the turn's last part, so the window opens at it."""
+    by_room: dict[str, list[SendFact]] = {}
+    for s in sorted(sends, key=lambda x: (x.ts, x.id)):
+        by_room.setdefault(s.room, []).append(s)
+    last_of_turn: dict[tuple[str, str], SendFact] = {}
+    for room, room_sends in by_room.items():
+        for s in room_sends:
+            last_of_turn[(room, s.turn or f"send:{s.id}")] = s
+    out: list[ResponseEvidence] = []
+    for c in sorted(candidates, key=lambda x: x.id):
+        room_sends = by_room.get(c.room, [])
+        i = bisect_left([s.ts for s in room_sends], c.ts)
+        if i == 0:
+            continue  # nothing of hers before it in this room
+        latest = room_sends[i - 1]
+        if not (
+            c.names_nora
+            or (c.ts - latest.ts <= follow_window_ms and not c.mentions_other)
+        ):
+            continue
+        target = last_of_turn[(c.room, latest.turn or f"send:{latest.id}")]
+        out.append(ResponseEvidence(
+            send_id=target.id, person_id=c.person_id,
+            ts=max(c.ts, target.ts), kind="follow",
+        ))
+    return out
 
 
 @dataclass(frozen=True)
@@ -762,6 +836,9 @@ class Response:
     valid_from_ms: int
     valid_to_ms: int
     as_of_ms: int
+    #: Messages that quoted nothing and are read as answering it
+    #: (`unquoted_follows`): counted in `responders`, never in `replies`.
+    follows: int = 0
 
     @property
     def lineage(self) -> tuple[LineageEntry, ...]:
@@ -778,7 +855,8 @@ def responses(
     - `open` while the window runs past `as_of_ms`, the newest Record time
       (the window closes when the Record shows the time passed, never the
       wall clock);
-    - `responded` when any reply, reaction or edit landed in the window;
+    - `responded` when any reply, reaction, edit or unquoted `follow` landed
+      in the window;
     - with nothing in a closed window: `silent` when the send expected an
       answer (its brief's intent is `ask`, or it named a person) AND its
       room's platform was proved up for the window (`platform_up[send id]`),
@@ -794,6 +872,7 @@ def responses(
         replies = sum(1 for e in inside if e.kind == "reply")
         reacts = sum(1 for e in inside if e.kind == "reaction")
         edits = sum(1 for e in inside if e.kind == "edit")
+        follows = sum(1 for e in inside if e.kind == "follow")
         expects = s.intent == "ask" or bool(s.named)
         outcome: ResponseOutcome
         if inside:
@@ -809,7 +888,7 @@ def responses(
         out.append(Response(
             unit=unit, message_id=s.id, platform=s.platform,
             conversation_id=s.conversation_id, sent_ts=s.ts,
-            replies=replies, reactions=reacts, edits=edits,
+            replies=replies, reactions=reacts, edits=edits, follows=follows,
             responders=tuple(sorted({e.person_id for e in inside})),
             named_persons=tuple(sorted(set(s.named))), intent=s.intent,
             outcome=outcome, valid_from_ms=s.ts, valid_to_ms=end,
@@ -925,6 +1004,8 @@ def silent_runs(
 
 __all__ = [
     "FIX_RANK",
+    "FOLLOW_NAMES",
+    "FOLLOW_WINDOW_SECONDS",
     "LOCAL_TZ",
     "NEVER",
     "POLL_RANK",
@@ -936,6 +1017,7 @@ __all__ = [
     "EventPosition",
     "FixEvent",
     "FoldState",
+    "FollowCandidate",
     "HealthRow",
     "Home",
     "LineageEntry",
@@ -974,5 +1056,6 @@ __all__ = [
     "stay_to_json",
     "tags_sha256",
     "ties",
+    "unquoted_follows",
     "utc_ms",
 ]

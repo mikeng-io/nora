@@ -878,7 +878,11 @@ ROLLUP_TIE = sa.Table(
 #: recorded» (a tag reply). `outcome` is `open` while
 #: the window runs to the newest Record time, `silent` only when something
 #: was expected and the room's platform was proved up for the window,
-#: `unknown` when it was not.
+#: `unknown` when it was not. `replies` counts only messages that QUOTE the
+#: send; `follows` counts the unquoted messages read as answering it (a
+#: member's message soon after, or one naming her; `nora.domain.rollup.
+#: unquoted_follows`, 25 §3, migration 0099), so a reader can tell a quoted
+#: answer from an inferred one. Both count toward `responded` and `responders`.
 ROLLUP_RESPONSE = sa.Table(
     "rollup_response",
     METADATA,
@@ -890,6 +894,7 @@ ROLLUP_RESPONSE = sa.Table(
     sa.Column("replies", sa.Integer, nullable=False),
     sa.Column("reactions", sa.Integer, nullable=False),
     sa.Column("edits", sa.Integer, nullable=False),
+    sa.Column("follows", sa.Integer, nullable=False, server_default=sa.text("0")),
     sa.Column(
         "responders", pg.ARRAY(sa.Text), nullable=False,
         server_default=sa.text("'{}'::text[]"),

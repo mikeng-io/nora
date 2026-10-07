@@ -255,6 +255,84 @@ async def test_every_rollup_recomputes_identically_from_the_record(pg_url):
     await engine.dispose()
 
 
+async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(pg_url):
+    """25 §3: a member's message that quotes nothing answers her latest send in
+    its room when it comes within 120 s and mentions no one else, or at any time
+    inside the response window when it names her; a multi-part turn is answered
+    at its last part; a quoted reply is a reply, counted once."""
+    engine = create_sql_engine(pg_url)
+    base = _START
+
+    async with engine.begin() as conn:
+        async def message(at_s, *, person=None, body="…", quoted=None, mentions=(), tag=None,
+                          nora=False):
+            await conn.execute(sa.insert(MESSAGES).values(
+                platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
+                sender_id="nora" if nora else f"acct-{person}", person_id=person,
+                ts=base + at_s * 1000, body=body, is_nora=int(nora), delivery_status="sent",
+                quoted_ts=None if quoted is None else base + quoted * 1000,
+                mentions_json=mentions_json(frozenset(mentions)),
+                raw_json=None if tag is None else f'{{"tag_id": "{tag}"}}',
+                created_at=_ts(base + at_s * 1000 + 1_000).isoformat(),
+            ))
+
+        await message(0, nora=True, tag="t1")
+        await message(30, person="a", body="sure")                      # 30 s: follows t1
+        await message(1000, nora=True, tag="t2")
+        await message(1300, person="b", body="sure")                    # 300 s, unnamed: not
+        await message(2000, nora=True, tag="t3")
+        await message(2300, person="a", body="ok NORA thanks")          # 300 s, names her
+        await message(3000, nora=True, tag="t4")
+        await message(3030, person="b", body="sure", mentions={"acct-a"})  # names another
+        await message(4000, nora=True, tag="t5")
+        await message(4050, nora=True, tag="t6")                        # a different turn
+        await message(4060, person="a", body="sure")                    # answers t6 only
+        await message(5000, nora=True, tag="t7")
+        await message(5005, nora=True, tag="t7")                        # a two-part turn
+        await message(5030, person="b", body="sure")                    # answers its last part
+        await message(6000, nora=True, tag="t9")
+        await message(6020, person="a", body="sure", quoted=6000)       # a quote: a reply
+        await message(6500, person="b", body="anyone?")                 # 500 s: no send's follow
+        await message(7000, nora=True, tag="t10")
+        await message(7030, person="a", body="yes", quoted=6500)        # a reply to b: not a follow
+        await message(8000, nora=True, tag="t11")
+        await message(8030, person="a", body="thanks nora", quoted=6500)  # quotes b, names her
+        await message(9000, nora=True, tag="t12")
+        await message(9500, person="b", body="hi", mentions={"nora"})   # 500 s, her account
+        await message(4 * 3600, person="b", body="later")               # the Record's clock
+
+    rollups = SqlRollupStore(engine)
+    unit_rollups = UnitRollups(
+        store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE, clock=lambda: 0.0,
+    )
+    build = await rollups.create_build(code_version=CODE_VERSION, params_sha256="x")
+    mark = await rollups.mark(through_ms=base + 5 * _H)
+    await unit_rollups.run(
+        build_id=build, mark=mark, logical_now={}, raise_stimuli=False,
+    )
+    rows = {
+        (r["sent_ts"] - base) // 1000: r
+        for r in await rollups.rows(table=ROLLUP_RESPONSE, build_id=build)
+    }
+    got = {at: (r["outcome"], r["replies"], r["follows"], r["responders"])
+           for at, r in rows.items()}
+    assert got == {
+        0: ("responded", 0, 1, ["a"]),
+        1000: ("unanswered", 0, 0, []),
+        2000: ("responded", 0, 1, ["a"]),
+        3000: ("unanswered", 0, 0, []),
+        4000: ("unanswered", 0, 0, []),
+        4050: ("responded", 0, 1, ["a"]),
+        5000: ("unanswered", 0, 0, []),
+        5005: ("responded", 0, 1, ["b"]),
+        6000: ("responded", 1, 0, ["a"]),
+        7000: ("unanswered", 0, 0, []),
+        8000: ("responded", 0, 1, ["a"]),
+        9000: ("responded", 0, 1, ["b"]),
+    }
+    await engine.dispose()
+
+
 async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_tie_rollup(pg_url):
     """NEGATIVE, PR #622 review: `message_facts`'s `quoted` join carried no
     `hidden_at` filter, so a `nora person forget` (removed)-hidden message a reply

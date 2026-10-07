@@ -215,6 +215,8 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         colocation_radius_m=analytics.colocation_radius_m,
         colocation_min_overlap_seconds=analytics.colocation_min_overlap_seconds,
         response_window_seconds=analytics.response_window_seconds,
+        follow_window_seconds=analytics.follow_window_seconds,
+        follow_names=tuple(analytics.follow_names),
         stimulus_horizon_seconds=analytics.stimulus_horizon_seconds,
         deviation_silence_days=analytics.deviation_silence_days,
         deviation_stimuli_per_person_per_day=analytics.deviation_stimuli_per_person_per_day,

@@ -126,7 +126,7 @@ open, as the build fixed them:
 | **outing** | where have we been together, how often? | (unit, place, interval) | co-locations of ≥ 2 members away from any member's home | new |
 | **play session** | who played what, with whom, when? | (unit, game, interval) | play samples (§6) | new |
 | **daybook** | what did X do on day D? | (unit, person, local date) | that day's stays, co-locations, outings, play sessions, rooms active in, social items posted | new |
-| **response** | how did people respond to something she sent? | (unit, her send's Record id) | replies, reactions and edits to that send within `response_window_seconds` (starting at 3600 s); `silent` when a send whose Record row carries the `ask` intent of its brief, or one naming a person, got nothing within the window | new; the outcomes the Lessons adaptor and Character · Nora read |
+| **response** | how did people respond to something she sent? | (unit, her send's Record id) | replies, reactions and edits to that send, and unquoted `follow`s (§3 as built), within `response_window_seconds` (starting at 3600 s); `silent` when a send whose Record row carries the `ask` intent of its brief, or one naming a person, got nothing within the window | new; the outcomes the Lessons adaptor and Character · Nora read |
 
 **Aggregates** — counts, patterns and clusters over a window.
 
@@ -158,8 +158,8 @@ minutes and companions, outings, messages and reactions per room;
 pair per ISO week, replies (a quote of the other's message), mentions (a
 structured mention resolving to the other), reactions, each direction, and
 co-location minutes split at the week boundary. Response: per send,
-replies, reactions and edits of a reply inside `response_window_seconds`;
-`open` while the window runs past the unit's Record clock; with nothing in
+replies, reactions and edits of a reply inside `response_window_seconds`, and
+unquoted follows (below); `open` while the window runs past the unit's Record clock; with nothing in
 a closed window, `silent` only when an answer was expected AND the room's
 platform was proved up for the window (`source_health` transitions),
 `unknown` when expected but unproved, `unanswered` when nothing was
@@ -169,6 +169,36 @@ Deliverer writes `intent` (`tell`/`ask`) into the `raw_json` of every message
 it sends (self-growth L0, 2026-10-07). `intent` is NULL for a tag reply (it has
 no brief), for a send before L0, and for a proactive row whose payload holds
 free text instead of `tell`/`ask`.
+
+**Unquoted answers (`follow`, 2026-10-07).** Most people in a group answer
+without quoting her, so a quote-only response left answered sends `unanswered`
+(and an `ask` `silent`). A member's message in the same room counts as a
+`follow` of her send when it quotes none of her sends and either (a) comes
+within `follow_window_seconds` (120 s) of her latest send in that room, carries
+no structured mention of anyone but her and does not quote anyone else's
+message (a quote of another member is a reply to that member, like a mention of
+them), or (b) at any time before the
+response window closes names her: a structured mention resolving to her own
+account in that room, or one of `follow_names` (`nora`) as a whole word,
+case-insensitive, in the body (`nora.tag.is_tagged`'s rules). It counts for ONE
+send: the last send of the turn (`tag_id`, as L0 reads it; a send with no
+`tag_id` is its own turn) that delivered her latest send before it, so a
+message after her next, different-turn send attaches to that one, and a
+multi-part turn is answered at its last part (a message between the parts is
+stamped at that last part). A message that quotes her is a `reply`, counted
+once. A `follow` is an `outcome = responded` like any other and is kept apart:
+`rollup_response.follows` counts them, `replies` stays «quoted it», and
+`responders` holds both. **Her account ids** come from the Record, not from a
+platform registry (the analytics process has none): the `sender_id` her own
+rows in the unit's rooms were written under (`PlatformIdentity.primary` at
+send time). A mention of her under an id form that never wrote a row (a Signal
+ACI alone) does not resolve; the message is then read by what it says, and a
+message that mentions only her under such an id reads as mentioning someone
+else. The rule is a measurement, not a law: 14 days of the friends unit and 60
+labelled follow-up messages, one labeller; inside 120 s without a mention of
+anyone else 33 answered her, 3 did not and 11 were ambiguous (design
+self-growth/40 §6). Changing it bumps `CODE_VERSION` (`rollup-2a.3`) and the
+parameters hash, so the next start rebuilds.
 
 ## 4. Stimuli the Rollup raises
 

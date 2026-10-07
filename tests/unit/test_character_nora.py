@@ -180,3 +180,13 @@ async def test_the_floor_never_exceeds_the_evidence_the_session_was_shown():
     revise, _keep = adaptor.verbs(key=KEY)
     assert await revise(entity="nora", body="a plan lands",
                         citations=["response:100"]) == {"status": "ok"}
+
+
+def test_an_episode_whose_only_responses_are_follows_is_not_evidence():
+    only = Episode(send_id=1, room="r", text="t", outcome="responded",
+                   reactions=0, edits=0, follows=3)
+    assert not only.is_evidence
+    assert Episode(send_id=1, room="r", text="t", outcome="responded",
+                   reactions=1, edits=0, follows=3).is_evidence
+    assert Episode(send_id=1, room="r", text="t", outcome="responded",
+                   reactions=0, edits=0).is_evidence  # no follows: unchanged
