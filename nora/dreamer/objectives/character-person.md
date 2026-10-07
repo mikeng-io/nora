@@ -1,7 +1,7 @@
 ---
 name: character-person
 kind: objective
-version: 1
+version: 2
 applies_to: [character_person_adaptor]
 description: >-
   One person's Character in one unit (design/self-growth/10-character.md §3,
@@ -59,9 +59,8 @@ else.
 ## Looking things up
 
 You may ask your memory about them (`ask_memory`, `search_memory`) or check who
-a name in their messages is (`about`, `lookup_person`, `group_members`), and
-look up a reference nobody explains (`web_search`, `web_fetch`). Do it when it
-would change what you write. What memory says is a hint about them across
+a name in their messages is (`about`, `lookup_person`, `group_members`). Do it
+when it would change what you write. What memory says is a hint about them across
 everything you have seen; it can be wrong, it is never something to cite, and
 where it disagrees with their messages, trust the messages.
 

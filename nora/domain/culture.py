@@ -47,6 +47,7 @@ __all__ = [
     "CHARACTER_OUTCOMES",
     "CULTURE_OUTCOMES",
     "MAX_CONSECUTIVE_REJECTIONS",
+    "NORA_MIN_EVIDENCE_EPISODES",
     "OUTPUT_TOKENS_PER_CHAR",
     "REVISE_REFUSALS",
     "Citable",
@@ -335,11 +336,6 @@ class CultureProposal:
     """
 
     body: str
-    #: `None` is the ROOM's account. A `person_id` makes it that one person's
-    #: account in this room (`character_key`), written by the same fold from
-    #: Honcho's view of them and the room's culture. It comes from the roster
-    #: the prompt showed, never from an id the model typed.
-    person_id: str | None = None
     #: The citations `check_revision` accepted, in the model's order.
     citations: tuple[str, ...] = ()
 
@@ -359,7 +355,7 @@ class CultureProposal:
 #:   (`nora.agent.dream_screen`), applied to the body before it is staged.
 REVISE_REFUSALS = frozenset({
     "unknown_entity", "empty", "too_long", "uncited", "unresolved_citation",
-    "echo", "identifier", "coordinate",
+    "echo", "thin_evidence", "identifier", "coordinate",
 })
 
 #: `response:<her send's message id>`: how a session cites a Rollup response
@@ -371,6 +367,14 @@ _EPISODE = re.compile(r"response:(\d+)")
 #: The outcomes that are evidence on their own, whatever the counts say
 #: (`Episode.is_evidence`).
 EPISODE_EVIDENCE_OUTCOMES = frozenset({"responded", "silent"})
+
+
+#: How many evidence episodes (`Episode.is_evidence`) a revision of Nora's own
+#: account must cite (DEC-290): one reaction is an anecdote, and the wedding
+#: account rested on four citations of mostly non-evidence. A floor, clamped by
+#: the adaptor to how many evidence episodes the session was shown, so a session
+#: woken by the stale rule on one episode is not given a bar it cannot meet.
+NORA_MIN_EVIDENCE_EPISODES = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,12 +394,14 @@ class Citable:
     her own sends; `episodes` are the Rollup response episodes it was shown
     that are evidence (`Episode.is_evidence`), by her send's id. `echo_rule` is
     on for Character · Nora alone: a revision of HER account must rest on
-    something other than her own words (10-tiers §2 rule 4)."""
+    something other than her own words (10-tiers §2 rule 4). `min_episodes` is
+    how many distinct evidence episodes such a revision must cite (0: none)."""
 
     messages: frozenset[int] = frozenset()
     nora: frozenset[int] = frozenset()
     episodes: frozenset[int] = frozenset()
     echo_rule: bool = False
+    min_episodes: int = 0
 
 
 def check_revision(
@@ -438,6 +444,11 @@ def check_revision(
                        "account must rest on how people responded: cite the "
                        "`response:<n>` of an episode whose outcome is `responded` "
                        "or `silent`, or a message someone else wrote")
+    if len(episodes) < citable.min_episodes:
+        return Refusal("thin_evidence", f"cite at least {citable.min_episodes} "
+                       f"different `response:<n>` episodes someone responded to "
+                       f"(outcome `responded` or `silent`); you cited "
+                       f"{len(episodes)}")
     return None
 
 

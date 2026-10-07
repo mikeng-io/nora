@@ -160,6 +160,16 @@ def test_a_person_session_holds_no_presence_read_and_no_act_verb():
     assert ToolRegistry().read_only_tools() >= CHARACTER_PERSON_TOOLS
 
 
+def test_a_person_session_holds_no_web_tool():
+    """The design asked a person session for memory and a roster check, not for
+    the open web: `web_search` and `web_fetch` were carried without a reason,
+    each a call that costs and reaches outside the room (DEC-290)."""
+    assert CHARACTER_PERSON_TOOLS.isdisjoint({"web_search", "web_fetch"})
+    assert {
+        "ask_memory", "search_memory", "about", "lookup_person", "group_members",
+    } == CHARACTER_PERSON_TOOLS
+
+
 async def test_the_evidence_counts_and_reads_their_lines_across_the_units_rooms():
     store = InMemoryCharacterEvidence()
     store.add_message(id=1, platform="signal", room="room-a", person_id="ada")

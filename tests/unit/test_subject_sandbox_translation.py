@@ -33,6 +33,7 @@ from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql.snapshot import Snapshot
+from nora.subject import AccountSeed
 from nora.subject.sandbox import (
     _collapse_duplicate_proactive_notes,
     as_knowledge,
@@ -224,6 +225,26 @@ def test_the_culture_account_current_then_is_what_is_seeded() -> None:
     assert as_knowledge(shot).culture == (
         "they roast each other and mean it kindly"
     )
+
+
+def test_the_unit_and_person_accounts_are_seeded_at_the_age_they_had() -> None:
+    """`<unit_culture>` and `<character>` render an AGE, so a copy seeded as
+    «just now» would show the model another block than the recorded turn."""
+    def account(key: str, body: str, age_hours: int) -> CultureRevision:
+        return CultureRevision(
+            id=f"cr-{key}", culture_key=key, body=body,
+            written_at=BEFORE_MS - age_hours * HOUR, established_by="run-7",
+        )
+
+    knowledge = as_knowledge(_shot(
+        unit_culture=account("friends#unit", "a close group", 30),
+        characters=(("ada", account("friends#character:ada", "Ada plans", 5)),),
+    ))
+
+    assert knowledge.unit_culture == AccountSeed(body="a close group", age_hours=30.0)
+    assert knowledge.characters == {"ada": AccountSeed(body="Ada plans", age_hours=5.0)}
+    assert as_knowledge(_shot()).unit_culture is None
+    assert as_knowledge(_shot()).characters == {}
 
 
 def test_the_note_body_is_the_as_of_revision_not_the_head() -> None:

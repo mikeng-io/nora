@@ -34,7 +34,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import Episode, RoomMessage
+from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES, ROLLUP_RESPONSE
@@ -154,15 +154,27 @@ class SqlCharacterEvidence:
         return [
             ROLLUP_RESPONSE.c.build_id == current_build_id(),
             ROLLUP_RESPONSE.c.unit == unit,
+            # EVIDENCE ONLY, `Episode.is_evidence` in SQL (DEC-290 (4)): people
+            # answered, or silence was proved against an expected answer.
+            # `unanswered` (none expected) is neither, and `open`/`unknown`
+            # are not yet / an outage (R-27). Counting them woke Nora's
+            # session on episodes it could not cite.
+            sa.or_(
+                ROLLUP_RESPONSE.c.outcome.in_(sorted(EPISODE_EVIDENCE_OUTCOMES)),
+                ROLLUP_RESPONSE.c.replies > 0,
+                ROLLUP_RESPONSE.c.reactions > 0,
+                ROLLUP_RESPONSE.c.edits > 0,
+            ),
             ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
             ROLLUP_RESPONSE.c.message_id > after,
         ]
 
     async def episode_count(self, *, unit: str, after: int) -> int:
         """`response` episodes of the current build for `unit` whose send is
-        past Record id `after`. An `open` one is never counted (its outcome can
-        still change) and neither is an `unknown` one (nothing to read: no
-        reply, and no proof the platform was up)."""
+        past Record id `after` that ARE EVIDENCE (`Episode.is_evidence`). An
+        `open` one is never counted (its outcome can still change), nor an
+        `unknown` one (no proof the platform was up), nor an `unanswered` one
+        (none was expected, so nothing happened)."""
         stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
             *self._closed(unit, after),
         )
@@ -172,7 +184,7 @@ class SqlCharacterEvidence:
     async def episodes(
         self, *, unit: str, after: int, limit: int,
     ) -> tuple[list[Episode], int]:
-        """The newest `limit` of those episodes, oldest first, each with her
+        """The newest `limit` of those evidence episodes, oldest first, each with her
         send's text and the replies that quoted it inside its window, and the
         cursor: the newest send id among all of them."""
         where = self._closed(unit, after)

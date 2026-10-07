@@ -160,9 +160,10 @@ async def test_a_units_evidence_is_its_rooms_revisions_counted_in_write_order(re
 
 @pytest.fixture(params=["memory", "sql"])
 async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
-    """Four of her sends in `friends` (one still open, one `unknown` because
-    the platform was not proved up, one whose reply came after the window), one
-    in another unit, and one in a superseded build."""
+    """Six of her sends in `friends` (one `responded`, one `silent`, one
+    `unanswered` because none was expected, one still open, one `unknown`
+    because the platform was not proved up, one whose reply came after the
+    window), one in another unit, and one in a superseded build."""
     from nora.domain.culture import Episode
 
     if request.param == "memory":
@@ -179,7 +180,10 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             send_id=5, room="room-a", text="open", outcome="open", reactions=0, edits=0))
         fake.add_episode(unit="wedding", episode=Episode(
             send_id=6, room="room-w", text="w", outcome="responded", reactions=0, edits=0))
-        yield fake, {"dinner": 1, "list": 3, "reply": 2}
+        fake.add_episode(unit="friends", episode=Episode(
+            send_id=7, room="room-a", text="who is free?", outcome="silent",
+            reactions=0, edits=0))
+        yield fake, {"dinner": 1, "list": 3, "reply": 2, "ask": 7}
         return
     from nora.infra.sql.schema import ROLLUP_BUILD, ROLLUP_RESPONSE
 
@@ -201,6 +205,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             await msg("unk", "room-a", 2500, "unk", True)
             await msg("open", "room-a", 3000, "open", True)
             await msg("w", "room-w", 3500, "w", True)
+            await msg("ask", "room-a", 3600, "who is free?", True)
             old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
                 code_version="v0", params_sha256="p", status="superseded",
             ).returning(ROLLUP_BUILD.c.id))).scalar_one()
@@ -219,6 +224,7 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
             await resp(cur, "friends", "list", 2000, "unanswered")
             await resp(cur, "friends", "unk", 2500, "unknown")
             await resp(cur, "friends", "open", 3000, "open")
+            await resp(cur, "friends", "ask", 3600, "silent")
             await resp(cur, "wedding", "w", 3500, "responded")
             await resp(old, "friends", "w", 3500, "responded")
         yield SqlCharacterEvidence(engine), ids
@@ -230,19 +236,23 @@ async def episodes(request: Any) -> AsyncIterator[tuple[Any, dict[str, int]]]:
         await engine.dispose()
 
 
-async def test_nora_reads_settled_episodes_never_open_or_unknown_ones(episodes):
-    """`unknown` is an outage, not silence (R-27), and has nothing in it to
-    read; neither it nor an `open` one is counted, read or the cursor."""
+async def test_nora_counts_and_reads_evidence_episodes_only(episodes):
+    """DEC-290 (4): her wake counts closed episodes that are EVIDENCE
+    (`Episode.is_evidence`): `responded`, `silent`, or with a reply, reaction or
+    edit. An `unanswered` one (none was expected), an `unknown` one (an outage,
+    R-27) and an `open` one are neither counted, read, nor the cursor."""
     store, ids = episodes
     assert await store.episode_count(unit="friends", after=0) == 2
     assert await store.episode_count(unit="friends", after=ids["dinner"]) == 1
+    assert await store.episode_count(unit="friends", after=ids["ask"]) == 0
     got, cursor = await store.episodes(unit="friends", after=0, limit=5)
     assert [(e.send_id, e.text, e.outcome) for e in got] == [
-        (ids["dinner"], "dinner?", "responded"), (ids["list"], "a list", "unanswered"),
+        (ids["dinner"], "dinner?", "responded"),
+        (ids["ask"], "who is free?", "silent"),
     ]
-    assert cursor == ids["list"]
+    assert cursor == ids["ask"]
     if isinstance(store, SqlCharacterEvidence):
         assert [r.body for r in got[0].replies] == ["yes"]
         assert got[1].replies == ()
     newest, _ = await store.episodes(unit="friends", after=0, limit=1)
-    assert [e.send_id for e in newest] == [ids["list"]]
+    assert [e.send_id for e in newest] == [ids["ask"]]

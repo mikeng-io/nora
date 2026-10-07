@@ -439,8 +439,8 @@ class CultureAdaptor(EntitySessions):
     # -- inputs ---------------------------------------------------------
 
     async def inputs(self, *, key: str, batch: Sequence[TranscriptRow]) -> str:
-        """Which room this is, the account written last time, her position in
-        this room, what the room has open, and the room's own messages.
+        """Which room this is, the account written last time, what the room
+        has open, and the room's own messages.
 
         **The `<room>` block comes first** and frames everything under it: what
         the room is CALLED and what the operator says it IS. This is issue
@@ -530,6 +530,16 @@ class CultureAdaptor(EntitySessions):
         parts: list[ContextBlock] = [self._room_block(key)]
         # The fold's own prior account, so it can see what it wrote and supersede it.
         previous = await self._culture.head(key=key)
+        # AN UNCITED ACCOUNT IS NOT HANDED OVER (R-31). One with no citations
+        # predates the verb (migration `0098_culture_citations`): it was
+        # written by the envelope fold, while the pass read `<standing>`,
+        # `where_been` and `online_now`. A revision that CONTINUED that text
+        # would carry its lines forward and gain citations, and so pass the
+        # "has citations" filter of `character._room_cultures` into the person
+        # and unit sessions, whose accounts render in rooms with different
+        # `location` flags. The room is re-written from its own messages.
+        if previous is not None and not previous.citations:
+            previous = None
         if previous is not None:
             account_order, account_key = _ROW["previous_account"]
             parts.append(
@@ -690,11 +700,6 @@ class CultureAdaptor(EntitySessions):
                     f"CultureAdaptor.commit only accepts a CultureProposal "
                     f"payload, got {type(payload).__name__}"
                 )
-            if payload.person_id is not None:
-                # A room session writes the room alone since C2b (a person is
-                # `nora.language.character`'s, keyed by unit); a person here
-                # is a wiring fault, not a bad answer.
-                raise TypeError("CultureAdaptor.commit writes the room's account only")
             previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
                 self._inc("unchanged")

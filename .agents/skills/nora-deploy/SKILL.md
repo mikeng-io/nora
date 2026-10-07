@@ -52,13 +52,14 @@ config edit and rollback in this skill holds `/tmp/nora-deploy.lock` on norty
 through `flock` (util-linux, present on norty), and also refuses to start while
 an unlocked `docker build` or `docker compose up` is running.
 
+Every locked script runs under `LOCK='flock -o -E 75 -w 900 /tmp/nora-deploy.lock'`
+(`-o`: nothing the script starts inherits the lock; reference.md, Lock).
+
 ## 3. Build, recreate, verify (one locked script)
 
 ```bash
-ssh norty "SHA=$SHA bash -s" > deploy.log 2>&1 <<'EOF'
+ssh norty "SHA=$SHA ${LOCK:?set LOCK, step 2} bash -s" > deploy.log 2>&1 <<'EOF'
 set -u
-exec 9>/tmp/nora-deploy.lock
-flock -w 900 9 || { echo "LOCK_TIMEOUT"; exit 75; }
 if pgrep -af 'docker( compose)? (build|up)'; then echo "UNLOCKED_DEPLOY_RUNNING"; exit 75; fi
 cd ~/workspace/nora || exit 1
 git fetch -q origin || { echo "FETCH_FAILED"; exit 2; }
@@ -93,8 +94,8 @@ Check: `DEPLOY_RC=0`; `BUILD_RC=0 UP_RC=0 VD_RC=0`; every `nora:latest`
 container `ok`; the log's last line names this commit. Only a VERIFIED deploy
 is tagged and logged, so a failed one is never a rollback target (step 6). On failure:
 
-- `LOCK_TIMEOUT` / `UNLOCKED_DEPLOY_RUNNING`: another deploy is live. Wait,
-  then rerun; never kill it.
+- Exit 75 with no output / `UNLOCKED_DEPLOY_RUNNING`: another deploy is live.
+  Wait, then rerun; never kill it. A leaked lock: reference.md, Lock.
 - `LIVE_CONFIG_REFUSED_BY_NEW_IMAGE`: master changed a config key the live file
   still has; nothing was recreated. Fix it through step 5, then rerun (reference.md).
 - `CHECKOUT_NOT_CLEAN`: the checkout holds another session's work (22 and 7
@@ -128,9 +129,8 @@ the copy through the running container, and only then put it in place; a bad
 key reaches no process, and the backup comes back on any failure:
 
 ```bash
-ssh norty bash -s > cfg.log 2>&1 <<'EOF'
+ssh norty "${LOCK:?set LOCK, step 2} bash -s" > cfg.log 2>&1 <<'EOF'
 set -u
-exec 9>/tmp/nora-deploy.lock; flock -w 900 9 || { echo LOCK_TIMEOUT; exit 75; }
 cd ~/workspace/nora || exit 1
 mkdir -p ~/nora-backups; B=~/nora-backups/config.toml.$(date +%Y%m%dT%H%M%S)
 cp config.toml "$B" && cp config.toml /tmp/config.candidate.toml || exit 1
@@ -176,9 +176,8 @@ schema a newer deploy migrated: the script refuses and you roll FORWARD with a
 revert PR (nora-land, then step 3).
 
 ```bash
-ssh norty bash -s > rollback.log 2>&1 <<'EOF'
+ssh norty "${LOCK:?set LOCK, step 2} bash -s" > rollback.log 2>&1 <<'EOF'
 set -u
-exec 9>/tmp/nora-deploy.lock; flock -w 900 9 || { echo LOCK_TIMEOUT; exit 75; }
 cd ~/workspace/nora || exit 1
 CUR=$(docker inspect -f '{{.Image}}' nora) || exit 1
 L=~/nora-backups/deploys.log; PREV=$(awk -v c="$CUR" 'NR==FNR {if ($2=="ROLLBACK") bad[$3]=1; next} $2!="ROLLBACK" && $3!=c && !($3 in bad) {p=$2} END {print p}' "$L" "$L" 2>/dev/null)
