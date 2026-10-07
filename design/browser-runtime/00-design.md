@@ -140,31 +140,12 @@ and, at the moment of a fill, the one credential value the page needs.
 - **An anti-detect backend is an option, not the default:** Camoufox
   (Firefox, Juggler, not CDP) as a second engine for sites that block Chrome,
   measured as a spike arm (`03-open-questions.md`).
-- **Egress.** Browsing needs the public web, a new allowance on the VM that
-  holds every room's files (ADR 0022 Decision 2). **S1 measured that sbx
-  cannot give it safely** (`04-s1-runbook.md` §Results, step 4): under `**`
-  with every private range denied, public names that resolve to
-  `127.0.0.1`, `172.17.0.1` and the LAN address reached the social bridge,
-  Ollama, Prometheus (bound to loopback only) and OmniRoute, by plain HTTP
-  and by CONNECT. A CIDR deny applies to IP literals only, and sbx's proxy
-  dials from the host's own network namespace. So **`nora-computer` never
-  gets `**`**, and the fence comes first (the operator's ruling, 2026-10-07):
-  - **A filtering egress proxy on the host,** which resolves the name
-    itself and refuses any private, loopback or link-local answer before it
-    connects. Stripe's Smokescreen is the published pattern (an MIT HTTP
-    CONNECT proxy that refuses non-public IPs by default; not yet evaluated
-    here). It listens on the docker0 address.
-  - **sbx allows exactly that proxy,** by IP literal and port
-    (`172.17.0.1:<port>`), which S1 showed sbx does enforce. Chrome is
-    launched with `--proxy-server` pointing at it, so every page load goes
-    VM → sbx → the filtering proxy → the site. TLS stays end to end (a
-    CONNECT tunnel; S1 step 3 showed tunnels keep Chrome's ClientHello).
-  - B1 measures the fence the way S1 measured its absence: the same
-    rebinding names through it return refusals, by body, with the same
-    controls.
-  - The filtering proxy is also where a per-room or per-domain policy and
-    its own log can live later. The network half of the audit is
-    `sbx policy log` plus that log.
+- **Egress (operator, 2026-10-07): `**` over TCP for `nora-computer`,
+  with the private ranges denied.** No extra proxy. S1 measured the one
+  gap this leaves (`04-s1-runbook.md` step 4): a CIDR deny applies to IP
+  literals only, so a public name that resolves to a private address
+  (`127-0-0-1.sslip.io`) still reached host services. The operator accepted
+  that risk rather than add a guard. The network audit is `sbx policy log`.
 - **The Google challenge.** One search from a fresh profile on norty's
   residential IP got `/sorry/` (S1 step 6, one page). Anti-bot is a real
   cost here even with a good IP; B3's anti-detect arms measure it.
@@ -346,8 +327,8 @@ Two paths, both built eventually:
 | step | what | gate |
 |---|---|---|
 | **S1** | the runbook in `04-s1-runbook.md`: Chrome + Xvfb RSS, TLS fingerprint through the proxy, rebinding under a `**` rule, exit IP, Flash image passthrough | numbers recorded in `04-s1-runbook.md` §Results |
-| **B0** | ADR 0022 accepted (egress shape settled by S1, §3) | operator |
-| **B1** | the filtering egress proxy and its sbx rule (§3); CDP over `--remote-debugging-pipe` in computerd, scoped per room; screencast relay | S1's rebinding probe refused through the proxy, with its controls; a scope reaches only its own browser; no CDP port listens |
+| **B0** | ADR 0022 accepted | operator |
+| **B1** | the `**` egress rule (§3); CDP over `--remote-debugging-pipe` in computerd, scoped per room; screencast relay | a scope reaches only its own browser; no CDP port listens |
 | **B2** | `computer_browse` + sub-agent, tiers 4 and 5 only (Flash, hand-off) | nora-tool routing measurement |
 | **B3** | spike (`03-open-questions.md` §2): decision-model arms, Camoufox arm | measured, fail-closed |
 | **B4** | OpenBao + fill broker + redaction (`01-vault.md`); the `browser` user and its display; Nora's Google account | a room's shell cannot read `/var/lib/nora-browser` or its display; a credential reaches only a bound field on its bound origin; zero plaintext in traces |

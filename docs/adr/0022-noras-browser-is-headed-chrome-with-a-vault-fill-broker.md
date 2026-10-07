@@ -10,8 +10,7 @@
   by a dedicated `browser` user inside `nora-computer`.
 - **Design:** `design/browser-runtime/` (00 shape, 01 vault, 02 research,
   03 open questions and rulings, 04 the S1 runbook).
-- **Rulings folded in (operator, 2026-10-07):** egress opens after S1's
-  probe; one sandbox; `auto` approval for read-only credentials, `ask` for
+- **Rulings folded in (operator, 2026-10-07):** egress is `**` with private ranges denied; one sandbox; `auto` approval for read-only credentials, `ask` for
   the rest; no recordings; decision models on CPU first; manual unseal.
 - **Index:** a DEC number is taken at merge, when a behaviour lands. This ADR
   number is re-taken from origin/master at merge as well.
@@ -66,13 +65,9 @@ read of norty (`00-design.md` §0, 2026-10-07) found:
 
 1. **Real Google Chrome, headed on Xvfb, inside sbx.** Not `--headless`.
    noVNC and a CDP screencast make the display watchable and takeable.
-2. **Browsing egress goes through a filtering proxy, never sbx `**`.** The
-   operator ruled egress opens after S1's probe, and S1 failed it. A proxy
-   on the host resolves each name and refuses private, loopback and
-   link-local answers (Smokescreen's pattern), and sbx allows only that
-   proxy, by IP literal. B1 proves it with S1's own probe. Logged-in
-   profiles share this egress, and Chrome's URL policy limits them to
-   exact hosts.
+2. **Browsing egress is `**` over TCP, with the private ranges denied**
+   (operator, 2026-10-07). No extra proxy. Logged-in profiles share it, and
+   Chrome's URL policy limits them to exact hosts.
 3. **Credentials live in OpenBao and reach a page only through the fill
    broker.** Transit encrypts credential records stored in Postgres, TOTP
    generates 2FA codes, and the broker (outside the VM) fills by CDP after
@@ -128,8 +123,10 @@ read of norty (`00-design.md` §0, 2026-10-07) found:
   by the browser, not the network.
 - **#678 (one VM per social unit) reopens this:** Nora's accounts would sit
   in one unit's VM, or be signed in once per VM.
-- **A filtering egress proxy is new infrastructure too,** on the host, and
-  every page load depends on it; if it is down, browsing is `unavailable`.
+- **A name that resolves to a private address gets through** (S1): the
+  CIDR deny applies to IP literals only, so a page could steer the browser
+  to host services such as Ollama or the social bridge. Accepted by the
+  operator, 2026-10-07.
 - **OpenBao is new infrastructure to run:** unseal after every reboot (fills
   are `unavailable` until the operator unseals), upgrades, its own audit log.
 - **Credential values do enter the VM** at fill time, inside the page; a

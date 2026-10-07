@@ -333,11 +333,10 @@ Run 2026-10-07 on norty, sbx 0.46.0, in `browser-s1` built from
 
 **What S1 decides:**
 
-- **Wide egress through sbx is ruled out** as designed: sbx's CIDR deny does
+- **A CIDR deny does not cover names:** sbx's CIDR deny does
   not apply to an allowed name, exactly as its help says, and the reach
-  includes loopback-only services. Under the operator's ruling ("open
-  after S1's probe, else fence first"), the fence comes first. Its shape is
-  in `00-design.md` §3.
+  includes loopback-only services. The operator accepted the risk
+  (2026-10-07): egress is `**` with private ranges denied, no extra proxy.
 - Chrome fits: 5 tabs leave 2.2 GiB of the 3 GiB VM. A second, logged-in
   Chrome beside room work is the next memory reading (B4).
 - The proxy is not a fingerprint problem. Exit IP is residential, and Google

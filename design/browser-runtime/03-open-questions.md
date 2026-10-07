@@ -9,13 +9,10 @@ Ruled 2026-10-07 unless marked open. Each keeps the fact it rests on, so a
 later reading can reopen it.
 
 1. **Accept ADR 0022?** **Open, and next (B0).** S1 has run, and its
-   readings are folded into Decision 2 (the filtering proxy) and the
-   Context.
-2. **Browsing egress: ruled, open after S1's probe; S1 failed, so fence
-   first.** Under `**` with private ranges denied, rebinding names reached
-   four host services (`04-s1-runbook.md` step 4). `nora-computer` never gets
-   `**`; browsing goes through a filtering egress proxy on the host that sbx
-   allows by IP literal (00 §3). B1 proves the fence with the same probe.
+   readings are folded into Decision 2 and the Context.
+2. **Browsing egress: ruled, `**` with private ranges denied, no extra
+   proxy.** S1 showed a name resolving to a private address still gets
+   through (`04-s1-runbook.md` step 4); the operator accepted that risk.
 3. **One sandbox or two: ruled, one.** The recommendation was two. Logged-in
    profiles live in `nora-computer` under a dedicated `browser` user, with
    the fences in 00 §4. What the choice costs is in ADR 0022 Worse. Reopen if
@@ -42,8 +39,7 @@ later reading can reopen it.
 leave 2.2 GiB); the proxy keeps Chrome's TLS; rebinding FAILED; Flash reads
 images; residential exit, one Google challenge.
 
-**Still to measure:** the filtering proxy against the same rebinding probe
-(B1); RSS with a logged-in Chrome beside an anonymous one and room work
+**Still to measure:** RSS with a logged-in Chrome beside an anonymous one and room work
 (B4); Google's challenge rate across the B3 arms.
 
 **B3 spike.** Same six tasks as sandbox §14 (availability, form with
