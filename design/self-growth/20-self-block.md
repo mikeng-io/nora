@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The self block: Character · Nora rendered below the doctrine, self_card retired"
-description: "One block, one PR (built, DEC-291): her whole Character · Nora for this unit, capped in lines, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. The before/after eval could not be run on the suite (section 5); self_card had been in nearly every prompt."
+description: "One block, one PR (built, DEC-292): her whole Character · Nora for this unit, capped in lines, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. The before/after eval could not be run on the suite (section 5); self_card had been in nearly every prompt."
 tags: [nora, self, context-assembly, self-card]
 timestamp: '2026-10-07'
 edges:
@@ -46,7 +46,7 @@ read or to Standing, not back into a pushed Honcho block.
 
 One PR. The plumbing is small; the eval is the cost.
 
-## 5. As built, 2026-10-07 (DEC-291)
+## 5. As built, 2026-10-07 (DEC-292)
 
 **Built.** `self` is the first row of the tag and fire prefill `_BLOCKS` (order
 1, key `unit`) and of the Cognition prompt's (order 5, before the clock);

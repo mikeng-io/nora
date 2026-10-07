@@ -1,7 +1,7 @@
 ---
 type: design
 title: "Self — what her adaptors build, where her growth lives, and the conscious and the subconscious"
-description: "Cognition is not a tier: it is the loop; what it builds is Register, Character, Lessons and Standing. Her identity is the part of all state that is about her: given (doctrine), done (her Record), digested (her Character), learned (her Lessons) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
+description: "Cognition is not a tier: it is the loop; what it builds is Register, Character, Lessons and Standing. Her identity is the part of all state that is about her: given (the law in the doctrine), done (her Record), digested (her Character), learned (her Lessons) and held (her Standing). Growth is those changing and every turn reading them. Doctrine is the law: she never changes it, in whole or in part, and it changes only when the humans all agree. Her growth lives only in her own blocks, which render below the doctrine; where they disagree the doctrine is followed and a tension row records it for the operator."
 tags: [nora, self, identity, cognition, growth, doctrine, character]
 timestamp: '2026-09-28'
 edges:
@@ -28,7 +28,7 @@ have with her and with each other.
 
 | facet | what it says about her | where it lives | changes how |
 |---|---|---|---|
-| **given** | who she is meant to be: constraints, voice, conduct | Doctrine (authored) | only when the humans all agree |
+| **given** | the law she lives within: what no unit may loosen. **AMENDED 2026-10-07 (DEC-291):** it named «constraints, voice, conduct»; it now means the law subset of the doctrine ([self-growth/30](../self-growth/30-doctrine-sort.md), [31](../self-growth/31-doctrine-audit.md)). Her voice is digested (Character) and her conduct is learned (Lessons), though their text is still served from the doctrine files until the cut | Doctrine, law subset (authored) | only when the humans all agree |
 | **done** | what she said and decided, and what happened after | Record (her sends, `loop_decisions`, reminders' outcomes) | every act |
 | **digested** | who she has become in this unit, as its people met her | **Character · Nora** | the Character adaptor, from what she did **and how people responded** |
 | **learned** | what she has learned about how to act in this unit | **Lessons** | the Lessons adaptor, from outcomes; the operator may roll any lesson back |
@@ -43,7 +43,12 @@ read together with the doctrine above it and the Standing beside it.
 ## 3. Growth, and the law she lives within
 
 Doctrine is the law: every file of it, `core/identity.md`,
-`rooms/voice.md` and `rooms/belonging.md` included. **Nora never changes
+`rooms/voice.md` and `rooms/belonging.md` included. **AMENDED 2026-10-07 (DEC-291):**
+until the cut, the files still carry practice and character beside the law, and
+the whole of it is still served, still wins and is still never changed by her;
+but what *law* means is the law bucket (`nora/doctrine/classification.yaml`,
+[self-growth/31](../self-growth/31-doctrine-audit.md)), and that subset is what the
+doctrine check reads (§4). **Nora never changes
 doctrine**, in whole or in part, and never proposes a change (operator
 2026-09-28). It changes only when the humans all agree.
 
@@ -60,7 +65,7 @@ The `self` block (step 8) renders her whole Character · Nora, capped in
 lines. `self_card` stays pushed until then and leaves the prompt at step 8
 ([80](80-prior-art.md) §6).
 
-> **As built 2026-10-07 (DEC-291, `design/self-growth/20-self-block.md`):** the
+> **As built 2026-10-07 (DEC-292, `design/self-growth/20-self-block.md`):** the
 > `self` block is built and `self_card` is deleted, ahead of the cognition
 > loop's own step 8. The self-growth bundle sequenced it first.
 

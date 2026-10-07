@@ -50,7 +50,8 @@ records what someone did, not who they are, and its derivation is not ours
 to steer. Character reads memory as a hint, never cites it, and writes an
 account of its own.
 
-**Nora's Character is not her doctrine.** Doctrine is authored and wins. Her
+**Nora's Character is not her doctrine.** Doctrine is authored and wins (its
+law subset is the part no account may loosen, DEC-291). Her
 Character is derived — how she has actually come across here — and may be
 read beside the doctrine, never over it.
 
@@ -165,7 +166,7 @@ portal goes through `lesson_retire` too.
 - **Doctrine wins.** A lesson that would loosen or contradict doctrine is
   refused and written as a tension row instead ([55](55-self.md) §4). The
   judgement is a separate instrument call (a model other than the session,
-  reading the lesson and the doctrine); code applies its verdict. It is a
+  reading the lesson and the doctrine's law subset, DEC-291); code applies its verdict. It is a
   model check, not a proof, so the assess pass measures it on a labelled set.
   **An instrument error is not a pass**: a lesson is refused; for a
   Character · Nora revision no tension row is written (the revision itself

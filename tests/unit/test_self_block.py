@@ -1,5 +1,5 @@
 """The `<self>` block: her own Character · Nora account for the turn's unit
-(design/self-growth/20, DEC-291).
+(design/self-growth/20, DEC-292).
 
 What must hold, each with the way it would fail:
 

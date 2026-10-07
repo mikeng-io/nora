@@ -105,7 +105,7 @@ is why `nora/infra`'s two clients have opposite error contracts.
   turn's unit (design/self-growth/20), capped in lines, first in the tag, fire
   and Cognition prompts, directly after the doctrine. No block while the unit
   has no account. It replaced the `<self_card>` block (her Honcho conclusions
-  about herself, DEC-96), retired by DEC-291.
+  about herself, DEC-96), retired by DEC-292.
 - **peer card** — a Honcho endpoint (`HonchoClient.peer_card`), Honcho's own
   model-authored distillation of who a person is, injected as `<peer_card>`
   on a tag when Honcho has one (`nora/agent/prefill.py::_peer_card_block`,
