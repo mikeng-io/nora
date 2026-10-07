@@ -766,6 +766,9 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # `routine_read` (design/27 §4.3): the same substrate behind the SAME
         # guard as `where_been`, so the same fail-closed side.
         "routine_read",
+        # `character_read` (self-growth C4) resolves its unit from the BOUND room
+        # (`lineage.render_room`), so a unit-keyed run without a home room has none.
+        "character_read",
         # `online_now` (design/online-status/) answers about the ROOM's own
         # members — the invoking conversation's roster is its input domain
         # (03-guards), which a unit-keyed Dreamer tick does not have.

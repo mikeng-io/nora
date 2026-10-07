@@ -179,6 +179,7 @@ from ..domain.notes import (
 )
 from ..domain.ports import (
     ArtifactIngest,
+    CultureReader,
     DiscordPresenceSource,
     DiscordPresenceState,
     GifSource,
@@ -238,6 +239,7 @@ from ..infra.vision.preprocess import (
 from ..obs.logging import current_tag_id
 from ..obs.tracing import annotate, current_span_ids, span
 from .arithmetic import evaluate as evaluate_expression
+from .character_read import account_key, person_named, room_named, rooms_listing
 from .egress import scan_reply
 from .lineage import LineagePolicy, entry_permits
 
@@ -932,6 +934,17 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 source_tier="remembered", cacheable=False, read_only=True,
                                 side_effect_state="none", idempotency="idempotent",
                                 retry="safe", output_contract="three_state", level=1),
+    # `character_read` (design/self-growth/10-character.md §6 C4): the current
+    # account of a room or a person of this unit, for a Dreamer loop ONLY
+    # (`DREAMER_LOOP_TOOLS`; not on the tag path until `tool_selection` is run).
+    # 2: one call per entity a session wants, and a second returns what the
+    # first did. `remembered`: her own accounts, like a note and Standing.
+    # `cacheable=False`: a revision can land between two calls. `level=2`: L1
+    # plus one SHOULD (how to name the subject).
+    "character_read": NativeTool(2,
+                                 source_tier="remembered", cacheable=False, read_only=True,
+                                 side_effect_state="none", idempotency="idempotent",
+                                 retry="safe", output_contract="three_state", level=2),
     # The three room-scoped tools. Every budget here is chosen against ONE
     # currency: a tool call is a model round trip (~4 s on this gateway), and
     # `llm.limits.turns = 8` is the real global ceiling — these numbers only
@@ -3092,6 +3105,21 @@ _STANDING_NONE = (
     "No supported position is held for this room. Say so, and do not "
     "reconstruct one."
 )
+_CHARACTER_OFF = (
+    "I can't read accounts of this group right now. Say so; do not guess one."
+)
+_CHARACTER_WITHHELD = (
+    "An account is held but carries something that can't be repeated here. "
+    "Work from what you already know."
+)
+_CHARACTER_NONE = (
+    "No account is held of that room or person in this group. Say so, and do "
+    "not describe them from memory as if one were."
+)
+_CHARACTER_OK = (
+    "Each account is as of its own time and is one room's view. Link it by its "
+    "`revision`; do not quote it as what someone said."
+)
 _STANDING_WITHHELD = (
     "Some sections are not shown in this conversation. Do not read the rest "
     "as complete."
@@ -4516,6 +4544,7 @@ def build_tool_specs(
     # path) answers `unavailable`; both tools are Dreamer-only besides.
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
+    culture: CultureReader | None = None,
     # The sub-agent desk (design/subagent §3): `subagent_create`/`list`/`read`/`cancel`. `None`
     # (`[subagent] enabled = false`, offline, eval) answers `unavailable`; the registry
     # withholds the four before that matters, and the scope admits them to a tag turn only.
@@ -5456,6 +5485,86 @@ def build_tool_specs(
         result: dict = {"status": "ok", **shown}
         if withheld:
             result["note"] = _STANDING_WITHHELD
+        return result
+
+    async def character_read(entity: Literal["room", "person"], subject: str) -> dict:
+        """Read the current account of a room of this group or of one person in it.
+        Call this when you need how a room talks and decides, or what someone is
+        like here.
+
+        SHOULD: name a room by its label and a person as they are named here.
+        Returns each account with its `as_of` time and its `revision`. Statuses:
+        ok, nothing_found, unavailable.
+
+        Args:
+            entity: room for a room's culture, person for one person's account.
+            subject: The room's label, or the person's name.
+        """
+        if culture is None:
+            _record(metrics, "character_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
+        if lineage is None:
+            _record(metrics, "character_read", "unavailable", reason="unwired")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
+        here = lineage.render_room(
+            platform=room.platform, conversation_id=bound_conversation_id,
+        ).room
+        if here is None:
+            _record(metrics, "character_read", "unavailable", reason="room")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
+        # THIS unit's rooms and nothing else: another unit's room or person is
+        # never a candidate, so it answers exactly as a name nobody uses.
+        unit_rooms = tuple(r for r in lineage.rooms if r.unit == here.unit)
+        wanted: list[tuple[RoomFacts, str | None]] = []
+        if entity == "room":
+            found = room_named(unit_rooms, subject)
+            wanted = [(found, None)] if found is not None else []
+        elif entity == "person":
+            # Names resolve among THIS unit's listed people only: a namesake in
+            # another unit must neither be a candidate nor make the name
+            # ambiguous here (a false nothing_found, R-27).
+            unit_people = {
+                pid: ref for pid, ref in persons.by_person.items()
+                if rooms_listing(unit_rooms, pid)
+            }
+            person_id = person_named(unit_people, subject)
+            if person_id is not None:
+                wanted = [(r, person_id) for r in rooms_listing(unit_rooms, person_id)]
+        else:
+            _record(metrics, "character_read", "unavailable", reason="entity")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
+        keyed = [(r, key) for r, pid in wanted if (key := account_key(r, pid)) is not None]
+        try:
+            heads = await asyncio.gather(*(culture.head(key=key) for _, key in keyed))
+        except Exception:
+            log.exception("character_read failed")
+            _record(metrics, "character_read", "unavailable", reason="store")
+            return {"status": "unavailable", "note": _CHARACTER_OFF}
+        held = [
+            (r, head) for (r, _), head in zip(keyed, heads, strict=True)
+            if head is not None and head.body.strip()
+        ]
+        # R-18 fails closed on the WHOLE reply, so an account carrying an
+        # identifier is withheld whole here, as `ask_memory` withholds an
+        # answer: nothing screened these bodies when they were written.
+        accounts = [
+            {"room": r.label or platform_name(r.platform), "account": head.body,
+             "as_of": rollup_iso(head.written_at), "revision": head.id}
+            for r, head in held if scan_identifiers(head.body) is None
+        ]
+        withheld = len(held) - len(accounts)
+        if not accounts and withheld:
+            _record(metrics, "character_read", "nothing_found", entity=entity, withheld=withheld)
+            return {"status": "nothing_found", "withheld": withheld,
+                    "note": _CHARACTER_WITHHELD}
+        if not accounts:
+            _record(metrics, "character_read", "nothing_found", entity=entity)
+            return {"status": "nothing_found", "note": _CHARACTER_NONE}
+        _record(metrics, "character_read", "ok", entity=entity, accounts=len(accounts))
+        result: dict = {"status": "ok", "entity": entity, "accounts": accounts,
+                          "note": _CHARACTER_OK}
+        if withheld:
+            result["withheld"] = withheld
         return result
 
     # ---- the three room-scoped tools -------------------------------------
@@ -14840,6 +14949,7 @@ Args:
         _spec("record_query", record_query),
         _spec("rollup_read", rollup_read),
         _spec("standing_read", standing_read),
+        _spec("character_read", character_read),
         _spec("group_members", group_members),
         _spec("lookup_person", lookup_person),
         _spec("about", about),
@@ -15090,6 +15200,7 @@ def build_tools(
     lineage: LineagePolicy | None = None,
     rollup: RollupReadSource | None = None,
     standing_head: StandingHeadSource | None = None,
+    culture: CultureReader | None = None,
     subagent: SubagentDesk | None = None,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
@@ -15151,6 +15262,7 @@ def build_tools(
         lineage=lineage,
         rollup=rollup,
         standing_head=standing_head,
+        culture=culture,
         subagent=subagent,
     )
     return [adapt(spec) for spec in specs]

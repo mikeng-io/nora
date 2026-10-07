@@ -44,6 +44,7 @@ from ..domain.models import TranscriptRow
 from ..domain.ports import (
     ArtifactIngest,
     BlobStore,
+    CultureReader,
     DiscordPresenceSource,
     GifSource,
     MediaDescriptionStore,
@@ -255,6 +256,8 @@ class ToolRegistry:
         # every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         standing_head: StandingHeadSource | None = None,
+        # `character_read`'s culture store (`[culture] enabled`): `None` withholds it.
+        culture: CultureReader | None = None,
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools call. Without
         # it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
@@ -265,6 +268,7 @@ class ToolRegistry:
         self._lineage = lineage
         self._rollup = rollup
         self._standing_head = standing_head
+        self._culture = culture
         # Tools no turn is offered in this process: `record_query` without its
         # Record read (`[record_query] enabled = false`, the shipped default).
         # Withheld from every surface and from the gate's digest, so an
@@ -277,6 +281,7 @@ class ToolRegistry:
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
+            | (frozenset() if culture is not None else frozenset({"character_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
@@ -1062,6 +1067,7 @@ class ToolRegistry:
             lineage=self._lineage,
             rollup=self._rollup,
             standing_head=self._standing_head,
+            culture=self._culture,
             versions=self._versions,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,

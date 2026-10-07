@@ -88,7 +88,9 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
                    "advances and switches no build, and folds nothing. No write.",
     "event_search": "SQL read of the unit's gatherings; counters only. No write.",
     "memo_read": "not built yet; audit it when it lands.",
-    "character_read": "not built yet; audit it when it lands.",
+    "character_read": "SQL SELECT of `culture` heads (`CultureReader.head`) of the "
+                      "unit's own rooms; counters only. It folds and revises nothing. "
+                      "No write.",
     "standing_read": "SQL SELECT of one `standing` head and the newest "
                      "`standing_revision` row (its id only); counters only. It folds, "
                      "revises and migrates nothing. No write.",
@@ -112,8 +114,12 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
 
 #: Tools withheld while their flag is off. `record_query` is offered only with
 #: `[record_query] enabled` (the registry withholds it itself when it has no
-#: Record read; naming it here keeps the boot log honest about it).
-FLAGGED_READS: Mapping[str, str] = {"record_query": "record_query.enabled"}
+#: Record read; `character_read` likewise under `[culture] enabled`; naming
+#: them here keeps the boot log honest about them).
+FLAGGED_READS: Mapping[str, str] = {
+    "record_query": "record_query.enabled",
+    "character_read": "culture.enabled",
+}
 
 
 @dataclass(frozen=True)
