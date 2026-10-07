@@ -73,7 +73,8 @@ async def test_the_session_is_handed_its_account_its_rooms_and_its_messages_by_i
     await store.append(key=KEY, body="the one who books", written_at=T0,
                        established_by="dream:character-person:x")
     await store.append(key="room-b", body="a games room that plays late",
-                       written_at=T0, established_by="dream:culture:x")
+                       written_at=T0, established_by="dream:culture:x",
+                       citations=("57",))
     out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
     names = [name for name, _o, _k in _BLOCKS if name not in ("about_unit", "episodes")]
     positions = [out.index(f"<{name} ") for name in names]
@@ -183,3 +184,18 @@ async def test_a_byte_identical_account_is_not_appended():
     )])
     assert written == 0
     assert isinstance(await store.head(key=KEY), CultureRevision)
+
+
+async def test_a_room_culture_with_no_citations_is_not_handed_to_the_person():
+    """An account older than the verb was written by the envelope fold, which
+    held the presence reads, and it renders only in its own room; the person's
+    account renders in every room of the unit that lists them, so it is not
+    handed one. A cited room culture still is."""
+    store = InMemoryCultureStore()
+    await store.append(key="room-a", body="plans by attrition", written_at=T0,
+                       established_by="dream:culture:x", citations=("41",))
+    await store.append(key="room-b", body="Bo is usually at the gym", written_at=T0,
+                       established_by="dream:culture:old")
+    out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
+    assert "plans by attrition" in out
+    assert "Bo is usually at the gym" not in out

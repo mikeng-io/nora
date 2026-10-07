@@ -50,6 +50,20 @@ async def test_the_unit_session_is_handed_each_rooms_culture_with_what_it_cites(
     assert "a late games room" in out and 'cites="57"' in out
 
 
+async def test_a_room_culture_with_no_citations_is_not_handed_to_the_unit():
+    """A room account older than the verb was written by the envelope fold,
+    which held the presence reads; the unit's account renders in every room, so
+    it is skipped (the cited room still is)."""
+    store = InMemoryCultureStore()
+    await store.append(key="room-a", body="they plan by attrition", written_at=T0,
+                       established_by="x", citations=("41",))
+    await store.append(key="room-b", body="Bo is usually at the gym", written_at=T0,
+                       established_by="old")
+    out = await _adaptor(store).inputs(key=KEY, batch=("room-a",))
+    assert "they plan by attrition" in out
+    assert "Bo is usually at the gym" not in out
+
+
 async def test_it_cites_only_what_its_rooms_cultures_cite_and_writes_under_the_unit_key():
     store = InMemoryCultureStore()
     await _rooms(store)

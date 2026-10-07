@@ -229,9 +229,17 @@ def _room_cultures(
 ) -> ContextBlock | None:
     """`<room_cultures>`: each room of the unit that has an account, labelled,
     with its age, and with `cites` the Record ids it rests on (a unit session
-    cites through them). `None` when no room has one yet."""
+    cites through them). `None` when no room has one yet.
+
+    **An account with no citations is skipped.** One is older than the verb
+    (migration `0098_culture_citations`), so it was written by the envelope
+    fold, which also held the presence reads, and what it says was never
+    checked against a Record row. This block reaches accounts that render in
+    every room of the unit, whose `location` flags differ (R-31); a room's own
+    account only ever renders in its room. So a pre-verb account is handed to
+    nobody here, and a room is read again once its own fold has revised it."""
     rows = [(room, head) for room, head in zip(rooms, heads, strict=True)
-            if head is not None and head.body.strip()]
+            if head is not None and head.body.strip() and head.citations]
     if not rows:
         return None
     return ContextBlock(name="room_cultures", **_at("room_cultures"), body=render_elements(
