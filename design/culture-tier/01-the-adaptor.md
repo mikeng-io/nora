@@ -226,6 +226,8 @@ A culture block fills `ContextBlock`: `name`, `placement`, `order`, `note`,
   granularity, and the rule `BlockKey` now encodes is that **anything keyed
   narrower than `global` belongs in `turn`, whatever its cadence.**
 
+  (2026-10-07, DEC-288: the cadence is now an evidence wake, every few days,
+  which only strengthens the argument below.)
   So **culture's daily cadence is a production win — one fold a day instead of
   a model call per turn — not a cache win.** That is the honest argument for the
   design, and it is the one this bundle originally got backwards.

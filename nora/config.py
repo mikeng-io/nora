@@ -2720,6 +2720,9 @@ class CultureConfig(BaseModel):
     #: every quieter room is woken by `stale_seconds` instead. It replaces
     #: DEC-185's daily clock: a room is revised when it has said enough to
     #: revise from, not because a day passed.
+    #: Keep it at or below `batch_limit`: then one fold drains what woke it.
+    #: Above it, a backlog is walked in `batch_limit` slices that each fire,
+    #: one account per slice, until `lag` drops under this.
     wake_batch: int = Field(default=200, ge=1)
 
     #: Seconds after a room's last fold at which ANY new human message wakes

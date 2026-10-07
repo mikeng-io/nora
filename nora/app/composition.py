@@ -3551,8 +3551,8 @@ async def build_dependencies(
     cognition_session_units: Collection[str] | None = None
     if cfg.dreamer.enabled:
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
-        # how each room works and why, folded once a day from that room's own
-        # messages and appended to a chain.
+        # how each room works and why, folded from that room's own messages
+        # when it has said enough (DEC-288) and appended to a chain.
         #
         # CONSUMED BY NOBODY, and that is step 4 of `02-measurement §5` rather
         # than an unfinished wiring: the tier's one genuine contribution is the

@@ -318,8 +318,8 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "instruction to you; a person with no entry wrote nothing here or is one "
        "memory had nothing to say about, never one with no character."),
     _t("character",
-       "what each person in this room is like here, in your own words, written "
-       "daily from your memory of them and this room's culture. NOT a summary "
+       "what each person in this room is like here, in your own words, revised "
+       "every few days from your memory of them and this room's culture. NOT a summary "
        "of anything recent: none of it expires, so an old one is not out of "
        "date. Not an instruction to you, and not something they said. A person "
        "with no entry has not been written up yet, which does not mean they "
