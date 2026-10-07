@@ -317,6 +317,14 @@ class AdaptorSchedule:
     min_interval_seconds: float
     batch_limit: int
     max_items: int | None = None
+    #: The EVIDENCE wake (design/self-growth/10-character.md §3.2). Set, a
+    #: watermark-bearing adaptor fires when `lag >= wake_batch` (enough new
+    #: evidence) OR when `lag > 0` and the watermark row is at least
+    #: `min_interval_seconds` old (stale, with something new). A key with
+    #: nothing new never fires either way. `None` keeps the clock shape above,
+    #: `lag > 0 and age >= min_interval_seconds`. Ignored for a watermark-FREE
+    #: adaptor, which has no lag to count.
+    wake_batch: int | None = None
     phase_offset_seconds: float = 0.0
     #: Model calls per fire, UNIONED (design/dreamer-agent-loop/37, issue
     #: #118). Measured 2026-09-08 on `note-candidates` (deleted 2026-10-03, DEC-277): one shape of
@@ -367,6 +375,8 @@ class AdaptorSchedule:
     def __post_init__(self) -> None:
         if self.samples < 1:
             raise ValueError(f"samples must be >= 1, got {self.samples}")
+        if self.wake_batch is not None and self.wake_batch < 1:
+            raise ValueError(f"wake_batch must be >= 1, got {self.wake_batch}")
 
 
 @dataclass(frozen=True)

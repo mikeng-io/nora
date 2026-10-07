@@ -350,7 +350,7 @@ fixed schedule, and none is woken by a single message, except a
 | **Assess** | a finished session; the unit, nightly | a session of any adaptor ends; the nightly clock | — |
 
 The Character adaptor replaces the culture adaptor's daily clock
-(`[culture] fold_interval_seconds = 86400`). The same week of shadow sizes
+(`[culture] fold_interval_seconds = 86400`; done for rooms by DEC-288, 2026-10-07). The same week of shadow sizes
 these values.
 
 ## 4. Metrics

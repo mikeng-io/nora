@@ -49,7 +49,7 @@ every gate the runtime owns because a restated input leaves a row and a row is
 what success looks like ([17-failure-classes §11]).
 
 **It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
-the same daily clock, the same fold asks Nora's memory «what is the character of
+the same wake (DEC-288), the same fold asks Nora's memory «what is the character of
 X?» for each person the room lists who wrote in the batch (DEC-280: only
 those; `memory.chat`, the dialectic verb
 `ask_memory` calls), hands those answers to the model beside the room's own
@@ -202,7 +202,8 @@ STORE_CALLS_PER_TICK = 6
 #: none.
 #:
 #: **What it cannot support is a RATE, and that is measured rather than
-#: feared.** One fold per room per day is ~6 increments a day here, this process
+#: feared.** One fold per room per day (DEC-185's clock, before DEC-288 made it
+#: rarer) was ~6 increments a day here, this process
 #: restarts 2-3x daily, and Prometheus labels lazily — so a label is destroyed
 #: at every restart and only re-created by the next increment of THAT value
 #: (`design/culture-tier 00-overview §1.0`: the `go` series was absent for five
@@ -237,7 +238,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # different corpus from what they said in this batch. `01-the-adaptor §2`
     # asks the model to say what the room comes to her for and what it never
     # would; that is a claim about a relationship across months, and the batch
-    # is a day.
+    # is a few days.
     "ask_memory", "search_memory",
     # THE ROSTER — who is actually in this room, and who a handle IS. A batch
     # renders display names; an account that calls one person by two names, or
@@ -267,7 +268,7 @@ CULTURE_TOOLS: frozenset[str] = frozenset({
     # (`RegistryToolSource.build`).
     "online_now",
     # THE OPEN INTERNET — `01-the-adaptor §2`: these earn their place BECAUSE
-    # the pass is daily. When a room leans on a reference nobody explains — a
+    # the pass is slow (days, DEC-288). When a room leans on a reference nobody explains — a
     # game, a meme, a place — the loop can find out what it is, so the account
     # can say WHY a name landed rather than merely that it did. A name whose
     # origin the account can explain is the objective's own stated bar.
@@ -445,7 +446,7 @@ _ROW: dict[str, tuple[int, BlockKey]] = {
 
 
 class CultureAdaptor:
-    """One account per room per day, appended to a chain — see the module
+    """One account per room per wake (DEC-288), appended to a chain — see the module
     docstring."""
 
     name = CULTURE_ADAPTOR_NAME

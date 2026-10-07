@@ -2698,7 +2698,7 @@ class CultureConfig(BaseModel):
     #: the deleted `[notes] candidates_enabled` stated (DEC-277).
     #:
     #: **What turning it on does — TWO things, under this one flag.** A
-    #: background pass writes one short account of each room per day into its
+    #: background pass writes one short account of each room per wake into its
     #: own store, AND every runtime reads the room's current account as
     #: `<culture>`: the tag turn, every fire occasion and the tag-path
     #: standing fold (DEC-207, 2026-09-25, when the note passes and the
@@ -2713,13 +2713,23 @@ class CultureConfig(BaseModel):
     #: second flag.
     enabled: bool = False
 
-    #: Seconds between folds of one room. **86400** — design/culture-tier
-    #: DEC-185, and the number is the design's rather than a cost preference:
-    #: a model asked this question twice in a day answers from nearly the same
-    #: material, so the second answer differs by model variance rather than by
-    #: anything the room did, and variance is the one thing the revision chain
-    #: must not accumulate.
-    fold_interval_seconds: int = Field(default=86_400, ge=3600)
+    #: New human messages in a room that wake its fold at once
+    #: (design/self-growth/10-character.md §3.2, DEC-288). **200**, sized from
+    #: 14 days read back on the deploy host (design/self-growth/50 §4): the
+    #: Friends room reaches it about every 4 days, Zone 42 about every 6, and
+    #: every quieter room is woken by `stale_seconds` instead. It replaces
+    #: DEC-185's daily clock: a room is revised when it has said enough to
+    #: revise from, not because a day passed.
+    #: Keep it at or below `batch_limit`: then one fold drains what woke it.
+    #: Above it, a backlog is walked in `batch_limit` slices that each fire,
+    #: one account per slice, until `lag` drops under this.
+    wake_batch: int = Field(default=200, ge=1)
+
+    #: Seconds after a room's last fold at which ANY new human message wakes
+    #: it, so a quiet room is still revised weekly. **604800** (7 days). A
+    #: room with nothing new never fires (DEC-183: a quiet room's culture is
+    #: accurate, not stale).
+    stale_seconds: int = Field(default=604_800, ge=3600)
 
     #: Messages read per fold. **THE BATCH IS THE CORPUS** — the account is
     #: written from it — so this is not a throttle, it is how much of the room

@@ -179,7 +179,7 @@ Signal / Discord / WhatsApp / Instagram room
 ④ THE DREAMER (background, never speaks — `nora/app/runtime.py::dream_loop`)
    per adaptor, on its own schedule: a deterministic `inputs()` read, and a
    bounded research loop ONLY when that read rendered something.
-   culture         (daily, per room, [culture] enabled) → appends ONE short
+   culture         (per room on 200 new messages or weekly, DEC-288) → appends ONE short
                     account of what the room has become to its chain (DEC-207)
    Notes, events, Standing and Nora's own reminders are no longer adaptors
    (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
@@ -417,7 +417,7 @@ both, plus its own decision log (her `kind="proactive"` reminder rows) and
 are deleted; the Cognition session writes Standing and `remind` rows.)*
 A third, the **culture tier** (`design/culture-tier/`; tables `culture`/
 `culture_revision`), is her account of what each room has BECOME — how they
-talk, how things get decided — appended once a day by the `culture` adaptor
+talk, how things get decided — appended when the room has said enough (DEC-288) by the `culture` adaptor
 and read as `<culture>` by every occasion in a room except the Relevance Gate (DEC-207); the public summons reads no room and no culture.
 
 The 2026-08-06 measurement of `representation` (~88% events, not traits) was
