@@ -137,7 +137,7 @@ class _HeadReader(Protocol):
 async def read_character(
     reader: _HeadReader | None,
     *,
-    scope: str,
+    unit: str,
     members: Sequence[PersonRef],
     stage: str,
     platform: str,
@@ -146,16 +146,19 @@ async def read_character(
 ) -> tuple[tuple[str, CultureRevision], ...]:
     """`(name, account)` for each listed person who has one, in roster order.
 
-    The Character tier's read (DEC-278): one `read_culture` per person, so each
-    keeps its bound, its count and the withdrawal rule, and a person whose read
-    failed or who has no account yet is simply absent. `scope` is the room's
-    `primary_id`, the key the fold wrote under.
+    The Character tier's read: one `read_culture` per person, so each keeps
+    its bound and its count, and a person whose read failed or who has no
+    account yet is simply absent. `unit` is the rendering room's unit: an
+    account is one per (unit, person) since C2b (design/self-growth/10 §3),
+    and `members` are the rendering room's LISTED persons, so a person's
+    account renders only in a room of their unit that lists them
+    (design/cognition-loop/50-character-and-standing.md §5).
     """
     if reader is None or not members:
         return ()
     found = await asyncio.gather(*(
         read_culture(
-            reader.head(key=character_key(scope, ref.person_id)),
+            reader.head(key=character_key(unit, ref.person_id)),
             stage=stage, platform=platform, metrics=metrics,
             timeout_seconds=timeout_seconds,
         )

@@ -1461,21 +1461,27 @@ enabled = false
 # room's culture is not stale, it is accurate, and an old name does not become
 # false — it becomes history, which is part of what the current one means.
 #
-# CHARACTER (DEC-278). The same fold, on the same wake, also writes one short
-# account per person the room lists in policy.toml: it asks Nora's memory «what
-# is the character of X?» (Honcho's dialectic, which is NOT scoped to a room —
-# a unit is one circle), combines the answer with the room's culture and the
-# room's messages, and stores it in the same store under the person's own key.
-# Every tag and fire turn then carries a <character> block of the accounts of
-# the people in that room. No separate switch: `enabled` turns on both.
+# CHARACTER (design/self-growth/10). Each person listed in a unit's rooms has
+# ONE account per unit, written by their own session when they have said
+# enough (person_wake_batch of their messages across the unit's rooms) or a
+# week has passed with anything new. The session is handed the account it
+# wrote last time, their messages and each room's culture; it may ask Nora's
+# memory, but nothing it writes rests on memory. Every account cites the
+# messages it rests on, and a citation it was not shown is refused. Every tag
+# and fire turn then carries a <character> block of the accounts of the people
+# that room lists. No separate switch: `enabled` turns on both.
 enabled = false
-# New human messages in a room that wake its fold (and each poster's account)
-# at once (DEC-288). Sized from 14 days on the deploy host: the busiest room
-# reaches 200 about every 4 days; quieter rooms are woken by stale_seconds.
+# New human messages in a room that wake its fold at once (DEC-288). Sized
+# from 14 days on the deploy host: the busiest room reaches 200 about every 4
+# days; quieter rooms are woken by stale_seconds.
 wake_batch = 200
 # Seconds after a room's last fold at which ANY new human message wakes it,
 # so a quiet room is still revised weekly. A room with nothing new never fires.
 stale_seconds = 604800
+# A person's new messages, across their unit's rooms, that wake their own
+# account at once. Sized from 14 days on the deploy host: the busiest poster
+# reaches 100 about every 4 days; everyone else is woken by stale_seconds.
+person_wake_batch = 100
 # Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300

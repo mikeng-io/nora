@@ -418,6 +418,11 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CultureAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
+    # A person's session (design/self-growth/10 §3, C2b): its own account and
+    # the unit's room cultures in, one account out.
+    "CharacterPersonAdaptor": frozenset({
+        "self._culture.head", "self._culture.append",
+    }),
     # note-merge (design 41 §7): the change check's two reads, the fold's
     # transaction, and the stamp that must come last.
     "NoteMergeAdaptor": frozenset({

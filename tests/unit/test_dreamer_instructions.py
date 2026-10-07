@@ -616,6 +616,11 @@ NATIVELY_AUTHORED = {
     # DEC-244). Written for it from 30 §1-§3; there was no prior prompt, and it
     # lists no tool and no limit.
     "cognition",
+    # A person's Character session (design/self-growth/10-character.md §3,
+    # C2b). Written for it; the prompt it replaces was the `<people_views>`
+    # section of `culture`, which asked for an account from a pre-fetched
+    # memory answer (DEC-278).
+    "character-person",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

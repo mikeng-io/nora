@@ -32,13 +32,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from math import ceil
+from typing import TYPE_CHECKING
 
 from nora.domain.lineage import Lineage
+
+if TYPE_CHECKING:  # `nora.domain.models` imports this module
+    from nora.domain.models import TranscriptRow
 
 __all__ = [
     "ACCOUNT_CHARS_OBSERVED_MAX",
     "ACCOUNT_OUTPUT_TOKENS",
     "BODY_MAX_CHARS",
+    "CHARACTER_KINDS",
+    "CHARACTER_OUTCOMES",
     "CULTURE_OUTCOMES",
     "MAX_CONSECUTIVE_REJECTIONS",
     "OUTPUT_TOKENS_PER_CHAR",
@@ -48,6 +54,7 @@ __all__ = [
     "CultureProposal",
     "CultureRevision",
     "Refusal",
+    "RoomMessage",
     "character_key",
     "check_revision",
 ]
@@ -170,6 +177,15 @@ BODY_MAX_CHARS = 20_000
 CULTURE_OUTCOMES = frozenset({
     "written", "unchanged", "kept", "refused", "unsettled", "abandoned",
 })
+
+#: The entity kinds a Character session writes besides a room
+#: (`nora.language.character`), the `kind` label of
+#: `nora_character_session_total`.
+CHARACTER_KINDS = frozenset({"person"})
+
+#: That metric's `outcome` vocabulary: the room's own, which every session
+#: shares (`nora.language.character_session.EntitySessions`).
+CHARACTER_OUTCOMES = CULTURE_OUTCOMES
 
 #: How many consecutive unsettled sessions of the same batch a key takes
 #: before the fold gives up on it and advances (DEC-280). Each one holds the
@@ -416,15 +432,27 @@ def check_revision(
     return None
 
 
-def character_key(scope: str, person_id: str) -> str:
-    """The `culture` key one person's account is stored under, in room `scope`.
+def character_key(unit: str, person_id: str) -> str:
+    """The `culture` key one person's account is stored under, in `unit`
+    (design/self-growth/10 §3, C2b): ONE account per (unit, person), written by
+    that person's own session from their messages across the unit's rooms.
 
     The Character tier REUSES the culture store and its revision chain rather
     than growing a parallel one: `culture.key` is free text, so a person's
     account is one more key. It cannot collide with a room's key (a room's
     `primary_id` carries no `#character:`), and nothing scans the table for
-    every key (`culture` is read by key, and the citation cascade joins on
-    keys it already holds). `scope` is the room's `primary_id`, so the account
-    is per person per room: it is combined with THAT room's culture.
+    every key. Until C2b the first half was the ROOM's `primary_id` (one
+    account per person per room, DEC-278); those keys stay in the store
+    (nothing here retires, DEC-183) and are read by nothing but the one-time
+    move to these (`nora.app.character_heads.seed_unit_person_heads`).
     """
-    return f"{scope}#character:{person_id}"
+    return f"{unit}#character:{person_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class RoomMessage:
+    """One person's message as their session reads it: the Record row and the
+    room it was said in (the room's `primary_id`, its culture key)."""
+
+    room: str
+    row: TranscriptRow

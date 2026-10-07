@@ -48,6 +48,15 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
   handed in as `<people_views>`. One envelope carries the room account and
   every person's account.
 
+> **As built, branch `mikeng-io/character-sessions` (C2a, C2b), 2026-10-07.**
+> The list above is what ran before it. The room session now writes through
+> `character_revise` (`nora/language/character_session.py`), citing batch
+> row ids, and writes the room alone. `<people_views>` and the `memory.chat`
+> pre-fetch are deleted; each (unit, person) has its own `character-person`
+> session (`nora/language/character.py`), keyed `{unit}#character:{person}`,
+> woken by `[culture] person_wake_batch` (100) or `stale_seconds`. The per-room
+> person heads were moved once at startup (`nora/app/character_heads.py`).
+
 ## 3. The target workflow
 
 ```

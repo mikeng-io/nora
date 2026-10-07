@@ -2731,6 +2731,13 @@ class CultureConfig(BaseModel):
     #: accurate, not stale).
     stale_seconds: int = Field(default=604_800, ge=3600)
 
+    #: A PERSON's new messages, across their unit's rooms, that wake their own
+    #: Character session at once (design/self-growth/10 §3, C2b). **100**,
+    #: sized in design/self-growth/50 §4: the busiest poster reaches it about
+    #: every 4 days, everyone else is woken by `stale_seconds` (with any new
+    #: message). At 200 the count would wake nobody but the top poster.
+    person_wake_batch: int = Field(default=100, ge=1)
+
     #: Messages read per fold. **THE BATCH IS THE CORPUS** — the account is
     #: written from it — so this is not a throttle, it is how much of the room
     #: the model gets to see. An earlier draft of the design pinned it at 1, on

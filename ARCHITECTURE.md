@@ -180,7 +180,11 @@ Signal / Discord / WhatsApp / Instagram room
    per adaptor, on its own schedule: a deterministic `inputs()` read, and a
    bounded research loop ONLY when that read rendered something.
    culture         (per room on 200 new messages or weekly, DEC-288) → appends ONE short
-                    account of what the room has become to its chain (DEC-207)
+                    account of what the room has become to its chain (DEC-207),
+                    through the checked `character_revise` verb (citations)
+   character-person (per (unit, person) on 100 of their messages across the
+                    unit's rooms, or weekly) → one account per person per unit,
+                    read as `<character>` in that unit's rooms that list them
    Notes, events, Standing and Nora's own reminders are no longer adaptors
    (DEC-277, 2026-10-03): the Cognition session writes them (`[cognition]
    enabled`), with the verbs `note_retire` and `note_merge` and a
@@ -419,6 +423,11 @@ A third, the **culture tier** (`design/culture-tier/`; tables `culture`/
 `culture_revision`), is her account of what each room has BECOME — how they
 talk, how things get decided — appended when the room has said enough (DEC-288) by the `culture` adaptor
 and read as `<culture>` by every occasion in a room except the Relevance Gate (DEC-207); the public summons reads no room and no culture.
+The same store holds the other Character accounts (design/self-growth/10): one per
+(unit, person), written by that person's own `character-person` session from their
+messages across the unit's rooms and read as `<character>`. Every Character
+session writes through `character_revise`, which refuses a citation the session
+was not handed.
 
 The 2026-08-06 measurement of `representation` (~88% events, not traits) was
 recorded here as «do not build further on Honcho»; DEC-66 and DEC-96 then

@@ -65,8 +65,8 @@
   {
     "name": "part 2b: a quiet room starts paying for the reads",
     "file": "nora/language/culture.py",
-    "old": "        if not batch:\n            return \"\"\n        self._batch_start[key] = batch[0].id",
-    "new": "        self._batch_start[key] = batch[0].id if batch else 0",
+    "old": "        if not batch:\n            return \"\"\n        # THE RUN",
+    "new": "        # THE RUN",
     "target": "tests/unit/test_culture_adaptor.py -k quiet_room_reads_NO_store"
   },
   {
@@ -121,7 +121,7 @@
   {
     "name": "the declared store-call bound stops covering the two new reads",
     "file": "nora/language/culture.py",
-    "old": "STORE_CALLS_PER_TICK = 6",
+    "old": "STORE_CALLS_PER_TICK = 5",
     "new": "STORE_CALLS_PER_TICK = 3",
     "target": "tests/unit/test_culture_adaptor.py tests/architecture/test_dream_store_calls_are_declared.py"
   },

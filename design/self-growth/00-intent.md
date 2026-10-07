@@ -70,7 +70,7 @@ Read from master at 67520d7.
 | part | built | what exists |
 |---|---|---|
 | Character · room (culture) | partly | `nora/language/culture.py`: a Dreamer adaptor with nine read tools, once a day per room with new messages (watermark; a quiet room never fires, DEC-183) |
-| Character · person | simplified | DEC-278/280: the same room pass pre-fetches one `memory.chat` answer per person who posted and writes their account in the same store; rendered as `<character>` |
+| Character · person | simplified | DEC-278/280: the same room pass pre-fetches one `memory.chat` answer per person who posted and writes their account in the same store; rendered as `<character>` (replaced by C2b: one session per (unit, person), [10](10-character.md) §2) |
 | Character · unit | no | |
 | Character · Nora | no | one line of "Nora's own standing" inside each room account |
 | `self` block | no | `self_card` is the nearest thing: Honcho's record of what she said and did before, episodic continuity rather than self-description (`nora/language/self_card_render.py`) |

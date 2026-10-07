@@ -2128,3 +2128,99 @@ async def test_the_dream_batch_starts_above_the_consolidation_watermark():
         f"a batch of 5 came back after the watermark advanced ({sizes}) — "
         f"already-consolidated rows are being re-fed every tick"
     )
+
+
+# ---------------------------------------------------------------------------
+# a key that is not a room: its own evidence (design/self-growth/10 §3.2, C2b)
+# ---------------------------------------------------------------------------
+
+
+class _Evidence:
+    """A Character key's own evidence: `count` is what is new after the
+    watermark (items with a larger position), `newest` the newest `limit` of
+    them and the cursor, the newest position among ALL of them."""
+
+    def __init__(self, positions: list[int]) -> None:
+        self.positions = positions
+
+    async def count(self, *, key: str, after: int) -> int:
+        return sum(1 for p in self.positions if p > after)
+
+    async def newest(self, *, key: str, after: int, limit: int):
+        new = [p for p in self.positions if p > after]
+        return new[-limit:], (new[-1] if new else after)
+
+
+class _EntityAdaptor(_StubAdaptor):
+    def __init__(self, name: str, evidence: _Evidence, keys=("friends#character:ada",)):
+        super().__init__(name, key_kind="entity")
+        self.evidence = evidence
+        self._keys = tuple(keys)
+
+    def keys(self):
+        return self._keys
+
+
+async def test_an_entity_key_wakes_on_its_own_evidence_at_the_batch_or_stale_never_on_none():
+    """The C1 rule on a key that is not a room: the key's OWN count (not a
+    room's `lag`) fires it at `wake_batch`, or at any count once the watermark
+    is stale; one short on a young watermark does not, and nothing new never
+    does. The population is the adaptor's own `keys()`."""
+    schedules = {"character-person": AdaptorSchedule(
+        min_interval_seconds=1000.0, batch_limit=300, wake_batch=100)}
+
+    async def fired(*, new: int, age: float) -> list[tuple[str, str, int]]:
+        runner = _RecordingRunner()
+        await _tick(dream_loop(
+            _FakeRecord({}), _KeyedLanguage(age=age), Metrics(),
+            scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+            quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+            adaptors=[_EntityAdaptor("character-person", _Evidence(list(range(1, new + 1))))],
+            runtime=runner, schedules=schedules,
+        ), ticks=0.03)
+        return runner.calls
+
+    assert await fired(new=99, age=0.0) == []
+    assert ("character-person", "friends#character:ada", 100) in await fired(new=100, age=0.0)
+    assert ("character-person", "friends#character:ada", 1) in await fired(new=1, age=1000.0)
+    assert await fired(new=0, age=1e9) == []
+
+
+async def test_an_entity_key_reads_the_newest_and_advances_to_the_newest_only_on_success():
+    """A backlog past `batch_limit` is read for what was said LATELY and
+    consumed whole (the cursor is the newest position, read or not); an
+    `unavailable` run leaves the watermark where it was."""
+    schedules = {"character-person": AdaptorSchedule(
+        min_interval_seconds=1000.0, batch_limit=3, wake_batch=5)}
+    language = _KeyedLanguage(age=0.0)
+    runner = _RecordingRunner()
+    await _dream_adaptor_once(
+        adaptor=_EntityAdaptor("character-person", _Evidence([3, 5, 8, 9, 12, 14])),
+        runtime=runner, record=_FakeRecord({}), language=language, metrics=Metrics(),
+        key="friends#character:ada", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=10, schedules=schedules,
+    )
+    assert runner.calls == [("character-person", "friends#character:ada", 3)]
+    assert language.advance_calls == [("character-person", "friends#character:ada", 14)]
+
+    held = _KeyedLanguage(age=1e9)
+    await _dream_adaptor_once(
+        adaptor=_EntityAdaptor("character-person", _Evidence([3, 5])),
+        runtime=_RecordingRunner(unavailable_for="character-person"),
+        record=_FakeRecord({}), language=held, metrics=Metrics(),
+        key="friends#character:ada", safety_lag=0, quiet_seconds=0.0,
+        max_age_seconds=1e9, batch_limit=10, schedules=schedules,
+    )
+    assert held.advance_calls == []
+
+
+async def test_an_entity_adaptor_is_never_seeded_from_a_rooms_cursor():
+    """Its cursor counts its own evidence, so inheriting a room's message id
+    would be a number in the wrong unit."""
+    language = _KeyedLanguage()
+    language.watermarks[("language", "friends#character:ada")] = 500
+    seeded = await seed_watermarks(
+        language, [_EntityAdaptor("character-person", _Evidence([1]))],
+        keys=lambda a: a.keys(),
+    )
+    assert seeded == 0 and language.advance_calls == []

@@ -1930,7 +1930,13 @@ async def test_no_wired_adaptor_holds_an_act_verb(cfg, tmp_path):
 
     ceiling = ToolRegistry().read_only_tools()
     assert deps.dreamer_runtime is not None
-    assert [a.name for a in deps.dream_adaptors] == ["culture"]
+    assert [a.name for a in deps.dream_adaptors] == ["culture", "character-person"]
+    # A person session wakes on its own count, on the room fold's stale clock,
+    # and runs on the room fold's budget when the deployment set one.
+    person = deps.dream_schedules["character-person"]
+    assert person.wake_batch == 100
+    assert person.min_interval_seconds == deps.dream_schedules["culture"].min_interval_seconds
+    assert deps.character_heads_seed is not None
     for adaptor in deps.dream_adaptors:
         assert adaptor.tools <= ceiling, adaptor.name
 

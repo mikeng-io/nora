@@ -1435,16 +1435,18 @@ class FirePath:
     async def _read_character(
         self, occasion: Event,
     ) -> tuple[tuple[str, CultureRevision], ...]:
-        """Each listed person's account in this room (DEC-278): `_read_culture`'s
-        key and bounds, one head per person. `()` when the tier is off."""
+        """Each listed person's account, keyed by this room's UNIT (one per
+        (unit, person) since C2b, design/self-growth/10 §3), for the persons
+        this room lists: `_read_culture`'s bounds, one head per person. `()`
+        when the tier is off."""
         if self._culture is None or self._policy is None:
             return ()
         convo = self._policy.conversation(
             occasion.platform, occasion.conversation_id)
-        if convo is None or not convo.primary_id:
+        if convo is None or not convo.unit:
             return ()
         return await read_character(
-            self._culture, scope=convo.primary_id,
+            self._culture, unit=convo.unit,
             members=self._room_members(occasion), stage="fire_character",
             platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,

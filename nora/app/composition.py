@@ -60,6 +60,7 @@ from nora.agent.telemetry import (
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
+from nora.app.character_heads import seed_unit_person_heads
 from nora.app.cognition_grounding import (
     build_grounder,
     place_release,
@@ -106,6 +107,7 @@ from nora.domain.computer_events import ComputerEventStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.computer_leases import ComputerLeases
 from nora.domain.computer_sessions import ComputerSessionStore
+from nora.domain.culture import character_key
 from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
@@ -151,6 +153,7 @@ from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
 from nora.infra.sql.announcements import SqlAnnouncementLog
+from nora.infra.sql.character import SqlCharacterEvidence
 from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.compute_jobs import SqlComputeJobStore
 from nora.infra.sql.computer_events import SqlComputerEventStore
@@ -206,6 +209,13 @@ from nora.ingest.stages import stimulus as stimulus_stage
 from nora.ingest.stickers import StickerReader
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
+from nora.language.character import (
+    CHARACTER_PERSON_ADAPTOR_NAME,
+    CharacterPersonAdaptor,
+    CharacterRoom,
+    PersonEvidence,
+    PersonKey,
+)
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.obs.health import LLMState
@@ -885,6 +895,37 @@ def _computer_token(cfg: Config) -> str:
     return token
 
 
+#: Every Character adaptor that is not the room fold, by name (budgets, grants).
+CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (CHARACTER_PERSON_ADAPTOR_NAME,)
+
+
+def character_person_keys(allowlist: Any, persons: Any) -> dict[str, PersonKey]:
+    """One key per (unit, person listed in any of that unit's rooms), from
+    `policy.toml` and `identity.toml` (design/self-growth/10 §3, C2b). A
+    person's evidence and room cultures are the unit's rooms, in policy order;
+    their read tools stand in the first of those that lists them. A `*` room
+    lists nobody by name and adds no person."""
+    rooms_of: dict[str, list[CharacterRoom]] = {}
+    listing: dict[tuple[str, str], list[str]] = {}
+    refs: dict[str, Any] = {}
+    for conv in allowlist.conversations:
+        if not conv.primary_id or not conv.unit:
+            continue
+        rooms_of.setdefault(conv.unit, []).append(CharacterRoom(
+            key=conv.primary_id, platform=conv.platform, label=conv.label,
+        ))
+        for ref in persons.room_members(conv.persons):
+            refs[ref.person_id] = ref
+            listing.setdefault((conv.unit, ref.person_id), []).append(conv.primary_id)
+    return {
+        character_key(unit, person_id): PersonKey(
+            unit=unit, person=refs[person_id], rooms=tuple(rooms_of[unit]),
+            home=homes[0],
+        )
+        for (unit, person_id), homes in listing.items()
+    }
+
+
 @dataclass(frozen=True)
 class Dependencies:
     """The wired collaborators the app receives instead of `Config`.
@@ -1118,6 +1159,10 @@ class Dependencies:
     # `None` under `[cognition] enabled = false`, the shipped default. The
     # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
     wake_evaluator: WakeEvaluator | None = None
+    #: The one-time move of per-room person accounts to per-unit keys
+    #: (`nora.app.character_heads`), awaited before the dream loop starts;
+    #: `None` while `[culture]` or `[dreamer]` is off.
+    character_heads_seed: Callable[[], Awaitable[int]] | None = None
     cognition_runner: CognitionSessionRunner | None = None
     cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker (design/subagent): `None` under `[subagent] enabled = false`, the
@@ -3535,6 +3580,9 @@ async def build_dependencies(
     # tier's passes were deleted 2026-10-03, DEC-277): `dream_loop` with an
     # empty tuple ticks the cursor and runs nothing.
     dream_adaptors: tuple[DreamAdaptor, ...] = ()
+    #: The one-time move of person accounts to unit keys, awaited by
+    #: `nora.__main__` before the dream loop starts (`nora.app.character_heads`).
+    character_heads_seed: Callable[[], Awaitable[int]] | None = None
     dreamer_runtime: DreamerRuntime | None = None
     dream_schedules: Mapping[str, AdaptorSchedule] = {}
     # ONE schedule-state store, shared by the loop's slots and
@@ -3677,20 +3725,37 @@ async def build_dependencies(
                         lambda rows, platform:
                             persons.name_transcript(rows, platform=platform)
                     ),
-                    # THE CHARACTER TIER (DEC-278): the room's listed persons
-                    # (the same `persons.room_members` the tag prompt's
-                    # `<room_members>` uses), Nora's memory and observer peer,
-                    # and R-18's screen on what memory answers.
-                    members_for={
-                        conv.primary_id: persons.room_members(conv.persons)
-                        for conv in allowlist.conversations
-                        if conv.primary_id
-                    }.get,
-                    memory=memory,
-                    ai_peer=cfg.memory.ai_peer,
-                    screen=scan_identifiers,
                 ),
             )
+            # CHARACTER · PERSON (design/self-growth/10 §3, C2b): one session
+            # per (unit, person listed in that unit's rooms), woken by that
+            # person's own messages across the unit's rooms. Same store,
+            # same chain, the stale rule `[culture] stale_seconds` shares.
+            person_keys = character_person_keys(allowlist, persons)
+            culture_store = SqlCultureStore(engine)
+            dream_schedules = {
+                **dream_schedules,
+                CHARACTER_PERSON_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.culture.stale_seconds,
+                    wake_batch=cfg.culture.person_wake_batch,
+                    batch_limit=cfg.culture.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                CharacterPersonAdaptor(
+                    culture=culture_store,
+                    evidence=PersonEvidence(
+                        store=SqlCharacterEvidence(engine), keys=person_keys,
+                    ),
+                    keys=person_keys, metrics=metrics,
+                ),
+            )
+
+            async def _seed_character_heads() -> int:
+                return await seed_unit_person_heads(culture=culture_store, keys=person_keys)
+
+            character_heads_seed = _seed_character_heads
 
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
@@ -3808,6 +3873,10 @@ async def build_dependencies(
             # adaptor that is not wired is never read, and `[culture] enabled
             # = false` is what keeps the adaptor out of `dream_adaptors`.
             CULTURE_ADAPTOR_NAME: culture_grant(),
+            # A person session's read tools stand in the first of its unit's
+            # rooms that lists the person (`CharacterPersonAdaptor.tool_room`),
+            # resolved through `scope_rooms` exactly as the room fold's are.
+            CHARACTER_PERSON_ADAPTOR_NAME: culture_grant(),
         }
         # `DreamBudgetConfig` -> `AdaptorBudget`, through the ONE named
         # converter (`_adaptor_budget` above): the same five numbers across the
@@ -3816,6 +3885,13 @@ async def build_dependencies(
         dream_budgets = {
             name: _adaptor_budget(b) for name, b in cfg.dreamer.budgets.items()
         }
+        # A Character session with no block of its own runs on the room
+        # fold's numbers when the deployment set them: the same loop shape (a
+        # handed batch, a few reads, one account written), and a live config
+        # needs no new block for it.
+        if "culture" in dream_budgets:
+            for name in CHARACTER_ADAPTOR_NAMES:
+                dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a
         # module-level instance), so an adaptor added later is BOUNDED by
@@ -4090,6 +4166,7 @@ async def build_dependencies(
         dream_adaptors=dream_adaptors,
         dream_schedules=dream_schedules,
         dream_schedule_clock=dream_schedule_clock,
+        character_heads_seed=character_heads_seed,
         revisions=SqlRevisionStore(engine),
         unit_scopes=unit_scopes,
         events=events,

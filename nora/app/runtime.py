@@ -387,6 +387,28 @@ class _DreamOutcome(Protocol):
     def status(self) -> str: ...
 
 
+class _KeyEvidence(Protocol):
+    """An adaptor's own evidence, for a key that is not a room
+    (design/self-growth/10-character.md §3.2): a Character session for a
+    person, the unit or Nora counts what is new for ITS key since the key's
+    watermark, and reads the newest of it when it wakes.
+
+    `newest` returns the items handed to the session (newest `limit`, oldest
+    first) and the CURSOR to advance the watermark to on success: the newest
+    position among everything new, read or not, so a backlog past `limit` is
+    consumed rather than walked (a single evolving account wants what was said
+    lately, `AdaptorSchedule.seed_at_head`'s reason). The cursor is whatever
+    integer the kind counts by (a Record id, a revision count): the loop only
+    stores it and hands it back as `after`.
+    """
+
+    async def count(self, *, key: str, after: int) -> int: ...
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[Any], int]: ...
+
+
 class _ScheduleClock(Protocol):
     """Where a watermark-free scheduled adaptor's last fire is remembered —
     `nora.infra.sql.dream_schedule.SqlDreamScheduleClock`, seen from the loop.
@@ -637,6 +659,10 @@ async def seed_watermarks(
     for adaptor in adaptors:
         if not adaptor.uses_watermark or adaptor.name == source:
             continue
+        if getattr(adaptor, "evidence", None) is not None:
+            # Its cursor counts its OWN evidence, never a room's messages, so
+            # nothing can be inherited, and its first new item wakes it.
+            continue
         for key in keys(adaptor):
             if await language.watermark_for(
                 consolidator_name=adaptor.name, scope_id=key
@@ -743,6 +769,13 @@ async def _dream_adaptor_once(
     the success path was CLEARING backoff accrued from an unrelated failure.
     """
     sched = (schedules or {}).get(adaptor.name)
+    evidence: _KeyEvidence | None = getattr(adaptor, "evidence", None)
+    if evidence is not None:
+        return await _dream_evidence_once(
+            adaptor=adaptor, runtime=runtime, language=language, metrics=metrics,
+            evidence=evidence, key=key, sched=sched, batch_limit=batch_limit,
+            max_age_seconds=max_age_seconds, failure_count=failure_count,
+        )
     if not adaptor.uses_watermark:
         if sched is None:
             return (await runtime.run(adaptor=adaptor, key=key, batch=())).status
@@ -927,6 +960,58 @@ async def _dream_adaptor_once(
     return outcome.status
 
 
+async def _dream_evidence_once(
+    *, adaptor: DreamAdaptor, runtime: _AdaptorRunner,
+    language: _ConsolidationCursor, metrics: Metrics, evidence: _KeyEvidence,
+    key: str, sched: AdaptorSchedule | None, batch_limit: int,
+    max_age_seconds: float, failure_count: int,
+) -> str | None:
+    """One cycle of an adaptor whose key is not a room: its OWN evidence count
+    decides the wake (design/self-growth/10-character.md §3.2), on the rule C1
+    gave rooms. It fires when the new evidence reaches the schedule's
+    `wake_batch`, or when the key's watermark is `min_interval_seconds` old
+    (stale) with ANY new evidence. A key with nothing new never fires, and a
+    key that never ran has an infinitely old watermark, so its first new item
+    wakes it.
+
+    The cursor is the same `consolidation_watermark` row every adaptor keeps,
+    and the order is the same: run, then advance only on a run that was not
+    `unavailable` («the watermark advances only on success»).
+    """
+    watermark = await traced_read(
+        "language", "watermark_for", language.watermark_for(
+            consolidator_name=adaptor.name, scope_id=key),
+    )
+    new = await traced_read(
+        "character", "count", evidence.count(key=key, after=watermark),
+    )
+    if new <= 0:
+        return None
+    age = await traced_read(
+        "language", "watermark_age_seconds", language.watermark_age_seconds(
+            consolidator_name=adaptor.name, scope_id=key),
+    )
+    stale_after = sched.min_interval_seconds if sched is not None else max_age_seconds
+    batch = sched.wake_batch if sched is not None else None
+    if not (age >= stale_after or (batch is not None and new >= batch)):
+        return None
+    base_limit = sched.batch_limit if sched is not None else batch_limit
+    limit = _shrunk_batch_limit(base_limit, failure_count)
+    if limit != base_limit:
+        metrics.inc("nora_dream_batch_shrunk_total", adaptor=adaptor.name)
+    items, cursor = await traced_read(
+        "character", "newest", evidence.newest(key=key, after=watermark, limit=limit),
+    )
+    outcome = await runtime.run(adaptor=adaptor, key=key, batch=items)
+    if outcome.status == "unavailable":
+        return outcome.status
+    await language.advance_watermark(
+        consolidator_name=adaptor.name, scope_id=key,
+        last_message_id=max(cursor, watermark),
+    )
+    return outcome.status
+
+
 async def dream_loop(
     record: _SinceReadable, language: _ConsolidationCursor,
     metrics: Metrics, *,
@@ -1082,6 +1167,12 @@ async def dream_loop(
             return scopes()
         if adaptor.key_kind == "unit":
             return units()
+        if adaptor.key_kind == "entity":
+            # A Character entity (design/self-growth/10 §3): the adaptor
+            # knows its own keys, one per (unit, entity), from the policy.
+            entity_keys: Callable[[], Sequence[str]] | None = getattr(adaptor, "keys", None)
+            if entity_keys is not None:
+                return entity_keys()
         log.error(
             "dream adaptor %s declares key_kind=%r, which this loop cannot "
             "enumerate; it will not run", adaptor.name, adaptor.key_kind,

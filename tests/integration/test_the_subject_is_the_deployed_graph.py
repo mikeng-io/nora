@@ -33,7 +33,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
     """Same type, same builder, same field count as `nora/__main__.py` gets."""
     subject = await obtain(spec)
     assert isinstance(subject.deps, Dependencies)
-    assert len(dataclasses.fields(Dependencies)) == 62, (
+    assert len(dataclasses.fields(Dependencies)) == 63, (
         "Dependencies changed shape; the subject follows it automatically, but "
         "this number is here so a change is noticed rather than absorbed. "
         "38 -> 40 on 2026-09-17: `relevance_gate` and `fire_path`, the two "
@@ -89,7 +89,10 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "cancels (None unless `[subagent] enabled`; DEC-282). "
         "60 -> 62 on 2026-10-05: `otp` and `otp_api_token`, the one-time code "
         "service and the bearer its routes need (None/empty unless `[otp] enabled`; "
-        "DEC-287)."
+        "DEC-287). 62 -> 63 on 2026-10-07: `character_heads_seed`, the one-time "
+        "move of per-room person accounts to per-unit keys the daemon awaits before "
+        "the dream loop (None unless `[culture]` and `[dreamer]` are on; "
+        "design/self-growth/10 C2b)."
     )
 
 

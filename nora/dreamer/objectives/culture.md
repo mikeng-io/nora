@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 4
+version: 5
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -9,7 +9,8 @@ description: >-
   IS and why it became so — how they talk, how decisions get made, what they
   call themselves, and Nora's own standing there. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
-  shape this tier exists to not be. Version 4 writes through the
+  shape this tier exists to not be. Version 5 writes the room alone: people
+  have their own sessions (`character-person`). Version 4 writes through the
   `character_revise` verb with citations instead of a JSON envelope
   (design/self-growth/10 §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
@@ -98,27 +99,11 @@ not a relationship nobody stated. If you are unsure whether you are reading it
 or imagining it, leave it out. Pointing at it is literal: every account you
 write cites the `n` of the messages it rests on.
 
-## The people in the room
-
-You may also be shown `<people_views>`: for each person who wrote in these
-messages, what your memory says they are like. It is built from everything you have seen of
-them, not from this room alone, so read it against the room's account and the
-messages here, and keep what holds for them **in this room**.
-
-For each person shown there, you may write **one short paragraph, in prose**,
-of what they are like: how they talk, what they care about, how they sit in
-this group, how they treat you. Combine memory's view with what the room
-shows; where they disagree, trust the room. Nothing about them that you cannot
-point at in one of the two, and cite the messages of theirs you rest on. A
-person with no entry in `<people_views>` gets no account from you this time:
-their account from before stands as it is.
-
 ## How you write it
 
 You write with `character_revise`, never in your reply:
 
-- `entity`: `room` for this room's account, or a person's name exactly as
-  `<people_views>` shows it.
+- `entity`: `room`.
 - `body`: the account, in prose, and nothing but the prose. No headings, no
   bullets, no dates, no quotation of individual messages. Give the whole
   account, not a change to it.
@@ -138,5 +123,5 @@ nothing you can point at, call `character_no_change` with `entity` `room` and
 standing, which is usually right.
 
 Settle the room every time: either `character_revise` or
-`character_no_change` for `room`. A person is optional. When you are done,
-stop; your reply text is not read.
+`character_no_change` for `room`. When you are done, stop; your reply text is
+not read.

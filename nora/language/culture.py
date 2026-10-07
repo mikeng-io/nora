@@ -48,18 +48,13 @@ so it was asked for a join and handed one table: §7.1's tautology, which passes
 every gate the runtime owns because a restated input leaves a row and a row is
 what success looks like ([17-failure-classes §11]).
 
-**It is also the Character adaptor (DEC-278, operator ruling 2026-10-03).** On
-the same wake (DEC-288), the same fold asks Nora's memory «what is the character of
-X?» for each person the room lists who wrote in the batch (DEC-280: only
-those; `memory.chat`, the dialectic verb
-`ask_memory` calls), hands those answers to the model beside the room's own
-account, and stores one short account per person under `character_key` in this
-same store and chain. **That supersedes DEC-182's narrowing, for this use
-only:** Honcho's `chat` is not scoped to a room, which is what closed #237, and
-the operator accepted that here, because a unit is one circle of friends. The
-cache shape (ask once, store the answer verbatim) is still not what this is:
-the model combines memory's view with the room's culture and the fold is the
-author. Rendered as `<character>` by `nora.language.culture_render`.
+**It writes the ROOM's account and nothing else** (since C2b of
+design/self-growth/10). From DEC-278 to C2b the same fold also wrote one account
+per person who posted, from a `memory.chat` answer fetched before the pass
+(`<people_views>`) and keyed per room. People are now their own sessions, one
+per (unit, person), woken by their own evidence and keyed by unit
+(`nora.language.character`); memory is a tool those sessions may call, never a
+pre-fetch.
 
 **It writes through a verb, not an envelope** (design/self-growth/10 §3, C2a).
 The session calls `character_revise(entity, body, citations)`; code checks the
@@ -84,10 +79,9 @@ one thing it does not contribute.
 
 from __future__ import annotations
 
-import asyncio
 import datetime as _dt
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from nora.domain.blocks import (
@@ -100,20 +94,16 @@ from nora.domain.blocks import (
 )
 from nora.domain.culture import (
     CULTURE_OUTCOMES,
-    MAX_CONSECUTIVE_REJECTIONS,
     Citable,
     CultureProposal,
     CultureRevision,
-    Refusal,
-    character_key,
-    check_revision,
 )
-from nora.domain.errors import NoraError
-from nora.domain.models import PersonRef, TranscriptRow
+from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note
-from nora.domain.ports import MemoryStore, Proposal
+from nora.domain.ports import Proposal
 from nora.domain.prompt import escape
 from nora.domain.standing import Standing
+from nora.language.character_session import AccountNotRecordableError, EntitySessions
 from nora.language.note_render import render_notes
 from nora.language.standing_render import render_standing
 from nora.obs.metrics import Metrics
@@ -130,62 +120,6 @@ __all__ = [
 ]
 
 
-class AccountNotRecordableError(NoraError):
-    """The model wrote one account, it was read, and it cannot enter the chain.
-
-    **Raised so the BATCH IS NOT CONSUMED**, which is the whole point of it
-    being an exception rather than an empty return. `DreamerRuntime.run`
-    reports an adaptor raising as `unavailable`, and `_dream_once` holds the
-    watermark on `unavailable` alone — so the messages this fold read are
-    folded again tomorrow instead of being spent on an account nobody kept.
-
-    **The failure this closes, traced end to end.** `accept` returning `()`
-    for an oversize body gave: no proposal -> `commit(key, ())` -> status `ok`
-    -> the watermark advances. The account was discarded, the batch was
-    consumed, and the ONLY record was
-    `nora_culture_fold_total{outcome="oversize"}`, a counter whose own comment
-    concedes it cannot support a rate because the label is destroyed at every
-    process restart. A room whose fold habitually runs long would therefore
-    have written nothing, forever, and nothing durable would have said so.
-
-    **It is `unavailable` rather than `nothing_found` for R-27's reason, not
-    as a convenience.** `nothing_found` is the claim «there was nothing in this
-    batch», and a run whose model returned an account is not entitled to make
-    it — the same rule that stops an empty bus catalogue becoming 「冇呢條線」.
-    `unavailable` is «I could not record this», which is what happened. The
-    module docstring's own line: a batch that will not parse is `unavailable`,
-    never `nothing_found`, *because the loop must not advance a watermark past
-    a batch nobody read*. A batch whose one account was refused is that batch.
-
-    **The cost, OBSERVED rather than named.** If a draw for a room overruns
-    the cap, that fire is spent and the watermark does not move; while it keeps
-    overrunning, `lag` grows. This paragraph called that an accepted trade that
-    "self-heals on any compliant draw, because the next fire is a fresh sample
-    at non-zero temperature". **That sentence is CORRECT and a rewrite of this
-    docstring briefly claimed it was not** — the claim was made on 2026-09-17
-    from a four-fire window, while the fifth fire was still pending. It landed:
-    the deployment's busiest room drew 1,876, 1,725, 1,677 and 1,583 against a
-    1,400 cap, then 1,323, which was recorded. A Signal room did the same two
-    fires earlier. Both self-healed exactly as the original sentence said.
-
-    What the window DID show is the price of the healing. At the refusal rate
-    measured that evening — 6 of 11 draws over the cap — a room re-draws for a
-    geometrically distributed number of ticks and pays a model call each time;
-    zone 42 paid four. Loud, it was: `nora_dream_run_total{status=
-    "unavailable"}`, a growing lag and a WARNING naming the scope. Loud and
-    self-healing still is not free. What makes the trade cheap is
-    `BODY_MAX_CHARS` being set where an account written to the objective's own
-    instruction rarely reaches it — a claim about what the model EMITS, which
-    is why the cap is now sized against `ACCOUNT_CHARS_OBSERVED_MAX` rather
-    than against a ratio to the worked example.
-
-    **What would make the cap a quality instrument again is in the OBJECTIVE,
-    and the objective is `change_policy: operator-only`.** The model is never
-    told the cap — it is enforced after emission, on prose already written — so
-    nothing in this module can stop a long account being produced, only stop it
-    being lost. See the note in `CultureAdaptor.accept`.
-    """
-
 #: The adaptor's `name`: the metric label, the schedule and budget key, and the
 #: `AdaptorGrant` key the composition root reads (`PROACTIVE_ADAPTOR_NAME`'s own
 #: precedent — a name spelled in four places is a name that drifts in three).
@@ -198,8 +132,9 @@ CULTURE_ADAPTOR_NAME = "culture"
 #: added without this number moving.
 #:
 #: 3 -> 5 on 2026-09-17, when `standing` and the notes joined the inputs.
-#: 5 -> 6 for the Character tier: ONE site, `memory.chat`, fanned out per person.
-STORE_CALLS_PER_TICK = 6
+#: 5 -> 6 for the Character tier (DEC-278): ONE site, `memory.chat`, per person.
+#: 6 -> 5 at C2b: the person accounts left this pass, and that site with them.
+STORE_CALLS_PER_TICK = 5
 
 #: Every value `nora_culture_fold_total{outcome}` may carry, DERIVED rather than
 #: hand-copied into the metric's help text — the deleted `note_candidates`' own precedent,
@@ -224,12 +159,12 @@ STORE_CALLS_PER_TICK = 6
 #: days after three real increments). So an absent series means "nothing since
 #: the last restart", never "never happened", and `§1.1`'s three clauses apply
 #: to every reading of it. The durable per-outcome row that WOULD carry a rate
-#: is DEC-179's, excluded there; `log.warning` on `too_many` and `oversize`
+#: is DEC-179's, excluded there; `log.warning` on `refused` and `unsettled`
 #: carries the news meanwhile, which is the half a counter cannot.
 #:
 #: Defined in `nora.domain.culture` since DEC-280 (2026-10-03), so the
-#: metric's help text reads the same set; `dropped_person` and `abandoned`
-#: joined it there.
+#: metric's help text reads the same set; the verb's outcomes replaced the
+#: envelope's at C2a.
 
 #: The read verbs one fold holds — granted 2026-09-17, against
 #: `tools = frozenset()` since the tier shipped.
@@ -387,9 +322,8 @@ def _render_batch(batch: Sequence[TranscriptRow]) -> str:
     )
 
 
-#: The entity name a room session writes its own account under
-#: (`character_revise(entity="room", ...)`); a person is written under the name
-#: the prompt showed for them.
+#: The entity name a room session writes its account under
+#: (`character_revise(entity="room", ...)`), its one entity since C2b.
 ROOM_ENTITY = "room"
 
 
@@ -419,8 +353,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("previous_account", 20, "turn"),
     ("standing", 30, "turn"),
     ("notes", 40, "turn"),
-    ("people_views", 45, "turn"),
-    ("person_view", 46, "turn"),
     ("room_messages", 50, "turn"),
 )
 
@@ -431,9 +363,9 @@ _ROW: dict[str, tuple[int, BlockKey]] = {
 }
 
 
-class CultureAdaptor:
+class CultureAdaptor(EntitySessions):
     """One account per room per wake (DEC-288), appended to a chain — see the module
-    docstring."""
+    docstring. Its write verbs and settle rule are `EntitySessions`'."""
 
     name = CULTURE_ADAPTOR_NAME
     key_kind = "scope"
@@ -513,28 +445,7 @@ class CultureAdaptor:
         resolve_names: (
             Callable[[Sequence[TranscriptRow], str], Sequence[TranscriptRow]] | None
         ) = None,
-        # THE CHARACTER TIER (DEC-278): the room's listed persons, Nora's
-        # memory (the existing Honcho port, never a new client), her observer
-        # peer id, and R-18's screen on what memory answers. `memory=None` is
-        # the pre-Character fold, byte for byte: no people block, no person
-        # accounts. The screen is INJECTED (`language` may not import
-        # `agent`), and required with `memory` rather than defaulted, because
-        # a missing screen would pass an identifier into a prompt silently.
-        members_for: Callable[[str], Sequence[PersonRef] | None] | None = None,
-        memory: MemoryStore | None = None,
-        ai_peer: str = "",
-        screen: Callable[[str], object] | None = None,
     ) -> None:
-        if memory is not None and (screen is None or members_for is None or not ai_peer):
-            raise ValueError(
-                "CultureAdaptor: memory needs members_for, ai_peer and screen "
-                "(R-18) together; a Character fold missing any of them would "
-                "ask about nobody or pass an identifier into a prompt"
-            )
-        self._members_for = members_for
-        self._memory = memory
-        self._ai_peer = ai_peer
-        self._screen = screen
         self._culture = culture
         self._standing = standing
         self._notes = notes
@@ -546,23 +457,12 @@ class CultureAdaptor:
         self._tz = timezone
         self._platform_for = platform_for
         self._resolve_names = resolve_names
-        # Per key, for the run in flight: the names whose views `inputs`
-        # showed (only those may get an account, DEC-280), the batch's first
-        # row id, and the run of consecutive rejections of that batch.
-        # ponytail: in memory, so a restart forgets a rejection run and the
-        # batch gets up to `MAX_CONSECUTIVE_REJECTIONS` more tries; a column
-        # on `dream_schedule_state` if that is ever seen to matter. The runtime
-        # serializes runs per (adaptor, key), so no two runs share a key here.
-        self._shown: dict[str, frozenset[str]] = {}
-        self._batch_start: dict[str, int] = {}
-        self._rejections: dict[str, tuple[int | None, int]] = {}
-        # What the run in flight may cite (the batch's row ids), what its
-        # `character_revise` calls staged per entity (`None` is the room), and
-        # which entities it closed unchanged. Set by `inputs`, read by the
-        # verbs and drained by `accept`.
-        self._citable: dict[str, Citable] = {}
-        self._staged: dict[str, dict[str | None, CultureProposal]] = {}
-        self._kept: dict[str, set[str | None]] = {}
+        # The verbs' per-run state (`EntitySessions`): what the run in flight
+        # may cite, what it staged, and the bounded run of unsettled sessions.
+        self._sessions_init()
+
+    def _count(self, outcome: str) -> None:
+        self._inc(outcome)
 
     def _inc(self, outcome: str) -> None:
         if outcome not in CULTURE_OUTCOMES:
@@ -623,11 +523,12 @@ class CultureAdaptor:
         """
         if not batch:
             return ""
-        self._batch_start[key] = batch[0].id
-        self._shown[key] = frozenset()
-        self._citable[key] = Citable(messages=frozenset(row.id for row in batch))
-        self._staged[key] = {}
-        self._kept[key] = set()
+        # THE RUN: it may cite this batch's rows, and it writes one entity,
+        # the room.
+        self._begin(
+            key, citable=Citable(messages=frozenset(row.id for row in batch)),
+            entities={ROOM_ENTITY: None}, batch_start=batch[0].id,
+        )
         # RESOLVE NAMES (issue #200), the same projection the deleted `NoteCandidateAdaptor`
         # applied before its own batch renders. Every row this fold gets from
         # `record.since` carries `person_name=None` — nothing on this path
@@ -743,17 +644,6 @@ class CultureAdaptor:
                 "(unit=%r standing_key=%r); folding without those inputs",
                 key, unit, standing_key,
             )
-        # HONCHO'S VIEW OF EACH LISTED PERSON WHO WROTE IN THIS BATCH, asked
-        # once here (comprehend once) so the model computes on a fixed answer
-        # instead of deciding whether to ask. Absent when no person answered.
-        # A sender is known by the name `resolve_names` gave their row, which
-        # it resolved from the platform id: never a self-set profile name.
-        senders = frozenset(
-            row.person_name for row in batch if not row.is_nora and row.person_name
-        )
-        people = await self._people_views(key, unit, senders)
-        if people is not None:
-            parts.append(people)
         # WRAPPED, for the reason the (deleted) note-candidates batch was (#292 audit):
         # bodies keep their newlines in the element form, so an uncontained
         # batch let a member's message write free text at prompt top level,
@@ -774,78 +664,6 @@ class CultureAdaptor:
             )
         )
         return assemble(parts, sep="\n\n")
-
-    def _roster(self, key: str) -> tuple[PersonRef, ...]:
-        """This room's listed persons, or `()` when Character is not wired."""
-        if self._memory is None or self._members_for is None:
-            return ()
-        return tuple(self._members_for(key) or ())
-
-    async def _people_views(
-        self, key: str, unit: str | None, senders: frozenset[str],
-    ) -> ContextBlock | None:
-        """`<people_views>`: what Nora's memory says each listed person who
-        WROTE in this batch is like, one `<person>` per answer (the Character
-        tier, DEC-278, narrowed by DEC-280).
-
-        **Only the batch's senders are asked.** Live 2026-10-03: eight
-        dialectic calls on a pass where two people had posted. A person who
-        said nothing in the batch gives the fold nothing new to combine with
-        memory, so they are not asked and get no entry; their account stands
-        as it was (`commit` only appends, and `accept` takes an account only
-        for a name shown here).
-
-        **The operator's design, and nothing more:** ask the memory system
-        «what is the character of X?», combine the answer with the room's
-        culture, write it down. `chat` is the dialectic verb `ask_memory`
-        already calls, with Nora as observer and the person observed. It
-        blends across the unit, which DEC-182's narrowing refused for the
-        cache shape; the operator ruled 2026-10-03 that a unit is one circle,
-        so that is accepted here (DEC-278).
-
-        **FAIL-SOFT PER PERSON, and the gap is stated:** `chat` returns `None`
-        for unreachable and for nothing-to-say alike, so a person with no
-        answer gets no account this fold rather than a guessed one; the room's
-        own fold is unaffected. An answer carrying an identifier is withheld
-        whole (R-18), as `ask_memory` does.
-        """
-        roster = tuple(ref for ref in self._roster(key) if ref.name in senders)
-        if not roster or self._memory is None or self._screen is None or unit is None:
-            return None
-        screen = self._screen
-        # ponytail: one dialectic call per listed person who wrote in the
-        # batch, no cap; rooms here are a handful of friends. Add a cap key to
-        # `[culture]` if one grows.
-        answers = await asyncio.gather(
-            *(
-                self._memory.chat(
-                    peer_id=self._ai_peer, target=ref.honcho_peer_id,
-                    query=f"What is the character of {ref.name}?", unit=unit,
-                )
-                for ref in roster
-            ),
-            return_exceptions=True,
-        )
-        rows: list[str] = []
-        shown: set[str] = set()
-        for ref, answer in zip(roster, answers, strict=True):
-            if isinstance(answer, BaseException) or not answer or not answer.strip():
-                log.warning("character: no view of %s for scope=%s", ref.person_id, key)
-                continue
-            if screen(answer) is not None:
-                log.warning("character: view of %s withheld (R-18)", ref.person_id)
-                continue
-            rows.append(ContextBlock(
-                name="person_view", attrs=(("name", ref.name),), body=escape(answer.strip()),
-            ).render())
-            shown.add(ref.name)
-        self._shown[key] = frozenset(shown)
-        if not rows:
-            return None
-        order, bkey = _ROW["people_views"]
-        return ContextBlock(
-            name="people_views", order=order, key=bkey, body="\n".join(rows),
-        )
 
     def _room_block(self, key: str) -> ContextBlock:
         """What this room is CALLED and what the operator says it IS.
@@ -885,173 +703,6 @@ class CultureAdaptor:
             # is what the hand join this replaced did with it.
             when_empty="render" if description else "self_close",
         )
-
-    # -- the write verbs --------------------------------------------------
-
-    def verbs(self, *, key: str) -> list[Callable[..., Awaitable[dict[str, object]]]]:
-        """`character_revise` and `character_no_change`, bound to this run's
-        `key` (design/self-growth/10 §3, the Cognition session's verb shape).
-
-        Each VALIDATES as the model calls it and answers `ok` or `refused`
-        with a reason it can act on (`nora.domain.culture.check_revision`);
-        nothing is written here. What was staged is returned by `accept`, the
-        runtime stamps the provenance on it and `commit` appends it, so a
-        refused write never reaches the store and an accepted one carries the
-        same provenance an envelope account did."""
-
-        async def character_revise(
-            entity: str, body: str, citations: list[str],
-        ) -> dict[str, object]:
-            """Write the new account of one entity: this room, or one person
-            shown in `<people_views>`. Give the WHOLE account, not a change to
-            it. Call it once per entity; a later call for the same entity
-            replaces the earlier one.
-
-            Returns `status`: ok, or refused with a `reason` and a `detail`
-            saying what to do instead.
-
-            Args:
-                entity: `room` for this room's account, or a person's name
-                    exactly as `<people_views>` shows it.
-                body: The account, in prose. No headings, no bullet points,
-                    no dates.
-                citations: The `n` of every message the account rests on, as
-                    strings, at least one. Only messages you were shown.
-            """
-            return self._revise(key, entity, body, tuple(str(c) for c in citations))
-
-        async def character_no_change(entity: str, why: str) -> dict[str, object]:
-            """Close one entity with its account unchanged. Call this when the
-            messages add nothing the account does not already say, or when
-            there is nothing you can point at. The previous account stands.
-
-            Returns `status`: ok, or refused with a `reason` and a `detail`.
-
-            Args:
-                entity: `room`, or a person's name exactly as `<people_views>`
-                    shows it.
-                why: One short sentence: why nothing changes.
-            """
-            return self._keep(key, entity, why)
-
-        return [character_revise, character_no_change]
-
-    def _entity(self, key: str, entity: str) -> str | Refusal | None:
-        """`None` for the room, a `person_id` for a person shown this run, or
-        the refusal. The id comes from the roster the prompt showed, never
-        from anything the model typed."""
-        name = entity.strip()
-        if name.casefold() == ROOM_ENTITY:
-            return None
-        shown = self._shown.get(key, frozenset())
-        for ref in self._roster(key):
-            if ref.name == name and ref.name in shown:
-                return ref.person_id
-        allowed = ", ".join([ROOM_ENTITY, *sorted(shown)])
-        return Refusal("unknown_entity", f"{entity!r} is not an entity of this "
-                       f"session; write one of: {allowed}")
-
-    def _refused(self, key: str, refusal: Refusal) -> dict[str, object]:
-        log.warning("culture: scope=%s write refused: %s", key, refusal.reason)
-        self._inc("refused")
-        return {"status": "refused", "reason": refusal.reason, "detail": refusal.detail}
-
-    def _revise(
-        self, key: str, entity: str, body: str, citations: tuple[str, ...],
-    ) -> dict[str, object]:
-        if key not in self._staged:
-            return {"status": "unavailable", "reason": "no_session",
-                    "detail": "this session is over; nothing was written"}
-        resolved = self._entity(key, entity)
-        if isinstance(resolved, Refusal):
-            return self._refused(key, resolved)
-        refusal = check_revision(
-            body=body, citations=citations, citable=self._citable[key],
-        )
-        if refusal is not None:
-            return self._refused(key, refusal)
-        self._kept[key].discard(resolved)
-        self._staged[key][resolved] = CultureProposal(
-            body=body.strip(), person_id=resolved, citations=citations,
-        )
-        return {"status": "ok"}
-
-    def _keep(self, key: str, entity: str, why: str) -> dict[str, object]:
-        if key not in self._staged:
-            return {"status": "unavailable", "reason": "no_session",
-                    "detail": "this session is over; nothing was written"}
-        resolved = self._entity(key, entity)
-        if isinstance(resolved, Refusal):
-            return self._refused(key, resolved)
-        self._staged[key].pop(resolved, None)
-        self._kept[key].add(resolved)
-        log.info("culture: scope=%s entity=%s unchanged: %s", key, entity, why[:200])
-        return {"status": "ok"}
-
-    # -- accept ---------------------------------------------------------
-
-    async def accept(
-        self, *, key: str, items: Sequence[Mapping[str, object]]
-    ) -> Sequence[object]:
-        """What this run's `character_revise` calls staged, or a refusal to
-        spend the batch.
-
-        `items` is empty: this adaptor answers through its verbs, never an
-        envelope (`DreamerRuntime._sample`). Every staged account was checked
-        when it was written, so nothing is re-judged here; what is judged is
-        whether the session SETTLED the room: revised it, or closed it
-        unchanged. A session that did neither (it ran out of turns, or every
-        write was refused and it stopped) is `unsettled` and RAISES
-        `AccountNotRecordableError`, so the runtime reports `unavailable` and
-        HOLDS the watermark: the batch was not folded, so it is folded again.
-        A person is optional: one shown and neither revised nor kept keeps
-        the account they had.
-
-        **A run of unsettled sessions is bounded** (DEC-280): the
-        `MAX_CONSECUTIVE_REJECTIONS`-th in a row of the same batch for one key
-        (the batch named by its first row, which a shrunk retry keeps) does not
-        raise; it is logged, counted `abandoned`, and returns `()`, so the fold
-        advances instead of re-reading a batch for ever. The run is in memory
-        (a restart starts it again).
-        """
-        staged = self._staged.pop(key, {})
-        kept = self._kept.pop(key, set())
-        self._citable.pop(key, None)
-        if None not in staged and None not in kept:
-            log.warning(
-                "culture: scope=%s ended without revising or keeping the room's "
-                "account; HOLDING the watermark", key,
-            )
-            self._inc("unsettled")
-            self._reject(key, f"the session for scope={key} did not settle the room")
-            return ()
-        self._rejections.pop(key, None)
-        for _ in kept:
-            self._inc("kept")
-        # The room's account first, then the people, in the order written.
-        room = [p for entity, p in staged.items() if entity is None]
-        people = [p for entity, p in staged.items() if entity is not None]
-        return (*room, *people)
-
-    def _reject(self, key: str, why: str) -> None:
-        """Refuse this run. RAISES `AccountNotRecordableError` (the runtime
-        reports `unavailable` and holds the watermark) unless this is the
-        `MAX_CONSECUTIVE_REJECTIONS`-th rejection in a row of the same batch for
-        `key`: then it RETURNS, after a WARNING and `abandoned`, and the caller
-        returns `()` so the batch is consumed (DEC-280)."""
-        start = self._batch_start.get(key)
-        previous, run = self._rejections.get(key, (start, 0))
-        run = run + 1 if previous == start else 1
-        if run < MAX_CONSECUTIVE_REJECTIONS:
-            self._rejections[key] = (start, run)
-            raise AccountNotRecordableError(why)
-        self._rejections.pop(key, None)
-        log.warning(
-            "culture: scope=%s rejected %d times in a row on the batch from row %s "
-            "(%s); advancing past it with no account written from it",
-            key, run, start, why,
-        )
-        self._inc("abandoned")
 
     # -- commit ---------------------------------------------------------
 
@@ -1093,17 +744,17 @@ class CultureAdaptor:
                     f"CultureAdaptor.commit only accepts a CultureProposal "
                     f"payload, got {type(payload).__name__}"
                 )
-            # A person's account is one more key in the same store and chain.
-            store_key = (
-                character_key(key, payload.person_id)
-                if payload.person_id is not None else key
-            )
-            previous = await self._culture.head(key=store_key)
+            if payload.person_id is not None:
+                # A room session writes the room alone since C2b (a person is
+                # `nora.language.character`'s, keyed by unit); a person here
+                # is a wiring fault, not a bad answer.
+                raise TypeError("CultureAdaptor.commit writes the room's account only")
+            previous = await self._culture.head(key=key)
             if previous is not None and previous.body == payload.body:
                 self._inc("unchanged")
                 continue
             await self._culture.append(
-                key=store_key,
+                key=key,
                 body=payload.body,
                 written_at=now_ms,
                 established_by=proposal.established_by,

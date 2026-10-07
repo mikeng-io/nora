@@ -98,6 +98,7 @@ AgentRunner`, a stage-level `Protocol`, not one of `nora/domain/ports.py`'s
 ports — also exempt; see their docstrings.
 """
 
+from nora.testing.character_evidence import InMemoryCharacterEvidence
 from nora.testing.culture_store import InMemoryCultureStore
 from nora.testing.decision_log import (
     DuplicateDecisionError,
@@ -203,6 +204,7 @@ __all__ = [
     "FakeTranscriber",
     "FakeVideoReadingStore",
     "FakeVoicePresenceSource",
+    "InMemoryCharacterEvidence",
     "InMemoryCultureStore",
     "InMemoryDecisionLogStore",
     "InMemoryDreamScheduleClock",

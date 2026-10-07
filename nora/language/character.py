@@ -1,0 +1,322 @@
+"""Character sessions for the entities that are not a room
+(design/self-growth/10-character.md §3).
+
+**One Dreamer session per (unit, entity) key, woken by that entity's own
+evidence.** A room is `nora.language.culture.CultureAdaptor`. This module holds
+the others, each its own adaptor with its own key kind, evidence count, wake
+batch, objective and block rows, and all of them writing through the same
+verbs (`nora.language.character_session.EntitySessions`) into the same culture
+store and revision chain:
+
+- **a person** (C2b), key `character_key(unit, person_id)`: one account per
+  (unit, person listed in that unit's rooms). Its evidence is the person's
+  human messages across the unit's rooms since its watermark. It is handed its
+  previous account, those messages (newest `batch_limit`, each with its Record
+  id and room) and the current culture of each of the unit's rooms, read by
+  code from the store. Memory is a tool it MAY call (`ask_memory`,
+  `search_memory`), never a pre-fetch: the account must not depend on Honcho
+  (#736). Its citations are the ids of the messages it was handed.
+
+**Code at the edges, an agent loop in the middle** (§3.1): code counts the
+evidence, wakes the key, hands over the previous account and what is new, and
+validates every write; the model decides what to look up and what the account
+now says.
+
+**Lineage, chosen and stated** (§3 C2b, design/cognition-loop/10-tiers.md §3).
+An account is prose with no sections (DEC-184), so it has no section to drop.
+`[lineage]` is off and marked do-not-enable (operator, 2026-10-03; AGENTS.md
+«A boundary is drawn by scope»): the unit is the read boundary, and a person's
+account renders only in that unit's rooms that list them. What would have put
+presence into it is left out instead: a person session holds no presence verb
+(`where_been`, `online_now`), because its account renders in rooms whose
+`location` flags differ, and R-31 is never simplified away.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Protocol
+
+from nora.domain.blocks import (
+    BlockKey,
+    ContextBlock,
+    assemble,
+    render_elements,
+    render_row_window,
+)
+from nora.domain.culture import (
+    CHARACTER_KINDS,
+    CHARACTER_OUTCOMES,
+    Citable,
+    CultureProposal,
+    CultureRevision,
+    RoomMessage,
+)
+from nora.domain.models import PersonRef
+from nora.domain.ports import Proposal
+from nora.domain.prompt import age, escape
+from nora.language.character_session import EntitySessions
+from nora.obs.metrics import Metrics
+
+log = logging.getLogger(__name__)
+
+__all__ = [
+    "CHARACTER_PERSON_ADAPTOR_NAME",
+    "CHARACTER_PERSON_TOOLS",
+    "CharacterPersonAdaptor",
+    "CharacterRoom",
+    "PersonEvidence",
+    "PersonKey",
+]
+
+#: The person adaptor's `name`: its watermark identity, schedule, budget and
+#: grant key, and its objective file.
+CHARACTER_PERSON_ADAPTOR_NAME = "character-person"
+
+#: The read verbs a person session holds, each for what it reads that the
+#: handed messages do not:
+#:
+#: - `ask_memory`, `search_memory`: what Nora has concluded about them, and
+#:   what they said before this batch. A hint the account may weigh, never a
+#:   citation (DEC-249) and never a pre-fetch (§3.3, #736).
+#: - `about`, `lookup_person`, `group_members`: who a name or handle in their
+#:   messages IS, against the room's roster.
+#: - `web_search`, `web_fetch`: a reference they lean on that nobody explains.
+#:
+#: Deliberately absent: `where_been`, `online_now` (presence, R-31; module
+#: docstring), and every act verb (the read-only ceiling).
+CHARACTER_PERSON_TOOLS: frozenset[str] = frozenset({
+    "ask_memory", "search_memory", "about", "lookup_person", "group_members",
+    "web_search", "web_fetch",
+})
+
+#: `inputs` holds two sites (the previous account; the rooms' cultures, one
+#: gather) and `commit` two (a `head` and an `append`).
+PERSON_STORE_CALLS_PER_TICK = 4
+
+#: What each session carries, in the order the model reads it
+#: (`design/context-assembly/04-every-occasion.md` §6).
+_BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("person", 10, "turn"),
+    ("previous_character", 20, "turn"),
+    ("room_cultures", 30, "turn"),
+    ("person_messages", 40, "turn"),
+)
+_ROW: dict[str, tuple[int, BlockKey]] = {
+    name: (order, key) for name, order, key in _BLOCKS
+}
+
+
+def _at(name: str) -> dict[str, Any]:
+    """`order` and `key` for a `ContextBlock(name=...)` from the table."""
+    order, key = _ROW[name]
+    return {"order": order, "key": key}
+
+
+@dataclass(frozen=True)
+class CharacterRoom:
+    """One room of a unit, as a Character session needs it: its culture key
+    (`primary_id`), its platform and its policy label."""
+
+    key: str
+    platform: str
+    label: str
+
+
+@dataclass(frozen=True)
+class PersonKey:
+    """What a person key names: the unit, the person, the unit's rooms (where
+    their evidence is counted and whose cultures they are handed), and the
+    room their read tools stand in (the first of the unit's rooms that lists
+    them, so a roster lookup resolves them)."""
+
+    unit: str
+    person: PersonRef
+    rooms: tuple[CharacterRoom, ...]
+    home: str
+
+
+class _PersonMessages(Protocol):
+    """`nora.infra.sql.character.SqlCharacterEvidence`'s person reads."""
+
+    async def person_count(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+    ) -> int: ...
+
+    async def person_since(
+        self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
+        limit: int,
+    ) -> tuple[list[RoomMessage], int]: ...
+
+
+class PersonEvidence:
+    """The dream loop's count and read for a person key (`nora.app.runtime`
+    `_KeyEvidence`): that person's messages across their unit's rooms."""
+
+    def __init__(self, *, store: _PersonMessages, keys: Mapping[str, PersonKey]) -> None:
+        self._store = store
+        self._keys = keys
+        self._population = tuple(sorted(keys))
+
+    def _of(self, key: str) -> tuple[list[tuple[str, str]], str]:
+        pk = self._keys[key]
+        return [(r.platform, r.key) for r in pk.rooms], pk.person.person_id
+
+    async def count(self, *, key: str, after: int) -> int:
+        rooms, person_id = self._of(key)
+        return await self._store.person_count(rooms=rooms, person_id=person_id, after=after)
+
+    async def newest(
+        self, *, key: str, after: int, limit: int,
+    ) -> tuple[Sequence[RoomMessage], int]:
+        rooms, person_id = self._of(key)
+        return await self._store.person_since(
+            rooms=rooms, person_id=person_id, after=after, limit=limit,
+        )
+
+
+class _CultureStore(Protocol):
+    async def head(self, *, key: str) -> CultureRevision | None: ...
+
+    async def append(
+        self, *, key: str, body: str, written_at: int, established_by: str,
+        instruction_sha256: str | None = ..., model: str | None = ...,
+        citations: tuple[str, ...] = ...,
+    ) -> CultureRevision: ...
+
+
+def _room_cultures(
+    rooms: Sequence[CharacterRoom], heads: Sequence[CultureRevision | None],
+    now: datetime,
+) -> ContextBlock | None:
+    """`<room_cultures>`: each room of the unit that has an account, labelled,
+    with its age. `None` when no room has one yet."""
+    rows = [(room, head) for room, head in zip(rooms, heads, strict=True)
+            if head is not None and head.body.strip()]
+    if not rows:
+        return None
+    return ContextBlock(name="room_cultures", **_at("room_cultures"), body=render_elements(
+        rows, tag="room_culture",
+        attrs=lambda pair, _i: (
+            ("room", pair[0].label or "unnamed room"),
+            ("written", age(pair[1].written_at, now)),
+        ),
+        body=lambda pair: pair[1].body,
+    ))
+
+
+class CharacterPersonAdaptor(EntitySessions):
+    """One person's account in one unit, per wake of their own evidence."""
+
+    name = CHARACTER_PERSON_ADAPTOR_NAME
+    #: Not a room and not a unit: the loop asks `keys()` for its population
+    #: and `evidence` for its count (`nora.app.runtime.dream_loop`).
+    key_kind = "entity"
+    uses_watermark = True
+    objective = CHARACTER_PERSON_ADAPTOR_NAME
+    #: Unread: answers through `verbs`, never an envelope.
+    envelope_key = "account"
+    tools: frozenset[str] = CHARACTER_PERSON_TOOLS
+    store_calls_per_tick = PERSON_STORE_CALLS_PER_TICK
+
+    def __init__(
+        self, *, culture: _CultureStore, evidence: PersonEvidence,
+        keys: Mapping[str, PersonKey], metrics: Metrics | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._culture = culture
+        #: Read by the dream loop, never awaited here.
+        self.evidence = evidence
+        self._keys = keys
+        self._population = tuple(sorted(keys))
+        self._metrics = metrics
+        self._clock = clock or (lambda: datetime.now().astimezone())
+        self._sessions_init()
+
+    def keys(self) -> Sequence[str]:
+        return self._population
+
+    def tool_room(self, key: str) -> str | None:
+        pk = self._keys.get(key)
+        return None if pk is None else pk.home
+
+    def _count(self, outcome: str) -> None:
+        _inc_session(self._metrics, "person", outcome)
+
+    async def inputs(self, *, key: str, batch: Sequence[Any]) -> str:
+        """Who this is, the account written last time, the current culture of
+        each of the unit's rooms, and their messages (newest last, each with
+        its Record id and room). `""` with no messages: the runtime then does
+        not call a model."""
+        pk = self._keys.get(key)
+        messages = [m for m in batch if isinstance(m, RoomMessage)]
+        if pk is None or not messages:
+            return ""
+        now = self._clock()
+        labels = {r.key: r.label for r in pk.rooms}
+        self._begin(
+            key, citable=Citable(messages=frozenset(m.row.id for m in messages)),
+            entities={pk.person.name: None}, batch_start=messages[0].row.id,
+        )
+        previous = await self._culture.head(key=key)
+        heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
+        parts: list[ContextBlock | None] = [
+            ContextBlock(
+                name="person", **_at("person"), body="", when_empty="self_close",
+                attrs=(("name", pk.person.name),) + (
+                    (("aliases", ", ".join(pk.person.aliases)),)
+                    if pk.person.aliases else ()
+                ),
+            ),
+            None if previous is None else ContextBlock(
+                name="previous_character", **_at("previous_character"),
+                body=escape(previous.body),
+                attrs=(("written", age(previous.written_at, now)),),
+            ),
+            _room_cultures(pk.rooms, heads, now),
+            ContextBlock(name="person_messages", **_at("person_messages"), body=render_row_window(
+                messages,
+                row_id=lambda m: m.row.id,
+                attrs=lambda m: (("room", labels.get(m.room) or "unnamed room"),),
+                body=lambda m: m.row.body or "",
+            )),
+        ]
+        return assemble([p for p in parts if p is not None], sep="\n\n")
+
+    async def commit(
+        self, *, key: str, proposals: Sequence[Proposal], now_ms: int
+    ) -> int:
+        """Append the staged account under the person's unit key, unless it is
+        byte-identical to the head (`CultureAdaptor.commit`'s rule)."""
+        written = 0
+        for proposal in proposals:
+            payload = proposal.payload
+            if not isinstance(payload, CultureProposal) or payload.person_id is not None:
+                raise TypeError("CharacterPersonAdaptor.commit takes its own account only")
+            previous = await self._culture.head(key=key)
+            if previous is not None and previous.body == payload.body:
+                self._count("unchanged")
+                continue
+            await self._culture.append(
+                key=key, body=payload.body, written_at=now_ms,
+                established_by=proposal.established_by,
+                instruction_sha256=proposal.instruction_sha256,
+                model=proposal.model, citations=payload.citations,
+            )
+            self._count("written")
+            written += 1
+        return written
+
+
+def _inc_session(metrics: Metrics | None, kind: str, outcome: str) -> None:
+    """`nora_character_session_total{kind, outcome}`, refusing a label outside
+    its vocabulary (a typo is a new series, not an error)."""
+    if kind not in CHARACTER_KINDS or outcome not in CHARACTER_OUTCOMES:
+        raise ValueError(f"nora_character_session_total{{{kind}, {outcome}}} is "
+                         f"outside its vocabulary")
+    if metrics is not None:
+        metrics.inc("nora_character_session_total", kind=kind, outcome=outcome)

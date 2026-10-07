@@ -1,11 +1,14 @@
 {
   "type": "change",
-  "summary": "Nora's background account of each room now has to point at the messages it rests on: she writes it through a checked step that refuses a citation she was never shown, and every revision keeps what it cites.",
+  "summary": "Nora keeps one account of each person per group, written when that person has said enough rather than whenever their room is revised, and every account she writes, of a room or a person, has to point at the messages it rests on.",
   "details": [
-    "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried rather than spent.",
-    "What the room account renders as is unchanged."
+    "A person's account is written by its own background pass from what they said across all of the group's rooms, about every 100 messages or weekly; it is shown in that group's rooms that list them.",
+    "The pass may ask her memory about the person, but the account no longer depends on a memory answer fetched beforehand.",
+    "Accounts that existed per room were carried over to the group's account on first start, the newest one for each person.",
+    "A refused write tells her why, so she can correct it in the same pass; a pass that settles nothing is retried rather than spent."
   ],
   "limitations": [
-    "A citation is per account, not per sentence: the check proves the account rests on real messages, not that each line does."
+    "A citation is per account, not per sentence: the check proves an account rests on real messages, not that each line does.",
+    "A person's pass does not read presence (where people were), because the account is shown in rooms whose location settings differ."
   ]
 }
