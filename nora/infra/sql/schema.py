@@ -873,8 +873,9 @@ ROLLUP_TIE = sa.Table(
 )
 
 #: Response (25 §3): how people responded to one thing Nora sent, keyed by
-#: the send's Record id. `intent` is the brief's (`tell`/`ask`) once step 3
-#: records it on the send; NULL is «not recorded». `outcome` is `open` while
+#: the send's Record id. `intent` is the brief's (`tell`/`ask`), read from
+#: the send's `raw_json` where a fire turn's Deliverer wrote it; NULL is «not
+#: recorded» (a tag reply). `outcome` is `open` while
 #: the window runs to the newest Record time, `silent` only when something
 #: was expected and the room's platform was proved up for the window,
 #: `unknown` when it was not.

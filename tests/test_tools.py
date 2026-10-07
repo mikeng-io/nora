@@ -143,7 +143,7 @@ def test_every_declared_tool_is_built(wiring):
         "record_query",
         # design/cognition-loop/25 §5, 50 §2: built here like every closure; only a
         # Dreamer loop is OFFERED them (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read", "standing_read",
+        "rollup_read", "standing_read", "character_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         # `search_memory_workspace` IS built here — `build_tools` builds every

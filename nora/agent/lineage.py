@@ -245,6 +245,7 @@ class LineagePolicy:
             RoomFacts(
                 platform=c.platform, ids=c.ids, unit=c.unit,
                 persons=c.persons, location=c.location, label=c.label,
+                primary_id=c.primary_id,
             )
             for c in policy.conversations
         )

@@ -131,7 +131,11 @@ class Deliverer:
         composer: OutboundComposer | None = None,
         links: LinkCarry | None = None,
         send_permitted: bool = True,
+        intent: str | None = None,
     ) -> None:
+        # The brief's intent (`tell`/`ask`) of a fire turn, written into the raw_json of every
+        # message this Deliverer audits (key `intent`). None is the tag path: a reply has no brief.
+        self._intent = intent
         self._store = store
         self._adapter = adapter
         self._target = target
@@ -542,6 +546,7 @@ class Deliverer:
             body=outbound.text if record_text is None else record_text,
             raw={"tag_id": self._tag_id, "source": source,
                  "doctrine_sha256": self._doctrine_sha256,
+                 **({} if self._intent is None else {"intent": self._intent}),
                  **({} if record_metadata is None else dict(record_metadata))},
             media_blobs=media_blobs,
         )

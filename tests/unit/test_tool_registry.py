@@ -69,6 +69,8 @@ _RECORD = object()
 #: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
 _ROLLUP = object()
 _STANDING = object()
+#: `character_read`'s culture store, never called.
+_CULTURE = object()
 #: The document service, never called: both document tools are offered only when one
 #: is wired (`[documents] enabled`).
 _DOCUMENTS = object()
@@ -152,7 +154,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING,
+        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
         computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
     ))
     assert {t.tool_name for t in tools} == {
@@ -167,7 +169,7 @@ def test_the_registry_exposes_every_declared_tool():
         # under lineage.
         "record_query",
         # design/cognition-loop/25 §5, 50 §2: the Dreamer-only reads.
-        "rollup_read", "standing_read",
+        "rollup_read", "standing_read", "character_read",
         "group_members", "lookup_person", "about", "ask_memory", "search_memory",
         "recall_lookups",
         "calculate", "transit", "route",
@@ -482,7 +484,7 @@ def test_budgets_match_todays_table():
         # trip is the cost); `standing_read` is 1 (the head does not move inside a
         # session's read of one room). A Cognition session raises both per agenda
         # item (`nora.app.cognition_wiring`).
-        "rollup_read": 4, "standing_read": 1,
+        "rollup_read": 4, "standing_read": 1, "character_read": 2,
     }
 
 
@@ -529,7 +531,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING,
+        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
         computer=FakeSandboxRuntime(), documents=_DOCUMENTS,
     ))
     agent = factory.create_agent(
@@ -888,7 +890,7 @@ READ_ONLY = frozenset({
     "note_read", "note_search",
     # design/cognition-loop/25 §5, 50 §2: Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
-    "rollup_read", "standing_read",
+    "rollup_read", "standing_read", "character_read",
     # The unit-wide memory variant — a pure read of a store the tag path
     # already trusts, granted to a unit-keyed adaptor through
     # `UNIT_SAFE_TOOLS`.

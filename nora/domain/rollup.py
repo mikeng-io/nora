@@ -722,8 +722,8 @@ ResponseOutcome = Literal["open", "responded", "silent", "unanswered", "unknown"
 @dataclass(frozen=True)
 class SendFact:
     """One thing Nora sent in a unit room. `named` are the persons its
-    structured mentions resolve to; `intent` is the brief's intent once step 3
-    records it on the send (None until then: «not recorded», never «tell»)."""
+    structured mentions resolve to; `intent` is the brief's intent, read from
+    the send's raw_json (None: «not recorded», never «tell»)."""
 
     id: int
     room: str

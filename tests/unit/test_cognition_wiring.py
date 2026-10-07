@@ -53,6 +53,7 @@ NOW = 1_790_000_000_000
 HOME = Room("signal", "home")
 OTHER = Room("discord", "other")
 READ_ONLY = frozenset(n for n, t in NATIVE_TOOLS.items() if t.read_only)
+FLAGS_ON = {"record_query.enabled", "culture.enabled"}
 
 
 # ---- the read catalogue ------------------------------------------------------
@@ -67,21 +68,21 @@ def test_the_catalogue_is_the_designs_and_names_no_live_social_read():
 
 
 def test_every_tool_the_session_would_wire_exists_and_is_read_only():
-    surface = read_surface(read_only=READ_ONLY, enabled_flags={"record_query.enabled"})
+    surface = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
     assert surface.wired, "positive control"
     assert surface.wired <= READ_ONLY
     assert all(NATIVE_TOOLS[n].read_only for n in surface.wired)
 
 
 def test_the_designs_tools_the_tree_does_not_have_are_named_missing_not_dropped():
-    surface = read_surface(read_only=READ_ONLY, enabled_flags={"record_query.enabled"})
-    assert surface.missing == {"memo_read", "character_read", "social_items"}
+    surface = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
+    assert surface.missing == {"memo_read", "social_items"}
     assert surface.wired | surface.missing == COGNITION_READ_CATALOGUE
 
 
 def test_record_query_is_withheld_until_its_flag_is_on():
     off = read_surface(read_only=READ_ONLY, enabled_flags=())
-    on = read_surface(read_only=READ_ONLY, enabled_flags={"record_query.enabled"})
+    on = read_surface(read_only=READ_ONLY, enabled_flags=FLAGS_ON)
     assert "record_query" in off.withheld and "record_query" not in off.wired
     assert "record_query" in on.wired and not on.withheld
 

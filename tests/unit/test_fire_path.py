@@ -12,6 +12,7 @@ off by the real `limits`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -2397,6 +2398,38 @@ async def test_a_proactive_turn_that_speaks_is_sent_and_counted(
     assert adapter.texts == ["星期六食飯，大家幾點到？"]
     assert metrics.get("nora_proactive_spoke_total", platform="signal") == 1
     assert metrics.get("nora_proactive_silence_total") == 0
+
+
+def _intent_path(persons, doctrine_store, metrics):
+    records = FakeRecordStore()
+    path = FirePath(
+        persons=persons, records=records, memory=FakeMemoryStore(),
+        doctrine_store=doctrine_store, metrics=metrics, runner=FakeAgentRunner([]),
+        adapters={"signal": _FireAdapter()}, registry=ToolRegistry(),
+        canary="test-canary", display_name="Nora", ai_peer="nora",
+        context_window=40, limits=LIMITS, timeout_seconds=5.0, clock=lambda: T0,
+        proactive_runner=FakeAgentRunner(_send_turns("大家幾點到？")),
+        event_registry={"proactive": fire_module.proactive_occasion},
+    )
+    return path, records
+
+
+@pytest.mark.parametrize(("payload_intent", "recorded"), [
+    ("ask", "ask"), ("tell", "tell"),
+    # Rows from before 2026-10-03 hold free text: not an intent, never read as `tell`.
+    ("ask where everyone is coming from before dinner", None),
+])
+async def test_a_proactive_send_records_its_briefs_intent_on_the_sent_row(
+    persons: Persons, doctrine_store, metrics: Metrics, payload_intent, recorded,
+) -> None:
+    path, records = _intent_path(persons, doctrine_store, metrics)
+    row = _proactive_row(payload={"note_title": "dinner", "intent": payload_intent})
+
+    assert await path.run([row]) == fire_module.SENT
+
+    sent = [r for r in records.rows if r["is_nora"]]
+    assert len(sent) == 1
+    assert json.loads(sent[0]["raw_json"]).get("intent") == recorded
 
 
 def _determinations(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
