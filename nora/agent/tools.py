@@ -5561,8 +5561,8 @@ def build_tool_specs(
             _record(metrics, "character_read", "nothing_found", entity=entity)
             return {"status": "nothing_found", "note": _CHARACTER_NONE}
         _record(metrics, "character_read", "ok", entity=entity, accounts=len(accounts))
-        result = {"status": "ok", "entity": entity, "accounts": accounts,
-                  "note": _CHARACTER_OK}
+        result: dict = {"status": "ok", "entity": entity, "accounts": accounts,
+                          "note": _CHARACTER_OK}
         if withheld:
             result["withheld"] = withheld
         return result
