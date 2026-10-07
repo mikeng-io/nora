@@ -25,6 +25,7 @@ Files:
 | `01-vault.md` | OpenBao, the credential record, the fill broker, redaction |
 | `02-research.md` | how Hermes, pi/OpenClaw, CUA and others do it; decision models; GPU |
 | `03-open-questions.md` | what the operator still has to rule on, and what to measure |
+| `04-s1-runbook.md` | S1 on norty: the commands, the pass/fail reading of each, and the results |
 
 ## 0. What exists today (read 2026-10-06)
 
@@ -47,6 +48,25 @@ Files:
   (placeholder substituted by the host proxy) is designed but unused (§8).
 - **Decision 3 (2026-10-01): no browser logins for now.** This bundle asks
   for it to be superseded (ADR 0022).
+- **The host (read on norty 2026-10-07):** a GMKtec NucBox M7 Ultra mini PC,
+  AMD Ryzen 7 PRO 6850U (x86-64, 16 threads), 27 GiB RAM with 15 GiB
+  available, a Radeon 680M iGPU, two USB4 ports, a TPM 2.0 (`/dev/tpm0`).
+  x86-64 means Google Chrome stable installs. There is **no internal slot
+  for a GPU** (§5.3). `nora-computer` runs at 3 GiB / 2 CPUs.
+- **The sbx proxy (read in `nora-computer` 2026-10-07):** HTTP(S) leaves
+  through `gateway.docker.internal:3128` as `CONNECT`. For the allowlisted
+  hosts probed (`pypi.org`, `archive.ubuntu.com`) the VM saw the sites' own
+  certificates (GlobalSign, Let's Encrypt), so **the proxy tunnels TLS
+  rather than terminating it** for a plain host rule. The VM also trusts a
+  proxy CA (`PROXY_CA_CERT_B64`, `proxy-ca.crt` in the system store), which
+  is what placeholder secrets (`secret set-custom`) need: a host with a
+  secret is intercepted (round 2's httpbin probe). HTTP `--method`/`--path`
+  rules need it too (inferred from the help text, not probed).
+- **sbx policy language (`sbx policy allow network --help`, v0.46.0):**
+  hostnames, `*.` and `**.` wildcards, `**` for everything, IPs and CIDRs,
+  ports, TCP by default; deny wins over allow for the same host or CIDR,
+  but **"an allowed hostname isn't checked against CIDR rules for its
+  resolved IP address"** (§3, egress).
 
 ## 1. Operator direction (2026-10-06/07)
 
@@ -105,9 +125,15 @@ and, at the moment of a fill, the one credential value the page needs.
   2. **CDP automation leaks** (`Runtime.enable`, `navigator.webdriver`).
      Every CDP driver has them; Patchright and nodriver patch them. The
      extension-based control OpenCLI uses avoids the class.
-  3. **The sbx egress proxy.** If it terminates TLS for general traffic, the
-     site sees the proxy's TLS fingerprint, not Chrome's: a strong bot signal.
-     **Unknown; S1 measures it** against a TLS fingerprint echo service.
+  3. **The sbx egress proxy.** If it terminated TLS, the site would see the
+     proxy's TLS fingerprint, not Chrome's: a strong bot signal. **For a
+     plain host rule it tunnels** (§0, two hosts read), so Chrome's own
+     ClientHello should reach the site; S1 confirms it with a JA4 echo
+     service. Two rules follow: **never put an sbx secret or an HTTP
+     method/path rule on a host the browser visits** (that host would be
+     intercepted), and launch Chrome with `--proxy-server` pointing at the
+     proxy rather than relying on env vars. QUIC is UDP and the rules are
+     TCP, so Chrome falls back to HTTP/2 over TCP.
   4. **No GPU in the VM:** WebGL reports a software renderer, headed or not.
   5. Behaviour (timing, mouse paths); least important for our volume.
 - **Not every block is avoidable.** Turnstile, hCaptcha and DataDome will
@@ -116,10 +142,25 @@ and, at the moment of a fill, the one credential value the page needs.
   (Firefox, Juggler, not CDP) as a second engine for sites that block Chrome,
   measured as a spike arm (`03-open-questions.md`).
 - **Egress.** Browsing needs the public web. That is a new allowance on the
-  VM that also holds every room's files, so it is a decision (ADR 0022 §2):
-  the browser's traffic goes through sbx's policy with a deny list for
-  private ranges, Nora's own services and the host, and the network half of
-  the audit stays `sbx policy log`.
+  VM that also holds every room's files, so it is a decision (ADR 0022 §2),
+  and **"allow `**`, deny the private ranges" does not do what it says.**
+  sbx checks a CIDR deny against an IP literal, not against what an allowed
+  hostname resolves to. A public name that resolves to `172.17.0.1` or the
+  LAN address (DNS rebinding, or a wildcard-DNS service) would then pass,
+  and on norty that address reaches Ollama (`:11434`, no auth), Langfuse,
+  Neo4j, Prometheus, OmniRoute and the social bridge (`:19826`, no auth),
+  all listening on `0.0.0.0` or docker0 (`ss -ltn`, 2026-10-07). So:
+  - S1 measures it: a name resolving to `172.17.0.1`, to the LAN IP and to
+    `127.0.0.1`, fetched through the proxy under a `**` rule, each by an
+    HTTP body (never a TCP connect, sandbox §9).
+  - If any of them reaches a service, wide egress needs a second fence
+    first: a host firewall rule that drops the proxy's connections to
+    private ranges, or a filtering resolver for the proxy. Which one is
+    possible depends on the user and namespace the proxy connects from
+    (S1 reads it).
+  - The logged-in sandbox does not need the open web at all: its egress is
+    the allowlist of its accounts' hosts (§4).
+  - The network half of the audit stays `sbx policy log`.
 
 ## 4. Where logged-in browsers live
 
@@ -131,11 +172,28 @@ VM has a shell the model drives:
 | **anonymous** | per-scope profiles, no logins, wiped freely | `nora-computer` VM, `/workspace/<scope>/browser/<profile>`, owned by the scope's user |
 | **logged in** | Nora's own accounts (Google, later X/Instagram/LinkedIn via OpenCLI) | a second sbx sandbox, `nora-browser`, which no `computer_run` shell can reach; only computerd's CDP proxy and the broker talk to it |
 
+- **Against sandbox decision 2** (one VM per social unit, #678, not
+  built): anonymous profiles follow the room's VM, whichever grain that
+  is. `nora-browser` is not per unit. It holds Nora's own accounts, so
+  there is one, and its sessions are used for any room under the
+  credential's `scopes` (`01-vault.md` §3).
+- **`nora-browser`'s egress is an allowlist,** not the open web: the hosts
+  its accounts need (for Google, `accounts.google.com` and the
+  `*.google.com` / `*.gstatic.com` / `*.googleusercontent.com` families; B4
+  reads the real list from `sbx policy log` during the hand sign-in). A
+  logged-in browser that cannot reach an attacker's host cannot be steered
+  into handing a session to one.
 - The OpenCLI daemon listens on localhost with no auth. Put it in a VM that a
   room's shell shares and that shell can call it, bypass the bridge's
   allowlist and post as the account. **So OpenCLI moves last, and only into
   `nora-browser`**, with `bridge_server.py` still the one door. Until then
   the host social Chrome stays as it is, and `session_probe` keeps reading it.
+  At B7 the bridge stays on the host and only its runner changes: today it
+  spawns `opencli` locally (`_spawn_opencli`); then it runs the same argv in
+  `nora-browser` (through `sbx exec`, 0.67 s warm in the sandbox spike, or a
+  small agent there). The allowlist still builds the argv host-side, so
+  R-86's three layers hold unchanged. `session_probe` then has to read the
+  cookie file inside the VM.
 - Profiles are never in the nightly tar backup (sandbox §7). A logged-in
   profile's cookies may be snapshotted encrypted through OpenBao transit
   (`01-vault.md` §5), so a recreate is a restore, not a re-login.
@@ -184,8 +242,9 @@ speed (`02-research.md` §4):
   Never a guess.
 - **The picker names a credential handle, never a value.** The broker
   (`01-vault.md`) fills.
-- **Pre-ranker in front.** Every small decision model sees about 20–26
-  options or 3–4k tokens; a real page has 140–580 interactive elements.
+- **Pre-ranker in front.** Every small decision model sees at most 10–26
+  options or a 4k-token context (`02-research.md` §4); a real page has
+  140–580 interactive elements.
   First filter (visible, in viewport, interactive role), then rank (a small
   text ranker in the MindAct style, CPU-cheap) to the top K.
 
@@ -199,7 +258,27 @@ speed (`02-research.md` §4):
   (Holo, Fara, UI-TARS) gets an adapter that maps a click to the mark under it.
 - DeepSeek v4.1 Flash reads it directly, if OmniRoute and the provider pass
   images through: **verify before building on it** (the configured model is
-  `ollamacloud/deepseek-v4-flash:0731`).
+  `ollama-cloud/deepseek-v4-flash:0731` behind the `nora` alias; Ollama's
+  library page calls that model retired since 2026-08-27, `02-research.md`
+  §6, so S1 reads what the route actually does).
+
+### 5.3 Where the decision model runs
+
+norty has no internal slot for a GPU (§0). Three options, in order of
+cost:
+
+1. **CPU, 16 threads.** Tev1-0.8B, Laya and the pre-ranker are small
+   enough. Strands Decider 2B is the question; B3 times it.
+2. **The Radeon 680M iGPU** through llama.cpp's Vulkan backend, for GGUF
+   models. Strands Decider ships its own PyTorch server, and ROCm does not
+   officially support the 680M, so this option may not cover it.
+3. **A desktop card in an external enclosure** on USB4 (present). The
+   weights stay in VRAM, so the tunnel's lower bandwidth costs load time
+   and little per step (reasoning, not measured). 12 GB or more
+   (`02-research.md` §5).
+
+Buy the card only if B3 shows the picker tier wins on fit and CPU latency
+is what stops it.
 
 ## 6. Human hand-off
 
@@ -230,7 +309,7 @@ Two paths, both built eventually:
 
 | step | what | gate |
 |---|---|---|
-| **S1** | Chrome + Xvfb in the image; RSS at 1/3/5 tabs; TLS fingerprint through the sbx proxy; IP reputation of norty's exit | numbers recorded here |
+| **S1** | the runbook in `04-s1-runbook.md`: Chrome + Xvfb RSS, TLS fingerprint through the proxy, rebinding under a `**` rule, exit IP, Flash image passthrough | numbers recorded in `04-s1-runbook.md` §Results |
 | **B0** | ADR 0022 accepted; egress policy for browsing | operator |
 | **B1** | CDP proxy in computerd, scoped per room; screencast relay | tests: a scope reaches only its own browser |
 | **B2** | `computer_browse` + sub-agent, tiers 4 and 5 only (Flash, hand-off) | nora-tool routing measurement |

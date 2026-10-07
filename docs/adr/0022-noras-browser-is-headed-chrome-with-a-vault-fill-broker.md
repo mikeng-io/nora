@@ -28,34 +28,45 @@ driver faster and cheaper than browser-use, a vault for many credentials
 (OpenBao), vision from DeepSeek v4.1 Flash, a small decision model for
 steps, and a view-only stream to the portal.
 
-The research (`design/browser-runtime/02-research.md`, 2026-10-06, much of
-it from search snippets and marked so) found:
+The research (`design/browser-runtime/02-research.md`, 2026-10-06,
+re-verified against primary pages 2026-10-07, each claim marked) and a
+read of norty (`00-design.md` §0, 2026-10-07) found:
 
-- **The core of S4 is what the field does.** Hermes Agent defaults to
-  agent-browser with `@eN` accessibility refs; pi drives CDP from small
-  scripts; OpenClaw uses ARIA refs over Playwright. None is ahead on the
-  core loop.
+- **The core of S4 is what the field does.** Hermes Agent offers
+  agent-browser-style `@eN` snapshots (its default is a Browser Use CLI
+  tool); pi drives CDP from small scripts; OpenClaw drives Playwright behind
+  a loopback service. None is ahead on the core loop.
 - **Where they are ahead is around it:** a password-blind credential fill,
-  action caching (Stagehand v3, about 2x faster on repeats, S), a headed
+  action caching (Stagehand, "up to 2x faster" on repeats), a headed
   mode for a human hand-off, and a vision fallback.
 - **The failure to design against is Hermes's:** its vault filled a
-  password the model never saw, and a JS-eval tool read it back out of the
-  page into the state database (issue #112693). Redaction at one tool is not
-  a boundary.
-- **Blocks are decided mostly by exit IP and CDP leaks,** not headless mode;
-  the sbx proxy may change Chrome's TLS fingerprint (unmeasured).
+  password the model never saw, and its default `browser_exec` tool, the
+  one path its redactor did not cover, read it back out of the page into
+  the state database (issue #112693, fixed by #113261). Redaction per tool
+  is not a boundary.
+- **Blocks are decided mostly by exit IP and CDP leaks,** not headless mode.
+  The sbx proxy tunnels TLS for a plain host rule (two hosts read), so
+  Chrome's own fingerprint should reach the site; S1 confirms it.
+- **sbx cannot express "the web minus private ranges":** a CIDR deny is not
+  checked against an allowed hostname's resolved address (its own help
+  text), and Ollama, Langfuse, Neo4j, Prometheus, OmniRoute and the social
+  bridge listen where a rebinding name would land.
 - **Small decision models** now exist that return a choice and a confidence
   in one pass (Strands Decider 2B, Tev1, Laya, cua-s1; Jev is hosted only).
-  All see about 20–26 options or 3–4k tokens; a page has hundreds of
-  elements.
+  Each sees at most 10–26 options or a 4k-token context; a page has
+  hundreds of elements, so a pre-ranker goes in front.
+- **norty is a mini PC** (Ryzen 7 PRO 6850U, x86-64, 27 GiB, no internal GPU
+  slot), so Google Chrome installs, and a GPU means an external enclosure.
 
 ## Decision
 
 1. **Real Google Chrome, headed on Xvfb, inside sbx.** Not `--headless`.
    noVNC and a CDP screencast make the display watchable and takeable.
-2. **Browsing egress is allowed** from the browser's sandbox through sbx
-   policy, with a deny list for private ranges, the host and Nora's own
-   services. The exact policy is the B0 ruling (`03-open-questions.md` §1).
+2. **Browsing egress is allowed only where it is fenced.** The logged-in
+   sandbox reaches only its accounts' hosts. The anonymous sandbox reaches
+   the public web only once S1 shows that a name resolving to a private or
+   loopback address is refused, or a host-side fence makes it so. The
+   exact policy is the B0 ruling (`03-open-questions.md` §1).
 3. **Credentials live in OpenBao and reach a page only through the fill
    broker.** Transit encrypts credential records stored in Postgres, TOTP
    generates 2FA codes, and the broker (outside the VM) fills by CDP after
@@ -95,7 +106,7 @@ it from search snippets and marked so) found:
   untrusted input to a model with tools, and the VM can now reach the
   internet.
 - **A second VM** (`nora-browser`) costs memory on a host the design notes has
-  about 10 GB free, plus its own lifecycle and backup story.
+  15 GiB available (2026-10-07), plus its own lifecycle and backup story.
 - **OpenBao is new infrastructure to run:** unseal after every reboot (fills
   are `unavailable` until the operator unseals), upgrades, its own audit log.
 - **Credential values do enter the VM** at fill time, inside the page; a

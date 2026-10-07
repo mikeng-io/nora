@@ -15,9 +15,10 @@ process environment.
 The harder half is not storage. It is **keeping the value out of the
 model**: out of the prompt, the tool arguments, the tool results, Langfuse
 traces, `computer_events`, and any page read after the fill. Hermes Agent
-built a password-blind vault and still leaked: a JS-eval tool read the
-filled field back in plaintext into its state database (issue #112693,
-closed; `02-research.md` §1). The store is the easy part.
+built a password-blind vault and still leaked: its default `browser_exec`
+tool, the one path without the redactor its CDP tool had, read the filled
+field back in plaintext into its state database (issue #112693, fixed by
+PR #113261; `02-research.md` §1). The store is the easy part.
 
 ## 2. OpenBao
 
@@ -35,8 +36,9 @@ closed; `02-research.md` §1). The store is the easy part.
     record table because it splits the record from Nora's own audit, kept
     possible for the few service API keys that sbx substitutes.
 - **Unseal.** A sealed OpenBao after every reboot is the cost. Manual unseal
-  by the operator is the default; auto-unseal (TPM or a cloud KMS) is a later
-  decision. An unseal key on norty's own disk defeats the point and is
+  by the operator is the default; auto-unseal is a later decision. OpenBao
+  has no TPM seal (`02-research.md` §6): norty's TPM would go through the
+  PKCS#11 seal (untested), and a cloud KMS puts the unseal on a third party. An unseal key on norty's own disk defeats the point and is
   rejected. While sealed, every fill is `unavailable`, never a fallback.
 - **Audit device** on, to a file the host rotates; plus a Postgres row per
   decrypt (who, which handle, which scope, which origin, approved by).
