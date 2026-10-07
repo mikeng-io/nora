@@ -28,7 +28,7 @@ from nora.domain.models import PersonRef
 from nora.domain.ports import MemoryStore
 from nora.persons import Persons
 
-# Generous relative to the tagger/self cards' small caps (nora/engagement/
+# Generous relative to the tagger card's small cap (nora/engagement/
 # context.py uses 3-5) because this is the ONE place a person's whole
 # showcased history renders at once, not a per-turn prefill budget.
 _MAX_CONCLUSIONS = 20

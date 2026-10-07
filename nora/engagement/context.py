@@ -25,7 +25,7 @@ from typing import Any, Protocol
 
 from nora.agent.lineage import LineagePolicy
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision, unit_culture_key
+from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
 from nora.domain.documents_context import DocumentsView
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import (
@@ -98,7 +98,6 @@ class TranscriptInjection:
         metrics: Any,
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
-        self_card_conclusions: int = 0,
         tagger_card_conclusions: int = 0,
         notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
@@ -118,7 +117,6 @@ class TranscriptInjection:
         self._quote_window = quote_window
         self._metrics = metrics
         self._ai_peer = ai_peer
-        self._self_card_conclusions = self_card_conclusions
         self._tagger_card_conclusions = tagger_card_conclusions
         # `notes` is `None` while `[notes] enabled = false` — the note tier
         # ships dormant, the same "not yet configured" shape `ai_peer=""`
@@ -229,23 +227,24 @@ class TranscriptInjection:
         # `<culture>` (DEC-207) is the eighth, and joins the OUTER gather for
         # the same overload reason `<presence>` does.
         (
-            (transcript, card, self_card, tagger_card, standing, notes),
+            (transcript, card, tagger_card, standing, notes),
             presence,
             culture,
-            (character, unit_culture),
+            (character, unit_culture, self_account),
             (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._recent(msg),
                 self._peer_card(ref, msg),
-                self._recall_self(msg),
                 self._recall_tagger(ref, msg),
                 self._standing(msg),
                 self._notes(msg),
             ),
             self._presence(msg),
             self._culture(msg),
-            asyncio.gather(self._character(msg), self._unit_culture(msg)),
+            asyncio.gather(
+                self._character(msg), self._unit_culture(msg), self._self_account(msg),
+            ),
             asyncio.gather(
                 self._computer(msg),
                 self._documents(msg),
@@ -280,7 +279,6 @@ class TranscriptInjection:
             transcript=transcript,
             peer_card=card,
             started_at=time.perf_counter(),
-            self_card=self_card,
             tagger_card=tagger_card,
             notes=notes,
             standing=standing,
@@ -288,6 +286,7 @@ class TranscriptInjection:
             culture=culture,
             character=character,
             unit_culture=unit_culture,
+            self_account=self_account,
             computer=computer,
             documents=documents,
             subagents=subagents,
@@ -373,6 +372,26 @@ class TranscriptInjection:
             traced_read("culture", "head", self._culture_reader.head(
                 key=unit_culture_key(convo.unit))),
             stage="tag_unit_culture", platform=msg.platform, metrics=self._metrics,
+        )
+
+    async def _self_account(self, msg: NormalizedMessage) -> CultureRevision | None:
+        """Her own account in this room's UNIT (design/self-growth/20), keyed
+        `nora_character_key(unit)`. Bounded, fail-soft and counted
+        (`stage="tag_self"`) by `read_culture`, like `_unit_culture`; `None`
+        when the unit has no account or the room may not show it
+        (`Policy.shows_self_in`), so no `<self>` block renders."""
+        if self._culture_reader is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.unit:
+            return None
+        # R-31: unit-wide, written from location rooms' sends too.
+        if not self._policy.shows_self_in(msg.platform, msg.conversation_id):
+            return None
+        return await read_culture(
+            traced_read("culture", "head", self._culture_reader.head(
+                key=nora_character_key(convo.unit))),
+            stage="tag_self", platform=msg.platform, metrics=self._metrics,
         )
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
@@ -521,10 +540,11 @@ class TranscriptInjection:
         just spoke in it. So this surfaces nothing she could not already have
         asked for about this person, in this room, on this turn.
 
-        Fail-open and silent for `_recall_self`'s reason, which applies with
-        more force here: this is background she may draw on, never the ground
-        for a claim. `about` remains the path for anything she will actually
-        assert, and it reports `unavailable` honestly.
+        Fail-open and silent, deliberately: an unreachable Honcho yields no
+        block rather than a note saying she cannot remember. This is
+        background she may draw on, never the ground for a claim. `about`
+        remains the path for anything she will actually assert, and it
+        reports `unavailable` honestly.
         """
         if ref is None or not self._ai_peer or self._tagger_card_conclusions <= 0:
             return ()
@@ -549,54 +569,6 @@ class TranscriptInjection:
         if not recall.reachable:
             self._metrics.inc(
                 "nora_errors_total", stage="tagger_card", platform=msg.platform)
-            return ()
-        return recall.conclusions
-
-    async def _recall_self(self, msg: NormalizedMessage) -> tuple[str, ...]:
-        """What Honcho concluded about NORA, curated to THIS message.
-
-        The `representation` verb with `target=None`, i.e. observer==observed —
-        her own model of herself, built from what she has said in this
-        room's unit (its named scope, DEC-214). NOT `peer_card`: the card
-        renders the same history as IDENTITY claims, and hers currently
-        asserts «Kind: AI chatbot/assistant» and an owner with «admin
-        authority», both of which contradict
-        `identity.md` and would win on injection because a learned claim reads
-        as evidence next to an authored one.
-
-        `search_query` is the inbound text, so the conclusions are the ones
-        RELEVANT to what was just asked rather than the newest N — a promise
-        about tomorrow morning surfaces when somebody mentions tomorrow, which
-        is the only time it is worth its tokens.
-
-        Fail-open and SILENT-open, deliberately, and this is the one place in
-        the repo where that is right: an unreachable Honcho yields no block at
-        all rather than a note saying she cannot remember. R-27's three states
-        govern CLAIMS — this is not a claim she will make, it is background she
-        may draw on, so «I could not check» has nothing to be reported about.
-        The failure surfaces on `nora_errors_total{stage="self_card"}` instead,
-        where it is an operator's problem rather than the group's.
-        """
-        if not self._ai_peer or self._self_card_conclusions <= 0:
-            return ()
-        try:
-            recall = await traced_read(
-                "memory", "representation", self._memory.representation(
-                    peer_id=self._ai_peer,
-                    search_query=msg.body or "",
-                    max_conclusions=self._self_card_conclusions,
-                    conversation_id=msg.conversation_id,
-                ),
-                count=lambda r: len(r.conclusions),
-            )
-        except Exception:
-            log.exception("self-card recall failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="self_card", platform=msg.platform)
-            return ()
-        if not recall.reachable:
-            self._metrics.inc(
-                "nora_errors_total", stage="self_card", platform=msg.platform)
             return ()
         return recall.conclusions
 

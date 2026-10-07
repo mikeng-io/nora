@@ -83,34 +83,13 @@ base_url = "http://127.0.0.1:8000"
 # carry Nora's `nora_owner` marker (or be absent or empty, and then claimed),
 # because this one holds every deployment's history from before the marker.
 workspace_id = "nora"
-# `<self_card>` — how many of HER OWN conclusions ride in the prefill, so a
-# promise she made last night survives falling out of the transcript window.
-# 0 turns the block off.
-#
-# TWO turns since issue #210: the tag turn, and the participation turn behind
-# the ambient gate. The arithmetic below is the tag loop's and is the binding
-# one (`turns = 20` against a participation turn's single pass), so 8 is if
-# anything conservative on the ambient path. It is deliberately NOT the number
-# `people_in_window_conclusions` takes: that one is multiplied by up to four
-# speakers and this one is not. From `representation`, never from the peer
-# CARD: read live 2026-08-11 her card asserts «Kind: AI chatbot/assistant» and
-# «Owner: 主人 with admin authority» — both distilled from her own output, both
-# contradicting identity.md, and both would WIN against the doctrine because a
-# concrete observation outranks a prescription in practice.
-#
-# 8, not 25. This block is per-tag, so it is re-sent on every model call of the
-# loop rather than living in the cached static head: 25 conclusions measured
-# 2,459 chars (~820 tokens), which at `turns = 20` is ~16k of the 128k budget.
-# Eight measured ~1,080 chars.
-self_card_conclusions = 8
 # `<peer_history>` — how many of her conclusions ABOUT THE TAGGER ride in the
 # per-tag prefill. 0 disables the block. NOT a duplicate of `<peer_card>`: read
 # live 2026-08-15 the two shared ZERO items — the card renders IDENTITY claims,
 # the representation states dated episodes. Who they are, and what happened.
 #
-# Same per-tag arithmetic as `self_card_conclusions`: 8 (~360 tokens) is ~7.2k
-# of the 128k budget at `turns = 20`. Raising BOTH to 16 spends ~29k before
-# anybody has said anything — measure a real turn's total_tokens first.
+# Per-tag arithmetic: 8 (~360 tokens) is ~7.2k of the 128k budget at
+# `turns = 20`; measure a real turn's total_tokens before raising it.
 tagger_card_conclusions = 8
 # `<people_in_window>` on the PARTICIPATION turn (issue #210) — how many of her
 # conclusions ABOUT EACH SPEAKER in the quiescence window ride in the prompt,
@@ -118,7 +97,7 @@ tagger_card_conclusions = 8
 # Either at 0 turns the block off.
 #
 # Why the block exists: the participation occasion is built `person_id=None`,
-# so until #210 `peer_card`, `<self_card>` and `<peer_history>` were ALL empty
+# so until #210 `peer_card` and `<peer_history>` were both empty
 # on every ambient turn — the one decider design 36 §6 describes as holding
 # «notes and the peer card» behind a blind gate knew the room by display name
 # and nothing else. Its question is not about one person (that is the tagger,
@@ -1494,8 +1473,9 @@ enabled = false
 # and fire turn then carries a <character> block of the accounts of the people
 # that room lists, and a <unit_culture> block (what the unit is across its
 # rooms, written by the unit's own session). Nora's own account per unit is
-# written too, from the episodes people responded to (at least three cited),
-# and nothing renders it yet. No separate switch: `enabled` turns on all.
+# written too, from the episodes people responded to (at least three cited), and rendered as a <self>
+# block first in every tag, fire and Cognition prompt. No separate switch:
+# `enabled` turns on all, so it also adds <self> to every one of those prompts.
 enabled = false
 # New human messages in a room that wake its fold at once (DEC-288). Sized
 # from 14 days on the deploy host: the busiest room reaches 200 about every 4

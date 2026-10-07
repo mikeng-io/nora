@@ -82,7 +82,6 @@ def build_assembler(
         # the plain `context_window` fetch, no quote-aware growth.
         quote_window=quote_window,
         ai_peer=cfg.memory.ai_peer,
-        self_card_conclusions=cfg.memory.self_card_conclusions,
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
         standing=standing,

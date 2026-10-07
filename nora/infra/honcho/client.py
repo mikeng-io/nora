@@ -43,7 +43,7 @@ log = logging.getLogger("nora.honcho")
 # THE STRIP STAYS — this is A2 of the 2026-08-20 prompt-architecture audit,
 # decided rather than inherited. F2 found the real cost of it: `[2026-08-19
 # 10:17:08] nora agreed to speak all Chinese after miles_novak requested.` reaches
-# the model undated inside `<self_card>` and reads as a standing directive, a
+# the model undated inside the prompt and reads as a standing directive, a
 # one-time in-conversation request made permanent in under three minutes. The
 # audit offered two fixes and this is the second of them.
 #
@@ -57,9 +57,9 @@ log = logging.getLogger("nora.honcho")
 # the precision is the worse failure of the two.
 #
 # So the honest statement is «undated», and it is made where the line is
-# rendered: `nora.agent.prefill._self_card_block` / `._peer_history_block` say
-# so in the block note. Anyone re-litigating the strip must read those two
-# first — dropping the note is what re-opens F2, not touching this regex.
+# rendered: `nora.agent.prefill._peer_history_block` says so in the block note.
+# Anyone re-litigating the strip must read that first — dropping the note
+# is what re-opens F2, not touching this regex.
 _STAMP = re.compile(r"^\[[^\]]*\]\s*")
 # `[id:abc123] ` — only emitted for `include_ids=True`, which this client never
 # asks for. Stripped anyway: it costs one regex and the alternative, if the
@@ -970,7 +970,7 @@ class HonchoClient:
         async with self._peer_lock(f"conv:{conversation_id}"):
             # Nora joins every session as an OBSERVER (observe_others=True), so
             # the deriver builds her model of each human who speaks here; and as
-            # observable herself (observe_me=True) so her own self-card can form.
+            # observable herself (observe_me=True) so her own model of herself can form.
             # Without this the (nora → person) pair is never derived and every
             # recall reads empty — proven live 2026-08-07 (design/24 §4).
             #

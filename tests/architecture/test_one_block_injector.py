@@ -192,7 +192,6 @@ CONVERTED = (
     "nora/language/culture_render.py",
     "nora/language/note_render.py",
     "nora/language/presence_render.py",
-    "nora/language/self_card_render.py",
     "nora/language/standing_render.py",
     "nora/engagement/debrief_render.py",
     "nora/infra/transit/arrivals.py",

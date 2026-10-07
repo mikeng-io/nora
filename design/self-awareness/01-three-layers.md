@@ -13,9 +13,10 @@ than one platform, and the same you is in all of them."* That sentence is
 true for as long as she exists. It is the right thing to put in a cached
 prefix, and nothing in this bundle edits it.
 
-`self_card` is not this layer either. It is episodic memory, Honcho's
-conclusions about what she has said and done, *"not a description of who she
-is"* (`nora/language/self_card_render.py`). It stays what it is.
+`self_card` was not this layer either. It was episodic memory, Honcho's
+conclusions about what she had said and done, *"not a description of who she
+is"*. It left the tag and fire prompts when the `<self>` block (her Character ·
+Nora account, `design/self-growth/20-self-block.md`) landed.
 
 ## Where: generated from the room table and adapter health
 

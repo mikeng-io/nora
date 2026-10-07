@@ -146,7 +146,12 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import CultureRevision, character_key, unit_culture_key
+from nora.domain.culture import (
+    CultureRevision,
+    character_key,
+    nora_character_key,
+    unit_culture_key,
+)
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
@@ -252,6 +257,11 @@ class Snapshot:
     #: `<character>` renders for the persons the room lists.
     characters: tuple[tuple[str, CultureRevision], ...] = ()
 
+    #: Her own account in this unit as it stood at `before_ms`
+    #: (`nora_character_key(unit)`), what `<self>` renders; `None` when it had
+    #: none (design/self-growth/20).
+    nora_account: CultureRevision | None = None
+
 
 async def snapshot(
     engine: AsyncEngine,
@@ -328,6 +338,9 @@ async def snapshot(
         unit_culture = await _culture(
             engine, culture_key=unit_culture_key(unit), before_ms=before_ms,
         )
+        nora_account = await _culture(
+            engine, culture_key=nora_character_key(unit), before_ms=before_ms,
+        )
         characters: list[tuple[str, CultureRevision]] = []
         for person_id in person_ids:
             account = await _culture(
@@ -365,6 +378,7 @@ async def snapshot(
         reminders=reminders,
         unit_culture=unit_culture,
         characters=tuple(characters),
+        nora_account=nora_account,
     )
 
 

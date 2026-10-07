@@ -654,7 +654,7 @@ def render_decisions(
     rendered — see `decision_line` for what that is for and what it is not. A
     room is named by its policy label or not at all,
     and `writer`/`verdict` are this module's own closed vocabularies. Every
-    field is escaped anyway, exactly like `<self_card>` one layer up.
+    field is escaped anyway, exactly like `<peer_history>` one layer up.
 
     `groups` is `(label, rows)` so one call serves both readers, each of which
     labels a row with the room it was decided in.

@@ -257,6 +257,31 @@ class Policy:
     def conversation(self, platform: str, conversation_id: str) -> Conversation | None:
         return self._by_id.get((platform, conversation_id))
 
+    def _location_flags(self, unit: str) -> set[bool]:
+        return {c.location for c in self.conversations if c.unit == unit}
+
+    def shows_self_in(self, platform: str, conversation_id: str) -> bool:
+        """Whether her unit-wide account (`<self>`) may render in this room
+        (design/self-growth/20, R-31). The account is written from her sends in
+        every room of the unit, including rooms with `location` on, where she
+        may have answered where someone is. So a room renders it only if it
+        has `location = true` itself (its audience already holds that trust),
+        or no room of its unit has (then no send came from a location room). A
+        location-off room of a mixed unit does not: no block, not an empty one.
+        An unknown room does not."""
+        convo = self.conversation(platform, conversation_id)
+        if convo is None or not convo.unit:
+            return False
+        return convo.location or True not in self._location_flags(convo.unit)
+
+    def shows_self_to_unit(self, unit: str) -> bool:
+        """Whether `<self>` may render in a unit-scoped prompt (a Cognition
+        session, whose agenda may span rooms and whose sends can reach any
+        room of the unit): only when every room of the unit agrees on
+        `location`, so the account is never shown where a location-off room
+        could be the audience."""
+        return len(self._location_flags(unit)) == 1
+
     def workspace_of(self, unit: str) -> str | None:
         """The Nora workspace `unit` belongs to, or `None` when the file
         declares `[units]` and this unit is not in it.

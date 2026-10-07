@@ -29,8 +29,8 @@ store and revision chain:
   and its outcome. It cites episodes people responded to (`response:<id>`,
   outcome `responded` or `silent`) or the replies, and the verb enforces the ECHO
   RULE (10-tiers §2 rule 4): a revision resting only on her own sends is
-  refused. Descriptive only, no read tool, and NO block yet: the self block
-  is design/self-growth/20, a later step.
+  refused. Descriptive only, no read tool; rendered as `<self>`
+  (design/self-growth/20).
 
 **Code at the edges, an agent loop in the middle** (§3.1): code counts the
 evidence, wakes the key, hands over the previous account and what is new, and
@@ -565,7 +565,7 @@ class NoraEvidence:
 
 class CharacterNoraAdaptor(EntitySessions):
     """Her own account in one unit, from how its people responded to her
-    (C3b). Writes only; nothing renders it yet."""
+    (C3b). Writes only; `<self>` renders it (design/self-growth/20)."""
 
     name = CHARACTER_NORA_ADAPTOR_NAME
     key_kind = "entity"

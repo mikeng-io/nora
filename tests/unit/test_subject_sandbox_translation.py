@@ -238,12 +238,15 @@ def test_the_unit_and_person_accounts_are_seeded_at_the_age_they_had() -> None:
 
     knowledge = as_knowledge(_shot(
         unit_culture=account("friends#unit", "a close group", 30),
+        nora_account=account("friends#nora", "she keeps it short", 3),
         characters=(("ada", account("friends#character:ada", "Ada plans", 5)),),
     ))
 
     assert knowledge.unit_culture == AccountSeed(body="a close group", age_hours=30.0)
     assert knowledge.characters == {"ada": AccountSeed(body="Ada plans", age_hours=5.0)}
+    assert knowledge.nora_account == AccountSeed(body="she keeps it short", age_hours=3.0)
     assert as_knowledge(_shot()).unit_culture is None
+    assert as_knowledge(_shot()).nora_account is None
     assert as_knowledge(_shot()).characters == {}
 
 

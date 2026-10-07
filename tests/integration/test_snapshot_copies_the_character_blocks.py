@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from evals.backbone import _close
-from nora.domain.culture import character_key, unit_culture_key
+from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
@@ -72,6 +72,9 @@ async def source(pg_url: str, pg_template: str, tmp_path: Any, monkeypatch: Any)
 
         await write(unit_culture_key(UNIT), "a close group of cyclists", BEFORE_MS - 5 * HOUR)
         await write(unit_culture_key(UNIT), "AFTER: the unit changed", BEFORE_MS + HOUR)
+        await write(nora_character_key(UNIT), "she answers short and dry", BEFORE_MS - 3 * HOUR)
+        await write(nora_character_key(UNIT), "AFTER: she changed", BEFORE_MS + HOUR)
+        await write(nora_character_key("elsewhere"), "OTHER UNIT: her", BEFORE_MS - HOUR)
         await write(character_key(UNIT, "miles_novak"), "Miles plans, then waits", BEFORE_MS - 2 * HOUR)
         await write(character_key(UNIT, "miles_novak"), "AFTER: Miles stopped", BEFORE_MS + HOUR)
         # The room does not list Bo, and Miles's account in another unit is not
@@ -112,6 +115,8 @@ async def test_an_eval_turn_carries_the_unit_and_person_accounts_as_of_then(
 
     assert "a close group of cyclists" in blocks["unit_culture"]
     assert 'written="5h ago"' in blocks["unit_culture"], blocks["unit_culture"]
+    assert "she answers short and dry" in blocks["self"]
+    assert 'written="3h ago"' in blocks["self"], blocks["self"]
     assert '<person_account name="Miles" written="2h ago"' in blocks["character"]
     assert "Miles plans, then waits" in blocks["character"]
     rendered = "\n".join(blocks.values())

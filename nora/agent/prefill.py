@@ -32,12 +32,12 @@ from ..language.computer_render import render_computer
 from ..language.culture_render import (
     render_character,
     render_culture,
+    render_self,
     render_unit_culture,
 )
 from ..language.documents_render import render_documents
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
-from ..language.self_card_render import render_self_card
 from ..language.standing_render import render_standing, render_standing_working_set
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
@@ -124,6 +124,14 @@ def _now_line(now: datetime | None) -> str:
 #: message rather than the cached head. `BlockKey`'s docstring argues that rule
 #: and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    # WHO SHE IS HERE (design/self-growth/20): her own Character · Nora for
+    # this unit, first in the block message, directly after the doctrine (which
+    # is the system prompt, read before this message) so the doctrine is read
+    # first and wins (design/cognition-loop/55-self.md §3). `unit`: it varies by
+    # the room's unit. The row is unconditional; the block renders only where
+    # `TagContext.self_account` is filled, and a unit with no account renders
+    # none.
+    ("self", 1, "unit"),
     # design/tool-catalogue phase C. Ahead of `presence`, because it is the
     # steadier of the two: it varies by the room's tool SCOPE (a Discord room carries the
     # music verbs, a Signal room does not), never by the turn or the person.
@@ -142,7 +150,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # between two turns in the same room, which is why it is read at turn
     # start and never cached.
     ("presence", 5, "turn"),
-    ("self_card", 10, "person"),
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
@@ -619,47 +626,6 @@ def _peer_card_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
-def _self_card_block(ctx: TagContext) -> ContextBlock | None:
-    """What she said and did before — episodic continuity, not self-description.
-
-    The attribute name and the framing line are the whole safety property here,
-    and they are worth more than the content. These conclusions are distilled
-    from HER OWN output and nothing verified them, so the repo's «no
-    self-attestation» rule applies exactly: done is never decided by the doer.
-    Presented as «this is who you are» they would compete with `voice.md` and
-    win, because a concrete observation beats a prescription. Presented as «you
-    said this», they are a record — the same kind of thing as the transcript,
-    at the same authority, and she can contradict one if she wants to.
-
-    Which is also why the block sits BESIDE `group_transcript` rather than
-    anywhere near the doctrine: it is situation-tier, below every authored file.
-
-    **The note now carries a THIRD clause, and it is the whole of A2.** The
-    conclusions arrive here with their leading timestamp stripped
-    (`nora.infra.honcho.client._STAMP` — read that comment before touching
-    this), so a line reads as a timeless fact:
-
-        stored:   [2026-08-19 10:17:08] nora agreed to speak all Chinese after
-                  miles_novak requested.
-        injected: - nora agreed to speak all Chinese after miles_novak requested.
-
-    A one-time request became a permanent standing directive in under three
-    minutes. The old note said only «a record of the past… you may contradict
-    any of it», and **permission is not prohibition**: nothing in it marked the
-    line as spent. The fix is stated here rather than by restoring the date,
-    because the stamp is BATCH-level — one live peer's 102 documents carry six
-    distinct stamps, one shared by 77 — and it is destroyed before this module
-    can see it: `Recollection.conclusions` is `tuple[str, ...]`, so restoring a
-    date would mean widening the port to carry a number that is not the fact's
-    own date and would be read as if it were. Saying «undated» is the true
-    statement, and it is the one that closes the failure.
-    """
-    block = render_self_card(ctx.self_card)
-    if block is None:
-        return None
-    return _block("self_card", body=block.body)
-
-
 def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     """What happened with the person talking — episodes, beside their card.
 
@@ -675,12 +641,28 @@ def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
     is told she may be wrong about them, because the failure mode this block
     invites is confidently telling somebody what they think.
 
-    Situation-tier, below every authored file, for `_self_card_block`'s reason.
+    Situation-tier, below every authored file: conclusions distilled from
+    what was said are a record, at the same authority as the transcript, and
+    nothing verified them.
 
-    Fed by the same stripped-stamp path as `self_card`, so it takes the same
-    «undated, therefore not standing» clause for the same reason — see
-    `_self_card_block`'s docstring for the argument and for why the date is not
-    restored instead.
+    **Its note carries a clause that says every line is undated and none of it
+    is a standing instruction, and that clause is the whole of A2.** The
+    conclusions arrive with their leading timestamp stripped
+    (`nora.infra.honcho.client._STAMP` — read that comment before touching
+    this), so a line reads as a timeless fact:
+
+        stored:   [2026-08-19 10:17:08] nora agreed to speak all Chinese after
+                  miles_novak requested.
+        injected: - nora agreed to speak all Chinese after miles_novak requested.
+
+    A one-time request became a permanent standing directive in under three
+    minutes. **Permission is not prohibition**: «you may contradict any of it»
+    did not mark the line as spent. The fix is stated rather than the date
+    restored, because the stamp is BATCH-level — one live peer's 102 documents
+    carry six distinct stamps, one shared by 77 — and it is destroyed before
+    this module can see it (`Recollection.conclusions` is `tuple[str, ...]`),
+    so a restored date would be a number that is not the fact's own date and
+    would be read as if it were. Saying «undated» is the true statement.
     """
     if not ctx.tagger_card:
         return None
@@ -736,14 +718,14 @@ def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
       directly above a transcript of what they DID say just now, which is
       exactly the confusion it has to pre-empt.
     - *every line is undated and none of it is current … not a standing
-      instruction* — A2, and read `_self_card_block`'s docstring for the
+      instruction* — A2, and read `_peer_history_block`'s docstring for the
       three-minute incident that put that clause in the prompt. The conclusions
       arrive here through the same stripped-stamp path, so a line reads as a
       timeless fact unless the note says otherwise. A room that jokingly called
       her 管理員 last week is a RECORD of a joke; it is not an order standing
       today, and the difference is this sentence.
 
-    Situation-tier, below every authored file, for `_self_card_block`'s reason.
+    Situation-tier, below every authored file, for `_peer_history_block`'s reason.
     One `<person>` row per speaker, name-attributed like `<peer_card>` — the
     name is `PersonRef.name`, operator-authored, never a platform id (R-18).
     """
@@ -870,7 +852,7 @@ def _standing_block(
 
     **It sits LAST, immediately before the transcript, and that breaks the
     widening-scope order the blocks above it follow on purpose.** Every block
-    from `<self_card>` to `<notes>` widens — her past, then theirs, then the
+    from `<self>` to `<notes>` widens — her own account, then theirs, then the
     room's slang, then the unit's settled claims, then its open questions.
     Standing is the narrowest thing in the prompt (one conversation, not even a
     unit), so on scope alone it would sit at the front. It sits at the back
@@ -959,7 +941,7 @@ def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
 
     **An empty block is not rendered, and that is a deliberate difference from
     `render_decisions`' own default.** Its siblings here — `<notes>`,
-    `<standing>`, `<self_card>` — all emit nothing rather than emit an
+    `<standing>`, `<self>` — all emit nothing rather than emit an
     "(empty)" line, and the reason is the prefix cache: a block that appears on
     every turn whether or not it has content is a block every turn pays for.
     The renderer's `empty` text is for a caller that has ONE block and needs
@@ -1050,8 +1032,8 @@ def build_prefill(
             # what the context assembler read.
             _block("tool_catalogue", body=catalogue) if catalogue else None,
             _room_members_block(ctx),
+            _restamp(render_self(ctx.self_account, now=clock)),
             _restamp(_presence_block(ctx)),
-            _self_card_block(ctx),
             _peer_card_block(ctx),
             _peer_history_block(ctx),
             _people_in_window_block(ctx),

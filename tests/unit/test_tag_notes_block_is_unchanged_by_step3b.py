@@ -45,7 +45,7 @@ def _note(n: int, title: str, description: str, **kw: object) -> Note:
 def _block(notes: tuple[Note, ...]) -> str:
     """The `<notes>` block of one tag turn's prefill, or `""` when there is none."""
     msg = NormalizedMessage("signal", "g1", "group", "+852111", "Miles", 1, "hi", {})
-    ctx = TagContext("tag-1", msg, None, (), (), 0.0, (), notes=notes)
+    ctx = TagContext("tag-1", msg, None, (), (), 0.0, notes=notes)
     text = "\n".join(m["content"][0]["text"] for m in build_prefill(
         ctx, display_name="Nora", context_window=40,
         # `<notes>` reads each anchor against this day, so it is pinned.

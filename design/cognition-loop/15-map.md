@@ -74,7 +74,7 @@ section only where its lineage passes for the room ([10](10-tiers.md) §3).
 | **`self`** (new, step 8) | Character · Nora | Nora | tag, fire, cognition, after the doctrine and below it; her whole account ([55](55-self.md) §3) | capped in lines |
 | **`lessons`** (new, step 8) | Lessons | the unit | tag, fire, cognition, after the doctrine and below it | the unit's lessons, under a hard size cap ([50](50-character-and-standing.md) §6) |
 | `standing`, `standing_working_set` | Standing · room | a room | tag, fire | as today |
-| `self_card` | memory | Nora | tag, fire; until step 8 | as today |
+| `self_card` | memory | Nora | tag, fire; deleted 2026-10-07 by the `self` block (DEC-292) | as today |
 | `peer_card`, `peer_history`, `people_in_window` | memory | a person; the people in the window | tag, fire | as today |
 
 **As built (step 2, lineage half, DEC-236).** The pushed blocks that render

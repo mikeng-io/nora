@@ -4,7 +4,7 @@ Issue #462. Until this module, every subject composed against ONE shared
 `<deployment>-eval` workspace. The sandbox DATABASE was per case; Honcho was
 not. Ingest feeds every arriving line and her reply into Honcho, the deriver
 turns them into conclusions, and the tag path reads those conclusions back as
-the tagger card and her self card. So draw 3 of a case read what draws 1 and 2
+the tagger card. So draw 3 of a case read what draws 1 and 2
 had said, ranked by similarity to the very question being asked again, and
 replied «你問咗第三次喇» («third time you've asked»). The judge graded that as a
 fabrication, because the window it grades against holds no earlier ask. Draws

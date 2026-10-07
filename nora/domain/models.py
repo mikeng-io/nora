@@ -464,20 +464,6 @@ class TagContext:
     transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
     peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
-    # What Honcho has concluded about NORA HERSELF — episodes, not identity.
-    # Deliberately sourced from the `representation` verb and never from
-    # `peer_card`: her card distils her own output into IDENTITY claims («Kind:
-    # AI chatbot/assistant», «Owner: 主人 with admin authority» — both observed
-    # live 2026-08-11), and identity is doctrine's lane and operator-only. A
-    # learned self-description injected beside an authored one wins, because it
-    # reads as evidence. Episodes do not compete: «you told Aaron you would talk
-    # after work» is a fact about the past, which is what she actually lacks.
-    #
-    # Defaulted, so the ~40 existing construction sites (tests, the fire path)
-    # keep working and an absent card is the SAME shape as a card Honcho could
-    # not answer — which is safe here only because this block is advisory: it is
-    # never the ground for a claim, so an empty one costs continuity, not truth.
-    self_card: tuple[str, ...] = ()
     # What Honcho has concluded about THE TAGGER — the same `representation`
     # verb, with `target` set to them instead of to her.
     #
@@ -487,11 +473,11 @@ class TagContext:
     # representation states dated episodes («asked what to eat for dinner»).
     # Who they are, and what happened with them.
     #
-    # Her own card is excluded (see `self_card`) because a learned
-    # self-description outranks an authored one. That argument does NOT reach
-    # here: the objection was about doctrine's lane, and other people's cards
-    # are facts about them rather than claims about her. So the asymmetry is
-    # deliberate — for her, representation only; for them, both.
+    # Her own card is excluded because a learned self-description outranks an
+    # authored one. That argument does NOT reach here: the objection was about
+    # doctrine's lane, and other people's cards are facts about them rather
+    # than claims about her. So the asymmetry is deliberate — for her, no card;
+    # for them, both.
     #
     # This DUPLICATES what `about` would return for the same person, which is
     # the trade being made: her episodes with the person actually speaking are
@@ -559,6 +545,10 @@ class TagContext:
     # C3a), read through `read_culture` on the same occasions as `culture`,
     # keyed `unit_culture_key(unit)`. `None` until the unit has an account.
     unit_culture: CultureRevision | None = None
+    # Her own account in this room's unit (design/self-growth/20): Character ·
+    # Nora, read through `read_culture` keyed `nora_character_key(unit)` on the
+    # tag and fire turns. `None` until the unit has one.
+    self_account: CultureRevision | None = None
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
@@ -598,7 +588,7 @@ class TagContext:
     # It exists because `tagger_card` is keyed on ONE person — whoever tagged
     # her — and the participation occasion has no tagger at all
     # (`participation_occasion` builds `person_id=None`, so `ref is None`, so
-    # `peer_card`, `tagger_card` and `self_card` were all empty on every
+    # `peer_card` and `tagger_card` were both empty on every
     # ambient turn). The ambient decider's question is not about one person; it
     # is about the people in this window, and «Aaron asks this every week and
     # never means it» is exactly the input that separates a turn worth taking
