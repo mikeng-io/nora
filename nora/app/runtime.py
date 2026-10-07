@@ -774,7 +774,7 @@ async def _dream_adaptor_once(
         return await _dream_evidence_once(
             adaptor=adaptor, runtime=runtime, language=language, metrics=metrics,
             evidence=evidence, key=key, sched=sched, batch_limit=batch_limit,
-            max_age_seconds=max_age_seconds, failure_count=failure_count,
+            max_age_seconds=max_age_seconds,
         )
     if not adaptor.uses_watermark:
         if sched is None:
@@ -964,7 +964,7 @@ async def _dream_evidence_once(
     *, adaptor: DreamAdaptor, runtime: _AdaptorRunner,
     language: _ConsolidationCursor, metrics: Metrics, evidence: _KeyEvidence,
     key: str, sched: AdaptorSchedule | None, batch_limit: int,
-    max_age_seconds: float, failure_count: int,
+    max_age_seconds: float,
 ) -> str | None:
     """One cycle of an adaptor whose key is not a room: its OWN evidence count
     decides the wake (design/self-growth/10-character.md §3.2), on the rule C1
@@ -995,10 +995,13 @@ async def _dream_evidence_once(
     batch = sched.wake_batch if sched is not None else None
     if not (age >= stale_after or (batch is not None and new >= batch)):
         return None
-    base_limit = sched.batch_limit if sched is not None else batch_limit
-    limit = _shrunk_batch_limit(base_limit, failure_count)
-    if limit != base_limit:
-        metrics.inc("nora_dream_batch_shrunk_total", adaptor=adaptor.name)
+    # NOT shrunk on a failure, unlike a room's batch: a Character session reads
+    # the NEWEST `limit` items, so a smaller limit changes which items it is
+    # handed on every retry, and its output is one account, not a verdict per
+    # row, so a smaller read does not make it fit. The retry bound is the
+    # session's own (`EntitySessions._reject`), and it names the batch by this
+    # key's held watermark, which only a success moves.
+    limit = sched.batch_limit if sched is not None else batch_limit
     items, cursor = await traced_read(
         "character", "newest", evidence.newest(key=key, after=watermark, limit=limit),
     )

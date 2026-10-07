@@ -89,8 +89,10 @@ class EntitySessions:
         batch_start: int | None,
     ) -> None:
         """Open the run for `key`: what it may cite, the entity names it may
-        write (`name -> Entity`, matched case-insensitively), and the batch's
-        first item, which names the batch for the rejection run."""
+        write (`name -> Entity`, matched case-insensitively), and what names
+        the batch for the rejection run: the key's HELD watermark, which only a
+        success moves, so the same backlog is the same batch however many items
+        arrive while it is retried (`None`: every unsettled session counts)."""
         self._citable[key] = citable
         self._entities[key] = {name.casefold(): e for name, e in entities.items()}
         self._staged[key] = {}
@@ -208,7 +210,7 @@ class EntitySessions:
 
         **A run of unsettled sessions is bounded** (DEC-280): the
         `MAX_CONSECUTIVE_REJECTIONS`-th in a row of the same batch for one key
-        (named by its first item, which a shrunk retry keeps) does not raise;
+        (named by its held watermark, which new evidence does not move) does not raise;
         it is logged, counted `abandoned`, and returns `()`, so the key
         advances instead of re-reading a batch for ever.
         """

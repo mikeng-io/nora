@@ -187,6 +187,12 @@ class PersonEvidence:
         self._store = store
         self._keys = keys
         self._population = tuple(sorted(keys))
+        self._held: dict[str, int] = {}
+
+    def held(self, key: str) -> int | None:
+        """The watermark the last `newest` read for `key` started after: the
+        name of the batch the session in flight was handed (`_begin`)."""
+        return self._held.get(key)
 
     def _of(self, key: str) -> tuple[list[tuple[str, str]], str]:
         pk = self._keys[key]
@@ -200,6 +206,7 @@ class PersonEvidence:
         self, *, key: str, after: int, limit: int,
     ) -> tuple[Sequence[RoomMessage], int]:
         rooms, person_id = self._of(key)
+        self._held[key] = after
         return await self._store.person_since(
             rooms=rooms, person_id=person_id, after=after, limit=limit,
         )
@@ -288,7 +295,7 @@ class CharacterPersonAdaptor(EntitySessions):
         labels = {r.key: r.label for r in pk.rooms}
         self._begin(
             key, citable=Citable(messages=frozenset(m.row.id for m in messages)),
-            entities={pk.person.name: None}, batch_start=messages[0].row.id,
+            entities={pk.person.name: None}, batch_start=self.evidence.held(key),
         )
         previous = await self._culture.head(key=key)
         heads = await asyncio.gather(*(self._culture.head(key=r.key) for r in pk.rooms))
@@ -507,6 +514,11 @@ class NoraEvidence:
     def __init__(self, *, store: _Episodes, keys: Mapping[str, NoraKey]) -> None:
         self._store = store
         self._keys = keys
+        self._held: dict[str, int] = {}
+
+    def held(self, key: str) -> int | None:
+        """`PersonEvidence.held`, for a Nora key."""
+        return self._held.get(key)
 
     async def count(self, *, key: str, after: int) -> int:
         return await self._store.episode_count(unit=self._keys[key].unit, after=after)
@@ -514,6 +526,7 @@ class NoraEvidence:
     async def newest(
         self, *, key: str, after: int, limit: int,
     ) -> tuple[Sequence[Episode], int]:
+        self._held[key] = after
         return await self._store.episodes(unit=self._keys[key].unit, after=after, limit=limit)
 
 
@@ -589,7 +602,7 @@ class CharacterNoraAdaptor(EntitySessions):
                 messages=sends | frozenset(r.id for e in episodes for r in e.replies),
                 nora=sends, episodes=sends, echo_rule=True,
             ),
-            entities={"nora": None}, batch_start=episodes[0].send_id,
+            entities={"nora": None}, batch_start=self.evidence.held(key),
         )
         previous = await self._culture.head(key=key)
         parts: list[ContextBlock | None] = [

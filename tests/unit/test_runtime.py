@@ -2224,3 +2224,145 @@ async def test_an_entity_adaptor_is_never_seeded_from_a_rooms_cursor():
         keys=lambda a: a.keys(),
     )
     assert seeded == 0 and language.advance_calls == []
+
+
+# ---------------------------------------------------------------------------
+# the retry bound of a Character session (DEC-280): a batch is named by the
+# key's HELD WATERMARK, so reading the newest items cannot dodge it
+# ---------------------------------------------------------------------------
+
+
+class _SettleRunner:
+    """What `DreamerRuntime.run` does with a Character adaptor, minus the
+    model: hand it the batch (`inputs`), then `accept` with nothing written, so
+    a session that never settles raises exactly as it does in production and
+    the runtime reports `unavailable`."""
+
+    def __init__(self) -> None:
+        self.sizes: list[int] = []
+
+    async def run(self, *, adaptor, key, batch):
+        from nora.language.character_session import AccountNotRecordableError
+
+        self.sizes.append(len(batch))
+        await adaptor.inputs(key=key, batch=batch)
+        try:
+            await adaptor.accept(key=key, items=())
+        except AccountNotRecordableError:
+            return _StubOutcome(status="unavailable", written=0)
+        return _StubOutcome(status="ok", written=0)
+
+
+async def _retry_until_it_advances(adaptor, evidence_grows, *, tries: int = 6):
+    """The dream loop's retries of one key: `failure_count` is how many
+    `unavailable` runs came before, as `dream_loop` counts them. Returns the
+    statuses, the batch sizes and the watermark each attempt left."""
+    schedules = {adaptor.name: AdaptorSchedule(
+        min_interval_seconds=1000.0, batch_limit=300, wake_batch=100)}
+    language = _KeyedLanguage(age=1e9)
+    runner = _SettleRunner()
+    statuses: list[str | None] = []
+    key = adaptor.keys()[0]
+    failures = 0
+    for _ in range(tries):
+        status = await _dream_adaptor_once(
+            adaptor=adaptor, runtime=runner, record=_FakeRecord({}), language=language,
+            metrics=Metrics(), key=key, safety_lag=0, quiet_seconds=0.0,
+            max_age_seconds=1e9, batch_limit=10, schedules=schedules,
+            failure_count=failures,
+        )
+        statuses.append(status)
+        failures = failures + 1 if status == "unavailable" else 0
+        if status != "unavailable":
+            break
+        evidence_grows()
+    return statuses, runner.sizes, language.watermarks.get((adaptor.name, key), 0)
+
+
+def _person_adaptor_with(store):
+    from nora.domain.culture import character_key
+    from nora.domain.models import PersonRef
+    from nora.language.character import (
+        CharacterPersonAdaptor,
+        CharacterRoom,
+        PersonEvidence,
+        PersonKey,
+    )
+    from nora.testing import InMemoryCultureStore
+
+    pk = PersonKey(
+        unit="friends", person=PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada"),
+        rooms=(CharacterRoom(key="room-a", platform="signal", label="Friends"),),
+        home="room-a",
+    )
+    key = character_key("friends", "ada")
+    return CharacterPersonAdaptor(
+        culture=InMemoryCultureStore(), evidence=PersonEvidence(store=store, keys={key: pk}),
+        keys={key: pk},
+    )
+
+
+async def test_a_person_backlog_it_cannot_settle_is_given_up_on_the_third_try():
+    """Reviewer probe: 400 messages, the newest 300 read, each failure used to
+    halve the limit, so the batch's FIRST item changed every retry and the run
+    never reached three. The held watermark does not change, so it is the same
+    batch, at the same size, three times."""
+    from nora.testing import InMemoryCharacterEvidence
+
+    store = InMemoryCharacterEvidence()
+    for i in range(1, 401):
+        store.add_message(id=i, platform="signal", room="room-a", person_id="ada")
+    statuses, sizes, watermark = await _retry_until_it_advances(
+        _person_adaptor_with(store), lambda: None)
+    assert statuses == ["unavailable", "unavailable", "ok"]
+    assert sizes == [300, 300, 300]
+    assert watermark == 400
+
+
+async def test_new_evidence_between_retries_does_not_reset_a_persons_count():
+    """An active person never settles if every message that arrives while a
+    batch is retried names a new one."""
+    from nora.testing import InMemoryCharacterEvidence
+
+    store = InMemoryCharacterEvidence()
+    for i in range(1, 401):
+        store.add_message(id=i, platform="signal", room="room-a", person_id="ada")
+    arrived = iter(range(1000, 2000))
+
+    def more() -> None:
+        store.add_message(id=next(arrived), platform="signal", room="room-a", person_id="ada")
+
+    statuses, _sizes, _wm = await _retry_until_it_advances(_person_adaptor_with(store), more)
+    assert statuses == ["unavailable", "unavailable", "ok"]
+
+
+async def test_new_evidence_between_retries_does_not_reset_noras_count():
+    from nora.domain.culture import Episode, nora_character_key
+    from nora.language.character import (
+        CharacterNoraAdaptor,
+        CharacterRoom,
+        NoraEvidence,
+        NoraKey,
+    )
+    from nora.testing import InMemoryCharacterEvidence, InMemoryCultureStore
+
+    store = InMemoryCharacterEvidence()
+
+    def add(send_id: int) -> None:
+        store.add_episode(unit="friends", episode=Episode(
+            send_id=send_id, room="room-a", text="a send", outcome="responded",
+            reactions=1, edits=0))
+
+    for i in range(1, 401):
+        add(i)
+    arrived = iter(range(1000, 2000))
+    key = nora_character_key("friends")
+    nk = NoraKey(unit="friends", rooms=(CharacterRoom(key="room-a", platform="signal",
+                                                      label="Friends"),))
+    adaptor = CharacterNoraAdaptor(
+        culture=InMemoryCultureStore(), evidence=NoraEvidence(store=store, keys={key: nk}),
+        keys={key: nk}, name_of=lambda _pid: "someone",
+    )
+    statuses, sizes, _wm = await _retry_until_it_advances(adaptor, lambda: add(next(arrived)))
+    assert statuses == ["unavailable", "unavailable", "ok"]
+    assert sizes == [300, 300, 300]
