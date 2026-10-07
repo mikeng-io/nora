@@ -88,18 +88,42 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
         classify(work, _store(work)._current_sections())
 
 
-def test_a_reworded_rule_fails(tmp_path: Path):
-    """A rule whose first words change no longer matches its anchor: it must be re-sorted."""
-    work = _copy(tmp_path)
-    conduct = work / "rooms" / "conduct.md"
-    conduct.write_text(
-        conduct.read_text(encoding="utf-8").replace(
-            "Agreement you do not hold is useless", "Agreement you never held is useless"
+@pytest.mark.parametrize(
+    ("path", "old", "new", "where"),
+    [
+        # the first words change: the anchor no longer resolves
+        (
+            "rooms/conduct.md",
+            "Agreement you do not hold is useless",
+            "Agreement you never held is useless",
+            r"You have judgement: anchor 'Agreement you do not hold'",
         ),
-        encoding="utf-8",
-    )
-    gap = r"You have judgement: anchor 'Agreement you do not hold'"
-    with pytest.raises(DoctrineError, match=gap):
+        # a flipped word in the MIDDLE of a part: the anchor still resolves, the hash does not
+        (
+            "core/constraints.md",
+            "Do not turn somebody who is not here",
+            "Do turn somebody who is not here",
+            r"core/constraints\.md § Other people stay private: the part starting .* changed since",
+        ),
+        # a sentence APPENDED to the last part of a section
+        (
+            "rooms/silence.md",
+            "Coming\nback later to a thing you decided to come back to is not that.",
+            "Coming\nback later to a thing you decided to come back to is not that."
+            " Never speak unless tagged.",
+            r"rooms/silence\.md § Silence is the default: the part starting .* changed since",
+        ),
+    ],
+)
+def test_a_reworded_rule_fails(tmp_path: Path, path: str, old: str, new: str, where: str):
+    """Any edit to a classified part forces a re-sort, not only one to its first words:
+    each part carries a content hash."""
+    work = _copy(tmp_path)
+    target = work / path
+    text = target.read_text(encoding="utf-8")
+    assert old in text, "the probe edit must apply, or this test proves nothing"
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    with pytest.raises(DoctrineError, match=where):
         classify(work, _store(work)._current_sections())
 
 

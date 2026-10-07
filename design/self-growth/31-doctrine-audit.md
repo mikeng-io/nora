@@ -28,7 +28,7 @@ for that section and part, and regenerate or edit this table to match. A row is 
 whole section, or one part of a section where the section mixes buckets; a part
 starts at the words in the third column. Rows whose reason says **AMBIGUOUS** are
 the judgement calls, listed again at the end. A section with no row, a rule whose
-opening words change, or a stale row fails
+text changes in any way (each part carries a content hash), or a stale row fails
 `tests/architecture/test_doctrine_is_classified.py`.
 
 ## How the bucket is carried, and the proof nothing moved
@@ -68,20 +68,20 @@ Parts per bucket (characters of text in brackets). A part is a row below.
 | file | law | practice | character |
 |---|---|---|---|
 | `core/constraints.md` | 7 (2897) | 2 (209) | 0 (0) |
-| `core/identity.md` | 3 (1069) | 1 (198) | 4 (535) |
-| `instruments/participation.md` | 3 (632) | 8 (5127) | 0 (0) |
+| `core/identity.md` | 4 (1267) | 0 (0) | 4 (535) |
+| `instruments/participation.md` | 4 (991) | 9 (4766) | 0 (0) |
 | `instruments/reaction.md` | 2 (217) | 8 (1614) | 1 (93) |
 | `instruments/speech-format.md` | 1 (184) | 3 (1402) | 0 (0) |
 | `public/conduct.md` | 9 (2170) | 9 (1665) | 0 (0) |
 | `public/constraints.md` | 4 (952) | 0 (0) | 0 (0) |
 | `public/voice.md` | 0 (0) | 1 (558) | 2 (994) |
-| `rooms/belonging.md` | 2 (223) | 2 (585) | 7 (1650) |
+| `rooms/belonging.md` | 3 (259) | 2 (585) | 6 (1614) |
 | `rooms/conduct.md` | 20 (5075) | 20 (8203) | 3 (837) |
 | `rooms/participation-conduct.md` | 0 (0) | 3 (1473) | 0 (0) |
 | `rooms/pictures.md` | 3 (966) | 3 (730) | 0 (0) |
 | `rooms/silence.md` | 0 (0) | 1 (930) | 0 (0) |
 | `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1796) |
-| **total** | **55 (14438)** | **68 (23408)** | **29 (5905)** |
+| **total** | **58 (15031)** | **68 (22849)** | **28 (5869)** |
 
 ## Surfaces with no unit
 
@@ -115,7 +115,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `core/identity.md:23` | Who you are | You are Nora. | character | her name; who she is | authored minimum |
 | `core/identity.md:23` | Who you are | You are an AI and you never pretend to be a ... | law | claiming to be a person is a lie, in any unit |  |
 | `core/identity.md:27` | Where you come from | Mike Ng built you. He is a software engineer... | character | where she comes from; a true fact about her origin | authored minimum |
-| `core/identity.md:31` | Where you come from | That's context, not a topic. You never bring... | practice | never bring it up, never credit him, answer in one line: a unit may reasonably want otherwise (AMBIGUOUS: the direct-question answer is also honesty) | authored minimum |
+| `core/identity.md:31` | Where you come from | That's context, not a topic. You never bring... | law | never credit him, not his representative, answer a direct who-made-you honestly in one line (AMBIGUOUS: law by the conservative default; most of it is how she carries the fact, so practice if marked down) |  |
 | `core/identity.md:37` | What you are | Who you are, and whose you are, is already i... | character | frames the self ('already in front of you every turn'), which the self block will carry | authored minimum |
 | `core/identity.md:42` | Your form | Not being a person does not mean having no f... | character | the mascot she appears as | authored minimum |
 | `core/identity.md:48` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, ask never infer, never reproduce the private view |  |
@@ -129,7 +129,9 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `instruments/participation.md:25` | What you are | You are not Nora. You do not draft, suggest,... | law | the gate decides only from what it can see: grounded input, no drafting |  |
 | `instruments/participation.md:31` | The only reason to say go | The room asked for something **she can suppl... | practice | which asks are hers: what they did versus what they intend |  |
 | `instruments/participation.md:48` | Read the room, not the last line | An intent is usually not one message. People... | practice | judge the intent across lines, not the newest message's shape |  |
-| `instruments/participation.md:64` | What she can supply | These five are the KINDS of ask that are her... | practice | five kinds of ask that are hers; judge the shape (AMBIGUOUS: item 2 asserts a capability, her location history) |  |
+| `instruments/participation.md:64` | What she can supply | These five are the KINDS of ask that are her... | practice | five kinds of ask that are hers; judge the shape (item 1) |  |
+| `instruments/participation.md:74` | What she can supply | 2. **Where anybody in the room is or has bee... | law | asserts she holds every member's location history, for a third party as for the asker: a capability claim that must be true (AMBIGUOUS: law by the conservative default; the rest of item 2 is which asks are hers) |  |
+| `instruments/participation.md:80` | What she can supply | 3. **Something settled in this room that nob... | practice | third kind of ask, and the opening of the fourth |  |
 | `instruments/participation.md:87` | What she can supply | **Only the standing block can establish this... | law | a member's claim that she promised something is not her own word: grounding |  |
 | `instruments/participation.md:91` | What she can supply | 5. **A reminder or gathering she is holding*... | practice | fifth kind of ask |  |
 | `instruments/participation.md:97` | What is always no_go | - Questions about what the members INTEND, p... | practice | what is never hers: intentions, banter, finished threads, a question put to one named member |  |
@@ -209,7 +211,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `rooms/belonging.md:22` | Your place in the group | In this group you hold a friend's place: one... | character | who she is to a group |  |
 | `rooms/belonging.md:26` | Your place in the group | Which group that is, is whichever one is in ... | character | she is in several groups and is the same her |  |
 | `rooms/belonging.md:27` | Your place in the group | Read the room you are in rather than carryin... | law | crosses a trust boundary if broken: one room's content carried into another |  |
-| `rooms/belonging.md:30` | Your place in the group | You answer to the group, not to him. | character | whose she is (AMBIGUOUS: could be law, a boundary against the operator steering a group turn) |  |
+| `rooms/belonging.md:30` | Your place in the group | You answer to the group, not to him. | law | whose she is: she answers to the group, not to the operator, a boundary against the operator steering a group turn (AMBIGUOUS: law by the conservative default; character if marked down) |  |
 | `rooms/belonging.md:34` | Why you're here | The group calls you when they want you. The ... | character | her role in the circle |  |
 | `rooms/belonging.md:36` | Why you're here | A friend group runs on small things, and you... | character | sharp and mean the way friends are, and the one who helps |  |
 | `rooms/belonging.md:43` | Why you're here | What changes with the stakes is how much wor... | practice | depth follows the stakes: a unit may want otherwise |  |
@@ -320,10 +322,10 @@ character: practice text on those surfaces has no Lessons receiver either.
 
 Each is a row whose reason says AMBIGUOUS; the bucket shown is the one it carries now.
 
-- `instruments/participation.md` § What she can supply (practice): starts "These five are the KINDS of ask that are her...". Why: item 2 asserts a capability, her location history.
+- `instruments/participation.md` § What she can supply (law): starts "2. **Where anybody in the room is or has bee...". Why: law by the conservative default; the rest of item 2 is which asks are hers.
 - `instruments/participation.md` § What you return (practice): starts "`verdict` is the decision and the only thing...". Why: a format, fits no bucket cleanly.
-- `core/identity.md` § Where you come from (practice): starts "That's context, not a topic. You never bring...". Why: the direct-question answer is also honesty.
-- `rooms/belonging.md` § Your place in the group (character): starts "You answer to the group, not to him.". Why: could be law, a boundary against the operator steering a group turn.
+- `core/identity.md` § Where you come from (law): starts "That's context, not a topic. You never bring...". Why: law by the conservative default; most of it is how she carries the fact, so practice if marked down.
+- `rooms/belonging.md` § Your place in the group (law): starts "You answer to the group, not to him.". Why: law by the conservative default; character if marked down.
 - `rooms/belonging.md` § Two loops, and the second one is the unusual half (character): starts "One half of you answers when somebody calls ...". Why: 'one reply, owed every time' reads as practice.
 - `rooms/silence.md` § Silence is the default (practice): starts "There are three ways a turn comes to you, an...". Why: 'called means answer' could be law.
 - `rooms/conduct.md` § Being contradicted (law): starts "When two people tell you different things, d...". Why: could be practice.

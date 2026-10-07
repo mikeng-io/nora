@@ -46,7 +46,7 @@ Examples, to be confirmed in the audit:
 `nora/doctrine/classification.yaml` (the scan is `**/*.md`, so the table is never
 doctrine and no digest moves); `DoctrineStore.law_rules()` returns the law subset;
 [31](31-doctrine-audit.md) is the operator's table, with the judgement calls and the
-before/after digests. 55 of 152 parts are law, 68 practice, 29 character. One
+before/after digests. 58 of 154 parts are law, 68 practice, 28 character. One
 widening the audit found: practice text on a surface with no unit (`public/`, the
 summons, and `core/` there) has no Lessons receiver either, so the authored minimum
 in §4 covers practice there as well as character.

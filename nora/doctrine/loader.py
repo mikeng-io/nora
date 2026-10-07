@@ -610,6 +610,16 @@ class Rule:
     no_unit_surface: bool      # non-law text in a file that also reaches a surface with no unit
 
 
+def rule_digest(text: str) -> str:
+    """The short content hash a classification entry carries (`sha:`).
+
+    Over the text with whitespace collapsed, so a re-wrap does not trip it and any
+    other edit does: an anchor alone only noticed a change to a part's first words,
+    and a flipped "Do not" mid-part kept its old bucket.
+    """
+    return hashlib.sha256(" ".join(text.split()).encode("utf-8")).hexdigest()[:12]
+
+
 def _section_blocks(body: str) -> dict[str, str]:
     """Heading text -> the text under it, up to the next heading, stripped.
 
@@ -651,7 +661,8 @@ def classify(
 
     **Fail-closed and exhaustive, reporting every gap at once.** A section with no
     entry, an entry whose heading or anchor no longer resolves (a reworded rule), a
-    file the table does not know, an unknown bucket and an empty reason are all one
+    file the table does not know, a part whose text no longer matches its `sha`, an
+    unknown bucket and an empty reason are all one
     `DoctrineError`. A partial answer would read as "the law is X" when it is
     "the law is X, as far as the table reaches".
     """
@@ -728,6 +739,13 @@ def classify(
                         continue
                     if not reason:
                         problems.append(f"{rel} § {heading}: no reason given")
+                        continue
+                    if part.get("sha") != rule_digest(text):
+                        problems.append(
+                            f"{rel} § {heading}: the part starting {text[:40]!r} changed "
+                            f"since it was classified (sha {part.get('sha')!r}, text now "
+                            f"{rule_digest(text)!r}); re-sort it and update `sha`"
+                        )
                         continue
                     start_at = raw.index(text, heading_at)
                     rules.append(Rule(

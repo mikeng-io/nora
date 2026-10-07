@@ -15,7 +15,7 @@ description: >
   doctrine check reads law only; (4) Lessons, accumulated from closed response
   episodes, with an explicit-correction fast path; (5) cut the doctrine to
   law. Step (3) is built (DEC-291): every doctrine rule is sorted in a side table
-  with the text byte-identical, 55 of 152 parts law, and the audit is for the
+  with the text byte-identical, 58 of 154 parts law, and the audit is for the
   operator to mark up. Step (1) is built (DEC-290, #744 and its review follow-ups): room, unit,
   person and Nora sessions, `character_revise`, the `<character>` and
   `<unit_culture>` blocks, and `character_read`; Nora's own account is written
