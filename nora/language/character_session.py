@@ -31,27 +31,11 @@ from nora.domain.culture import (
     Refusal,
     check_revision,
 )
-from nora.domain.errors import NoraError
+from nora.domain.errors import AccountNotRecordableError
 
 log = logging.getLogger(__name__)
 
 __all__ = ["AccountNotRecordableError", "EntitySessions"]
-
-
-class AccountNotRecordableError(NoraError):
-    """The session ended without settling its entity: nothing it wrote can
-    enter the chain, and it did not close the entity unchanged.
-
-    **Raised so the BATCH IS NOT CONSUMED.** `DreamerRuntime.run` reports an
-    adaptor raising out of `accept` as `unavailable`, and the dream loop holds
-    the watermark on `unavailable` alone, so the evidence this session read is
-    read again on the next wake instead of being spent on nothing. It is
-    `unavailable` rather than `nothing_found` for R-27's reason: «there was
-    nothing here» is not what happened; «I could not record this» is.
-
-    A run of them is bounded (`EntitySessions._reject`, DEC-280), so a batch a
-    model keeps failing to settle is not re-read for ever.
-    """
 
 
 #: What one session's entity resolves to: `None` is the session's own entity

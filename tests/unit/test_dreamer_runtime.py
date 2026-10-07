@@ -581,6 +581,35 @@ async def test_an_accept_that_RAISES_is_unavailable_and_never_reaches_commit(
     assert sink.commits == []
 
 
+async def test_an_unsettled_session_is_a_warning_and_a_crashing_accept_is_an_error(
+    monkeypatch, caplog,
+):
+    """A Character session that settles nothing is an expected outcome (the
+    batch is held and retried), so it is a WARNING with no stack trace; an
+    `accept` that crashes is a fault and stays an ERROR with its traceback."""
+    import logging
+
+    from nora.domain.errors import AccountNotRecordableError
+
+    class _Unsettled(_Adaptor):
+        async def accept(self, *, key, items):
+            raise AccountNotRecordableError("the session did not settle its entity")
+
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
+    with caplog.at_level(logging.WARNING, logger="nora.dreamer"):
+        outcome = await runtime.run(adaptor=_Unsettled(sink=_Sink()), key="g1", batch=())
+    assert outcome.status == "unavailable"
+    ours = [r for r in caplog.records if r.name == "nora.dreamer"]
+    assert [r.levelno for r in ours] == [logging.WARNING] and ours[0].exc_info is None
+
+    caplog.clear()
+    runtime, _ = _runtime(monkeypatch, raw='{"observations": [{"term": "a"}]}')
+    with caplog.at_level(logging.WARNING, logger="nora.dreamer"):
+        await runtime.run(adaptor=_Adaptor(sink=_Sink(), accept_raises=True), key="g1", batch=())
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and errors[0].exc_info is not None
+
+
 # ---------------------------------------------------------------------------
 # bounds — the ones that fail QUIETLY if they are missing
 # ---------------------------------------------------------------------------

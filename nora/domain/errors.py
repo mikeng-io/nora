@@ -53,3 +53,20 @@ class PartialReplyError(NoraError):
     def __init__(self, partial_text: str) -> None:
         super().__init__("model cut off at max_tokens with a partial reply")
         self.partial_text = partial_text
+
+
+class AccountNotRecordableError(NoraError):
+    """The session ended without settling its entity: nothing it wrote can
+    enter the chain, and it did not close the entity unchanged.
+
+    **Raised so the BATCH IS NOT CONSUMED.** `DreamerRuntime.run` reports an
+    adaptor raising out of `accept` as `unavailable` (logged at WARNING, without
+    a stack trace: it is an expected outcome, not a fault), and the dream loop holds
+    the watermark on `unavailable` alone, so the evidence this session read is
+    read again on the next wake instead of being spent on nothing. It is
+    `unavailable` rather than `nothing_found` for R-27's reason: «there was
+    nothing here» is not what happened; «I could not record this» is.
+
+    A run of them is bounded (`EntitySessions._reject`, DEC-280), so a batch a
+    model keeps failing to settle is not re-read for ever.
+    """

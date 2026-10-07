@@ -85,6 +85,7 @@ from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeVar, get_args
 
+from ..domain.errors import AccountNotRecordableError
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
@@ -1489,7 +1490,10 @@ class DreamerRuntime:
             # WHICH ROOM the read tools resolve through. A scope-keyed
             # adaptor's key IS its room; an adaptor keyed on something else
             # (a Character entity, design/self-growth/10 §3) names the room
-            # its reads stand in through `tool_room`, or none (closed).
+            # its reads stand in through `tool_room`, and one with no
+            # `tool_room` (the unit's and Nora's sessions, which hold no read
+            # tool) resolves through its own key, which names no room, so
+            # every room-scoped verb is closed to it.
             tool_room = getattr(adaptor, "tool_room", None)
             tools = self._tools.build(
                 key=(tool_room(key) or key) if tool_room is not None else key,
@@ -1684,6 +1688,19 @@ class DreamerRuntime:
                 call=lambda: adaptor.commit(
                     key=key, proposals=proposals, now_ms=now_ms,
                 ),
+            )
+        except AccountNotRecordableError as unsettled:
+            # A Character session that settled nothing: expected, the adaptor
+            # has already said so and counted it, and the status is the same
+            # `unavailable` with the watermark HELD. A WARNING and no stack
+            # trace, so a model that keeps failing to settle is not read as a
+            # fault in the code.
+            log.warning(
+                "dream session unsettled; holding the batch (adaptor=%s key=%s): %s",
+                adaptor.name, key, unsettled,
+            )
+            return self._finish(
+                adaptor, "unavailable", 0, sha, stop_reason, started,
             )
         except Exception:
             # ACCEPT OR COMMIT — the try spans both, and naming only the
