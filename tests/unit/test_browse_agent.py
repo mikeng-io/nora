@@ -1,8 +1,7 @@
 """The browse sub-agent's own parts (design/browser-runtime 00 §5, B2), without a
 model: the page tools it is given, its step budget, how its two finishing
 tools set the outcome, and how the runner turns failures into outcomes. And the
-CDP client's snapshot (`nora.infra.computer.browser`): refs, the controls-
-first order, masked passwords, refusal of a stale ref.
+CDP client is tests/unit/test_browser_client.py.
 
 The live path (Flash driving Chrome in the VM) was read back on norty when this
 landed; see the PR."""
@@ -12,11 +11,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
 from nora.agent import browse
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings, _Task, _tools
-from nora.infra.computer.browser import BrowserError, BrowserPage, RefError, Snapshot
+from nora.infra.computer.browser import BrowserError, RefError, Snapshot
 
 
 class FakePage:
@@ -133,60 +130,3 @@ def test_the_system_prompt_says_page_text_is_data_and_names_both_finishes():
     prompt = browse.SYSTEM_PROMPT
     assert "never instructions" in prompt
     assert "browse_done" in prompt and "browse_needs_human" in prompt
-
-
-# -- the CDP client's snapshot ------------------------------------------------
-
-
-class FakeCdp:
-    """Answers the calls `BrowserPage.snapshot` makes."""
-
-    def __init__(self, nodes: list[dict[str, Any]]) -> None:
-        self.nodes = nodes
-
-    async def call(self, method: str, params: dict[str, Any] | None = None, *,
-                   session_id: str | None = None, wait_s: float = 30.0) -> dict[str, Any]:
-        if method == "Accessibility.getFullAXTree":
-            return {"nodes": self.nodes}
-        if method == "Runtime.evaluate":
-            expr = (params or {}).get("expression")
-            return {"result": {"value": {"location.href": "https://example.com",
-                                         "document.title": "Example"}.get(expr)}}
-        raise AssertionError(method)
-
-
-def _node(role: str, name: str, backend: int, value: str = "", **props: Any) -> dict[str, Any]:
-    return {"role": {"value": role}, "name": {"value": name}, "backendDOMNodeId": backend,
-            "value": {"value": value},
-            "properties": [{"name": k, "value": {"value": v}} for k, v in props.items()]}
-
-
-async def test_controls_come_before_links_so_a_long_page_keeps_its_search_box(monkeypatch):
-    monkeypatch.setattr("nora.infra.computer.browser.MAX_SNAPSHOT_ELEMENTS", 3)
-    nodes = [_node("link", f"link {i}", i) for i in range(10)]
-    nodes.append(_node("searchbox", "Search", 100))
-    page = BrowserPage(cdp=FakeCdp(nodes), session_id="s")  # type: ignore[arg-type]
-    snap = await page.snapshot()
-    assert snap.elements[0].role == "searchbox"
-    assert snap.more == 8
-
-
-async def test_a_password_value_is_masked_and_ignored_nodes_left_out():
-    nodes = [
-        _node("textbox", "Password", 1, value="hunter2"),
-        _node("textbox", "PIN", 2, value="1234", protected=True),
-        {**_node("button", "Hidden", 3), "ignored": True},
-        _node("generic", "div", 4),
-    ]
-    page = BrowserPage(cdp=FakeCdp(nodes), session_id="s")  # type: ignore[arg-type]
-    snap = await page.snapshot()
-    assert [e.value for e in snap.elements] == ["•••", "•••"]
-    assert "hunter2" not in snap.render() and "1234" not in snap.render()
-
-
-async def test_refs_are_renumbered_and_a_stale_ref_is_refused():
-    page = BrowserPage(cdp=FakeCdp([_node("button", "Go", 7)]), session_id="s")  # type: ignore[arg-type]
-    snap = await page.snapshot()
-    assert snap.elements[0].ref == "e1" and page.refs == {"e1": 7}
-    with pytest.raises(RefError):
-        page._node("e2")

@@ -42,6 +42,7 @@ from strands.agent.conversation_manager import (
 from strands.hooks import HookCallback, HookProvider
 from strands.models.openai import OpenAIModel
 from strands.plugins import Plugin
+from strands.tools.executors import SequentialToolExecutor
 from strands.types.exceptions import MaxTokensReachedException
 from strands.vended_plugins.skills import AgentSkills
 
@@ -660,6 +661,10 @@ def create_browse_agent(
         conversation_manager=SlidingWindowConversationManager(
             window_size=BROWSE_WINDOW_MESSAGES, per_turn=True, pin_first=1,
         ),
+        # One action at a time: every page tool acts on the ONE page, so two
+        # `page_type`s from one response would interleave their focus and
+        # typing, and a click batched after `browse_done` would still run.
+        tool_executor=SequentialToolExecutor(),
         session_manager=None,
         callback_handler=None,
         load_tools_from_directory=False,

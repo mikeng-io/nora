@@ -159,57 +159,111 @@ class CdpConnection:
 
 @dataclass
 class BrowserPage:
-    """The room's one page, through an attached CDP session."""
+    """The room's one page, through an attached CDP session.
+
+    Nothing here runs in the page's own JavaScript world. Reads (the url, the
+    title, the load state, the page text) and the per-element calls run in an
+    ISOLATED world created for each document (`Page.createIsolatedWorld`, the
+    approach Patchright takes): it shares the DOM but not the page's scripts,
+    so a page can neither see them nor redefine what they read. Navigation is
+    told by the main frame's `loaderId` changing, never by a marker left on the
+    page, and the Set-of-Marks boxes are drawn onto the screenshot here, never
+    into the page.
+    """
 
     cdp: CdpConnection
     session_id: str
+    target_id: str = ""
     refs: dict[str, int] = field(default_factory=dict)
+    _world: tuple[str, int] | None = None
 
     async def _page(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self.cdp.call(method, params, session_id=self.session_id)
 
+    async def _frame(self) -> tuple[str, str]:
+        """The main frame's id and its current document's `loaderId`."""
+        frame = (await self._page("Page.getFrameTree"))["frameTree"]["frame"]
+        return str(frame["id"]), str(frame.get("loaderId", ""))
+
+    async def _context(self) -> int:
+        """This document's isolated world, made on first use."""
+        frame_id, loader = await self._frame()
+        if self._world is not None and self._world[0] == loader:
+            return self._world[1]
+        got = await self._page("Page.createIsolatedWorld",
+                               {"frameId": frame_id, "worldName": "nora"})
+        self._world = (loader, int(got["executionContextId"]))
+        return self._world[1]
+
     async def evaluate(self, expression: str) -> Any:
-        got = await self._page("Runtime.evaluate",
-                               {"expression": expression, "returnByValue": True})
-        if "exceptionDetails" in got:
-            raise BrowserError("the page's script failed")
-        return got.get("result", {}).get("value")
+        """`expression`'s value, computed in the isolated world."""
+        for attempt in (0, 1):
+            try:
+                got = await self._page("Runtime.evaluate", {
+                    "expression": expression, "returnByValue": True,
+                    "contextId": await self._context(),
+                })
+            except (BrowserError, KeyError, TypeError, ValueError):
+                # The document changed under us (its world went with it).
+                self._world = None
+                if attempt:
+                    raise BrowserError("the page could not be read") from None
+                continue
+            if "exceptionDetails" in got:
+                raise BrowserError("the page's script failed")
+            return got.get("result", {}).get("value")
+        return None
+
+    async def _loader(self) -> str:
+        try:
+            return (await self._frame())[1]
+        except (BrowserError, KeyError, TypeError):
+            return ""
 
     async def navigate(self, url: str) -> str:
         """Open `url` and wait for the page to finish loading (or for
         `LOAD_SECONDS`). Returns the URL the page ended on."""
-        await self._mark()
+        before = await self._loader()
         got = await self._page("Page.navigate", {"url": url})
         if got.get("errorText"):
             raise BrowserError(f"could not open the page: {got['errorText']}")
-        await self.settle(expect_navigation=True)
+        # No `loaderId` back: a same-document navigation (a #fragment), so
+        # there is no new document to wait for.
+        new_document = bool(got.get("loaderId"))
+        await self.settle(before if new_document else "", expect_navigation=new_document)
         return str(await self.evaluate("location.href") or url)
 
-    async def _mark(self) -> None:
-        """Tag the current document, so `settle` can tell a navigation that
-        replaced it from the same page still standing."""
-        with contextlib.suppress(BrowserError):
-            await self.evaluate("window.__nora_doc__ = true")
-
-    async def settle(self, *, expect_navigation: bool = False) -> None:
-        """Wait until the page is loaded. After an action that may navigate
-        (a click, Enter, a submit), the OLD document still reads `complete`
-        for a moment, so first wait up to a second for the tag `_mark` set to
-        disappear (a new document); a document that keeps it did not navigate."""
+    async def settle(self, before: str = "", *, expect_navigation: bool = False) -> None:
+        """Wait until the page is loaded. After an action that may navigate (a
+        click, Enter, a submit, a select), the OLD document still reads
+        `complete` for a moment, so first wait for the frame's `loaderId` to
+        move off `before`: up to a second after an action, longer after an
+        explicit navigation. A loader that never moves did not navigate."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + LOAD_SECONDS
         grace = loop.time() + (LOAD_SECONDS if expect_navigation else 1.0)
-        while loop.time() < min(grace, deadline):
-            with contextlib.suppress(BrowserError):
-                if await self.evaluate("window.__nora_doc__ === true") is not True:
+        if before:
+            while loop.time() < min(grace, deadline):
+                if await self._loader() not in ("", before):
                     break
-            await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
         while loop.time() < deadline:
             with contextlib.suppress(BrowserError):
                 if await self.evaluate("document.readyState") == "complete":
                     break
             await asyncio.sleep(0.25)
         await asyncio.sleep(0.5)  # late scripts that render after `load`
+
+    async def _is_password(self, backend: int) -> bool:
+        """Whether the element is an `<input type=password>`, read from the DOM,
+        never from its label (a label may be in any language)."""
+        try:
+            node = (await self._page("DOM.describeNode", {"backendNodeId": backend}))["node"]
+        except (BrowserError, KeyError, TypeError):
+            return True  # unknown: masked
+        attrs = node.get("attributes") or []
+        pairs = dict(zip(attrs[0::2], attrs[1::2], strict=False))
+        return str(pairs.get("type", "")).lower() == "password"
 
     async def snapshot(self) -> Snapshot:
         """The page's interactive elements and headings, numbered afresh."""
@@ -222,6 +276,7 @@ class BrowserPage:
         # Controls first, links after: a long page's links would otherwise
         # fill the list and push its search box or its buttons off it.
         nodes = [n for n in tree.get("nodes", []) if isinstance(n, dict)]
+
         def is_link(n: dict[str, Any]) -> bool:
             return (n.get("role") or {}).get("value") == "link"
         ordered = [n for n in nodes if not is_link(n)] + [n for n in nodes if is_link(n)]
@@ -245,8 +300,8 @@ class BrowserPage:
             ref = f"e{len(elements) + 1}"
             self.refs[ref] = backend
             value = str((node.get("value") or {}).get("value") or "")
-            if props.get("protected") or (role == "textbox" and "password" in name.lower()):
-                value = "•••" if value else ""
+            if value and role in ("textbox", "searchbox") and await self._is_password(backend):
+                value = "•••"
             checked = props.get("checked")
             elements.append(Element(
                 ref=ref, role=role, name=name, value=_cut(value),
@@ -262,7 +317,9 @@ class BrowserPage:
         return node
 
     async def _object(self, ref: str) -> str:
-        got = await self._page("DOM.resolveNode", {"backendNodeId": self._node(ref)})
+        got = await self._page("DOM.resolveNode", {
+            "backendNodeId": self._node(ref), "executionContextId": await self._context(),
+        })
         object_id = (got.get("object") or {}).get("objectId")
         if not object_id:
             raise BrowserError(f"{ref} is no longer on the page")
@@ -277,31 +334,68 @@ class BrowserPage:
             raise BrowserError(f"the action on {ref} failed on the page")
         return got.get("result", {}).get("value")
 
+    async def _targets(self) -> list[dict[str, Any]]:
+        got = await self.cdp.call("Target.getTargets")
+        return [t for t in got.get("targetInfos", []) if t.get("type") == "page"]
+
+    async def _follow_new_tabs(self, known: set[str]) -> None:
+        """A link that opens a new tab opens it unattached: this page would
+        not change. Each new tab is closed and its address opened HERE, so the
+        task goes on where the person clicking would have looked."""
+        for target in await self._targets():
+            if target.get("targetId") in known or target.get("targetId") == self.target_id:
+                continue
+            url = str(target.get("url") or "")
+            with contextlib.suppress(BrowserError):
+                await self.cdp.call("Target.closeTarget", {"targetId": target["targetId"]})
+            if url.startswith(("http://", "https://")):
+                await self.navigate(url)
+
+    async def _viewport(self) -> tuple[float, float]:
+        try:
+            got = await self._page("Page.getLayoutMetrics")
+            vp = got.get("cssVisualViewport") or got.get("visualViewport") or {}
+            return float(vp["clientWidth"]), float(vp["clientHeight"])
+        except (BrowserError, KeyError, TypeError, ValueError):
+            return 1280.0, 800.0
+
     async def click(self, ref: str) -> None:
         node = self._node(ref)
-        await self._mark()
+        before = await self._loader()
+        known = {str(t.get("targetId")) for t in await self._targets()}
         with contextlib.suppress(BrowserError):
             await self._page("DOM.scrollIntoViewIfNeeded", {"backendNodeId": node})
         try:
             box = await self._page("DOM.getBoxModel", {"backendNodeId": node})
             quad = box["model"]["content"]
-            x, y = sum(quad[0::2]) / 4, sum(quad[1::2]) / 4
+            xs, ys = quad[0::2], quad[1::2]
         except (BrowserError, KeyError, TypeError, IndexError):
             # No layout box (an element drawn by script, or hidden): a DOM click.
             await self._call_on(ref, "function() { this.click(); }")
         else:
+            # The box's centre, kept inside the part that is on screen: an
+            # element taller than the window has its centre off it.
+            width, height = await self._viewport()
+            x = min(max(sum(xs) / 4, max(min(xs), 1.0)), min(max(xs), width - 1))
+            y = min(max(sum(ys) / 4, max(min(ys), 1.0)), min(max(ys), height - 1))
             for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
                 await self._page("Input.dispatchMouseEvent", {
                     "type": kind, "x": x, "y": y, "button": "left", "clickCount": 1,
                 })
-        await self.settle()
+        await self.settle(before)
+        await self._follow_new_tabs(known)
 
     async def type_text(self, ref: str, text: str, *, submit: bool = False) -> None:
-        """Replace the field's text with `text`, as typing would."""
+        """Replace the field's text with `text`, as typing would: an input's
+        value, or an editable element's text."""
         node = self._node(ref)
         await self._page("DOM.focus", {"backendNodeId": node})
-        await self._call_on(ref, "function() { if ('value' in this) { this.value = ''; "
-                                 "this.dispatchEvent(new Event('input', {bubbles: true})); } }")
+        await self._call_on(ref, """function() {
+            if ('value' in this) { this.value = ''; }
+            else if (this.isContentEditable) { this.textContent = ''; }
+            else { return; }
+            this.dispatchEvent(new Event('input', {bubbles: true}));
+        }""")
         await self._page("Input.insertText", {"text": text})
         if submit:
             await self.press("Enter")
@@ -310,6 +404,7 @@ class BrowserPage:
 
     async def select(self, ref: str, option: str) -> str:
         """Choose the option whose visible text (or value) is `option`."""
+        before = await self._loader()
         chosen = await self._call_on(ref, """function(want) {
             if (!this.options) return null;
             const w = String(want).trim().toLowerCase();
@@ -325,14 +420,14 @@ class BrowserPage:
         }""", option)
         if chosen is None:
             raise BrowserError(f"{ref} has no option {option!r}")
-        await self.settle()  # a change handler may navigate; settle notices
+        await self.settle(before)  # a change handler may reload the page
         return str(chosen)
 
     async def press(self, key: str) -> None:
         if key not in _KEYS:
             raise BrowserError(f"unknown key {key!r}")
         code, text, keycode = _KEYS[key]
-        await self._mark()
+        before = await self._loader()
         down: dict[str, Any] = {"type": "keyDown", "key": code, "code": code,
                                 "windowsVirtualKeyCode": keycode}
         if text:
@@ -341,13 +436,17 @@ class BrowserPage:
         await self._page("Input.dispatchKeyEvent",
                          {"type": "keyUp", "key": code, "code": code,
                           "windowsVirtualKeyCode": keycode})
-        await self.settle()
+        await self.settle(before)
 
     async def scroll(self, direction: str) -> None:
         dy = {"down": 1, "up": -1}.get(direction)
         if dy is None:
             raise BrowserError("scroll up or down")
-        await self.evaluate(f"window.scrollBy(0, {dy} * Math.round(window.innerHeight * 0.85))")
+        width, height = await self._viewport()
+        await self._page("Input.dispatchMouseEvent", {
+            "type": "mouseWheel", "x": width / 2, "y": height / 2, "deltaX": 0,
+            "deltaY": dy * round(height * 0.85),
+        })
         await asyncio.sleep(0.4)
 
     async def read_text(self, max_chars: int) -> tuple[str, bool]:
@@ -357,58 +456,48 @@ class BrowserPage:
 
     async def screenshot(self, *, marks: bool = True) -> bytes:
         """A JPEG of the viewport. With `marks`, each ref of the last snapshot
-        that is on screen is drawn as a numbered box first (Set-of-Marks) and
-        removed after, so what the picture shows is answerable by ref."""
-        drawn = False
-        if marks and self.refs:
-            boxes = []
-            for ref, node in self.refs.items():
-                try:
-                    quad = (await self._page("DOM.getBoxModel",
-                                             {"backendNodeId": node}))["model"]["border"]
-                except (BrowserError, KeyError, TypeError):
-                    continue
-                xs, ys = quad[0::2], quad[1::2]
-                boxes.append({"ref": ref, "x": min(xs), "y": min(ys),
-                              "w": max(xs) - min(xs), "h": max(ys) - min(ys)})
-            if boxes:
-                await self.evaluate(_MARKS_DRAW % json.dumps(boxes))
-                drawn = True
-        try:
-            got = await self._page("Page.captureScreenshot", {"format": "jpeg", "quality": 70})
-        finally:
-            if drawn:
-                with contextlib.suppress(BrowserError):
-                    await self.evaluate(_MARKS_CLEAR)
+        that is on screen is boxed and labelled on the IMAGE (Set-of-Marks), so
+        what the picture shows is answerable by ref; the page is not touched."""
+        got = await self._page("Page.captureScreenshot", {"format": "jpeg", "quality": 70})
         data = got.get("data")
         if not isinstance(data, str):
             raise BrowserError("no screenshot came back")
-        return base64.b64decode(data)
+        jpeg = base64.b64decode(data)
+        if not marks or not self.refs:
+            return jpeg
+        boxes: list[tuple[str, float, float, float, float]] = []
+        for ref, node in self.refs.items():
+            try:
+                quad = (await self._page("DOM.getBoxModel",
+                                         {"backendNodeId": node}))["model"]["border"]
+            except (BrowserError, KeyError, TypeError):
+                continue
+            xs, ys = quad[0::2], quad[1::2]
+            boxes.append((ref, min(xs), min(ys), max(xs), max(ys)))
+        return draw_marks(jpeg, boxes)
 
 
-#: Absolutely positioned boxes in the page's own coordinates, one per ref on
-#: screen; `pointer-events: none` so they never take a click.
-_MARKS_DRAW = """(() => {
-  const boxes = %s;
-  const layer = document.createElement('div');
-  layer.id = '__nora_marks__';
-  layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
-  for (const b of boxes) {
-    if (b.y + b.h < 0 || b.y > innerHeight || b.x + b.w < 0 || b.x > innerWidth) continue;
-    const box = document.createElement('div');
-    box.style.cssText = `position:fixed;left:${b.x}px;top:${b.y}px;width:${b.w}px;` +
-      `height:${b.h}px;outline:2px solid #e11d48;`;
-    const tag = document.createElement('span');
-    tag.textContent = b.ref;
-    tag.style.cssText = 'position:absolute;left:0;top:-14px;font:bold 11px monospace;' +
-      'background:#e11d48;color:#fff;padding:0 2px';
-    box.appendChild(tag);
-    layer.appendChild(box);
-  }
-  document.documentElement.appendChild(layer);
-  return true;
-})()"""
-_MARKS_CLEAR = "document.getElementById('__nora_marks__')?.remove(), true"
+def draw_marks(jpeg: bytes, boxes: list[tuple[str, float, float, float, float]]) -> bytes:
+    """`jpeg` with each `(ref, left, top, right, bottom)` boxed and labelled;
+    boxes wholly off the image are skipped."""
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    image = Image.open(BytesIO(jpeg)).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    width, height = image.size
+    for ref, left, top, right, bottom in boxes:
+        if right < 0 or bottom < 0 or left > width or top > height:
+            continue
+        draw.rectangle((left, top, right, bottom), outline=(225, 29, 72), width=2)
+        label_top = max(0.0, top - 12)
+        draw.rectangle((left, label_top, left + 7 * len(ref) + 4, label_top + 12),
+                       fill=(225, 29, 72))
+        draw.text((left + 2, label_top), ref, fill=(255, 255, 255))
+    out = BytesIO()
+    image.save(out, format="JPEG", quality=70)
+    return out.getvalue()
 
 
 def _cut(text: str) -> str:
@@ -423,7 +512,10 @@ async def open_browser(*, base_url: str, token: str, scope: str,
 
     Raises `BrowserError` when computerd refuses (another client holds this
     room's browser, every browser slot is busy, the computer is off) or the
-    page cannot be attached."""
+    page cannot be attached. A refusal is NOT asked again to learn its reason:
+    any request to that address may start a browser (B1's computerd answers a
+    refusal with JSON instead of upgrading, and a second plain GET would run
+    its start path again)."""
     ws_url = base_url.rstrip("/").replace("http://", "ws://", 1).replace(
         "https://", "wss://", 1) + f"/v1/browser?scope={scope}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -432,35 +524,41 @@ async def open_browser(*, base_url: str, token: str, scope: str,
         try:
             ws = await session.ws_connect(ws_url, headers=headers, max_msg_size=64 * 1024 * 1024,
                                           heartbeat=30)
-        except aiohttp.WSServerHandshakeError:
-            # computerd answers a refusal as JSON instead of upgrading; read it.
-            reason = "the computer refused the browser"
-            with contextlib.suppress(Exception):
-                async with session.get(ws_url, headers=headers) as resp:
-                    body = await resp.json(content_type=None)
-                    reason = str(body.get("reason") or body.get("status") or reason)
-            raise BrowserError(reason) from None
+        except aiohttp.WSServerHandshakeError as exc:
+            raise BrowserError("the computer refused the browser: it is busy, every "
+                               f"browser slot is in use, or it is off ({exc.status})") from None
         except (aiohttp.ClientError, OSError, TimeoutError) as exc:
             raise BrowserError(f"the computer could not be reached: {type(exc).__name__}") from None
         cdp = CdpConnection(ws)
         try:
-            targets = (await cdp.call("Target.getTargets")).get("targetInfos", [])
-            page = next((t for t in targets if t.get("type") == "page"), None)
-            if page is None:
-                target_id = (await cdp.call("Target.createTarget",
-                                            {"url": "about:blank"}))["targetId"]
-            else:
-                target_id = page["targetId"]
-            attached = await cdp.call("Target.attachToTarget",
-                                      {"targetId": target_id, "flatten": True})
-            session_id = str(attached["sessionId"])
-            # Never `Runtime.enable`: pages can detect it, and it is the
-            # best-known CDP automation tell (design 00 §3); `Runtime.evaluate`
-            # and `callFunctionOn` work without it.
-            for domain in ("Page", "DOM", "Accessibility"):
-                await cdp.call(f"{domain}.enable", session_id=session_id)
-            yield BrowserPage(cdp=cdp, session_id=session_id)
-        except (KeyError, TypeError) as exc:
-            raise BrowserError(f"the page could not be attached: {type(exc).__name__}") from None
+            page = await _attach(cdp)
+            yield page
         finally:
             await cdp.close()
+
+
+async def _attach(cdp: CdpConnection) -> BrowserPage:
+    """Attach to the room's page. Leftover tabs (a popup from an earlier task)
+    are closed, so a task always starts on, and stays on, one page."""
+    try:
+        targets = [t for t in (await cdp.call("Target.getTargets")).get("targetInfos", [])
+                   if t.get("type") == "page"]
+        if targets:
+            target_id = str(targets[0]["targetId"])
+            for extra in targets[1:]:
+                with contextlib.suppress(BrowserError):
+                    await cdp.call("Target.closeTarget", {"targetId": extra["targetId"]})
+        else:
+            target_id = str((await cdp.call("Target.createTarget",
+                                            {"url": "about:blank"}))["targetId"])
+        attached = await cdp.call("Target.attachToTarget",
+                                  {"targetId": target_id, "flatten": True})
+        session_id = str(attached["sessionId"])
+    except (KeyError, TypeError) as exc:
+        raise BrowserError(f"the page could not be attached: {type(exc).__name__}") from None
+    # Never `Runtime.enable`: pages can detect it, and it is the best-known CDP
+    # automation tell (design 00 §3); evaluation runs in an isolated world
+    # (`BrowserPage._context`), which needs only `Page`.
+    for domain in ("Page", "DOM", "Accessibility"):
+        await cdp.call(f"{domain}.enable", session_id=session_id)
+    return BrowserPage(cdp=cdp, session_id=session_id, target_id=target_id)

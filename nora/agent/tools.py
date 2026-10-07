@@ -14202,6 +14202,9 @@ Args:
         when a page needs clicking, searching or filling in, or web_fetch cannot
         read it.
 
+        It can submit forms on the pages it visits, and those pages see what it
+        types: put nobody's personal details in the objective.
+
         Returns `status`: ok, nothing_found or unavailable, with a `note` on how
         to read it.
         - ok: `answer`, what the pages showed, and the `url` it ended on.
