@@ -508,6 +508,9 @@ class Episode:
     reactions: int
     edits: int
     replies: tuple[TranscriptRow, ...] = ()
+    #: Unquoted `follow` responses (25 §3). Not shown to the session yet, so an
+    #: episode with only these is not evidence (`is_evidence`).
+    follows: int = 0
 
     @property
     def is_evidence(self) -> bool:
@@ -516,7 +519,14 @@ class Episode:
         (`silent`). `unanswered` (none expected) and `unknown` (an outage, not
         silence, R-27) are not, and `open` is not yet. Only an evidence episode
         may be cited, so her own send relabelled as an episode cannot meet the
-        echo rule."""
+        echo rule.
+
+        An episode whose ONLY responses are `follows` is not evidence either:
+        the session is shown her send and nothing of the follow messages, so
+        citing it would rest on a response it cannot see (design/self-growth/40
+        §6). That lifts when the follow messages are rendered."""
+        if self.follows and not (self.replies or self.reactions or self.edits):
+            return False
         return (
             self.outcome in EPISODE_EVIDENCE_OUTCOMES
             or bool(self.replies or self.reactions or self.edits)

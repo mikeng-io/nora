@@ -125,7 +125,11 @@ and line quoted, the evidence cited, and what the lesson would have said.
   name her is still missed. `follows` is stored apart from `replies`, so a
   lesson can weigh an inferred answer less than a quoted one; Character · Nora's
   episode still shows only the quoted replies, not the messages behind a
-  `follow`. Re-measure on more units before trusting `silent`.
+  `follow`, so an episode whose ONLY responses are follows (`follows > 0`,
+  no reply, reaction or edit) is NOT evidence for the Nora session: it is not
+  counted, not read and not citable (`Episode.is_evidence`, in SQL and in the
+  in-memory twin) until the follow messages are shown (a prompt change that
+  needs an eval). Re-measure on more units before trusting `silent`.
 - **A labelled set before going live**, including lessons that would loosen
   law, which must become tension rows. The largest single effort here.
 

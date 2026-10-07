@@ -165,6 +165,14 @@ class SqlCharacterEvidence:
                 ROLLUP_RESPONSE.c.reactions > 0,
                 ROLLUP_RESPONSE.c.edits > 0,
             ),
+            # ...and not one whose only responses are unquoted follows: the
+            # session is not shown those messages (`Episode.is_evidence`).
+            sa.not_(sa.and_(
+                ROLLUP_RESPONSE.c.follows > 0,
+                ROLLUP_RESPONSE.c.replies == 0,
+                ROLLUP_RESPONSE.c.reactions == 0,
+                ROLLUP_RESPONSE.c.edits == 0,
+            )),
             ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
             ROLLUP_RESPONSE.c.message_id > after,
         ]
@@ -196,7 +204,7 @@ class SqlCharacterEvidence:
                 ROLLUP_RESPONSE.c.conversation_id, ROLLUP_RESPONSE.c.sent_ts,
                 ROLLUP_RESPONSE.c.valid_to_ms, ROLLUP_RESPONSE.c.outcome,
                 ROLLUP_RESPONSE.c.reactions, ROLLUP_RESPONSE.c.edits,
-                send.c.body,
+                ROLLUP_RESPONSE.c.follows, send.c.body,
             )
             .select_from(ROLLUP_RESPONSE.outerjoin(
                 send, send.c.id == ROLLUP_RESPONSE.c.message_id,
@@ -224,6 +232,7 @@ class SqlCharacterEvidence:
                     send_id=int(r.message_id), room=r.conversation_id,
                     text=r.body or "", outcome=r.outcome,
                     reactions=int(r.reactions), edits=int(r.edits),
+                    follows=int(r.follows),
                     replies=tuple(transcript_row(x) for x in replies),
                 ))
         return out, int(cursor or after)
