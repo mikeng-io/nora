@@ -109,7 +109,7 @@ def render_culture(
     `render_standing`'s reasoning, and the same failure it avoids.
 
     The absence is also the COMMON case for a while after this ships: a fold
-    needs new messages and a day, so a new room simply has no account, and a
+    needs new messages and a wake (DEC-288), so a new room simply has no account, and a
     block that appeared blank would be read as «this room has no character».
 
     `room` names WHICH room the account is of, and is passed only by an
