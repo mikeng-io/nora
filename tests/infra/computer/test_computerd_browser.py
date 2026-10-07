@@ -1,0 +1,298 @@
+"""computerd's browsers (design/browser-runtime 00 §4, B1): a room's Chrome is
+reached only through computerd's authenticated CDP websocket, relayed over
+Chrome's `--remote-debugging-pipe`; there is never a debugging port.
+
+A fake Chrome stands in for the real one: it speaks the pipe protocol (NUL-
+terminated JSON in on fd 3, out on fd 4) and answers every command with what
+it was started with, so a test reads the argv, profile and display a real
+Chrome would have had. A fake Xvfb creates its display's socket file, which is
+what computerd waits for."""
+
+from __future__ import annotations
+
+import json
+import os
+import stat
+import sys
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from aiohttp import ClientSession, WSMsgType
+from aiohttp.test_utils import TestServer
+
+from nora.domain.computer import computer_scope
+from tests.contract.test_sandbox_runtime_contract import TOKEN, load_computerd, short_tmux_root
+
+SCOPE = computer_scope("signal", "room-a")
+OTHER = computer_scope("signal", "room-b")
+THIRD = computer_scope("signal", "room-c")
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+
+FAKE_CHROME = """#!{python}
+import json, os, sys
+argv = sys.argv[1:]
+inbox, outbox = os.fdopen(3, "rb", buffering=0), os.fdopen(4, "wb", buffering=0)
+buffer = b""
+while True:
+    chunk = inbox.read(65536)
+    if not chunk:
+        break
+    buffer += chunk
+    while b"\\0" in buffer:
+        raw, buffer = buffer.split(b"\\0", 1)
+        message = json.loads(raw)
+        reply = {{"id": message["id"], "result": {{
+            "argv": argv, "display": os.environ.get("DISPLAY"),
+            "xauthority": os.environ.get("XAUTHORITY"),
+            "has_token": "COMPUTERD_TOKEN" in os.environ, "pid": os.getpid()}}}}
+        outbox.write(json.dumps(reply).encode() + b"\\0")
+"""
+
+FAKE_XVFB = """#!/bin/sh
+touch "$FAKE_X11_DIR/X${1#:}"
+exec sleep 3600
+"""
+
+
+def _executable(path: Path, text: str) -> Path:
+    path.write_text(text)
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    return path
+
+
+@pytest.fixture
+def fakes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    x11 = Path(short_tmux_root())
+    monkeypatch.setenv("FAKE_X11_DIR", str(x11))
+    monkeypatch.setenv("COMPUTERD_TOKEN", TOKEN)
+    monkeypatch.setenv("https_proxy", "http://gateway.docker.internal:3128")
+    return {
+        "chrome": _executable(bin_dir / "chrome", FAKE_CHROME.format(python=sys.executable)),
+        "xvfb": _executable(bin_dir / "xvfb", FAKE_XVFB),
+        "x11": x11,
+        "root": tmp_path / "workspace",
+    }
+
+
+async def _serve(fakes: dict[str, Any], **kwargs: Any) -> TestServer:
+    fakes["root"].mkdir(exist_ok=True)
+    app = load_computerd().create_app(
+        root=fakes["root"], token=TOKEN, tmux_root=short_tmux_root(),
+        chrome_bin=str(fakes["chrome"]), xvfb_bin=str(fakes["xvfb"]), x11_dir=fakes["x11"],
+        **kwargs,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    return server
+
+
+@pytest.fixture
+async def server(fakes: dict[str, Any]) -> AsyncIterator[TestServer]:
+    srv = await _serve(fakes)
+    try:
+        yield srv
+    finally:
+        await srv.close()
+
+
+async def _ask(session: ClientSession, server: TestServer, scope: str) -> dict[str, Any]:
+    """Open the room's CDP websocket, send one command, return its answer."""
+    async with session.ws_connect(server.make_url(f"/v1/browser?scope={scope}"),
+                                  headers=AUTH) as ws:
+        await ws.send_str(json.dumps({"id": 7, "method": "Browser.getVersion"}))
+        msg = await ws.receive(timeout=10)
+        assert msg.type is WSMsgType.TEXT, msg
+        return json.loads(msg.data)
+
+
+async def test_a_cdp_command_round_trips_through_the_pipe(server, fakes):
+    async with ClientSession() as session:
+        answer = await _ask(session, server, SCOPE)
+    assert answer["id"] == 7
+    result = answer["result"]
+    assert "--remote-debugging-pipe" in result["argv"]
+    assert result["display"] is not None and result["display"].startswith(":")
+
+
+async def test_chrome_never_gets_a_debugging_port(server, fakes):
+    """No flag opens a CDP port, so nothing in the VM can attach but
+    computerd, which holds the pipe."""
+    async with ClientSession() as session:
+        argv = (await _ask(session, server, SCOPE))["result"]["argv"]
+    assert not [a for a in argv if a.startswith("--remote-debugging-port")]
+    assert not [a for a in argv if a.startswith("--remote-debugging-address")]
+    assert "--headless" not in " ".join(argv)
+
+
+async def test_each_room_gets_its_own_chrome_profile_and_display(server, fakes):
+    async with ClientSession() as session:
+        a = (await _ask(session, server, SCOPE))["result"]
+        b = (await _ask(session, server, OTHER))["result"]
+    assert a["pid"] != b["pid"]
+    assert a["display"] != b["display"]
+    root = fakes["root"]
+    assert f"--user-data-dir={root / SCOPE / 'browser' / 'default'}" in a["argv"]
+    assert f"--user-data-dir={root / OTHER / 'browser' / 'default'}" in b["argv"]
+    assert a["xauthority"] == str(root / SCOPE / "browser" / ".Xauthority")
+
+
+async def test_a_room_reconnecting_reaches_the_same_chrome(server, fakes):
+    async with ClientSession() as session:
+        first = (await _ask(session, server, SCOPE))["result"]["pid"]
+        second = (await _ask(session, server, SCOPE))["result"]["pid"]
+    assert first == second
+
+
+async def test_the_display_cookie_is_the_rooms_alone(server, fakes):
+    async with ClientSession() as session:
+        await _ask(session, server, SCOPE)
+    auth = fakes["root"] / SCOPE / "browser" / ".Xauthority"
+    assert stat.S_IMODE(os.lstat(auth).st_mode) == 0o600
+    data = auth.read_bytes()
+    assert b"MIT-MAGIC-COOKIE-1" in data and len(data) > 30
+
+
+async def test_xvfb_is_started_without_tcp_and_with_the_cookie(server, fakes, tmp_path):
+    record = tmp_path / "xvfb-argv"
+    fakes["xvfb"].write_text(
+        f'#!/bin/sh\necho "$@" > {record}\ntouch "$FAKE_X11_DIR/X${{1#:}}"\nexec sleep 3600\n')
+    async with ClientSession() as session:
+        await _ask(session, server, SCOPE)
+    argv = record.read_text().split()
+    assert argv[argv.index("-nolisten") + 1] == "tcp"
+    assert argv[argv.index("-auth") + 1].endswith(f"{SCOPE}/browser/.Xauthority")
+
+
+async def test_chrome_uses_the_vms_proxy_and_never_sees_the_token(server, fakes):
+    async with ClientSession() as session:
+        result = (await _ask(session, server, SCOPE))["result"]
+    assert "--proxy-server=http://gateway.docker.internal:3128" in result["argv"]
+    assert result["has_token"] is False
+
+
+async def test_a_bad_token_is_refused_before_any_browser_starts(server, fakes):
+    async with ClientSession() as session:
+        resp = await session.get(server.make_url(f"/v1/browser?scope={SCOPE}"),
+                                 headers={"Authorization": "Bearer wrong"})
+        assert resp.status == 401
+    assert not (fakes["root"] / SCOPE / "browser").exists()
+
+
+async def test_a_bad_scope_is_denied(server, fakes):
+    async with ClientSession() as session:
+        resp = await session.get(server.make_url("/v1/browser?scope=../etc"), headers=AUTH)
+        assert (await resp.json())["status"] == "denied"
+
+
+async def test_a_second_client_for_the_same_room_is_denied(server, fakes):
+    async with ClientSession() as session:
+        url = server.make_url(f"/v1/browser?scope={SCOPE}")
+        async with session.ws_connect(url, headers=AUTH) as ws:
+            await ws.send_str(json.dumps({"id": 1, "method": "x"}))
+            await ws.receive(timeout=10)
+            resp = await session.get(url, headers=AUTH)
+            body = await resp.json()
+    assert body["status"] == "denied" and "already" in body["reason"]
+
+
+async def test_stop_kills_the_rooms_chrome_and_state_says_so(server, fakes):
+    async with ClientSession() as session:
+        pid = (await _ask(session, server, SCOPE))["result"]["pid"]
+        state = await (await session.post(server.make_url("/v1/state"), headers=AUTH,
+                                          json={"scope": SCOPE})).json()
+        assert state["browser"]["running"] is True
+        stopped = await (await session.post(server.make_url("/v1/browser_stop"),
+                                            headers=AUTH, json={"scope": SCOPE})).json()
+        assert stopped["status"] == "ok"
+        state = await (await session.post(server.make_url("/v1/state"), headers=AUTH,
+                                          json={"scope": SCOPE})).json()
+    assert state["browser"]["running"] is False
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+async def test_past_the_cap_the_least_recent_idle_browser_is_stopped(fakes):
+    srv = await _serve(fakes, max_browsers=2)
+    try:
+        async with ClientSession() as session:
+            first = (await _ask(session, srv, SCOPE))["result"]["pid"]
+            await _ask(session, srv, OTHER)
+            await _ask(session, srv, THIRD)
+            running = set(srv.app["browsers"].running)
+    finally:
+        await srv.close()
+    assert running == {OTHER, THIRD}
+    with pytest.raises(ProcessLookupError):
+        os.kill(first, 0)
+
+
+async def test_past_the_cap_with_every_browser_attached_the_new_room_is_denied(fakes):
+    srv = await _serve(fakes, max_browsers=1)
+    try:
+        async with ClientSession() as session:
+            url = srv.make_url(f"/v1/browser?scope={SCOPE}")
+            async with session.ws_connect(url, headers=AUTH) as ws:
+                await ws.send_str(json.dumps({"id": 1, "method": "x"}))
+                await ws.receive(timeout=10)
+                resp = await session.get(srv.make_url(f"/v1/browser?scope={OTHER}"), headers=AUTH)
+                body = await resp.json()
+    finally:
+        await srv.close()
+    assert body["status"] == "denied"
+
+
+async def test_an_xvfb_that_never_comes_up_is_unavailable(fakes, monkeypatch):
+    fakes["xvfb"].write_text("#!/bin/sh\nexit 1\n")
+    srv = await _serve(fakes)
+    try:
+        async with ClientSession() as session:
+            resp = await session.get(srv.make_url(f"/v1/browser?scope={SCOPE}"), headers=AUTH)
+            body = await resp.json()
+    finally:
+        await srv.close()
+    assert body["status"] == "unavailable"
+
+
+def test_the_xauthority_record_has_the_xau_layout():
+    computerd = load_computerd()
+    cookie = bytes(range(16))
+    record = computerd.xauthority_entry(101, cookie)
+    assert record[:2] == b"\xff\xff"  # FamilyWild
+    assert record[2:4] == b"\x00\x00"  # no address
+    assert record[4:6] == b"\x00\x03" and record[6:9] == b"101"
+    assert record[9:11] == b"\x00\x12" and record[11:29] == b"MIT-MAGIC-COOKIE-1"
+    assert record[29:31] == b"\x00\x10" and record[31:] == cookie
+
+
+async def test_a_display_whose_socket_already_exists_is_skipped(server, fakes):
+    """Another X server's socket (left over, or someone else's) is never
+    taken as ours: Chrome would draw on that server's screen."""
+    (fakes["x11"] / "X100").touch()
+    async with ClientSession() as session:
+        display = (await _ask(session, server, SCOPE))["result"]["display"]
+    assert display != ":100"
+
+
+async def test_chromes_stderr_lands_in_the_rooms_own_log(server, fakes):
+    fakes["chrome"].write_text(
+        FAKE_CHROME.format(python=sys.executable).replace(
+            "argv = sys.argv[1:]", "argv = sys.argv[1:]\nsys.stderr.write('chrome said hello\\n')"
+            "\nsys.stderr.flush()"))
+    async with ClientSession() as session:
+        await _ask(session, server, SCOPE)
+    log = fakes["root"] / SCOPE / "browser" / "chrome.log"
+    assert "chrome said hello" in log.read_text()
+    assert stat.S_IMODE(os.lstat(log).st_mode) == 0o600
+
+
+async def test_chrome_is_started_without_the_automation_flag_pages_can_read(server, fakes):
+    """Driven over the pipe, Chrome reports `navigator.webdriver = true`
+    unless AutomationControlled is disabled (measured in the VM)."""
+    async with ClientSession() as session:
+        argv = (await _ask(session, server, SCOPE))["result"]["argv"]
+    assert "--disable-blink-features=AutomationControlled" in argv
+    assert "--enable-automation" not in argv
