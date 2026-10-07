@@ -57,10 +57,12 @@ class _Scripted(Model):
         self.calls += 1
         yield {"messageStart": {"role": "assistant"}}
         if i < len(self.script):
+            step = dict(self.script[i])
+            name = step.pop("__tool__", "send_reply")
             yield {"contentBlockStart": {"start": {"toolUse": {
-                "name": "send_reply", "toolUseId": f"t{i}"}}}}
+                "name": name, "toolUseId": f"t{i}"}}}}
             yield {"contentBlockDelta": {"delta": {"toolUse": {
-                "input": json.dumps(self.script[i])}}}}
+                "input": json.dumps(step)}}}}
             yield {"contentBlockStop": {}}
             yield {"messageStop": {"stopReason": "tool_use"}}
         else:
@@ -95,6 +97,7 @@ async def _drive(script: list[dict], statuses: list[str] | None = None):
     budgets = registry.budgets()
     model = _Scripted(script)
     sent: list[str] = []
+    later: list[str] = []
     answers = list(statuses or [])
     deliverer = Deliverer(
         store=_Store(), adapter=SinkSender(), target=TARGET, doctrine=_doctrine(),
@@ -102,7 +105,8 @@ async def _drive(script: list[dict], statuses: list[str] | None = None):
         audience="tag", metrics=Metrics(),
     )
 
-    async def send_reply(text: str, reply_to: int | None = None, more: bool = False) -> str:
+    async def send_reply(text: str, reply_to: int | None = None,
+                         more: bool | None = False) -> str:
         """Send.
 
         Args:
@@ -113,17 +117,28 @@ async def _drive(script: list[dict], statuses: list[str] | None = None):
         sent.append(text)
         return answers.pop(0) if answers else "sent"
 
+    async def now() -> str:
+        """Time.
+
+        Returns: a string.
+        """
+        later.append("ran")
+        return "Thursday"
+
     tool = adapt(ToolSpec(name="send_reply", description="", schema={}, call=send_reply,
                           budget=budgets["send_reply"]))
+    now_tool = adapt(ToolSpec(name="now", description="", schema={}, call=now,
+                              budget=budgets["now"]))
     guard = ReplyGuard(
         conversation_id="g1", budgets=budgets, terminal=registry.terminal_tools(),
         deliverer=deliverer, metrics=Metrics(),
     )
     await LiveAgentRunner(models=FixedModelSource(model), retry=RETRY).invoke(
-        doctrine=_doctrine(), tools=[tool], pre_fill=[], guard=guard,
+        doctrine=_doctrine(), tools=[tool, now_tool], pre_fill=[], guard=guard,
         tag_message="<tag_message/>", ctx=_ctx(), trace_attributes={},
         limits={"turns": 8, "output_tokens": 12_000, "total_tokens": 64_000},
     )
+    guard.later = later  # type: ignore[attr-defined]
     return model.calls, sent, guard
 
 
@@ -168,4 +183,28 @@ async def test_a_refused_send_keeps_the_turn_open_for_a_retry():
 
 async def test_a_held_send_ends_the_turn():
     calls, sent, _ = await _drive([{"text": "a"}], statuses=["held_for_review"])
+    assert (calls, sent) == (1, ["a"])
+
+
+async def test_work_after_the_reply_runs_when_more_is_true():
+    """The relaxed call is also where a note or a publish happens."""
+    _calls, sent, guard = await _drive([{"text": "a", "more": True}, {"__tool__": "now"}])
+    assert sent == ["a"]
+    assert guard.later == ["ran"]
+
+
+async def test_work_after_the_reply_is_dropped_without_more():
+    calls, sent, guard = await _drive([{"text": "a"}, {"__tool__": "now"}])
+    assert (calls, sent, guard.later) == (1, ["a"], [])
+
+
+async def test_the_guard_reads_more_as_the_tool_does():
+    """Strands coerces "true" to True for the tool; the guard must agree, or the
+    turn ends while the tool saw «more»."""
+    calls, sent, _ = await _drive([{"text": "a", "more": "true"}, {"text": "b"}])
+    assert (calls, sent) == (2, ["a", "b"])
+
+
+async def test_a_null_more_is_false_and_the_send_still_goes():
+    calls, sent, _ = await _drive([{"text": "a", "more": None}])
     assert (calls, sent) == (1, ["a"])

@@ -1850,3 +1850,11 @@ async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
     out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
                       platform="signal", text="we're starting")
     _assert_noted("send_to/unwired", out, "unavailable")
+
+
+def test_send_reply_accepts_a_null_more_instead_of_failing_the_send(wiring):
+    """A model that writes `"more": null` must still get its reply sent, and a
+    "true" string is the same True the guard reads (DEC-294)."""
+    validate = wiring["tools"]["send_reply"]._metadata.validate_input
+    assert validate({"text": "hi", "more": None})["more"] is None
+    assert validate({"text": "hi", "more": "true"})["more"] is True

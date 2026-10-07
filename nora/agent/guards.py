@@ -11,6 +11,7 @@ from collections.abc import Callable, Collection, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
+from pydantic import TypeAdapter
 from strands.hooks import (
     AfterModelCallEvent,
     AfterToolCallEvent,
@@ -38,6 +39,9 @@ from .outbound import Outbound, OutboundComposer
 from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
+
+#: `send_reply`'s `more`, validated as Strands validates the tool's own input.
+_MORE: TypeAdapter[bool | None] = TypeAdapter(bool | None)
 
 
 class DeliveredObserver(Protocol):
@@ -1291,10 +1295,13 @@ class ReplyGuard(HookProvider):
 
         After her first message the relaxed loop made one more FULL model call
         so she could send a second, and measured live (77 engagement traces,
-        2026-09-30..10-07) that call almost always ended with nothing: 2 of 45
-        replying turns sent more than one message, and each wasted call
-        re-sent ~24k input tokens. So the turn now ends after a `send_reply`
-        unless she passed `more=true`, which keeps the relaxed path.
+        2026-09-30..10-07) that call almost always ended with nothing: only 4 of 45
+        replying turns did anything with it (2 a second message, the rest a
+        note, a publish or a fetch), and each call re-sent ~24k input tokens.
+        So the turn now ends after a `send_reply`
+        unless she passed `more=true` (any work after the reply, not only a
+        second message; 16 of 382 turns over 40 days used it so), which keeps the
+        relaxed path.
 
         Fail-open on purpose: only the tool's own `sent` or `held_for_review`
         word ends the turn. A `refused` send (R-6, R-18, an audit or send
@@ -1304,7 +1311,16 @@ class ReplyGuard(HookProvider):
         """
         if name != "send_reply":
             return False
-        if isinstance(tool_input, dict) and tool_input.get("more") is True:
+        # Read `more` the way the TOOL does: Strands validates the input with
+        # pydantic's lax bool, so "true", "True", 1 and "yes" are all True to
+        # the tool. An `is True` here read them as False and ended a turn the
+        # tool saw as continuing. An unreadable value means the call itself
+        # failed validation, so it never carries a `sent` word below.
+        raw = tool_input.get("more") if isinstance(tool_input, dict) else None
+        try:
+            if _MORE.validate_python(raw):
+                return False
+        except ValueError:
             return False
         try:
             text = result["content"][0]["text"]
