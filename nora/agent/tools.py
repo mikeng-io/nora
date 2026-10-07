@@ -4636,9 +4636,11 @@ def build_tool_specs(
     `send_to`. So it takes `(platform, conversation_id)` and answers `None` for
     a room policy cannot name, which is `unavailable` rather than a guess.
 
-    `transcript` is `who_said`'s whole world (DEC-146): the SAME
-    `TagContext.transcript` tuple `nora.agent.prefill._transcript_block`
-    rendered `<group_transcript>` from, passed in rather than re-read. That is
+    `transcript` is `who_said`'s whole world (DEC-146): the window the prefill
+    was read from (`TagContext.lookup_transcript` when `[store] prompt_window`
+    shows fewer rows than were read, else the `TagContext.transcript` tuple
+    `nora.agent.prefill._transcript_block` rendered `<group_transcript>` from),
+    passed in rather than re-read. That is
     comprehend-once — the window is interpreted at assembly and every consumer
     computes on that one fixed model, so the tool cannot disagree with the block
     the model is looking at. Re-querying the store for it would be a second

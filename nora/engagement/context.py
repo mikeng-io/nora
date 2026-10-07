@@ -97,6 +97,7 @@ class TranscriptInjection:
         memory: MemoryStore,
         persons: Persons,
         context_window: int,
+        prompt_window: int | None = None,
         metrics: Any,
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
@@ -116,6 +117,10 @@ class TranscriptInjection:
         self._memory = memory
         self._persons = persons
         self._context_window = context_window
+        # `None` renders everything that was read (every harness that predates
+        # `[store] prompt_window`); a number renders at most that many rows,
+        # never reaching back less far than the quoted parent.
+        self._prompt_window = prompt_window
         self._quote_window = quote_window
         self._metrics = metrics
         self._ai_peer = ai_peer
@@ -274,11 +279,17 @@ class TranscriptInjection:
                 "media_join", "enrich", self._media_join.enrich(transcript, path="tag"),
             )
 
+        # LAST, after naming and the media join, so the lookup rows read the
+        # same as the shown ones. Empty when nothing was cut.
+        shown = self._shown(transcript, msg)
+        lookup = tuple(transcript) if len(shown) < len(transcript) else ()
+
         return TagContext(
             tag_id=request.tag_id,
             message=msg,
             tagger=ref,
-            transcript=transcript,
+            transcript=shown,
+            lookup_transcript=lookup,
             peer_card=card,
             started_at=time.perf_counter(),
             tagger_card=tagger_card,
@@ -351,8 +362,29 @@ class TranscriptInjection:
         gather instead of waiting for all of them. Its own bound
         (`read_character`'s timeout) is added to the transcript's, not to the
         whole gather's."""
-        transcript = await self._recent(msg)
-        return transcript, await self._character(msg, ref, transcript)
+        read = await self._recent(msg)
+        return read, await self._character(msg, ref, self._shown(read, msg))
+
+    def _shown(
+        self, read: Sequence[TranscriptRow], msg: NormalizedMessage,
+    ) -> tuple[TranscriptRow, ...]:
+        """The rows the prompt renders: the newest `prompt_window` of `read`,
+        reaching further back only to include the quoted parent (R-20, DEC-195)
+        so a reply never loses the message it answers. Deterministic in
+        (`read`, `msg.quote`), so it can be applied again after the rows are
+        named and enriched and land on the same rows."""
+        rows = tuple(read)
+        if self._prompt_window is None or len(rows) <= self._prompt_window:
+            return rows
+        start = len(rows) - self._prompt_window
+        if msg.quote is not None:
+            parent = next(
+                (i for i, row in enumerate(rows) if row.ts == msg.quote.quoted_ts),
+                None,
+            )
+            if parent is not None:
+                start = min(start, parent)
+        return rows[start:]
 
     async def _character(
         self, msg: NormalizedMessage, ref: PersonRef | None,

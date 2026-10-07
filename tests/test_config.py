@@ -2026,3 +2026,13 @@ def test_subagent_on_refuses_to_load_without_the_poller_or_the_dreamer(toml_path
     toml_path.write_text(head + sep + tail)
     with pytest.raises(ConfigError, match=r"\[subagent\] enabled = true needs"):
         load(toml_path)
+
+
+def test_prompt_window_defaults_to_20_and_may_not_exceed_the_read_window():
+    from nora.config import StoreConfig
+
+    base = {"data_dir": "data", "max_per_conversation": 500, "context_window": 40}
+    ctx = {"base": Path("base")}
+    assert StoreConfig.model_validate(base, context=ctx).prompt_window == 20
+    with pytest.raises(ValueError, match="prompt_window"):
+        StoreConfig.model_validate({**base, "prompt_window": 41}, context=ctx)

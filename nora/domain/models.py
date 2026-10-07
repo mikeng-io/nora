@@ -651,6 +651,11 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
+    # The rows READ, when the prompt shows fewer of them (`[store] prompt_window`).
+    # `transcript` is what `<group_transcript>` renders and what `#n` / `reply_to`
+    # index; this is the deeper read a LOOKUP (`who_said`) searches. Empty means
+    # the two are the same rows: use `transcript`.
+    lookup_transcript: tuple[TranscriptRow, ...] = ()
 
 
 @dataclass(frozen=True)

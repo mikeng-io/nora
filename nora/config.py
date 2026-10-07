@@ -714,6 +714,15 @@ class StoreConfig(BaseModel):
     # mechanism constant.
     quote_margin: int = 10
     quote_window_multiplier: int = 3
+    # How many of those rows the TAG prompt's `<group_transcript>` renders
+    # (2026-10-07, operator-approved). `context_window` stays the READ depth:
+    # `who_said` (DEC-146) keeps searching all of it, and the quote resolver
+    # above sizes from it, so a lookup never shrinks with the prompt. A quoted
+    # parent inside the read window is never cut off: the render reaches back
+    # to it. Measured live: the 40-row block is ~5.3k characters of a ~63k
+    # prompt, and a selector over it kept 8 rows on 206 of 216 turns. The
+    # default lives in code, so a config.toml that omits the key gets 20.
+    prompt_window: int = Field(default=20, ge=1)
     # Whether the retention sweep runs AT ALL. `max_per_conversation` is the
     # window when it does; this is the switch, and the two are separate keys on
     # purpose — «keep everything» is not expressible as a number. Widening the
@@ -737,6 +746,12 @@ class StoreConfig(BaseModel):
     @model_validator(mode="after")
     def _resolve_paths(self, info: ValidationInfo) -> StoreConfig:
         _resolve_context_field(self, "data_dir", info)
+        if self.prompt_window > self.context_window:
+            raise ValueError(
+                f"[store] prompt_window ({self.prompt_window}) cannot exceed "
+                f"context_window ({self.context_window}): it is a slice of what "
+                "was read, not a second read"
+            )
         return self
 
 

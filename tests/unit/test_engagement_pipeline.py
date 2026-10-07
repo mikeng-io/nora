@@ -3115,3 +3115,38 @@ async def test_the_tag_s_room_carries_the_record_row_of_the_message_that_raised_
     await pipeline.run(_request())
     await _drain(background)
     assert [r.trigger_message_ids for r in seen] == [(mine,)]
+
+
+async def test_who_said_searches_the_whole_read_window_not_the_prompt_slice():
+    """`[store] prompt_window` trims what `<group_transcript>` shows; the
+    lookup tool is handed the deeper read, so a lookup never shrinks with the
+    prompt. 12 rows read (`context_window=10` plus the tag), 4 shown."""
+    seen: dict = {}
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):
+            seen["lookup"] = tuple(r.body for r in kw["transcript"])
+            return super().surface(**kw)
+
+    audit = FakeRecordStore()
+    for i in range(12):
+        await audit.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=100 + i, body=f"m{i}", raw={},
+        ))
+    memory = _FakeMemory()
+    metrics = Metrics()
+    runner = _EchoRunner()
+    pipeline, _m, _a, _mem, background = _build_pipeline(
+        audit=audit, memory=memory, metrics=metrics, runner=runner,
+        tool_registry=_Spy(),
+        context_assembler=TranscriptInjection(
+            audit=audit, memory=memory, persons=PERSONS, context_window=10,
+            prompt_window=4, metrics=metrics,
+        ),
+    )
+    await pipeline.run(_req(body="q", tag_id="t1", ts=500))
+    await _drain(background)
+
+    assert runner.seen_transcripts[0] == ("m8", "m9", "m10", "m11")      # the prompt: 4
+    assert seen["lookup"] == tuple(f"m{i}" for i in range(2, 12))        # who_said: all 10

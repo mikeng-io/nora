@@ -890,3 +890,71 @@ async def test_a_failing_read_ends_its_span_with_error_status(exported_spans):
     assert "nora.store.row_count" not in recorded.attributes, (
         "a failed read never fabricates a count for what it did not get back"
     )
+
+
+async def _seeded_prompt(count: int, *, context_window: int, prompt_window: int,
+                         quote: Quote | None = None, quote_window_for_store=False):
+    store = FakeRecordStore()
+    for i in range(count):
+        await store.append(message=NormalizedMessage(
+            platform="signal", conversation_id="g1", conversation_type="group",
+            sender_id="+852111", sender_name="Miles", timestamp=i, body=f"m{i}", raw={},
+        ))
+    assembler = TranscriptInjection(
+        audit=store, memory=FakeMemory(), persons=_MILES, context_window=context_window,
+        prompt_window=prompt_window, metrics=Metrics(),
+        quote_window=_quote_window(store) if quote_window_for_store else None,
+    )
+    msg = NormalizedMessage(
+        platform="signal", conversation_id="g1", conversation_type="group",
+        sender_id="+852111", sender_name="Miles", timestamp=count, body="reply", raw={},
+        quote=quote,
+    )
+    return await assembler.assemble(request=_request(msg))
+
+
+async def test_the_prompt_carries_at_most_prompt_window_rows_and_the_read_stays_whole():
+    ctx = await _seeded_prompt(45, context_window=40, prompt_window=20)
+    assert [r.body for r in ctx.transcript] == [f"m{i}" for i in range(25, 45)]
+    assert [r.body for r in ctx.lookup_transcript] == [f"m{i}" for i in range(5, 45)]
+
+
+async def test_a_quoted_parent_beyond_the_prompt_window_is_never_cut():
+    """Parent m10 is 35 rows back: inside the 40-row read, outside the 20-row
+    prompt. The render reaches back to it; the newest rows all stay."""
+    ctx = await _seeded_prompt(
+        45, context_window=40, prompt_window=20,
+        quote=Quote(author_id="x", text="", quoted_ts=10),
+    )
+    assert ctx.transcript[0].body == "m10"
+    assert ctx.transcript[-1].body == "m44"
+    assert len(ctx.transcript) == 35
+
+
+async def test_a_quote_past_the_read_window_still_resolves_through_the_quote_resolver():
+    """Parent m5 is 55 rows back, past `context_window=40`: DEC-195 grows the
+    READ (cap 120), and the prompt reaches back to the parent."""
+    ctx = await _seeded_prompt(
+        60, context_window=40, prompt_window=20,
+        quote=Quote(author_id="x", text="", quoted_ts=5), quote_window_for_store=True,
+    )
+    assert any(r.body == "m5" for r in ctx.transcript)
+
+
+async def test_a_window_no_deeper_than_the_prompt_leaves_lookup_empty():
+    ctx = await _seeded_prompt(12, context_window=40, prompt_window=20)
+    assert len(ctx.transcript) == 12 and ctx.lookup_transcript == ()
+
+
+def test_the_composition_root_hands_the_configured_prompt_window_to_the_assembler(example_config):
+    """`[store] prompt_window` reaches `TranscriptInjection` through
+    `build_assembler`; without this wire the key is decoration and the prompt
+    stays at 40."""
+    from nora.app.assembler import build_assembler
+    from nora.policy import permissive_policy
+
+    assembler = build_assembler(
+        example_config, audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        metrics=Metrics(), policy=permissive_policy(),
+    )
+    assert assembler._prompt_window == example_config.store.prompt_window == 20

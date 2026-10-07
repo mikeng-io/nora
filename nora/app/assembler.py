@@ -74,6 +74,7 @@ def build_assembler(
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
         context_window=cfg.store.context_window, metrics=metrics,
+        prompt_window=cfg.store.prompt_window,
         # SHARED (DEC-195) with `nora.app.fire.FirePath`, not built here from
         # `cfg.store.quote_margin`/`.quote_window_multiplier` — those two
         # config values are read ONCE, at the composition root, into the ONE

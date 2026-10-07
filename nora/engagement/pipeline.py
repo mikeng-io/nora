@@ -731,7 +731,11 @@ class EngagementPipeline:
                 # a second store call here would be a second interpretation of
                 # the same messages, and the two would drift the first time one
                 # side's limit or naming pass changed.
-                transcript=ctx.transcript,
+                # When `[store] prompt_window` shows fewer rows than were read,
+                # `who_said` still searches all of them: a lookup must not
+                # shrink with the prompt, or «nobody said it» turns into «not in
+                # the 20 you were shown».
+                transcript=ctx.lookup_transcript or ctx.transcript,
                 allowed_mcp=allowed_mcp, location_trusted=location_trusted,
                 # DEC-89: the SAME carrier the `Deliverer` above holds. The
                 # tools mint links into it and the sender puts back the ones the
