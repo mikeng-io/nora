@@ -1,15 +1,14 @@
 # Open questions and measurements
 
-Status (2026-10-07): six of seven rulings made and S1 run; ADR acceptance
-is the one open ruling. Nothing here is decided by argument.
+Status (2026-10-07): every ruling made, ADR 0022 accepted, S1 run. Nothing here is decided by argument.
 
 ## 1. Rulings for the operator
 
 Ruled 2026-10-07 unless marked open. Each keeps the fact it rests on, so a
 later reading can reopen it.
 
-1. **Accept ADR 0022?** **Open, and next (B0).** S1 has run, and its
-   readings are folded into Decision 2 and the Context.
+1. **Accept ADR 0022: ruled, accepted** (2026-10-07). B0 is done; B1 is
+   next.
 2. **Browsing egress: ruled, `**` with private ranges denied, no extra
    proxy.** S1 showed a name resolving to a private address still gets
    through (`04-s1-runbook.md` step 4); the operator accepted that risk.

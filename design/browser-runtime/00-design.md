@@ -1,21 +1,21 @@
 ---
 type: design
 title: "Nora's browser — headed Chrome in the computer, a tiered driver, and a vault she never reads"
-description: "Not built. Extends design/sandbox-runtime §14 (S4). Real Google Chrome runs headed on Xvfb inside the sbx computer; a sub-agent outside the VM drives it over a CDP proxy through computerd, through four tiers (site adapter, cached script, small decision model, DeepSeek Flash with vision) and a human hand-off over noVNC. Credentials live in OpenBao and reach a page only through a fill broker, bound to an origin; the model holds handles. The portal can watch the screen read-only. Proposes ADR 0022 (number taken at merge). Research from 2026-10-06, much of it from search snippets and marked so."
+description: "Not built. Extends design/sandbox-runtime §14 (S4). Real Google Chrome runs headed on Xvfb inside the sbx computer; a sub-agent outside the VM drives it over a CDP proxy through computerd, through four tiers (site adapter, cached script, small decision model, DeepSeek Flash with vision) and a human hand-off over noVNC. Credentials live in OpenBao and reach a page only through a fill broker, bound to an origin; the model holds handles. The portal can watch the screen read-only. ADR 0022, accepted 2026-10-07. Research from 2026-10-06, much of it from search snippets and marked so."
 tags: [nora, compute, sandbox, sbx, browser, computer-use, credentials, openbao, vault, cdp]
 timestamp: '2026-10-07'
-status: proposed
+status: accepted
 ---
 
 # Nora's browser
 
-Status (2026-10-07): **proposed, not built.** This bundle is the design for
+Status (2026-10-07): **accepted (ADR 0022), not built.** This bundle is the design for
 S4 of `design/sandbox-runtime/00-design.md` (§14) plus the credential store
 that S4 needs and the sandbox design deferred (§8, decision 3). It is written
 from an operator conversation on 2026-10-06/07 and three research passes
 (`02-research.md`). The decision it asks for is
 `docs/adr/0022-noras-browser-is-headed-chrome-with-a-vault-fill-broker.md`
-(proposed; the number is re-taken from origin/master at merge).
+(accepted 2026-10-07).
 
 Files:
 

@@ -646,10 +646,11 @@ with who, when, how and what, as a full trail for auditing.**
 
 ## 14. Browser: agent-as-tool, not a tool per click
 
-**Proposed 2026-10-07:** `design/browser-runtime/` and ADR 0022 make S4
-concrete (headed Chrome, a tiered driver, an OpenBao fill broker) and ask to
-supersede decision 3 for Nora's own accounts. Until accepted, this section
-stands.
+**Accepted 2026-10-07 (operator):** `design/browser-runtime/` and ADR 0022
+make S4 concrete (headed Chrome, a tiered driver, an OpenBao fill broker) and
+supersede decision 3 for Nora's own accounts. Where this section and that
+bundle differ, the bundle holds; this section is kept as the 2026-09-30/10-01
+record.
 
 **Status (2026-10-01): not built (S4).** There is no `computer_browse`, no
 browser in the image and no CDP proxy in computerd. **No browser logins are
@@ -849,7 +850,8 @@ session names it, and does not restart the task from scratch.
    two units never do. **It is not built:** today there is one VM
    (`nora-computer`) with a directory and a user per room scope (§3), and one
    VM per unit is tracked as issue #678.
-3. **Decided, 2026-10-01 (was open):** **no browser logins are allowed for
+3. **Superseded in part, 2026-10-07, by ADR 0022** (logins allowed for Nora's
+   own accounts, held by a `browser` user). **Decided, 2026-10-01 (was open):** **no browser logins are allowed for
    now.** No account may stay logged in inside the browser. It matters only
    for S4, which is not built, and §8's "Nora's own low-value accounts, one
    profile per room" is withdrawn until a new ruling.

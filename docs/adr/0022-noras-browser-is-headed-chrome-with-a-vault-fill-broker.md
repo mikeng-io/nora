@@ -1,6 +1,6 @@
 # 0022 · Nora's browser is headed Chrome in sbx, driven in tiers, with credentials only through a vault fill broker
 
-- **Status:** proposed (2026-10-07)
+- **Status:** accepted (2026-10-07, operator)
 - **Date:** 2026-10-07
 - **Extends:** [0019](0019-noras-computer-runs-in-an-sbx-microvm.md) and
   `design/sandbox-runtime/00-design.md` §14 (S4, the browser), which this
@@ -12,8 +12,8 @@
   03 open questions and rulings, 04 the S1 runbook).
 - **Rulings folded in (operator, 2026-10-07):** egress is `**` with private ranges denied; one sandbox; `auto` approval for read-only credentials, `ask` for
   the rest; no recordings; decision models on CPU first; manual unseal.
-- **Index:** a DEC number is taken at merge, when a behaviour lands. This ADR
-  number is re-taken from origin/master at merge as well.
+- **Index:** none yet; no behaviour ships with this ADR. A DEC row is taken
+  from origin/master when the first behaviour (B1) lands.
 
 ## Context
 

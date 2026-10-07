@@ -1,6 +1,6 @@
 # Nora Vault — OpenBao and a fill broker
 
-Status (2026-10-07): **proposed, not built.** Part of `00-design.md`; the
+Status (2026-10-07): **accepted (ADR 0022), not built.** Part of `00-design.md`; the
 decision is ADR 0022 Decision 3.
 
 ## 1. The problem
