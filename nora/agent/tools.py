@@ -5545,8 +5545,10 @@ def build_tool_specs(
                 if rooms_listing(unit_rooms, pid)
             }
             person_id = person_named(unit_people, subject)
-            if person_id is not None:
-                wanted = [(r, person_id) for r in rooms_listing(unit_rooms, person_id)]
+            listing = rooms_listing(unit_rooms, person_id) if person_id is not None else ()
+            # ONE account per (unit, person) since C2b: every room listing them
+            # names the same key, so it is read once, labelled by the first.
+            wanted = [(listing[0], person_id)] if listing else []
         else:
             _record(metrics, "character_read", "unavailable", reason="entity")
             return {"status": "unavailable", "note": _CHARACTER_OFF}

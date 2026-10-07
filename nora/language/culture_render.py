@@ -130,6 +130,22 @@ def render_culture(
     )
 
 
+def render_unit_culture(
+    culture: CultureRevision | None, *, now: datetime | None = None,
+) -> ContextBlock | None:
+    """The `<unit_culture>` block: what the room's whole unit is like
+    (design/self-growth/10 §1, C3a). `None` while the unit has no account,
+    for `render_culture`'s reason: an empty block would say she looked and
+    found nothing."""
+    if culture is None or not culture.body.strip():
+        return None
+    return ContextBlock(
+        name="unit_culture",
+        attrs=(("written", _age(culture.written_at, now or datetime.now().astimezone())),),
+        body=escape(culture.body),
+    )
+
+
 class _HeadReader(Protocol):
     def head(self, *, key: str) -> Awaitable[CultureRevision | None]: ...
 
@@ -137,7 +153,7 @@ class _HeadReader(Protocol):
 async def read_character(
     reader: _HeadReader | None,
     *,
-    scope: str,
+    unit: str,
     members: Sequence[PersonRef],
     stage: str,
     platform: str,
@@ -146,16 +162,19 @@ async def read_character(
 ) -> tuple[tuple[str, CultureRevision], ...]:
     """`(name, account)` for each listed person who has one, in roster order.
 
-    The Character tier's read (DEC-278): one `read_culture` per person, so each
-    keeps its bound, its count and the withdrawal rule, and a person whose read
-    failed or who has no account yet is simply absent. `scope` is the room's
-    `primary_id`, the key the fold wrote under.
+    The Character tier's read: one `read_culture` per person, so each keeps
+    its bound and its count, and a person whose read failed or who has no
+    account yet is simply absent. `unit` is the rendering room's unit: an
+    account is one per (unit, person) since C2b (design/self-growth/10 §3),
+    and `members` are the rendering room's LISTED persons, so a person's
+    account renders only in a room of their unit that lists them
+    (design/cognition-loop/50-character-and-standing.md §5).
     """
     if reader is None or not members:
         return ()
     found = await asyncio.gather(*(
         read_culture(
-            reader.head(key=character_key(scope, ref.person_id)),
+            reader.head(key=character_key(unit, ref.person_id)),
             stage=stage, platform=platform, metrics=metrics,
             timeout_seconds=timeout_seconds,
         )

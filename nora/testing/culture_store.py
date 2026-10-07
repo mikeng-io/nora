@@ -56,6 +56,7 @@ class InMemoryCultureStore:
         established_by: str,
         instruction_sha256: str | None = None,
         model: str | None = None,
+        citations: tuple[str, ...] = (),
     ) -> CultureRevision:
         if not key.strip(" "):
             raise ValueError("culture_has_a_key_check")
@@ -69,6 +70,7 @@ class InMemoryCultureStore:
             established_by=established_by,
             parent_revision_id=self._heads.get(key),
             instruction_sha256=instruction_sha256, model=model,
+            citations=tuple(citations),
         )
         self._revisions[revision.id] = revision
         self._heads[key] = revision.id

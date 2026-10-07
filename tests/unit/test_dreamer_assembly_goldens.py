@@ -15,12 +15,16 @@ whole `inputs()` text, not a substring of it, over the cases a hand join and
   which `assemble` would DROP as an empty body), and a description made only of
   characters XML cannot carry, which escapes to an empty body without being
   falsy;
-* blocks built by a shared builder (`render_notes`, `render_standing`,
-  `render_culture`) and restamped with the occasion's own row;
+* blocks built by a shared builder (`render_notes`, `render_culture`) and
+  restamped with the occasion's own row;
 * long content: a long account, a batch of many rows.
 
 Nothing here regenerates a golden. Changing one is a model-visible change and
-belongs in a step that says so.
+belongs in a step that says so. The one such change so far: the culture
+adaptor stopped reading the room's `standing` (self-growth C2b review,
+2026-10-07, R-31: its account is input to accounts shown in every room of the
+unit), so the culture goldens no longer carry a `<standing>` block and the
+case that varied it alone is gone.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from nora.language import culture_render, standing_render
+from nora.language import culture_render
 from nora.testing import (
     InMemoryCultureStore,
 )
@@ -46,8 +50,8 @@ GOLDEN: dict[str, str] = json.loads(
 CASES: dict[str, Callable[[], Awaitable[str]]] = {}
 
 
-#: The wall clock the culture and Standing blocks' `written=` ages are measured
-#: against. `render_culture` and `render_standing` default to `datetime.now()`
+#: The wall clock the culture block's `written=` age is measured against.
+#: `render_culture` defaults to `datetime.now()`
 #: (production wants exactly that), so a golden that records "391d ago" was true
 #: on the day it was captured and false the next day: it went red on
 #: 2026-10-02, a day after merging. 391 days and half a day after the culture
@@ -64,7 +68,6 @@ class _FrozenDatetime(datetime):
 @pytest.fixture(autouse=True)
 def _frozen_wall_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(culture_render, "datetime", _FrozenDatetime)
-    monkeypatch.setattr(standing_render, "datetime", _FrozenDatetime)
 
 
 def _case(name: str):
@@ -86,17 +89,10 @@ _CUL_BATCH = (
 )
 
 
-async def _cul_standing_store(*, present: bool = True) -> cul._StandingStore:
-    return cul._StandingStore(
-        {("discord", "g1"): cul._standing()} if present else {},
-    )
-
-
 @_case("culture-full")
 async def _culture_full() -> str:
     return await cul._adaptor(
         cul._Store(cul._revision("they decide by attrition & <never> cancel")),
-        standing=await _cul_standing_store(),
         notes=cul._Notes((cul._note(), cul._note("trip & <away>"))),
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
@@ -105,7 +101,7 @@ async def _culture_full() -> str:
 async def _culture_no_description() -> str:
     return await cul._adaptor(
         cul._Store(cul._revision("account")), description=None,
-        standing=await _cul_standing_store(), notes=cul._Notes((cul._note(),)),
+        notes=cul._Notes((cul._note(),)),
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
 
@@ -133,7 +129,7 @@ async def _culture_no_label() -> str:
 
 @_case("culture-first-fold-nothing-else-wired")
 async def _culture_bare() -> str:
-    return await cul._adaptor(cul._Store(), notes=None, standing=None).inputs(
+    return await cul._adaptor(cul._Store(), notes=None).inputs(
         key=cul.KEY, batch=_CUL_BATCH[:1],
     )
 
@@ -141,37 +137,29 @@ async def _culture_bare() -> str:
 @_case("culture-previous-account-only")
 async def _culture_previous_only() -> str:
     return await cul._adaptor(
-        cul._Store(cul._revision("account")), notes=None, standing=None,
+        cul._Store(cul._revision("account")), notes=None,
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
 
-@_case("culture-standing-without-notes")
-async def _culture_standing_only() -> str:
-    return await cul._adaptor(
-        cul._Store(), standing=await _cul_standing_store(), notes=None,
-    ).inputs(key=cul.KEY, batch=_CUL_BATCH)
-
-
-@_case("culture-notes-without-standing")
+@_case("culture-notes-only")
 async def _culture_notes_only() -> str:
     return await cul._adaptor(
-        cul._Store(), standing=None, notes=cul._Notes((cul._note(),)),
+        cul._Store(), notes=cul._Notes((cul._note(),)),
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
 
-@_case("culture-wired-but-empty-standing-and-notes")
+@_case("culture-wired-but-empty-notes")
 async def _culture_wired_empty() -> str:
     return await cul._adaptor(
-        cul._Store(), standing=await _cul_standing_store(present=False),
-        notes=cul._Notes(()),
+        cul._Store(), notes=cul._Notes(()),
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
 
 @_case("culture-key-names-no-policy-conversation")
 async def _culture_unresolved() -> str:
     return await cul._adaptor(
-        cul._Store(cul._revision("account")), unit=None, standing_key=None,
-        standing=await _cul_standing_store(), notes=cul._Notes((cul._note(),)),
+        cul._Store(cul._revision("account")), unit=None,
+        notes=cul._Notes((cul._note(),)),
     ).inputs(key=cul.KEY, batch=_CUL_BATCH)
 
 
@@ -191,7 +179,6 @@ async def _culture_long() -> str:
     )
     return await cul._adaptor(
         cul._Store(cul._revision("a long account " * 60)),
-        standing=await _cul_standing_store(),
         notes=cul._Notes(tuple(cul._note(f"arrangement {i}") for i in range(12))),
     ).inputs(key=cul.KEY, batch=batch)
 
@@ -213,14 +200,14 @@ def test_every_case_has_a_golden_and_no_golden_is_orphaned():
 #: What each golden holds and does not, so «every optional block present and
 #: absent» is a checked property of the fixtures and not a claim about them.
 _PRESENT = {
-    "culture-full": ("room", "previous_account", "standing", "notes", "room_messages"),
+    "culture-full": ("room", "previous_account", "notes", "room_messages"),
     "culture-first-fold-nothing-else-wired": ("room", "room_messages"),
 }
 _ABSENT = {
-    "culture-first-fold-nothing-else-wired": ("previous_account", "standing", "notes"),
-    "culture-previous-account-only": ("standing", "notes"),
-    "culture-standing-without-notes": ("previous_account", "notes"),
-    "culture-notes-without-standing": ("previous_account", "standing"),
+    "culture-first-fold-nothing-else-wired": ("previous_account", "notes"),
+    "culture-previous-account-only": ("notes",),
+    "culture-notes-only": ("previous_account",),
+    # NO golden holds `<standing`: the fold does not read it (R-31).
 }
 
 

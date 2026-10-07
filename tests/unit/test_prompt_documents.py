@@ -208,14 +208,13 @@ def standing() -> Standing:
 
 
 async def culture(body: str = "去邊食", *, name: str = "Ada") -> str:
-    # The four policy accessors are REQUIRED since master gave the culture fold
+    # The three policy accessors are REQUIRED since master gave the culture fold
     # its own `<room>` block: without them the adaptor cannot name the room it
-    # is reading, which is #161's defect one tier over. `None` for the two store
-    # keys keeps this builder to the blocks this file is about.
+    # is reading, which is #161's defect one tier over. `None` for the unit
+    # keeps this builder to the blocks this file is about.
     return await CultureAdaptor(
         culture=InMemoryCultureStore(),
         unit_for=lambda _k: None,
-        standing_key_for=lambda _k: None,
         label_for=lambda _k: "Dinner",
         description_for=lambda _k: None,
     ).inputs(key="discord/g1", batch=[row(body, name=name)])

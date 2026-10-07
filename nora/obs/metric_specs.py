@@ -17,7 +17,7 @@ from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
-from nora.domain.culture import CULTURE_OUTCOMES
+from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
@@ -1762,20 +1762,28 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # without making it richer. A sustained run of it is a room that has stopped
     # changing, which is a real reading and not an error.
     #
-    # `too_many` should be flat forever: it counts a reply proposing more than
-    # one account for one room, which is a misread of the task, and the whole
-    # reply is discarded rather than one of them picked silently. `oversize` is
-    # the account drifting back into chronicle — restating what happened instead
-    # of saying what the room is — caught at the operating cap, well under the
-    # database ceiling that exists to catch corruption.
+    # Since the write verb (C2a) the outcomes are about what a session did
+    # with its room: `refused` counts one refused `character_revise` call,
+    # `unsettled` a session that ended with the room neither revised nor kept
+    # (its batch is held), `kept` a «no change» close.
     _CounterSpec(
         "nora_culture_fold_total",
-        "Culture folds by what the pass did with the model's answer, by outcome ("
-        + " / ".join(sorted(CULTURE_OUTCOMES))
-        + "). dropped_person: one person's account named someone the fold was "
-        "not shown, and only that item was dropped. abandoned: the same batch "
-        "was rejected three times in a row and the fold advanced past it.",
+        "Culture folds by what the session did with the room's account, by "
+        "outcome (" + " / ".join(sorted(CULTURE_OUTCOMES))
+        + "). refused: one write was refused with a reason the model read. "
+        "unsettled: the session ended with the room neither revised nor kept, "
+        "and its batch is held. abandoned: the same batch was unsettled three "
+        "times in a row and the fold advanced past it.",
         ("outcome",),
+    ),
+    # The Character sessions that are not a room (design/self-growth/10 §3):
+    # one per (unit, entity) key, by entity kind and by the same outcomes.
+    _CounterSpec(
+        "nora_character_session_total",
+        "Character sessions (person, unit, Nora) by kind ("
+        + " / ".join(sorted(CHARACTER_KINDS)) + ") and outcome ("
+        + " / ".join(sorted(CHARACTER_OUTCOMES)) + ").",
+        ("kind", "outcome"),
     ),
     # Issue #325. The OmniRoute Chat Completions transport drops
     # `reasoningContent` in a multi-turn position; in production it does not

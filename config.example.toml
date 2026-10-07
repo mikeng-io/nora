@@ -1478,21 +1478,33 @@ enabled = false
 # room's culture is not stale, it is accurate, and an old name does not become
 # false — it becomes history, which is part of what the current one means.
 #
-# CHARACTER (DEC-278). The same fold, on the same wake, also writes one short
-# account per person the room lists in policy.toml: it asks Nora's memory «what
-# is the character of X?» (Honcho's dialectic, which is NOT scoped to a room —
-# a unit is one circle), combines the answer with the room's culture and the
-# room's messages, and stores it in the same store under the person's own key.
-# Every tag and fire turn then carries a <character> block of the accounts of
-# the people in that room. No separate switch: `enabled` turns on both.
+# CHARACTER (design/self-growth/10). Each person listed in a unit's rooms has
+# ONE account per unit, written by their own session when they have said
+# enough (person_wake_batch of their messages across the unit's rooms) or a
+# week has passed with anything new. The session is handed the account it
+# wrote last time, their messages and each room's culture; it may ask Nora's
+# memory, but nothing it writes rests on memory. Every account cites the
+# messages it rests on, and a citation it was not shown is refused. Every tag
+# and fire turn then carries a <character> block of the accounts of the people
+# that room lists. No separate switch: `enabled` turns on both.
 enabled = false
-# New human messages in a room that wake its fold (and each poster's account)
-# at once (DEC-288). Sized from 14 days on the deploy host: the busiest room
-# reaches 200 about every 4 days; quieter rooms are woken by stale_seconds.
+# New human messages in a room that wake its fold at once (DEC-288). Sized
+# from 14 days on the deploy host: the busiest room reaches 200 about every 4
+# days; quieter rooms are woken by stale_seconds.
 wake_batch = 200
 # Seconds after a room's last fold at which ANY new human message wakes it,
 # so a quiet room is still revised weekly. A room with nothing new never fires.
 stale_seconds = 604800
+# A person's new messages, across their unit's rooms, that wake their own
+# account at once. Sized from 14 days on the deploy host: the busiest poster
+# reaches 100 about every 4 days; everyone else is woken by stale_seconds.
+person_wake_batch = 100
+# New revisions of a unit's room cultures that wake the unit's own account
+# (what the group is across its rooms, read as <unit_culture> in its rooms).
+unit_wake_batch = 5
+# Closed response episodes (her messages, each with how people responded) that
+# wake her own account in a unit. Written only: nothing reads it yet.
+nora_wake_batch = 100
 # Messages read per fold. THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300
@@ -1885,17 +1897,19 @@ model = "ollamacloud/deepseek-v4-flash:0731"
 max_tokens = 6000
 
 # THE CULTURE FOLD (design/culture-tier). Uncommented from 2026-09-17, when the
-# adaptor stopped being tool-free: it now holds nine read verbs through an
+# adaptor stopped being tool-free: it now holds seven read verbs through an
 # `AdaptorGrant`, so its loop can spend turns researching before it writes, and
 # the field defaults (6 turns / 40,000 total) were sized for a pass that made
 # one model call and stopped.
 #
 # **The arithmetic, because the failure it avoids is silent and
-# self-perpetuating.** A cut loop emits no envelope; `parse_envelope` reads
-# nothing; the run is `unavailable`; the watermark is HELD; the SAME batch is
-# re-read and re-cut on the next fire, forever. `[culture] batch_limit` is 300
-# messages, ~7-9k tokens of context with the room block, the previous account,
-# the standing position and the note index — and every turn RE-SENDS it, so the
+# self-perpetuating.** A cut loop never calls `character_revise` or
+# `character_no_change`; the session is unsettled and the run is `unavailable`;
+# the watermark is HELD; the SAME batch is re-read and re-cut on the next fire,
+# until the third in a row is skipped past (DEC-280), which loses that batch.
+# `[culture] batch_limit` is 300
+# messages, ~7-9k tokens of context with the room block, the previous account
+# and the note index — and every turn RE-SENDS it, so the
 # loop's running total is roughly context x turns. At the 40,000 default that
 # buys four turns, and the fourth is where the fold is still reading rather
 # than writing. This is the reading that the `[dreamer.budgets.proactive]`

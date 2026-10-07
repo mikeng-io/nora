@@ -299,7 +299,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "announcements.py", "assess.py", "audit.py", "cognition_store.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py",
-        "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
+        "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
         "media_descriptions.py", "media_objects.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",

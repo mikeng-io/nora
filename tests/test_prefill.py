@@ -33,7 +33,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
          quote=None, platform="signal", tagger_card=(), notes=(),
          standing=None, decisions=(), people_in_window=(), culture=None,
          room_members=(), computer=None, documents=None, character=(),
-         subagents=None) -> TagContext:
+         subagents=None, unit_culture=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
@@ -42,7 +42,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None, se
               "people_in_window": tuple(people_in_window),
               "room_members": tuple(room_members), "computer": computer,
               "documents": documents, "character": tuple(character),
-              "subagents": subagents}
+              "subagents": subagents, "unit_culture": unit_culture}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       tuple(self_card), **kwargs)
 
@@ -286,6 +286,7 @@ def _full_prefill_body() -> str:
         room_members=(PersonRef("p_ann", "Ann Lee", "p_ann", aliases=("Annie", "阿Ann")),),
         computer=_computer(), documents=_documents(), subagents=_subagents(),
         character=(("Miles", _culture()),),
+        unit_culture=_culture(),
     )
     return build_prefill(
         ctx, display_name="Nora", context_window=40,
@@ -1676,3 +1677,13 @@ def test_eval_context_rules_and_full_arm_differ_only_on_explicit_arithmetic():
     uncertain = _ctx(body="What about that plan?", documents=_documents())
     with exposure("rules"):
         assert pipeline.build_prefill(uncertain, **kwargs) == build_prefill(uncertain, **kwargs)
+
+
+def test_the_units_culture_renders_after_the_rooms_and_before_the_people():
+    """C3a (design/self-growth/10): `<unit_culture>` is read after this room's
+    `<culture>` (the room first, then the group) and before `<character>`;
+    a room whose unit has no account renders no block."""
+    body = _full_prefill_body()
+    assert body.index("<culture ") < body.index("<unit_culture ") < body.index("<character ")
+    bare = build_prefill(_ctx(_rows("hello")), display_name="Nora", context_window=40)
+    assert "<unit_culture" not in bare[1]["content"][0]["text"]

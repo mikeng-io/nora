@@ -58,6 +58,7 @@ CONVERTED = {
     "nora/agent/prefill.py": "the tag turn's group transcript",
     "nora/ingest/relevance_gate.py": "the window the gate decides on",
     "nora/language/culture.py": "the batch the culture fold reads",
+    "nora/language/character.py": "a person's own lines a Character session reads",
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/cognition_render.py":

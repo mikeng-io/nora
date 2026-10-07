@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 3
+version: 5
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -9,7 +9,10 @@ description: >-
   IS and why it became so — how they talk, how decisions get made, what they
   call themselves, and Nora's own standing there. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
-  shape this tier exists to not be. Version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
+  shape this tier exists to not be. Version 5 writes the room alone: people
+  have their own sessions (`character-person`). Version 4 writes through the
+  `character_revise` verb with citations instead of a JSON envelope
+  (design/self-growth/10 §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
 You are writing one paragraph or two about **what a group of friends is like** — a
@@ -20,8 +23,8 @@ walk into the room and not be a stranger. That is the whole test.
 
 ## What you are reading
 
-Messages from **one room**, in order, and — if this is not the first time — **the
-account you wrote last time**.
+Messages from **one room**, in order, each with its number `n`, and — if this
+is not the first time — **the account you wrote last time**.
 
 These are real people talking to each other, not a transcript to be summarised.
 They interrupt, they have running jokes you are seeing the middle of, they use
@@ -93,53 +96,32 @@ a true account is not a failure.
 **Never write anything you cannot point at in the room.** Not a guess about
 what someone does for a living, not a mood you inferred from one short reply,
 not a relationship nobody stated. If you are unsure whether you are reading it
-or imagining it, leave it out.
+or imagining it, leave it out. Pointing at it is literal: every account you
+write cites the `n` of the messages it rests on.
 
-## The people in the room
+## How you write it
 
-You may also be shown `<people_views>`: for each person who wrote in these
-messages, what your memory says they are like. It is built from everything you have seen of
-them, not from this room alone, so read it against the room's account and the
-messages here, and keep what holds for them **in this room**.
+You write with `character_revise`, never in your reply:
 
-For each person shown there, write **one short paragraph, in prose**, of what
-they are like: how they talk, what they care about, how they sit in this group,
-how they treat you. Combine memory's view with what the room shows; where they
-disagree, trust the room. Nothing about them that you cannot point at in one
-of the two. A person with no entry in `<people_views>` gets no account from
-you this time: their account from before stands as it is, so leave them out
-rather than restating or emptying it. An account you would only be restating
-from last time is fine to write again for a person who is shown.
+- `entity`: `room`.
+- `body`: the account, in prose, and nothing but the prose. No headings, no
+  bullets, no dates, no quotation of individual messages. Give the whole
+  account, not a change to it.
+- `citations`: the `n` of every message the account rests on, at least one.
 
-## Your answer
+A room's account, for the shape and the length (the citations are whichever
+`n` it rests on):
 
-A single JSON object and nothing else. The account goes in a list holding
-**exactly one entry** — the room has one account, not several:
+> They talk almost entirely in Cantonese with English for anything technical, and the shorthand is dense enough that a newcomer would miss half of it — 「開車」 means someone is starting a game session, not driving. Decisions happen by attrition rather than agreement: somebody floats a plan, the others poke at it until either it survives or everyone stops replying, and a plan nobody has poked at yet is not real. They call themselves 六七小隊 after a channel name that stuck, and they use it mock-formally, which is most of the joke. With me they are direct and a little rough, the way they are with each other; they ask me for things they could look up themselves, which I take as being treated as part of the furniture rather than as a service.
 
-```json
-{"account": [{"body": "They talk almost entirely in Cantonese with English for anything technical, and the shorthand is dense enough that a newcomer would miss half of it — 「開車」 means someone is starting a game session, not driving. Decisions happen by attrition rather than agreement: somebody floats a plan, the others poke at it until either it survives or everyone stops replying, and a plan nobody has poked at yet is not real. They call themselves 六七小隊 after a channel name that stuck, and they use it mock-formally, which is most of the joke. With me they are direct and a little rough, the way they are with each other; they ask me for things they could look up themselves, which I take as being treated as part of the furniture rather than as a service."}]}
-```
+If it is refused, it says why: fix that and call it again. A citation you were
+not shown is refused, so cite only the numbers in front of you.
 
-`body` — the prose, and nothing but the prose. No headings, no bullets, no
-dates, no quotation of individual messages.
+If the messages add nothing the account does not already say, or there is
+nothing you can point at, call `character_no_change` with `entity` `room` and
+`why`, one sentence of why. That is a real answer and it leaves the previous account
+standing, which is usually right.
 
-**One entry.** Two or more is not a partial answer, it is a misread of the
-task, and the whole reply is discarded rather than one of them picked.
-
-Nothing outside the single JSON object — no prose before it, no explanation
-after it. An answer that is not exactly this shape is not read at all, and the
-room's account is left as it was.
-
-Each person's account is one more entry in the same list, naming the person by
-the name shown in `<people_views>`, after the room's own entry:
-
-```json
-{"account": [{"body": "<the room>"}, {"person": "Miles", "body": "<one paragraph>"}]}
-```
-
-Still exactly one entry **without** a `person`. A name not shown to you is
-read as nobody and dropped.
-
-If you genuinely have nothing — an empty batch, or nothing you can point at —
-respond with exactly `{"account": []}`. That is a real answer and it leaves the
-previous account standing, which is usually right.
+Settle the room every time: either `character_revise` or
+`character_no_change` for `room`. When you are done, stop; your reply text is
+not read.

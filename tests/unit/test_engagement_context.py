@@ -878,7 +878,7 @@ async def test_presence_and_culture_reads_are_also_traced(exported_spans):
 
     names = [s.name for s in exported_spans.get_finished_spans()]
     assert names.count("store.presence.read") == 1
-    assert names.count("store.culture.head") == 1
+    assert names.count("store.culture.head") == 2  # the room's and its unit's (C3a)
 
 
 async def test_memory_representation_row_count_is_the_conclusions_count(

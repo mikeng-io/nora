@@ -48,6 +48,27 @@ Read from `nora/language/culture.py` and `[culture]` in `nora/config.py`.
   handed in as `<people_views>`. One envelope carries the room account and
   every person's account.
 
+> **As built, branch `mikeng-io/character-sessions` (C2a, C2b), 2026-10-07.**
+> The list above is what ran before it. The room session now writes through
+> `character_revise` (`nora/language/character_session.py`), citing batch
+> row ids, and writes the room alone. `<people_views>` and the `memory.chat`
+> pre-fetch are deleted; each (unit, person) has its own `character-person`
+> session (`nora/language/character.py`), keyed `{unit}#character:{person}`,
+> woken by `[culture] person_wake_batch` (100) or `stale_seconds`. The per-room
+> person heads are NOT carried to the unit key (security review, 2026-10-07: a
+> one-room account would render in every room of the unit); each person's first
+> session writes fresh, on the first tick after deploy. The room fold no longer
+> holds `where_been`/`online_now`, so no Character account rests on presence.
+> C3a: `character-unit` (key `{unit}#unit`), woken by `[culture]
+> unit_wake_batch` (5) new room-culture revisions or `stale_seconds`, cites
+> through the Record ids its rooms' cultures cite (Register rows are not read
+> yet), rendered as `<unit_culture>` after `<culture>` on tag and fire turns.
+> C3b: `character-nora` (key `{unit}#nora`), woken by `[culture]
+> nora_wake_batch` (100) closed episodes of the current Rollup build or
+> `stale_seconds`, handed each send with the replies that quoted it, its
+> counts and outcome; the verb refuses a revision whose citations are only her
+> sends. No block (the self block is [20](20-self-block.md)).
+
 ## 3. The target workflow
 
 ```
