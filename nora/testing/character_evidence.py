@@ -100,6 +100,9 @@ class InMemoryCharacterEvidence:
             key=lambda m: m.id,
         )
 
+    async def message_head(self) -> int:
+        return max((m.id for m in self._messages), default=0)
+
     async def person_count(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
     ) -> int:

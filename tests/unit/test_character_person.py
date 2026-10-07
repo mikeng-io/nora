@@ -199,3 +199,44 @@ async def test_a_room_culture_with_no_citations_is_not_handed_to_the_person():
     out = await _adaptor(store).inputs(key=KEY, batch=BATCH)
     assert "plans by attrition" in out
     assert "Bo is usually at the gym" not in out
+
+
+class _SpyEvidence(InMemoryCharacterEvidence):
+    """Records the `after` of every `person_count`, to see how far back it
+    looked."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.afters: list[int] = []
+
+    async def person_count(self, *, rooms, person_id, after):
+        self.afters.append(after)
+        return await super().person_count(rooms=rooms, person_id=person_id, after=after)
+
+
+async def test_a_listed_person_who_never_posted_is_not_rescanned_from_the_start_every_tick():
+    """Their watermark never moves, so the count over everything after it is
+    the same scan over the unit's whole history every tick. After a count that
+    found nothing, the next starts where that one looked to, and a message
+    that arrives later is still counted."""
+    store = _SpyEvidence()
+    for i in range(1, 51):
+        store.add_message(id=i, platform="signal", room="room-a", person_id="bo")
+    evidence = PersonEvidence(store=store, keys={KEY: PK})
+    assert await evidence.count(key=KEY, after=0) == 0
+    assert await evidence.count(key=KEY, after=0) == 0
+    assert store.afters == [0, 50]
+    store.add_message(id=51, platform="signal", room="room-a", person_id="ada")
+    store.add_message(id=52, platform="discord", room="room-b", person_id="ada")
+    assert await evidence.count(key=KEY, after=0) == 2
+    assert store.afters == [0, 50, 50]
+
+
+async def test_a_person_with_messages_is_counted_from_their_watermark_as_before():
+    store = _SpyEvidence()
+    store.add_message(id=1, platform="signal", room="room-a", person_id="ada")
+    store.add_message(id=2, platform="signal", room="room-a", person_id="bo")
+    evidence = PersonEvidence(store=store, keys={KEY: PK})
+    assert await evidence.count(key=KEY, after=0) == 1
+    assert await evidence.count(key=KEY, after=0) == 1
+    assert store.afters == [0, 0]

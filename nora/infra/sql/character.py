@@ -70,6 +70,14 @@ class SqlCharacterEvidence:
             MESSAGES.c.id > after,
         ]
 
+    async def message_head(self) -> int:
+        """The newest message id in the Record (0 when empty): a cheap primary
+        key read, so a count that found nothing can say how far it looked."""
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(
+                sa.select(sa.func.max(MESSAGES.c.id)),
+            )).scalar_one_or_none() or 0)
+
     async def person_count(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
     ) -> int:

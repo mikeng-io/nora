@@ -105,6 +105,11 @@ async def test_a_person_counts_only_their_own_visible_lines_in_the_units_rooms(s
     assert await store.person_count(rooms=[], person_id="ada", after=0) == 0
 
 
+async def test_the_head_is_the_newest_message_id_whoever_wrote_it(seeded):
+    store, ids = seeded
+    assert await store.message_head() == max(ids)
+
+
 async def test_the_read_is_the_newest_lines_oldest_first_and_the_cursor_is_the_newest(seeded):
     store, ids = seeded
     got, cursor = await store.person_since(rooms=ROOMS, person_id="ada", after=0, limit=2)

@@ -170,6 +170,8 @@ class PersonKey:
 class _PersonMessages(Protocol):
     """`nora.infra.sql.character.SqlCharacterEvidence`'s person reads."""
 
+    async def message_head(self) -> int: ...
+
     async def person_count(
         self, *, rooms: Sequence[tuple[str, str]], person_id: str, after: int,
     ) -> int: ...
@@ -189,6 +191,9 @@ class PersonEvidence:
         self._keys = keys
         self._population = tuple(sorted(keys))
         self._held: dict[str, int] = {}
+        #: `key -> (after, head)`: a count over `(after, head]` found nothing
+        #: of theirs, so the next one starts at `head`.
+        self._clear: dict[str, tuple[int, int]] = {}
 
     def held(self, key: str) -> int | None:
         """The watermark the last `newest` read for `key` started after: the
@@ -200,8 +205,26 @@ class PersonEvidence:
         return [(r.platform, r.key) for r in pk.rooms], pk.person.person_id
 
     async def count(self, *, key: str, after: int) -> int:
+        """Their messages after `after`, counted ONCE over the unit's whole
+        history and thereafter only over what is newer than the last count that
+        found none. A listed person who never posts has a watermark that never
+        moves, so without this every tick rescanned every message of the unit's
+        rooms for them. The read is `newest`, which does start at the
+        watermark, so a message this count's floor skipped (an id that committed
+        out of order, below the head read) still reaches the batch the next
+        wake reads. In memory: a restart is one more full count."""
         rooms, person_id = self._of(key)
-        return await self._store.person_count(rooms=rooms, person_id=person_id, after=after)
+        scanned = self._clear.get(key)
+        floor = after
+        if scanned is not None and scanned[0] <= after < scanned[1]:
+            floor = scanned[1]
+        # The head BEFORE the count: a message that lands during it is above
+        # the head, so the next count sees it.
+        head = await self._store.message_head()
+        n = await self._store.person_count(rooms=rooms, person_id=person_id, after=floor)
+        if n == 0 and head > floor:
+            self._clear[key] = (min(after, floor), head)
+        return n
 
     async def newest(
         self, *, key: str, after: int, limit: int,
