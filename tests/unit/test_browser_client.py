@@ -33,7 +33,8 @@ from nora.infra.computer.browser import (
 )
 
 
-def _jpeg(color: tuple[int, int, int] = (255, 255, 255), size: tuple[int, int] = (200, 100)) -> bytes:
+def _jpeg(color: tuple[int, int, int] = (255, 255, 255),
+          size: tuple[int, int] = (200, 100)) -> bytes:
     out = io.BytesIO()
     Image.new("RGB", size, color).save(out, format="JPEG")
     return out.getvalue()
@@ -85,7 +86,8 @@ class FakeCdp:
                 self.loader = self.loaders_after_input.pop(0)
             return {}
         if method == "Target.getTargets":
-            current = self.target_lists[0] if len(self.target_lists) == 1 else self.target_lists.pop(0)
+            lists = self.target_lists
+            current = lists[0] if len(lists) == 1 else lists.pop(0)
             return {"targetInfos": current}
         if method == "Page.navigate":
             return {"frameId": "F", "loaderId": "L-nav"}
