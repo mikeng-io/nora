@@ -29,7 +29,7 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.culture import character_key, unit_culture_key
+from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.notes import Note
@@ -319,6 +319,10 @@ class Knowledge:
     #: The UNIT's own account (`unit_culture_key`), what `<unit_culture>`
     #: renders in every room of the unit. Written for the subject's room only.
     unit_culture: AccountSeed | None = None
+
+    #: Her own account in the subject's unit (`nora_character_key`), what
+    #: `<self>` renders (design/self-growth/20).
+    nora_account: AccountSeed | None = None
 
     #: Each listed person's account in the subject's unit, keyed by person id
     #: (`character_key(unit, person_id)`), what `<character>` renders. A key
@@ -922,6 +926,13 @@ async def know(
                     key=unit_culture_key(subject.unit),
                     body=knowledge.unit_culture.body,
                     written_at=now_ms - round(knowledge.unit_culture.age_hours * _HOUR_MS),
+                    established_by="case-seed",
+                )
+            if knowledge.nora_account is not None:
+                await culture_store.append(
+                    key=nora_character_key(subject.unit),
+                    body=knowledge.nora_account.body,
+                    written_at=now_ms - round(knowledge.nora_account.age_hours * _HOUR_MS),
                     established_by="case-seed",
                 )
             for person_id, account in knowledge.characters.items():

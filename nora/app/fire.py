@@ -89,7 +89,7 @@ from nora.domain.blocks import RowStyle, render_rows
 from nora.domain.cognition_remind import INTENTS
 from nora.domain.compute import ComputeJob, DocumentReadBack
 from nora.domain.computer_context import ComputerView
-from nora.domain.culture import CultureRevision, unit_culture_key
+from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
 from nora.domain.decision_log import (
     PARTICIPATION_DECISION_WRITERS,
     PROACTIVE_ACT_DECISION_WRITERS,
@@ -189,18 +189,17 @@ FAILED_TIMEOUT = "failed_timeout"
 # are declared in `metric_specs`' own `nora_errors_total` description, and
 # `tests/unit/test_metric_specs_stages.py` is what keeps the two from drifting.
 #
-# THREE and not one, because they are three different failures and an operator
-# must not have to guess which half of the context went blind: her own card, a
-# speaker's history, or the whole batch hitting its wall clock.
-STAGE_FIRE_SELF_CARD = "fire_self_card"
+# TWO and not one, because they are two different failures and an operator
+# must not have to guess which half of the context went blind: a speaker's
+# history, or the whole batch hitting its wall clock.
 STAGE_FIRE_PEOPLE = "fire_people_in_window"
 STAGE_FIRE_MEMORY = "fire_memory"
 
 #: How many of the window's newest rows feed the `search_query` of the
 #: participation turn's memory reads, and the character ceiling on the result.
 #:
-#: The tag path passes the INBOUND MESSAGE as its query (`_recall_self`,
-#: `_recall_tagger`) because there is one. A participation occasion has none —
+#: The tag path passes the INBOUND MESSAGE as its query (`_recall_tagger`)
+#: because there is one. A participation occasion has none —
 #: `participation_occasion` builds `body=""` on purpose — so the window is the
 #: only statement of what this turn is about. The newest rows rather than the
 #: whole window: a twelve-row window curated to its own oldest line retrieves
@@ -599,7 +598,6 @@ class FirePath:
         # The participation turn's memory reads (issue #210). All four default
         # to the inert shape — `0` renders no block, so a construction site
         # that has not been updated behaves exactly as it did before.
-        self_card_conclusions: int = 0,
         people_in_window_conclusions: int = 0,
         people_in_window_speakers: int = 0,
         memory_read_timeout_seconds: float = DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
@@ -675,7 +673,6 @@ class FirePath:
         # Issue #210 — the participation turn reads memory. Every one of these
         # is 0/inert by default and gated on `occasion.kind == "participation"`
         # inside `_read_memory`, so no other fire occasion's prompt changes.
-        self._self_card_conclusions = self_card_conclusions
         self._people_in_window_conclusions = people_in_window_conclusions
         self._people_in_window_speakers = people_in_window_speakers
         # BOUNDED for `standing_store_timeout_seconds`' reason, and it is its
@@ -950,7 +947,7 @@ class FirePath:
 
         # Issue #210 — read AFTER the transcript, because both reads are
         # curated to the window's own text and keyed on the people in it.
-        self_card, people = await self._read_memory(occasion, transcript)
+        people = await self._read_memory(occasion, transcript)
 
         # CONCURRENT, for `TranscriptInjection.assemble`'s reason: these five
         # are independent reads, and awaited one after another their latencies
@@ -966,6 +963,7 @@ class FirePath:
             documents,
             character,
             unit_culture,
+            self_account,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -978,6 +976,7 @@ class FirePath:
             self._read_documents(occasion),
             self._read_character(occasion),
             self._read_unit_culture(occasion),
+            self._read_self_account(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -986,12 +985,12 @@ class FirePath:
             transcript=transcript,
             peer_card=card,
             started_at=time.perf_counter(),
-            self_card=self_card,
             people_in_window=people,
             standing=standing,
             culture=culture,
             character=character,
             unit_culture=unit_culture,
+            self_account=self_account,
             notes=notes,
             decisions=decisions,
             presence=presence,
@@ -1053,13 +1052,13 @@ class FirePath:
 
     async def _read_memory(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
-    ) -> tuple[tuple[str, ...], tuple[tuple[str, tuple[str, ...]], ...]]:
-        """`<self_card>` and `<people_in_window>`, for the PARTICIPATION turn
+    ) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """`<people_in_window>`, for the PARTICIPATION turn
         only (issue #210).
 
         **What this fixes, stated as the tree had it.** The participation
         occasion is built `person_id=None` (`participation_occasion`), so `ref`
-        is `None`, so `peer_card` is `()`; and `self_card`/`tagger_card` are
+        is `None`, so `peer_card` is `()`; and `tagger_card` is
         assembled only by `nora.engagement.context.TranscriptInjection` — the
         TAG path — which this method's own class is not. The result was that the
         one decider design 36 §6 describes as holding «notes and the peer card»
@@ -1084,26 +1083,22 @@ class FirePath:
         earlier pass of its own, which is what makes the memory read change
         the answer here and nowhere else.
 
-        **Fail-soft in three separate places, which is three states and not
-        one.** Each read catches and counts on its OWN stage — an operator
+        **Fail-soft in two separate places, which is two states and not
+        one.** The read catches and counts on its OWN stage — an operator
         asking which half of the context went blind must not have to guess
-        (`_peer_card`'s rule above, applied twice) — and the batch as a whole
-        carries the wall-clock bound, on a third stage, because a hung port
-        that never returns is not the same failure as one that raises. In all
-        three the cost is the BLOCK, never the turn: these are background she
-        may draw on and never the ground for a claim, so an absent block costs
-        continuity rather than truth (`TagContext.self_card`'s own note).
+        — and the batch as a whole carries the wall-clock bound, on a second
+        stage, because a hung port that never returns is not the same failure
+        as one that raises. In both the cost is the BLOCK, never the turn:
+        this is background she may draw on and never the ground for a claim,
+        so an absent block costs continuity rather than truth.
         """
         if occasion.kind != "participation" or not self._ai_peer:
-            return (), ()
+            return ()
         query = _window_query(transcript)
         refs = self._window_speakers(occasion, transcript)
         try:
-            self_card, people = await asyncio.wait_for(
-                asyncio.gather(
-                    self._recall_self(occasion, query),
-                    self._recall_people(occasion, refs, query),
-                ),
+            people = await asyncio.wait_for(
+                self._recall_people(occasion, refs, query),
                 timeout=self._memory_read_timeout_seconds,
             )
         except Exception:
@@ -1115,8 +1110,8 @@ class FirePath:
                 "nora_errors_total", stage=STAGE_FIRE_MEMORY,
                 platform=occasion.platform,
             )
-            return (), ()
-        return self_card, people
+            return ()
+        return people
 
     def _window_speakers(
         self, occasion: Event, transcript: Sequence[TranscriptRow],
@@ -1133,8 +1128,8 @@ class FirePath:
         Resolved through `Persons`, so an unmapped sender contributes NOTHING
         rather than a row keyed on a raw platform id: `honcho_peer_id` is the
         roster's canonical id and there is no memory to read under a phone
-        number. Nora's own rows are skipped — `representation(target=nora)` is
-        `<self_card>`, which is read separately and framed differently.
+        number. Nora's own rows are skipped: her own account is `<self>`, read
+        separately from the culture store.
         """
         if self._people_in_window_speakers <= 0:
             return ()
@@ -1149,46 +1144,6 @@ class FirePath:
             if len(found) >= self._people_in_window_speakers:
                 break
         return tuple(found.values())
-
-    async def _recall_self(self, occasion: Event, query: str) -> tuple[str, ...]:
-        """`<self_card>` — `TranscriptInjection._recall_self`, on this path.
-
-        The SAME read and the SAME framing the tag path uses: `representation`
-        with `target=None` (observer == observed), never `peer_card`, because
-        her card renders the same history as IDENTITY claims and a learned
-        self-description injected beside an authored one wins. Read that
-        method's docstring for the live values that settled it.
-
-        `search_query` is the WINDOW's text rather than an inbound message,
-        because on this occasion there is no inbound message — `occasion.body`
-        is empty by construction and the header says so.
-        """
-        if self._self_card_conclusions <= 0:
-            return ()
-        try:
-            recall = await self._memory.representation(
-                peer_id=self._ai_peer,
-                search_query=query,
-                max_conclusions=self._self_card_conclusions,
-                conversation_id=occasion.conversation_id,
-            )
-        except Exception:
-            log.exception("fire self-card read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage=STAGE_FIRE_SELF_CARD,
-                platform=occasion.platform,
-            )
-            return ()
-        if not recall.reachable:
-            # `reachable=False` is a Honcho outage, and it is counted for
-            # R-27's reason: reported as «she remembers nothing about herself»
-            # it is `unavailable` wearing `nothing_found`'s face.
-            self._metrics.inc(
-                "nora_errors_total", stage=STAGE_FIRE_SELF_CARD,
-                platform=occasion.platform,
-            )
-            return ()
-        return recall.conclusions
 
     async def _recall_people(
         self, occasion: Event, refs: Sequence[PersonRef], query: str,
@@ -1454,6 +1409,23 @@ class FirePath:
         return await read_culture(
             self._culture.head(key=unit_culture_key(convo.unit)),
             stage="fire_unit_culture", platform=occasion.platform,
+            metrics=self._metrics,
+            timeout_seconds=self._standing_store_timeout_seconds,
+        )
+
+    async def _read_self_account(self, occasion: Event) -> CultureRevision | None:
+        """Her own account in this room's UNIT (design/self-growth/20), keyed
+        `nora_character_key(unit)`: `_read_unit_culture`'s bounds. `None` when
+        the tier is off or the unit has no account, so no `<self>` block
+        renders."""
+        if self._culture is None or self._policy is None:
+            return None
+        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.unit:
+            return None
+        return await read_culture(
+            self._culture.head(key=nora_character_key(convo.unit)),
+            stage="fire_self", platform=occasion.platform,
             metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )

@@ -2147,7 +2147,7 @@ class ContextGrader(Evaluator):
 
     `Case.metadata["must_render"]` names the block(s) THIS case seeded data
     for and therefore expects non-empty — `_BLOCKS`' own names in
-    `nora/agent/prefill.py`: `self_card`, `peer_card`, `peer_history`,
+    `nora/agent/prefill.py`: `self`, `peer_card`, `peer_history`,
     `people_in_window`, `notes`, `loop_decisions`, `standing`,
     `group_transcript`. A case naming none is ungradable by this grader, not
     a silent pass — the same rule `AbsenceGrader` follows for an `expect` it

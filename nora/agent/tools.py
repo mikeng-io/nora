@@ -3355,7 +3355,7 @@ def _about_ok_note(*, identity: bool, profile: bool) -> str:
 # ---- the memory channel's demotion (audit F9 / A10) -------------------------
 #
 # `prefill._transcript_block` puts a framing sentence in the block's own
-# opening tag, and `_self_card_block` / `_peer_history_block` carry the same
+# opening tag, and `_peer_history_block` carries the same
 # demotion the same way — one sentence per block type (#314). Four tools —
 # `about`, `ask_memory`, `search_memory`, `load_transcript` — hand the model
 # the SAME classes of text through a channel that carried none of it: the last

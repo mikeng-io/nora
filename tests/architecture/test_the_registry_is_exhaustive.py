@@ -10,7 +10,7 @@ rather than running the module: a census that has to construct each
 occasion's real dependencies to import it is a census nobody runs.** Two
 things are counted per module: every literal `ContextBlock(name="x", ...)`,
 and every call to one of four KNOWN shared builders
-(`render_notes`/`render_standing`/`render_decisions`/`render_self_card`),
+(`render_notes`/`render_standing`/`render_decisions`/`render_self`),
 each of which always produces exactly one fixed block name regardless of its
 arguments — that name comes from the BUILDER's own source, never guessed from
 the call site. The union is checked against the module's own `_BLOCKS` tuple,
@@ -60,13 +60,13 @@ def test_the_census_finds_the_five_occasions_it_used_to_list():
 
 #: Imported name -> the ONE block name it always builds. Each lives in its
 #: own module (`nora.language.note_render`, `.standing_render`,
-#: `nora.domain.decision_log`, `nora.language.self_card_render`) and is
+#: `nora.domain.decision_log`, `nora.language.culture_render`) and is
 #: shared across occasions precisely because it is not parametrised on name.
 _SHARED_BUILDER_NAMES = {
     "render_notes": "notes",
     "render_standing": "standing",
     "render_decisions": "loop_decisions",
-    "render_self_card": "self_card",
+    "render_self": "self",
     # `nora.language.presence_render` (design/self-awareness/02): the tag
     # path and the proactive pass render `<presence>` through it, and no
     # occasion builds its own copy.

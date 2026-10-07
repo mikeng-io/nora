@@ -53,6 +53,7 @@ import yaml
 
 from nora.agent.prefill import build_prefill, build_tag_message
 from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.culture import CultureRevision
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -178,7 +179,11 @@ def tag_context(
     return TagContext(
         "tag-1", message, PersonRef("miles", "Miles", "miles", aliases=("阿Miles",)),
         (row(body, name=name),), ("likes espresso",), 0.0,
-        ("nora said a thing",), tagger_card=("asked about dinner",),
+        tagger_card=("asked about dinner",),
+        self_account=CultureRevision(
+            id="rev-self", culture_key="friends#nora", body="She answers short and dry.",
+            written_at=TS, established_by="character-nora",
+        ),
         notes=(), standing=None, decisions=(),
         # TWO people, because `<person>` is a framed block that repeats — a
         # one-person fixture cannot tell a row that repeats from a block served
@@ -376,8 +381,8 @@ SHAPES = {
 <tag_message also_known_as description fields from>
   <replying_to author description fields>""",
     "prefill.volatile": """
+<self description fields written>
 <presence description>
-<self_card description>
 <peer_card description fields person>
 <peer_history description fields person>
 <people_in_window description>

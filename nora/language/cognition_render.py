@@ -92,6 +92,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.stimuli import Stimulus
+from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
 from nora.language.note_render import render_note_rows
 
@@ -109,6 +110,9 @@ from nora.language.note_render import render_note_rows
 #: describe the same thing here, and nothing routes on `key` yet either way
 #: (`design/context-assembly/00-overview.md` §3).
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    # Her own Character · Nora for the unit (design/self-growth/20), first, directly
+    # after the doctrine (the system prompt). No block while the unit has no account.
+    ("self", 5, "turn"),
     ("clock", 10, "turn"),
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
@@ -643,6 +647,15 @@ def render_agenda(
     age; without `grounding` an item is its summary alone, which is exactly
     what the eval probe hands the model and nothing else does."""
     blocks: list[ContextBlock] = []
+    self_block = restamp(
+        render_self(
+            grounding.self_account if grounding else None,
+            now=None if now_ms is None else datetime.fromtimestamp(now_ms / 1000, tz=tz),
+        ),
+        _ROW,
+    )
+    if self_block is not None:
+        blocks.append(self_block)
     if now_ms is not None:
         blocks.append(restamp(ContextBlock(
             name="clock", body=escape(clock_line(now_ms, last_session_ms, tz)),

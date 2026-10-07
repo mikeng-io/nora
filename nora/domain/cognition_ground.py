@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from nora.domain.cognition_session import Room
+from nora.domain.culture import CultureRevision
 from nora.domain.stimuli import Stimulus
 
 #: The tables a message stimulus's `ref` names a row of (`nora.ingest.stages.
@@ -244,6 +245,10 @@ class Grounding:
     #: `platform:conversation_id` -> the room's label. The prompt says the
     #: label; the id stays where a tool's argument needs it.
     room_labels: Mapping[str, str] = field(default_factory=dict)
+    #: Her own Character · Nora for the unit (design/self-growth/20), rendered
+    #: as the `self` block; `None` when the unit has no account or the read
+    #: failed.
+    self_account: CultureRevision | None = None
 
     def as_dict(self) -> dict[str, object]:
         """The JSON the session row keeps: what she was shown, by reference
@@ -258,6 +263,8 @@ class Grounding:
                 for r in self.records.values()
             ],
             "notes": [n.id for n in self.notes],
+            # By revision id, never the words: the account is hers to rewrite.
+            "self_revision_id": None if self.self_account is None else self.self_account.id,
             "events": [e.id for e in self.events],
             # By reference, and no name: a person id, the kind, the interval.
             "rollups": [

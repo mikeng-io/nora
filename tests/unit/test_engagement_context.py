@@ -78,7 +78,7 @@ class FakeMemory:
         self, *, peer_id: str, search_query: str, max_conclusions: int = 5,
         target: str | None = None, **_route: str | None,
     ) -> Recollection:
-        # Records the QUERY, not just the call: `_recall_self` curates her own
+        # Records the QUERY, not just the call: `_recall_tagger` curates its
         # conclusions to the inbound message, and a double that ignores the
         # argument cannot tell a working call from one passing "".
         self.calls.append(("representation", peer_id))
@@ -358,19 +358,11 @@ def test_it_satisfies_the_context_assembler_port():
     assert isinstance(assembler, ContextAssembler)
 
 
-# ---- <self_card>: the PRODUCER side (DEC-96) -------------------------------
+# ---- the assembler's helper -------------------------------------------------
 #
-# These exist because the first version of `_recall_self` read `msg.text` on a
-# `NormalizedMessage` whose field is `body`. Every tag turn raised
-# AttributeError, the fail-open `except` swallowed it, `self_card` was always
-# `()`, and `nora_errors_total{stage="self_card"}` incremented on every turn —
-# so the feature was 100% inert AND its outage metric read as a permanent
-# Honcho failure, which would send an operator to debug the wrong system.
-#
-# Five tests covered the block at the time. All five built `TagContext(
-# self_card=...)` by hand and could not reach this function. That is the repo's
-# own war-story exactly: never read an instrument's output as evidence without
-# first checking it can measure the thing.
+# The `<self>` read (design/self-growth/20) is tested in
+# `tests/unit/test_self_block.py`; the retired `<self_card>` read's tests went
+# with it.
 
 
 def _assembler(memory, **kw):
@@ -378,34 +370,7 @@ def _assembler(memory, **kw):
         audit=FakeRecordStore(), memory=memory, persons=_MILES,
         context_window=10, metrics=kw.pop("metrics", Metrics()),
         ai_peer=kw.pop("ai_peer", "nora"),
-        self_card_conclusions=kw.pop("self_card_conclusions", 8),
     )
-
-
-async def test_the_self_card_is_recalled_and_curated_to_the_inbound_message():
-    """The probe for the `msg.text`/`msg.body` defect. Asserting only that
-    `self_card` is non-empty would NOT have caught it — the call has to be made
-    with the real message text, so the assertion is on the query."""
-    memory = FakeMemory()
-    ctx = await _assembler(memory).assemble(
-        request=_request(_msg_with_body("聽日朝早記唔記得")))
-
-    assert ctx.self_card == ("nora told Aaron they would talk",)
-    assert memory.queries == ["聽日朝早記唔記得"]      # not "", and not a crash
-    assert ("representation", "nora") in memory.calls
-
-
-async def test_an_unreachable_memory_yields_no_self_card_and_counts_the_stage():
-    """Fail-open, and SILENT-open: no block rather than a note saying she cannot
-    remember. The failure belongs to the operator, on the metric."""
-    memory = FakeMemory()
-    memory.representation_unreachable = True
-    metrics = Metrics()
-
-    ctx = await _assembler(memory, metrics=metrics).assemble(request=_request())
-
-    assert ctx.self_card == ()
-    assert metrics.get("nora_errors_total", stage="self_card", platform="signal") == 1
 
 
 async def test_a_thrown_recall_never_costs_the_turn():
@@ -415,22 +380,9 @@ async def test_a_thrown_recall_never_costs_the_turn():
         async def representation(self, **kw):
             raise RuntimeError("honcho is down")
 
-    metrics = Metrics()
-    ctx = await _assembler(Boom(), metrics=metrics).assemble(request=_request())
+    ctx = await _assembler(Boom()).assemble(request=_request())
 
-    assert ctx.self_card == ()
     assert ctx.peer_card == ("likes coffee",)     # the rest of the turn survived
-    assert metrics.get("nora_errors_total", stage="self_card", platform="signal") == 1
-
-
-async def test_the_block_is_off_entirely_when_the_budget_is_zero():
-    """`self_card_conclusions = 0` disables it, and disabling means NOT CALLING
-    Honcho — not calling and discarding."""
-    memory = FakeMemory()
-    ctx = await _assembler(memory, self_card_conclusions=0).assemble(request=_request())
-
-    assert ctx.self_card == ()
-    assert not any(c[0] == "representation" for c in memory.calls)
 
 
 # ---------------------------------------------------------------------------
@@ -800,7 +752,7 @@ async def test_assemble_emits_a_span_per_store_read(exported_spans):
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=memory, persons=_MILES,
         context_window=10, metrics=Metrics(),
-        ai_peer="nora", self_card_conclusions=3, tagger_card_conclusions=3,
+        ai_peer="nora", tagger_card_conclusions=3,
         notes=FakeNoteStore({"ridgeline": (notes,)}), policy=_policy(),
         standing=standing_store,
     )
@@ -810,10 +762,8 @@ async def test_assemble_emits_a_span_per_store_read(exported_spans):
     names = [s.name for s in exported_spans.get_finished_spans()]
     assert names.count("store.record.recent") == 1
     assert names.count("store.memory.peer_card") == 1
-    # Both `_recall_self` and `_recall_tagger` call `MemoryStore.representation`
-    # — two reads, two spans, same name, exactly as two calls to the same
-    # store method should read in a trace.
-    assert names.count("store.memory.representation") == 2
+    # `_recall_tagger` calls `MemoryStore.representation`: one read, one span.
+    assert names.count("store.memory.representation") == 1
     assert names.count("store.standing.read") == 1
     assert names.count("store.notes.standing") == 1
 
@@ -878,7 +828,7 @@ async def test_presence_and_culture_reads_are_also_traced(exported_spans):
 
     names = [s.name for s in exported_spans.get_finished_spans()]
     assert names.count("store.presence.read") == 1
-    assert names.count("store.culture.head") == 2  # the room's and its unit's (C3a)
+    assert names.count("store.culture.head") == 3  # the room's, its unit's (C3a), hers
 
 
 async def test_memory_representation_row_count_is_the_conclusions_count(
@@ -890,13 +840,13 @@ async def test_memory_representation_row_count_is_the_conclusions_count(
     is what closes that, not a special case inside `_row_count` itself.
 
     PROBE: drop `count=lambda r: len(r.conclusions)` from either
-    `traced_read(..., "representation", ...)` call in `_recall_self` /
+    `traced_read(..., "representation", ...)` call in
     `_recall_tagger` and `nora.store.row_count` disappears from its span.
     """
     assembler = TranscriptInjection(
         audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
         context_window=10, metrics=Metrics(),
-        ai_peer="nora", self_card_conclusions=3, tagger_card_conclusions=3,
+        ai_peer="nora", tagger_card_conclusions=3,
     )
 
     await assembler.assemble(request=_request())
@@ -905,7 +855,7 @@ async def test_memory_representation_row_count_is_the_conclusions_count(
         s for s in exported_spans.get_finished_spans()
         if s.name == "store.memory.representation"
     ]
-    assert len(representation_spans) == 2
+    assert len(representation_spans) == 1
     for recorded in representation_spans:
         # `FakeMemory.representation` answers one conclusion per call
         # (module docstring / `FakeMemory.representation`'s own body).

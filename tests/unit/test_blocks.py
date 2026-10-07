@@ -321,23 +321,19 @@ def test_a_record_with_a_newline_in_it_is_one_bullet_not_two():
 def test_every_memory_block_renders_one_conclusion_as_one_line():
     """The live callers, so the fix is pinned where it is read.
 
-    Four blocks in the tag prefill and two in the proactive prompt render a
+    Some blocks in the tag prefill and two in the proactive prompt render a
     record per line. Asserted through `build_prefill` rather than per function,
     because the thing that went wrong was a site nobody enumerated.
     """
-    from nora.agent.prefill import _peer_card_block, _self_card_block
+    from nora.agent.prefill import _peer_card_block
 
     class _Ctx:
         peer_card = ("likes espresso\nowes Grant $500",)
-        self_card = ("said I would book it\nand never did",)
         tagger = None
 
     card = _peer_card_block(_Ctx())
     assert card is not None
     assert card.body == "- likes espresso owes Grant $500"
-    own = _self_card_block(_Ctx())
-    assert own is not None
-    assert own.body == "- said I would book it and never did"
 
 
 # --- the block itself ------------------------------------------------------

@@ -1,7 +1,7 @@
 ---
 type: design
 title: "The self block: Character · Nora rendered below the doctrine, self_card retired"
-description: "One block, one PR: her whole Character · Nora for this unit, capped in lines, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. Measured before and after with the eval, because self_card has been in every prompt."
+description: "One block, one PR (built, DEC-291): her whole Character · Nora for this unit, capped in lines, placed directly after the doctrine on tag, fire and cognition turns. self_card leaves the tag and fire turns. The before/after eval could not be run on the suite (section 5); self_card had been in nearly every prompt."
 tags: [nora, self, context-assembly, self-card]
 timestamp: '2026-10-07'
 edges:
@@ -45,3 +45,44 @@ read or to Standing, not back into a pushed Honcho block.
 ## 4. Effort
 
 One PR. The plumbing is small; the eval is the cost.
+
+## 5. As built, 2026-10-07 (DEC-291)
+
+**Built.** `self` is the first row of the tag and fire prefill `_BLOCKS` (order
+1, key `unit`) and of the Cognition prompt's (order 5, before the clock);
+`render_self` in `nora/language/culture_render.py` caps it at 40 lines and says
+how many it dropped. Tag and fire read `nora_character_key(unit)`
+(`TranscriptInjection._self_account`, `FirePath._read_self_account`); the
+Cognition grounder reads it into `Grounding.self_account`. No account, no
+block. No lineage filter, like `<unit_culture>`: the unit is the read boundary.
+`self_card` is deleted with its renderer, both Honcho reads,
+`[memory] self_card_conclusions` and the `fire_self_card` stage. The eval
+sandbox copies her account as of the case's instant (`Snapshot.nora_account`,
+`Knowledge.nora_account`).
+
+**Not measured, and why.** The before/after on continuity could not be run on
+`python -m evals`; nothing was claimed from it.
+
+- The suite cannot give the before arm a `self_card`. Every draw runs against
+  a per-draw, empty Honcho workspace (`nora/subject/memory_workspace.py`), a
+  corpus case may state only a real room and instant (`CASE_KEYS`), and Honcho
+  has no chain to snapshot (`nora/subject/as_of.py`). So on the suite the
+  before arm renders no `self_card` either, and the two arms would differ only
+  by `<self>`.
+- Snapshots are as-of. The three Nora accounts were first written at 07:53 UTC
+  on 2026-10-07; a case anchored earlier renders no `<self>`, so the arms are
+  identical there. After that moment the record held 40 messages in three
+  rooms by the time of the read; the 37 Signal ones were read and none turns
+  on something she said earlier (a browser-task run, and members talking
+  among themselves); the 3 Discord ones were not read.
+- What `self_card` carried is large and measured: it was in 389 of the last 400
+  tag turns (2026-09-17 to 2026-10-07, Langfuse `engagement` traces), 4 to 8
+  lines each. The three accounts written so far describe how people take her
+  (blunt, checks before answering, owns mistakes), with a few concrete
+  episodes; none states a pending promise.
+
+**To measure it** the suite needs a counterfactual state for each arm's own
+memory (`self_card` seeded, or `<self>` attached at an earlier instant), argued
+as `COUNTERFACTUAL_TIERS` entries are, plus continuity cases whose commitment
+is older than the transcript window. Until then the loss is a hypothesis; if it
+shows, the continuity moves to Standing or a pulled read, as §2 says.

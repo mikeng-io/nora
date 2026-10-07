@@ -20,7 +20,7 @@ This module is the comparison, used two ways:
 
 What is excepted, by name, and why:
 
-- **memory** — `self_card`, `peer_card`, `peer_history`: Honcho has no chain
+- **memory** — `peer_card`, `peer_history`: Honcho has no chain
   to read backwards (10-tiers §8), so a restore cannot hold what it said.
 - **Live** — `tool_catalogue` (built from the tools admitted at the turn, not
   from any store), `presence` (her platform presence: transport health read
@@ -51,7 +51,7 @@ __all__ = [
     "render_tag_blocks",
 ]
 
-MEMORY_BLOCKS: frozenset[str] = frozenset({"self_card", "peer_card", "peer_history"})
+MEMORY_BLOCKS: frozenset[str] = frozenset({"peer_card", "peer_history"})
 LIVE_BLOCKS: frozenset[str] = frozenset({"tool_catalogue", "presence"})
 
 #: One top-level block: its opening tag starts a line, its body is escaped

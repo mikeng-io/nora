@@ -74,6 +74,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
+from nora.domain.culture import CultureRevision
 from nora.domain.gatherings import Gathering
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
@@ -334,6 +335,7 @@ def build_grounder(
     tz: tzinfo = UTC,
     stay_context: Callable[[str, int], Awaitable[StayContext | None]] | None = None,
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
+    self_account: Callable[[str], Awaitable[CultureRevision | None]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -487,9 +489,18 @@ def build_grounder(
                 "cognition grounding lineage shadow (unit=%s): would withhold %d note(s) "
                 "and %d event(s); shown", unit, withheld["notes"], withheld["events"],
             )
+        # Her own account of herself in this unit (design/self-growth/20). Unlike
+        # the reads above it is background, never the ground for a claim, so a
+        # failed read costs the `self` block and not the session.
+        account: CultureRevision | None = None
+        if self_account is not None:
+            try:
+                account = await self_account(unit)
+            except Exception:
+                log.exception("cognition grounding: self account read failed; continuing")
         return Grounding(
             records=records_out, notes=notes, events=tuple(events), rollups=rollups,
-            own_sends=own_sends, room_labels=labels,
+            own_sends=own_sends, room_labels=labels, self_account=account,
         )
 
     return ground

@@ -96,13 +96,16 @@ is why `nora/infra`'s two clients have opposite error contracts.
   `nora_recall_total` keeps the old word: metric names are append-only.
 - **representation** — Honcho's derived model of one peer AS SEEN BY another:
   every read is keyed `(observer, observed)` (DEC-66), so `about` reads
-  `(nora → person)` — her model of them — and the **self card** reads
-  `(nora → nora)`, distilled from her own replies. Measured 2026-08-06 as
+  `(nora → person)` — her model of them — and `(nora → nora)` is her model of
+  herself, distilled from her own replies (no longer injected: the `<self>`
+  block is the Character · Nora account instead). Measured 2026-08-06 as
   ~88% *events* rather than *traits*; built on anyway, deliberately, and
   framed as a record she may contradict rather than a description.
-- **self card** — the `<self_card>` block: things she said or did before,
-  from her own memory (DEC-96). Injected on every tag, and into the proactive
-  pass. Undated on purpose, and never an instruction.
+- **self block** — the `<self>` block: her Character · Nora account for the
+  turn's unit (design/self-growth/20), capped in lines, first in the tag, fire
+  and Cognition prompts, directly after the doctrine. No block while the unit
+  has no account. It replaced the `<self_card>` block (her Honcho conclusions
+  about herself, DEC-96), retired by DEC-291.
 - **peer card** — a Honcho endpoint (`HonchoClient.peer_card`), Honcho's own
   model-authored distillation of who a person is, injected as `<peer_card>`
   on a tag when Honcho has one (`nora/agent/prefill.py::_peer_card_block`,
@@ -271,7 +274,7 @@ The most-used words in this repo, and none of them was here until 2026-09-08.
   deciders. The active half is a
   Dreamer adaptor whose **decide turn** reads a unit's open notes, each
   room's Standing with its age, its own **decision log** (what it scheduled
-  before and how each went) and its self card, asks memory about the people
+  before and how each went), asks memory about the people
   involved, and may set ITSELF a reminder for a chosen hour with `remind` —
   its one act verb, and the only act any Dreamer adaptor holds. The **act
   turn** is that reminder coming due: a fire turn (`kind="proactive"`) that
@@ -370,8 +373,8 @@ no entry.
   - **Nora session** (`character-nora`) — what she is like in the unit, woken
     by `nora_wake_batch` (100) closed response episodes that are evidence
     (`Episode.is_evidence`), citing at least three of them; the echo rule
-    refuses a revision resting on her own sends. Written only: no block renders
-    it yet.
+    refuses a revision resting on her own sends. Renders as **`<self>`**, first
+    in the tag, fire and Cognition prompts.
   - **`character_revise(entity, body, citations)`** — the one write verb. Code
     checks the body (non-empty, within the cap, the R-18/R-28 screen) and that
     every citation is a Record row id the session was shown or a

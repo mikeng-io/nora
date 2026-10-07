@@ -9,16 +9,9 @@
   {
     "name": "#210 — build_context fills the block for a participation occasion",
     "file": "nora/app/fire.py",
-    "old": "            self_card=self_card,\n            people_in_window=people,\n",
-    "new": "            self_card=self_card,\n",
+    "old": "            people_in_window=people,\n",
+    "new": "",
     "target": "tests/unit/test_people_in_window.py -k carries_what_she_remembers_about_each_speaker"
-  },
-  {
-    "name": "#210 — the participation turn reads her own card",
-    "file": "nora/app/fire.py",
-    "old": "            self_card=self_card,\n            people_in_window=people,",
-    "new": "            people_in_window=people,",
-    "target": "tests/unit/test_people_in_window.py -k participation_turn_reads_her_own_card"
   },
   {
     "name": "#210 — the block carries <peer_history>'s hedge, A2 clause included",
@@ -33,13 +26,6 @@
     "old": "        f\"{mark}{escape(text)}\"",
     "new": "        f\"{mark}{text}\"",
     "target": "tests/unit/test_people_in_window.py -k forged_closing_tag_inside_a_conclusion"
-  },
-  {
-    "name": "#210 — a raising Honcho costs the block, never the turn, and is counted",
-    "file": "nora/app/fire.py",
-    "old": "        except Exception:\n            log.exception(\"fire self-card read failed; continuing without it\")",
-    "new": "        except ValueError:\n            log.exception(\"fire self-card read failed; continuing without it\")",
-    "target": "tests/unit/test_people_in_window.py -k honcho_failure_costs_the_block_never_the_turn"
   },
   {
     "name": "#210 — one speaker's failed recall costs that speaker, not the block",
@@ -72,8 +58,8 @@
   {
     "name": "#210 — every new stage label is declared in metric_specs",
     "file": "nora/obs/metric_specs.py",
-    "old": "        \"failed or Honcho was unreachable), stage=\\\"fire_people_in_window\\\" \"",
-    "new": "        \"failed or Honcho was unreachable), \"",
+    "old": "        \"stage=\\\"fire_people_in_window\\\" \"",
+    "new": "        \"\"",
     "target": "tests/unit/test_metric_specs_stages.py -k every_ambient_memory_stage_is_declared"
   },
   {

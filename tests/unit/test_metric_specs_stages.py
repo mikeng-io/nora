@@ -16,7 +16,7 @@ the difference is the whole design of this file. The first cut asserted that
 every declared stage was one of the four this branch added, which would have
 gone red the moment somebody documented one of the ten other fail-soft stages
 that have exactly the same property (`fire_peer_card`, `fire_notes`,
-`fire_standing`, `fire_unit`, `fire_context`, `tagger_card`, `self_card`,
+`fire_standing`, `fire_unit`, `fire_context`, `tagger_card`,
 `proactive_self_card`, `proactive_standing`, `fire_feedback`). A gate that
 forbids the fix for the lesson it cites is inverted, and an Opus review caught
 it before it landed. What the reverse check asks instead is that a declared
@@ -35,7 +35,6 @@ import pytest
 from nora.app.fire import (
     STAGE_FIRE_MEMORY,
     STAGE_FIRE_PEOPLE,
-    STAGE_FIRE_SELF_CARD,
 )
 from nora.obs.metric_specs import _COUNTERS
 
@@ -45,7 +44,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: modules rather than retyped: a vocabulary hand-copied into its own test
 #: measures the copy (`evals/harness.py`'s `TRIGGER_TEXT` war-story).
 _STAGES = (
-    STAGE_FIRE_SELF_CARD,
     STAGE_FIRE_PEOPLE,
     STAGE_FIRE_MEMORY,
 )

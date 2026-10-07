@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Nora now opens each turn with her own account of herself in that group, written from how its members have responded to her, in place of the list of things she had said or done before that she used to be handed.",
+  "details": [
+    "The account is the one the new character-nora session writes for each group; a group with no account yet shows her nothing in its place.",
+    "It sits first, straight after her doctrine, on messages that tag her, on turns she starts herself, and on her background thinking passes, and is cut to 40 lines."
+  ],
+  "limitations": [
+    "The old list carried what she had promised or agreed to in earlier days; the account describes how she comes across and does not state pending promises. Whether that loses anything could not be measured on the eval suite, which cannot give it the old list, so it is untested.",
+    "The first three accounts were written on 7 October; before a group's first account lands the prompt carries neither."
+  ]
+}

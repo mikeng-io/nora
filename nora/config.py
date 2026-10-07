@@ -217,37 +217,16 @@ class MemoryConfig(BaseModel):
     # (decision B-global). Defaulted so a config.toml written before v2 loads
     # unchanged; the value is a peer id, never a secret.
     ai_peer: str = "nora"
-    # How many of HER OWN conclusions ride in `<self_card>` — episodic
-    # continuity, so a promise she made last night survives falling out of the
-    # transcript window. 0 disables the block entirely.
-    #
-    # It drives TWO turns since issue #210, and the comment below was written
-    # for one of them: the tag turn, and the participation turn behind the
-    # ambient gate. The arithmetic is the tag loop's and is the binding one
-    # (`turns = 20` against a participation turn's single pass), so 8 is if
-    # anything conservative on the ambient path — but it is deliberately NOT
-    # the number `people_in_window_conclusions` takes, because that one is
-    # multiplied by up to four speakers and this one is not.
-    #
-    # Small on purpose. This is a PER-TAG block, so unlike the doctrine it is
-    # not in the cached static head and is re-sent on every model call of the
-    # loop: her live representation measured 2,459 chars (~820 tokens) at 25
-    # conclusions on 2026-08-11, which at `turns = 20` is ~16k of the 128k
-    # budget spent on background nobody asked for. Eight measured ~1,080.
-    self_card_conclusions: int = 8
     # How many of HER CONCLUSIONS ABOUT THE TAGGER ride in `<peer_history>`.
     # 0 disables the block, which restores the pre-2026-08-15 behaviour exactly:
     # `about` then remains the only way she reaches a person's episodes.
     #
-    # A SEPARATE knob from `self_card_conclusions` rather than a reuse. The two
-    # blocks have different lifetimes and different failure modes — hers is
-    # continuity she cannot get any other way, theirs duplicates a tool that
-    # already exists — so the number that is right for one is not evidence
-    # about the other, and one knob would make tuning either of them a guess
-    # about both.
+    # A SEPARATE knob from the people-in-window one rather than a reuse: the
+    # two blocks have different lifetimes and different arithmetic, so the
+    # number that is right for one is not evidence about the other.
     #
-    # Same per-tag arithmetic as above and it is the binding constraint here
-    # too: this block is re-sent on every model call of the loop, so 8
+    # The per-tag arithmetic is the binding constraint: this block is re-sent
+    # on every model call of the loop, so 8
     # conclusions (~1,080 chars, ~360 tokens) is ~7.2k of the 128k budget at
     # `turns = 20`. That is the honest price of not making her ask.
     tagger_card_conclusions: int = 8

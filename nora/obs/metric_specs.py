@@ -147,18 +147,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_errors_total",
         "Internal errors, by processing stage. The stage vocabulary is open — "
-        "every call site names its own — but the four stages the AMBIENT "
+        "every call site names its own — but the stages the AMBIENT "
         "loop's memory reads raise are declared here by name, because they are "
         "the only way an operator can see a block go missing: "
-        "stage=\"fire_self_card\" (the participation turn's <self_card> read "
-        "failed or Honcho was unreachable), stage=\"fire_people_in_window\" "
+        "stage=\"fire_people_in_window\" "
         "(one speaker's <people_in_window> read did, counted once per failed "
         "speaker), stage=\"fire_memory\" (the whole concurrent batch hit "
         "[memory] read_timeout_seconds — a port that never answers, which is "
-        "not the same failure as one that raises). All three are issue #210 "
-        "and all three are "
+        "not the same failure as one that raises). Both are issue #210 "
+        "and both are "
         "fail-soft: the block is lost, never the turn, so absence is the only "
-        "symptom and this series is the only tell. The three fire_* stages "
+        "symptom and this series is the only tell. The fire_* stages "
         "sit beside the pre-existing fire_peer_card / fire_standing / "
         "fire_notes / fire_unit for that set's own stated reason — an "
         "operator asking WHICH half of the context went blind must not have "
@@ -166,7 +165,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "stage each, for the same reason: stage=\"tag_culture\", "
         "and stage=\"fire_culture\" — a room's account that exists and could "
         "not be read (a raise, or the bounded read timing out). A room never "
-        "folded is not an error and moves nothing.",
+        "folded is not an error and moves nothing. The <self> read "
+        "(design/self-growth/20) is stage=\"tag_self\" and "
+        "stage=\"fire_self\", on the same terms.",
         ("stage", "platform"),
     ),
     _CounterSpec(

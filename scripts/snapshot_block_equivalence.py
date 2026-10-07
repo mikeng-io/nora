@@ -29,7 +29,7 @@ AFTER the turn:
    `--at` is the turn's SYSTEM time (when it ran), which is what the
    snapshot is taken at; the subject's clock is the tagging row's own `ts`.
 
-It prints the blocks compared, excepted (memory: `self_card`, `peer_card`,
+It prints the blocks compared, excepted (memory: `peer_card`,
 `peer_history`; Live: `tool_catalogue`, `presence`) and any that differ, and
 exits 0 only when every compared block is byte-identical and at least one
 was compared. A doctrine, Dreamer or config load not recorded by `--at`

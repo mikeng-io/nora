@@ -55,7 +55,7 @@ decision, not this file's.
 | hours to days | each room's position, and her unsent work there | Standing and its working set (DEC-199, #445) | `<standing>` |
 | days to weeks | the group's open questions | the note tier and its three Dreamer writers (DEC-202) | `<notes>`, `note_read` |
 | weeks to months | people's usual places; what each room has become | `analytics/` (`design/proposed/27`); the culture tier (DEC-207) | `where_been`, `saved_places`, `<culture>` |
-| long-lived | conclusions about each person, and about herself | Honcho, an interpretation and never the record (ADR 0001) | `about`, `ask_memory`, `<self_card>` |
+| long-lived | conclusions about each person, and about herself | Honcho, an interpretation and never the record (ADR 0001) | `about`, `ask_memory` |
 
 **Where the build is behind that table.** Measured, not assumed:
 
@@ -162,7 +162,7 @@ Signal / Discord / WhatsApp / Instagram room
                               │       silent. Off by default.
                               └─ yes ──▶
 ② ENGAGEMENT / TAGGING PATH (trigger only, via the Strands Agents SDK)
-   collect context (transcript window, <standing>, <notes>, <self_card>,
+   collect context (transcript window, <standing>, <notes>, <self>,
                     the tagger's <peer_history>†, doctrine)
    → Agent(messages=[pre-filled context]) → agent.invoke_async(tag_message)
    → the native tools (`ToolRegistry.tool_names()`, 63 plus the `skills`
@@ -422,8 +422,7 @@ and injected as `<standing>` — a stance, not a record. Since 2026-09-24 it is
 also where she keeps what she found on a turn and has not yet given the room
 — the compact of her work in that room (design/standing-compact/). The
 **proactive adaptor** (`39`) read
-both, plus its own decision log (her `kind="proactive"` reminder rows) and
-`<self_card>`, standing in a `home_room` `policy.toml` names per unit.
+both, plus its own decision log (her `kind="proactive"` reminder rows), standing in a `home_room` `policy.toml` names per unit.
 *(2026-10-03, DEC-277: the adaptor and the event-driven/rollup Standing fold
 are deleted; the Cognition session writes Standing and `remind` rows.)*
 A third, the **culture tier** (`design/culture-tier/`; tables `culture`/

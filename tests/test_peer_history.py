@@ -109,7 +109,7 @@ def _assembler(memory, *, metrics=None, tagger_conclusions=8) -> TranscriptInjec
     return TranscriptInjection(
         audit=_Audit(), memory=memory, persons=_persons(), context_window=10,
         metrics=metrics or _Metrics(), ai_peer="nora",
-        self_card_conclusions=8, tagger_card_conclusions=tagger_conclusions,
+        tagger_card_conclusions=tagger_conclusions,
     )
 
 
@@ -153,7 +153,10 @@ async def test_the_observer_is_nora_and_the_observed_is_the_tagger():
     await _assemble(memory)
 
     assert "blake_lindqvist" in memory.targets, "the tagger must be the OBSERVED"
-    assert None in memory.targets, "her own self-card is the observer==observed call"
+    assert None not in memory.targets, (
+        "her own representation is no longer read: the `<self>` block is her "
+        "Character account, not an observer==observed call"
+    )
 
 
 async def test_her_own_card_is_never_injected():
@@ -288,10 +291,11 @@ def test_the_room_reports_whether_the_block_landed():
 
 
 async def test_the_block_is_rendered_with_the_persons_name_and_a_hedge():
-    """The framing carries the safety property, as it does for `self_card`.
-    These are conclusions Nora drew from messages she witnessed — inferred and
-    occasionally wrong about intent in a way an identity fact is not — and the
-    failure this invites is confidently telling somebody what they think."""
+    """The framing carries the safety property, as it does for every block
+    distilled from what was said. These are conclusions Nora drew from
+    messages she witnessed — inferred and occasionally wrong about intent in
+    a way an identity fact is not — and the failure this invites is
+    confidently telling somebody what they think."""
     ctx = await _assemble(_Memory())
 
     blob = str(build_prefill(ctx, display_name="Nora", context_window=10))
@@ -326,6 +330,9 @@ async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill
     await culture.append(
         key="room-primary", body="they decide by attrition",
         written_at=1, established_by="dream:culture:test")
+    await culture.append(
+        key="u#nora", body="she keeps it short here",
+        written_at=2, established_by="dream:character-nora:test")
     culture.reads.clear()
     assembler = TranscriptInjection(
         audit=_Audit(), memory=_Memory(), persons=_persons(), context_window=10,
@@ -336,7 +343,9 @@ async def test_a_tag_turn_carries_the_rooms_account_through_assemble_and_prefill
         request=EngagementRequest(message=_msg(), decision=None, tag_id="t"))
 
     # The room's account by its `primary_id`, and its unit's (C3a) by the unit.
-    assert sorted(culture.reads) == ["room-primary", "u#unit"]
+    assert sorted(culture.reads) == ["room-primary", "u#nora", "u#unit"]
     assert ctx.culture is not None
     blob = str(build_prefill(ctx, display_name="Nora", context_window=10))
     assert "<culture" in blob and "they decide by attrition" in blob
+    # And her own account by the unit (design/self-growth/20), first.
+    assert "<self " in blob and "she keeps it short here" in blob

@@ -1,10 +1,10 @@
-"""`<people_in_window>` and `<self_card>` on the PARTICIPATION turn (issue #210).
+"""`<people_in_window>` on the PARTICIPATION turn (issue #210).
 
 The tree this is against, stated once so every assertion below has a referent:
 `fire.py::participation_occasion` builds `person_id=None` — deliberately,
 «like a version announcement», because the occasion is the room and not a
 person. `FirePath.build_context` reads `peer_card` only `if ref is not None`,
-and `self_card`/`tagger_card` were assembled **only** by
+and `tagger_card` was assembled **only** by
 `nora.engagement.context.TranscriptInjection`, the TAG path. So the one decider
 design 36 §6 describes as holding «notes and the peer card» behind a blind gate
 rendered *no Honcho block at all*: it knew the people in the window by display
@@ -14,7 +14,8 @@ Four properties, and each is a mutation entry in
 `scripts/mutations/issue-210-participation-reads-memory.json`:
 
 1. the block RENDERS, and only on the participation occasion;
-2. her own card renders there too, the same read the tag path makes;
+2. the turn makes no read of her own representation: the `<self>` block
+   (her Character · Nora account) replaced `<self_card>`;
 3. the hedge is `<peer_history>`'s clause for clause — A2's «undated, therefore
    not standing» included, which is the whole of what keeps a remembered joke
    («the room calls me 管理員») a record rather than a standing directive;
@@ -111,7 +112,6 @@ def _path(
     defaulted: `FirePath`'s own defaults are 0 (inert), so a test that let them
     default would measure the block being off."""
     base = {                                # a dict LITERAL: ruff C408
-        "self_card_conclusions": 8,
         "people_in_window_conclusions": 3,
         "people_in_window_speakers": 4,
     }
@@ -196,7 +196,6 @@ async def test_a_reminder_occasion_reads_no_memory_at_all(
     ctx = await path.build_context(reminder_occasion([_reminder()]))
 
     assert ctx.people_in_window == ()
-    assert ctx.self_card == ()
     assert memory.queries == []          # not «empty answer» — NO CALL
 
 
@@ -217,15 +216,15 @@ async def test_an_unmapped_speaker_is_not_read_and_not_rendered(
     ))
 
     assert [name for name, _ in ctx.people_in_window] == ["Miles Novak"]
-    assert {obs for _, obs, _ in memory.queries} == {"miles", "nora"}
+    assert {obs for _, obs, _ in memory.queries} == {"miles"}
 
 
 async def test_her_own_rows_are_not_read_as_a_speaker(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """`representation(target=nora)` is `<self_card>` — read separately and
-    framed differently. A Nora row in the window must not produce a second,
-    differently-hedged copy of it inside `<people_in_window>`."""
+    """Her own account is `<self>`, read separately from the culture store. A
+    Nora row in the window must not produce an entry for her inside
+    `<people_in_window>`, nor a read of her own representation."""
     store = FakeRecordStore()
     await store.append(
         message=NormalizedMessage(
@@ -247,21 +246,20 @@ async def test_her_own_rows_are_not_read_as_a_speaker(
     ))
 
     assert [name for name, _ in ctx.people_in_window] == ["Miles Novak"]
-    assert ctx.self_card == ("hers",)
+    assert {obs for _, obs, _ in memory.queries} == {"miles"}
 
 
 # ---------------------------------------------------------------------------
-# 2. her own card, on the turn that had none
+# 2. her own card is no longer read on this turn
 # ---------------------------------------------------------------------------
 
 
-async def test_the_participation_turn_reads_her_own_card(
+async def test_the_participation_turn_makes_no_read_of_her_own_representation(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """`<self_card>` from `representation(target=None)` — observer == observed,
-    never `peer_card`, because her CARD renders the same history as identity
-    claims and a learned self-description injected beside an authored one wins
-    (`TranscriptInjection._recall_self`, live values in its docstring)."""
+    """`<self_card>` read `representation(target=None)` (observer == observed)
+    on this turn until the self block replaced it. Her own account is `<self>`
+    now (the culture store); no Honcho call may be made about her."""
     memory = FakeMemoryStore(
         cards={"nora": ["Kind: AI chatbot/assistant"]},
         conclusions={"nora": ["nora was asked as 管理員 to handle a room matter"]},
@@ -275,11 +273,9 @@ async def test_the_participation_turn_reads_her_own_card(
         platform="signal", conversation_id="conv-1",
     ))
 
-    assert ctx.self_card == ("nora was asked as 管理員 to handle a room matter",)
-    # The card is the thing NOT read: `peer_card` stays `()` because the
-    # occasion has no person, and her own card must not be substituted for it.
+    assert "nora" not in {obs for _, obs, _ in memory.queries}
     assert ctx.peer_card == ()
-    assert "Kind: AI chatbot/assistant" not in "".join(ctx.self_card)
+    assert not hasattr(ctx, "self_card")
 
 
 async def test_the_search_query_is_the_windows_own_text(
@@ -415,7 +411,7 @@ async def test_no_more_speakers_are_read_than_the_bound_allows(
     ))
 
     assert [name for name, _ in ctx.people_in_window] == ["Ben", "Ada"]
-    assert {obs for _, obs, _ in memory.queries} == {"ben", "ada", "nora"}
+    assert {obs for _, obs, _ in memory.queries} == {"ben", "ada"}
 
 
 async def test_no_more_conclusions_are_asked_for_than_the_bound_allows(
@@ -455,7 +451,7 @@ async def test_zero_turns_the_block_off_without_a_single_read(
     ))
 
     assert ctx.people_in_window == ()
-    assert {obs for _, obs, _ in memory.queries} == {"nora"}   # the self card only
+    assert memory.queries == []          # disabled means no call
 
 
 async def test_a_honcho_failure_costs_the_block_never_the_turn(
@@ -478,10 +474,7 @@ async def test_a_honcho_failure_costs_the_block_never_the_turn(
     ))
 
     assert ctx.people_in_window == ()
-    assert ctx.self_card == ()
     assert ctx.transcript != ()                    # the TURN survived
-    assert metrics.get(
-        "nora_errors_total", stage="fire_self_card", platform="signal") == 1
     assert metrics.get(
         "nora_errors_total", stage="fire_people_in_window", platform="signal") == 1
 
@@ -532,8 +525,6 @@ async def test_an_unreachable_honcho_is_counted_not_reported_as_nothing_known(
     assert ctx.people_in_window == ()
     assert metrics.get(
         "nora_errors_total", stage="fire_people_in_window", platform="signal") == 1
-    assert metrics.get(
-        "nora_errors_total", stage="fire_self_card", platform="signal") == 1
 
 
 async def test_an_unknown_peer_is_silence_not_an_error(
@@ -553,7 +544,6 @@ async def test_an_unknown_peer_is_silence_not_an_error(
 
     assert ctx.people_in_window == ()
     assert metrics.get("nora_errors_total", stage="fire_people_in_window") == 0
-    assert metrics.get("nora_errors_total", stage="fire_self_card") == 0
 
 
 async def test_a_port_that_never_answers_is_bounded_and_counted(
@@ -584,7 +574,6 @@ async def test_a_port_that_never_answers_is_bounded_and_counted(
     ))
 
     assert ctx.people_in_window == ()
-    assert ctx.self_card == ()
     assert ctx.transcript != ()
     assert metrics.get(
         "nora_errors_total", stage="fire_memory", platform="signal") == 1
@@ -616,7 +605,7 @@ def test_the_relevance_gate_gained_no_memory_reader() -> None:
     ).read_text()
 
     for forbidden in (
-        "MemoryStore", "representation", "peer_card", "people_in_window", "self_card",
+        "MemoryStore", "representation", "peer_card", "people_in_window", "self_account",
     ):
         assert forbidden not in source, (
             f"{forbidden!r} reached nora/ingest/relevance_gate.py — design 36 §6 "

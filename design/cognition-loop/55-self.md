@@ -60,6 +60,10 @@ The `self` block (step 8) renders her whole Character · Nora, capped in
 lines. `self_card` stays pushed until then and leaves the prompt at step 8
 ([80](80-prior-art.md) §6).
 
+> **As built 2026-10-07 (DEC-291, `design/self-growth/20-self-block.md`):** the
+> `self` block is built and `self_card` is deleted, ahead of the cognition
+> loop's own step 8. The self-growth bundle sequenced it first.
+
 **Where her blocks and the doctrine disagree, the doctrine is followed** and
 a tension row records the disagreement for the operator (§4): information
 for the humans to decide on, never a proposal from her.

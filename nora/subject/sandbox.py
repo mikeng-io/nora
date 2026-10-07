@@ -729,6 +729,10 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
             None if shot.unit_culture is None
             else _account_seed(shot.unit_culture, before_ms=shot.before_ms)
         ),
+        nora_account=(
+            None if shot.nora_account is None
+            else _account_seed(shot.nora_account, before_ms=shot.before_ms)
+        ),
         characters={
             person_id: _account_seed(account, before_ms=shot.before_ms)
             for person_id, account in shot.characters
