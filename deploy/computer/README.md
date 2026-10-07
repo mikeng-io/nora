@@ -89,7 +89,15 @@ which is never an allow.
 Read it back, both halves, from sbx's own authorizer. Allowed: `pypi.org:443`,
 `archive.ubuntu.com:80`, `example.com:443`. Denied, as IP literals: computerd's own
 port (`172.17.0.1:18765`), OmniRoute (`172.17.0.1:20128`), Ollama on the loopback
-(`127.0.0.1:11434`) and the LAN (`192.168.1.1:80`).
+(`127.0.0.1:11434`), and one address in every other denied range (`10.0.0.1:80`,
+`192.168.1.1:80`, `100.64.0.1:80`, `169.254.169.254:80`), so one missing deny shows.
+
+**`apply` never adds `**` unless all six denies read back from `sbx policy ls` as
+this sandbox's own** (a rule of `nora-computer-eval` is not ours): an add that
+failed, one that reported success but did not land, or a rule list sbx will not
+print each leave the web closed and exit 1. A `**` already in place from an
+earlier apply is not removed by that; `egress check` and `status` report the
+missing deny. `serve` runs the check after every apply.
 
 ```bash
 nora-computer egress check; echo "RC=$?"     # 0 all as required, 1 a violation, 2 sbx would not say

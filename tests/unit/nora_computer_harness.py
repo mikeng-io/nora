@@ -93,14 +93,17 @@ PY
       esac ;;
   "policy ls --json")
       [ "${STUB_LS_BROKEN:-}" = 1 ] && { echo "not json"; exit 0; }
-      python3 - "$allowed" "$denied_store" <<'PY'
+      touch "$STUB_DIR/foreign_denied"
+      python3 - "$allowed" "$denied_store" "$STUB_DIR/foreign_denied" <<'PY'
 import json, sys
 # The real shape (sbx 0.46.0): scope and applies_to are both "sandbox:<name>".
-def rule(decision, r):
+def rule(decision, r, name="nora-computer"):
     return {"resource_type": "network", "decision": decision, "resources": [r],
-            "scope": "sandbox:nora-computer", "applies_to": "sandbox:nora-computer"}
+            "scope": "sandbox:" + name, "applies_to": "sandbox:" + name}
 rules = [rule("allow", r) for r in open(sys.argv[1]).read().split()]
 rules += [rule("deny", r) for r in open(sys.argv[2]).read().split()]
+# Rules of a sandbox whose name merely starts with ours: never ours.
+rules += [rule("deny", r, "nora-computer-eval") for r in open(sys.argv[3]).read().split()]
 rules.append({"resource_type": "network", "decision": "deny", "resources": ["**"],
               "scope": "global", "applies_to": "all"})
 print(json.dumps({"rules": rules}))
@@ -115,6 +118,8 @@ PY
   "policy deny network")
       shift 3
       [ "${STUB_DENY_FAILS:-}" = 1 ] && { echo "policy store is read-only" >&2; exit 1; }
+      # An add that reports success and records nothing: the read-back's case.
+      [ "${STUB_DENY_SILENT:-}" = 1 ] && exit 0
       res=""; for a in "$@"; do res="$a"; done
       # Like sbx: a comma list is one rule per CIDR.
       echo "$res" | tr ',' '\n' >> "$denied_store"

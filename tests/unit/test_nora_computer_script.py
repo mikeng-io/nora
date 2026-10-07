@@ -246,29 +246,43 @@ def test_apply_reads_the_rule_list_first_and_never_adds_a_listed_rule_again(host
     assert result.returncode == 1, result.stdout + result.stderr
 
 
-def test_an_unreadable_rule_list_falls_back_to_the_authorizer(host: Host) -> None:
-    """Allow rules fall back to the authorizer's verdict. A deny rule has no
-    verdict of its own, so with the list unreadable it is added again: a
-    duplicate deny is harmless, a missing one is not, so it fails toward adding."""
-    assert host.run("egress", "apply", STUB_LS_BROKEN="1").returncode == 0
-    first = len(host.allow_calls())
-    again = host.run("egress", "apply", STUB_LS_BROKEN="1")
-    assert again.returncode == 0, again.stdout + again.stderr
-    assert len(host.allow_calls()) == first == len(EXPECTED_EGRESS)
-    assert len(host.deny_calls()) == 2 * len(EXPECTED_DENY)
+def test_an_unreadable_rule_list_withholds_the_web(host: Host) -> None:
+    """With sbx's rule list unreadable the denies cannot be confirmed, so `**`
+    is not added: fail closed. The denies are still attempted (a duplicate
+    deny is harmless, a missing one is not)."""
+    result = host.run("egress", "apply", STUB_LS_BROKEN="1")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert host.allow_calls() == []
+    assert len(host.deny_calls()) == len(EXPECTED_DENY)
 
 
 def test_a_rule_scoped_to_another_sandbox_does_not_count_as_ours(host: Host) -> None:
-    """Present in the list for `nora-computer-eval` is not present for us."""
-    sbx = host.bin / "sbx"
-    mine = '"applies_to": "sandbox:nora-computer"}'
-    assert mine in sbx.read_text()
-    sbx.write_text(sbx.read_text().replace(mine, '"applies_to": "sandbox:other-sandbox"}'))
-    (host.dir / "allowed").write_text("**\n")
-    (host.dir / "denied").write_text("10.0.0.0/8\n")
-    host.run("egress", "apply", STUB_CHECK_DENIES_ALL="1")
-    assert any(c.endswith(" **") for c in host.allow_calls()), host.allow_calls()
-    assert any(c.endswith(" 10.0.0.0/8") for c in host.deny_calls()), host.deny_calls()
+    """Denies listed for `nora-computer-eval` (a name that merely starts with
+    ours) are not ours: every range is still denied for this sandbox before
+    `**` is allowed. A substring match skipped them and opened the ranges."""
+    (host.dir / "foreign_denied").write_text("".join(f"{c}\n" for c in EXPECTED_DENY))
+    result = host.run("egress", "apply")
+    assert result.returncode == 0, result.stdout + result.stderr
+    asked = {c.split()[-1] for c in host.deny_calls()}
+    assert asked == EXPECTED_DENY, asked
+
+
+def test_a_deny_that_reports_success_but_did_not_land_withholds_the_web(host: Host) -> None:
+    """The adds' exit codes are not the evidence: the rule list is read back,
+    and `**` is not added while a range is missing from it."""
+    result = host.run("egress", "apply", STUB_DENY_SILENT="1")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert host.allow_calls() == []
+
+
+@pytest.mark.parametrize("cidr", sorted(EXPECTED_DENY))
+def test_check_sees_each_missing_deny(host: Host, cidr: str) -> None:
+    """One probe per range: losing any single deny is a violation."""
+    host.run("egress", "apply")
+    (host.dir / "denied").write_text("".join(f"{c}\n" for c in EXPECTED_DENY - {cidr}))
+    result = host.run("egress", "check")
+    assert result.returncode == 1, (cidr, result.stdout)
+    assert "got allowed" in result.stdout
 
 
 def _fresh(tmp_path: Path, name: str) -> Host:
@@ -298,7 +312,8 @@ def test_the_readme_documents_the_apply_and_check_exit_codes() -> None:
 
 ALLOWED_PROBES = ("pypi.org:443", "archive.ubuntu.com:80", "example.com:443")
 DENIED_PROBES = (
-    f"{HOST_IP}:{HOST_PORT}", f"{HOST_IP}:20128", "127.0.0.1:11434", "192.168.1.1:80",
+    f"{HOST_IP}:{HOST_PORT}", f"{HOST_IP}:20128", "127.0.0.1:11434", "10.0.0.1:80",
+    "192.168.1.1:80", "100.64.0.1:80", "169.254.169.254:80",
 )
 
 

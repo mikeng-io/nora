@@ -224,7 +224,7 @@ except (ValueError, KeyError, TypeError):
 for r in rules:
     if (r.get("resource_type") == "network" and r.get("decision") == decision
             and res in (r.get("resources") or [])
-            and (r.get("scope") == "global" or name in str(r.get("applies_to", "")))):
+            and (r.get("scope") == "global" or r.get("applies_to") == "sandbox:" + name)):
         sys.exit(0)
 sys.exit(1)' "$1" "$2" "$NAME"
 }
@@ -250,21 +250,28 @@ egress_apply() {
             || { log "egress: denying $res failed: $out"; bad=1; continue; }
         log "egress: denied $res for $NAME"
     done
+    # Read back from sbx's own list, not from the adds' exit codes: an add that
+    # exited 0 but did not land must not let `**` in.
+    for res in "${EGRESS_DENY[@]}"; do
+        egress_listed deny "$res" || bad=1
+    done
     if [ "$bad" != 0 ]; then
-        log "egress: a private range is not denied, so the web is not allowed"
+        log "egress: a private range is not denied, so the web is not allowed (an allow already in place stays until the deny is restored; egress check reports it)"
         return 1
     fi
     for res in "${EGRESS_ALLOW[@]}"; do
         if egress_listed allow "$res"; then
             :
-        elif [ "$(egress_verdict "$res")" = allowed ]; then
+        elif [ "$res" != '**' ] && [ "$(egress_verdict "$res")" = allowed ]; then
             continue
         else
             out=$(sbx policy allow network --sandbox "$NAME" "$res" </dev/null 2>&1) \
                 || { log "egress: allowing $res failed: $out"; bad=1; continue; }
             log "egress: allowed $res for $NAME"
         fi
-        verdict=$(egress_verdict "$res")
+        # `**` is a pattern, not a host:port sbx is known to check: it is read
+        # back through an ordinary public site.
+        if [ "$res" = '**' ]; then verdict=$(egress_verdict example.com:443); else verdict=$(egress_verdict "$res"); fi
         case "$verdict" in
             allowed) ;;
             unknown) log "egress: $res is in place but sbx would not say whether it is allowed"; unknown=2 ;;
@@ -279,7 +286,8 @@ egress_apply() {
 # hosts (the ports apt and pip use) and one ordinary public site. Denied, as IP
 # LITERALS (a CIDR deny applies to literals only, see EGRESS_ALLOW): computerd's
 # own published port (the VM has no business calling the thing that drives it),
-# OmniRoute's port on the same host, Ollama on the host's loopback, and the LAN.
+# OmniRoute's port on the same host, Ollama on the host's loopback, and one
+# address in every other EGRESS_DENY range, so a single missing deny shows.
 # Exit 0 all as required, 1 a violation, 2 a verdict sbx would not give.
 egress_check() {
     local violation=0 unreadable=0 res verdict
@@ -288,7 +296,8 @@ egress_check() {
         echo "want allowed  $res  got $verdict"
         case "$verdict" in allowed) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
     done
-    for res in "$HOST_IP:$HOST_PORT" "$HOST_IP:20128" 127.0.0.1:11434 192.168.1.1:80; do
+    for res in "$HOST_IP:$HOST_PORT" "$HOST_IP:20128" 127.0.0.1:11434 10.0.0.1:80 \
+            192.168.1.1:80 100.64.0.1:80 169.254.169.254:80; do
         verdict=$(egress_verdict "$res")
         echo "want denied   $res  got $verdict"
         case "$verdict" in denied) ;; unknown) unreadable=1 ;; *) violation=1 ;; esac
@@ -600,7 +609,8 @@ prepare() {
     # serves without package egress (deny-all just refuses the fetch), and a
     # crash-looping unit over a policy word would take the whole computer down
     # for a read-back problem. `status` and `egress check` say it is missing.
-    egress_apply || log "egress: the policy is NOT in place; run: nora-computer egress apply"
+    { egress_apply && egress_check >/dev/null; } \
+        || log "egress: the policy is NOT in place or does not read back; run: nora-computer egress check"
 }
 
 # The long-running mode systemd supervises (nora-computer.service,
