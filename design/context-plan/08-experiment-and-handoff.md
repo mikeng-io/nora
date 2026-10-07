@@ -62,8 +62,8 @@ Before this documentation consolidation, the final code tree passed `make gate`:
 **14,944 passed, 14 skipped, 3 xfailed**, all three static checks passed. Snapshot
 integration checks passed (30), including the real seeding path. Focused filter,
 receipt-coverage and name-projection tests pass. The full-bundle final check and
-committed-head readback are recorded at handoff; use the recorded command/exit code,
-not an assumed green status.
+committed-head readback are recorded in [verification](evidence/verification.txt);
+use the recorded command/exit code, not an assumed green status.
 
 Independent additive-code review found and verified fixes for malformed response
 fallback, missing-draw evidence, former-person lookup and stale docstrings. The
@@ -82,6 +82,10 @@ Regression targets:
 Mutation verification must be read back from its log. A green test alone does not
 prove the defect is guarded. Run existing mutation tables naming touched files:
 `eval-note-date-split`, `instagram-shared-reel-cover`, `note-format-s1a-roster-names`.
+The checkpoint's results are saved with the verification receipt. The next landing
+session must update against current master: the local branch began at `1a20c236`,
+while `origin/master` advanced to `67520d7a` during this session. This checkpoint
+does not incorporate that later conversational-recall design bundle.
 
 ## Replay has not run
 
