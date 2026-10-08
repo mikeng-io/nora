@@ -1,0 +1,1 @@
+{"type": "fix", "summary": "Signing in to the portal with Discord works again.", "details": ["Discord began sending an issuer value on its sign-in callback, which the portal rejected; the portal now expects Discord's own issuer."], "limitations": []}
