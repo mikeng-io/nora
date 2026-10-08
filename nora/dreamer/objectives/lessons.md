@@ -64,7 +64,9 @@ you speak in this group.
   someone else wrote. A real correction is enough on its own: a lesson that
   cites the `n` of one needs no three episodes. Write what it asks of how you
   act, in your own words; write nothing for a message that was not really
-  telling you how to act. To reinforce or reword a lesson you hold, pass its
+  telling you how to act. One person's ask is how that person wants you to
+  act: write it for the whole group only if the episodes agree, otherwise as
+  what to do with that person. To reinforce or reword a lesson you hold, pass its
   `lesson_id` (`L2`) and give the whole new body; cite the new episodes. Never
   write a second lesson that says what one you hold says.
 - `lesson_retire`: `lesson_id` and `why`, when these episodes show a lesson is

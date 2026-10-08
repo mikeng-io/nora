@@ -3865,6 +3865,7 @@ async def build_dependencies(
                         correction_quiet_seconds=(
                             cfg.lessons.correction_quiet_seconds or None),
                         stale_seconds=cfg.lessons.stale_seconds, metrics=metrics,
+                        self_ids=frozenset(registry.self_aliases()),
                     ),
                     keys=lessons_keys,
                     name_of=lambda pid: (

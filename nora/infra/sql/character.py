@@ -35,6 +35,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
+from nora.domain.lessons import NAMES_HER
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
@@ -125,12 +126,14 @@ class SqlCharacterEvidence:
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int,
+        limit: int, self_ids: frozenset[str] = frozenset(),
     ) -> list[RoomMessage]:
         """Human messages in `rooms` sent in `(since_ms, until_ms]` that address
-        Nora: they quote one of her messages in the same room, or name her
-        («nora», any case). Oldest first, at most the newest `limit`. Whether one
-        is a CORRECTION is the caller's (`nora.domain.lessons.is_correction`)."""
+        Nora: they quote one of her messages in the same room, @-mention one of
+        `self_ids` (`mentions_json`: Signal stores a mention as U+FFFC in the
+        body, so the body alone never shows it), or name her («nora» as a word,
+        any case). Oldest first, at most the newest `limit`. Whether one is a
+        CORRECTION is the caller's (`nora.domain.lessons.is_correction`)."""
         if limit <= 0 or until_ms <= since_ms:
             return []
         hers = MESSAGES.alias("hers")
@@ -150,7 +153,8 @@ class SqlCharacterEvidence:
                 MESSAGES.c.ts > since_ms, MESSAGES.c.ts <= until_ms,
                 sa.or_(
                     sa.and_(MESSAGES.c.quoted_ts.isnot(None), quotes_her),
-                    MESSAGES.c.body.ilike("%nora%"),
+                    MESSAGES.c.body.op("~*")(NAMES_HER),
+                    *(MESSAGES.c.mentions_json.contains(f'"{i}"') for i in sorted(self_ids)),
                 ),
             )
             .order_by(MESSAGES.c.id.desc()).limit(limit)

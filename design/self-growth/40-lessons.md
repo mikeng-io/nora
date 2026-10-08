@@ -78,17 +78,18 @@ lesson cites. How the cue is detected (a code pattern, or the tag turn raising
 it) is decided in the PR.
 
 **Built (L4, DEC-299): a code pattern, read at wake time, not at ingest.** A
-message in the unit's rooms that ADDRESSES her (quotes one of her messages, or
-names «nora») and matches `is_correction` (English and Cantonese prohibitions,
+message in the unit's rooms that ADDRESSES her (quotes one of her messages,
+@-mentions her through `mentions_json`, or names «nora» as a word) and matches `is_correction` (English and Cantonese prohibitions,
 "too long", "next time", 「唔好」「下次」「你成日」...) wakes the unit once it is
 `[lessons] correction_quiet_seconds` (600) old and newer than her last session
 there. Computed at read time rather than as a stimulus cue, because a new cue
 name renders into Cognition's agenda, a prompt change this step does not own.
 The session is handed it as `<lesson_corrections>`; a lesson citing one is
 exempt from the three-episode floor (`Citable.corrections`). Measured on 14
-days live (2026-10-09): 112 messages addressed her, the pattern matched 4, two
-real corrections and two not; about two extra sessions a week, each false one
-closed unchanged by the session.
+days live (2026-10-09): 176 messages addressed her (58 by quote, 52 by name, 66
+only by @-mention, which a body read cannot see on Signal), the pattern matched
+5, two real corrections and three not; about two or three extra sessions a
+week, each false one closed unchanged by the session.
 
 ## 4. Enforced by code on every write
 

@@ -114,7 +114,7 @@ class _Episodes(Protocol):
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int,
+        limit: int, self_ids: frozenset[str] = ...,
     ) -> list[RoomMessage]: ...
 
     async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
@@ -164,7 +164,7 @@ class LessonEvidence:
         wake_batch: int, horizon_seconds: int,
         clock_ms: Callable[[], int],
         correction_quiet_seconds: int | None = None, stale_seconds: int = 604_800,
-        metrics: Metrics | None = None,
+        metrics: Metrics | None = None, self_ids: frozenset[str] = frozenset(),
     ) -> None:
         """`correction_quiet_seconds` turns on the correction fast path (L4):
         `None` is off. A correction wakes the key once it is that old, so the
@@ -179,6 +179,8 @@ class LessonEvidence:
                           else correction_quiet_seconds * 1000)
         self._stale_ms = stale_seconds * 1000
         self._metrics = metrics
+        #: Her own platform ids, so an @-mention of her addresses her.
+        self._self_ids = self_ids
         self._held: dict[str, int] = {}
 
     async def corrections(self, key: str) -> list[RoomMessage]:
@@ -201,6 +203,7 @@ class LessonEvidence:
         found = await self._store.addressed_since(
             rooms=[(r.platform, r.key) for r in lk.rooms], since_ms=since,
             until_ms=now - self._quiet_ms, limit=CORRECTIONS_MAX * 5,
+            self_ids=self._self_ids,
         )
         return [m for m in found if is_correction(m.row.body)][-CORRECTIONS_MAX:]
 

@@ -46,6 +46,7 @@ __all__ = [
     "LESSON_MIN_EPISODES",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
+    "NAMES_HER",
     "Lesson",
     "LessonConflictError",
     "LessonRevision",
@@ -270,6 +271,11 @@ def check_lesson(
     return None
 
 
+#: «nora» as a word, any case (Postgres `~*` and Python `re` agree on this form):
+#: not "ignorance", "Leonora" or "anorak". A CJK character beside it is not a
+#: letter here, so «nora你» still names her.
+NAMES_HER = r"(^|[^a-z])nora([^a-z]|$)"
+
 #: A message that tells her how to act (Lessons L4, design/self-growth/40 §3):
 #: a prohibition, a "too much", a "next time", a "you always". Read only on a
 #: message that ADDRESSES her (`SqlCharacterEvidence.addressed_since`), and
@@ -278,7 +284,8 @@ def check_lesson(
 #: Not a parser, and never what the correction says: the session reads that.
 _CORRECTION = re.compile(
     "|".join((
-        r"\b(?:don'?t|dont|do\s+not|never|stop|quit|no\s+need\s+to|no\s+more)\b",
+        # U+2019: iOS types a curly apostrophe by default, and NFKC keeps it.
+        r"\b(?:don['\u2019]?t|do\s+not|never|stop|quit|no\s+need\s+to|no\s+more)\b",
         r"\btoo\s+(?:long|much|many|wordy|formal|serious|slow|often)\b",
         r"\b(?:shorter|briefer|less\s+(?:often|long|text))\b",
         r"\bnext\s+time\b",

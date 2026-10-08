@@ -10,10 +10,12 @@ every person would pass a test that the real query fails.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from nora.domain.culture import Episode, RoomMessage
+from nora.domain.lessons import NAMES_HER
 from nora.domain.models import DeliveryStatus, TranscriptRow
 
 
@@ -28,6 +30,7 @@ class _Message:
     is_nora: bool
     hidden: bool
     quoted_ts: int | None = None
+    mentions: frozenset[str] = frozenset()
 
 
 class InMemoryCharacterEvidence:
@@ -69,7 +72,7 @@ class InMemoryCharacterEvidence:
 
     async def addressed_since(
         self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
-        limit: int,
+        limit: int, self_ids: frozenset[str] = frozenset(),
     ) -> list[RoomMessage]:
         """`SqlCharacterEvidence.addressed_since`: a human message in `rooms`
         in `(since_ms, until_ms]` that quotes one of her messages in the same
@@ -83,7 +86,8 @@ class InMemoryCharacterEvidence:
             if (m.platform, m.room) in wanted and not m.is_nora and not m.hidden
             and since_ms < m.ts <= until_ms
             and ((m.quoted_ts is not None and (m.platform, m.room, m.quoted_ts) in hers)
-                 or "nora" in (m.body or "").casefold())
+                 or re.search(NAMES_HER, m.body or "", re.IGNORECASE) is not None
+                 or bool(m.mentions & self_ids))
         ]
         return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]]
 
@@ -118,10 +122,12 @@ class InMemoryCharacterEvidence:
         self, *, id: int, platform: str, room: str, person_id: str | None,
         body: str = "a line", ts: int = 0, is_nora: bool = False,
         hidden: bool = False, quoted_ts: int | None = None,
+        mentions: frozenset[str] = frozenset(),
     ) -> None:
         self._messages.append(_Message(
             id=id, platform=platform, room=room, person_id=person_id, body=body,
             ts=ts, is_nora=is_nora, hidden=hidden, quoted_ts=quoted_ts,
+            mentions=mentions,
         ))
 
     @staticmethod

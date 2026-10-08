@@ -409,6 +409,7 @@ async def test_the_fast_path_off_never_reads_corrections():
 def test_the_correction_pattern_reads_both_languages_and_skips_plain_requests():
     from nora.domain.lessons import is_correction
     for text in ("nora stop sending five options", "@Nora next time just give one",
+                 "nora don\u2019t send gifs",
                  "nora 唔好每次都問咁多", "nora 你成日講好長", "nora that was too long"):
         assert is_correction(text), text
     for text in ("nora can you book a table", "what time nora", "nora 幾點食飯", None, ""):
