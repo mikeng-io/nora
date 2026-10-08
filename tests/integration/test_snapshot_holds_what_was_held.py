@@ -351,6 +351,14 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
     },
+    # 0101_self_tension (design/self-growth/40, L3): a lesson refused by the law.
+    "self_tension": lambda n: {
+        "id": _uuid("st", n), "unit": "friends", "source": "lesson",
+        "doctrine_file": "rooms/conduct.md", "doctrine_line": n + 1,
+        "doctrine_text": f"rule {n}", "would_have_said": f"lesson {n}",
+        "citations": [f"response:{n + 1}"], "why": "it loosens the rule",
+        "written_at": MS0 + n, "established_by": "test",
+    },
     # design/sandbox-runtime §6 (0083): one row per file that left the computer.
     "computer_exports": lambda n: {
         "id": _uuid("cx", n), "platform": "signal", "conversation_id": "g1",

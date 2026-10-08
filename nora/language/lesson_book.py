@@ -19,10 +19,11 @@ forced by the data:
 `nora.language.lessons.LessonsAdaptor`), built only under `[lessons] enabled`
 (default off). No turn holds these verbs, and nothing renders a lesson until L5.
 
-**Nothing here awaits a model.** The doctrine check (L3) is a separate
-instrument and is not applied: a lesson that loosens law passes this file's
-checks (it echoes nothing) until L3 reads it. That is why `[lessons]` ships off,
-and why no lesson is rendered before L3 and L5.
+**The doctrine check (L3) runs last**, when the book is built with one: a separate
+instrument call (`nora.language.doctrine_check.DoctrineCheck`) reads the lesson
+against the law. A conflict refuses the write and records a tension row for the
+operator; an instrument error refuses it and records nothing. The operator's CLI
+book is built without one, because it never writes a lesson.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from nora.domain.culture import Citable, Refusal
+from nora.domain.doctrine_check import CheckVerdict, Tension
 from nora.domain.lessons import (
     Lesson,
     LessonConflictError,
@@ -40,6 +42,7 @@ from nora.domain.lessons import (
     check_lesson,
     evidence_ceiling,
 )
+from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +50,21 @@ log = logging.getLogger(__name__)
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 __all__ = ["LessonBook", "LessonStore"]
+
+
+class _Check(Protocol):
+    """`nora.language.doctrine_check.DoctrineCheck`."""
+
+    @property
+    def model(self) -> str: ...
+
+    async def judge(self, lesson: str) -> CheckVerdict: ...
+
+
+class _Tensions(Protocol):
+    """`nora.infra.sql.tension.SqlTensionStore`."""
+
+    async def record(self, tension: Tension) -> str: ...
 
 
 class LessonStore(Protocol):
@@ -81,6 +99,8 @@ class LessonBook:
         self, *, store: LessonStore, law: Callable[[], Sequence[str]],
         screen: Callable[[Mapping[str, object]], tuple[str, str] | None],
         clock_ms: Callable[[], int],
+        check: _Check | None = None, tensions: _Tensions | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         """`law` returns the text of each LAW rule now, the doctrine's own words
         (`DoctrineStore.law_rules()`, DEC-291). It is a required argument and not
@@ -93,6 +113,16 @@ class LessonBook:
         self._law = law
         self._screen = screen
         self._clock = clock_ms
+        # The doctrine check (L3) and where its conflicts go: both or neither. A
+        # check with nowhere to write a tension would refuse silently; a tension
+        # store with no check would never be written. The operator's CLI book
+        # has neither: it never writes a lesson.
+        if (check is None) != (tensions is None):
+            raise ValueError("a LessonBook takes the doctrine check and the tension "
+                             "store together, or neither")
+        self._check = check
+        self._tensions = tensions
+        self._metrics = metrics
 
     # -- reads ---------------------------------------------------------------
 
@@ -235,6 +265,14 @@ class LessonBook:
         if refusal is not None:
             return self._refused(unit, refusal)
         text = body.strip()
+        if self._check is not None:
+            judged = await self._judged(
+                unit=unit, text=text, citations=citations,
+                established_by=established_by, instruction_sha256=instruction_sha256,
+                model=model,
+            )
+            if judged is not None:
+                return judged
         now = self._clock()
         if replacing is None:
             made = await self._store.create(
@@ -253,6 +291,47 @@ class LessonBook:
         if isinstance(revision, dict):
             return revision
         return {"status": "ok", "lesson_id": replacing.id, "revision": revision.seq}
+
+    async def _judged(
+        self, *, unit: str, text: str, citations: tuple[str, ...], established_by: str,
+        instruction_sha256: str | None, model: str | None,
+    ) -> dict[str, object] | None:
+        """The doctrine check (L3), last and only once every cheap check has
+        passed: it is a model call. `None` lets the write go on. A conflict writes
+        one tension row for the operator and refuses; an error refuses and writes
+        nothing (an instrument error is not a pass, 50 §6)."""
+        check, tensions = self._check, self._tensions
+        if check is None or tensions is None:
+            return None
+        verdict = await check.judge(text)
+        if verdict.outcome == "consistent":
+            return None
+        if verdict.outcome != "conflict" or verdict.rule is None:
+            return self._refused(unit, Refusal(
+                "check_unavailable", "the check that reads a lesson against your rules "
+                "did not answer, so nothing was written; try it once more, or stop"))
+        rule = verdict.rule
+        try:
+            await tensions.record(Tension(
+            unit=unit, source="lesson", doctrine_file=rule.file, doctrine_line=rule.line,
+            doctrine_text=rule.text, would_have_said=text, citations=citations,
+            why=verdict.why, written_at=self._clock(), established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+            check_model=check.model,
+            ))
+        except Exception:
+            # The lesson is still refused: a lost tension row is the
+            # operator's loss, never a reason to write what the law refused.
+            log.exception("lessons: unit=%s the tension row could not be written", unit)
+        else:
+            if self._metrics is not None:
+                self._metrics.inc("nora_self_tension_total", doctrine_file=rule.file)
+        # The file, not the judge's reason: a session told how it was caught
+        # is a session taught to reword around it (review of #764).
+        return self._refused(unit, Refusal(
+            "loosens_law", f"acting on this would loosen or contradict a rule you keep "
+            f"({rule.file}); it is not written. A lesson adds practice only where "
+            "your rules are silent"))
 
     async def retire(
         self, *, unit: str, lesson_id: str, by: str, why: str, established_by: str,

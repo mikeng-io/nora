@@ -4625,3 +4625,41 @@ LESSON_REVISION = sa.Table(
 UQ_LESSON_REVISION_SEQ = sa.Index(
     "uq_lesson_revision_seq", LESSON_REVISION.c.lesson_id, LESSON_REVISION.c.seq, unique=True,
 )
+
+# `0101_self_tension` (design/self-growth/40 §4-§5, L3): a lesson the doctrine check
+# refused because it would loosen or contradict a LAW rule, with the rule quoted.
+# OPERATOR-ONLY: no read tool returns a row and no block renders one.
+SELF_TENSION = sa.Table(
+    "self_tension",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("doctrine_file", sa.Text, nullable=False),
+    sa.Column("doctrine_line", sa.Integer, nullable=False),
+    sa.Column("doctrine_text", sa.Text, nullable=False),
+    sa.Column("would_have_said", sa.Text, nullable=False),
+    sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("why", sa.Text, nullable=False),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("instruction_sha256", sa.Text),
+    sa.Column("model", sa.Text),
+    sa.Column("check_model", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_self_tension_has_a_unit"),
+    sa.CheckConstraint("source IN ('lesson')", name="ck_self_tension_source"),
+    sa.CheckConstraint(
+        "length(btrim(doctrine_text)) > 0", name="ck_self_tension_quotes_the_law",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(would_have_said)) > 0", name="ck_self_tension_says_what_it_would",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0", name="ck_self_tension_names_its_writer",
+    ),
+)
+IDX_SELF_TENSION_UNIT = sa.Index(
+    "idx_self_tension_unit", SELF_TENSION.c.unit, SELF_TENSION.c.written_at,
+)

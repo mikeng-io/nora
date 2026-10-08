@@ -90,8 +90,9 @@ it) is decided in the PR.
   until the session consolidates or retires. L1 sized it without data (no lesson
   exists to measure): 400 characters a lesson, 12 active and 2,400 characters a
   unit, about three times the start (DEC-293); L5's measure tightens it.
-- **Doctrine check:** a separate instrument call reads the lesson and the law
-  subset ([30](30-doctrine-sort.md) §2). A lesson that would loosen or
+- **Doctrine check (built, L3, DEC-298):** a separate instrument call reads the
+  lesson and the law subset ([30](30-doctrine-sort.md) §2) that reaches a unit's
+  turns (`core/`, `rooms/`; `public/` and `instruments/` never see a lesson). A lesson that would loosen or
   contradict law is refused and written as a tension row. An instrument error
   is a refusal, counted, never a pass.
 - **Rollback by id:** `lesson_retire`, reachable by the operator. A CLI first
@@ -153,6 +154,6 @@ and line quoted, the evidence cited, and what the lesson would have said.
 | L0 | done (#740): a fire turn's brief intent rides on its sends' `raw_json`, the turn's last send carries it | `silent` counted on expected asks |
 | L1 | **done (DEC-293, migration `0100_lessons`):** `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, identifier, echo, no-re-learn and cap checks; `nora lessons list|show|retire|rollback`. Registered on no model surface: L2's adaptor hands the verbs to its session | write, cap refusal, rollback and no re-learn, in tests (`tests/infra/test_lessons.py`, `tests/unit/test_lessons_checks.py`) |
 | L2 | **built (DEC-297), off by default:** the Lessons adaptor, its objective and its wake (`[lessons] wake_batch` 50 closed episodes, `stale_seconds`, or a held lesson at its horizon); every closed episode is handed with her send's text, `unanswered` included and citable; a write cites three episodes; code retires a lesson not re-evidenced in `horizon_seconds` (60 days); an unsettled session holds its batch, bounded at three. **Not yet run:** the labelled set of `unanswered` sends (questions and not) judged correctly, which needs `[lessons] enabled` on the deploy host and a read-back of what the session writes | wake, settle, citation floor and decay in tests (`tests/unit/test_lessons_adaptor.py`, `tests/contract/test_character_evidence_contract.py`) |
-| L3 | the doctrine-check instrument on the law subset; tension rows, operator-only | a labelled set of loosening lessons all refused and written as tension |
+| L3 | **built (DEC-298):** `DoctrineCheck` (`nora/language/doctrine_check.py`), a separate call on `[lessons] check_model` (default the tag model, never the session's) reading each lesson against the law rules of `core/` and `rooms/` (38 of 58) with `nora/dreamer/objectives/doctrine-check.md`; a conflict refuses the write and appends a `self_tension` row (migration `0101_self_tension`), an error refuses and writes nothing; `nora lessons tensions` is the operator's read. **Measured 2026-10-09** on the deployed `nora` alias, effort low, instruction v2: 32 labelled lessons (16 loosening one rule, four of them only "in this group" or "when they joke", 16 practice, stricter or near-miss) × 3 samples, 96 of 96 verdicts right, every conflict naming the targeted file; and the first 4 live lessons × 3, all `consistent` (`scripts/doctrine_check_labelled.py`, `tests/fixtures/doctrine_check_labelled.json`). The live run found the Strands client returning an EMPTY answer on one live lesson at every effort, so the check uses the relevance gate's raw JSON client. Author-written labelled cases are cleaner than real lessons: re-run on the first month | a labelled set of loosening lessons all refused and written as tension |
 | L4 | the correction fast path | a correction wakes Lessons within the cue quiet |
 | L5 | the `lessons` block, after `self` | before/after eval (`nora-eval`) |

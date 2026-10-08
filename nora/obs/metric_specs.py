@@ -18,6 +18,7 @@ from typing import NamedTuple
 from nora.domain.assess import DQ_CHECKS
 from nora.domain.cues import CUES
 from nora.domain.culture import CHARACTER_KINDS, CHARACTER_OUTCOMES, CULTURE_OUTCOMES
+from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
@@ -1797,6 +1798,21 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "session that did none (its batch is held); abandoned the third "
         "unsettled run of one batch; decayed a lesson retired at its horizon.",
         ("outcome",),
+    ),
+    # The doctrine check (design/self-growth/40 §4, L3) and the tension rows it
+    # writes. An `error` refused the lesson and wrote nothing.
+    _CounterSpec(
+        "nora_doctrine_check_total",
+        "Doctrine checks of a lesson by outcome (" + " / ".join(sorted(CHECK_OUTCOMES))
+        + "). conflict wrote a tension row; error refused the lesson and wrote "
+        "nothing (an instrument error is never a pass).",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_self_tension_total",
+        "Tension rows: a lesson refused because it would loosen or contradict a "
+        "law rule, by the doctrine file of that rule. Operator-only.",
+        ("doctrine_file",),
     ),
     # Issue #325. The OmniRoute Chat Completions transport drops
     # `reasoningContent` in a multi-turn position; in production it does not

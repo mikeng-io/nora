@@ -123,7 +123,7 @@ LESSON_REFUSALS = frozenset({
     "empty", "too_long", "uncited", "unresolved_citation", "echo", "thin_evidence",
     "identifier", "coordinate",
     "echoes_doctrine", "echoes_lesson", "relearn", "cap", "too_short", "conflict",
-    "unknown_lesson", "not_active",
+    "unknown_lesson", "not_active", "loosens_law", "check_unavailable",
 })
 
 
