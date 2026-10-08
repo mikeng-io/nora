@@ -8,9 +8,10 @@ docstring named as the reversal path (DEC-136).
 sizes from 173 B to 12.8 MB — a real volume and a real size distribution, the
 first of the three conditions actually met. (The second, a second consumer,
 still is not — this remains the only `BlobStore` caller.) RustFS was also, by
-then, already running for `drop`'s own artifact bytes (`deploy/drop/
-artifacts.py`), so the "a container on the write path that can be down" cost
-`filesystem.py` named is not a NEW container this deployment now depends on.
+then, already running for Drop's artifact bytes (Drop retired 2026-10-08, ADR
+0023; this store is now RustFS's only consumer), so the "a container on the
+write path that can be down" cost `filesystem.py` named is not a NEW container
+this deployment now depends on.
 
 **Same port, same encryption, different WHERE.** `BlobCipher` seals the bytes
 before they leave this process either way (DEC-47) — this module never writes
@@ -22,8 +23,8 @@ keep any one directory from accumulating every object on ext4 — a concern that
 does not apply to an object store's flat key namespace, so the key here is
 just the sha256 hex digest itself.
 
-**boto3, not aiobotocore, in `asyncio.to_thread`** — the same choice `drop`'s
-own RustFS client already made (`deploy/drop/artifacts.py`'s docstring): this
+**boto3, not aiobotocore, in `asyncio.to_thread`** — the same choice Drop's
+retired RustFS client made: this
 store's call volume does not justify `aiobotocore`'s larger dependency chain,
 and the blocking-I/O-off-the-event-loop shape is identical to
 `FilesystemBlobStore`'s own worker-thread writes.

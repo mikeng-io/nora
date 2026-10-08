@@ -1098,7 +1098,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
     # one generate, possibly one re-run with a size/quality tweak — the reply
     # rides `send_reply`'s own budget. `read_only=False` because it
-    # commits an artifact to external custody (`drop`) — an act verb, never
+    # commits an image to Nora's blob store — an act verb, never
     # claimable as read-only (the `media_fetch` cache exemption does NOT
     # extend here).
     #

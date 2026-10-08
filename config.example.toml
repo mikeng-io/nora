@@ -704,7 +704,7 @@ comprehension_max_concurrent = 4
 enabled = false
 endpoint = ""              # e.g. "http://rustfs:9000"
 bucket = "nora-media"
-access_key_env = "RUSTFS_ROOT_USER"      # same var `drop`'s RustFS client uses
+access_key_env = "RUSTFS_ROOT_USER"      # the RustFS service's own root credentials
 secret_key_env = "RUSTFS_ROOT_PASSWORD"
 
 # Image generation (design/proposed/29, DEC-137): provider-agnostic

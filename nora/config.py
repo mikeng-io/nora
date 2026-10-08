@@ -857,9 +857,9 @@ class RustfsBlobConfig(BaseModel):
     always the safe fallback, matching `encryption_key_env`'s own posture.
 
     `access_key_env`/`secret_key_env` NAME the env vars (DEC-8), never inline
-    credentials — and default to the SAME names `drop`'s own RustFS client
-    already reads (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment
-    that already runs `drop` needs no new secret, only new wiring.
+    credentials — and default to the RustFS service's own root credentials
+    (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment that runs
+    RustFS needs no new secret, only new wiring.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
