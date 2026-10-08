@@ -1,0 +1,11 @@
+{
+  "type": "change",
+  "summary": "Nora's accounts of each room, group, person and herself become short syntheses of a few traits that hold, instead of growing summaries of what was said lately.",
+  "details": [
+    "Every account is re-judged when it is rewritten: a few defining traits, about one paragraph, with no quotes, lists or one-off events.",
+    "An account can no longer carry message numbers in its text."
+  ],
+  "limitations": [
+    "Accounts change as each session next runs; existing long accounts are rewritten once after deploy."
+  ]
+}
