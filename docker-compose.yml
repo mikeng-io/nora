@@ -44,7 +44,10 @@ services:
     # HTTP server comes up and every RPC works while signal-cli never opens its
     # websocket to Signal — so not one message is delivered. The host daemon
     # ran that way for two months, and under R-5 it looked like a quiet group.
-    command: ["--account", "+85290000100", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
+    # The account is the deployment's own phone number, so it lives in `.env`
+    # (`SIGNAL_ACCOUNT`), never in git: the identifier scrub (#767) replaced the
+    # literal here with a pseudonym and signal-cli came up unregistered.
+    command: ["--account", "${SIGNAL_ACCOUNT:?set SIGNAL_ACCOUNT in .env}", "daemon", "--http", "0.0.0.0:18080", "--receive-mode", "on-start"]
     healthcheck:
       # Probes the RUNNING daemon over JSON-RPC. The previous check was
       # `signal-cli --version`, which forks a fresh JVM, prints a string and
