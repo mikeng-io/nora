@@ -120,6 +120,23 @@ describe("resolveUpstream", () => {
       "documents/:id",
       "documents/:id/revisions",
       "documents/:id/revisions/:n",
+      "artifacts",
+      "artifacts/:id",
     ]);
+  });
+
+  it("scopes artifacts to the session's person and lets only a link id or a UUID through", () => {
+    const link = "a1b2c3d4e5f6";
+    const chat = "0b9d9f6e-3c0a-4f57-9a43-0d6f3a1c2e11";
+    expect(ok(["artifacts"], "personId=ken&page=2&q=trip&evil=1", "jo")).toBe(
+      "/app/v1/artifacts?page=2&q=trip&personId=jo",
+    );
+    expect(ok(["artifacts", link], "personId=ken", "jo")).toBe(`/app/v1/artifacts/${link}?personId=jo`);
+    expect(ok(["artifacts", chat], "", "jo")).toBe(`/app/v1/artifacts/${chat}?personId=jo`);
+    for (const bad of ["A1B2C3D4E5F6", "a1b2c3d4e5f", "..", "keep"]) {
+      expect(resolveUpstream(["artifacts", bad], q(), "jo"), bad).toEqual({ ok: false, status: 404 });
+    }
+    // The bytes are never read through the JSON proxy: they have their own route.
+    expect(resolveUpstream(["artifacts", link, "download"], q(), "jo")).toEqual({ ok: false, status: 404 });
   });
 });

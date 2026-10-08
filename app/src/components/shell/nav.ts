@@ -2,6 +2,7 @@ import {
   BookOpenText,
   CalendarDays,
   FileText,
+  FolderOpen,
   Gamepad2,
   Map as MapIcon,
   NotebookPen,
@@ -11,13 +12,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// The portal's map of itself. Six places for the circle, four for Nora.
+// The portal's map of itself. Seven places for the circle, four for Nora.
 // On a phone the bottom bar holds five (DESIGN.md §7: no raised centre button);
 // People is one tap from Today and the map, and Nora is her own mark in the
 // top bar. Five is the most it fits (MOBILE_NAV_MAX): a sixth would crowd the
 // labels on a 320px phone, so a new place goes to the rail or replaces one.
 export interface NavItem {
-  key: "today" | "map" | "people" | "plans" | "documents" | "games" | "nora" | "memory" | "doctrine" | "abilities";
+  key:
+    | "today"
+    | "map"
+    | "people"
+    | "plans"
+    | "documents"
+    | "artifacts"
+    | "games"
+    | "nora"
+    | "memory"
+    | "doctrine"
+    | "abilities";
   href: string;
   icon: LucideIcon | "nora";
   /** Exact match only (a parent of other items). */
@@ -44,6 +56,8 @@ export const MAIN_NAV: NavItem[] = [
   { key: "people", href: "/people", icon: UsersRound },
   { key: "plans", href: "/plans", icon: CalendarDays, mobile: true },
   { key: "documents", href: "/documents", icon: FileText, mobile: true },
+  // The files Nora sent in your rooms (ADR 0023). Not on the phone's bar, which is full.
+  { key: "artifacts", href: "/artifacts", icon: FolderOpen },
   { key: "games", href: "/games", icon: Gamepad2, mobile: true },
 ];
 

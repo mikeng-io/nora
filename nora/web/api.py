@@ -1,6 +1,7 @@
 """Registers GET /app/v1/status, GET /app/v1/memory, GET /app/v1/doctrine, the
-GET /app/v1/games/servers* trio, GET /app/v1/presence*, and the read-only
-GET /app/v1/events(/{id}) pair onto an existing aiohttp Application — same
+GET /app/v1/games/servers* trio, GET /app/v1/presence*, the read-only
+GET /app/v1/events(/{id}) pair, the documents routes and the Artifacts routes
+(`nora.web.artifacts`) onto an existing aiohttp Application — same
 process/container as Nora (design spec §3, §5.3).
 
 Deliberately a `register_*` function taking an existing `web.Application`,
@@ -23,12 +24,14 @@ from aiohttp import web
 from nora.agent.whereis import Circle, PresenceReader
 from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
+from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.documents import DOCUMENT_QUERY_MAX, DocumentStore, RoomKey, is_handle
 from nora.domain.ports import BlobStore, MemoryStore, RecordStore
 from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
+from nora.web.artifacts import register_artifact_routes
 from nora.web.doctrine import build_doctrine_payload
 from nora.web.document_history import register_document_history_routes
 from nora.web.documents import (
@@ -222,8 +225,10 @@ def register_web_routes(
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
     blobs: BlobStore | None = None,
     room_label: Callable[[str, str], str] | None = None,
+    artifacts: ComputerExportStore | None = None,
 ) -> None:
     app["web_store"] = store
+    app["web_artifacts"] = artifacts
     app["web_workspaces_of"] = workspaces_of
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
@@ -810,3 +815,4 @@ def register_web_routes(
     app.router.add_get("/app/v1/documents/{id}/media/{sha}", documents_media)
     app.router.add_post("/app/v1/documents/{id}/state", documents_state)
     register_document_history_routes(app)
+    register_artifact_routes(app)

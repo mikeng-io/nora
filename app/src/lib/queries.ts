@@ -1,6 +1,7 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as artifacts from "./api/artifacts";
 import * as documents from "./api/documents";
 import * as games from "./api/games";
 import * as nora from "./api/nora";
@@ -37,6 +38,8 @@ export const qk = {
   documents: (page: number, state: documents.DocumentFilter = "active", search = "") =>
     ["documents", page, state, search] as const,
   document: (id: string) => ["document", id] as const,
+  artifacts: (page: number, search = "") => ["artifacts", page, search] as const,
+  artifact: (id: string) => ["artifact", id] as const,
   plan: (id: string) => ["plan", id] as const,
   presence: ["presence"] as const,
   savedPlaces: ["saved-places"] as const,
@@ -124,6 +127,26 @@ export const usePlan = (id: string) =>
   useQuery({
     queryKey: qk.plan(id),
     queryFn: ({ signal }) => people.fetchPlan(id, signal),
+    staleTime: 1 * M,
+  });
+
+// ------------------------------------------------------------- artifacts
+
+export const useArtifacts = (page: number, search = "") =>
+  useQuery({
+    queryKey: qk.artifacts(page, search),
+    queryFn: ({ signal }) => artifacts.fetchArtifacts(page, search, signal),
+    staleTime: 1 * M,
+    // A new page or search keeps the last list on screen until the next arrives; the
+    // view says so (`isPlaceholderData`).
+    placeholderData: keepPreviousData,
+  });
+
+export const useArtifact = (id: string) =>
+  useQuery({
+    queryKey: qk.artifact(id),
+    queryFn: ({ signal }) => artifacts.fetchArtifact(id, signal),
+    // A link can be revised by Nora; a minute is fresh enough.
     staleTime: 1 * M,
   });
 
