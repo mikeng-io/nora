@@ -1,7 +1,8 @@
 # 0023 · Artifacts are files the portal shares behind sign-in; Drop and every link shortener retire
 
-- **Status:** proposed (2026-10-08, operator direction: "the drop service becomes Artifacts, internal
-  artifact sharing, like a shared drive", and "remove the use of link shorteners from everywhere")
+- **Status:** accepted (2026-10-08, operator), as built: part 1 #758 and part 2 #759 are live on
+  norty. Proposed the same day on operator direction: "the drop service becomes Artifacts, internal
+  artifact sharing, like a shared drive", and "remove the use of link shorteners from everywhere"
 - **Date:** 2026-10-08
 - **Extends:** [0020](0020-documents-are-json-specs-the-portal-renders.md) point 5, which retired
   Drop's document use and left its file half and its shortener for "a later change". This is that
