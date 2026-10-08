@@ -380,6 +380,9 @@ services:
       #   composition.py builds no games_client and the games routes answer
       #   503 (R-5-shaped: absent, never a crash or a guessed 200).
       - PULSE_API_TOKEN=${PULSE_API_TOKEN:-}
+      # The Pulse REST base (a private tailnet host), read with the token
+      # above (`nora.app.composition`); unset keeps the source's placeholder.
+      - PULSE_API_BASE=${PULSE_API_BASE:-}
       # The group is in Hong Kong. Without this the container runs UTC, and
       # `nora.agent.prefill._now_line` — which calls `datetime.now().astimezone()`
       # — tells her it is 07:05 when the group's clock says 15:05.
