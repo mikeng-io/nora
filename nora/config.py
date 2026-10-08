@@ -2814,6 +2814,19 @@ class LessonsConfig(BaseModel):
     #: what is past it is consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
 
+    #: The doctrine check's model (L3): a separate call that reads each lesson
+    #: against the law before it is written. `""` is `[llm] model`, the tag
+    #: model, so the judge is never the Dreamer model that wrote the lesson
+    #: (design/cognition-loop/50 §6: "a model other than the session").
+    check_model: str = ""
+    #: Its reasoning effort; `""` is `low`. A verdict over ~40 rules is a
+    #: judgement, and `none` measured worse on the gate's comparable judgement.
+    check_reasoning_effort: str = ""
+    #: Its wall clock and output ceiling. The answer is one JSON object with a
+    #: sentence in it; 2048 leaves a reasoning model room before it answers.
+    check_timeout_seconds: float = Field(default=60.0, gt=0)
+    check_max_tokens: int = Field(default=2048, ge=128)
+
 
 class NotesConfig(BaseModel):
     """The note tier's gate. `enabled` defaults to **False**, because a new

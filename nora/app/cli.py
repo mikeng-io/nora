@@ -89,6 +89,7 @@ from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.reminders import SqlReminderStore
+from nora.infra.sql.tension import SqlTensionStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.signal import directory
@@ -280,6 +281,15 @@ def add_subcommands(
     lessons_rollback.add_argument("--to", required=True, type=int, help="the revision")
     lessons_rollback.add_argument("--apply", action="store_true", help="write")
     lessons_rollback.set_defaults(func=cmd_lessons_rollback)
+    # L3: the lessons the doctrine check refused, with the law each pulled
+    # against (design/cognition-loop/55-self.md §4). Operator-only by design.
+    lessons_tensions = lessons_sub.add_parser(
+        "tensions", parents=[parent],
+        help="lessons refused for loosening a law rule, newest first",
+    )
+    lessons_tensions.add_argument("--unit", help="one unit (default: all)")
+    lessons_tensions.add_argument("--limit", type=int, default=20)
+    lessons_tensions.set_defaults(func=cmd_lessons_tensions)
 
     presence = subparsers.add_parser(
         "presence", parents=[parent], help="Life360 presence helpers",
@@ -788,6 +798,18 @@ async def cmd_lessons_list(args: argparse.Namespace) -> int:
     finally:
         await engine.dispose()
     for line in lessons_cli.render_list(args.unit, found, everything=bool(args.all)):
+        print(line)
+    return 0
+
+
+async def cmd_lessons_tensions(args: argparse.Namespace) -> int:
+    """`nora lessons tensions [--unit U] [--limit N]`, READ ONLY."""
+    engine = create_readonly_sql_engine(_database_url(_config(args)))
+    try:
+        found = await SqlTensionStore(engine).recent(unit=args.unit, limit=args.limit)
+    finally:
+        await engine.dispose()
+    for line in lessons_cli.render_tensions(found):
         print(line)
     return 0
 

@@ -386,7 +386,11 @@ no entry.
   the Lessons adaptor, through `lesson_write`/`lesson_retire`; a session that
   changes nothing closes with `lessons_no_change` (DEC-297, off by default
   behind `[lessons] enabled`). Not doctrine (a rule she may not break) and not
-  a runtime skill.
+  a runtime skill. Every lesson passes the **doctrine check** first (DEC-298).
+- **Tension** — a lesson the doctrine check refused because acting on it would
+  loosen or contradict a law rule: the rule quoted, what the lesson would have
+  said, its evidence (`self_tension`, `nora lessons tensions`). Operator-only;
+  she never reads one.
 - **Standing** — see above; now one of the Notebook's four tiers rather
   than a lone concept.
 

@@ -186,6 +186,7 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
+from nora.infra.sql.tension import SqlTensionStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.tts import TextFormatter as SpeechTextFormatter
@@ -228,6 +229,7 @@ from nora.language.character import (
 )
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
+from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.language.lesson_book import LessonBook
 from nora.language.lessons import (
     LESSONS_ADAPTOR_NAME,
@@ -3808,11 +3810,32 @@ async def build_dependencies(
                 uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
                 for uk in character_unit_keys(allowlist).values()
             }
+            # THE DOCTRINE CHECK (L3): every lesson is read against the law by a
+            # separate call before it is written; a conflict is a tension row.
+            lesson_check = DoctrineCheck(
+                client=_DebriefModelClient(
+                    base_url=cfg.llm.base_url,
+                    api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                    model=cfg.lessons.check_model or cfg.llm.model,
+                    timeout_seconds=cfg.lessons.check_timeout_seconds + 1.0,
+                    reasoning_effort=_reasoning_effort(
+                        cfg.lessons.check_reasoning_effort or "low",
+                        source="[lessons] check_reasoning_effort",
+                    ),
+                    max_tokens=cfg.lessons.check_max_tokens, temperature=0.0,
+                    agent_name="doctrine-check",
+                ),
+                law=doctrine_store.law_rules,
+                instruction=lambda: dreamer_instructions.objective_body(CHECK_OBJECTIVE),
+                timeout_seconds=cfg.lessons.check_timeout_seconds,
+                metrics=metrics,
+            )
             lesson_book = LessonBook(
                 store=SqlLessonStore(engine),
                 law=lambda: [r.text for r in doctrine_store.law_rules()],
                 screen=dream_offence,
                 clock_ms=_now_ms,
+                check=lesson_check, tensions=SqlTensionStore(engine), metrics=metrics,
             )
             dream_schedules = {
                 **dream_schedules,

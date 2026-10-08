@@ -200,6 +200,7 @@ CONVERTED = (
     "nora/language/culture.py",
     "nora/language/character.py",
     "nora/language/lessons.py",
+    "nora/language/doctrine_check.py",
     "nora/domain/summons.py",
     "nora/skills/loader.py",
     "nora/subject/context_filter.py",

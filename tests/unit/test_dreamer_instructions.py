@@ -627,6 +627,9 @@ NATIVELY_AUTHORED = {
     "character-nora",
     # The Lessons session (design/self-growth/40, L2): new, written for it.
     "lessons",
+    # The doctrine check (L3): an instrument's instruction, read through
+    # `objective_body`, never with the Dreamer doctrine. New, written for it.
+    "doctrine-check",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why
