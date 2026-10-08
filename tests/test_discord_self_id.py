@@ -8,7 +8,7 @@ from nora.platform.discord.self_id import DiscordIdentityError, derive_identity,
 @pytest.fixture
 async def me_server(aiohttp_server):
     body = {
-        "id": "100000000000000100", "username": "nora", "discriminator": "0000",
+        "id": "100000000000000100", "username": "nora", "discriminator": "1234",
         "bot": True,
     }
     seen_auth: list[str | None] = []
@@ -51,7 +51,7 @@ async def test_derive_identity_also_returns_the_rendered_handle(me_server):
         "tok", base_url=str(me_server.make_url("")).rstrip("/")
     )
 
-    assert handle == "@nora#0000"
+    assert handle == "@nora#1234"
 
 
 async def test_derive_identity_authenticates_with_the_bot_token(me_server):
@@ -88,12 +88,12 @@ async def test_derive_identity_raises_when_the_body_has_no_id(aiohttp_server):
 #
 # `discriminator = "0"` is what Discord reports for every account migrated to
 # unique usernames (2023); `derive_identity_also_returns_the_rendered_handle`
-# above pins the pre-migration, numbered-tag shape (`discriminator = "0000"`,
-# the value measured live on 2026-09-24).
+# above pins the pre-migration, numbered-tag shape (`discriminator = "1234"`, a
+# stand-in for the four-digit tag measured live on 2026-09-24; 0001-9999).
 
 
 def test_render_handle_with_a_real_discriminator_keeps_the_tag():
-    assert render_handle("nora", "0000") == "@nora#0000"
+    assert render_handle("nora", "1234") == "@nora#1234"
 
 
 def test_render_handle_with_discriminator_zero_drops_the_tag():
@@ -107,6 +107,6 @@ def test_render_handle_with_no_discriminator_field_drops_the_tag():
 
 
 def test_render_handle_with_no_username_is_none():
-    assert render_handle(None, "0000") is None
-    assert render_handle("", "0000") is None
+    assert render_handle(None, "1234") is None
+    assert render_handle("", "1234") is None
     assert render_handle("   ", "0") is None

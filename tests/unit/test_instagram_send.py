@@ -232,7 +232,7 @@ async def test_two_mentions_one_substituted_shifts_the_LATER_offset_correctly(br
     """The cascading case: `"@Miles Novak"` (12 units) becomes `"@nka_bpumvg"` (11
     units), 1 unit SHORTER — so the second mention, unsubstituted, has to
     report an offset 1 unit further left than the one it was drafted at, or
-    it would point at the middle of "and " instead of "@Ada Lawson".
+    it would point one unit into "@Ada Lawson" instead of at its "@".
 
     PROBE: revert `_apply_mention_handles` to the naive per-mention `m.start`
     (no running `delta`) and this goes red — the second mention's `offset`

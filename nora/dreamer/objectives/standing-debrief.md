@@ -1,7 +1,7 @@
 ---
 name: standing-debrief
 kind: objective
-version: 10
+version: 11
 applies_to: [standing_debrief]
 description: >-
   The debrief fold — a second model reading one FINISHED exchange (or an

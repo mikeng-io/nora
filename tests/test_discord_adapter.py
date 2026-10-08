@@ -270,7 +270,7 @@ async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
     async def handler(request):
         nonlocal calls
         calls += 1
-        return web.json_response({"id": "555", "username": "nora", "discriminator": "0000"})
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "1234"})
 
     app = web.Application()
     app.router.add_get("/users/@me", handler)
@@ -280,8 +280,8 @@ async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
     first = await adapter.own_handle()
     second = await adapter.own_handle()
 
-    assert first == "@nora#0000"
-    assert second == "@nora#0000"
+    assert first == "@nora#1234"
+    assert second == "@nora#1234"
     assert calls == 1, "own_handle must reuse resolve_identity()'s single call, never re-fetch"
 
 
