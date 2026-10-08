@@ -11,7 +11,7 @@ import os
 import re
 import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -857,9 +857,9 @@ class RustfsBlobConfig(BaseModel):
     always the safe fallback, matching `encryption_key_env`'s own posture.
 
     `access_key_env`/`secret_key_env` NAME the env vars (DEC-8), never inline
-    credentials — and default to the SAME names `drop`'s own RustFS client
-    already reads (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment
-    that already runs `drop` needs no new secret, only new wiring.
+    credentials — and default to the RustFS service's own root credentials
+    (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment that runs
+    RustFS needs no new secret, only new wiring.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1124,40 +1124,10 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
-class ShortenerConfig(BaseModel):
-    """Nora's own link shortener — `drop`'s internal `POST /api/links`
-    (the `2026-08-12-nora-drop-design` spec under `docs/superpowers/specs/`
-    §5, cutover 2026-08-12; the mint contract itself is unchanged from the
-    Worker it replaced, `deploy/shortener/` — same bearer-auth, same
-    `{"url"}` in / `{"slug","short_url"}` out shape — so this class did not
-    need to change, only its default `base_url` and `token_env` did).
-
-    **Optional, defaulted, `enabled` False** — the `[route]` shape: off (or an
-    unset token) leaves long URLs in replies, never a failure. The shortener is
-    SELF-HOSTED on purpose — a third-party one would see every destination the
-    group routes to — and it is never load-bearing: a mint that fails leaves
-    the long URL exactly as it was. `token_env` NAMES the env var holding the
-    mint bearer token (DEC-8); the same value is `drop`'s own secret.
-
-    `base_url` points at `drop`'s INTERNAL listener (`http://drop:8081` in
-    this deployment) — the write API is deliberately unreachable from the
-    public internet (spec §5a); the public `short_url` a mint returns is
-    built server-side by `drop` from its own `DROP_PUBLIC_BASE_URL`
-    (`https://nora.example.net`), which this class never needs to know.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
-    base_url: str = "http://drop:8081"
-    token_env: str = "NORA_DROP_TOKEN"  # noqa: S105 — names an env var, not a secret
-    timeout_seconds: float = Field(default=5.0, gt=0)
-
-
 class PreviewConfig(BaseModel):
     """Sender-generated link previews on Nora's outbound messages.
 
-    **Optional, defaulted, `enabled` False** — the `[route]`/`[shortener]`
+    **Optional, defaulted, `enabled` False** — the `[route]`
     shape, and off for a sharper reason than either of those: this is the one
     capability that makes Nora FETCH a URL that came out of a model, from her
     own network. DEC-73 deleted `web_fetch` and its whole SSRF apparatus
@@ -3901,7 +3871,7 @@ class AgentConfig(BaseModel):
 class McpMountConfig(BaseModel):
     """One MCP server Nora may mount as conversation tools (spec §2.1/§2.2).
 
-    Optional and defaulted like `RouteConfig`/`ShortenerConfig`: `enabled`
+    Optional and defaulted like `RouteConfig`: `enabled`
     defaults False, so a section existing in a committed config doesn't mean
     it's live. `token_env` NAMES the environment variable holding the bearer
     token (DEC-8's `api_key_env`/`token_env` shape) — the value is never here,
@@ -3944,9 +3914,14 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
-    # Optional and defaulted — see `ShortenerConfig`. Off unless an operator
-    # turns it on; never load-bearing (a failed mint leaves the long URL).
-    shortener: ShortenerConfig = ShortenerConfig()
+    # DEPRECATED (ADR 0023, 2026-10-08) and read by nothing: the link
+    # shortener is gone and `maps_url` is the full Google Maps URL. The key
+    # stays declared, untyped, because `extra="forbid"` is on every model in
+    # this file and the deployment's `config.toml` is untracked: deleting it
+    # would turn a live file that still carries `[shortener]` into a container
+    # that refuses to boot. It goes when the operator has removed the section
+    # from that file (the `rollup_delay_seconds` precedent).
+    shortener: dict[str, Any] | None = None
     # Optional and defaulted — see `PreviewConfig`. Off unless an operator turns
     # it on; off means a reply carrying a link goes out with no card, which is
     # every deployment's behaviour before this section existed.

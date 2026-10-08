@@ -728,26 +728,25 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     B2, 2026-09-13. The reviewed version of this file asserted «its address … was
     never given to you» and measured it over `_baked_inputs()` alone — a claim
     about her whole prompt checked against two of its parts. It is false: with
-    `[shortener]` wired, `nora.agent.tools` REPLACES `maps_url` with a link on the
-    portal's own origin and hands that back as a tool result, and a finished
+    `[shortener]` wired, `nora.agent.tools` REPLACED `maps_url` with a link on the
+    portal's own origin and handed that back as a tool result (the shortener is
+    gone, ADR 0023, so `route` and `place_info` left this haystack), and a finished
     compute job's occasion body (`nora.app.fire.compute_occasion`) carries a link
     on the same origin as that turn's input. Both are in her transcript; neither
     was in the haystack. AGENTS.md: never read an instrument's output as evidence
     without first checking it can measure the thing.
 
-    B3, 2026-09-13. The other relay paths: `place_info`'s `maps_url` (the same
-    shortener/origin as `route`'s, screened through the same
-    `_screen_and_resolve_place`) and `generate_image`'s hosted-artifact branch
+    B3, 2026-09-13. The other relay path: `generate_image`'s hosted-artifact branch
     (`{"status": "ok", "url": artifact}` — taken only when the provider answers
     with a URL rather than raw bytes, so no `deliverer` is needed to reach it).
-    Both go through this same closure, EXECUTED — not read off the source, the
+    It goes through this same closure, EXECUTED — not read off the source, the
     same discipline B2 established. (A fifth, the artifact tool's synchronous
     return, left with the tool in S3b.)
 
-    So the haystack contains all four, and the property measured over them is
+    So the haystack contains both, and the property measured over them is
     the one that is actually true — these channels RELAY an address, they do not
     carry one. Everything they hand her is derived from `SENTINEL_ORIGIN`, which
-    only this test knows; a constant baked into any of the four shows up as an
+    only this test knows; a constant baked into either shows up as an
     address the test never supplied."""
     import asyncio
     import json
@@ -761,25 +760,6 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     from nora.domain.ports import ImageResult, JobResult, JobStatus
     from nora.obs.metrics import Metrics
     from nora.persons import Persons
-
-    class _Shortener:
-        """`[shortener]` as the deployment has it: it mints on the portal's own
-        origin (`docker-compose.yml`'s `DROP_PUBLIC_BASE_URL`), and `route`'s
-        post-processing puts what it returns into the payload the model reads."""
-
-        async def shorten(self, url: str) -> str:
-            return f"{SENTINEL_ORIGIN}/i/aBc1234"
-
-    class _RouteSource:
-        async def route(self, origin, destination, **kw):
-            return {"status": "ok", "origin": origin, "destination": destination,
-                    "mode": "transit", "legs": []}
-
-        async def place_info(self, name: str) -> dict:
-            """`screen_and_resolve_place`'s call target — `place_info` builds
-            its own `maps_url` from `name` afterwards, through the same
-            shortener, so this reply only needs a resolved place to trigger it."""
-            return {"status": "ok", "name": name, "rating": 4.5}
 
     #: `ImageGenerator` has no fake in `nora/testing/` yet (R-C, issue #113 —
     #: `tests/architecture/test_port_fakes_live_in_nora_testing.py::_ALLOWED`
@@ -804,14 +784,11 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
             store=None, conversation_id="g1", conversation_type="group",
             persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
             room=room,
-            transit_source=None, route_source=_RouteSource(),
-            shortener=_Shortener(), question="點去", context_window=40,
+            transit_source=None, route_source=None,
+            question="點去", context_window=40,
             image_generator=_ImageGenerator(),
         )
     }
-    routed = asyncio.run(
-        tools["route"].call(origin="A站", destination="B Mall"))
-    placed = asyncio.run(tools["place_info"].call(name="Soi 29"))
     image = asyncio.run(tools["generate_image"].call(prompt="a cat"))
 
     job = ComputeJob(
@@ -824,13 +801,11 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     )
     finished = compute_occasion(job, JobResult(
         status=JobStatus.SUCCEEDED, summary="one chart",
-        url=f"{SENTINEL_ORIGIN}/drop/aBc1234",
+        url=f"{SENTINEL_ORIGIN}/artifacts/aBc1234",
     ))
 
     return (
-        ("tool-result:route", json.dumps(routed, ensure_ascii=False)),
         ("occasion:compute", finished.body),
-        ("tool-result:place_info", json.dumps(placed, ensure_ascii=False)),
         ("tool-result:generate_image", json.dumps(image, ensure_ascii=False)),
     )
 
@@ -922,14 +897,15 @@ def test_no_input_of_hers_carries_a_baked_address_or_an_inventory(self_account):
       the portal's own origin, not "no URL at all") to avoid flagging every
       illustrative example any tool docstring carries. Left for a future pass
       if that narrower claim is ever worth making; not measured here.
-    * **Live** (`route` and `place_info`'s `maps_url` with the shortener wired,
-      a finished compute job's occasion body and `generate_image`'s
-      hosted-artifact branch — four relay paths) — an address DOES arrive here, which is
-      exactly why the old denial was false, and the skill now says so: «one
+    * **Live** (a finished compute job's occasion body and `generate_image`'s
+      hosted-artifact branch — two relay paths; `route` and `place_info` left
+      with the shortener, ADR 0023: their `maps_url` is a Google URL now) — an
+      address DOES arrive here, which is exactly why the old denial was false,
+      and the skill now says so: «one
       that reaches you came in with the turn, inside something you were
       handed». The property that makes that true is that these paths RELAY.
       Every address they hand her is built from `SENTINEL_ORIGIN`, a value only
-      this test knows, so a constant baked into any of the four reddens this as
+      this test knows, so a constant baked into either reddens this as
       an address the test never supplied.
     * **Both** — nothing anywhere hands her an account of what the view HOLDS. A
       route named as a page is #227's own failure arriving as an input instead

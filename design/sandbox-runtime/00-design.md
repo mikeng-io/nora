@@ -16,6 +16,13 @@ describes something that was not built that way, it says so and the code wins;
 the original study text is kept, marked, where it records how the design got
 here. Open decisions: none; the five decided on 2026-10-01 are at the end,
 and Chromium RSS is a measurement still to take (S1).
+**Superseded in part (ADR 0023, 2026-10-08): Drop is retired.** Everywhere below that
+routes `computer_export(to="link")` through Drop, `ArtifactIngest`,
+`DropArtifactIngest`, `drop:8081`, `[shortener]` or `NORA_DROP_TOKEN`, read it as
+history: the `drop` and `valkey` services, `deploy/drop/`, the port and its fake
+are deleted, and a link export puts the bytes in Nora's blob store and returns a
+portal `/artifacts` URL behind sign-in. The code wins.
+
 Operator direction (2026-09-30):
 
 - **Nora remains a container** and stays the trusted control plane. She is
@@ -95,7 +102,7 @@ computer_* tool
   ← typed result ←──────────────────────────────────────────────────  (Chromium: S4, not built)
 
 computer_export(to="link")
-  → ArtifactIngest (existing port) → drop:8081 (nora network) → RustFS + artifacts row
+  → (superseded, ADR 0023) ArtifactIngest → drop:8081 → RustFS + artifacts row; now: blob store → portal /artifacts
 
 lifecycle (never on the data path)
   nora-computer.service ── `nora-computer serve`, Restart=always:
@@ -331,7 +338,7 @@ over the computer tools, so it becomes the `document-creation` runtime skill (AD
 
 Revising an artifact is the same skill with `artifact_id`.
 
-- **Drop stays a separate service; only its tool face moves.** Drop is the
+- **(Superseded, ADR 0023, 2026-10-08: Drop is retired.) Drop stays a separate service; only its tool face moves.** Drop is the
   public server with its own hardening, and it must never live in the VM,
   because a public-facing renderer inside the untrusted machine is exactly
   the exposure this design removes. `computer_export(to="link")` is the only
@@ -555,7 +562,7 @@ are built. The figures are estimates, not measured.
 | where | what |
 |---|---|
 | **nora container** | intent, governance, memory, identity, secrets, the manifest, publishing (ArtifactIngest), composing replies |
-| **Drop** | the only writer of published artifacts (RustFS + `artifacts`), the public renderer |
+| **Drop** | (retired 2026-10-08, ADR 0023; the portal serves published files now) the only writer of published artifacts (RustFS + `artifacts`), the public renderer |
 | **lifecycle unit** | `sbx` create/start/stop/rm; no data path |
 | **sbx daemon** | microVM, egress policy, placeholder secrets |
 | **nora-computer VM** | `computerd`, files under `/workspace/<scope>`, processes, toolchains (Chromium + profiles: S4, not built) |
@@ -643,7 +650,7 @@ with who, when, how and what, as a full trail for auditing.**
   `LocalDockerBackend`, the `docker.sock` mount, `nora-compute` with
   `compute-egress`, and Drop's `POST /api/tokens` are retired; the job outbox,
   poller, `ComputeBackend` port and `compute_jobs` stay wired but idle (decision
-  4). Drop's artifact read path and link shortener stay.
+  4). Drop's artifact read path and link shortener stayed then; **retired 2026-10-08 (ADR 0023)** with the whole service.
 - **S4: not built.** The browser spike (§14), then `computer_browse`, then
   persistent browser profiles per room (which wait on a ruling on browser
   logins: decision 3).

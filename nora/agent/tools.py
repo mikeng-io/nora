@@ -1098,7 +1098,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
     # one generate, possibly one re-run with a size/quality tweak — the reply
     # rides `send_reply`'s own budget. `read_only=False` because it
-    # commits an artifact to external custody (`drop`) — an act verb, never
+    # commits an image to Nora's blob store — an act verb, never
     # claimable as read-only (the `media_fetch` cache exemption does NOT
     # extend here).
     #
@@ -4471,7 +4471,6 @@ def build_tool_specs(
     mobility=None,
     refresher=None,
     geocoder=None,
-    shortener=None,
     question: str = "",
     context_window: int = 40,
     transcript: tuple[TranscriptRow, ...] | None = None,
@@ -6435,14 +6434,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 f"&destination={urllib.parse.quote(destination)}"
                 f"&travelmode={_MAPS_TRAVELMODE.get(str(out.get('mode', '')), 'transit')}"
             )
-            # Minted through Nora's OWN shortener when one is wired
-            # ([shortener], self-hosted so no third party sees the trip). Never
-            # load-bearing: any failure keeps the long URL, which was already a
-            # fine answer.
-            if shortener is not None:
-                short = await shortener.shorten(out["maps_url"])
-                if short:
-                    out["maps_url"] = short
             # ADR 0015 §3: the link's reporting rule rides with the link.
             out["note"] = " ".join(filter(None, (
                 str(out.get("note") or ""),
@@ -6530,14 +6521,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if out.get("status") == "ok":
             # A Google Maps link to the PLACE (search deep link, keyless), built
             # from the asked name — never a resolved coordinate (R-28, the same
-            # rule route's maps_url follows). Minted short when the shortener is
-            # wired; never load-bearing.
+            # rule route's maps_url follows). The full URL, never shortened (ADR 0023).
             maps_url = ("https://www.google.com/maps/search/?api=1&query="
                         + urllib.parse.quote(name))
-            if shortener is not None:
-                short = await shortener.shorten(maps_url)
-                if short:
-                    maps_url = short
             out["maps_url"] = maps_url
             # DEC-89: offer it to the turn's carrier so that a reply which NAMES
             # this place carries the link whether or not the model remembered to
@@ -15306,7 +15292,6 @@ def build_tools(
     mobility=None,
     refresher=None,
     geocoder=None,
-    shortener=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
     question: str = "",
@@ -15361,7 +15346,6 @@ def build_tools(
         mobility=mobility,
         refresher=refresher,
         geocoder=geocoder,
-        shortener=shortener,
         question=question, context_window=context_window, transcript=transcript,
         lookup_window=lookup_window,
         ai_peer=ai_peer,

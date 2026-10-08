@@ -10,7 +10,7 @@ contract either way.
 
 One POST against Nora's OWN local service (private `nora` network, no host
 port — audio never leaves the box). NEVER load-bearing and NEVER raises into
-the ingest loop, the same posture as `LinkShortener`: every failure —
+the ingest loop, the same posture as the link preview: every failure —
 transport, timeout, non-200, an empty transcript — returns an unavailable
 `SttResult`, and the caller records the voice note with a bare handle exactly
 as it did before speech existed. A voice note that fails to transcribe is

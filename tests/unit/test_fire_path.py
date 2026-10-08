@@ -853,13 +853,13 @@ def test_a_finished_job_puts_its_summary_and_link_to_her() -> None:
     occasion = compute_occasion(
         _compute_job(),
         JobResult(
-            status=JobStatus.SUCCEEDED, url="https://nora.example.net/drop/abc",
+            status=JobStatus.SUCCEEDED, url="https://portal.example.net/artifacts/abc",
             summary="12 wet days in July",
         ),
     )
 
     assert "It finished: 12 wet days in July" in occasion.body
-    assert "https://nora.example.net/drop/abc" in occasion.body
+    assert "https://portal.example.net/artifacts/abc" in occasion.body
     assert "chart the rainfall" in occasion.body   # what was asked, still there
     assert occasion.person_id == "miles"
     assert occasion.kind == "compute"

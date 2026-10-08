@@ -272,7 +272,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "aclose", "append", "claim", "create", "delete",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "recent", "record", "resolve", "rsvps_for", "save", "search",
-        "sweep_firing", "update", "apply",
+        "sweep_firing", "apply",
         # `SqlDocumentStore.set_state` (DEC-255) shares the name with another store's.
         "set_state",
         # `SubagentBackend.cancel` (design/subagent step 2) is a `ComputeBackend` method, not a

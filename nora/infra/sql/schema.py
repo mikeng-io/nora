@@ -1159,6 +1159,10 @@ VERSION_ANNOUNCEMENTS = sa.Table(
 )
 
 
+# RETIRED (ADR 0023, 2026-10-08): nothing reads or writes `artifacts` any more.
+# Drop and its `deploy/drop` service are gone; the table and its 15 rows stay
+# in place, unread, until someone chooses the irreversible delete.
+#
 # `artifacts` — `drop`'s own artifact metadata (Nora Drop spec §3, §4, §7a).
 # Written by `deploy/drop`'s internal `POST /api/artifacts`, a SEPARATE Python
 # app/venv from Nora herself that reaches this table with its own Postgres
@@ -1174,16 +1178,16 @@ VERSION_ANNOUNCEMENTS = sa.Table(
 # before either is written, the same reason `reminders.id` cannot come from a
 # sequence (this file's own note on that table, above).
 #
-# `slug` is a SEPARATE, short, public-facing value (the same base58-ish
-# alphabet `deploy/shortener/worker/shortener.js` uses for link slugs) — the
+# `slug` is a SEPARATE, short, public-facing value (a base58-ish
+# alphabet, the retired link shortener's) — the
 # thing a `GET /d/<slug>` URL path actually contains. Kept apart from `id` so
 # `artifact_id` can keep naming the row for a future admin/expiry surface
 # without that surface reparsing it back out of a URL
-# (`ArtifactRegistration`'s own docstring, `nora/domain/ports.py`). UNIQUE,
+# (the retired `ArtifactRegistration`). UNIQUE,
 # not primary — the row's identity is `id`.
 #
 # `expires_at` is epoch-MILLISECONDS, matching `PresenceFix.ts`'s unit
-# (`ArtifactIngest.register`'s own docstring) and deliberately NOT a
+# (the retired `ArtifactIngest.register`) and deliberately NOT a
 # `DateTime` like `reminders.due_at`: this value crosses the HTTP boundary
 # from a caller (a future Compute tool, or `drop`'s own client) that never
 # gets a live SQLAlchemy type to compare against, so the wire format IS the

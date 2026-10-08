@@ -6,7 +6,7 @@
 - **Extends:** [0020](0020-documents-are-json-specs-the-portal-renders.md) point 5, which retired
   Drop's document use and left its file half and its shortener for "a later change". This is that
   change, and it reverses 0020's "Drop's link shortener stays".
-- **Index:** DEC-295 (part 1); part 2 takes its own row
+- **Index:** DEC-295 (part 1), DEC-296 (part 2)
 
 ## Context
 
@@ -15,7 +15,8 @@ Read from the tree and from norty on 2026-10-08:
 - **Drop has two halves left** (DEC-254). Its file half publishes `computer_export(to="link")`
   through `POST`/`PATCH /api/artifacts` and serves `/drop/{slug}` on a PUBLIC origin with no
   sign-in (`deploy/drop/server.py`). Its shortener mints `/i/{slug}` for the `route` and
-  `place_info` tools' `maps_url` (`nora/infra/shortener.py`, `nora/agent/tools.py`).
+  `place_info` tools' `maps_url` (`nora/infra/shortener.py`, deleted by this change, and
+  `nora/agent/tools.py`).
 - **The file half has never been used by the computer.** `computer_exports` on norty holds 4 rows,
   all `chat`; no `link` row exists. Drop's own `artifacts` table holds 15 rows, the newest from
   2026-09-04, all from the retired Smith document path (0020).
@@ -58,7 +59,7 @@ Read from the tree and from norty on 2026-10-08:
    `[shortener]` config section, `NORA_DROP_TOKEN`, `deploy/shortener/` and Drop's `/api/links`
    and `/i/{slug}` go.
 5. **Drop retires.** The `drop` and `valkey` services, `deploy/drop/`, `nora/infra/drop.py`, the
-   `ArtifactIngest` port and its fake are removed, with the tunnel rules that route to them
+   `ArtifactIngest` port and its fake are deleted, with the tunnel rules that route to them
    (outside git, on the deploy host). RustFS stays: Nora's blob store uses it. Drop's
    `artifacts` table and its `drop-artifacts` bucket are left in place, unread; deleting 15 rows
    of retired Smith output is a separate, irreversible step nobody needs yet.

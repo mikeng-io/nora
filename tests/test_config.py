@@ -494,6 +494,19 @@ def test_the_deprecated_summons_poll_interval_is_still_accepted(toml_path):
     assert load(toml_path).social.instagram.summons.poll_seconds == 120
 
 
+def test_the_retired_shortener_section_still_loads(toml_path):
+    """The live config.toml still has `[shortener]` (DEC-296 retired it) and the
+    model forbids unknown keys: it must still load, and nothing reads it.
+    Deleting the field would crash-loop the deployment."""
+    toml_path.write_text(toml_path.read_text() + (
+        '\n[shortener]\nenabled = true\nbase_url = "http://drop:8081"\n'
+        'token_env = "NORA_DROP_TOKEN"\n'
+    ))
+    assert load(toml_path).shortener == {
+        "enabled": True, "base_url": "http://drop:8081", "token_env": "NORA_DROP_TOKEN",
+    }
+
+
 def test_the_summons_mode_is_a_closed_set(toml_path):
     toml_path.write_text(_in_section(
         toml_path.read_text(), "[social.instagram.summons]",

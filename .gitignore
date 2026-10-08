@@ -87,11 +87,6 @@ policy.toml
 .claude/worktrees/
 .worktrees/
 
-# Terraform (deploy/shortener): state carries the mint token; vars carry secrets.
-deploy/shortener/.terraform/
-deploy/shortener/.terraform.lock.hcl
-deploy/shortener/terraform.tfstate*
-deploy/shortener/*.tfvars
 .eval-cache/
 
 # The build-time version stamp (DEC-79). GENERATED, never committed: it is
