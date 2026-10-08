@@ -30,6 +30,7 @@ the model reads with a `detail` saying what to do instead:
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -45,12 +46,14 @@ __all__ = [
     "LESSON_MIN_EPISODES",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
+    "NAMES_HER",
     "Lesson",
     "LessonConflictError",
     "LessonRevision",
     "check_lesson",
     "echoes",
     "evidence_ceiling",
+    "is_correction",
 ]
 
 #: **Sizing, stated as what it is.** The design starts a unit at about 800
@@ -266,3 +269,34 @@ def check_lesson(
         return Refusal("cap", f"the unit's lessons would hold {held + len(text)} characters, "
                        f"past the {LESSON_UNIT_MAX_CHARS} cap; retire or shorten one first")
     return None
+
+
+#: «nora» as a word, any case (Postgres `~*` and Python `re` agree on this form):
+#: not "ignorance", "Leonora" or "anorak". A CJK character beside it is not a
+#: letter here, so «nora你» still names her.
+NAMES_HER = r"(^|[^a-z])nora([^a-z]|$)"
+
+#: A message that tells her how to act (Lessons L4, design/self-growth/40 §3):
+#: a prohibition, a "too much", a "next time", a "you always". Read only on a
+#: message that ADDRESSES her (`SqlCharacterEvidence.addressed_since`), and
+#: leaning towards recall: a false positive costs one Lessons session that
+#: judges it and closes unchanged; a miss costs only the wait for the batch.
+#: Not a parser, and never what the correction says: the session reads that.
+_CORRECTION = re.compile(
+    "|".join((
+        # U+2019: iOS types a curly apostrophe by default, and NFKC keeps it.
+        r"\b(?:don['\u2019]?t|do\s+not|never|stop|quit|no\s+need\s+to|no\s+more)\b",
+        r"\btoo\s+(?:long|much|many|wordy|formal|serious|slow|often)\b",
+        r"\b(?:shorter|briefer|less\s+(?:often|long|text))\b",
+        r"\bnext\s+time\b",
+        r"\byou\s+(?:always|keep|never)\b",
+        r"唔好|咪再|咪咁|唔使|唔洗|少啲|講少|短啲|太長|太多|太囉嗦|好囉嗦|下次|你成日|你次次|你又|收聲|別再|别再|不要",
+    )),
+    re.IGNORECASE,
+)
+
+
+def is_correction(text: str | None) -> bool:
+    """Whether `text` reads as an instruction about how she acts (see
+    `_CORRECTION`). NFKC first, as `nora.domain.cues.cues_of` does."""
+    return bool(text) and _CORRECTION.search(unicodedata.normalize("NFKC", text or "")) is not None

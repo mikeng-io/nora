@@ -1809,6 +1809,12 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("outcome",),
     ),
     _CounterSpec(
+        "nora_lessons_correction_wake_total",
+        "Lessons sessions woken by the correction fast path (L4): a message "
+        "that spoke to her and read as an instruction about how she acts.",
+        (),
+    ),
+    _CounterSpec(
         "nora_self_tension_total",
         "Tension rows: a lesson refused because it would loosen or contradict a "
         "law rule, by the doctrine file of that rule. Operator-only.",

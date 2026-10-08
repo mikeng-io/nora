@@ -1,7 +1,7 @@
 ---
 name: lessons
 kind: objective
-version: 1
+version: 2
 applies_to: [lessons_adaptor]
 description: >-
   Nora's Lessons in one unit (design/self-growth/40-lessons.md, L2): practice
@@ -26,6 +26,9 @@ they leave open, learned from this group.
 - `<held_lessons>`: the lessons you hold here now, if any. Each `lesson` has a short
   `id` (`L1`, `L2`, ...), how long ago it was `written` and its `revision`. A
   lesson nothing re-evidences for 60 days is retired for you.
+- `<lesson_corrections>`, sometimes: messages that spoke to you and seem to
+  tell you how to act here, each an `m` with its number, who said it and the
+  room. A word pattern picked them, so some are not corrections: judge each.
 - `<lesson_episodes>`: your messages in this group since you last looked, oldest
   first, each with how its response window closed. Each `episode` has its handle
   `n` (`response:<number>`), its `room`, its `outcome`, how many `reactions`
@@ -58,7 +61,12 @@ you speak in this group.
 
 - `lesson_write`: `body` the lesson, `citations` at least three different
   episode handles (`response:<number>`) it rests on, and any `n` of a reply
-  someone else wrote. To reinforce or reword a lesson you hold, pass its
+  someone else wrote. A real correction is enough on its own: a lesson that
+  cites the `n` of one needs no three episodes. Write what it asks of how you
+  act, in your own words; write nothing for a message that was not really
+  telling you how to act. One person's ask is how that person wants you to
+  act: write it for the whole group only if the episodes agree, otherwise as
+  what to do with that person. To reinforce or reword a lesson you hold, pass its
   `lesson_id` (`L2`) and give the whole new body; cite the new episodes. Never
   write a second lesson that says what one you hold says.
 - `lesson_retire`: `lesson_id` and `why`, when these episodes show a lesson is

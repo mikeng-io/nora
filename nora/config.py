@@ -2814,6 +2814,14 @@ class LessonsConfig(BaseModel):
     #: what is past it is consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
 
+    #: The correction fast path (L4, design/self-growth/40 §3): a message that
+    #: speaks to her and reads as an instruction about how she acts wakes the
+    #: unit's session once it is this many seconds old, instead of waiting for
+    #: `wake_batch` episodes. **600** (10 minutes): long enough for the
+    #: conversation around it to settle, short enough that the lesson lands the
+    #: same evening. `0` turns the fast path off.
+    correction_quiet_seconds: int = Field(default=600, ge=0)
+
     #: The doctrine check's model (L3): a separate call that reads each lesson
     #: against the law before it is written. `""` is `[llm] model`, the tag
     #: model, so the judge is never the Dreamer model that wrote the lesson
