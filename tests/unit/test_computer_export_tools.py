@@ -319,6 +319,14 @@ async def test_a_refused_page_is_called_a_page_in_its_note(persons):
     (b"\x1aE\xdf\xa3\x01", "x", "video/webm"),
     (b"PK\x03\x04\x14\x00", "x.pdf", "application/zip"),
     (b"\x1f\x8b\x08\x00", "x", "application/gzip"),
+    # Review of #757: a page in latin-1 or UTF-16 is still a page; a UTF-16
+    # CSV is not an MP3 (its BOM `FF FE` passes a bare frame-sync test); and
+    # "ID3" with no version byte is text.
+    ("<html><body>caf\xe9</body></html>".encode("latin-1"), "x.bin", None),
+    ("<html><body>hi</body></html>".encode("utf-16"), "x.bin", None),
+    ("a,b\n1,2\n".encode("utf-16"), "data.csv", "text/csv"),
+    (b"ID3 tag notes\n", "notes.md", "text/markdown"),
+    (b"\xff\xf9\x00\x00", "x", "application/octet-stream"),
 ])
 def test_the_type_is_read_off_the_bytes(data, path, expected):
     assert sniff_export_type(data, path) == expected

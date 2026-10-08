@@ -78,7 +78,6 @@ NEVER_EXPORTED: frozenset[str] = frozenset({"text/html"})
 #: Each is a format definition, matched on the leading bytes only.
 _BINARY_SIGNATURES: tuple[tuple[bytes, str], ...] = (
     (b"%PDF-", "application/pdf"),
-    (b"ID3", "audio/mpeg"),
     (b"OggS", "audio/ogg"),
     (b"fLaC", "audio/flac"),
     (b"\x1aE\xdf\xa3", "video/webm"),
@@ -136,6 +135,26 @@ def _looks_like_svg(head: str) -> bool:
     return False
 
 
+def _as_text(data: bytes) -> str | None:
+    """`data` as text: UTF-8, or UTF-16 when it opens with a byte-order mark
+    (Excel's "Unicode Text", PowerShell's output). None when it is neither,
+    or holds a NUL, which no text file does."""
+    codec = "utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8"
+    try:
+        text = data.decode(codec)
+    except UnicodeDecodeError:
+        return None
+    return None if "\x00" in text else text
+
+
+def _is_mpeg_frame(data: bytes) -> bool:
+    """An MPEG audio frame header: the 11-bit sync, a defined layer, and a
+    bitrate index that is neither free (0) nor bad (15). Checked after the
+    text decode, so a UTF-16 byte-order mark (`FF FE`) never reaches it."""
+    return (len(data) > 2 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0
+            and data[1] & 0x06 != 0 and (data[2] >> 4) not in (0x0, 0xF))
+
+
 def sniff_export_type(data: bytes, path: str) -> str | None:
     """The media type `data` leaves the computer as, or None when it is a web
     page, the one kind of file that may not leave. `path` is consulted only
@@ -149,13 +168,16 @@ def sniff_export_type(data: bytes, path: str) -> str | None:
             return media_type
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
         return "audio/wav"
-    if len(data) > 1 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0:
-        return "audio/mpeg"  # an MPEG audio frame sync: an MP3 with no ID3 tag
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        return OPAQUE
-    if "\x00" in text:
+    if data[:3] == b"ID3" and data[3:4] in (b"\x02", b"\x03", b"\x04"):
+        return "audio/mpeg"  # an ID3v2 tag names its version; "ID3" alone is text
+    text = _as_text(data)
+    if text is None:
+        # Not text in any encoding a page is read in, but a page in latin-1
+        # or another 8-bit charset still opens like one: refused as a page.
+        if _looks_like_html(data[:_HEAD_CHARS].decode("latin-1").lstrip(" \t\n\r\f")):
+            return None
+        if _is_mpeg_frame(data):
+            return "audio/mpeg"  # an MP3 with no ID3 tag
         return OPAQUE
     text = text.removeprefix("﻿")
     head = text.lstrip(" \t\n\r\f")[:_HEAD_CHARS]
