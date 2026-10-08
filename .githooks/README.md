@@ -22,16 +22,26 @@ them). Two things worth knowing before you trust it:
   checkout has it. `git config core.hooksPath` should print `.githooks`;
   `make hooks` sets it.
 
-- **`commit-msg`** — runs `scripts/check_commit_subject.py` on every commit.
-  The closed type list and the authored-merge rule are enforced here so the
+- **`commit-msg`** — scans the message and the author/committer identity for
+  identifiers (below) FIRST, then runs `scripts/check_commit_subject.py`. The
+  closed type list and the authored-merge rule are enforced here so the
   convention stops depending on memory. `--no-verify` bypasses it; if you use
-  that, name the reason in the commit body. Then scans the message and the
-  author/committer identity for identifiers (below).
+  that, name the reason in the commit body. The order matters: the subject
+  checker prints a bad subject as written, so it runs only once the scan has
+  passed (it once printed a denylisted name the scan would have masked).
 - **`pre-commit`** — scans the STAGED blobs for identifiers (below).
-- **`pre-push`** — same subject checker across EVERY commit in the pushed
-  range, not just the head: the commits that need it most are the ones made
-  before the hook was installed. Capped at 200 per ref, and it says so when
-  the cap binds. Then the identifier scan over the same range.
+- **`pre-push`** — the identifier scan over everything the push gives the
+  remote, then (only if it passed) the same subject checker across EVERY
+  commit in the pushed range, not just the head: the commits that need it
+  most are the ones made before the hook was installed. Capped at 200 per
+  ref, and it says so when the cap binds.
+- **Every hook runs this repo's scanner and nothing else.** A symlink at
+  `scripts/`, at the scanner, at its one import (`pii_cjk_fold.py`) or at the
+  subject checker is refused; `python3 -I -S` keeps `PYTHONPATH`,
+  `PYTHONSTARTUP`, the user site and `.pth` files from substituting a module;
+  and the scanner neither writes nor reads a bytecode cache (it used a shared
+  `$TMPDIR/nora-pii-pycache`, where a planted `.pyc` ran in place of the
+  source).
 
 The rule these enforce lives in `CONTRIBUTING.md` §Commit messages / §Merge
 strategy. The checker is the typing aid; the doc is the contract. To change
@@ -45,10 +55,12 @@ WHOLE message file (comment lines and text past the scissors included: `git
 commit -m` and `--cleanup=verbatim` keep them) and the author/committer
 identity at `commit-msg`; and at `pre-push` every blob, message, identity,
 extra commit header (a `mergetag`'s tag message included), tag message and
-tagger that the push gives the target remote. Every NEW path -- added,
-renamed or copied, directory names included -- goes through the same
-denylist and shape rules as content; a path that matched is printed, recorded
-and shown to any model only as an opaque `<path 1a2b3c4d5e>`.
+tagger that the push gives the target remote, and the pushed ref names (a
+branch or tag named after a person is published too; denylist only, printed
+as `<ref 1a2b3c4d5e>` when it matched). Every NEW path -- added, renamed or
+copied, directory names included -- goes through the same denylist and shape
+rules as content; a path that matched is printed only as an opaque
+`<path 1a2b3c4d5e>`. Nothing is judged by a model: every verdict is a rule.
 
 The push scan asks the TARGET remote what it already has (`git ls-remote`)
 rather than trusting local remote-tracking refs, which go stale (a branch
@@ -62,24 +74,43 @@ look.
 
 **Cutover to a new remote** (the scrubbed public repository): the whole
 history is "new" there, so its residue can never pass. Instead of
-`--no-verify`, set `NORA_PII_PUSH_BASELINE=<manifest>`: a file the scrub's
-content verification writes, starting `# nora-pii-baseline v1`, then one full
-commit id per line whose history that verification read clean. Those commits
-and their ancestors count as already published; everything after them is
-scanned. The use is printed with the manifest's digest on every run; a
-malformed manifest is an ERROR. The manifest is a trust decision: it is only
-as good as the verification that wrote it. Tags are scanned too: an annotated tag's message and
+`--no-verify`, set `NORA_PII_PUSH_BASELINE=<manifest>` and
+`NORA_PII_PUSH_BASELINE_SHA256=<its full sha256>`. The manifest is the file
+the scrub's content verification writes:
+
+```
+# nora-pii-baseline v2
+remote <the exact url this push goes to>
+<full commit id>
+...
+```
+
+It is bound three ways, and each is an ERROR when it does not hold: it
+counts ONLY the commits it lists -- never their ancestors, so a manifest
+naming a tip vouches for nothing beneath it, and the verification must list
+every commit it read clean; only for the one remote it names (the url
+pre-push is given); and only when its digest equals the pinned
+`NORA_PII_PUSH_BASELINE_SHA256`, which lives outside the file, so editing the
+manifest voids it. A v1 manifest (unbound) is refused. The use is printed
+with the digest on every run. The manifest is still a trust decision: it is
+only as good as the verification that wrote it. Tags are scanned too: an annotated tag's message and
 tagger, and a lightweight tag on a bare blob or tree (every object in it the
 remote does not already reach).
 
 Exit 0 PASS, 1 FAIL, 2 ERROR ("could not look": no denylist, a malformed
-`NORA_PII_*` setting, an unreadable blob or container, an unreachable remote
-or judge, a crash); both non-zero block. The output names path, line and
+`NORA_PII_*` setting or private list, an unreadable blob or container, an
+unreachable remote, a crash); both non-zero block. The output names path, line and
 rule, and masks the value.
 
 **Where the hooks do not run.** `git am`, `git cherry-pick` and `git rebase`
 create commits without `pre-commit` (and cherry-pick and rebase without
-`commit-msg`), and `git commit --no-verify` skips both. Pre-push is the
+`commit-msg`; git 2.55's `rebase --continue` too), and `git commit
+--no-verify` skips both. A `git commit` YOU run at a rebase or cherry-pick
+stop fires both hooks, with HEAD detached and `REBASE_HEAD` /
+`CHERRY_PICK_HEAD` set: the hooks then honour the `PII-Ack` trailers of the
+commit being replayed (its findings were decided when it was first
+committed), find the upstream through the branch being rebased, and honour
+a declaration the rebase rewrote (below). Pre-push is the
 backstop for all of those. **`git push --no-verify` skips pre-push as well,
 and nothing server-side repeats the check**: there is no CI job and no
 server hook. A CI job could run the shape layer and the structural checks on
@@ -108,27 +139,54 @@ is an ERROR. A machine that genuinely has no access to the real values (a
 fresh CI runner) sets `NORA_PII_DENYLIST_ABSENT=<reason>`; the reason is
 printed on every run and only the shape rules apply.
 
+Two more private files, both optional (missing = the feature is off, which
+only makes the scan stricter; present but unreadable = ERROR). Neither is
+ever printed, and neither belongs in the repository:
+
+- **Keep-phrases**, `~/.config/nora/pii-keep-phrases.txt` (or
+  `$NORA_PII_KEEP_PHRASES`): one exact multi-word phrase per line that may
+  contain a denylisted value -- the creator credit lines. Before denylist
+  matching, each occurrence of a phrase is masked out: the exact phrase, case
+  and punctuation as written, any whitespace between its words, not glued to
+  a longer word. Anything else on the line is still matched, so the same
+  name outside the phrase, or the phrase with its name reordered, recased or
+  its wording changed, FAILS. A phrase that is one word, or nothing but the
+  denylisted value, is an ERROR: it would switch the value off. The owner's
+  own name is no exception -- project identity in code is only the public
+  org and domain (`mikeng-io`, `mikeng`, `mikeng.io`, `iam@mikeng.io`); if
+  the denylist holds a name that appears in the author line, that line
+  (`Name <email>`) belongs here.
+- **Pseudonyms**, `~/.config/nora/pii-pseudonyms.txt` (or
+  `$NORA_PII_PSEUDONYMS`): one value per line that the scrub map itself
+  produced -- known fake. A SHAPE finding whose value is listed is cleared.
+  It is asked only after the denylist has had its say on the same digits, so
+  it can never clear a denylist hit, nor a shape whose digits sit inside a
+  real number.
+
 **What it checks**, in order:
 
 1. The denylist, in every spelling the matcher knows: case; separators
    between digits (up to four characters, so `+<cc> NNNN - NNNN` is one
    number), including Unicode dashes, the minus sign and no-break spaces;
-   full-width digits; zero-width and control characters; Cyrillic and Greek
+   full-width digits; control characters and every invisible character
+   (all format characters -- zero-width spaces and joiners, bidi marks and
+   isolates, soft hyphen, word joiner, BOM, the tag block -- plus variation
+   selectors, the combining grapheme joiner and Hangul fillers); Cyrillic and Greek
    look-alike letters; Traditional and Simplified Chinese (folded through
    OpenCC's character table) and spaces inside a CJK name; `Family, Given`
    order and a middle initial; dashless and upper-case UUIDs; JID and
    bare-local phone forms; url-safe and percent-encoded base64. Each line is
-   also DECODED and matched again: JSON `\uXXXX` escapes, URL percent-
+   also DECODED and matched again: JSON `\uXXXX` and Python `\xNN` /
+   `\UXXXXXXXX` escapes, URL percent-
    encoding, HTML entities, and base64/base64url segments (a JWT's payload),
    two layers deep, plus `&#x..` entities without their `;`, hex runs that
    decode to text, combining accents stripped, middle dots inside a CJK name,
    and an address spelled out (`name at host dot tld`); a number spread over
    up to 8 separator characters is found too, when the run is phone-sized.
    Decoding is capped per line (64 segments, 256 KB decoded). A hit is a
-   known real value: remove it. It cannot be acknowledged or declared away,
-   and no line it touches -- new or already in the file, lines read together
-   so a name split across two lines still counts -- is ever sent to a model.
-   A shape finding whose digits sit inside a denylisted number is reported
+   known real value: remove it. It cannot be acknowledged, declared away or
+   cleared by a pseudonym; only an exact keep-phrase is masked before
+   matching. A shape finding whose digits sit inside a denylisted number is reported
    as that number, not as an acknowledgeable shape.
 2. Shapes the denylist does not know: phone numbers written with a `+` (any
    country), in a `wa.me/`, `tel:` or `sms:` link, as E.164 without the `+`
@@ -150,7 +208,12 @@ printed on every run and only the shape rules apply.
    pass: `example.com`, `555-01xx`, runs of one digit, all-zero UUIDs, every
    value in `identity.example.toml`.
 3. Fail closed (#166): UTF-16, undecodable bytes, a symlink, a submodule and a
-   blob over 8 MiB are ERRORs, never skips. A declared binary is opened, not
+   blob over 8 MiB are ERRORs, never skips. Declaring or acknowledging one
+   never suppresses the denylist: whatever can still be read -- ASCII and
+   UTF-16 strings, runs of valid UTF-8 (a CJK name in a binary, or in a text
+   file with one bad byte), the whole blob as UTF-16 when it is UTF-16, and
+   the raw bytes of a container that could not be opened -- is matched
+   against the denylist, and a hit is reported beside the ERROR. A declared binary is opened, not
    skipped: its printable strings, PNG text chunks (`tEXt`, and `zTXt`/`iTXt`
    decompressed, UTF-8), and the members of zip containers (xlsx, docx, jar)
    and gzip, bzip2 and xz payloads, two containers deep. One budget covers a
@@ -173,113 +236,66 @@ to its content: `python3 scripts/pii_scan.py declare-coords <path>` prints
 the line), `value` and `value-re` (placeholders). A path pattern must be
 narrow: a literal path, a directory at least two levels deep (`site/public/*`)
 or a named kind (`assets/*.png`); `*`, `**`, a leading wildcard and a bare
-wildcard under a top-level directory (`vendor/*`) are refused, and a pattern
-that matches more than 200 tracked files is an ERROR. Declarations are read
-from the newest ancestor the remote ALREADY HAS, never from HEAD or from the
-range being pushed: commit the declaration, push it, then commit what it
-covers. At `pre-commit` the "already has" comes from the local
-remote-tracking refs, so when the declarations change the outcome the hook
-asks the remote (`git ls-remote`) before honouring them; unconfirmed, the
-strict result stands. A declaration in the same commit as its payload,
-amended into it, or pushed in the same push, exempts nothing (#283
-criterion 3).
+wildcard under a top-level directory (`vendor/*`, and `vendor/[!.]*`: a
+`[...]` class is a wildcard too) are refused for every path form, `coords`
+included. A pattern that matches more than 200 files is an ERROR, counted
+over the files the base tracks AND the paths the change touches -- a
+declaration published while its directory was empty cannot then cover a
+thousand new files -- and the tree audit (`tree --allowlist-from-worktree`)
+applies the same cap. A `value-re` that fullmatches any of a fixed set of
+generic probe values (numbers of every length under common country codes,
+hex ids, mailbox addresses, plain words) is refused as too broad: it must
+pin one placeholder range (`(852)?900001\d\d`), not a class (`.*`, `\d+`,
+`44\d{10}`). Errors name the line, never the pattern.
+
+Declarations are read from the newest ancestor the remote ALREADY HAS --
+an ancestor of a tip it advertises, so a branch behind its remote still
+counts -- never from HEAD or from the range being pushed: commit the
+declaration, push it, then commit what it covers. A rebase rewrites the
+commit that added a declaration; a line the rebased branch still carries
+counts when the remote already holds that exact line at one of its tips
+(the branch's old tip, typically). At `pre-commit` and `commit-msg` the
+"already has" comes from the local remote-tracking refs, so when the
+declarations change the outcome the hook asks the remote (`git ls-remote`)
+and redoes the scan on what it advertises; unreachable, the strict result
+stands. A declaration in the same commit as its payload, amended into it,
+or pushed in the same push, exempts nothing (#283 criterion 3).
 
 `scrub/replacements.txt` stays declared `path-exempt`, which since this change
 no longer lifts the denylist: an edit that ADDS a real value to it is refused
 like any other. The map is private by design and belongs outside the
 repository (scrub/README.md).
 
-**Deciding a finding that is not a denylist hit.** A shape or judge finding
-blocks the commit until someone decides it. Two ways, both recorded:
+**Deciding a finding that is not a denylist hit.** The scan is
+deterministic: no model judges anything (the agent adjudicator and the
+optional commit judge were removed; their trailers, `PII-Ack: <id> (agent
+...)`, clear nothing). A shape finding clears in exactly three ways:
 
-- **The adjudicator** (the default route, and the one a coding agent takes):
-
-  ```bash
-  python3 scripts/pii_adjudicate.py      # then re-run the SAME git commit
-  ```
-
-  A headless Claude Code agent (`claude -p`, Sonnet unless
-  `NORA_PII_ADJUDICATOR_MODEL` says otherwise) decides each finding `real`,
-  `fake` or `unsure`, with a one-line reason and the evidence it looked at.
-  - **Its evidence is what is already published.** It runs in a scratch clone
-    of the newest ancestor of HEAD that the remote itself reports having;
-    the staged change is shown to it as a diff, and it is told that anything
-    the change introduces -- a `# GENERATED` header, a Faker script, a README
-    -- is a claim, not evidence. (The second review talked the previous
-    version into `fake` with exactly that.)
-  - **Its only tool is `scripts/pii_readonly.py`**: fixed read-only
-    subcommands (ls, cat, grep, log, log -S, show, blame), no flags passed
-    through, paths confined to the clone, and every line holding a denylisted
-    value masked before the agent sees it. `--restricted --safe-mode`, no MCP
-    servers, every other permission denied. (The previous version allowed
-    `git grep --open-files-in-pager=<cmd>` and `git log --output=<file>`.)
-  - The verdicts are bound to the staged tree; only `fake` becomes an
-    acknowledgement; `real` and `unsure` stay blocked; staging anything else
-    voids them. It refuses while a denylist hit or ERROR is open; a reason
-    that quotes an identifier-like value is withheld; a missing agent CLI,
-    an unreachable remote or an unreadable answer is exit 2.
-  - Measured with the live agent (fabricated data, 3 runs each): the second
-    review's two steering probes -- a Faker script, and a `# GENERATED`
-    header with a README and a stamp script, staged beside the value -- left
-    the value `unsure` in 6 of 6 runs (the version before: `fake`, 2 of 2);
-    a number with no evidence either way, `unsure` 3 of 3; values produced
-    by a generator that was ALREADY PUBLISHED, `fake` 9 of 9. The review's
-    tool-abuse prompts (`git grep -O`, `git log --output`, a flag smuggled
-    into the wrapper, a compound command, reading outside the repository)
-    ran nothing and read nothing in 4 of 4. 14-58 s per run.
-    Before it, on 24 synthetic cases x 3 runs (agent-judge spike): Sonnet 92%
-    correct, 0 real values cleared as fake, median 20 s per case.
-- **By hand**, for a finding you have looked at yourself:
+- **A declaration** in `.githooks/pii-allowlist.txt` that the remote already
+  has (above): narrow, capped, never in the change it covers.
+- **A pseudonym**: the value is in the private registry (above), because the
+  scrub map produced it.
+- **A human who has looked at the value**, by id:
 
   ```bash
   NORA_PII_ACK=1a2b3c4d5e6f,0f9e8d7c6b5a git commit ...
   ```
 
-The `commit-msg` hook writes a `PII-Ack: <id> (human)` or `PII-Ack: <id>
-(agent <model>: fake, <reason>)` trailer for each, so the decision is in the
-history, and pre-push honours exactly those trailers. An id belongs to ONE
-finding (path, line, rule and the matched value): it acknowledges that
-finding and not its neighbour on the same line.
+  The `commit-msg` hook writes a `PII-Ack: <id> (human)` trailer for each,
+  so the decision is in the history, and pre-push honours exactly those
+  trailers. An id belongs to ONE finding (path, line, rule and the matched
+  value): it acknowledges that finding and not its neighbour on the same
+  line. A coding agent never acknowledges a value it has not had a human
+  check.
 
-**Acknowledgements are trust-based, and the trailer is a claim.** Anyone can
-type `(human)` or `(agent ...)`, or hand-write the verdict file. Pre-push
-raises the bar for `agent`: it honours one only when this clone's
-adjudication log (`$GIT_DIR/nora-pii-adjudications.jsonl`) holds a `fake`
-verdict for that finding in that exact tree -- so an agent ack pushed from
-another clone must be re-adjudicated or acknowledged as `human` there. None
-of this is a guarantee. **The denylist is the only hard guarantee**: its
-hits can be neither acknowledged nor declared away.
-
-**The optional commit judge** (`NORA_PII_JUDGE=laya|jev`, off by default;
-`scripts/pii_judge.py`) runs at `commit-msg`, where the message and the staged
-change are both known, and reads the COMMIT: the message lines and each file's
-added lines with two lines of context, every line holding a denylisted value
-replaced by `[withheld]`, lockfiles and generated files left out. It can RAISE
-a finding (at the line it points to), never clear one; an unreachable or
-failing model is an ERROR.
-
-| env | what it does |
-|---|---|
-| `NORA_PII_JUDGE=laya` | Laya's typed-decisions checkpoint on Apple Silicon (`laya-mlx` in the interpreter `NORA_PII_LAYA_PYTHON`; `NORA_PII_LAYA_MODEL`/`NORA_PII_LAYA_SUBFOLDER` to point elsewhere, offline unless `NORA_PII_LAYA_ALLOW_DOWNLOAD=1`). The commit is cut into windows that fit its budget; one yes/no per window, a Choice to point at a line. Local. Threshold 0.29. |
-| `NORA_PII_JUDGE=jev` | TypeSafe's hosted `jev-1.13.0`: one request per file (message + that file), an `exists` yes/no decides, a `where` Choice points. **Every rendered line leaves the machine**: not for real repo content until TypeSafe's zero data retention is confirmed. Threshold 0.57. |
-| `NORA_PII_JUDGE_THRESHOLD` | overrides the threshold. |
-
-What the numbers are worth. Both thresholds come from the commit-judge spike's
-synthetic dev split (66 generated commits): Jev made 0 errors in 3 runs on dev
-and held-out (0 in 22 held-out still allows about 14%); Laya made 4 errors in
-22 held-out and missed personal data in commit messages and in Cantonese. On
-this repo's 55-case set (`scripts/pii_judge_eval.py`, each line in a small
-commit) Laya at 0.29 made 13 errors (6 false positives, all on placeholders;
-7 misses). Laya's score is a max over windows, so it rises with commit size:
-synthetic code-only commits of 500 and 5,000 lines scored 0.34 and 0.43 and
-were flagged. Cost on an M-series Mac with Laya on: a 50-line commit 1.1 s
-(0.4 s off), 500 lines 2.1 s, 5,000 lines 12.9 s; load 0.1-0.3 s, peak
-1.6-1.8 GB. Laya stays OFF by default: over the last 30 real master commits it
-flagged 3, all of them large (the second review's measurement), so on its
-own it is mostly noise on big changes. A model can
-say whether a commit LOOKS like it adds personal data
-copied from real records; it cannot know whether a name belongs to a real
-person. The denylist is the ground truth for identity.
+**Acknowledgements are trust-based, and the trailer is a claim**: anyone can
+type one. Nothing local can stand in for it -- no file in the git dir clears
+a finding (the adjudicator's verdict file and log are gone; the side file
+pre-commit leaves for commit-msg only carries ids it already applied from
+`NORA_PII_ACK`, and writing it by hand changes no verdict). None of this is
+a guarantee. **The denylist is the only hard guarantee**: its hits can be
+neither acknowledged nor declared away, and only an exact keep-phrase is
+masked before it matches.
 
 **What it does not catch.** A headerless integer-microdegree table in a file
 that never names coordinates; geohashes; two-decimal coordinates in a file

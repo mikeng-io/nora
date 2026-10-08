@@ -23,8 +23,8 @@ It reads them at run time and contains no values itself. Output: one
         [--out ~/.config/nora/pii-denylist.txt]
 
 Dropped on purpose, and counted: account `label`s (personal/business/live are
-not identifiers), project identity (the author, the org, the domain — they
-stay by operator decision), and single-word names shorter than
+not identifiers), project identity (the public org and domain tokens -- they
+stay by operator decision; a personal name is never exempt), and single-word names shorter than
 `--min-token` letters, which collide with ordinary words (a 3-letter surname
 is a substring-word in every licence header). Full names and person ids
 keep them covered.
@@ -41,7 +41,9 @@ import tempfile
 import time
 
 NON_IDENTIFYING_KEYS = {"label"}
-PROJECT_IDENTITY = {"miles novak", "mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
+# The project's public org and domain tokens only (scripts/pii_scan.py says
+# why no personal name may be listed here).
+PROJECT_IDENTITY = {"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
 
 # Terms the owner has declared PUBLIC: an ordinary name that stays out of the
 # denylist even though a private source lists it. Owner decision 2026-09-27:

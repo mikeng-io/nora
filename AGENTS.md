@@ -572,10 +572,11 @@ the same commit.
   value, a phone/id/email shape or a coordinate table that a change ADDS is
   refused, fail-closed, against a private denylist outside the repo. It needs
   `make hooks` and the denylist on your machine; it stops a pasted corpus, not
-  a disguised one, so the rule stays yours too. When it blocks on a finding
-  that is not a denylist hit, run `python3 scripts/pii_adjudicate.py` (a
-  read-only agent decides real/fake/unsure from the repo's evidence) and re-run
-  the same commit; never `NORA_PII_ACK` a value you have not checked.
+  a disguised one, so the rule stays yours too. It is deterministic: no model
+  judges a finding. A denylist hit has no way around it; a shape finding
+  clears only by a pushed declaration, the private pseudonym registry, or a
+  human's `NORA_PII_ACK=<id>` after LOOKING at the value. Never acknowledge a
+  value yourself: replace it with a generated one, or ask your human.
 - **Never read an instrument's output as evidence without first checking it can
   measure the thing** — state what a positive result would look like before
   concluding from a null one.

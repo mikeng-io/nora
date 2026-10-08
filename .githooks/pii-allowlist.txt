@@ -10,8 +10,10 @@
 # Format: `<kind> <glob-or-value> [sha256=<digest>] -- <reason>`. Every line
 # needs a reason; a malformed line is an ERROR, not a skip.
 #
-#   path-exempt  not scanned at all. Only for a file whose CONTENT is real
-#                values by design; it must be deleted from any published copy.
+#   path-exempt  the shape and coordinate rules are lifted; the denylist and
+#                the path scan still apply. Only for a file whose CONTENT is
+#                real values by design; it must be deleted from any published
+#                copy.
 #   binary       not text: scanned for embedded strings and media GPS instead
 #                of being refused. Nothing is skipped (#166).
 #   symlink      a link; its target path is scanned.
@@ -23,10 +25,16 @@
 #                criterion 2).
 #   value        one placeholder value (normalised: digits of a number,
 #                dashless lower-case UUID, lower-case otherwise).
-#   value-re     a regex over the normalised value.
+#   value-re     a regex over the normalised value, pinned to one placeholder
+#                range: one that matches generic numbers, ids or addresses
+#                (`.*`, `\d+`) is refused as too broad.
 #
-# A denylist hit (a known real value) is never exempted by `value` or
-# `value-re`; only `path-exempt` reaches it. This file is itself scanned
+# Path patterns must be narrow (no `*`, `**`, leading wildcard, or bare
+# wildcard or `[...]` class under a top-level directory) and may match at
+# most 200 files, counted over what is tracked and what the change touches.
+#
+# A denylist hit (a known real value) is never exempted by ANY declaration.
+# This file is itself scanned
 # against the denylist; the shape detectors skip it, so a placeholder can be
 # declared here without tripping on its own declaration.
 

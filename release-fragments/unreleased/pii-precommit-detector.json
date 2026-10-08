@@ -1,6 +1,6 @@
 {
   "type": "none",
-  "reason": "Contributor tooling only (#283): pre-commit, commit-msg and pre-push hooks now refuse a change that adds a real identifier, checked against a private denylist and shape rules; nothing Nora does at runtime changes.",
+  "reason": "Contributor tooling only (#283): pre-commit, commit-msg and pre-push hooks now refuse a change that adds a real identifier, checked deterministically against a private denylist and shape rules (no model judges anything); nothing Nora does at runtime changes.",
   "details": [],
   "limitations": []
 }

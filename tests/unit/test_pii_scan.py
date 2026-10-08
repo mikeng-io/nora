@@ -1,7 +1,7 @@
 """The identifier detector's rules, each against GENERATED values (#283).
 
 Every value here is built at run time from a seeded generator
-(`scripts/pii_judge_eval.py`'s `Synth`, plus invented names); none is copied
+(`tests/pii_synth.py`'s `Synth`, plus invented names); none is copied
 from a record, and this file holds no identifier-shaped literal of its own, so
 the detector passes it like any other file. Each rule is checked on the form
 it must catch AND on the look-alike it must not.
@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.pii_synth import Synth
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -30,9 +32,9 @@ def _load(name: str):
 
 
 P = _load("pii_scan")
-E = _load("pii_judge_eval")
+B = _load("pii_denylist_build")
 
-SY = E.Synth(9001)
+SY = Synth(9001)
 _R = random.Random(9001)
 _SYL = ["qor", "vel", "tam", "ris", "pal", "dra", "ken", "mor", "zul", "wix", "bran", "sto"]
 
@@ -141,18 +143,33 @@ def test_denylist_cjk_is_a_substring_match():
     assert "denylist:text" in _rules(f"佢叫{CJK}呀\n")
 
 
-def test_project_identity_is_never_denied():
+PROJECT_TOKENS = {"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
+
+
+def test_project_identity_is_the_org_and_the_domain_only():
+    """Round 3 item 2: project identity in code is the public org/domain
+    tokens and nothing else. A personal name in it would be rewritten by the
+    history rewrite -- the hook's own source would change under it -- and
+    would exempt a person from the denylist."""
+    assert set(P.PROJECT_IDENTITY) == PROJECT_TOKENS
+    assert set(B.PROJECT_IDENTITY) == PROJECT_TOKENS
+    for v in P.PROJECT_IDENTITY:
+        assert " " not in v
+
+
+def test_project_identity_is_never_denied_and_a_personal_name_always_is():
     d = P.parse_denylist(
-        "text\tMiles Novak\ntext\tmilesng-io\ntext\tmiles_novak\ntext\tiam@mikeng.io\n", "t"
+        f"text\tmilesng-io\ntext\tmilesng_io\ntext\tmilesng\ntext\tiam@mikeng.io\ntext\t{NAME}\n",
+        "t",
     )
-    assert d.count == 0
+    assert d.count == 1
     sc = P.Scanner(d, P.Allowlist(), set())
-    assert (
-        sc.scan_text(
-            "Copyright Miles Novak <iam@mikeng.io>, github.com/mikeng-io\n", "LICENSE"
-        ).findings
-        == []
-    )
+    line = f"Copyright {NAME} <iam@mikeng.io>, github.com/mikeng-io\n"
+    assert [f.rule for f in sc.scan_text(line, "LICENSE").findings] == ["denylist:text"]
+    project_only = "Copyright <iam@mikeng.io>, github.com/mikeng-io\n"
+    assert sc.scan_text(project_only, "LICENSE").findings == []
+    owner = f"{GIVEN.lower()}_{FAMILY.lower()}"
+    assert P.parse_denylist(f"text\t{owner}\n", "t").count == 1
 
 
 def test_denylist_rejects_unknown_kind():
@@ -226,8 +243,9 @@ def test_identity_example_values_are_placeholders():
 
 
 def test_value_allowlist_exempts_a_shape_but_never_a_denylist_hit():
-    allow = P.parse_allowlist(f"value {P.digits_of(PHONE)} -- test\nvalue-re 44.* -- test\n")
     other = SY.phone("44")
+    near = P.digits_of(other)[:10] + r"\d\d"  # a narrow range around `other`
+    allow = P.parse_allowlist(f"value {P.digits_of(PHONE)} -- test\nvalue-re {near} -- test\n")
     assert _rules(f'p = "{other}"\n', _scanner(allow=allow)) == []
     assert "denylist:number" in _rules(f'p = "{PHONE}"\n', _scanner(allow=allow))
 
@@ -375,12 +393,17 @@ def test_editing_a_line_that_already_held_a_value_is_not_new():
 
 
 def test_utf16_and_a_trailing_non_utf8_byte_are_errors_not_skips():
+    """An ERROR, never a skip -- and since round 3 (a) the denylist hit in
+    what can still be read is reported beside it."""
     payload = f"x = {NAME!r}\n"
+    hit = ("FAIL", "denylist:text")
     fs = _judge(_job(payload.encode("utf-16")))
-    assert [(f.status, f.rule) for f in fs] == [("ERROR", "utf16")]
+    assert {(f.status, f.rule) for f in fs} == {("ERROR", "utf16"), hit}
     fs = _judge(_job(f"{CJK}\n".encode("utf-16")))
-    assert [(f.status, f.rule) for f in fs] == [("ERROR", "utf16")]
+    assert {(f.status, f.rule) for f in fs} == {("ERROR", "utf16"), hit}
     fs = _judge(_job(payload.encode() + b"\xff"))
+    assert {(f.status, f.rule) for f in fs} == {("ERROR", "undecodable"), hit}
+    fs = _judge(_job(b"x = 1\n" + b"\xff"))
     assert [(f.status, f.rule) for f in fs] == [("ERROR", "undecodable")]
 
 
@@ -502,228 +525,17 @@ def test_the_whole_message_file_is_scanned_comments_and_scissors_included(tmp_pa
         assert "denylist:text" in [f.rule for f in rep.findings], body
 
 
-# ---- the commit judge (a fake backend: no model here)
-
-J = _load("pii_judge")
+# ---- acknowledgement trailers and crashes
 
 
-def _capture_judge(monkeypatch, score=0.0, ranked=(), error=None):
-    """The real pii_judge module with judge_commit replaced by a recorder."""
-    seen: dict = {}
-
-    def judge_commit(backend, view):
-        seen["view"] = view
-        if error:
-            raise J.JudgeError(error)
-        return J.CommitVerdict(score, 0.5, list(ranked), 0.0, {})
-
-    monkeypatch.setattr(J, "judge_commit", judge_commit)
-    monkeypatch.setitem(sys.modules, "pii_judge", J)
-    return seen
-
-
-def _judged_report(text: str, old: str | None = None):
-    sc = _scanner()
-    rep = P.judge_blob(_job(text.encode(), old.encode() if old else None), sc, P.Allowlist(), set())
-    rep.guard = sc.contains_denylisted
-    rep.guard_lines = sc.withheld_lines
-    return rep
-
-
-def _view_text(view) -> str:
-    return repr(view.message) + repr(view.files)
-
-
-def _commit(monkeypatch, staged_text, message="feat: x", old=None):
-    """A message report plus a staged report, as commit-msg builds them."""
-    staged = _judged_report(staged_text, old)
-    rep = P.Report(guard=staged.guard, guard_lines=staged.guard_lines)
-    rep.message_lines = [(n, x) for n, x in enumerate(message.split("\n"), 1) if P._judgeable(x)]
-    return rep, staged
-
-
-def test_the_judge_reads_message_and_added_lines_and_raises_at_its_pick(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    seen = _capture_judge(monkeypatch, score=0.9, ranked=["L2"])
-    rep, staged = _commit(
-        monkeypatch,
-        "keep = 1\nfirst = 2\nShe lives at somewhere\n",
-        "feat: add rows",
-        old="keep = 1\n",
-    )
-    P.run_judges(rep, staged)
-    view = seen["view"]
-    assert view.message == [("M1", "feat: add rows")]
-    assert [r for r in view.files[0]["rows"] if r[1] == "+"] == [
-        ("L1", "+", "first = 2"),
-        ("L2", "+", "She lives at somewhere"),
-    ]
-    assert [(f.rule, f.path, f.line, f.ackable) for f in rep.findings] == [
-        ("judge:laya", "tests/fixtures/x.py", 3, True)
-    ]
-
-
-def test_the_judge_never_clears_a_finding(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    _capture_judge(monkeypatch, score=0.0)
-    rep, staged = _commit(monkeypatch, f'a = "{SY.phone("44")}"\n')
-    P.run_judges(rep, staged)
-    assert [f.rule for f in staged.findings] == ["phone"] and not staged.findings[0].state
-    assert rep.findings == []
-
-
-def test_a_judge_that_does_not_answer_is_an_error(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "jev")
-    _capture_judge(monkeypatch, error="HTTP 529")
-    rep, staged = _commit(monkeypatch, "x = 1\n")
-    P.run_judges(rep, staged)
-    assert P.verdict(rep) == P.ERROR
-
-
-def test_a_line_that_already_held_a_denylisted_value_is_never_sent(monkeypatch):
-    """Review of #591 finding 4: an edit to a line holding a real value, and
-    that line as context, reach no model."""
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    seen = _capture_judge(monkeypatch)
-    old = f"a = 1\nowner = {NAME!r}  # old\nb = 2\n"
-    new = f"a = 1\nowner = {NAME!r}  # new\nb = 3\n"
-    rep, staged = _commit(monkeypatch, new, f"fix: as {GIVEN} {FAMILY} asked", old=old)
-    P.run_judges(rep, staged)
-    text = _view_text(seen["view"])
-    assert "b = 3" in text and "[withheld]" in text
-    assert NAME not in text and GIVEN not in text and FAMILY not in text
-
-
-def test_with_no_guard_every_line_is_withheld(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    seen = _capture_judge(monkeypatch)
-    staged = P.judge_blob(_job(b"x = 1\n"), _scanner(), P.Allowlist(), set())
-    P.run_judges(P.Report(message_lines=[(1, "feat: x")]), staged)
-    rows = [t for f in seen["view"].files for _i, _o, t in f["rows"]] + [
-        t for _m, t in seen["view"].message
-    ]
-    assert rows and set(rows) == {"[withheld]"}
-
-
-def test_lockfiles_are_not_shown_to_the_judge(monkeypatch):
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    seen = _capture_judge(monkeypatch)
-    sc = _scanner()
-    staged = P.judge_blob(_job(b"name = pkg-one\n", path="uv.lock"), sc, P.Allowlist(), set())
-    staged.guard, staged.guard_lines = sc.contains_denylisted, sc.withheld_lines
-    P.run_judges(P.Report(guard=sc.contains_denylisted, guard_lines=sc.withheld_lines), staged)
-    assert seen["view"].skipped == ["uv.lock"] and seen["view"].files == []
-
-
-def test_jev_sends_one_request_per_file_with_the_message_and_withheld_lines(monkeypatch):
-    bodies = []
-
-    def post(url, body, headers, timeout, retries=5):
-        bodies.append(body)
-        ids = list(body["questions"]["where"]["criteria"])
-        return {
-            "answers": {
-                "exists": {"noul": 0.1 * len(bodies)},
-                "where": {"probabilities": {i: 1.0 / len(ids) for i in ids}},
-            },
-            "usage": {"input_tokens": 10},
-            "model": "jev-1.13.0",
-        }
-
-    monkeypatch.setattr(J, "_post_json", post)
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
-    view = J.CommitView(subject="feat: x", message=[("M1", "feat: x")])
-    view.files = [
-        {"path": "a.py", "rows": [("L1", "+", "x = 1"), (None, " ", "[withheld]")]},
-        {"path": "b.py", "rows": [("L2", "+", "y = 2")]},
-    ]
-    score, _ranked, detail = J.jev_commit(view)
-    assert len(bodies) == 2 and detail["requests"] == 2
-    for b, path, lid in zip(bodies, ("a.py", "b.py"), ("L1", "L2"), strict=True):
-        assert b["model"] == "jev-1.13.0" and b["state"]["commit_message"] == {"M1": "feat: x"}
-        assert [f["path"] for f in b["state"]["files"]] == [path]
-        assert set(b["questions"]) == {"exists", "where"}
-        assert set(b["questions"]["where"]["criteria"]) == {"M1", lid, "none"}
-    assert "[withheld]" in json.dumps(bodies[0]) and score == pytest.approx(0.2)
-
-
-def test_jev_retries_the_cdn_errors():
-    assert {520, 522, 524, 429, 529} <= set(J.RETRY_STATUS)
-
-
-def test_the_laya_worker_protocol_and_its_failure(monkeypatch, tmp_path):
-    fake = tmp_path / "py"
-    fake.write_text(
-        '#!/bin/sh\ncat > /dev/null\necho \'{"score": 0.7, "ranked": ["L1"], "windows": 1}\'\n'
-    )
-    fake.chmod(0o755)
-    monkeypatch.setenv("NORA_PII_LAYA_PYTHON", str(fake))
-    view = J.CommitView(
-        message=[("M1", "feat: x")], files=[{"path": "a", "rows": [("L1", "+", "x")]}]
-    )
-    assert J.laya_commit(view)[:2] == (0.7, ["L1"])
-    # a worker that dies after printing something readable is still a failure
-    fake.write_text(
-        '#!/bin/sh\ncat > /dev/null\necho \'{"score": 0.0, "ranked": []}\'\n'
-        "echo 'No module named laya_mlx' >&2\nexit 1\n"
-    )
-    with pytest.raises(J.JudgeError):
-        J.laya_commit(view)
-
-
-# ---- the adjudicator's plumbing (the agent itself is faked in tests/infra)
-
-
-def test_only_a_fake_verdict_for_the_current_tree_acknowledges(monkeypatch, tmp_path):
-    monkeypatch.setattr(P, "_gitdir", lambda: str(tmp_path))
-    fs = (
-        _scanner()
-        .scan_text(f'p = "{SY.phone("44")}"\nq = "{SY.phone("81")}"\nr = {NAME!r}\n', "f.py")
-        .findings
-    )
-    ids = {f.rule + str(f.line): f.fid for f in fs}
-    (tmp_path / P.ADJUDICATION_FILE).write_text(
-        json.dumps(
-            {
-                "tree": "t1",
-                "model": "sonnet",
-                "verdicts": {
-                    ids["phone1"]: {"verdict": "fake", "reason": "generated in conftest"},
-                    ids["phone2"]: {"verdict": "unsure", "reason": "no history"},
-                    ids["denylist:text3"]: {"verdict": "fake", "reason": "forged"},
-                },
-            }
-        )
-    )
-    assert P.adjudicated_fakes("t2") == {}
-    rep = P.Report(findings=fs)
-    P.apply_adjudication(rep, P.adjudicated_fakes("t1"))
-    assert {f.rule + str(f.line): f.state for f in fs} == {
-        "phone1": "ACKED",
-        "phone2": "",
-        "denylist:text3": "",
-    }
-    assert "agent sonnet: fake, generated in conftest" in fs[[f.line for f in fs].index(1)].note
-
-
-def test_recorded_findings_hold_masks_not_values(monkeypatch, tmp_path):
-    monkeypatch.setattr(P, "_gitdir", lambda: str(tmp_path))
-    phone = SY.phone("44")
-    rep = P.Report(findings=_scanner().scan_text(f'p = "{phone}"\nr = {NAME!r}\n', "f.py").findings)
-    P.record_findings(rep, "staged", "t1")
-    raw = (tmp_path / P.FINDINGS_FILE).read_text()
-    data = json.loads(raw)
-    assert [f["rule"] for f in data["staged"]] == ["phone"] and data[
-        "staged_blocked_otherwise"
-    ] == 1
-    assert phone not in raw and P.digits_of(phone) not in raw and NAME not in raw
-
-
-def test_trailer_acks_read_the_id_with_or_without_a_reason():
+def test_trailer_acks_honour_a_human_claim_and_never_an_agent_verdict():
+    """Round 3 (c): the model adjudicator is gone, so an `(agent ...)` trailer
+    has nothing deterministic behind it and clears nothing."""
     msg = (
-        "feat: x\n\nPII-Ack: 0123456789ab\nPII-Ack: ba9876543210 (agent sonnet: fake, generated)\n"
+        "feat: x\n\nPII-Ack: 0123456789ab\nPII-Ack: 1a2b3c4d5e6f (human)\n"
+        "PII-Ack: ba9876543210 (agent sonnet: fake, generated)\n"
     )
-    assert P.trailer_acks(msg) == {"0123456789ab", "ba9876543210"}
+    assert P.trailer_acks(msg) == {"0123456789ab", "1a2b3c4d5e6f"}
 
 
 def test_a_crash_is_an_error(monkeypatch, capsys):
@@ -1007,7 +819,13 @@ def test_an_existing_path_is_masked_but_not_reported_again():
         P.Allowlist(),
         set(),
     )
-    assert rep.findings == [] and rep.views and GIVEN not in rep.views[0][0]
+    assert rep.findings == []
+    added = f'a = 1\nc = "{SY.email()}"\n'.encode()
+    rep = P.judge_blob(
+        P.BlobJob(path, "100644", added, [b"a = 1\n"], False), _deny2(), P.Allowlist(), set()
+    )
+    assert [f.rule for f in rep.findings] == ["email"]
+    assert GIVEN not in rep.findings[0].path and rep.findings[0].path.startswith("<path ")
 
 
 @pytest.mark.parametrize(
@@ -1084,23 +902,6 @@ def test_a_long_numeric_line_does_not_assemble_a_number_by_chance():
     )
 
 
-def test_the_judge_is_shown_neither_a_name_split_across_lines_nor_a_bad_path(monkeypatch):
-    """r2 finding 8: the mask reads lines together, as the scanner does."""
-    monkeypatch.setenv("NORA_PII_JUDGE", "laya")
-    seen = _capture_judge(monkeypatch)
-    sc = _deny2()
-    path = f"people/{NAME}/r.txt"
-    old = f"owner: {GIVEN}\n{FAMILY} (lead)\nx = 1\n"
-    new = f"owner: {GIVEN}\n{FAMILY} (lead) edited\nx = 2\n"
-    staged = P.judge_blob(
-        P.BlobJob(path, "100644", new.encode(), [old.encode()], False), sc, P.Allowlist(), set()
-    )
-    rep = P.Report(guard=sc.contains_denylisted, guard_lines=sc.withheld_lines)
-    P.run_judges(rep, staged)
-    text = _view_text(seen["view"]) + repr([f["path"] for f in seen["view"].files])
-    assert "x = 2" in text and GIVEN not in text and FAMILY not in text
-
-
 def test_a_zip_with_too_many_members_is_an_error(monkeypatch):
     import io
     import zipfile
@@ -1169,22 +970,37 @@ def test_extra_commit_headers_are_read_and_signatures_skipped():
     assert NAME in hdr and EMAIL_USER in hdr and "AAAA" not in hdr and "tree" not in hdr
 
 
-def test_an_agent_ack_needs_the_adjudication_record_for_that_tree():
-    body = "x\n\nPII-Ack: 0123456789ab (agent sonnet: fake, r)\nPII-Ack: ba9876543210 (human)\n"
-    ok, refused = P.verified_acks(body, "t1", {})
-    assert ok == {"ba9876543210"} and refused == {"0123456789ab"}
-    ok, refused = P.verified_acks(body, "t1", {("t1", "0123456789ab"): "sonnet"})
-    assert ok == {"0123456789ab", "ba9876543210"} and not refused
-    assert P.verified_acks(body, "t2", {("t1", "0123456789ab"): "sonnet"})[1] == {"0123456789ab"}
+def test_a_cutover_baseline_must_be_a_bound_manifest(monkeypatch, tmp_path):
+    import hashlib
 
-
-def test_a_cutover_baseline_must_be_a_manifest(monkeypatch, tmp_path):
     f = tmp_path / "m.txt"
-    for body in ("", "abc\n", "# nora-pii-baseline v1\nnot-an-id\n"):
+    url = "https://example.invalid/public.git"
+    good = f"# nora-pii-baseline v2\nremote {url}\n"
+    for body in (
+        "",
+        "abc\n",
+        "# nora-pii-baseline v1\n" + "a" * 40 + "\n",  # unbound v1
+        good + "not-an-id\n",
+        "# nora-pii-baseline v2\n" + "a" * 40 + "\n",  # no remote
+        good + f"remote {url}x\n",  # two remotes
+        good.replace(url, url + "x"),  # another remote
+        f"remote {url}\n" + "a" * 40 + "\n",  # no header
+        f"# nora-pii-baseline v1\nremote {url}\n" + "a" * 40 + "\n",  # a v1 header
+    ):
         f.write_text(body)
         monkeypatch.setenv("NORA_PII_PUSH_BASELINE", str(f))
+        pin = hashlib.sha256(body.encode()).hexdigest()
+        monkeypatch.setenv("NORA_PII_PUSH_BASELINE_SHA256", pin)
         with pytest.raises(P.ConfigError):
-            P.baseline(P.Report())
+            P.baseline(P.Report(), url)
+    f.write_text(good)
+    monkeypatch.setenv("NORA_PII_PUSH_BASELINE_SHA256", hashlib.sha256(good.encode()).hexdigest())
+    monkeypatch.setattr(P, "git", lambda *a, **k: b"")
+    assert P.baseline(P.Report(), url) == set()
+    for pin in ("", "0" * 64, hashlib.sha256(b"other").hexdigest()[:16]):
+        monkeypatch.setenv("NORA_PII_PUSH_BASELINE_SHA256", pin)
+        with pytest.raises(P.ConfigError):
+            P.baseline(P.Report(), url)
 
 
 def test_ls_remote_never_waits_for_a_prompt(monkeypatch):
@@ -1202,9 +1018,6 @@ def test_ls_remote_never_waits_for_a_prompt(monkeypatch):
 # ---- the denylist builder's public keep-list (owner decision 2026-09-27)
 
 
-B = _load("pii_denylist_build")
-
-
 def test_a_kept_public_term_is_dropped_but_its_longer_siblings_stay():
     term = _invented_word().lower()
     src = [
@@ -1219,47 +1032,6 @@ def test_a_kept_public_term_is_dropped_but_its_longer_siblings_stay():
     assert term not in values and term.upper() not in values and f"/home/{term}/" not in values
     assert f"{term}-dev" in values and any(v.endswith(".ts.net") for v in values)
     assert dropped["public-keep"] == 3
-
-
-# ---- the adjudicator's read-only tool and answer parsing (r2 findings 4, 12)
-
-
-RO = _load("pii_readonly")
-A = _load("pii_adjudicate")
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["cat", "../outside.txt"],
-        ["cat", "/etc/hosts"],
-        ["cat", ".git/config"],
-        ["grep", "x", "--open-files-in-pager=touch pwned"],
-        ["show", "--output=x"],
-        ["log-S", "x", "../"],
-        ["frobnicate"],
-    ],
-)
-def test_the_read_only_tool_refuses(argv, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises((RO.Refused, ValueError)):
-        RO.cmd(argv)
-
-
-def test_the_read_only_tool_masks_denylisted_lines(tmp_path, monkeypatch):
-    deny = tmp_path / "d.txt"
-    deny.write_text(f"text\t{NAME}\n")
-    monkeypatch.setenv("NORA_PII_DENYLIST", str(deny))
-    out = RO.masked(f"a = 1\nowner: {GIVEN}\n{FAMILY}\nb = 2")
-    assert "a = 1" in out and "b = 2" in out and GIVEN not in out and FAMILY not in out
-
-
-def test_the_answer_is_read_from_structured_output_or_the_last_json():
-    good = {"verdicts": [{"id": "0123456789ab", "verdict": "fake", "reason": "r"}]}
-    assert A.parse_verdicts(good)["0123456789ab"]["verdict"] == "fake"
-    prose = "The id format is {id}. Here: " + json.dumps(good)
-    assert A.parse_verdicts(prose)["0123456789ab"]["verdict"] == "fake"
-    assert A.parse_verdicts("no json {here") == {}
 
 
 # ---- the normalisation contract itself (each layer is also covered by a
@@ -1291,3 +1063,291 @@ def test_decoding_is_capped_per_line():
 
     line = " ".join(base64.b64encode(f"plain words {i:06d}".encode()).decode() for i in range(500))
     assert len(P._b64_texts(line)) == P.LAYER_SEGMENTS
+
+
+# ---- round 3 (g): invisible and format characters inside a name
+
+_INVISIBLE = [
+    *(chr(c) for c in range(0x200B, 0x2010)),
+    *(chr(c) for c in range(0x2060, 0x2065)),
+    "﻿",
+    "­",
+    "᠎",
+    "͏",
+    "️",
+    "︀",
+    "\U000e0100",
+    "\U000e0041",
+    "\U000e007f",
+    "⁦",
+    "‮",
+    "؜",
+]
+
+
+@pytest.mark.parametrize("ch", _INVISIBLE, ids=lambda c: f"U+{ord(c):04X}")
+def test_a_name_with_an_invisible_character_inside_is_still_denied(ch):
+    spelled = f"{GIVEN[:2]}{ch}{GIVEN[2:]} {FAMILY[:3]}{ch}{ch}{FAMILY[3:]}"
+    assert "denylist:text" in _rules(f'owner = "{spelled}"\n')
+    # and as a source-code escape (`\xad`, `\u200e`, `\U000e0041`)
+    assert "denylist:text" in _rules(f"owner = {spelled!r}\n")
+    cjk = CJK[0] + ch + CJK[1:]
+    assert "denylist:text" in _rules(f"佢叫{cjk}呀\n")
+
+
+def test_invisible_characters_inside_a_number_are_dropped():
+    spread = "⁣".join(PHONE)
+    assert "denylist:number" in _rules(f'p = "{spread}"\n')
+
+
+# ---- item 3: keep-phrases, a private file of exact credit lines
+
+CREDIT = f"Character design by {NAME}, 2026"
+
+
+def _keep_scanner(tmp_path, monkeypatch, *phrases):
+    f = tmp_path / "keep.txt"
+    f.write_text("# credit lines\n" + "".join(p + "\n" for p in phrases))
+    monkeypatch.setenv("NORA_PII_KEEP_PHRASES", str(f))
+    monkeypatch.setenv("NORA_PII_PSEUDONYMS", str(tmp_path / "none.txt"))
+    deny = tmp_path / "deny.txt"
+    deny.write_text(f"text\t{NAME}\nphone\t{PHONE}\ntext\t{CJK}\n")
+    monkeypatch.setenv("NORA_PII_DENYLIST", str(deny))
+    d, err, _ = P.load_denylist()
+    return d, err
+
+
+def test_a_keep_phrase_passes_and_the_name_outside_it_fails(tmp_path, monkeypatch):
+    d, err = _keep_scanner(tmp_path, monkeypatch, CREDIT)
+    assert err is None
+    sc = P.Scanner(d, P.Allowlist(), set())
+
+    def rules(text):
+        return [f.rule for f in sc.scan_text(text, "README.md").findings]
+
+    assert rules(f"{CREDIT}\n") == []
+    assert rules(f"_{CREDIT.replace(' by ', '  by' + chr(9))}_\n") == []  # whitespace-tolerant
+    assert rules(f"{CREDIT}; contact {NAME}\n") == ["denylist:text"]  # same line, outside it
+    assert rules(f"owner: {NAME}\n") == ["denylist:text"]
+    # the phrase with its name changed is not the phrase
+    assert rules(f"Character design by {FAMILY}, {GIVEN}, 2026\n") == ["denylist:text"]
+    assert rules(f"{CREDIT.replace(NAME, NAME.upper())}\n") == ["denylist:text"]
+    assert rules(f"{CREDIT.replace('2026', '2027')}\n") == ["denylist:text"]
+
+
+def test_a_keep_phrase_does_not_mask_a_number_or_an_encoded_name_beside_it(tmp_path, monkeypatch):
+    import base64
+
+    d, _ = _keep_scanner(tmp_path, monkeypatch, CREDIT)
+    sc = P.Scanner(d, P.Allowlist(), set())
+    enc = base64.b64encode(f"owner {NAME}".encode()).decode()
+    assert [f.rule for f in sc.scan_text(f"{CREDIT} {enc}\n", "a.md").findings] == ["denylist:text"]
+    assert "denylist:number" in [f.rule for f in sc.scan_text(f"{CREDIT} {PHONE}\n", "a").findings]
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [NAME, f"{NAME}.", f"{FAMILY}, {GIVEN}", "single"],
+)
+def test_a_keep_phrase_must_be_more_than_the_name(tmp_path, monkeypatch, phrase):
+    d, err = _keep_scanner(tmp_path, monkeypatch, phrase)
+    assert d is None and err.status == "ERROR" and err.rule == "keep-phrase-invalid"
+    assert GIVEN not in err.note and FAMILY not in err.note
+
+
+def test_no_keep_phrase_file_is_off_not_an_error(tmp_path, monkeypatch):
+    d, err = _keep_scanner(tmp_path, monkeypatch, CREDIT)
+    monkeypatch.setenv("NORA_PII_KEEP_PHRASES", str(tmp_path / "absent.txt"))
+    d, err, _ = P.load_denylist()
+    assert err is None
+    assert "denylist:text" in [
+        f.rule for f in P.Scanner(d, P.Allowlist(), set()).scan_text(CREDIT, "a").findings
+    ]
+
+
+# ---- item 1 (c): the pseudonym registry, values the scrub map produced
+
+
+def _pseudo(tmp_path, monkeypatch, *values):
+    f = tmp_path / "pseudo.txt"
+    f.write_text("# scrub map output\n" + "".join(v + "\n" for v in values))
+    monkeypatch.setenv("NORA_PII_PSEUDONYMS", str(f))
+    monkeypatch.setenv("NORA_PII_KEEP_PHRASES", str(tmp_path / "none.txt"))
+    deny = tmp_path / "deny.txt"
+    deny.write_text(f"text\t{NAME}\nphone\t{PHONE}\n")
+    monkeypatch.setenv("NORA_PII_DENYLIST", str(deny))
+    d, err, _ = P.load_denylist()
+    assert err is None
+    return P.Scanner(d, P.Allowlist(), set())
+
+
+def test_a_registered_pseudonym_clears_its_shape_and_nothing_else(tmp_path, monkeypatch):
+    fake_phone = SY.phone("44", "spaced")
+    fake_mail = SY.email()
+    fake_id = SY.uuid()
+    sc = _pseudo(tmp_path, monkeypatch, fake_phone, fake_mail.upper(), fake_id.replace("-", ""))
+
+    def rules(text):
+        return [f.rule for f in sc.scan_text(text, "a.py").findings]
+
+    assert rules(f'p = "{P.digits_of(fake_phone)}"  # phone\n') == []
+    assert rules(f"to: {fake_mail}\n") == []
+    assert rules(f"uid {fake_id}\n") == []
+    assert rules(f'p = "{SY.phone("44", "spaced")}"\n') == ["phone"]  # an unregistered one
+    assert rules(f"to: {SY.email()}\n") == ["email"]
+
+
+def test_a_pseudonym_never_clears_a_denylist_hit(tmp_path, monkeypatch):
+    """Not even the shape whose digits sit inside a real number (the
+    denylist reads it as that number): the registry is asked only after."""
+    spread = f"+44 {NSN[:4]} - - - {NSN[4:]}"
+    inside = f"+44 {NSN[:4]} {NSN[4:8]}"  # a prefix of the real number: a shape only
+    sc = _pseudo(tmp_path, monkeypatch, PHONE, spread, NAME, inside)
+    for text in (
+        f'p = "{PHONE}"\n',
+        f'p = "{spread}"\n',
+        f"who = {NAME!r}\n",
+        f'p = "{inside}"\n',
+    ):
+        assert [f.rule for f in sc.scan_text(text, "a.py").findings][:1] in (
+            ["denylist:number"],
+            ["denylist:text"],
+        ), text
+
+
+def test_no_pseudonym_registry_is_off_not_an_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("NORA_PII_PSEUDONYMS", str(tmp_path / "absent.txt"))
+    monkeypatch.setenv("NORA_PII_KEEP_PHRASES", str(tmp_path / "absent2.txt"))
+    deny = tmp_path / "deny.txt"
+    deny.write_text(f"text\t{NAME}\n")
+    monkeypatch.setenv("NORA_PII_DENYLIST", str(deny))
+    d, err, _ = P.load_denylist()
+    assert err is None
+    assert _rules(f'p = "{SY.phone("44", "spaced")}"\n', P.Scanner(d, P.Allowlist(), set())) == [
+        "phone"
+    ]
+
+
+# ---- round 3 (a): an acknowledged or declared ERROR still gets every
+# denylist check the scanner can run on what it can read
+
+
+def _file_ack(job, allow=None):
+    """The id an author would acknowledge to get past the structural ERROR."""
+    errs = [f for f in _judge(job, allow) if f.status == "ERROR"]
+    assert errs, "expected a structural ERROR"
+    return errs[0].fid
+
+
+def _cjk_payload() -> bytes:
+    return f"owner = {CJK}\n".encode()
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        _cjk_payload() + b"\xff",  # one bad byte: undecodable
+        _cjk_payload().decode().encode("utf-16"),  # UTF-16 with a BOM
+        _cjk_payload().decode().encode("utf-16-le"),  # UTF-16 without one
+        b"\x1f\x8b\x08\x00garbage " + _cjk_payload(),  # a corrupt gzip
+        b"\x00\x01\x02BIN" + _cjk_payload() + b"\x00",  # a binary with a UTF-8 string inside
+    ],
+    ids=["undecodable", "utf16-bom", "utf16-le", "corrupt-gzip", "binary-utf8-string"],
+)
+def test_an_acknowledged_error_still_runs_the_denylist(data):
+    job = _job(data, path="tests/fixtures/x.bin")
+    fid = _file_ack(job)
+    fs = _judge(job, acks={fid})
+    assert "denylist:text" in [f.rule for f in fs], [(f.status, f.rule) for f in fs]
+    # declared as binary instead of acknowledged: the same
+    allow = P.parse_allowlist("binary tests/fixtures/*.bin -- test\n")
+    assert "denylist:text" in [f.rule for f in _judge(job, allow, acks={fid})]
+    assert "denylist:text" in [f.rule for f in _judge(job, allow)]
+
+
+def test_an_unacknowledged_error_reports_the_denylist_hit_too():
+    fs = _judge(_job(_cjk_payload() + b"\xff", path="tests/fixtures/x.txt"))
+    assert {(f.status, f.rule) for f in fs} == {("ERROR", "undecodable"), ("FAIL", "denylist:text")}
+
+
+def test_an_over_budget_container_is_still_read_for_the_denylist(monkeypatch):
+    import io
+    import zipfile
+
+    monkeypatch.setattr(P, "DECODE_MAX", 16)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("notes.txt", f"owner {NAME}\n" * 4)
+    allow = P.parse_allowlist("binary media/art/* -- test\n")
+    job = _job(buf.getvalue(), path="media/art/a.zip")
+    fid = _file_ack(job, allow)
+    fs = _judge(job, allow, acks={fid})
+    assert "denylist:text" in [f.rule for f in fs]
+
+
+def test_a_binary_already_holding_the_value_is_not_new():
+    old = b"\x00\x01BIN" + _cjk_payload() + b"\x00"
+    new = old + b"\x00more\x00"
+    allow = P.parse_allowlist("binary tests/fixtures/*.bin -- test\n")
+    assert _judge(_job(new, old, path="tests/fixtures/x.bin"), allow) == []
+
+
+# ---- round 3 (d): no declaration form escapes the breadth rules
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["vendor/[!.]*", "vendor/[a-z]*", "x/?", "vendor/[!.]*/*", "[a-z]*/x.txt", "d/*[!/]"],
+)
+def test_a_bracket_wildcard_is_as_broad_as_a_star(pattern):
+    assert P.too_broad(pattern)
+    for kind in ("path-exempt", "binary", "symlink", "gitlink", "large"):
+        with pytest.raises(P.AllowlistError):
+            P.parse_allowlist(f"{kind} {pattern} -- why\n")
+    with pytest.raises(P.AllowlistError):
+        P.parse_allowlist(f"coords {pattern} sha256={'a' * 16} -- why\n")
+
+
+@pytest.mark.parametrize(
+    "regex",
+    [
+        ".*",
+        ".+",
+        r"\d+",
+        r"\d{8,15}",
+        r"44\d{10}",
+        r"852\d{8}",
+        r"[0-9a-f]{32}",
+        r".*@gmail\.com",
+        r"[^@]+@[^@]+",
+        r"(?:85[23])?\d{8}",
+    ],
+)
+def test_a_value_re_that_matches_generic_values_is_refused(regex):
+    with pytest.raises(P.AllowlistError) as exc:
+        P.parse_allowlist(f"value-re {regex} -- why\n")
+    assert "too broad" in str(exc.value)
+
+
+def test_the_repo_s_own_declarations_are_narrow():
+    P.parse_allowlist((ROOT / ".githooks" / "pii-allowlist.txt").read_text())
+    P.parse_allowlist(r"value-re (852)?900001\d\d -- the pseudonym range" + "\n")
+
+
+def test_a_refused_declaration_never_echoes_its_pattern():
+    with pytest.raises(P.AllowlistError) as exc:
+        P.parse_allowlist(f"path-exempt {GIVEN}/[a-z]* -- why\n")
+    assert GIVEN not in str(exc.value)
+    with pytest.raises(P.AllowlistError) as exc:
+        P.parse_allowlist(f"value-re ({GIVEN}|.*) -- why\n")
+    assert GIVEN not in str(exc.value)
+
+
+def test_a_too_broad_declaration_is_reported_without_its_pattern(capsys):
+    pattern = f"people/{GIVEN}-{FAMILY}/*"
+    allow = P.parse_allowlist(f"binary {pattern} -- why\n")
+    paths = {f"people/{GIVEN}-{FAMILY}/f{i}.bin" for i in range(201)}
+    kept, errs = P._capped(allow.entries, paths)
+    assert kept == [] and [e.rule for e in errs] == ["allowlist-too-broad"]
+    P.emit(P.Report(findings=errs), "staged", 0.0)
+    assert GIVEN not in capsys.readouterr().err

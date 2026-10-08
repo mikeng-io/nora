@@ -10,13 +10,26 @@
 # because silence there would read as "everything checked out".
 #
 # Path resolution and `python3` (not `uv run`) match .githooks/commit-msg —
-# see that file for why (linked-worktree + stdlib-only).
+# see that file for why (linked-worktree + stdlib-only), for why a symlink on
+# a checker's path is refused, and for why the identifier scan runs FIRST:
+# the subject checker prints subjects as written.
 set -euo pipefail
 
 TOPLEVEL="$(git rev-parse --show-toplevel)"
 CHECKER="$TOPLEVEL/scripts/check_commit_subject.py"
+SCANNER="$TOPLEVEL/scripts/pii_scan.py"
+for p in "$TOPLEVEL/scripts" "$SCANNER" "$TOPLEVEL/scripts/pii_cjk_fold.py" "$CHECKER"; do
+  if [ -L "$p" ]; then
+    echo "pre-push: $p is a symlink - refusing to run a checker that may not be this repo's" >&2
+    exit 1
+  fi
+done
 if [ ! -f "$CHECKER" ]; then
   echo "pre-push: checker not found at $CHECKER - refusing to pass unverified" >&2
+  exit 1
+fi
+if [ ! -f "$SCANNER" ]; then
+  echo "pre-push: identifier scanner not found at $SCANNER - refusing to pass unverified" >&2
   exit 1
 fi
 
@@ -29,7 +42,7 @@ check_one() {  # $1 = sha
   subject="$(git log -1 --format=%s "$sha")"
   msgfile="$(mktemp)"
   printf '%s\n' "$subject" > "$msgfile"
-  if ! python3 "$CHECKER" "$msgfile"; then
+  if ! python3 -I -S "$CHECKER" "$msgfile"; then
     echo "  offending commit: $sha" >&2
     failed=1
   fi
@@ -42,8 +55,29 @@ check_one() {  # $1 = sha
 # the parse and put a sha in the wrong variable. `remote_ref` was already
 # unused; `remote_sha` became unused when the range stopped being derived from
 # it (#315), and it is kept named because the line documents the protocol.
-# stdin is read once and kept: the identifier scan below needs the same lines.
+# stdin is read once and kept: the identifier scan and the subject loop both read it.
 push_lines="$(cat)"
+
+# Identifier backstop (#283): every blob, message and author identity, and
+# every tag message and tagger, that the push gives the TARGET remote. The
+# scanner asks that remote what it already has (`git ls-remote "$2"`) instead
+# of trusting local remote-tracking refs, which go stale, can be forged, and
+# describe a different remote when pushing elsewhere; unreachable is an ERROR.
+# This is what catches a commit made with --no-verify on commit, before the
+# hooks were installed, or one whose payload a LATER commit `git rm`-ed: the
+# object is still in the push. `git push --no-verify` skips this too, and
+# nothing server-side repeats it (.githooks/README.md).
+#
+# It runs BEFORE the subject check, and a failure skips that check: the
+# subject checker prints subjects as written, and a subject can carry the
+# very value the scan masks (round 3, finding e).
+pii_rc=0
+printf '%s\n' "$push_lines" | python3 -I -S "$SCANNER" push "$1" "$2" || pii_rc=$?
+if [ "$pii_rc" -ne 0 ]; then
+  echo "pre-push: commit subjects not checked until the identifier finding above is fixed" >&2
+  exit 1
+fi
+
 # shellcheck disable=SC2034
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ -z "$local_ref" ] && continue
@@ -86,26 +120,5 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     check_one "$sha"
   done
 done <<< "$push_lines"
-
 echo "pre-push: checked $checked commit subject(s)"
-
-# Identifier backstop (#283): every blob, message and author identity, and
-# every tag message and tagger, that the push gives the TARGET remote. The
-# scanner asks that remote what it already has (`git ls-remote "$2"`) instead
-# of trusting local remote-tracking refs, which go stale, can be forged, and
-# describe a different remote when pushing elsewhere; unreachable is an ERROR.
-# This is what catches a commit made with --no-verify on commit, before the
-# hooks were installed, or one whose payload a LATER commit `git rm`-ed: the
-# object is still in the push. `git push --no-verify` skips this too, and
-# nothing server-side repeats it (.githooks/README.md).
-SCANNER="$TOPLEVEL/scripts/pii_scan.py"
-if [ ! -f "$SCANNER" ]; then
-  echo "pre-push: identifier scanner not found at $SCANNER - refusing to pass unverified" >&2
-  exit 1
-fi
-pii_rc=0
-printf '%s\n' "$push_lines" | python3 "$SCANNER" push "$1" "$2" || pii_rc=$?
-if [ "$pii_rc" -ne 0 ]; then
-  failed=1
-fi
 exit "$failed"

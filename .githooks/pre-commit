@@ -8,13 +8,21 @@
 # commit. See scripts/pii_scan.py and .githooks/README.md.
 #
 # Path resolution and `python3` (not `uv run`) match .githooks/commit-msg -
-# see that file for why (linked-worktree + stdlib-only).
+# see that file for why (linked-worktree + stdlib-only), and for why a
+# symlink anywhere on the scanner's path is refused and it runs `-I -S`.
 set -euo pipefail
 
-SCANNER="$(git rev-parse --show-toplevel)/scripts/pii_scan.py"
+TOPLEVEL="$(git rev-parse --show-toplevel)"
+SCANNER="$TOPLEVEL/scripts/pii_scan.py"
+for p in "$TOPLEVEL/scripts" "$SCANNER" "$TOPLEVEL/scripts/pii_cjk_fold.py"; do
+  if [ -L "$p" ]; then
+    echo "pre-commit: $p is a symlink - refusing to run a scanner that may not be this repo's" >&2
+    exit 1
+  fi
+done
 if [ ! -f "$SCANNER" ]; then
   echo "pre-commit: identifier scanner not found at $SCANNER - refusing to pass unverified" >&2
   echo "  are you on a branch without it? (see .githooks/README.md)" >&2
   exit 1
 fi
-exec python3 "$SCANNER" staged
+exec python3 -I -S "$SCANNER" staged

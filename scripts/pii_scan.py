@@ -16,8 +16,8 @@ Three verdicts, three exit codes, never merged:
 
     0  PASS   everything it was asked to look at, it looked at, and found nothing
     1  FAIL   it found something
-    2  ERROR  it could not look (no denylist, undecodable blob, symlink, a judge
-              that did not answer). An ERROR is never a PASS.
+    2  ERROR  it could not look (no denylist, undecodable blob, symlink, an
+              unreachable remote). An ERROR is never a PASS.
 
 What it knows, in the order it is applied:
 
@@ -27,23 +27,25 @@ What it knows, in the order it is applied:
    (`~/.config/nora/pii-denylist.txt`, or `$NORA_PII_DENYLIST`). Matched after
    normalisation (case, separators, full-width digits, dashless UUIDs, JID and
    bare-local phone forms, base64url). A hit is a hard FAIL: it cannot be
-   acknowledged, and it is never sent to any model. A missing denylist is an
-   ERROR unless `NORA_PII_DENYLIST_ABSENT=<reason>` says why this machine has
-   none; the reason is printed on every run.
+   acknowledged or declared away. A missing denylist is an ERROR unless
+   `NORA_PII_DENYLIST_ABSENT=<reason>` says why this machine has none; the
+   reason is printed on every run.
 2. **Shape detectors** for what the denylist does not know: phone numbers (any
    country), emails, platform snowflakes, UUIDs, WhatsApp JIDs, Signal group
    ids, Tailscale names and addresses, GPS in media metadata, and COORDINATE
    TABLES read as number fields and scored on dwell — fixes per place, and
    dwell rows x dwell places — not on a literal count (#283 criterion 1).
-3. **An optional commit judge** (`NORA_PII_JUDGE=laya|jev`, off by default;
-   `scripts/pii_judge.py`): it reads the whole commit at commit-msg time and
-   can RAISE a finding, never clear one.
 
-A finding that is not a denylist hit and not an ERROR can be decided by
-`scripts/pii_adjudicate.py`: a read-only coding agent reads the staged change
-and the repository's history and answers real / fake / unsure per finding.
-Only `fake` becomes an acknowledgement, recorded as a `PII-Ack:` trailer with
-the agent's reason; `real` and `unsure` stay blocked.
+Deterministic throughout: no model judges anything. A shape finding (not a
+denylist hit, not an ERROR) clears in exactly three ways: a narrow
+declaration the remote already has (below), a human acknowledgement
+(`NORA_PII_ACK`), or a value listed in the operator's private pseudonym
+registry (`~/.config/nora/pii-pseudonyms.txt`, `$NORA_PII_PSEUDONYMS`): values
+the scrub map itself produced, known fake. A denylist hit clears in none of
+them. The one sanctioned way past the denylist is an exact keep-phrase
+(`~/.config/nora/pii-keep-phrases.txt`, `$NORA_PII_KEEP_PHRASES`): a whole
+multi-word phrase -- a creator credit line -- is masked before matching, and
+anything else on the line is still matched.
 
 Only what a change ADDS is judged: a value already present in the parent's copy
 of the file, as often, is not new. That is what lets the ~2,000 residue hits
@@ -77,7 +79,6 @@ import fnmatch
 import hashlib
 import html
 import io
-import json
 import lzma
 import os
 import re
@@ -91,11 +92,14 @@ import zlib
 from collections import Counter
 from dataclasses import dataclass, field
 
-# A hook must not leave files behind: importing the fold table or the judge
-# module would otherwise write scripts/__pycache__/ into the worktree, where
-# `git add -A` picks it up. Their bytecode is cached outside it instead.
-if not sys.pycache_prefix:
-    sys.pycache_prefix = os.path.join(os.environ.get("TMPDIR") or "/tmp", "nora-pii-pycache")  # noqa: S108
+# A hook must not leave files behind, and must not run bytecode it did not
+# compile: importing the fold table would otherwise write scripts/__pycache__/
+# into the worktree (where `git add -A` picks it up), and a shared cache such
+# as the old /tmp/nora-pii-pycache can be seeded with a .pyc that runs in
+# place of the repo's source (round 3, finding e). Nothing is written, and the
+# prefix points where no cache can exist, so nothing is read either.
+sys.dont_write_bytecode = True
+sys.pycache_prefix = os.path.join(os.devnull, "nora-pii-no-pycache")
 
 PASS, FAIL, ERROR = 0, 1, 2
 
@@ -136,10 +140,14 @@ def configure() -> None:
 
 
 # Project identity stays; application identity goes (operator decision
-# 2026-09-10, scrub/README.md). These are the project: the commit author, the
+# 2026-09-10, scrub/README.md). These are the project's PUBLIC tokens: the
 # GitHub org and the domain. They are removed from the denylist on load and
-# never reported by the email detector.
-PROJECT_IDENTITY = frozenset({"miles novak", "mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"})
+# never reported by the email detector. No personal name belongs here: the
+# history rewrite replaces real names, so a name in this literal would change
+# the hook's own source under it, and would exempt a person from the denylist.
+# A credit line that must keep a real name is a keep-phrase, in a private
+# file outside the repo (NORA_PII_KEEP_PHRASES).
+PROJECT_IDENTITY = frozenset({"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"})
 PROJECT_EMAIL_DOMAINS = frozenset({"mikeng.io"})
 
 ACK_TRAILER = "PII-Ack"
@@ -160,7 +168,7 @@ class Finding:
     ackable: bool = True
     note: str = ""
     key: str = ""  # normalised value; never printed
-    text: str = ""  # the full line; never printed, only hashed or sent to a judge
+    text: str = ""  # the full line; never printed, only hashed
     state: str = ""  # "", ACKED, CLEARED
 
     def render(self) -> str:
@@ -189,14 +197,26 @@ def mask(value: str, *, full: bool = False) -> str:
 # --------------------------------------------------------------------------
 # Normalisation
 
-_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"), None)
+# Characters that draw nothing: every format (Cf) character -- zero-width
+# spaces and joiners, bidi marks, embeddings and isolates, word joiner and the
+# invisible operators, soft hyphen, Mongolian vowel separator, BOM, the
+# Arabic letter mark, the tag block -- plus the combining grapheme joiner,
+# variation selectors (both blocks), Mongolian free variation selectors,
+# Khmer inherent vowels and Hangul fillers. Any of them inside a name split
+# it into tokens the denylist did not know (round 3, finding g).
+_INVISIBLE = re.compile(
+    "[\u00ad\u034f\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u115f\u1160"
+    "\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164"
+    "\ufe00-\ufe0f\ufeff\uffa0\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f"
+    "\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]"
+)
 
 
 def normalise_line(line: str) -> str:
-    """NFKC folds full-width digits and letters; zero-width characters are
-    dropped so one cannot be slipped inside a number. Applied per line, so the
-    line count (and every reported line number) is unchanged."""
-    return unicodedata.normalize("NFKC", line).translate(_ZERO_WIDTH)
+    """NFKC folds full-width digits and letters; invisible characters are
+    dropped so one cannot be slipped inside a name or a number. Applied per
+    line, so the line count (and every reported line number) is unchanged."""
+    return _INVISIBLE.sub("", unicodedata.normalize("NFKC", line))
 
 
 def normalise_text(text: str) -> str:
@@ -246,7 +266,14 @@ def match_view(text: str) -> str:
 
 
 def _json_unescape(s: str) -> str:
+    """JSON / JavaScript `\\uXXXX` and Python's `\\xNN` and `\\UXXXXXXXX`."""
     out = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)
+    out = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), out)
+    out = re.sub(
+        r"\\U([0-9a-fA-F]{8})",
+        lambda m: chr(int(m.group(1), 16)) if int(m.group(1), 16) < 0x110000 else m.group(),
+        out,
+    )
     try:
         return out.encode("utf-16", "surrogatepass").decode("utf-16")
     except UnicodeError:
@@ -322,7 +349,7 @@ def decoded_layers(line: str, depth: int = 2) -> list[str]:
         nxt = []
         for cur in todo:
             cands = []
-            if "\\u" in cur:
+            if "\\u" in cur or "\\x" in cur or "\\U" in cur:
                 cands.append(_json_unescape(cur))
             if "%" in cur:
                 cands.append(urllib.parse.unquote_plus(cur, errors="replace"))
@@ -384,6 +411,11 @@ class Denylist:
     uuids: set = field(default_factory=set)
     hexes: set = field(default_factory=set)
     b64: list = field(default_factory=list)
+    # the operator's private lists (load_private_lists): exact credit lines
+    # masked before denylist matching, and known-fake values the scrub map
+    # produced, which clear a SHAPE finding (never a denylist hit)
+    keep: list = field(default_factory=list)  # compiled keep-phrase patterns
+    pseudonyms: set = field(default_factory=set)  # normalise_key()ed values
 
     @property
     def empty(self) -> bool:
@@ -479,7 +511,94 @@ def parse_denylist(text: str, source: str = "") -> Denylist:
     return d
 
 
+DEFAULT_KEEP_PHRASES = os.path.join("~", ".config", "nora", "pii-keep-phrases.txt")
+DEFAULT_PSEUDONYMS = os.path.join("~", ".config", "nora", "pii-pseudonyms.txt")
+
+
 def load_denylist() -> tuple[Denylist | None, Finding | None, str]:
+    """Returns (denylist, error, notice): the denylist with the operator's
+    private keep-phrases and pseudonym registry attached."""
+    d, err, notice = _load_denylist_file()
+    if d is None:
+        return d, err, notice
+    err = load_private_lists(d)
+    if err is not None:
+        return None, err, notice
+    return d, None, notice
+
+
+def _private_lines(env: str, default: str) -> tuple[list[str] | None, str]:
+    """(non-comment lines, path) of an optional private file; None when it
+    does not exist -- the feature is off, which only makes the scan stricter.
+    A file that exists and cannot be read is an OSError/UnicodeDecodeError."""
+    path = os.path.expanduser(os.environ.get(env) or default)
+    if not os.path.exists(path):
+        return None, path
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    lines = [normalise_line(x).strip() for x in text.splitlines()]
+    return [x for x in lines if x and not x.startswith("#")], path
+
+
+def keep_phrase_pattern(phrase: str) -> re.Pattern:
+    """The exact phrase, case and punctuation as written, any run of
+    whitespace (a line break included) between its words, and not glued to a
+    longer word at either end."""
+    words = [re.escape(w) for w in phrase.split()]
+    # a letter or digit, not `_`: `_credit line_` is Markdown emphasis
+    lead = r"(?<![^\W_])" if re.match(r"[^\W_]", phrase) else ""
+    tail = r"(?![^\W_])" if re.search(r"[^\W_]$", phrase) else ""
+    return re.compile(lead + r"\s+".join(words) + tail)
+
+
+def load_private_lists(d: Denylist) -> Finding | None:
+    """Attach the keep-phrases and the pseudonym registry to `d`. Both are
+    optional private files outside the repo: missing = off. A keep-phrase
+    must be several words and must hold something of its own beyond the
+    denylisted values in it, or it would be a way to switch a name off; a
+    bad one is an ERROR that never echoes it."""
+    try:
+        phrases, kpath = _private_lines("NORA_PII_KEEP_PHRASES", DEFAULT_KEEP_PHRASES)
+        values, _ppath = _private_lines("NORA_PII_PSEUDONYMS", DEFAULT_PSEUDONYMS)
+    except (OSError, UnicodeDecodeError) as exc:
+        return Finding(
+            "ERROR",
+            "private-list-unreadable",
+            "<config>",
+            0,
+            "",
+            "",
+            ackable=False,
+            note=f"{type(exc).__name__}: a keep-phrase or pseudonym file exists and cannot be read",
+        )
+    bare = Scanner(d, Allowlist(), set())
+    for n, phrase in enumerate(phrases or [], 1):
+        blanked = phrase
+        for s, e, _k, _key in bare.denylist_hits(phrase):
+            blanked = blanked[:s] + " " * (e - s) + blanked[e:]
+        own = [t for t in re.findall(r"\w+", blanked) if len(t) >= 2]
+        if len(phrase.split()) < 2 or not own:
+            return Finding(
+                "ERROR",
+                "keep-phrase-invalid",
+                kpath,
+                n,
+                mask(phrase, full=True),
+                "",
+                ackable=False,
+                note="a keep-phrase is an exact multi-word line that holds more than the "
+                "denylisted value in it (a credit line); this one would switch the value off",
+            )
+        d.keep.append(keep_phrase_pattern(phrase))
+    for v in values or []:
+        key = normalise_key(v)
+        d.pseudonyms.add(key)
+        if re.fullmatch(r"[+()\d \-.]+", v):
+            d.pseudonyms.update(phone_forms(digits_of(v)))
+    return None
+
+
+def _load_denylist_file() -> tuple[Denylist | None, Finding | None, str]:
     """Returns (denylist, error, notice). Missing or empty is an ERROR unless
     NORA_PII_DENYLIST_ABSENT names a reason."""
     path = os.path.expanduser(os.environ.get("NORA_PII_DENYLIST") or DEFAULT_DENYLIST)
@@ -596,11 +715,13 @@ def parse_allowlist(text: str) -> Allowlist:
             )
         kind, pattern = parts[0], parts[1]
         if kind not in ("value", "value-re") and too_broad(pattern):
+            # the pattern is not echoed: a declaration can name a person's
+            # directory, and this message lands in terminals and transcripts
             raise AllowlistError(
-                f"{ALLOWLIST_PATH}:{n}: `{pattern}` is too broad: name the file, or a directory at "
-                "least two levels deep, or a narrow pattern such as `dir/*.png` (review of #591 "
-                "r2: "
-                "one `path-exempt *` switched everything off)"
+                f"{ALLOWLIST_PATH}:{n}: the {kind} pattern is too broad: name the file, or a "
+                "directory at least two levels deep, or a narrow pattern such as `dir/*.png` "
+                "(review of #591 r2: one `path-exempt *` switched everything off; round 3: a "
+                "`[...]` class is a wildcard too)"
             )
         if kind == "value":
             pattern = body.split(None, 1)[1].strip()  # a value may hold spaces: `+44 7700 ...`
@@ -616,9 +737,16 @@ def parse_allowlist(text: str) -> Allowlist:
             a.values.add(normalise_key(pattern))
         elif kind == "value-re":
             try:
-                a.value_res.append(re.compile(pattern))
+                rx = re.compile(pattern)
             except re.error as exc:
                 raise AllowlistError(f"{ALLOWLIST_PATH}:{n}: bad regex: {exc}") from exc
+            if any(rx.fullmatch(p) for p in breadth_probes()):
+                raise AllowlistError(
+                    f"{ALLOWLIST_PATH}:{n}: the value-re is too broad: it matches generic "
+                    "phone numbers, ids or addresses, not one placeholder range (round 3: "
+                    "`.*` or `\\d+` cleared every shape). Anchor it on the range's own digits."
+                )
+            a.value_res.append(rx)
         a.entries.append((kind, pattern, extra, reason.strip()))
     return a
 
@@ -628,7 +756,8 @@ MAX_DECL_FILES = 200  # a declaration matching more tracked files than this is a
 
 def too_broad(pattern: str) -> bool:
     """`*`, `**`, a leading wildcard, or a bare wildcard directly under a
-    top-level directory (`vendor/*`) exempt too much to be a declaration."""
+    top-level directory (`vendor/*`) exempt too much to be a declaration. A
+    `[...]` class is a wildcard like `?`: `vendor/[!.]*` is `vendor/*`."""
     if "**" in pattern:
         return True
     parts = [p for p in pattern.split("/") if p]
@@ -641,9 +770,57 @@ def too_broad(pattern: str) -> bool:
         return False  # a literal path
     if lead == 0:
         return True
-    wild = parts[lead]
+    wild = re.sub(r"\[[^\]]*\]?", "", parts[lead])
     bare = set(wild) <= set("*?")
     return bare and lead < 2
+
+
+_PROBES: list[str] = []
+
+
+def breadth_probes() -> list[str]:
+    """Generic normalised values a placeholder declaration must NOT match:
+    numbers of every length 7-15 under common country codes and none, hex
+    ids, mailbox addresses at common providers, and plain words. Generated
+    from a fixed seed, so the rule is the same on every machine; a `value-re`
+    that fullmatches any of them declares a CLASS of values, not a range."""
+    if _PROBES:
+        return _PROBES
+    import random
+
+    r = random.Random(283)  # noqa: S311 - a fixed, public probe set, not a secret
+
+    def digits(n: int) -> str:
+        return "".join(r.choice("0123456789") for _ in range(n))
+
+    for cc in (
+        "",
+        "1",
+        "7",
+        "33",
+        "34",
+        "39",
+        "44",
+        "49",
+        "61",
+        "65",
+        "81",
+        "82",
+        "86",
+        "91",
+        "852",
+        "853",
+        "886",
+    ):
+        for n in range(7, 16):
+            if n > len(cc) + 3:
+                _PROBES.extend(cc + digits(n - len(cc)) for _ in range(3))
+    alnum = "abcdefghijklmnopqrstuvwxyz0123456789"
+    for dom in ("gmail.com", "outlook.com", "yahoo.com", "icloud.com", "proton.me", "qq.com"):
+        _PROBES.append("".join(r.choice(alnum) for _ in range(8)) + "@" + dom)
+    _PROBES.extend("".join(r.choice("0123456789abcdef") for _ in range(32)) for _ in range(4))
+    _PROBES.extend("".join(r.choice(alnum) for _ in range(n)) for n in (1, 4, 12, 43))
+    return _PROBES
 
 
 def normalise_key(value: str) -> str:
@@ -1086,6 +1263,51 @@ def extract_strings(data: bytes) -> str:
     return "\n".join(parts)
 
 
+# Printable runs of valid UTF-8, multi-byte sequences included: a CJK name
+# inside a binary, or in a text file with one bad byte, is text the
+# denylist can read (round 3, finding a: extract_strings is ASCII-only).
+_UTF8_RUN = re.compile(
+    rb"(?:[\x20-\x7e\t]|[\xc2-\xdf][\x80-\xbf]|[\xe0-\xef][\x80-\xbf]{2}"
+    rb"|[\xf0-\xf4][\x80-\xbf]{3}){4,}"
+)
+
+
+def _utf16_text(data: bytes) -> str:
+    """A UTF-16 blob decoded whole: by its BOM, else by where the NULs of
+    its ASCII sit (odd offsets: little-endian)."""
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16", "replace")
+    head = data[:8192]
+    le = head[1::2].count(0) >= head[0::2].count(0)
+    return data.decode("utf-16-le" if le else "utf-16-be", "replace")
+
+
+def readable_spellings(data: bytes, why: str, inner: list[str]) -> str:
+    """Everything the scanner can read in a blob it could not decode as
+    text, for the denylist alone: ASCII and UTF-16 strings, UTF-8 runs, the
+    whole blob as UTF-16 when it is UTF-16, and whatever its containers
+    yielded (`inner`, empty when they could not be opened)."""
+    parts = [extract_strings(data)]
+    parts += [r.decode("utf-8", "replace") for r in _UTF8_RUN.findall(data) if len(r) >= 6]
+    if why == "utf16":
+        parts.append(_utf16_text(data))
+    return "\n".join(parts + list(inner))
+
+
+def spellings_of(blob: bytes | None) -> str:
+    """readable_spellings for an old version (a parent's copy)."""
+    if blob is None:
+        return ""
+    text, why = _decode(blob)
+    if text is not None:
+        return text
+    try:
+        inner = expand_binary(blob)[0]
+    except DecodeError:
+        inner = []
+    return readable_spellings(blob, why, inner)
+
+
 def _tiff_has_gps(buf: bytes, base: int) -> bool:
     try:
         endian = buf[base : base + 2]
@@ -1336,16 +1558,26 @@ class Scanner:
         spelling: the text as written (folded: dashes, spaces, look-alike
         letters, Traditional/Simplified), and each encoded layer of each line
         decoded (JSON escapes, URL and HTML encoding, base64). A hit in a
-        decoded layer is reported on its line."""
+        decoded layer is reported on its line. Keep-phrases are masked out
+        first, in the text and in every decoded layer: only the exact
+        phrase; the rest of its line is matched as usual."""
+        text = self.mask_keep(text)
         hits = self._direct_hits(match_view(text))
         pos = 0
         for line in text.split("\n"):
             if len(line) >= 6:
                 for layer in decoded_layers(line):
-                    for _s, _e, kind, key in self._direct_hits(match_view(layer)):
+                    for _s, _e, kind, key in self._direct_hits(match_view(self.mask_keep(layer))):
                         hits.append((pos, pos + len(line), kind, key))
             pos += len(line) + 1
         return hits
+
+    def mask_keep(self, text: str) -> str:
+        """Every keep-phrase occurrence blanked to spaces (line breaks kept),
+        so offsets and line numbers do not move."""
+        for rx in self.deny.keep:
+            text = rx.sub(lambda m: re.sub(r"[^\n]", " ", m.group()), text)
+        return text
 
     def _direct_hits(self, t: str) -> list[tuple[int, int, str, str]]:
         d = self.deny
@@ -1423,23 +1655,6 @@ class Scanner:
                         break
         return hits
 
-    def withheld_lines(self, lines: list[str]) -> set[int]:
-        """Indices of the lines a model must not see: every line that any
-        denylist match touches, with the lines read TOGETHER (a name split
-        across two lines is still that name) and each line decoded, exactly
-        as the scanner reads them (review of #591 r2, finding 8)."""
-        text = normalise_text("\n".join(lines))
-        idx = LineIndex(text)
-        out: set[int] = set()
-        for s, e, _k, _key in self.denylist_hits(text):
-            out.update(range(idx.line(s) - 1, idx.line(max(s, e - 1))))
-        return out
-
-    def contains_denylisted(self, text: str) -> bool:
-        """True when any spelling of any denylisted value is in `text`: the
-        test every line must pass before a model may see it."""
-        return bool(self.denylist_hits(normalise_text(text)))
-
     def denied_digits(self, digits: str) -> bool:
         """A shape's digits that contain, or sit inside, a denylisted number."""
         d = self.deny
@@ -1447,6 +1662,18 @@ class Scanner:
             return False
         return bool(d.number_rx and d.number_rx.search(digits)) or any(
             digits in x for x in d.numbers
+        )
+
+    def cleared(self, key: str) -> bool:
+        """A shape's value that is known not to be real: a placeholder from
+        identity.example.toml, a declared `value`/`value-re`, or a pseudonym
+        the scrub map produced. Asked only AFTER the denylist has had its say
+        on the same digits, so none of them can clear a real number."""
+        return (
+            key in self.placeholders
+            or self.allow.value_allowed(key)
+            or key in self.deny.pseudonyms
+            or key.lower() in self.deny.pseudonyms
         )
 
     # shapes -------------------------------------------------------------------
@@ -1474,8 +1701,6 @@ class Scanner:
                 if _shape_placeholder(rule, value, lines[ln - 1]):
                     continue
                 key = normalise_key(value if rule != "whatsapp-jid" else value.split("@")[0])
-                if key in self.placeholders or self.allow.value_allowed(key):
-                    continue
                 out.append((s, e, rule, key))
         # bare digit runs are a phone only where the line says so
         for n, line in enumerate(lines):
@@ -1489,7 +1714,7 @@ class Scanner:
                 spans.add(s, e)
                 if _DATEISH.match(m.group()):
                     continue
-                if placeholder_digits(d) or d in self.placeholders or self.allow.value_allowed(d):
+                if placeholder_digits(d):
                     continue
                 out.append((s, e, "phone", d))
         for n, line in enumerate(lines):
@@ -1499,9 +1724,7 @@ class Scanner:
                 s, e = offsets[n] + m.start(), offsets[n] + m.end()
                 if free(s, e) and not placeholder_hex(m.group()):
                     spans.add(s, e)
-                    key = m.group().lower()
-                    if key not in self.placeholders and not self.allow.value_allowed(key):
-                        out.append((s, e, "uuid", key))
+                    out.append((s, e, "uuid", m.group().lower()))
         for n, line in enumerate(lines):
             if "group" in line.lower():
                 for m in _SIGNAL_URLSAFE.finditer(line):
@@ -1556,6 +1779,8 @@ class Scanner:
                             text=lines[ln - 1],
                         )
                     )
+                    continue
+                if self.cleared(key):
                     continue
                 findings.append(
                     Finding(
@@ -1671,20 +1896,11 @@ class Report:
     findings: list = field(default_factory=list)
     notices: list = field(default_factory=list)
     scanned: int = 0
-    # for the commit judge: per file, the added lines and two lines of context
-    # either side, [(path, [(line_no, "+" | " ", text)])]; and the message lines
-    views: list = field(default_factory=list)
-    message_lines: list = field(default_factory=list)
-    # True when a text holds any denylisted value in any spelling; nothing
-    # for which it is True (or for which it is unset) ever reaches a model
-    guard: object = None
-    guard_lines: object = None  # Scanner.withheld_lines, over a block of lines
 
     def extend(self, other: Report) -> None:
         self.findings += other.findings
         self.notices += other.notices
         self.scanned += other.scanned
-        self.views += other.views
 
 
 def _decode(data: bytes) -> tuple[str | None, str]:
@@ -1769,6 +1985,37 @@ def _coords_findings(
     ]
 
 
+def _denylist_in_unreadable(
+    sc: Scanner, path: str, blob_id: str, spellings: str, olds: list
+) -> list[Finding]:
+    """Denylist hits in what could be read of an undecodable blob that are
+    NEW against every parent's readable copy (a binary that already held
+    the value does not block an unrelated edit, like text)."""
+
+    def keys(t: str) -> Counter:
+        return Counter((k, key) for _s, _e, k, key in sc.denylist_hits(normalise_text(t)))
+
+    now = keys(spellings)
+    new: Counter | None = None
+    for old in olds or [None]:
+        net = now - keys(spellings_of(old))
+        new = net if new is None else (new & net)
+    return [
+        Finding(
+            "FAIL",
+            f"denylist:{kind}",
+            path,
+            0,
+            mask(key, full=True),
+            finding_id(path, f"<blob {blob_id}> denylist:{kind} {key}"),
+            ackable=False,
+            key=key,
+            note="in what could be read of a blob that is not text",
+        )
+        for kind, key in sorted(new or Counter())
+    ]
+
+
 def path_findings(sc: Scanner, path: str) -> list[Finding]:
     """The path's own components -- directories and file name -- through the
     same denylist, normalisation and shape rules as content (review of #591
@@ -1847,6 +2094,7 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
         return rep
     text, why = _decode(data)
     binary = text is None
+    unread: list[Finding] = []
     if binary:
         try:
             inner_texts, gps = expand_binary(data)
@@ -1875,7 +2123,14 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
                     note="strip EXIF / ©xyz before committing",
                 )
             )
+        # Round 3 (a): what it could not decode, it still reads for the
+        # denylist -- before any ERROR returns, and whether or not the ERROR
+        # is declared or acknowledged: neither ever suppresses a denylist hit.
+        unread = _denylist_in_unreadable(
+            sc, path, blob_id, readable_spellings(data, why, inner_texts), job.olds
+        )
         if not (allow.path_has("binary", raw_path) or fallback):
+            rep.findings += unread
             rep.findings.append(
                 Finding(
                     "ERROR",
@@ -1937,32 +2192,15 @@ def judge_blob(job: BlobJob, sc: Scanner, allow: Allowlist, acks: set[str]) -> R
                 f.line = 0
                 f.fid = finding_id(path, f"<blob {blob_id}> {f.rule} {f.key}")
             rep.findings.append(f)
+    have = {(f.rule, f.key) for f in rep.findings}
+    rep.findings += [f for f in unread if (f.rule, f.key) not in have]
 
     if not binary and shapes and union:
         geo = bool(_GEO_WORDS.search(text))
         probe = scan_coords([normalise_line(raw_new[n - 1]) for n in union], geo=geo)
         if probe.points:
             rep.findings += _coords_findings(path, text, raw_olds, added, geo, allow, raw_path)
-    if not binary:
-        judged = {n for n in added if _judgeable(raw_new[n - 1])}
-        shown = sorted(
-            {k for n in judged for k in range(max(1, n - 2), min(len(raw_new), n + 2) + 1)}
-        )
-        if judged:
-            rep.views.append(
-                (
-                    path,
-                    [
-                        (k, "+" if k in judged else " ", normalise_line(raw_new[k - 1]))
-                        for k in shown
-                    ],
-                )
-            )
     return rep
-
-
-def _judgeable(line: str) -> bool:
-    return len(line.strip()) >= 4 and bool(re.search(r"\w", line))
 
 
 # --------------------------------------------------------------------------
@@ -1979,14 +2217,51 @@ def load_context(parent: str | None) -> tuple[Allowlist, set[str], list[Finding]
     )
 
 
+def _decl_lines(raw: bytes | None) -> set[str]:
+    if raw is None:
+        return set()
+    lines = raw.decode("utf-8", "replace").splitlines()
+    return {x.strip() for x in lines if x.strip() and not x.strip().startswith("#")}
+
+
+def carried_declarations(own: bytes | None, published: list) -> list[str]:
+    """Declaration lines the change's own parent still carries AND the remote
+    already holds at one of its tips. A rebase rewrites the commit that added
+    a declaration, so the rebased branch's first-parent line no longer
+    reaches it -- but the remote does have it, on the branch's old tip, and
+    "pushed first" is exactly that (round 3, finding b). A line the parent
+    dropped is not carried; nor is one no tip has (an amend, a same-push)."""
+    mine = _decl_lines(own)
+    if not mine:
+        return []
+    have: set[str] = set()
+    for raw in published:
+        have |= _decl_lines(raw)
+    return sorted(mine & have)
+
+
 def _context_from(
-    raw: bytes | None, ph: bytes | None, base: str | None = None
+    raw: bytes | None,
+    ph: bytes | None,
+    base: str | None = None,
+    extra_paths: list[str] | tuple = (),
+    carried: list[str] | tuple = (),
 ) -> tuple[Allowlist, set[str], list[Finding]]:
+    """The declarations in force: `base`'s allowlist plus any `carried`
+    lines, each path form capped at MAX_DECL_FILES matches over the files
+    `base` tracks AND the paths the change being judged touches -- a
+    declaration published while its directory was empty cannot then cover a
+    thousand new files (round 3, finding d)."""
     errs: list[Finding] = []
     allow = Allowlist()
-    if raw is not None:
+    text = raw.decode("utf-8", "replace") if raw is not None else ""
+    if carried:
+        text += "\n" + "\n".join(carried) + "\n"
+    if raw is not None or carried:
         try:
-            allow = parse_allowlist(raw.decode("utf-8"))
+            if raw is not None:
+                raw.decode("utf-8")
+            allow = parse_allowlist(text)
         except (UnicodeDecodeError, AllowlistError) as exc:
             errs.append(
                 Finding(
@@ -2000,48 +2275,68 @@ def _context_from(
                     note=str(exc),
                 )
             )
-    if base and allow.entries:
-        tracked = (
-            git("ls-tree", "-r", "--name-only", "-z", base)
-            .decode("utf-8", "surrogateescape")
-            .split("\0")
-        )
-        keep = []
-        for ent in allow.entries:
-            kind, pattern = ent[0], ent[1]
-            if kind in ("value", "value-re"):
-                keep.append(ent)
-                continue
-            n = sum(1 for t in tracked if t and fnmatch.fnmatchcase(t, pattern))
-            if n > MAX_DECL_FILES:
-                errs.append(
-                    Finding(
-                        "ERROR",
-                        "allowlist-too-broad",
-                        ALLOWLIST_PATH,
-                        0,
-                        f"{kind} {pattern}",
-                        "",
-                        ackable=False,
-                        note=f"matches {n} tracked files (more than {MAX_DECL_FILES})",
-                    )
-                )
-                continue
-            keep.append(ent)
-        allow.entries = keep
+    if allow.entries:
+        tracked = set(extra_paths)
+        if base:
+            tracked |= set(
+                git("ls-tree", "-r", "--name-only", "-z", base)
+                .decode("utf-8", "surrogateescape")
+                .split("\0")
+            )
+        tracked.discard("")
+        allow.entries, cap_errs = _capped(allow.entries, tracked)
+        errs += cap_errs
     placeholders = placeholder_values(ph.decode("utf-8", "replace")) if ph else set()
     return allow, placeholders, errs
 
 
-def published_base(head: str | None) -> str | None:
-    """The newest first-parent ancestor of `head` that a remote already has,
-    by the local remote-tracking refs (pre-commit has no network; pre-push,
-    the backstop, asks the target remote). Declarations are read from here
-    and not from HEAD: `git commit --amend` would otherwise let a commit's
-    own declaration exempt the payload amended into it (review of #591)."""
-    if not head:
+def _capped(entries: list, paths: set[str]) -> tuple[list, list[Finding]]:
+    keep, errs, seen = [], [], set()
+    for ent in entries:
+        kind, pattern = ent[0], ent[1]
+        if (kind, pattern, ent[2]) in seen:
+            continue
+        seen.add((kind, pattern, ent[2]))
+        if kind in ("value", "value-re"):
+            keep.append(ent)
+            continue
+        n = sum(1 for t in paths if fnmatch.fnmatchcase(t, pattern))
+        if n > MAX_DECL_FILES:
+            errs.append(
+                Finding(
+                    "ERROR",
+                    "allowlist-too-broad",
+                    ALLOWLIST_PATH,
+                    0,
+                    f"{kind} {mask(pattern, full=True)}",
+                    "",
+                    ackable=False,
+                    note=f"matches {n} files tracked or changed (more than {MAX_DECL_FILES})",
+                )
+            )
+            continue
+        keep.append(ent)
+    return keep, errs
+
+
+def base_within(head: str | None, tips: list[str]) -> str | None:
+    """The newest first-parent ancestor of `head` that `tips` reach: what the
+    remote already has on this line of history. Reached, not equal: a base
+    that is an ANCESTOR of a tip the remote advertises is published too (a
+    branch behind its remote, round 3 finding b). Declarations are read from
+    here and not from HEAD: `git commit --amend` would otherwise let a
+    commit's own declaration exempt the payload amended into it (#591)."""
+    if not head or not tips:
         return None
-    unpublished = set(git("rev-list", head, "--not", "--remotes").decode().split())
+    unpublished = set(
+        git(
+            "rev-list",
+            "--stdin",
+            input_bytes=("\n".join([head] + [f"^{t}" for t in tips]) + "\n").encode(),
+        )
+        .decode()
+        .split()
+    )
     if not unpublished:
         return head
     for c in git("rev-list", "--first-parent", head).decode().split():
@@ -2050,12 +2345,97 @@ def published_base(head: str | None) -> str | None:
     return None
 
 
+def tracking_tips() -> list[str]:
+    """What the local remote-tracking refs say the remotes have: a HINT,
+    confirmed with the remote before it may relax anything."""
+    out = git("for-each-ref", "--format=%(objectname)", "refs/remotes").decode().split()
+    return sorted(set(out))
+
+
+def declared_context(
+    head: str | None, tips: list[str], extra_paths: list[str]
+) -> tuple[Allowlist, set[str], list[Finding]]:
+    """The declarations `tips` vouch for, as seen from `head`: the published
+    base's allowlist, plus the lines `head` carries that a tip already holds."""
+    if not head or not tips:
+        return Allowlist(), set(), []
+    base = base_within(head, tips)
+    names = [f"{head}:{ALLOWLIST_PATH}"] + [f"{t}:{ALLOWLIST_PATH}" for t in tips]
+    if base:
+        names += [f"{base}:{ALLOWLIST_PATH}", f"{base}:{PLACEHOLDER_SOURCE}"]
+    objs = read_objects(names)
+    carried = carried_declarations(
+        objs.get(f"{head}:{ALLOWLIST_PATH}"), [objs.get(f"{t}:{ALLOWLIST_PATH}") for t in tips]
+    )
+    return _context_from(
+        objs.get(f"{base}:{ALLOWLIST_PATH}") if base else None,
+        objs.get(f"{base}:{PLACEHOLDER_SOURCE}") if base else None,
+        base,
+        extra_paths,
+        carried,
+    )
+
+
+def with_confirmed_declarations(head: str | None, extra_paths: list[str], scan) -> Report:
+    """`scan(ctx)` with the declarations the remote vouches for. Scanned with
+    the ones the local tracking refs vouch for, and with none: when the two
+    agree (almost always) no network is needed. When the declarations change
+    the outcome, the remote is asked (`git ls-remote`, the truth pre-push
+    uses) and the scan is redone on what IT advertises; unreachable, the
+    strict result stands (review of #591 r2: tracking refs can be forged)."""
+    strict = scan((Allowlist(), set(), []))
+    local = declared_context(head, tracking_tips(), extra_paths)
+    declared = scan(local)
+    if _outcome(strict) == _outcome(declared):
+        return declared
+    remote = _upstream_remote()
+    try:
+        tips = sorted(remote_has(remote)) if remote else None
+    except GitError:
+        tips = None
+    if tips is None:
+        strict.notices.append(
+            "pii: declarations NOT honoured: could not ask the remote what it has (offline, or "
+            "no remote); the strict result stands"
+        )
+        return strict
+    confirmed = scan(declared_context(head, tips, extra_paths))
+    if _outcome(confirmed) != _outcome(declared):
+        confirmed.notices.append(
+            "pii: declarations NOT honoured where only local refs vouch for them: the remote "
+            "does not have them (a forged or stale ref; `git fetch` if the remote moved)"
+        )
+    return confirmed
+
+
 def env_acks() -> set[str]:
     return {x.strip() for x in re.split(r"[,\s]+", os.environ.get("NORA_PII_ACK", "")) if x.strip()}
 
 
 def trailer_acks(message: str) -> set[str]:
-    return set(re.findall(rf"(?mi)^{ACK_TRAILER}:[ \t]*([0-9a-f]{{12}})(?:[ \t].*)?$", message))
+    """The ids a message's `PII-Ack:` trailers acknowledge. A trailer is a
+    human's CLAIM, honoured as one; an `(agent ...)` trailer is not: the
+    model adjudicator it named was removed, and nothing deterministic stands
+    behind it."""
+    out = set()
+    for m in re.finditer(rf"(?mi)^{ACK_TRAILER}:[ \t]*([0-9a-f]{{12}})(?:[ \t]+(.*))?$", message):
+        if not re.match(r"\(agent\b", (m.group(2) or "").strip()):
+            out.add(m.group(1))
+    return out
+
+
+def replay_acks() -> set[str]:
+    """During `git rebase` or `git cherry-pick`, the acknowledgements recorded
+    in the commit being replayed (REBASE_HEAD / CHERRY_PICK_HEAD): its
+    finding was decided when it was first committed, and the trailer travels
+    with the message. Without this, a manual `git commit` at a rebase stop
+    re-blocked every acknowledged finding (round 3, finding b)."""
+    out: set[str] = set()
+    for name in ("REBASE_HEAD", "CHERRY_PICK_HEAD"):
+        sha = rev_exists(name)
+        if sha:
+            out |= trailer_acks(git("log", "-1", "--format=%B", sha).decode("utf-8", "replace"))
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -2067,49 +2447,43 @@ def _outcome(rep: Report) -> set:
 
 
 def mode_staged(deny: Denylist) -> Report:
-    """Scan the index twice: with the declarations of the newest ancestor the
-    local remote-tracking refs call published, and with none. When the two
-    agree (almost always) no network is needed. When the declarations change
-    the outcome, they count only if the remote itself confirms it has that
-    ancestor (`git ls-remote`, the same truth pre-push uses); otherwise the
-    strict result stands (review of #591 r2: tracking refs can be forged)."""
+    """The index, judged with the declarations the remote vouches for
+    (with_confirmed_declarations)."""
     head = rev_exists("HEAD")
-    base = published_base(head)
-    declared = _mode_staged(deny, load_context(base), head)
-    if not base:
-        return declared
-    strict = _mode_staged(deny, (Allowlist(), set(), []), head)
-    if _outcome(strict) == _outcome(declared):
-        return declared
-    remote = _upstream_remote()
-    try:
-        confirmed = bool(remote) and base in remote_has(remote)
-    except GitError:
-        confirmed = False
-    if confirmed:
-        return declared
-    strict.notices.append(
-        f"pii: declarations NOT honoured: could not confirm with the remote that {base[:10]} is "
-        "published (offline, or a local ref the remote does not have)"
+    changed = (
+        git("diff-index", "--cached", "--name-only", "-z", head or EMPTY_TREE)
+        .decode("utf-8", "surrogateescape")
+        .split("\0")
     )
-    return strict
+    return with_confirmed_declarations(
+        head, [c for c in changed if c], lambda ctx: _mode_staged(deny, ctx, head)
+    )
+
+
+def _current_branch() -> str:
+    """The branch being committed to: HEAD's, or -- HEAD detached during a
+    rebase -- the branch the rebase is rewriting (round 3, finding b)."""
+    branch = git("rev-parse", "--abbrev-ref", "HEAD", check=False).decode().strip()
+    if branch and branch != "HEAD":
+        return branch
+    gitdir = _gitdir()
+    for d in ("rebase-merge", "rebase-apply"):
+        try:
+            with open(os.path.join(gitdir, d, "head-name"), encoding="utf-8") as fh:
+                return fh.read().strip().removeprefix("refs/heads/")
+        except OSError:
+            continue
+    return ""
 
 
 def _upstream_remote() -> str | None:
     """The URL of the remote the current branch tracks, else `origin`."""
+    branch = _current_branch()
     name = (
-        git(
-            "config",
-            "--get",
-            "branch."
-            + git("rev-parse", "--abbrev-ref", "HEAD", check=False).decode().strip()
-            + ".remote",
-            check=False,
-        )
-        .decode()
-        .strip()
-        or "origin"
-    )
+        git("config", "--get", f"branch.{branch}.remote", check=False).decode().strip()
+        if branch
+        else ""
+    ) or "origin"
     url = git("remote", "get-url", name, check=False).decode().strip()
     return url or None
 
@@ -2143,9 +2517,7 @@ def _mode_staged(deny: Denylist, ctx: tuple, head: str | None) -> Report:
         jobs_meta.append((dst, nm, nsha, olds, status[0] in "ARC"))
     objs = read_objects(names)
     sc = Scanner(deny, allow, placeholders)
-    rep.guard = sc.contains_denylisted
-    rep.guard_lines = sc.withheld_lines
-    acks = env_acks()
+    acks = env_acks() | replay_acks()
     for dst, nm, nsha, olds, new_path in jobs_meta:
         job = BlobJob(
             dst,
@@ -2173,7 +2545,7 @@ def _ident_findings(sc: Scanner, label: str, ident: str) -> list[Finding]:
             )
         )
     for m in EMAIL_RX.finditer(ident):
-        if not placeholder_email(m.group()):
+        if not placeholder_email(m.group()) and not sc.cleared(normalise_key(m.group())):
             out.append(
                 Finding("FAIL", "email", label, 0, mask(m.group()), finding_id(label, ident))
             )
@@ -2200,9 +2572,18 @@ def message_findings(sc: Scanner, body: str, label: str = "<commit-message>") ->
 
 
 def mode_message(deny: Denylist, msg_path: str) -> Report:
+    """The message and the identity, with the declarations the remote
+    vouches for -- the same confirmation pre-commit uses (round 3: this path
+    trusted the local tracking refs unconfirmed)."""
     head = rev_exists("HEAD")
-    allow, placeholders, errs = load_context(published_base(head))
-    rep = Report(findings=errs, scanned=1)
+    if not head:
+        return _mode_message(deny, msg_path, (Allowlist(), set(), []))
+    return with_confirmed_declarations(head, [], lambda ctx: _mode_message(deny, msg_path, ctx))
+
+
+def _mode_message(deny: Denylist, msg_path: str, ctx: tuple) -> Report:
+    allow, placeholders, errs = ctx
+    rep = Report(findings=list(errs), scanned=1)
     # The WHOLE file: `git commit -m` and --cleanup=verbatim keep `#` lines
     # and text past the scissors, so stripping them first skipped text that
     # lands in the commit. Over-strict on git's own comment template is the
@@ -2210,18 +2591,11 @@ def mode_message(deny: Denylist, msg_path: str) -> Report:
     with open(msg_path, encoding="utf-8", errors="surrogateescape") as fh:
         body = fh.read()
     sc = Scanner(deny, allow, placeholders)
-    rep.guard = sc.contains_denylisted
-    rep.guard_lines = sc.withheld_lines
     rep.findings += message_findings(sc, body)
     for label, var in (("<author>", "GIT_AUTHOR_IDENT"), ("<committer>", "GIT_COMMITTER_IDENT")):
         ident = git("var", var, check=False).decode("utf-8", "replace").strip()
         ident = re.sub(r"\s+\d+\s+[+-]\d{4}$", "", ident)
         rep.findings += _ident_findings(sc, label, ident)
-    rep.message_lines = [
-        (n, normalise_line(line))
-        for n, line in enumerate(body.split("\n"), 1)
-        if _judgeable(line) and not line.startswith(f"{ACK_TRAILER}:") and not line.startswith("#")
-    ]
     return rep
 
 
@@ -2344,42 +2718,96 @@ def ls_remote(remote: str) -> str:
     return p.stdout.decode()
 
 
-def baseline(rep: Report) -> set[str]:
-    """Cutover (review of #591 r2): pushing to a NEW remote -- the scrubbed
-    public repository -- makes every commit "new", and the residue in the
-    history can never pass. `NORA_PII_PUSH_BASELINE=<manifest>` names a file
-    the scrub's content verification wrote: a `# nora-pii-baseline v1` header,
-    then one object id per line, each a commit whose whole history that
-    verification read clean. Those commits (and their ancestors) are treated
-    as already published. The use is printed, with the manifest's digest, on
-    every run; a malformed manifest is an ERROR."""
+BASELINE_HEADER = "# nora-pii-baseline v2"
+
+
+def baseline(rep: Report, remote_url: str) -> set[str]:
+    """Cutover (review of #591 r2, bound in round 3 f): pushing to a NEW
+    remote -- the scrubbed public repository -- makes every commit "new",
+    and the residue in the history can never pass.
+    `NORA_PII_PUSH_BASELINE=<manifest>` names a file the scrub's content
+    verification wrote:
+
+        # nora-pii-baseline v2
+        remote <the exact url this push goes to>
+        <full commit id>          one per line, every commit it read clean
+
+    It is bound three ways, each an ERROR when it does not hold: it counts
+    ONLY the commits it lists (never their ancestors: a manifest naming a
+    tip vouches for nothing beneath it); only for the remote it names; and
+    only when its sha256 equals `NORA_PII_PUSH_BASELINE_SHA256`, pinned
+    outside the file, so editing the manifest voids it. The use is printed,
+    with the digest, on every run."""
     path = os.environ.get("NORA_PII_PUSH_BASELINE", "").strip()
     if not path:
         return set()
+    pinned = os.environ.get("NORA_PII_PUSH_BASELINE_SHA256", "").strip().lower()
     try:
-        with open(path, encoding="utf-8") as fh:
+        with open(path, "rb") as fh:
             raw = fh.read()
     except OSError as exc:
         raise ConfigError(f"NORA_PII_PUSH_BASELINE={path!r}: {exc}") from exc
-    lines = [x.strip() for x in raw.splitlines() if x.strip()]
-    if not lines or not lines[0].startswith("# nora-pii-baseline v1"):
+    digest = hashlib.sha256(raw).hexdigest()
+    if not re.fullmatch(r"[0-9a-f]{64}", pinned):
         raise ConfigError(
-            f"NORA_PII_PUSH_BASELINE={path!r}: not a `# nora-pii-baseline v1` manifest"
+            "NORA_PII_PUSH_BASELINE needs NORA_PII_PUSH_BASELINE_SHA256=<the manifest's full "
+            "sha256>, pinned where the manifest was verified: unpinned, any file is a manifest"
         )
-    ids = [x for x in lines[1:] if not x.startswith("#")]
+    if digest != pinned:
+        raise ConfigError(
+            f"NORA_PII_PUSH_BASELINE={path!r}: sha256 {digest[:16]}... is not the pinned "
+            "NORA_PII_PUSH_BASELINE_SHA256: the manifest changed since it was verified"
+        )
+    try:
+        lines = [x.strip() for x in raw.decode("utf-8").splitlines() if x.strip()]
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"NORA_PII_PUSH_BASELINE={path!r}: not UTF-8") from exc
+    if not lines or lines[0] != BASELINE_HEADER:
+        raise ConfigError(
+            f"NORA_PII_PUSH_BASELINE={path!r}: not a `{BASELINE_HEADER}` manifest (v1 manifests "
+            "were not bound to a remote and are refused)"
+        )
+    body = [x for x in lines[1:] if not x.startswith("#")]
+    remotes = [x.split(None, 1)[1].strip() for x in body if x.startswith("remote ")]
+    ids = [x for x in body if not x.startswith("remote ")]
+    if len(remotes) != 1:
+        raise ConfigError(f"NORA_PII_PUSH_BASELINE={path!r}: needs exactly one `remote <url>` line")
+    if remotes[0] != remote_url:
+        raise ConfigError(
+            f"NORA_PII_PUSH_BASELINE={path!r}: names a different remote than this push's; a "
+            "manifest counts only for the remote it was verified for"
+        )
     if not all(re.fullmatch(r"[0-9a-f]{40}", x) for x in ids):
-        raise ConfigError(f"NORA_PII_PUSH_BASELINE={path!r}: every line must be a full object id")
+        raise ConfigError(f"NORA_PII_PUSH_BASELINE={path!r}: every line must be a full commit id")
     if ids:
         probe = git("cat-file", "--batch-check", input_bytes=("\n".join(ids) + "\n").encode())
         ids = [
-            ln.split(" ", 1)[0] for ln in probe.decode().splitlines() if not ln.endswith(" missing")
+            ln.split()[0]
+            for ln in probe.decode().splitlines()
+            if len(ln.split()) == 3 and ln.split()[1] == "commit"
         ]
-    digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
     rep.notices.append(
-        f"pii: CUTOVER BASELINE in use: {len(ids)} commit(s) from {path} (sha256 {digest}) are "
-        "treated as already published; everything else is scanned"
+        f"pii: CUTOVER BASELINE in use: exactly {len(ids)} listed commit(s) from {path} "
+        f"(sha256 {digest[:16]}) count as already published to this remote; everything else, "
+        "their ancestors included, is scanned"
     )
     return set(ids)
+
+
+def ref_findings(sc: Scanner, ref: str) -> tuple[list[Finding], str]:
+    """A ref name is published with the push: it goes through the denylist
+    like a path, and is shown masked when it matched (round 3, finding e: a
+    tag named after a person was printed as written). Denylist only: a
+    branch named for a ticket number is not a phone."""
+    scan = sc.scan_text(ref.replace("/", " / "), "<ref>", shapes=False, coords=False)
+    if not scan.findings:
+        return [], ref
+    shown = f"<ref {hashlib.sha256(ref.encode('utf-8', 'surrogateescape')).hexdigest()[:10]}>"
+    for f in scan.findings:
+        f.path, f.line, f.text = shown, 0, ref
+        f.note = "in a ref name"
+        f.fid = finding_id(shown, ref, f.rule, f.key)
+    return scan.findings, shown
 
 
 def _tag_chain(sha: str) -> tuple[list[tuple[str, str, str]], str, str]:
@@ -2417,7 +2845,7 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
     _PUSH_DECODED[0] = 0
     try:
         published = remote_has(remote)
-        published |= baseline(rep)
+        clean = baseline(rep, remote)
     except ConfigError as exc:
         rep.findings.append(
             Finding("ERROR", "config", "<env>", 0, "", "", ackable=False, note=str(exc))
@@ -2438,23 +2866,31 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
         )
         return rep
     shas: list[str] = []
+    seen: set[str] = set()
+    sc = Scanner(deny, Allowlist(), set())
     for line in stdin_lines:
         parts = line.split()
         if len(parts) < 4 or parts[1] == zero:
             continue
-        local_ref, local_sha, _remote_ref, remote_sha = parts[:4]
+        local_ref, local_sha, remote_ref, remote_sha = parts[:4]
         if local_sha == remote_sha:
             continue
+        shown = local_ref
+        for ref in dict.fromkeys((local_ref, remote_ref)):
+            fs, disp = ref_findings(sc, ref)
+            rep.findings += fs
+            if ref == local_ref:
+                shown = disp
+        # Only what the remote ADVERTISES excludes history (and with it, every
+        # ancestor); the cutover manifest's commits are dropped one by one below.
         exclude = set(published)
         if remote_sha != zero and remote_sha in published:
             exclude.add(remote_sha)
         tags, target, typ = _tag_chain(local_sha)
-        allow, placeholders, _errs = load_context(None)
-        sc = Scanner(deny, allow, placeholders)
         for tsha, tagger, message in tags:
             fs = message_findings(sc, message) + _ident_findings(sc, "<tagger>", tagger)
             for f in fs:
-                f.path = f"{local_ref} ({tsha[:10]}) {f.path}"
+                f.path = f"{shown} ({tsha[:10]}) {f.path}"
             rep.findings += fs
             rep.scanned += 1
         if typ in ("blob", "tree"):
@@ -2477,18 +2913,20 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
                 if data is None or git("cat-file", "-t", o[0]).decode().strip() != "blob":
                     continue
                 path = o[1] if len(o) > 1 else "<blob>"
-                sub = judge_blob(BlobJob(path, "100644", data, [None], True), sc, allow, set())
+                sub = judge_blob(
+                    BlobJob(path, "100644", data, [None], True), sc, Allowlist(), set()
+                )
                 for f in sub.findings:
-                    f.path = f"{local_ref} {f.path}"
-                sub.views = []
+                    f.path = f"{shown} {f.path}"
                 rep.extend(sub)
             continue
         if typ != "commit":
             continue
+        limit = [] if clean else [f"--max-count={PUSH_MAX + 1}"]
         found = (
             git(
                 "rev-list",
-                f"--max-count={PUSH_MAX + 1}",
+                *limit,
                 "--stdin",
                 input_bytes=(
                     "\n".join([target] + [f"^{x}" for x in sorted(exclude)]) + "\n"
@@ -2497,12 +2935,13 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
             .decode()
             .split()
         )
+        found = [x for x in found if x not in clean]
         if len(found) > PUSH_MAX:
             rep.findings.append(
                 Finding(
                     "ERROR",
                     "push-too-long",
-                    local_ref,
+                    shown,
                     0,
                     f">{PUSH_MAX} commits the remote does not have",
                     "",
@@ -2511,11 +2950,18 @@ def mode_push(deny: Denylist, stdin_lines: list[str], remote: str | None) -> Rep
                 )
             )
             found = found[:PUSH_MAX]
-        shas += [x for x in found if x not in shas]
-    return scan_commits(deny, shas, rep)
+        for x in found:
+            if x not in seen:
+                seen.add(x)
+                shas.append(x)
+    return scan_commits(deny, shas, rep, sorted(published))
 
 
-def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> Report:
+def scan_commits(
+    deny: Denylist, shas: list[str], rep: Report | None = None, tips: list[str] | tuple = ()
+) -> Report:
+    """Every commit in `shas`. `tips`: what the target remote advertises
+    (pre-push), whose allowlists vouch for declarations a rebase rewrote."""
     rep = rep or Report()
     if not shas:
         return rep
@@ -2559,24 +3005,42 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
 
     bases = {sha: base_of(sha) for sha in shas}
     firsts = sorted({b for b in bases.values() if b})
+    owns = sorted({meta[sha][0][0] for sha in shas if meta[sha][0]})
     names = [c[2] for sha in shas for c in changes[sha] if c[1] != "160000"]
     names += [o for sha in shas for c in changes[sha] for o in c[3] if o]
     names += [f"{p}:{x}" for p in firsts for x in (ALLOWLIST_PATH, PLACEHOLDER_SOURCE)]
+    names += [f"{p}:{ALLOWLIST_PATH}" for p in owns + list(tips)]
     names += list(shas)  # the raw commit objects, for their headers
     objs = read_objects(names)
-    adjudications = adjudication_log()
-    ctx_cache: dict[str, tuple] = {"": (Allowlist(), set(), [])}
-    for p in firsts:
-        ctx_cache[p] = _context_from(
-            objs.get(f"{p}:{ALLOWLIST_PATH}"), objs.get(f"{p}:{PLACEHOLDER_SOURCE}"), p
-        )
+    published = [objs.get(f"{t}:{ALLOWLIST_PATH}") for t in tips]
+    # the cap counts what the range touches too, not only what the base tracks
+    touched = sorted({c[0] for sha in shas for c in changes[sha]})
+    ctx_cache: dict[tuple, tuple] = {}
+
+    def context(sha: str) -> tuple:
+        base = bases[sha]
+        own = objs.get(f"{meta[sha][0][0]}:{ALLOWLIST_PATH}") if meta[sha][0] else None
+        carried = tuple(carried_declarations(own, published)) if tips else ()
+        key = (base, carried)
+        if key not in ctx_cache:
+            if not base and not carried:
+                ctx_cache[key] = (Allowlist(), set(), [])
+            else:
+                ctx_cache[key] = _context_from(
+                    objs.get(f"{base}:{ALLOWLIST_PATH}") if base else None,
+                    objs.get(f"{base}:{PLACEHOLDER_SOURCE}") if base else None,
+                    base or None,
+                    touched,
+                    carried,
+                )
+        return ctx_cache[key]
+
     for sha in shas:
         parents, author, committer, body = meta[sha]
-        allow, placeholders, errs = ctx_cache[bases[sha]]
+        allow, placeholders, errs = context(sha)
         sc = Scanner(deny, allow, placeholders)
         raw_commit = (objs.get(sha) or b"").decode("utf-8", "surrogateescape")
-        tree = raw_commit[5:45] if raw_commit.startswith("tree ") else ""
-        acks, unverified = verified_acks(body, tree, adjudications)
+        acks = trailer_acks(body)
         sub = Report(findings=list(errs))
         for dst, nm, nsha, olds, new_path in changes[sha]:
             job = BlobJob(
@@ -2595,12 +3059,6 @@ def scan_commits(deny: Denylist, shas: list[str], rep: Report | None = None) -> 
         for f in sub.findings:
             f.path = f"{sha[:10]} {f.path}"
         apply_acks(sub.findings, acks)
-        for f in sub.findings:
-            if not f.state and f.fid in unverified:
-                f.note = (f.note + "; " if f.note else "") + (
-                    "its `agent` ack has no matching adjudication record for this tree here"
-                )
-        sub.views = []
         rep.extend(sub)
     return rep
 
@@ -2623,59 +3081,25 @@ def extra_headers(raw_commit: str) -> str:
     return "\n".join(x for x in out if not x.startswith(("-----BEGIN", "-----END")))
 
 
-ADJUDICATION_LOG = "nora-pii-adjudications.jsonl"
-
-
-def adjudication_log() -> dict[tuple[str, str], str]:
-    """{(tree, finding id): model} for every `fake` verdict the adjudicator
-    recorded in this clone."""
-    out: dict[tuple[str, str], str] = {}
-    try:
-        with open(os.path.join(_gitdir(), ADJUDICATION_LOG), encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    rec = json.loads(line)
-                except ValueError:
-                    continue
-                for fid, v in (rec.get("verdicts") or {}).items():
-                    if isinstance(v, dict) and v.get("verdict") == "fake":
-                        out[(rec.get("tree", ""), fid)] = rec.get("model", "")
-    except OSError:
-        pass
-    return out
-
-
-def verified_acks(body: str, tree: str, log: dict) -> tuple[set[str], set[str]]:
-    """(ids honoured, ids refused). A `PII-Ack` trailer is a CLAIM: `human`
-    ones are honoured as claims; an `agent` one only when this clone holds the
-    adjudication record for exactly this tree (review of #591 r2)."""
-    ok, refused = set(), set()
-    for m in re.finditer(rf"(?mi)^{ACK_TRAILER}:[ \t]*([0-9a-f]{{12}})(?:[ \t](.*))?$", body):
-        fid, rest = m.group(1), (m.group(2) or "")
-        if re.match(r"\(agent\b", rest.strip()) and (tree, fid) not in log:
-            refused.add(fid)
-        else:
-            ok.add(fid)
-    return ok - refused, refused
-
-
 def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
     commit = rev_exists(rev)
     if not commit:
         raise GitError(f"no such revision: {rev}")
     if allow_from_worktree:
+        # the same parse and the same caps as a published allowlist (round 3,
+        # finding d: this path skipped the file-count cap)
         top = git("rev-parse", "--show-toplevel").decode().strip()
-        try:
-            with open(os.path.join(top, ALLOWLIST_PATH), encoding="utf-8") as fh:
-                allow = parse_allowlist(fh.read())
-        except FileNotFoundError:
-            allow = Allowlist()
-        ex = os.path.join(top, PLACEHOLDER_SOURCE)
-        placeholders: set[str] = set()
-        if os.path.exists(ex):
-            with open(ex, encoding="utf-8") as fh:
-                placeholders = placeholder_values(fh.read())
-        errs: list[Finding] = []
+
+        def read(rel: str) -> bytes | None:
+            try:
+                with open(os.path.join(top, rel), "rb") as fh:
+                    return fh.read()
+            except FileNotFoundError:
+                return None
+
+        allow, placeholders, errs = _context_from(
+            read(ALLOWLIST_PATH), read(PLACEHOLDER_SOURCE), commit
+        )
     else:
         allow, placeholders, errs = load_context(commit)
     rep = Report(findings=errs)
@@ -2691,9 +3115,7 @@ def mode_tree(deny: Denylist, rev: str, allow_from_worktree: bool) -> Report:
     sc = Scanner(deny, allow, placeholders)
     for path, mode, sha in items:
         job = BlobJob(path, mode, objs.get(sha) if mode != "160000" else None, [None])
-        sub = judge_blob(job, sc, allow, set())
-        sub.views = []
-        rep.extend(sub)
+        rep.extend(judge_blob(job, sc, allow, set()))
     return rep
 
 
@@ -2719,7 +3141,7 @@ def mode_declare_coords(path: str) -> int:
 
 
 # --------------------------------------------------------------------------
-# Acks, judges, output
+# Acks and output
 
 
 def apply_acks(findings: list[Finding], acks: set[str]) -> set[str]:
@@ -2729,119 +3151,6 @@ def apply_acks(findings: list[Finding], acks: set[str]) -> set[str]:
             f.state = "ACKED"
             used.add(f.fid)
     return used
-
-
-def _judge_backend() -> str:
-    backend = os.environ.get("NORA_PII_JUDGE", "").strip().lower()
-    if not backend and os.environ.get("NORA_PII_JEV", "").strip().lower() == "on":
-        backend = "jev"
-    return "" if backend in ("", "off") else backend
-
-
-def build_view(pii_judge, rep: Report, staged: Report | None):
-    """The commit as a model may read it: message lines `M<n>`, then each
-    file's added lines `L<k>` with their context, paths masked where they
-    matched. Any line a denylist match touches -- read together with its
-    neighbours, as the scanner reads them; added OR context; new OR already
-    in the file -- is `[withheld]`; with no guard set, every line is."""
-    guard_lines = rep.guard_lines if callable(rep.guard_lines) else None
-    view = pii_judge.CommitView()
-    texts: dict = {}
-    held = 0
-
-    def withheld(lines: list[str]) -> set[int]:
-        nonlocal held
-        idx = guard_lines(lines) if guard_lines else set(range(len(lines)))
-        held += len(idx)
-        return idx
-
-    msg_held = withheld([line for _n, line in rep.message_lines])
-    for i, (n, line) in enumerate(rep.message_lines):
-        mid = f"M{n}"
-        view.message.append((mid, "[withheld]" if i in msg_held else line))
-        view.where[mid] = ("<commit-message>", n)
-        texts[mid] = line
-    view.subject = view.message[0][1] if view.message else ""
-    k = 0
-    for path, rows in staged.views if staged else []:
-        if pii_judge.SKIP_PATH.search(path):
-            view.skipped.append(path)
-            continue
-        file_held = withheld([text for _n, _op, text in rows])
-        out = []
-        for i, (n, op, text) in enumerate(rows):
-            rid = None
-            if op == "+":
-                k += 1
-                rid = f"L{k}"
-                view.where[rid] = (path, n)
-                texts[rid] = text
-            out.append((rid, op, "[withheld]" if i in file_held else text))
-        view.files.append({"path": path, "rows": out})
-    return view, texts, held
-
-
-def run_judges(rep: Report, staged: Report | None = None) -> None:
-    """The optional commit judge (scripts/pii_judge.py): it can RAISE a
-    finding, never clear one. Runs at commit-msg, where the message and the
-    staged change are both known."""
-    backend = _judge_backend()
-    if not backend:
-        return
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import pii_judge
-
-    view, texts, held = build_view(pii_judge, rep, staged)
-    if held:
-        rep.notices.append(
-            f"pii: {held} line(s) holding a denylisted value were withheld from the judge"
-        )
-    try:
-        v = pii_judge.judge_commit(backend, view)
-    except pii_judge.JudgeError as exc:
-        rep.findings.append(
-            Finding("ERROR", f"judge:{backend}", "<judge>", 0, "", "", ackable=False, note=str(exc))
-        )
-        return
-    rep.notices.append(
-        f"pii: judge {backend} read the commit: p={v.score:.2f} (threshold {v.threshold:.2f}, "
-        f"{v.seconds:.1f}s)"
-    )
-    if v.score < v.threshold:
-        return
-    target = next((i for i in v.ranked if i in view.where), None)
-    if target is None:
-        body = "\n".join(texts.values())
-        rep.findings.append(
-            Finding(
-                "FAIL",
-                f"judge:{backend}",
-                "<commit>",
-                0,
-                "the commit as a whole",
-                finding_id("<commit>", hashlib.sha256(body.encode()).hexdigest()),
-                note=f"p={v.score:.2f}",
-            )
-        )
-        return
-    path, n = view.where[target]
-    line = texts[target]
-    if any(
-        f.path == path and f.line == n for f in rep.findings + (staged.findings if staged else [])
-    ):
-        return
-    rep.findings.append(
-        Finding(
-            "FAIL",
-            f"judge:{backend}",
-            path,
-            n,
-            mask(line.strip()),
-            finding_id(path, line),
-            note=f"p={v.score:.2f}; the judge's pick for the likeliest line",
-            text=line,
-        )
-    )
 
 
 def verdict(rep: Report) -> int:
@@ -2877,14 +3186,10 @@ def emit(rep: Report, label: str, elapsed: float) -> int:
         )
         if not denied and not errors and label in ("staged", "message"):
             print(
-                "  Every open finding can be adjudicated. Run\n"
-                "      python3 scripts/pii_adjudicate.py\n"
-                "  (a read-only agent reads the change and the history and answers real/fake/\n"
-                "  unsure per finding), then re-run the SAME git commit: `fake` verdicts become\n"
-                f"  `{ACK_TRAILER}:` trailers with the agent's reason; real/unsure stay blocked.\n"
-                "  IF YOU ARE A CODING AGENT MAKING THIS COMMIT: run it yourself; do not ask.\n"
-                "  A human who has looked may instead acknowledge by id:\n"
-                "      NORA_PII_ACK=<id>[,<id>] git commit ...",
+                "  A shape finding is cleared by a human who has LOOKED at the value, by id:\n"
+                "      NORA_PII_ACK=<id>[,<id>] git commit ...\n"
+                f"  (recorded as a `{ACK_TRAILER}: <id> (human)` trailer). Never acknowledge a\n"
+                "  value you have not checked; a coding agent asks its human.",
                 file=sys.stderr,
             )
         print(
@@ -2895,73 +3200,8 @@ def emit(rep: Report, label: str, elapsed: float) -> int:
     return code
 
 
-FINDINGS_FILE = "nora-pii-findings.json"
-ADJUDICATION_FILE = "nora-pii-adjudication.json"
-
-
 def _gitdir() -> str:
     return git("rev-parse", "--git-dir").decode().strip()
-
-
-def index_tree() -> str | None:
-    """The staged tree: what an adjudication was about. A verdict counts only
-    while the index still holds exactly that tree."""
-    p = subprocess.run(["git", "write-tree"], capture_output=True)  # noqa: S607
-    return p.stdout.decode().strip() or None if p.returncode == 0 else None
-
-
-def adjudicated_fakes(tree: str | None) -> dict[str, str]:
-    """{finding id: note} for every `fake` verdict of an adjudication of THIS
-    staged tree (scripts/pii_adjudicate.py). A stale or unreadable file counts
-    for nothing."""
-    path = os.path.join(_gitdir(), ADJUDICATION_FILE)
-    if not tree or not os.path.exists(path):
-        return {}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    if data.get("tree") != tree:
-        return {}
-    out = {}
-    for fid, v in (data.get("verdicts") or {}).items():
-        if (
-            isinstance(v, dict)
-            and v.get("verdict") == "fake"
-            and re.fullmatch(r"[0-9a-f]{12}", fid)
-        ):
-            out[fid] = f"agent {data.get('model', '?')}: fake, {v.get('reason', '')}"
-    return out
-
-
-def apply_adjudication(rep: Report, fakes: dict[str, str]) -> None:
-    for f in rep.findings:
-        if f.ackable and not f.state and f.fid in fakes:
-            f.state = "ACKED"
-            f.note = (f.note + "; " if f.note else "") + fakes[f.fid][:160]
-
-
-def record_findings(rep: Report, part: str, tree: str | None) -> None:
-    """Leave the open, acknowledgeable findings (masked, with ids) where the
-    adjudicator reads them. Never a value: the path, line, rule and mask only."""
-    path = os.path.join(_gitdir(), FINDINGS_FILE)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        data = {}
-    if data.get("tree") != tree:
-        data = {"tree": tree}
-    live = [f for f in rep.findings if not f.state]
-    data[part] = [
-        {"id": f.fid, "rule": f.rule, "path": f.path, "line": f.line, "masked": f.masked}
-        for f in live
-        if f.ackable and f.status == "FAIL"
-    ]
-    data[f"{part}_blocked_otherwise"] = sum(1 for f in live if not f.ackable or f.status == "ERROR")
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=1)
 
 
 def _record_used_acks(rep: Report) -> None:
@@ -3001,19 +3241,13 @@ def main(argv: list[str]) -> int:
     try:
         if mode == "staged":
             rep = mode_staged(deny)
-            tree = index_tree()
-            apply_acks(rep.findings, env_acks())
-            apply_adjudication(rep, adjudicated_fakes(tree))
+            apply_acks(rep.findings, env_acks() | replay_acks())
             _record_used_acks(rep)
-            record_findings(rep, "staged", tree)
         elif mode == "message":
             rep = mode_message(deny, argv[2])
-            tree = index_tree()
-            staged = mode_staged(deny) if _judge_backend() else None
-            run_judges(rep, staged)
-            apply_acks(rep.findings, env_acks())
-            apply_adjudication(rep, adjudicated_fakes(tree))
-            record_findings(rep, "message", tree)
+            with open(argv[2], encoding="utf-8", errors="surrogateescape") as fh:
+                own = trailer_acks(fh.read())
+            apply_acks(rep.findings, env_acks() | own)
             if verdict(rep) == PASS:
                 _write_ack_trailers(argv[2], rep)
         elif mode == "push":
@@ -3063,38 +3297,27 @@ def main(argv: list[str]) -> int:
 
 def _write_ack_trailers(msg_path: str, rep: Report) -> None:
     """Record every acknowledgement this commit used -- pre-commit's (from the
-    per-worktree git dir) and the message's own -- as `PII-Ack: <id>`
-    trailers, with the adjudicator's reason when an agent decided it. A
-    reason is scanned first and dropped if it quotes anything identifier-like:
-    the trailer is published with the history."""
-    used: dict[str, str] = {f.fid: f.note for f in rep.findings if f.state == "ACKED"}
+    per-worktree git dir) and the message's own -- as `PII-Ack: <id> (human)`
+    trailers, so the decision is in the history and pre-push re-derives it.
+    The side file only carries ids pre-commit already applied from
+    NORA_PII_ACK; writing it by hand clears nothing, because a trailer is a
+    claim pre-push weighs exactly like a typed one."""
+    used = {f.fid for f in rep.findings if f.state == "ACKED"}
     side = os.path.join(_gitdir(), "nora-pii-acks")
     if os.path.exists(side):
         with open(side, encoding="utf-8") as fh:
             for line in fh:
-                fid, _, note = line.rstrip("\n").partition("\t")
-                if fid.strip():
-                    used.setdefault(fid.strip(), note)
+                fid = line.split("\t", 1)[0].strip()
+                if re.fullmatch(r"[0-9a-f]{12}", fid):
+                    used.add(fid)
         os.remove(side)
     if not used:
         return
     with open(msg_path, encoding="utf-8", errors="surrogateescape") as fh:
         have = trailer_acks(fh.read())
-    deny, _err, _ = load_denylist()
-    sc = Scanner(deny or Denylist(), Allowlist(), set())
     args = []
-    for fid in sorted(set(used) - have):
-        note = next((x.strip() for x in used[fid].split(";") if x.strip().startswith("agent ")), "")
-        note = re.sub(r"\s+", " ", note)[:160]
-        if note and sc.scan_text(note, "<trailer>").findings:
-            note = (
-                note.split(":", 1)[0]
-                + ": fake, reason withheld: it quoted an identifier-like value"
-            )
-        # Who decided is a CLAIM the trailer records, not a proof: `human` for
-        # NORA_PII_ACK, `agent <model>` for an adjudication (which pre-push
-        # checks against this clone's adjudication log).
-        args += ["--trailer", f"{ACK_TRAILER}: {fid}" + (f" ({note})" if note else " (human)")]
+    for fid in sorted(used - have):
+        args += ["--trailer", f"{ACK_TRAILER}: {fid} (human)"]
     if args:
         git("interpret-trailers", "--in-place", *args, msg_path)
 
