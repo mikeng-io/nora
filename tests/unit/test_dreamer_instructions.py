@@ -625,6 +625,8 @@ NATIVELY_AUTHORED = {
     "character-unit",
     # Her own Character session (C3b): new, written for it.
     "character-nora",
+    # The Lessons session (design/self-growth/40, L2): new, written for it.
+    "lessons",
 }
 
 # `standing-debrief` is the odd one in that set and it is worth saying why

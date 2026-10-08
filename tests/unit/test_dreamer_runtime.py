@@ -2357,3 +2357,30 @@ async def test_a_verb_adaptor_that_staged_nothing_is_nothing_found(monkeypatch):
     outcome = await runtime.run(adaptor=_VerbAdaptor(sink=sink), key="g1", batch=())
     assert outcome.status == "nothing_found"
     assert sink.commits == [("g1", ())]
+
+
+class _WritingVerbAdaptor(_VerbAdaptor):
+    """A verb that WRITES when called (the Lessons shape): it asks for the
+    run's provenance, which a staging verb never sees."""
+
+    def __init__(self, *, sink: _Sink) -> None:
+        super().__init__(sink=sink)
+        self.provenance: list[Any] = []
+
+    def verbs(self, *, key: str, provenance):  # type: ignore[override]
+        self.provenance.append(provenance)
+        return super().verbs(key=key)
+
+
+async def test_a_verb_that_writes_when_called_is_handed_the_runs_provenance(monkeypatch):
+    """The three fields a `Proposal` carries reach a verb that takes
+    `provenance` (design/self-growth/40, L2): the instruction digest read for
+    THIS run, the model, and an `established_by` naming the adaptor and key. A
+    staging verb (no such argument) is called exactly as before, above."""
+    sink = _Sink()
+    adaptor = _WritingVerbAdaptor(sink=sink)
+    runtime, _ = _runtime(monkeypatch, raw="")
+    await runtime.run(adaptor=adaptor, key="g1", batch=())
+    (prov,) = adaptor.provenance
+    assert prov.instruction_sha256 == SHA and prov.model == "deepseek-v4-flash"
+    assert prov.established_by.startswith("dream:test-adaptor:g1:")

@@ -429,6 +429,12 @@ _MUST_SEE: dict[str, frozenset[str]] = {
     "CharacterUnitAdaptor": frozenset({
         "self._culture.head", "self._culture.append",
     }),
+    # Lessons (design/self-growth/40, L2): the held lessons in, and the
+    # horizon's retirements out. Its verbs write through the book during the
+    # loop, outside `inputs`/`commit`, and are not awaited in this class.
+    "LessonsAdaptor": frozenset({
+        "self._book.active", "self._book.retire",
+    }),
     # note-merge (design 41 §7): the change check's two reads, the fold's
     # transaction, and the stamp that must come last.
     "NoteMergeAdaptor": frozenset({

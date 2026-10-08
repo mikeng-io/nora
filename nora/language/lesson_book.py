@@ -15,13 +15,14 @@ forced by the data:
   a new revision, never an edit, and an operator's retirement is undone the same
   way (`rollback` to an earlier, active revision).
 
-**Not registered on any model-facing surface yet.** `verbs` is what L2's adaptor
-will hand its session; nothing in `nora.app.composition` builds a book, so no
-model can call `lesson_write` today. The CLI is the only caller in production.
+**One model-facing surface: the Lessons session** (L2,
+`nora.language.lessons.LessonsAdaptor`), built only under `[lessons] enabled`
+(default off). No turn holds these verbs, and nothing renders a lesson until L5.
 
 **Nothing here awaits a model.** The doctrine check (L3) is a separate
 instrument and is not applied: a lesson that loosens law passes this file's
-checks (it echoes nothing) until L3 reads it. L1 therefore ships off.
+checks (it echoes nothing) until L3 reads it. That is why `[lessons]` ships off,
+and why no lesson is rendered before L3 and L5.
 """
 
 from __future__ import annotations
@@ -99,10 +100,40 @@ class LessonBook:
     def verbs(
         self, *, unit: str, citable: Citable, established_by: str,
         instruction_sha256: str | None = None, model: str | None = None,
+        handles: dict[str, str] | None = None,
+        on_ok: Callable[[str], None] | None = None,
     ) -> list[Callable[..., Awaitable[dict[str, object]]]]:
         """`lesson_write` and `lesson_retire`, bound to one unit's session.
         `citable` is what code handed the model (`Citable`); provenance is the
-        runtime's, never the model's."""
+        runtime's, never the model's.
+
+        `handles` maps the short name a session was shown (`L1`) to the lesson's
+        id, and is extended with every lesson the session writes. A session
+        never sees an id: the Dreamer's screen refuses any argument carrying a
+        UUID (`DreamerRuntime._screened`), so a verb taking one could never be
+        called. `None` passes ids through (the tests' and the CLI's shape).
+        `on_ok` is told the verb's name after each call that was not refused."""
+
+        def _resolve(name: str | None) -> str | None:
+            if name is None or handles is None:
+                return name
+            # An unknown handle is passed on as itself and refused as
+            # `unknown_lesson` by the book, with the handle in its detail.
+            return handles.get(name.strip().upper(), name)
+
+        def _shown(out: dict[str, object], verb: str) -> dict[str, object]:
+            if out.get("status") != "ok":
+                return out
+            if handles is not None:
+                lesson_id = str(out["lesson_id"])
+                handle = next((h for h, i in handles.items() if i == lesson_id), None)
+                if handle is None:
+                    handle = f"L{len(handles) + 1}"
+                    handles[handle] = lesson_id
+                out = {**out, "lesson_id": handle}
+            if on_ok is not None:
+                on_ok(verb)
+            return out
 
         async def lesson_write(
             body: str, citations: list[str], lesson_id: str | None = None,
@@ -121,14 +152,16 @@ class LessonBook:
                 citations: What it rests on, at least one, as strings: the `n`
                     of a message you were shown, or a `response:<n>` episode you
                     were shown. Never only your own sends.
-                lesson_id: A lesson you hold, to revise it. Omit for a new one.
+                lesson_id: A lesson you hold, exactly as you were shown it, to
+                    revise it. Omit for a new one.
             """
-            return await self.learn(
+            return _shown(await self.learn(
                 unit=unit, citable=citable, body=body,
-                citations=tuple(str(c) for c in citations), lesson_id=lesson_id,
+                citations=tuple(str(c) for c in citations),
+                lesson_id=_resolve(lesson_id),
                 established_by=established_by, instruction_sha256=instruction_sha256,
                 model=model,
-            )
+            ), "lesson_write")
 
         async def lesson_retire(lesson_id: str, why: str) -> dict[str, object]:
             """Retire a lesson you hold: it is no longer true or no longer
@@ -141,11 +174,11 @@ class LessonBook:
                 lesson_id: The lesson, exactly as you were shown it.
                 why: One short sentence.
             """
-            return await self.retire(
-                unit=unit, lesson_id=lesson_id, by="session", why=why,
-                established_by=established_by, instruction_sha256=instruction_sha256,
-                model=model,
-            )
+            return _shown(await self.retire(
+                unit=unit, lesson_id=_resolve(lesson_id) or lesson_id, by="session",
+                why=why, established_by=established_by,
+                instruction_sha256=instruction_sha256, model=model,
+            ), "lesson_retire")
 
         return [lesson_write, lesson_retire]
 

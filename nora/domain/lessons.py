@@ -38,9 +38,11 @@ from nora.domain.culture import Citable, Refusal, check_revision
 __all__ = [
     "ECHO_COVERAGE",
     "ECHO_GRAM",
+    "LESSONS_OUTCOMES",
     "LESSON_BODY_MAX_CHARS",
     "LESSON_BODY_MIN_CHARS",
     "LESSON_MAX_ACTIVE",
+    "LESSON_MIN_EPISODES",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
     "Lesson",
@@ -76,6 +78,22 @@ class LessonConflictError(Exception):
     """The lesson's head moved between a writer's read and its append (the
     operator retired it, or another writer revised it): the write was judged
     against a head that is no longer the head, so it is not made."""
+
+#: Different episodes a Lessons session's write must cite (`Citable.min_episodes`,
+#: L2): a lesson is a pattern across many outcomes, and one episode is one data
+#: point (design/self-growth/40 §1). Three is Character · Nora's floor
+#: (`NORA_MIN_EVIDENCE_EPISODES`) for the same reason; unlike hers it is not
+#: lowered to what a stale wake showed, because a lesson changes what she DOES.
+LESSON_MIN_EPISODES = 3
+
+#: `nora_lessons_session_total`'s `outcome`: `written` and `retired` count
+#: verb calls that landed, `kept` a session closed with `lessons_no_change`,
+#: `unsettled` a session that did none of those (the batch is held),
+#: `abandoned` the third unsettled run of one batch (it advances, DEC-280), and
+#: `decayed` a lesson retired by code at its horizon.
+LESSONS_OUTCOMES = frozenset({
+    "written", "retired", "kept", "unsettled", "abandoned", "decayed",
+})
 
 #: Active lessons a unit holds at once, and the characters they hold together.
 LESSON_MAX_ACTIVE = 12

@@ -1475,12 +1475,35 @@ person_wake_batch = 100
 unit_wake_batch = 5
 # Closed response episodes that ARE evidence (people replied, reacted or edited,
 # or a question drew silence; an `unanswered` one is not) that wake her own
-# account in a unit. Written only: nothing reads it yet.
+# account in a unit, read on her turns as the <self> block (DEC-292).
 nora_wake_batch = 100
 # Messages read per ROOM fold (a person's session reads person_wake_batch, and
 # Nora's reads nora_wake_batch). THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300
+
+[lessons]
+# Lessons (design/self-growth/40-lessons.md, L2). ON, one background session
+# per unit reads her messages whose response window has closed (each with the
+# replies, reactions and silence that followed) and writes LESSONS: practice
+# for that group, each citing at least three of those episodes, through checked
+# write verbs (`nora lessons list` to read them, `retire`/`rollback` to undo).
+#
+# OFF BY DEFAULT, and off is the safe reading: nothing renders a lesson into
+# any prompt yet (L5), and the doctrine check that refuses a lesson loosening
+# law is not built (L3). On only fills the store L3 and L5 are measured from.
+# Needs [dreamer] enabled. Its model budget is [dreamer.budgets.culture]'s
+# unless a [dreamer.budgets.lessons] block is set.
+enabled = false
+# Closed episodes in a unit that wake its session at once. 50 is about every 3
+# to 4 days in the busiest unit (260 closed sends in 14 days, 2026-10-07).
+wake_batch = 50
+# Seconds after a unit's last session at which ANY new closed episode wakes it.
+stale_seconds = 604800
+# A lesson not written or reinforced for this long is retired by code (60 days).
+horizon_seconds = 5184000
+# Closed episodes one session is handed, the newest.
+batch_limit = 100
 
 [standing]
 # The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a

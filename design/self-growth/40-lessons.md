@@ -33,12 +33,12 @@ lessons held) and checks only it carries (cap, doctrine check, tension).
 
 | part | where |
 |---|---|
-| adaptor | a new module beside `nora/language/culture.py` (lessons.py, not built; L2) |
-| objective | a new lessons.md beside `nora/dreamer/objectives/culture.md` (not built) |
+| adaptor | built (L2, DEC-297): `nora/language/lessons.py`, `LessonsAdaptor` and `LessonEvidence` |
+| objective | built (L2): `nora/dreamer/objectives/lessons.md` |
 | store | built (L1): `lesson` and `lesson_revision`, `nora/infra/sql/lessons.py`; the verbs are `nora/language/lesson_book.py` |
-| write verbs | built (L1) as `LessonBook.verbs`; L2 grants them to this adaptor only |
+| write verbs | built (L1) as `LessonBook.verbs`; L2 hands them to this adaptor only, addressed by handle (`L1`), never by id |
 | block | a `lessons` row in `_BLOCKS` and a renderer |
-| registration | `nora/app/composition.py`, beside culture |
+| registration | built (L2): `nora/app/composition.py`, under `[lessons] enabled` (default off) |
 
 Its wake is the dream scheduler's count-or-stale rule from C1
 ([10](10-character.md) §3.2), which counts only room messages; L2 adds a
@@ -147,7 +147,7 @@ and line quoted, the evidence cited, and what the lesson would have said.
 |---|---|---|
 | L0 | done (#740): a fire turn's brief intent rides on its sends' `raw_json`, the turn's last send carries it | `silent` counted on expected asks |
 | L1 | **done (DEC-293, migration `0100_lessons`):** `lesson` table and revision chain; `lesson_write`, `lesson_retire` with citation, identifier, echo, no-re-learn and cap checks; `nora lessons list|show|retire|rollback`. Registered on no model surface: L2's adaptor hands the verbs to its session | write, cap refusal, rollback and no re-learn, in tests (`tests/infra/test_lessons.py`, `tests/unit/test_lessons_checks.py`) |
-| L2 | the Lessons adaptor, its objective and its wake (batch, stale, horizon); each episode is handed with her send's text, so the session can judge whether an `unanswered` send asked something | wakes at threshold only; a session writes or closes; a labelled set of `unanswered` sends, questions and not, judged correctly |
+| L2 | **built (DEC-297), off by default:** the Lessons adaptor, its objective and its wake (`[lessons] wake_batch` 50 closed episodes, `stale_seconds`, or a held lesson at its horizon); every closed episode is handed with her send's text, `unanswered` included and citable; a write cites three episodes; code retires a lesson not re-evidenced in `horizon_seconds` (60 days); an unsettled session holds its batch, bounded at three. **Not yet run:** the labelled set of `unanswered` sends (questions and not) judged correctly, which needs `[lessons] enabled` on the deploy host and a read-back of what the session writes | wake, settle, citation floor and decay in tests (`tests/unit/test_lessons_adaptor.py`, `tests/contract/test_character_evidence_contract.py`) |
 | L3 | the doctrine-check instrument on the law subset; tension rows, operator-only | a labelled set of loosening lessons all refused and written as tension |
 | L4 | the correction fast path | a correction wakes Lessons within the cue quiet |
 | L5 | the `lessons` block, after `self` | before/after eval (`nora-eval`) |

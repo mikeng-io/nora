@@ -38,25 +38,30 @@ class InMemoryCharacterEvidence:
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
-        window has not closed (never counted, never read). Only an evidence
-        episode (`Episode.is_evidence`) is counted or read, as in the SQL."""
+        window has not closed (never counted, never read). With
+        `evidence_only` (the default, Character · Nora) only an evidence episode
+        (`Episode.is_evidence`) is counted or read, as in the SQL; without it
+        (Lessons) every closed one is."""
         self._episodes.append((unit, episode, open_))
 
-    def _eps(self, unit: str, after: int) -> list[Episode]:
+    def _eps(self, unit: str, after: int, evidence_only: bool) -> list[Episode]:
         return sorted(
             (e for u, e, o in self._episodes if u == unit and not o
-             and e.outcome not in ("open", "unknown") and e.is_evidence
+             and e.outcome not in ("open", "unknown")
+             and (e.is_evidence or not evidence_only)
              and e.send_id > after),
             key=lambda e: e.send_id,
         )
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
-        return len(self._eps(unit, after))
+    async def episode_count(
+        self, *, unit: str, after: int, evidence_only: bool = True,
+    ) -> int:
+        return len(self._eps(unit, after, evidence_only))
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, evidence_only: bool = True,
     ) -> tuple[list[Episode], int]:
-        found = self._eps(unit, after)
+        found = self._eps(unit, after, evidence_only)
         cursor = found[-1].send_id if found else after
         return (found[-limit:] if limit > 0 else []), cursor
 
