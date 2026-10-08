@@ -301,3 +301,31 @@ def test_lessons_ship_off_and_need_the_dreamer():
         _example_config(lessons={"enabled": True}, dreamer={"enabled": False})
     on = _example_config(lessons={"enabled": True}, dreamer={"enabled": True})
     assert (on.lessons.wake_batch, on.lessons.horizon_seconds) == (50, 5_184_000)
+
+
+async def test_a_refusal_names_a_held_lesson_by_handle_never_by_id(env):
+    """`echoes_lesson` names the lesson it repeats. A session addresses lessons
+    by handle and the screen refuses an id as an argument, so the refusal must
+    say `L1`, and must say what to cite in this session's own terms."""
+    _, v = await env.session()
+    await v["lesson_write"](
+        body=LESSON, citations=["response:100", "response:110", "response:120"])
+    twice = await v["lesson_write"](
+        body=LESSON, citations=["response:100", "response:120", "response:130"])
+    assert twice["reason"] == "echoes_lesson" and "L1" in str(twice["detail"])
+    assert offence(twice) is None
+    thin = await v["lesson_write"](body="a different practice about timing",
+                                   citations=["response:100"])
+    assert thin["reason"] == "thin_evidence" and "responded" not in str(thin["detail"])
+
+
+async def test_fewer_than_three_new_episodes_are_not_handed_over_or_consumed(env):
+    """No write could cite so few, so a horizon or stale wake on one or two
+    episodes is blank (no model call, `commit` still decays) and the cursor
+    stays put, so they reach the batch they belong to."""
+    for e in EPISODES[:2]:
+        env.episodes.add_episode(unit=UNIT, episode=e)
+    assert await env.evidence.newest(key=UNIT, after=0, limit=10) == ([], 0)
+    env.episodes.add_episode(unit=UNIT, episode=EPISODES[2])
+    got, cursor = await env.evidence.newest(key=UNIT, after=0, limit=10)
+    assert [e.send_id for e in got] == [100, 110, 120] and cursor == 120

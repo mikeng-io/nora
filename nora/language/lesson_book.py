@@ -28,6 +28,7 @@ and why no lesson is rendered before L3 and L5.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
@@ -41,6 +42,9 @@ from nora.domain.lessons import (
 )
 
 log = logging.getLogger(__name__)
+
+#: A lesson id as it appears in a refusal's detail.
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 __all__ = ["LessonBook", "LessonStore"]
 
@@ -123,7 +127,19 @@ class LessonBook:
 
         def _shown(out: dict[str, object], verb: str) -> dict[str, object]:
             if out.get("status") != "ok":
-                return out
+                if handles is None or not isinstance(out.get("detail"), str):
+                    return out
+                # A refusal names the lesson it is about (`echoes_lesson`,
+                # `relearn`) by id. Shown to a session that addresses lessons by
+                # handle, the id is advice it cannot follow (the screen refuses
+                # it as an argument), so it reads the handle, or, for a lesson
+                # it was never shown (an operator's retirement), a description.
+                by_id = {i: h for h, i in handles.items()}
+                detail = _UUID.sub(
+                    lambda m: by_id.get(m.group(0), "a lesson the operator retired"),
+                    str(out["detail"]),
+                )
+                return {**out, "detail": detail}
             if handles is not None:
                 lesson_id = str(out["lesson_id"])
                 handle = next((h for h, i in handles.items() if i == lesson_id), None)
@@ -149,9 +165,10 @@ class LessonBook:
 
             Args:
                 body: The lesson, in prose.
-                citations: What it rests on, at least one, as strings: the `n`
-                    of a message you were shown, or a `response:<n>` episode you
-                    were shown. Never only your own sends.
+                citations: What it rests on, as strings: the `response:<n>` of
+                    episodes you were shown (as many different ones as your
+                    instructions ask for), and any `n` of a reply someone else
+                    wrote. Never only your own messages.
                 lesson_id: A lesson you hold, exactly as you were shown it, to
                     revise it. Omit for a new one.
             """

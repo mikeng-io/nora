@@ -198,6 +198,16 @@ def evidence_ceiling(citations: Iterable[str]) -> int:
     return max(_ids(citations), default=0)
 
 
+_CITATION_DETAILS = {
+    "unresolved_citation": "cite only the `response:<n>` of an episode you were "
+                           "shown, or the `n` of a reply someone else wrote",
+    "echo": "every citation is one of your own messages; cite the `response:<n>` "
+            "episodes that show how people responded, or did not",
+    "thin_evidence": "a lesson is a pattern: cite at least {n} different "
+                     "`response:<n>` episodes you were shown",
+}
+
+
 def check_lesson(
     *, body: str, citations: tuple[str, ...], citable: Citable,
     law: Sequence[str], active: Sequence[Lesson], retired_by_operator: Sequence[Lesson],
@@ -223,7 +233,13 @@ def check_lesson(
                        "and digits; say what to do differently in a clause")
     refused = check_revision(body=text, citations=citations, citable=citable)
     if refused is not None:
-        return refused
+        # `check_revision`'s details are written for Character · Nora, who may
+        # cite only episodes someone responded to. A Lessons session may cite
+        # every episode it was shown (`unanswered` too, design/self-growth/40
+        # §6), so its refusal says that instead.
+        detail = _CITATION_DETAILS.get(refused.reason)
+        return refused if detail is None else Refusal(refused.reason, detail.format(
+            n=citable.min_episodes))
     for rule in law:
         if echoes(text, rule):
             return Refusal("echoes_doctrine", "this restates a law you already carry; a "

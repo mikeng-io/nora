@@ -80,7 +80,12 @@ it) is decided in the PR.
 ## 4. Enforced by code on every write
 
 - **Citations:** a lesson cites the `response` episodes (or the correction)
-  that taught it. Her own sends alone are refused (the echo rule).
+  that taught it, at least three different ones (L2, DEC-297). Her own sends
+  cited as messages are refused (the echo rule). An episode is her send AND its
+  closed window, so every closed episode the session was shown may be cited,
+  `unanswered` included: an unanswered send that asked something is the
+  outcome §6 hands the session to judge. That judgement is the model's, and
+  L2's labelled check is what measures it.
 - **Size cap** per unit, about 800 tokens to start; a write past it is refused
   until the session consolidates or retires. L1 sized it without data (no lesson
   exists to measure): 400 characters a lesson, 12 active and 2,400 characters a

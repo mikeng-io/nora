@@ -176,10 +176,20 @@ class LessonEvidence:
     async def newest(
         self, *, key: str, after: int, limit: int,
     ) -> tuple[Sequence[Episode], int]:
+        """The newest `limit` closed episodes and the cursor past them, or
+        nothing and the cursor UNMOVED when fewer than `LESSON_MIN_EPISODES`
+        arrived: no write could cite so few, so a model call on them (a horizon
+        or stale wake on one or two) is spent for nothing, and consuming them
+        would keep them from the batch they belong to. The run is then blank:
+        `commit` still runs the decay, and the watermark's age resets, so a
+        short batch is looked at again a `stale_seconds` later, not every tick."""
         self._held[key] = after
-        return await self._store.episodes(
+        found, cursor = await self._store.episodes(
             unit=self._keys[key].unit, after=after, limit=limit, evidence_only=False,
         )
+        if len(found) < LESSON_MIN_EPISODES:
+            return [], after
+        return found, cursor
 
 
 @dataclass
