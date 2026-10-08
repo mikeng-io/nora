@@ -84,7 +84,7 @@ func (f *fakeRESTIssuer) WebFormTokens() (string, string, string, error) {
 
 // testSelf is the account as the bridge knows it. Only the handle is used, for
 // the "@" token; `mentioned_user_ids` is never read (see mentionsAccount).
-var testSelf = domain.Self{FBID: "14963523149149302", IGID: fakeig.SelfIGID, Username: fakeig.SelfUsername}
+var testSelf = domain.Self{FBID: "18247361241432477", IGID: fakeig.SelfIGID, Username: fakeig.SelfUsername}
 
 func (f *fakeRESTIssuer) WebSessionID() (string, error) {
 	if f.session == "" {
@@ -721,7 +721,7 @@ func mentionsTestBridge(t *testing.T, issuer *fakeRESTIssuer) *Bridge {
 		Store:      session.Store{Dir: t.TempDir()},
 		State:      domain.StateAuthenticated,
 		Connected:  true,
-		Self:       domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: fakeig.SelfUsername},
+		Self:       domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: fakeig.SelfUsername},
 		RESTIssuer: issuer,
 	})
 }

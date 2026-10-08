@@ -26,7 +26,7 @@ from nora.infra.sql.migrations_runner import run_migrations
 from nora.language.lesson_book import LessonBook
 
 UNIT = "friends"
-LAW = ["Never share a member's location with anyone outside the room it came from."]
+LARSEN = ["Never share a member's location with anyone outside the room it came from."]
 CITABLE = Citable(
     messages=frozenset(range(100, 140)), nora=frozenset({100}),
     episodes=frozenset({110, 111, 112}), echo_rule=True,
@@ -49,7 +49,7 @@ async def env(pg_url):
     run_migrations(pg_url)
     engine = create_sql_engine(pg_url)
     store = SqlLessonStore(engine)
-    book = LessonBook(store=store, law=lambda: LAW, screen=offence, clock_ms=_Clock())
+    book = LessonBook(store=store, law=lambda: LARSEN, screen=offence, clock_ms=_Clock())
     try:
         yield SimpleNamespace(engine=engine, store=store, book=book, url=pg_url)
     finally:
@@ -104,7 +104,7 @@ async def test_a_refused_write_reaches_no_row(env):
         ({"citations": ()}, "uncited"),
         ({"citations": ("999",)}, "unresolved_citation"),
         ({"citations": ("100",)}, "echo"),
-        ({"body": LAW[0]}, "echoes_doctrine"),
+        ({"body": LARSEN[0]}, "echoes_doctrine"),
         ({"body": "call her on +85291234567 for the details of how to act"}, "identifier"),
         ({"body": "x" * 500}, "too_long"),
     ]:
@@ -312,7 +312,7 @@ async def test_an_operator_retirement_between_a_read_and_a_reinforce_is_not_undo
         await env.book.retire(unit=UNIT, lesson_id=lid, by="operator", why="wrong",
                               established_by="operator:cli", record_head=120)
 
-    racing = LessonBook(store=_RacingStore(env.store, operator_retires), law=lambda: LAW,
+    racing = LessonBook(store=_RacingStore(env.store, operator_retires), law=lambda: LARSEN,
                         screen=offence, clock_ms=_Clock())
     out = await racing.learn(
         unit=UNIT, citable=CITABLE, body=ONE + ", and say why", citations=("110", "112"),

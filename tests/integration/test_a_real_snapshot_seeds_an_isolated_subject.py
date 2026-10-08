@@ -97,7 +97,7 @@ async def _say(engine: Any, body: str, *, at: int) -> int:
     return await SqlRecordStore(engine).append(
         message=NormalizedMessage(
             platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
-            sender_id="+85214535926", sender_name="Miles", timestamp=at, body=body, raw={},
+            sender_id="+88387175396", sender_name="Miles", timestamp=at, body=body, raw={},
         ),
         person_id="miles_novak",
     )
@@ -292,7 +292,7 @@ async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, sou
     joined = "\n".join(seeded.transcript)
     sender_ids = {r.sender_id for r in await _rows(sandbox)}
     assert sender_ids  # the minted ids exist, and none of them is rendered
-    for raw in (*sender_ids, "+85214535926", "+852"):
+    for raw in (*sender_ids, "+88387175396", "+852"):
         assert raw not in joined
 
 

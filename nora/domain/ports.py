@@ -2093,7 +2093,7 @@ class SocialSubjectIndex(Protocol):
 
     **Not Honcho, deliberately.** Honcho holds what Nora remembers and infers
     about people, which is the right home for "Miles posts a lot of food
-    photos" and the wrong home for "Miles is igid 221731317": the binding is an
+    photos" and the wrong home for "Miles is igid 246967358": the binding is an
     AUTHORIZATION KEY (the tier decision is made on it), and a binding that
     can drift is a permission that can drift. It must also be auditable and
     revocable — a human reads one file and deletes one line — which inferred

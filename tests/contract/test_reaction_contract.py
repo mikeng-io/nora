@@ -35,12 +35,12 @@ from nora.testing import FakeAdapter
 DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
 DISCORD_MESSAGE = "100000000000000208"
 
-WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+WHATSAPP_GROUP = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 
 #: The SHORT thread id. On the reaction route that is load-bearing rather than merely
 #: matching upstream: a reaction addressed with the LONG one is accepted with
 #: a 200 and is absent from the thread afterwards (measured 2026-09-22).
-INSTAGRAM_GROUP = ConversationTarget("instagram", "1009543911792316", "group")
+INSTAGRAM_GROUP = ConversationTarget("instagram", "1183780976338188", "group")
 INSTAGRAM_MESSAGE = "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq"
 
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")

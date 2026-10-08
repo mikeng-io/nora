@@ -569,7 +569,9 @@ async def test_the_tool_hands_the_address_book_to_the_map_screen() -> None:
     the tool (`person_names=_route_person_names`) left the suite green and a person's name went to
     Google."""
     asked: list[str] = []
-    out = await _tools(_map_service(asked))["document_publish"](spec=_map_spec("Miles Novak's home"))
+    out = await _tools(_map_service(asked))["document_publish"](spec=_map_spec(
+        "Miles Novak's home"
+    ))
     assert out["status"] == "bad_arguments", out
     assert any("cannot be mapped" in f for f in out["findings"]), out["findings"]
     assert asked == [], "a person's name must never leave the host"

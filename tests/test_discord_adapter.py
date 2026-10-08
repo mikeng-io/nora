@@ -270,7 +270,7 @@ async def test_own_handle_reuses_the_startup_users_me_call(aiohttp_server):
     async def handler(request):
         nonlocal calls
         calls += 1
-        return web.json_response({"id": "555", "username": "nora", "discriminator": "4214"})
+        return web.json_response({"id": "555", "username": "nora", "discriminator": "0000"})
 
     app = web.Application()
     app.router.add_get("/users/@me", handler)

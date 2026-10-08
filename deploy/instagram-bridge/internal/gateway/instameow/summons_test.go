@@ -27,7 +27,7 @@ import (
 
 const (
 	cardMID        = "mid.$summonscard0001"
-	cardSenderFBID = "110966695387753"
+	cardSenderFBID = "186217604552756"
 	cardSenderIGID = "500000000001"
 	cardSenderName = "commenter_alpha"
 	cardText       = "@not_____nora is this true 3f9c"
@@ -97,7 +97,7 @@ func summonsBridge(t *testing.T, ig *fakeIG) (*Bridge, *fakeRecorder) {
 		Store:  session.Store{Dir: t.TempDir()},
 		Sink:   stream.NewHub(),
 		State:  domain.StateAuthenticated,
-		Self:   domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
+		Self:   domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"},
 		Client: ig,
 	})
 	rec := &fakeRecorder{}
@@ -144,8 +144,8 @@ func summonsEvents(t *testing.T, b *Bridge) []map[string]any {
 // Detection: an XMA card from somebody else whose subtitle, caption or
 // title carries word-bounded @own-handle. Nothing else.
 func TestSummonsCardDetection(t *testing.T) {
-	self := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
-	own := int64(14963523149149302)
+	self := domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"}
+	own := int64(18247361241432477)
 	// card is the measured card with one thing about its XMA changed.
 	card := func(change func(m *slidetypes.Message, x *slidetypes.XMAContent)) *slidetypes.Message {
 		m := liveCard(t, "is this true")
@@ -186,7 +186,7 @@ func TestSummonsCardDetection(t *testing.T) {
 			return m
 		}(), own, false},
 		{"not an XMA card", &slidetypes.Message{
-			MessageID: cardMID, SenderFBID: 110966695387753, TextBody: cardText,
+			MessageID: cardMID, SenderFBID: 186217604552756, TextBody: cardText,
 			Content: slidetypes.MessageContentWrapper{Content: &slidetypes.MessageContentText{TextBody: cardText}},
 		}, own, false},
 	} {

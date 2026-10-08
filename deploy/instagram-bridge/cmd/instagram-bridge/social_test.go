@@ -48,7 +48,7 @@ func getProfile(t *testing.T, b *testBridge, query string) *httptest.ResponseRec
 func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getProfile(t, b, "221731317")
+	rec := getProfile(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -67,10 +67,10 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 			"the operator's gate unreadable — and the body still looks fine",
 			got, ok)
 	}
-	if body.IGID != "221731317" {
+	if body.IGID != "246967358" {
 		t.Errorf("igid = %q, want the id off the RESPONSE", body.IGID)
 	}
-	if body.FBID != "110966695387753" {
+	if body.FBID != "186217604552756" {
 		t.Errorf("fbid = %q; the messaging id is carried so a caller can join "+
 			"the two spaces without a second round trip", body.FBID)
 	}
@@ -86,7 +86,7 @@ func TestProfileCarriesTheGateIncludingUnmodelledKeys(t *testing.T) {
 func TestProfileDoesNotLeakTheViewer(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getProfile(t, b, "221731317")
+	rec := getProfile(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -125,13 +125,13 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			name:  "no user in the response",
 			fake:  &fakeIG{ProfileUserSet: true, ProfileUser: nil},
 			want:  http.StatusNotFound,
-			query: "221731317",
+			query: "246967358",
 		},
 		{
 			name:  "transport error",
 			fake:  &fakeIG{ProfileErr: errors.New("connection reset")},
 			want:  http.StatusInternalServerError,
-			query: "221731317",
+			query: "246967358",
 		},
 		{
 			// A human has to clear this one, and a retry hammers a challenged
@@ -139,7 +139,7 @@ func TestProfileFailureIsNeverAZeroValueGate(t *testing.T) {
 			name:  "checkpointed session",
 			fake:  &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired},
 			want:  http.StatusConflict,
-			query: "221731317",
+			query: "246967358",
 		},
 		{
 			name:  "not a decimal id",
@@ -195,11 +195,11 @@ func TestProfileAddressesTheIGIDSpaceAndCanonicalizes(t *testing.T) {
 
 	// Leading zeros: the same account, spelled two ways. Left alone it would
 	// be two cache keys and two identities for one person.
-	if rec := getProfile(t, b, "0221731317"); rec.Code != http.StatusOK {
+	if rec := getProfile(t, b, "0246967358"); rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(f.ProfileIGIDs) != 1 || f.ProfileIGIDs[0] != "221731317" {
-		t.Fatalf("GetProfile was addressed with %v, want [221731317] canonicalized",
+	if len(f.ProfileIGIDs) != 1 || f.ProfileIGIDs[0] != "246967358" {
+		t.Fatalf("GetProfile was addressed with %v, want [246967358] canonicalized",
 			f.ProfileIGIDs)
 	}
 }
@@ -210,11 +210,11 @@ func TestProfileAddressesTheIGIDSpaceAndCanonicalizes(t *testing.T) {
 // which is exactly the set the operator's public-or-followed rule is for.
 func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 	f := &fakeIG{ProfileUserSet: true, ProfileUser: &slidetypes.User{
-		ID: "276321323", Username: "_qnpdwdmqvgho",
+		ID: "286113965", Username: "_qnpdwdmqvgho",
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getProfile(t, b, "276321323")
+	rec := getProfile(t, b, "286113965")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
@@ -227,7 +227,7 @@ func TestProfileWithNoMessagingIDStillAnswers(t *testing.T) {
 		t.Errorf("fbid = %q, want empty — 0 means no messaging row, and "+
 			"formatting it as \"0\" would be an id that names nobody", body.FBID)
 	}
-	if body.IGID != "276321323" || body.Username != "_qnpdwdmqvgho" {
+	if body.IGID != "286113965" || body.Username != "_qnpdwdmqvgho" {
 		t.Errorf("a missing join key lost the account: %+v", body)
 	}
 }
@@ -260,19 +260,19 @@ func (f *fakeGraphQLIssuer) MakeGraphQLRequest(
 func TestProfileKeysTheSocialCallOnTheIGIDNotTheUsername(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{body: []byte(`{"data":{"user":{"is_private":true}}}`)}
 
-	// measuredProfile carries ID "221731317" and Username "nka_bpumvg" — two
+	// measuredProfile carries ID "246967358" and Username "nka_bpumvg" — two
 	// different strings, so a test that only checked "some string was sent"
 	// could not tell a regression to the old, wrong behaviour from a pass.
 	f := &fakeIG{}
 	b := newTestBridge(t, f, withIssuer(issuer))
 
-	rec := getProfile(t, b, "221731317")
+	rec := getProfile(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/profile answered %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(issuer.sawIGID) != 1 || issuer.sawIGID[0] != "221731317" {
-		t.Fatalf("social call keyed on %v, want [221731317] — the numeric igid, "+
+	if len(issuer.sawIGID) != 1 || issuer.sawIGID[0] != "246967358" {
+		t.Fatalf("social call keyed on %v, want [246967358] — the numeric igid, "+
 			"not measuredProfile's username %q", issuer.sawIGID, "nka_bpumvg")
 	}
 	var body profileBody
@@ -317,13 +317,13 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 	f := &fakeIG{}
 	b := newTestBridge(t, f)
 
-	if rec := getStory(t, b, "221731317"); rec.Code != http.StatusOK {
+	if rec := getStory(t, b, "246967358"); rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(f.ReelIDs) != 1 {
 		t.Fatalf("FetchReel called %d times, want 1", len(f.ReelIDs))
 	}
-	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "221731317" {
+	if len(f.ReelIDs[0]) != 1 || f.ReelIDs[0][0] != "246967358" {
 		t.Errorf("FetchReel was addressed with %v, want exactly one igid — a "+
 			"batched read opens stories nobody asked about", f.ReelIDs[0])
 	}
@@ -336,7 +336,7 @@ func TestStoryNeverBatchesTheRead(t *testing.T) {
 func TestStoryFramesKeepBothTheClipAndTheStill(t *testing.T) {
 	b := newTestBridge(t, &fakeIG{})
 
-	rec := getStory(t, b, "221731317")
+	rec := getStory(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -392,12 +392,12 @@ func TestStoryVideoWithNoClipDegradesToItsCover(t *testing.T) {
 	}
 	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
-			"221731317": {ID: "221731317", Items: []*responses.ReelItem{item}},
+			"246967358": {ID: "246967358", Items: []*responses.ReelItem{item}},
 		},
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "221731317")
+	rec := getStory(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -426,7 +426,7 @@ func TestStoryEmptyIsNotAClaimThatNothingWasPosted(t *testing.T) {
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "221731317")
+	rec := getStory(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())
@@ -453,12 +453,12 @@ func TestStoryReadsTheFlatReelsMediaShapeToo(t *testing.T) {
 	item.ImageVersions2.Candidates = []responses.Candidates{{Width: 1080, URL: "https://cdn/a.jpg"}}
 	f := &fakeIG{ReelSet: true, ReelResp: &responses.ReelInfoResponse{
 		ReelsMedia: []responses.ReelInfo{
-			{ID: "221731317", Items: []*responses.ReelItem{item}},
+			{ID: "246967358", Items: []*responses.ReelItem{item}},
 		},
 	}}
 	b := newTestBridge(t, f)
 
-	rec := getStory(t, b, "221731317")
+	rec := getStory(t, b, "246967358")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/story answered %d: %s", rec.Code, rec.Body.String())

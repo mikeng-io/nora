@@ -54,7 +54,7 @@ A reaction addressed with the LONG id is **accepted and never arrives**. Text
 works with either, which is why the wrong rule went unnoticed.
 
 Inbound deltas carry `thread_fbid` (short). Every send requires
-`thread_igid` (long) — measured as `1009543911792316` and
+`thread_igid` (long) — measured as `1183780976338188` and
 `340282366841710301281152937372201004392` for the same thread. A send
 addressed with the short id does not arrive.
 
@@ -68,12 +68,12 @@ the trap where exactly one piece of code can step in it.
 
 ```json
 {
-  "room_id": "1009543911792316",
+  "room_id": "1183780976338188",
   "message_id": "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq",
-  "sender": {"fbid": "110966695387753", "igid": "221731317", "username": "nka_bpumvg"},
+  "sender": {"fbid": "186217604552756", "igid": "246967358", "username": "nka_bpumvg"},
   "timestamp_ms": 1789985625166,
   "text": "@not_____nora",
-  "mentions": [{"fbid": "14963523149149302", "offset": 0, "length": 13}],
+  "mentions": [{"fbid": "18247361241432477", "offset": 0, "length": 13}],
   "reply_to": null,
   "media": null,
   "kind": "message"
@@ -182,7 +182,7 @@ rather than re-derived.
 
 ```json
 {"members": [
-  {"fbid": "110966695387753", "igid": "221731317",
+  {"fbid": "186217604552756", "igid": "246967358",
    "username": "…", "full_name": "…"}
 ]}
 ```
@@ -215,7 +215,7 @@ failure the roster exists to end.
 
 **Corrected 2026-09-22.** An earlier revision of this paragraph justified the
 decision with "both kinds share a `1784` prefix". That measurement is real but
-is about two **fbids** — `110966695387753` and `12116372067347151`, the latter
+is about two **fbids** — `186217604552756` and `18457536310970624`, the latter
 sharing Nora's own leading digits (`02` §measured). Every measured **igid** is
 11 digits and none begins `1784`. The decision is unchanged; the evidence
 cited for it was borrowed from a different point, which is worth correcting

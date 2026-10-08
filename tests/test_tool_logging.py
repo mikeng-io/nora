@@ -158,7 +158,9 @@ def wiring(tmp_path, restore_logging):
     )
     tools = build_tools(
         store=_Store(), conversation_id=GROUP, conversation_type="group",
-        persons=persons, honcho=FakeMemoryStore(conclusions={"miles_novak": ["Miles is from Ridgeline"]},
+        persons=persons, honcho=FakeMemoryStore(conclusions={"miles_novak": [
+            "Miles is from Ridgeline"
+        ]},
                                            cards={"miles_novak": ["likes espresso"]}),
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,

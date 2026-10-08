@@ -1271,7 +1271,7 @@ async def test_media_send_collision_is_ambiguous(wiring):
     the old images_resend silently picked the first; media_send must refuse
     exactly like media_fetch does."""
     store = FakeMediaObjectStore([
-        _make_image(sha256="aabbcc14924244741244445555667788" * 2, prompt="cat one"),
+        _make_image(sha256="aabbcc14575433319544445555667788" * 2, prompt="cat one"),
         _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
     ])
     blobs = FakeBlobStore()
@@ -1465,7 +1465,7 @@ async def test_every_non_ok_media_library_status_carries_a_note(wiring):
     """`media_search` and `media_send`: every non-ok path returns a note."""
     one = FakeMediaObjectStore([_make_image()])
     two = FakeMediaObjectStore([
-        _make_image(sha256="aabbcc14924244741244445555667788" * 2, prompt="cat one"),
+        _make_image(sha256="aabbcc14575433319544445555667788" * 2, prompt="cat one"),
         _make_image(sha256="aabbcc99998888777766665555444433" * 2, prompt="cat two"),
     ])
     full = FakeBlobStore()

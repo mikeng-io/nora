@@ -64,7 +64,7 @@ func TestHealthCarriesOwnIdentity(t *testing.T) {
 	// This is the number "was I tagged?" compares against. Publishing it means
 	// the adapter can check its config against the live session instead of
 	// trusting a value that may silently have drifted.
-	if body.Self.FBID != "14963523149149302" {
+	if body.Self.FBID != "18247361241432477" {
 		t.Errorf("self.fbid = %q", body.Self.FBID)
 	}
 	if body.Self.IGID != "79597894900" {
@@ -270,7 +270,7 @@ func TestSendReturnsTheMessageItSent(t *testing.T) {
 	b := newTestBridge(t, f)
 	rec := sendMessage(t, b, threadShort, map[string]any{
 		"text":     "hello",
-		"mentions": []map[string]any{{"fbid": "110966695387753", "offset": 0, "length": 9}},
+		"mentions": []map[string]any{{"fbid": "186217604552756", "offset": 0, "length": 9}},
 		"reply_to": "mid.$parent",
 	})
 	if rec.Code != http.StatusOK {
@@ -301,7 +301,7 @@ func TestSendReturnsTheMessageItSent(t *testing.T) {
 		t.Error("the long thread id leaked into the HTTP response")
 	}
 	// The mention and the reply rode through.
-	if len(f.TextReq.Mentions) != 1 || f.TextReq.Mentions[0].FBID != 110966695387753 {
+	if len(f.TextReq.Mentions) != 1 || f.TextReq.Mentions[0].FBID != 186217604552756 {
 		t.Errorf("mentions = %+v", f.TextReq.Mentions)
 	}
 	if f.TextReq.ReplyToMessageID == nil || *f.TextReq.ReplyToMessageID != "mid.$parent" {

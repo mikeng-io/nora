@@ -24,7 +24,7 @@ from aiohttp.test_utils import TestServer
 from nora.domain.models import ConversationTarget
 from nora.platform.instagram.react import InstagramReactor
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 GROUP = ConversationTarget("instagram", ROOM, "group")
 DM = ConversationTarget("instagram", ROOM, "dm")
 MID = "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq"

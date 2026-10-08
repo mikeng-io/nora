@@ -323,10 +323,10 @@ else's — the circle-first sequencing they asked for.
 `FetchReel([igid])` returns a `user_reel` with everything needed:
 
 ```
-reel id=221731317 @nka_bpumvg type=user_reel media_count=2
+reel id=246967358 @nka_bpumvg type=user_reel media_count=2
   seen=1789935673  expiring_at=2026-09-22T04:21:13+08:00
   can_reply=true can_reshare=true
-  media_ids=[3575332932625258692 3993554204431792593]
+  media_ids=[3811649187021092147 3236689281856363849]
   item 1  video  taken_at=2026-09-20T20:20:32  url=https://instagram.f…fbcdn.net/…
   item 2  video  taken_at=2026-09-21T04:21:13  url=https://instagram.f…fbcdn.net/…
 ```

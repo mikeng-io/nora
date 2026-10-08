@@ -15,11 +15,11 @@ from nora.infra.parking.nearby import _parse_nearby
 def _payload():
     return {"places": [
         {"id": "g1", "displayName": {"text": "Langham Place Car Park"},
-         "location": {"latitude": 22.4106, "longitude": 114.1245},
+         "location": {"latitude": 22.4110, "longitude": 114.1245},
          "formattedAddress": "31 Ashcombe St, Mong Kok",
          "types": ["parking", "parking_lot"]},
         {"id": "g2", "displayName": {"text": "Olympian City 2 Car Park"},
-         "location": {"latitude": 22.4106, "longitude": 114.1245},
+         "location": {"latitude": 22.4180, "longitude": 114.1245},
          "formattedAddress": "18 Thistle Marlow Rd, Mong Kok",
          "types": ["parking_garage", "parking"]},
     ]}

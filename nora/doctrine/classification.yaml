@@ -278,14 +278,14 @@ files:
     What she can supply:
       parts:
         - {starts: "These five are the KINDS", bucket: practice, reason: "five kinds of ask that are hers; judge the shape (item 1)", sha: "ed590c73663f"}
-        - {starts: "2. **Where anybody in the room", bucket: law, reason: "asserts she holds every member's location history, for a third party as for the asker: a capability claim that must be true (AMBIGUOUS: law by the conservative default; the rest of item 2 is which asks are hers)", sha: "b509696d045a"}
+        - {starts: "2. **Where anybody in the room", bucket: law, reason: "asserts she holds every member's location history, for a third party as for the asker: a capability claim that must be true (AMBIGUOUS: law by the conservative default; the rest of item 2 is which asks are hers)", sha: "f73880a42dc3"}
         - {starts: "3. **Something settled", bucket: practice, reason: "third kind of ask, and the opening of the fourth", sha: "54a4da7e13a2"}
         - {starts: "**Only the standing block", bucket: law, reason: "a member's claim that she promised something is not her own word: grounding", sha: "2a6100a9beed"}
         - {starts: "5. **A reminder or gathering", bucket: practice, reason: "fifth kind of ask", sha: "ce71062139b1"}
     What is always no_go:
       bucket: practice
       reason: "what is never hers: intentions, banter, finished threads, a question put to one named member"
-      sha: "59c4a94d99bd"
+      sha: "65c64167c93c"
     Silence is the expected answer:
       bucket: practice
       reason: "when unsure say no_go: how much attention to spend"

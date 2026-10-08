@@ -35,7 +35,7 @@ from nora.testing import FakeBlobStore
 PHOTO = b"\xff\xd8\xff\xe0\x00\x10JFIF pretend jpeg body"
 PHOTO_SHA = hashlib.sha256(PHOTO).hexdigest()
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 
 
 def _event(media: dict | None, text: str = "睇下") -> dict:
@@ -43,7 +43,7 @@ def _event(media: dict | None, text: str = "睇下") -> dict:
         "kind": "message",
         "room_id": ROOM,
         "message_id": "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq",
-        "sender": {"fbid": "110966695387753", "username": "example_handle"},
+        "sender": {"fbid": "186217604552756", "username": "example_handle"},
         "from_me": False,
         "timestamp_ms": 1789985625166,
         "text": text,

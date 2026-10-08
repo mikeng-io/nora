@@ -22,7 +22,7 @@ edges:
 
 Examples, to be confirmed in the audit:
 
-- Law: never invent a preference; never claim a write that did not succeed;
+- Larsen: never invent a preference; never claim a write that did not succeed;
   say "I couldn't check" when a lookup broke; no action promised that no tool
   schema offers; she is an AI and never pretends otherwise.
 - Practice: usually one reply; short is the default; go deep on one or two

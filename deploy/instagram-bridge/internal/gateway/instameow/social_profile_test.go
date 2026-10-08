@@ -50,7 +50,7 @@ import (
 const fieldExceptionEnvelope = `{"errors":[{"message":"A server error field_exception occured. Check server logs for details.","severity":"CRITICAL","mids":["f0136f328befa77fe031ff7c53d932b4"],"debug_link":"https://www.meta.com/debug/?mid=f0136f328befa77fe031ff7c53d932b4","code":1675030,"api_error_code":-1,"summary":"Query Error","description":"Error performing query.","description_html":null,"description_raw":"Error performing query.","is_silent":false,"is_transient":false,"is_not_critical":false,"requires_reauth":false,"allow_user_retry":false,"debug_info":null,"query_path":null,"fbtrace_id":"F1CUAXL+Uuc","www_request_id":"A2b1faVSaoWmzADV29iJri-","path":["user"]}],"extensions":{"dtsg_token":"NAfxAATXtBq4-vYscgjOE4S6d2E0"}}`
 
 // realProfileEnvelope is a trimmed version of a real `data.user` response
-// (measured 2026-09-22, account igid 221731317): the named fields plus one
+// (measured 2026-09-22, account igid 246967358): the named fields plus one
 // unmodelled key (`account_type`) to prove extras are ignored rather than
 // erroring the parse.
 const realProfileEnvelope = `{"data":{"user":{
@@ -153,7 +153,7 @@ func attrOf(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
 
 func TestAFieldExceptionIsRefusedRatherThanReadAsEmpty(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{body: []byte(fieldExceptionEnvelope)}
-	out, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "221731317"))
+	out, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "246967358"))
 	if err == nil {
 		t.Fatalf("a field_exception envelope read with no error; got %+v", out)
 	}
@@ -173,7 +173,7 @@ func TestAFieldExceptionIsRefusedRatherThanReadAsEmpty(t *testing.T) {
 
 func TestANon200IsForwardedWithItsStatus(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{status: http.StatusTooManyRequests, body: []byte(`{"message":"Please wait a few minutes before you try again.","status":"fail"}`)}
-	_, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "221731317"))
+	_, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "246967358"))
 	if status != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want the upstream 429", status)
 	}
@@ -185,7 +185,7 @@ func TestANon200IsForwardedWithItsStatus(t *testing.T) {
 func TestAChallengePageInsideA200IsAFailure(t *testing.T) {
 	rec := recordSpans(t)
 	issuer := &fakeGraphQLIssuer{body: []byte(challengePage)}
-	out, _, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "221731317"))
+	out, _, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "246967358"))
 	if err == nil || !errors.Is(err, domain.ErrUpstreamRejected) {
 		t.Fatalf("an HTML body read as %+v, %v", out, err)
 	}
@@ -201,7 +201,7 @@ func TestAChallengePageInsideA200IsAFailure(t *testing.T) {
 
 func TestACheckpointOnTheRawPathNeedsAHuman(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{err: httpclient.ErrCheckpointRequired}
-	_, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "221731317"))
+	_, status, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "246967358"))
 	if !errors.Is(err, domain.ErrNeedsHuman) {
 		t.Errorf("err = %v, want ErrNeedsHuman", err)
 	}
@@ -212,7 +212,7 @@ func TestACheckpointOnTheRawPathNeedsAHuman(t *testing.T) {
 
 func TestARealProfileEnvelopeNamesEveryMeasuredField(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{body: []byte(realProfileEnvelope)}
-	out, _, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "221731317"))
+	out, _, err := readSocialProfile(t.Context(), issuer, mustIGID(t, "246967358"))
 	if err != nil {
 		t.Fatalf("a real profile envelope failed to parse: %v", err)
 	}
@@ -253,9 +253,9 @@ func TestParseSocialProfileRefusesAUserlessBodyWithNoErrors(t *testing.T) {
 func TestTheSocialCallIsKeyedOnTheIGID(t *testing.T) {
 	issuer := &fakeGraphQLIssuer{body: []byte(`{"data":{"user":{"is_private":true}}}`)}
 	b := NewBridge(Options{Client: &fakeIG{}, Issuer: issuer})
-	got := b.SocialProfile(t.Context(), mustIGID(t, "0221731317"))
-	if len(issuer.sawIGID) != 1 || issuer.sawIGID[0] != "221731317" {
-		t.Fatalf("social call keyed on %v, want [221731317]", issuer.sawIGID)
+	got := b.SocialProfile(t.Context(), mustIGID(t, "0246967358"))
+	if len(issuer.sawIGID) != 1 || issuer.sawIGID[0] != "246967358" {
+		t.Fatalf("social call keyed on %v, want [246967358]", issuer.sawIGID)
 	}
 	if got.Profile == nil || !got.Profile.IsPrivate || got.Err != nil || !got.Sent {
 		t.Errorf("social read = %+v", got)
@@ -325,7 +325,7 @@ func TestANon200MarksTheSpanUpstreamHTTP(t *testing.T) {
 func TestATypedCallClassifiesAChallengeOnTheSpanAndTheError(t *testing.T) {
 	rec := recordSpans(t)
 	b := NewBridge(Options{Client: &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired}})
-	_, err := b.Account(t.Context(), mustIGID(t, "221731317"))
+	_, err := b.Account(t.Context(), mustIGID(t, "246967358"))
 	if !errors.Is(err, domain.ErrNeedsHuman) || !errors.Is(err, httpclient.ErrCheckpointRequired) {
 		t.Errorf("err = %v, want ErrNeedsHuman wrapping the checkpoint", err)
 	}
@@ -333,7 +333,7 @@ func TestATypedCallClassifiesAChallengeOnTheSpanAndTheError(t *testing.T) {
 	if v, _ := attrOf(s, "error.type"); s.Status().Code != codes.Error || v.AsString() != "needs_human" {
 		t.Errorf("span status=%v error.type=%q", s.Status().Code, v.AsString())
 	}
-	if v, _ := attrOf(s, "instagram.igid"); v.AsString() != "221731317" {
+	if v, _ := attrOf(s, "instagram.igid"); v.AsString() != "246967358" {
 		t.Errorf("instagram.igid = %q", v.AsString())
 	}
 }
@@ -366,7 +366,7 @@ func socialTestBridge(t *testing.T, issuer *fakeGraphQLIssuer) *Bridge {
 		Store:     session.Store{Dir: t.TempDir()},
 		State:     domain.StateAuthenticated,
 		Connected: true,
-		Self:      domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: fakeig.SelfUsername},
+		Self:      domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: fakeig.SelfUsername},
 		Issuer:    issuer,
 	})
 }

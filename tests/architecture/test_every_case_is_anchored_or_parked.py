@@ -42,7 +42,7 @@ KNOWN_ROOMS = {
     ("signal", "x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc="),
     ("discord", "100000000000000201/100000000000000202"),
     ("discord", "100000000000000203/100000000000000204"),
-    ("whatsapp", "175356896463213715@g.us"),
+    ("whatsapp", "165393256957216018@g.us"),
 }
 #: The clone's history begins 2026-08-05 (`messages` from the cutover).
 FIRST_ROW_MS = 1_785_928_686_349

@@ -27,7 +27,7 @@ GET https://graph.threads.net/v1.0/{uid}/mentions
 ```
 
 **Pass:** the scopes list `threads_manage_mentions`, and `/mentions`
-answers 200. The user id is `27316499435041440` (`noraexample`, read back
+answers 200. The user id is `25168681017396334` (`noraexample`, read back
 2026-09-25). It becomes the bridge's `THREADS_USER_ID`.
 
 ## Phase 1: `threads-bridge`, read-only, and the measurements design needs

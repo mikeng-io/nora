@@ -51,7 +51,7 @@ One JSON object per `data:` line, discriminated by `type`.
 {
   "type": "message",
   "id": "3EB0F1…",
-  "chat_jid": "176569000000000000@g.us",
+  "chat_jid": "152099000000000000@g.us",
   "is_group": true,
   "from_me": false,
   "sender_jid": "60000000000001@lid",
@@ -60,10 +60,10 @@ One JSON object per `data:` line, discriminated by `type`.
   "push_name": "Alice",
   "text": "hello",
   "timestamp_ms": 1756963200000,
-  "mentioned": [{"jid": "85202411020@s.whatsapp.net", "phone": "85202411020", "lid": null}],
+  "mentioned": [{"jid": "86183254648@s.whatsapp.net", "phone": "86183254648", "lid": null}],
   "quoted": {
-    "id": "3EB0AA…", "participant_jid": "85202411020@s.whatsapp.net",
-    "participant_phone": "85202411020", "participant_lid": null,
+    "id": "3EB0AA…", "participant_jid": "86183254648@s.whatsapp.net",
+    "participant_phone": "86183254648", "participant_lid": null,
     "timestamp_ms": 1756963100000, "text": "earlier message"
   },
   "media": [{"kind": "audio", "mimetype": "audio/ogg; codecs=opus",
@@ -108,7 +108,7 @@ Field rules:
 ### `reaction` and `delete` (2026-09-28, design/cognition-loop step 1)
 
 ```json
-{"type": "reaction", "id": "3EB0F2", "chat_jid": "176569000000000000@g.us",
+{"type": "reaction", "id": "3EB0F2", "chat_jid": "152099000000000000@g.us",
  "is_group": true, "from_me": false, "sender_jid": "...", "sender_phone": "...",
  "sender_lid": "...", "push_name": "Alice", "target_id": "3EB0F1",
  "emoji": "👍", "removed": false, "timestamp_ms": 1756963200000}

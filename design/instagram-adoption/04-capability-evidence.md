@@ -29,7 +29,7 @@ protocol's behaviour — two of them turned out not to match the wire.
 | edit message | PASS | `EditMessage` accepted |
 | unsend message | PASS | 5 of 5 probe messages removed |
 | typing indicator | **UNVERIFIED** | `SetTyping` accepted; arrival never read back, and upstream addresses it with the SHORT id |
-| upload image bytes | PASS | 140-byte PNG → attachment fbid `2280432885466163` |
+| upload image bytes | PASS | 140-byte PNG → attachment fbid `2991842530094532` |
 | send image to group | PASS | `SendMedia` with that attachment fbid |
 | caption on media | **impossible** | `SendMediaRequest` has **no text field at all** |
 
@@ -153,7 +153,7 @@ All on the **same authenticated session**, no second credential:
 | multi-sender attribution (3-person room) | PASS | each message's `sender_fbid` matches that member's roster `interop_messaging_user_fbid` |
 | member added to the room | PASS | `ADD_PARTICIPANT_XMAT`, attributed to the member who did the adding |
 | message from a member other than the operator | PASS | `@second_member` text and image, both correctly attributed |
-| one member `@`-mentioning ANOTHER (not Nora) | PASS | `"@nka_bpumvg GH"` from a third party — `mentions[].user_fbid=110966695387753`, not Nora's |
+| one member `@`-mentioning ANOTHER (not Nora) | PASS | `"@nka_bpumvg GH"` from a third party — `mentions[].user_fbid=186217604552756`, not Nora's |
 | Nora distinguishes "tagged me" from "tagged someone else" | PASS | same room, same sender: one mention carries Nora's `GetOwnFBID()`, the other does not |
 | `SearchUsers(query)` | PASS | 2,941 bytes of results |
 | `FetchMedia(mediaID, shortcode)` | **FAIL** on a story media id | `HTTP 400` from `/api/v1/media/<id>/info/`; untested on a real feed post |
@@ -171,11 +171,11 @@ started):
 
 ```
 [bridge] listening on :18099 (session dir ./session)
-[bridge] authenticated as @not_____nora (fbid=14963523149149302 igid=79597894900)
+[bridge] authenticated as @not_____nora (fbid=18247361241432477 igid=79597894900)
 [bridge] realtime socket connected (subscribed_seq=79 latest_seq=79)
 
 GET /health  -> {"ok":true,"session":"authenticated","connected":true,"seq":79,
-                 "self":{"fbid":"14963523149149302","igid":"79597894900",...}}
+                 "self":{"fbid":"18247361241432477","igid":"79597894900",...}}
 GET /events  -> data: {"kind":"heartbeat","ts_ms":…,"connected":true,
                        "session":"authenticated"}
 ```
@@ -186,7 +186,7 @@ Confirmed by that run: the **cookie bootstrap from a `Copy as cURL` paste**
 the SSE stream including the 30s heartbeat that is the socket-death detector.
 
 The ids agree with what was measured independently two days earlier, which is
-the useful part: `self.fbid` is `14963523149149302` — the id mentions carry —
+the useful part: `self.fbid` is `18247361241432477` — the id mentions carry —
 and `self.igid` is `79597894900`, the public id `opencli instagram whoami`
 returns. The bridge derives both from the session; nothing was configured.
 

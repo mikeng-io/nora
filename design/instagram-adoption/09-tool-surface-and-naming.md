@@ -55,7 +55,7 @@ story"* about someone she already knows. Which network that person is on is a
 
 ```
 subject: a person Nora knows
-   └─ person index ──> instagram igid 221731317
+   └─ person index ──> instagram igid 246967358
                        x handle    @…
                        threads     …
 ```
