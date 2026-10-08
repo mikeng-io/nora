@@ -2776,6 +2776,45 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
+class LessonsConfig(BaseModel):
+    """`[lessons]` — the Lessons session (design/self-growth/40-lessons.md, L2):
+    one Dreamer session per unit, woken by closed `response` episodes, writing
+    lessons through `lesson_write` and `lesson_retire`.
+
+    **Off by default, and off is the safe reading.** Nothing renders a lesson
+    until L5, and the doctrine check that refuses a lesson loosening law is L3:
+    on, the session writes into a store no prompt reads, which is what L3 and
+    L5 need data from. Needs `[dreamer] enabled`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+
+    #: Closed episodes in a unit (her sends with what followed, `unanswered`
+    #: included) that wake its session at once. **50**, the read-back's
+    #: proposal (design/self-growth/50 §4): about every 3 to 4 days in the
+    #: busiest unit (260 closed sends in 14 days, 2026-10-07); every quieter
+    #: unit is woken by `stale_seconds` instead. 30, the design's start, would
+    #: induce from about two days of one unit.
+    wake_batch: int = Field(default=50, ge=1)
+
+    #: Seconds after a unit's last session at which ANY new closed episode
+    #: wakes it, so a quiet unit is still read weekly. **604800** (7 days), the
+    #: Character sessions' rule; a unit with nothing new never fires.
+    stale_seconds: int = Field(default=604_800, ge=3600)
+
+    #: A lesson not re-evidenced (written or reinforced) for this long is
+    #: retired by code (40 §2 step 7). **5184000** (60 days), the design's
+    #: number; unmeasured, since no lesson exists yet.
+    horizon_seconds: int = Field(default=5_184_000, ge=86_400)
+
+    #: Closed episodes one session is handed, the newest. Twice `wake_batch`,
+    #: so a stale wake after a long gap reads two batches, not the whole gap;
+    #: what is past it is consumed, as a Character session's backlog is.
+    batch_limit: int = Field(default=100, ge=1)
+
+
 class NotesConfig(BaseModel):
     """The note tier's gate. `enabled` defaults to **False**, because a new
     subsystem does not switch itself on. On: the store is built, `<notes>`
@@ -3964,6 +4003,7 @@ class Config(BaseModel):
     # (`enabled = false`): off, composition builds no adaptor, no schedule
     # entry and no store, so the tier is absent rather than idle.
     culture: CultureConfig = CultureConfig()
+    lessons: LessonsConfig = LessonsConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never
@@ -4404,6 +4444,17 @@ class Config(BaseModel):
             raise ValueError(
                 "[cognition] enabled = true needs [dreamer] enabled = true: "
                 "a session runs on the Dreamer's model, tools and objectives"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _lessons_need_the_dreamer(self) -> Config:
+        """A Lessons session is a Dreamer adaptor; `[lessons] enabled` without
+        the Dreamer would build nothing and say nothing."""
+        if self.lessons.enabled and not self.dreamer.enabled:
+            raise ValueError(
+                "[lessons] enabled = true needs [dreamer] enabled = true: "
+                "the Lessons session runs on the Dreamer"
             )
         return self
 

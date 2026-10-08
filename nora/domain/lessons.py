@@ -38,9 +38,11 @@ from nora.domain.culture import Citable, Refusal, check_revision
 __all__ = [
     "ECHO_COVERAGE",
     "ECHO_GRAM",
+    "LESSONS_OUTCOMES",
     "LESSON_BODY_MAX_CHARS",
     "LESSON_BODY_MIN_CHARS",
     "LESSON_MAX_ACTIVE",
+    "LESSON_MIN_EPISODES",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
     "Lesson",
@@ -76,6 +78,22 @@ class LessonConflictError(Exception):
     """The lesson's head moved between a writer's read and its append (the
     operator retired it, or another writer revised it): the write was judged
     against a head that is no longer the head, so it is not made."""
+
+#: Different episodes a Lessons session's write must cite (`Citable.min_episodes`,
+#: L2): a lesson is a pattern across many outcomes, and one episode is one data
+#: point (design/self-growth/40 §1). Three is Character · Nora's floor
+#: (`NORA_MIN_EVIDENCE_EPISODES`) for the same reason; unlike hers it is not
+#: lowered to what a stale wake showed, because a lesson changes what she DOES.
+LESSON_MIN_EPISODES = 3
+
+#: `nora_lessons_session_total`'s `outcome`: `written` and `retired` count
+#: verb calls that landed, `kept` a session closed with `lessons_no_change`,
+#: `unsettled` a session that did none of those (the batch is held),
+#: `abandoned` the third unsettled run of one batch (it advances, DEC-280), and
+#: `decayed` a lesson retired by code at its horizon.
+LESSONS_OUTCOMES = frozenset({
+    "written", "retired", "kept", "unsettled", "abandoned", "decayed",
+})
 
 #: Active lessons a unit holds at once, and the characters they hold together.
 LESSON_MAX_ACTIVE = 12
@@ -180,6 +198,16 @@ def evidence_ceiling(citations: Iterable[str]) -> int:
     return max(_ids(citations), default=0)
 
 
+_CITATION_DETAILS = {
+    "unresolved_citation": "cite only the `response:<n>` of an episode you were "
+                           "shown, or the `n` of a reply someone else wrote",
+    "echo": "every citation is one of your own messages; cite the `response:<n>` "
+            "episodes that show how people responded, or did not",
+    "thin_evidence": "a lesson is a pattern: cite at least {n} different "
+                     "`response:<n>` episodes you were shown",
+}
+
+
 def check_lesson(
     *, body: str, citations: tuple[str, ...], citable: Citable,
     law: Sequence[str], active: Sequence[Lesson], retired_by_operator: Sequence[Lesson],
@@ -205,7 +233,13 @@ def check_lesson(
                        "and digits; say what to do differently in a clause")
     refused = check_revision(body=text, citations=citations, citable=citable)
     if refused is not None:
-        return refused
+        # `check_revision`'s details are written for Character · Nora, who may
+        # cite only episodes someone responded to. A Lessons session may cite
+        # every episode it was shown (`unanswered` too, design/self-growth/40
+        # §6), so its refusal says that instead.
+        detail = _CITATION_DETAILS.get(refused.reason)
+        return refused if detail is None else Refusal(refused.reason, detail.format(
+            n=citable.min_episodes))
     for rule in law:
         if echoes(text, rule):
             return Refusal("echoes_doctrine", "this restates a law you already carry; a "

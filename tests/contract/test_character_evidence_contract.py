@@ -278,3 +278,25 @@ async def test_an_episode_answered_only_by_follows_is_not_evidence_in_either_sto
     assert ids["fonly"] not in [e.send_id for e in got]
     only, cursor = await store.episodes(unit="friends", after=ids["ask"], limit=10)
     assert [e.send_id for e in only] == [ids["fmix"]] and cursor == ids["fmix"]
+
+
+async def test_lessons_count_and_read_every_closed_episode(episodes):
+    """Lessons (design/self-growth/40 §6, L2) reads every CLOSED episode of the
+    current build: `unanswered` and follow-only ones too, since the session
+    judges from her send's text whether an unanswered one asked something. Still
+    never `open` (its outcome can change), `unknown` (an outage, R-27), another
+    unit's or a superseded build's."""
+    store, ids = episodes
+    closed = ["dinner", "list", "ask", "fonly", "fmix"]
+    assert await store.episode_count(unit="friends", after=0, evidence_only=False) == 5
+    assert await store.episode_count(
+        unit="friends", after=ids["ask"], evidence_only=False) == 2
+    got, cursor = await store.episodes(
+        unit="friends", after=0, limit=10, evidence_only=False)
+    assert [e.send_id for e in got] == [ids[n] for n in closed]
+    assert [e.outcome for e in got] == [
+        "responded", "unanswered", "silent", "responded", "responded"]
+    assert got[1].text == "a list" and got[3].follows == 2
+    assert cursor == ids["fmix"]
+    newest, _ = await store.episodes(unit="friends", after=0, limit=2, evidence_only=False)
+    assert [e.send_id for e in newest] == [ids["fonly"], ids["fmix"]]

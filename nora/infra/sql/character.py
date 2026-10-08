@@ -150,10 +150,22 @@ class SqlCharacterEvidence:
 
     # -- Nora ----------------------------------------------------------------
 
-    def _closed(self, unit: str, after: int) -> list[Any]:
-        return [
+    def _closed(self, unit: str, after: int, *, evidence_only: bool = True) -> list[Any]:
+        """Settled episodes of the current build for `unit` past `after`.
+        `evidence_only` (Character · Nora) narrows them to `Episode.is_evidence`;
+        off (Lessons, design/self-growth/40 §6), every CLOSED episode is read,
+        `unanswered` included, because the Lessons session is handed each send's
+        text and judges whether an unanswered one asked something."""
+        closed = [
             ROLLUP_RESPONSE.c.build_id == current_build_id(),
             ROLLUP_RESPONSE.c.unit == unit,
+            ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
+            ROLLUP_RESPONSE.c.message_id > after,
+        ]
+        if not evidence_only:
+            return closed
+        return [
+            *closed,
             # EVIDENCE ONLY, `Episode.is_evidence` in SQL (DEC-290 (4)): people
             # answered, or silence was proved against an expected answer.
             # `unanswered` (none expected) is neither, and `open`/`unknown`
@@ -173,29 +185,29 @@ class SqlCharacterEvidence:
                 ROLLUP_RESPONSE.c.reactions == 0,
                 ROLLUP_RESPONSE.c.edits == 0,
             )),
-            ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
-            ROLLUP_RESPONSE.c.message_id > after,
         ]
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
+    async def episode_count(
+        self, *, unit: str, after: int, evidence_only: bool = True,
+    ) -> int:
         """`response` episodes of the current build for `unit` whose send is
         past Record id `after` that ARE EVIDENCE (`Episode.is_evidence`). An
         `open` one is never counted (its outcome can still change), nor an
-        `unknown` one (no proof the platform was up), nor an `unanswered` one
-        (none was expected, so nothing happened)."""
+        `unknown` one (no proof the platform was up), nor, with `evidence_only`,
+        an `unanswered` one (none was expected, so nothing happened)."""
         stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
-            *self._closed(unit, after),
+            *self._closed(unit, after, evidence_only=evidence_only),
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, evidence_only: bool = True,
     ) -> tuple[list[Episode], int]:
         """The newest `limit` of those evidence episodes, oldest first, each with her
         send's text and the replies that quoted it inside its window, and the
         cursor: the newest send id among all of them."""
-        where = self._closed(unit, after)
+        where = self._closed(unit, after, evidence_only=evidence_only)
         head = sa.select(sa.func.max(ROLLUP_RESPONSE.c.message_id)).where(*where)
         send = MESSAGES.alias("send")
         stmt = (

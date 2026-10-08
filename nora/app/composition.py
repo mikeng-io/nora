@@ -35,6 +35,7 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings
+from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dreamer import (
     TOOL_RESULT_CAPS,
     AdaptorBudget,
@@ -165,6 +166,7 @@ from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
+from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.mobility import SqlMobilityStore
@@ -226,6 +228,13 @@ from nora.language.character import (
 )
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
+from nora.language.lesson_book import LessonBook
+from nora.language.lessons import (
+    LESSONS_ADAPTOR_NAME,
+    LessonEvidence,
+    LessonsAdaptor,
+    LessonsKey,
+)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError, load_persons
@@ -908,6 +917,11 @@ CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
     CHARACTER_PERSON_ADAPTOR_NAME, CHARACTER_UNIT_ADAPTOR_NAME,
     CHARACTER_NORA_ADAPTOR_NAME,
 )
+
+
+def _now_ms() -> int:
+    """Wall-clock epoch milliseconds, the Lessons book's and evidence's clock."""
+    return int(datetime.now(UTC).timestamp() * 1000)
 
 
 def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
@@ -3785,6 +3799,49 @@ async def build_dependencies(
                 ),
             )
 
+        # LESSONS (design/self-growth/40, L2): one session per unit, woken by
+        # closed response episodes, writing through the book's checked verbs.
+        # Gated on `[lessons] enabled` alone (off by default): nothing renders a
+        # lesson before L5, and the doctrine check is L3.
+        if cfg.lessons.enabled:
+            lessons_keys = {
+                uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
+                for uk in character_unit_keys(allowlist).values()
+            }
+            lesson_book = LessonBook(
+                store=SqlLessonStore(engine),
+                law=lambda: [r.text for r in doctrine_store.law_rules()],
+                screen=dream_offence,
+                clock_ms=_now_ms,
+            )
+            dream_schedules = {
+                **dream_schedules,
+                LESSONS_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.lessons.stale_seconds,
+                    wake_batch=cfg.lessons.wake_batch,
+                    batch_limit=cfg.lessons.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                LessonsAdaptor(
+                    book=lesson_book,
+                    evidence=LessonEvidence(
+                        store=SqlCharacterEvidence(engine), book=lesson_book,
+                        keys=lessons_keys, wake_batch=cfg.lessons.wake_batch,
+                        horizon_seconds=cfg.lessons.horizon_seconds,
+                        clock_ms=_now_ms,
+                    ),
+                    keys=lessons_keys,
+                    name_of=lambda pid: (
+                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                        else "someone"
+                    ),
+                    horizon_seconds=cfg.lessons.horizon_seconds,
+                    metrics=metrics,
+                ),
+            )
+
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends
@@ -3916,9 +3973,10 @@ async def build_dependencies(
         # A Character session with no block of its own runs on the room
         # fold's numbers when the deployment set them: the same loop shape (a
         # handed batch, a few reads, one account written), and a live config
-        # needs no new block for it.
+        # needs no new block for it. The Lessons session too: a handed batch
+        # and a few checked writes.
         if "culture" in dream_budgets:
-            for name in CHARACTER_ADAPTOR_NAMES:
+            for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a

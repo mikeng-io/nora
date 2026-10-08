@@ -383,8 +383,10 @@ no entry.
     neither holds its batch and is given up on the third try.
 - **Lessons** — what Nora has learned about how to act in a unit: short
   prescriptive lines, each with the outcomes that taught it. Written only by
-  the Lessons adaptor, through `lesson_write`/`lesson_retire`. Not doctrine
-  (a rule she may not break) and not a runtime skill.
+  the Lessons adaptor, through `lesson_write`/`lesson_retire`; a session that
+  changes nothing closes with `lessons_no_change` (DEC-297, off by default
+  behind `[lessons] enabled`). Not doctrine (a rule she may not break) and not
+  a runtime skill.
 - **Standing** — see above; now one of the Notebook's four tiers rather
   than a lone concept.
 
