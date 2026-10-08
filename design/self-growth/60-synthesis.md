@@ -115,3 +115,21 @@ Shipped as v2: `culture` v6, `character-person` v3, `character-unit` v2,
 number the session was handed (`ids_in_body`). The legacy heads are rewritten by
 a one-time watermark rewind after deploy, so a quiet room does not keep its
 compressed account for ever, and the live heads are measured again after it.
+
+## 6. Live, after the rewind (2026-10-09)
+
+Watermarks of every room, person and Nora key were rewound once (backup in
+`~/nora-backups/consolidation_watermark.20261009T061146.csv`): all 25 live heads
+were rewritten within 7 minutes (culture_revision rows and the dream log, read
+on norty), 2 writes refused as `ids_in_body` and corrected.
+Mean instance share, live before → after: room 0.48 → 0.32, person 0.68 → 0.26,
+Nora 0.60 → 0.45; median length 578, 452, 426 characters; no message numbers.
+
+Nora's own account stayed the most episodic (quoted messages, named episodes):
+her session is handed episodes and retold them. `character-nora` v4 adds one
+check, "would this sentence still be true if the episode it came from had never
+happened?", and bans naming a message, a request, a place or a quote. Replay of
+her 3 sessions × 2 draws (n=3 inputs, draws not independent; replay input, not
+live): mean instance share 0.09, accounts of what people bring her, what lands,
+what falls flat and how they treat her. A signal, not a rate: the live heads are
+measured again after the v4 rewind.
