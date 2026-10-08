@@ -37,6 +37,7 @@ from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.schema import NOTE, NOTE_REVISION
@@ -323,6 +324,11 @@ class Knowledge:
     #: Her own account in the subject's unit (`nora_character_key`), what
     #: `<self>` renders (design/self-growth/20).
     nora_account: AccountSeed | None = None
+
+    #: Her active lessons in the subject's unit, oldest first, what `<lessons>`
+    #: renders under `[lessons] render` (design/self-growth/40, L5). Seeded as
+    #: lessons written at the instant: the block renders no age.
+    lessons: tuple[str, ...] = ()
 
     #: Each listed person's account in the subject's unit, keyed by person id
     #: (`character_key(unit, person_id)`), what `<character>` renders. A key
@@ -928,6 +934,13 @@ async def know(
                     written_at=now_ms - round(knowledge.unit_culture.age_hours * _HOUR_MS),
                     established_by="case-seed",
                 )
+            if knowledge.lessons:
+                lesson_store = SqlLessonStore(engine)
+                for body in knowledge.lessons:
+                    await lesson_store.create(
+                        unit=subject.unit, body=body, citations=("case-seed",),
+                        written_at=now_ms, established_by="case-seed",
+                    )
             if knowledge.nora_account is not None:
                 await culture_store.append(
                     key=nora_character_key(subject.unit),

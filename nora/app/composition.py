@@ -231,6 +231,7 @@ from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
 from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
 from nora.language.lesson_book import LessonBook
+from nora.language.lesson_render import ActiveLessons
 from nora.language.lessons import (
     LESSONS_ADAPTOR_NAME,
     LessonEvidence,
@@ -1982,6 +1983,11 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
+    # `<lessons>` on tag and fire turns (design/self-growth/40, L5): read-only,
+    # bodies of active lessons. `None` while `[lessons] render` is off.
+    lessons_reader: ActiveLessons | None = (
+        ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
+    )
     # The join from a note to its room's account (DEC-207; the note curator it was
     # built for was deleted 2026-10-03, DEC-277):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
@@ -2044,6 +2050,9 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<lessons>` (design/self-growth/40, L5): `None` while `[lessons]
+        # render` is off. The same reader the fire path gets.
+        lessons=lessons_reader,
         # `<computer>` (design/sandbox-runtime §15.3): `None` while
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,
@@ -3224,6 +3233,7 @@ async def build_dependencies(
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
+            lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads

@@ -410,3 +410,24 @@ async def test_a_tension_row_round_trips_and_lists_newest_first(env):
             unit="friends", source="character", doctrine_file="x", doctrine_line=1,
             doctrine_text="y", would_have_said="z", citations=(), why="w",
             written_at=1, established_by="t"))
+
+
+async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
+    """The eval sandbox's copy of `<lessons>` (L5): per lesson, the revision
+    current at `before_ms`, kept when active; a lesson written after the instant
+    is absent."""
+    from nora.infra.sql.snapshot import _lessons
+
+    first = await env.store.create(unit=UNIT, body=ONE, citations=("110",), written_at=10,
+                                   established_by="t")
+    await env.store.append(lesson_id=first.id, expected_seq=1, body=ONE, citations=("110",),
+                           state="retired", retired_by="session", relearn_after=None,
+                           note="gone", written_at=20, established_by="t")
+    await env.store.create(unit=UNIT, body=TWO, citations=("111",), written_at=30,
+                           established_by="t")
+    await env.store.create(unit="ridgeline", body=TWO, citations=("111",), written_at=5,
+                           established_by="t")
+    assert await _lessons(env.engine, unit=UNIT, before_ms=5) == ()
+    assert await _lessons(env.engine, unit=UNIT, before_ms=15) == (ONE,)
+    assert await _lessons(env.engine, unit=UNIT, before_ms=25) == ()
+    assert await _lessons(env.engine, unit=UNIT, before_ms=35) == (TWO,)

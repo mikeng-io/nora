@@ -152,6 +152,7 @@ from nora.engagement.stages import deliver, feedback
 from nora.engagement.stages.invoke import AgentRunner
 from nora.ingest.relevance_gate import SCORE_ABSENT
 from nora.language.culture_render import read_character, read_culture
+from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.obs.determination import (
     WINDOW_BODY_CHARS,
     Determination,
@@ -595,6 +596,7 @@ class FirePath:
         event_registry: Mapping[str, EventFactory] | None = None,
         standing: StandingStore | None = None,
         culture: CultureReader | None = None,
+        lessons: ActiveLessons | None = None,
         standing_store_timeout_seconds: float = DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
         # The participation turn's memory reads (issue #210). All four default
         # to the inert shape — `0` renders no block, so a construction site
@@ -663,6 +665,8 @@ class FirePath:
         self._computer = computer
         self._documents = documents
         self._culture = culture
+        # `<lessons>` (L5): `None` while `[lessons] render` is off.
+        self._lessons = lessons
         # BOUNDED, for the reason the debrief stage's own store calls are:
         # the heartbeat holds this conversation's slot around the whole fire
         # turn (`heartbeat.py` try_acquire -> release_and_dispatch), and
@@ -965,6 +969,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
+            lessons,
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -978,6 +983,7 @@ class FirePath:
             self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
+            self._read_lessons(occasion),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -992,6 +998,7 @@ class FirePath:
             character=character,
             unit_culture=unit_culture,
             self_account=self_account,
+            lessons=lessons,
             notes=notes,
             decisions=decisions,
             presence=presence,
@@ -1431,6 +1438,23 @@ class FirePath:
             self._culture.head(key=nora_character_key(convo.unit)),
             stage="fire_self", platform=occasion.platform,
             metrics=self._metrics,
+            timeout_seconds=self._standing_store_timeout_seconds,
+        )
+
+    async def _read_lessons(self, occasion: Event) -> tuple[str, ...]:
+        """Her active lessons in this room's UNIT (design/self-growth/40, L5):
+        `_read_self_account`'s gates and bounds. `()` while `[lessons] render`
+        is off, with no unit, or where `<self>` may not show (R-31)."""
+        if self._lessons is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(occasion.platform, occasion.conversation_id)
+        if convo is None or not convo.unit:
+            return ()
+        if not self._policy.shows_self_in(occasion.platform, occasion.conversation_id):
+            return ()
+        return await read_lessons(
+            self._lessons.bodies(unit=convo.unit),
+            stage="fire_lessons", platform=occasion.platform, metrics=self._metrics,
             timeout_seconds=self._standing_store_timeout_seconds,
         )
 

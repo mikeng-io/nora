@@ -2814,6 +2814,13 @@ class LessonsConfig(BaseModel):
     #: what is past it is consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
 
+    #: Render the unit's active lessons as `<lessons>` on tag and fire turns
+    #: (L5), after `<self>`. **Off by default**: it changes what she reads on
+    #: every turn of a unit that has lessons, so it is switched on after its
+    #: before/after eval, not by the deploy that ships it. Independent of
+    #: `enabled`: lessons already written keep rendering if the session stops.
+    render: bool = False
+
     #: The correction fast path (L4, design/self-growth/40 §3): a message that
     #: speaks to her and reads as an instruction about how she acts wakes the
     #: unit's session once it is this many seconds old, instead of waiting for
