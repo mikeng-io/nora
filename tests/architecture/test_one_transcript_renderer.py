@@ -83,6 +83,8 @@ _NOT_A_TRANSCRIPT = {
     # unification is the other half of #292 and is gated by
     # `test_one_block_injector`.
     "nora/language/note_render.py": "renders the note index, not a transcript",
+    # The doctrine check's law list: one element per law rule, doctrine text.
+    "nora/language/doctrine_check.py": "renders law rules for the doctrine check, not a transcript",
     # The SKILL CATALOGUE — one element per installed skill, name and
     # when-to-load as attributes. Operator-installed metadata, not a message
     # anybody sent, so the transcript rule does not apply; it is here because

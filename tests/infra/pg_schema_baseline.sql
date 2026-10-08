@@ -132,6 +132,7 @@ $$;
 );
 );
 );
+);
 ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 ADD CONSTRAINT analytics_watermark_pkey PRIMARY KEY (deriver_name, subject_id);
 ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
@@ -239,6 +240,7 @@ ADD CONSTRAINT room_exchange_pkey PRIMARY KEY (scope_id, act, participants);
 ADD CONSTRAINT room_lexeme_pkey PRIMARY KEY (scope_id, canonical_form, sense);
 ADD CONSTRAINT room_portrait_pkey PRIMARY KEY (scope_id);
 ADD CONSTRAINT row_history_pkey PRIMARY KEY (id);
+ADD CONSTRAINT self_tension_pkey PRIMARY KEY (id);
 ADD CONSTRAINT source_health_pkey PRIMARY KEY (id);
 ADD CONSTRAINT standing_pkey PRIMARY KEY (platform, conversation_id);
 ADD CONSTRAINT standing_revision_pkey PRIMARY KEY (id);
@@ -364,6 +366,7 @@ ALTER TABLE ONLY public.room_exchange
 ALTER TABLE ONLY public.room_lexeme
 ALTER TABLE ONLY public.room_portrait
 ALTER TABLE ONLY public.row_history
+ALTER TABLE ONLY public.self_tension
 ALTER TABLE ONLY public.source_health
 ALTER TABLE ONLY public.standing
 ALTER TABLE ONLY public.standing_revision
@@ -528,6 +531,11 @@ CONSTRAINT ck_reminders_state CHECK ((state = ANY (ARRAY['pending'::text, 'firin
 CONSTRAINT ck_rollup_build_status CHECK ((status = ANY (ARRAY['building'::text, 'current'::text, 'superseded'::text, 'abandoned'::text])))
 CONSTRAINT ck_rollup_response_outcome CHECK ((outcome = ANY (ARRAY['open'::text, 'responded'::text, 'silent'::text, 'unanswered'::text, 'unknown'::text])))
 CONSTRAINT ck_rollup_tie_pair_order CHECK ((person_a < person_b))
+CONSTRAINT ck_self_tension_has_a_unit CHECK ((length(btrim(unit)) > 0)),
+CONSTRAINT ck_self_tension_names_its_writer CHECK ((length(btrim(established_by)) > 0)),
+CONSTRAINT ck_self_tension_quotes_the_law CHECK ((length(btrim(doctrine_text)) > 0)),
+CONSTRAINT ck_self_tension_says_what_it_would CHECK ((length(btrim(would_have_said)) > 0)),
+CONSTRAINT ck_self_tension_source CHECK ((source = 'lesson'::text))
 CONSTRAINT ck_source_health_event CHECK ((event = ANY (ARRAY['poll'::text, 'transition'::text])))
 CONSTRAINT ck_stimulus_kind CHECK ((kind = ANY (ARRAY['message'::text, 'social'::text, 'play'::text, 'rollup'::text, 'time'::text, 'self'::text])))
 CONSTRAINT ck_version_announcements_state CHECK ((state = ANY (ARRAY['announcing'::text, 'done'::text, 'failed'::text])))
@@ -709,6 +717,7 @@ CREATE INDEX idx_rollup_response_key ON public.rollup_response USING btree (buil
 CREATE INDEX idx_rollup_tie_key ON public.rollup_tie USING btree (build_id, unit, iso_week);
 CREATE INDEX idx_row_history_key ON public.row_history USING btree (table_name, row_key, recorded_at);
 CREATE INDEX idx_row_history_table_recorded ON public.row_history USING btree (table_name, recorded_at);
+CREATE INDEX idx_self_tension_unit ON public.self_tension USING btree (unit, written_at);
 CREATE INDEX idx_source_health_source_at ON public.source_health USING btree (source, at_ms);
 CREATE INDEX idx_standing_revision_room_updated ON public.standing_revision USING btree (platform, conversation_id, updated_at DESC, id DESC);
 CREATE INDEX idx_stimulus_unit_due ON public.stimulus USING btree (unit, due_ms) WHERE (due_ms IS NOT NULL);
@@ -798,6 +807,7 @@ CREATE TABLE public.room_exchange (
 CREATE TABLE public.room_lexeme (
 CREATE TABLE public.room_portrait (
 CREATE TABLE public.row_history (
+CREATE TABLE public.self_tension (
 CREATE TABLE public.source_health (
 CREATE TABLE public.standing (
 CREATE TABLE public.standing_revision (
@@ -1213,6 +1223,7 @@ canonical_name text NOT NULL,
 cause text DEFAULT 'infra'::text NOT NULL,
 challenge_id uuid NOT NULL,
 challenge_id uuid NOT NULL,
+check_model text,
 checkpoint jsonb,
 checkpoint_at timestamp with time zone,
 chunk_max integer NOT NULL,
@@ -1223,6 +1234,7 @@ circle_id text NOT NULL,
 circle_id text NOT NULL,
 circle_id text NOT NULL,
 citations text[] DEFAULT '{}'::text[] NOT NULL,
+citations text[] NOT NULL,
 citations text[] NOT NULL,
 closing_condition text NOT NULL,
 closing_condition text,
@@ -1331,7 +1343,10 @@ disputed_tag_id text,
 disputed_tag_id text,
 distance_m double precision NOT NULL,
 distinct_speakers integer DEFAULT 0 NOT NULL,
+doctrine_file text NOT NULL,
+doctrine_line integer NOT NULL,
 doctrine_sha256 text,
+doctrine_text text NOT NULL,
 document_id uuid NOT NULL,
 document_id uuid NOT NULL,
 due_at timestamp with time zone NOT NULL,
@@ -1349,6 +1364,7 @@ ended_ts bigint NOT NULL,
 ended_ts bigint NOT NULL,
 entity_id uuid NOT NULL
 error text,
+established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
 established_by text NOT NULL,
@@ -1471,6 +1487,7 @@ id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid DEFAULT gen_random_uuid() NOT NULL,
+id uuid DEFAULT gen_random_uuid() NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
 id uuid NOT NULL,
@@ -1487,6 +1504,7 @@ image jsonb NOT NULL,
 image_id text,
 instruction_sha256 text NOT NULL,
 instruction_sha256 text NOT NULL,
+instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
 instruction_sha256 text,
@@ -1611,6 +1629,7 @@ model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
 model text NOT NULL,
+model text,
 model text,
 model text,
 model text,
@@ -1813,6 +1832,7 @@ recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+recorded_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
 recorded_at timestamp with time zone NOT NULL,
 recurrence text DEFAULT 'none'::text NOT NULL,
 recurrence_count integer,
@@ -1910,6 +1930,7 @@ size_bytes bigint NOT NULL,
 skill_versions jsonb DEFAULT '{}'::jsonb NOT NULL,
 slug text NOT NULL,
 source text DEFAULT 'fold'::text NOT NULL,
+source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
 source text NOT NULL,
@@ -2043,6 +2064,7 @@ unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
 unit text NOT NULL,
+unit text NOT NULL,
 unit text,
 unit_id text DEFAULT ''::text NOT NULL,
 unsupported text[] DEFAULT '{}'::text[] NOT NULL,
@@ -2109,12 +2131,15 @@ wake_id bigint,
 wake_ref text,
 warrant_kind text DEFAULT 'source'::text NOT NULL,
 why text NOT NULL,
+why text NOT NULL,
 window_fix_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
 wire_state text NOT NULL,
 with_persons text[] DEFAULT '{}'::text[] NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
 working_set jsonb DEFAULT '[]'::jsonb NOT NULL,
+would_have_said text NOT NULL,
 writer text NOT NULL,
+written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,
 written_at bigint NOT NULL,

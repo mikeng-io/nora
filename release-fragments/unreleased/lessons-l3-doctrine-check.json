@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "L3 of Lessons checks each lesson against Nora's rules before it is written and keeps refusals for the operator; lessons are still rendered into no prompt, so nothing she says or does changes.",
+  "details": [],
+  "limitations": []
+}

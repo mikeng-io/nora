@@ -384,3 +384,29 @@ async def test_losing_the_unique_seq_race_is_a_conflict_and_other_integrity_erro
     monkeypatch.setattr(env.store, "_append", losing("ck_lesson_revision_state"))
     with pytest.raises(sa.exc.IntegrityError):
         await env.store.append(**kw)
+
+
+async def test_a_tension_row_round_trips_and_lists_newest_first(env):
+    """L3: the operator's record of a lesson the doctrine check refused, with the
+    rule quoted (`nora.infra.sql.tension`, migration `0101_self_tension`)."""
+    from nora.domain.doctrine_check import Tension
+    from nora.infra.sql.tension import SqlTensionStore
+
+    store = SqlTensionStore(env.engine)
+    for n, unit in enumerate(("friends", "ridgeline", "friends")):
+        await store.record(Tension(
+            unit=unit, source="lesson", doctrine_file="core/constraints.md",
+            doctrine_line=10 + n, doctrine_text=LAW[0], would_have_said=f"{ONE} {n}",
+            citations=("response:110", "response:111"), why="it shares a place",
+            written_at=1_790_000_000_000 + n, established_by="dream:lessons:friends:1",
+            instruction_sha256="a" * 64, model="writer", check_model="judge"))
+    mine = await store.recent(unit="friends")
+    assert [t.doctrine_line for t in mine] == [12, 10]
+    assert mine[0].citations == ("response:110", "response:111") and mine[0].id
+    assert mine[0].check_model == "judge" and mine[0].doctrine_text == LAW[0]
+    assert len(await store.recent()) == 3
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.record(Tension(
+            unit="friends", source="character", doctrine_file="x", doctrine_line=1,
+            doctrine_text="y", would_have_said="z", citations=(), why="w",
+            written_at=1, established_by="t"))

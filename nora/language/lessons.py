@@ -53,9 +53,9 @@ from nora.domain.blocks import (
     render_group,
     render_row_window,
 )
-from nora.domain.culture import MAX_CONSECUTIVE_REJECTIONS, Citable, Episode
+from nora.domain.culture import MAX_CONSECUTIVE_REJECTIONS, Citable, Episode, RoomMessage
 from nora.domain.errors import AccountNotRecordableError
-from nora.domain.lessons import LESSON_MIN_EPISODES, LESSONS_OUTCOMES, Lesson
+from nora.domain.lessons import LESSON_MIN_EPISODES, LESSONS_OUTCOMES, Lesson, is_correction
 from nora.domain.ports import Proposal, VerbProvenance
 from nora.domain.prompt import age
 from nora.language.character import CharacterRoom
@@ -81,8 +81,14 @@ LESSONS_STORE_CALLS_PER_TICK = 3
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("lesson_unit", 5, "turn"),
     ("held_lessons", 20, "turn"),
+    ("lesson_corrections", 40, "turn"),
     ("lesson_episodes", 50, "turn"),
 )
+
+#: The most corrections one session is handed (the newest). A unit that tells
+#: her how to act forty times in a week has a conversation to read, not forty
+#: corrections; the episodes carry the rest.
+CORRECTIONS_MAX = 20
 _ROW: dict[str, tuple[int, BlockKey]] = {
     name: (order, key) for name, order, key in _BLOCKS
 }
@@ -103,7 +109,15 @@ class LessonsKey:
 
 
 class _Episodes(Protocol):
-    """`nora.infra.sql.character.SqlCharacterEvidence`'s episode reads."""
+    """`nora.infra.sql.character.SqlCharacterEvidence`'s episode and
+    correction reads."""
+
+    async def addressed_since(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int, self_ids: frozenset[str] = ...,
+    ) -> list[RoomMessage]: ...
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None: ...
 
     async def episode_count(
         self, *, unit: str, after: int, evidence_only: bool = ...,
@@ -149,14 +163,49 @@ class LessonEvidence:
         self, *, store: _Episodes, book: _Book, keys: Mapping[str, LessonsKey],
         wake_batch: int, horizon_seconds: int,
         clock_ms: Callable[[], int],
+        correction_quiet_seconds: int | None = None, stale_seconds: int = 604_800,
+        metrics: Metrics | None = None, self_ids: frozenset[str] = frozenset(),
     ) -> None:
+        """`correction_quiet_seconds` turns on the correction fast path (L4):
+        `None` is off. A correction wakes the key once it is that old, so the
+        conversation around it has settled."""
         self._store = store
         self._book = book
         self._keys = keys
         self._wake_batch = wake_batch
         self._horizon_ms = horizon_seconds * 1000
         self._clock = clock_ms
+        self._quiet_ms = (None if correction_quiet_seconds is None
+                          else correction_quiet_seconds * 1000)
+        self._stale_ms = stale_seconds * 1000
+        self._metrics = metrics
+        #: Her own platform ids, so an @-mention of her addresses her.
+        self._self_ids = self_ids
         self._held: dict[str, int] = {}
+
+    async def corrections(self, key: str) -> list[RoomMessage]:
+        """Messages in the unit's rooms that address her and read as an
+        instruction about how she acts (`is_correction`), sent after her last
+        session here minus the quiet (what that session could not yet see) and
+        at least the quiet ago. At most a `stale_seconds` back, so a unit's
+        first session is not handed its whole history. Empty when the fast
+        path is off.
+
+        **Known gap:** a correction sent during the minutes a session ran, in
+        its quiet window, is older than the next lower bound and is not fast-
+        pathed; it still reaches a session through the episodes it is part of."""
+        if self._quiet_ms is None:
+            return []
+        lk = self._keys[key]
+        now = self._clock()
+        last = await self._store.last_run_ms(adaptor=LESSONS_ADAPTOR_NAME, key=key)
+        since = max(now - self._stale_ms, (last or 0) - self._quiet_ms)
+        found = await self._store.addressed_since(
+            rooms=[(r.platform, r.key) for r in lk.rooms], since_ms=since,
+            until_ms=now - self._quiet_ms, limit=CORRECTIONS_MAX * 5,
+            self_ids=self._self_ids,
+        )
+        return [m for m in found if is_correction(m.row.body)][-CORRECTIONS_MAX:]
 
     def held(self, key: str) -> int | None:
         """The watermark the last `newest` read for `key` started after: the
@@ -168,6 +217,11 @@ class LessonEvidence:
         n = await self._store.episode_count(unit=unit, after=after, evidence_only=False)
         if n >= self._wake_batch:
             return n
+        if await self.corrections(key):
+            # L4's fast path: one correction is enough to look now.
+            if self._metrics is not None:
+                self._metrics.inc("nora_lessons_correction_wake_total")
+            return self._wake_batch
         now = self._clock()
         if any(_due(x, now, self._horizon_ms) for x in await self._book.active(unit=unit)):
             return self._wake_batch
@@ -175,7 +229,7 @@ class LessonEvidence:
 
     async def newest(
         self, *, key: str, after: int, limit: int,
-    ) -> tuple[Sequence[Episode], int]:
+    ) -> tuple[Sequence[Episode | RoomMessage], int]:
         """The newest `limit` closed episodes and the cursor past them, or
         nothing and the cursor UNMOVED when fewer than `LESSON_MIN_EPISODES`
         arrived: no write could cite so few, so a model call on them (a horizon
@@ -187,6 +241,12 @@ class LessonEvidence:
         found, cursor = await self._store.episodes(
             unit=self._keys[key].unit, after=after, limit=limit, evidence_only=False,
         )
+        corrections = await self.corrections(key)
+        if corrections:
+            # A correction is enough on its own (40 §3); the episodes beside it
+            # are context, however few.
+            handed: list[Episode | RoomMessage] = [*found, *corrections]
+            return handed, cursor
         if len(found) < LESSON_MIN_EPISODES:
             return [], after
         return found, cursor
@@ -234,6 +294,10 @@ class LessonsAdaptor:
         self._metrics = metrics
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._runs: dict[str, _Run] = {}
+        #: What the last settled session of a key landed through its verbs,
+        #: handed from `accept` to `commit`'s return so the runtime counts the
+        #: run as `ok` (its writes never pass through a `Proposal`).
+        self._landed: dict[str, int] = {}
         # In memory, as `EntitySessions._rejections` (its ponytail applies).
         self._rejections: dict[str, tuple[int | None, int]] = {}
 
@@ -278,15 +342,18 @@ class LessonsAdaptor:
         lk = self._keys.get(key)
         episodes = [e for e in batch if isinstance(e, Episode)
                     and e.outcome not in ("open", "unknown")]
-        if lk is None or not episodes:
+        corrections = [m for m in batch if isinstance(m, RoomMessage)]
+        if lk is None or not (episodes or corrections):
             return ""
         now = self._clock()
         held = await self._book.active(unit=lk.unit)
         handles = {f"L{i}": x.id for i, x in enumerate(held, start=1)}
         sends = frozenset(e.send_id for e in episodes)
+        told = frozenset(m.row.id for m in corrections)
         self._runs[key] = _Run(
             citable=Citable(
-                messages=sends | frozenset(r.id for e in episodes for r in e.replies),
+                messages=(sends | told
+                          | frozenset(r.id for e in episodes for r in e.replies)),
                 nora=sends,
                 # Every shown episode, `unanswered` included: whether one asked
                 # something is the session's judgement (40 §6). Her send cited
@@ -297,6 +364,8 @@ class LessonsAdaptor:
                 # Not lowered to what was shown: a stale wake on two episodes
                 # may retire or close, but not induce.
                 min_episodes=LESSON_MIN_EPISODES,
+                # L4: a lesson citing a correction needs no three episodes.
+                corrections=told,
             ),
             handles=handles,
             batch_start=self.evidence.held(key),
@@ -321,7 +390,16 @@ class LessonsAdaptor:
                     body=lambda x: x.head.body,
                 )
             )),
-            ContextBlock(
+            None if not corrections else ContextBlock(
+                name="lesson_corrections", **_at("lesson_corrections"),
+                body=render_row_window(
+                    corrections, row_id=lambda m: m.row.id,
+                    attrs=lambda m: (("from", self._name_of(m.row.person_id)),
+                                     ("room", labels.get(m.room) or "unnamed room")),
+                    body=lambda m: m.row.body or "",
+                ),
+            ),
+            None if not episodes else ContextBlock(
                 name="lesson_episodes", **_at("lesson_episodes"),
                 body="\n".join(self._episode(e, labels) for e in episodes),
             ),
@@ -387,6 +465,7 @@ class LessonsAdaptor:
             self._reject(key, None if run is None else run.batch_start)
             return ()
         self._rejections.pop(key, None)
+        self._landed[key] = len(run.acted)
         written = run.acted.count("lesson_write")
         retired = run.acted.count("lesson_retire")
         if written:
@@ -414,10 +493,12 @@ class LessonsAdaptor:
     ) -> int:
         """The decay: retire every lesson of the unit not re-evidenced within
         the horizon. Runs after the session (which may have reinforced one), and
-        on a blank run too. Returns how many it retired."""
+        on a blank run too. Returns how many rows the run wrote: the session's
+        landed writes and retirements, and the decay's."""
+        landed = self._landed.pop(key, 0)
         lk = self._keys.get(key)
         if lk is None:
-            return 0
+            return landed
         retired = 0
         for lesson in await self._book.active(unit=lk.unit):
             if not _due(lesson, now_ms, self._horizon_ms):
@@ -431,4 +512,4 @@ class LessonsAdaptor:
                 retired += 1
         if retired:
             self._count("decayed", retired)
-        return retired
+        return landed + retired

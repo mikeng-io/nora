@@ -402,6 +402,10 @@ class Citable:
     episodes: frozenset[int] = frozenset()
     echo_rule: bool = False
     min_episodes: int = 0
+    #: Messages that told her directly how to act (Lessons L4, design/
+    #: self-growth/40 §3). A write citing one is exempt from `min_episodes`: a
+    #: correction is enough on its own, which is the point of the fast path.
+    corrections: frozenset[int] = frozenset()
 
 
 def check_revision(
@@ -444,7 +448,7 @@ def check_revision(
                        "account must rest on how people responded: cite the "
                        "`response:<n>` of an episode whose outcome is `responded` "
                        "or `silent`, or a message someone else wrote")
-    if len(episodes) < citable.min_episodes:
+    if len(episodes) < citable.min_episodes and not (messages & citable.corrections):
         return Refusal("thin_evidence", f"cite at least {citable.min_episodes} "
                        f"different `response:<n>` episodes someone responded to "
                        f"(outcome `responded` or `silent`); you cited "

@@ -1504,6 +1504,19 @@ stale_seconds = 604800
 horizon_seconds = 5184000
 # Closed episodes one session is handed, the newest.
 batch_limit = 100
+# The correction fast path (L4): a message that speaks to her and reads as an
+# instruction about how she acts ("stop", "唔好", "next time") wakes the unit's
+# session once it is this old, instead of waiting for wake_batch. 0 is off.
+correction_quiet_seconds = 600
+# The doctrine check (L3): a separate call reads every lesson against the law
+# before it is written; a conflict is refused and kept for you as a tension row
+# (`nora lessons tensions`). "" is [llm] model. It must differ from the
+# Dreamer's model (config refuses a match): a judge on the writer's model grades
+# its own homework.
+check_model = ""
+check_reasoning_effort = ""            # "" is low
+check_timeout_seconds = 60
+check_max_tokens = 2048
 
 [standing]
 # The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a
