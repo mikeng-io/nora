@@ -52,13 +52,20 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+const BYTE_RANGE = /^bytes=\d*-\d*$/;
+const CONTENT_RANGE = /^bytes (\d+-\d+|\*)\/\d+$/;
+
 export async function proxyArtifactDownload(args: {
   base: string;
   personId: string;
   id: string;
+  range?: string | null;
   fetchImpl?: typeof fetch;
 }): Promise<Response> {
   const { base, personId, id } = args;
+  // One byte range, passed on only in its plain form: Safari plays a video only after a
+  // 206 answers `Range: bytes=0-1`, and seeking needs ranges everywhere.
+  const range = args.range && BYTE_RANGE.test(args.range) ? args.range : null;
   const doFetch = args.fetchImpl ?? fetch;
   if (!ARTIFACT_REF.test(id)) return json(404, { error: "not found" });
 
@@ -67,13 +74,25 @@ export async function proxyArtifactDownload(args: {
     `?personId=${encodeURIComponent(personId)}`;
   let res: Response;
   try {
-    res = await doFetch(url, { cache: "no-store", signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+    res = await doFetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      ...(range ? { headers: { range } } : {}),
+    });
   } catch {
     return json(503, { error: "unavailable" });
   }
   if (res.status === 404) {
     await res.body?.cancel();
     return json(404, { error: "not found" });
+  }
+  if (res.status === 416) {
+    await res.body?.cancel();
+    const cr = res.headers.get("content-range") ?? "";
+    return new Response(null, {
+      status: 416,
+      headers: { ...PRIVATE, ...(CONTENT_RANGE.test(cr) ? { "content-range": cr } : {}) },
+    });
   }
   if (!res.ok) {
     await res.body?.cancel();
@@ -86,5 +105,11 @@ export async function proxyArtifactDownload(args: {
     return json(502, { error: "unavailable" });
   }
   const name = fileNameOf(res.headers.get("content-disposition"));
-  return new Response(res.body, { status: 200, headers: fileHeaders(type, name) });
+  const headers: Record<string, string> = { ...fileHeaders(type, name), "accept-ranges": "bytes" };
+  const cr = res.headers.get("content-range") ?? "";
+  const partial = res.status === 206 && CONTENT_RANGE.test(cr);
+  if (partial) headers["content-range"] = cr;
+  const length = res.headers.get("content-length");
+  if (length && /^\d+$/.test(length)) headers["content-length"] = length;
+  return new Response(res.body, { status: partial ? 206 : 200, headers });
 }

@@ -6,7 +6,7 @@ import { proxyArtifactDownload } from "@/server/artifact-download";
 // JSON only; the rules live in src/server/artifact-download.ts.
 const NORA_API_BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const check = await checkSession();
   if (check.status !== "ok") {
     return NextResponse.json(
@@ -15,5 +15,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     );
   }
   const { id } = await params;
-  return proxyArtifactDownload({ base: NORA_API_BASE, personId: check.personId, id });
+  return proxyArtifactDownload({
+    base: NORA_API_BASE,
+    personId: check.personId,
+    id,
+    range: request.headers.get("range"),
+  });
 }

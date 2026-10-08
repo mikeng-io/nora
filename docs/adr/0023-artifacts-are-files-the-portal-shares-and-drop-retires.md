@@ -6,7 +6,7 @@
 - **Extends:** [0020](0020-documents-are-json-specs-the-portal-renders.md) point 5, which retired
   Drop's document use and left its file half and its shortener for "a later change". This is that
   change, and it reverses 0020's "Drop's link shortener stays".
-- **Index:** a DEC number is taken at merge
+- **Index:** DEC-295 (part 1); part 2 takes its own row
 
 ## Context
 
