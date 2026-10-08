@@ -82,6 +82,7 @@ from nora.subject import (
     sandbox_database,
     sandbox_from_snapshot,
     seed_documents,
+    seed_lessons,
 )
 from nora.subject.transport import held_states, hold_transports
 
@@ -519,7 +520,7 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     results too when the case grades REPORTING (`tool_status_reported`),
     since that criterion is about what the results were worth."""
     parts = [transcript] if transcript else []
-    if "tool_status_reported" in criteria and results:
+    if ("tool_status_reported" in criteria or "lesson_applied" in criteria) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
         if lines:
@@ -857,6 +858,29 @@ def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) ->
         networks=networks,
         varied=varied_transport(md),
         live_handles=LIVE_HANDLE_STANDINS,
+    )
+
+
+def varied_lessons(md: Mapping[str, Any]) -> tuple[str, ...]:
+    """The lessons a `lessons` counterfactual attaches (`evals.scenarios` refuses
+    `metadata.lessons` anywhere else), or none."""
+    if (md.get("counterfactual") or {}).get("varies") != "lessons":
+        return ()
+    return tuple(str(x) for x in md.get("lessons") or ())
+
+
+def _lesson_facts(md: Mapping[str, Any], case: Any) -> str | None:
+    """The judge's ground truth for a `lesson_applied` case: the lessons she held
+    and the one behaviour this reply is graded on (the case's
+    `expected_output`). From the CASE, so it is the same in both arms."""
+    if "lesson_applied" not in tuple(md.get("criteria") or ()):
+        return None
+    held = "\n".join(f"- {x}" for x in varied_lessons(md))
+    behaviour = str(getattr(case, "expected_output", "") or "").strip()
+    return (
+        "Lessons she held in this group (practice she drew from how its people "
+        f"responded to her before; she may or may not have been shown them):\n{held}"
+        f"\n\nThe one behaviour this reply is graded on:\n{behaviour}"
     )
 
 
@@ -1381,6 +1405,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
             await seed_documents(subject, case.name, md.get("documents") or ())
+            # design/self-growth/40 §8: the lessons a `lessons` counterfactual
+            # attaches, written into the subject's unit. Seeded in EVERY arm; only
+            # `[lessons] render` decides whether the turn reads them.
+            await seed_lessons(subject, case.name, varied_lessons(md), now_ms=seeded.now_ms)
             exporter = _prefill_capture()
             exporter.clear()
             nora_case = _as_nora_case(case, spec, trigger=subject.cfg.engagement.trigger.text)
@@ -1480,7 +1508,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         extra=criteria_for(criteria),
                         facts=_presence_facts(
                             spec, md, room=room, shown=shown, tools=tools_called,
-                        ),
+                        ) or _lesson_facts(md, case),
                     )
                     outcome = dataclasses.replace(
                         outcome, judged=judgement.verdict, error=judgement.error,
