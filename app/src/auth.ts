@@ -1,5 +1,5 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
-import Discord from "next-auth/providers/discord";
+import { discordProvider } from "./discord";
 import Credentials from "next-auth/providers/credentials";
 import { codeSignInEnabled, verifyCode } from "@/server/otp";
 
@@ -12,7 +12,7 @@ import { codeSignInEnabled, verifyCode } from "@/server/otp";
 export const DEV_LOGIN_ENABLED =
   process.env.NODE_ENV === "development" && process.env.NORA_DEV_LOGIN === "1";
 
-const providers: NextAuthConfig["providers"] = [Discord];
+const providers: NextAuthConfig["providers"] = [discordProvider];
 
 // A one-time code Nora sent to the person's own Signal or WhatsApp account
 // (DEC-287). Nora checks it and answers who it was for, a person_id from
