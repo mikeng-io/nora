@@ -440,3 +440,28 @@ async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
     assert await _lessons(env.engine, unit=UNIT, before_ms=60) == (
         ONE, TWO, "a third practice, said short")
     assert third.id
+
+
+async def test_a_lessons_counterfactual_seeds_active_lessons_in_the_stated_order(env):
+    """design/self-growth/40 §8: the eval's `lessons` tier writes the case's
+    lessons into the subject's unit, active, oldest first, at the sandbox's own
+    instant, so `<lessons>` renders them in the order the case states."""
+    from nora.subject.sandbox import seed_lessons
+
+    subject = SimpleNamespace(database_url=env.url, unit=UNIT)
+    await seed_lessons(subject, "probe", [ONE, TWO], now_ms=1_790_000_000_000)
+    held = await env.book.active(unit=UNIT)
+    assert [x.head.body for x in held] == [ONE, TWO]
+    assert held[0].head.written_at < held[1].head.written_at <= 1_790_000_000_000
+    assert held[0].head.citations == ("case:probe",)
+    await seed_lessons(subject, "probe", [], now_ms=1)
+    assert len(await env.book.active(unit=UNIT)) == 2
+
+
+async def test_a_lessons_counterfactual_is_refused_where_the_unit_already_held_lessons(env):
+    from nora.subject.sandbox import seed_lessons
+
+    subject = SimpleNamespace(database_url=env.url, unit=UNIT)
+    await seed_lessons(subject, "probe", [ONE], now_ms=1_790_000_000_000)
+    with pytest.raises(ValueError, match="already held 1"):
+        await seed_lessons(subject, "probe", [TWO], now_ms=1_790_000_000_000)

@@ -65,6 +65,8 @@ from nora.subject.context_filter import exposure
 CORPUS_CLASS: dict[str, str] = {
     "proactive_act": "S1",
     "being_contradicted": "S3",
+    # design/self-growth/40 §8: what a held lesson does to a reply (judged).
+    "lessons": "S3",
     "identity_grounding": "S3",
     "source_scope": "S3",
     # ADR 0015 §4: what she SAYS after a tool returns (judged).

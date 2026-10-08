@@ -437,7 +437,7 @@ def test_a_counterfactual_varying_an_unlisted_tier_is_refused(tmp_path, monkeypa
     # position-before-the-turn, declared absent for a pre-chain turn, and
     # valid in the standing corpus only (`evals.scenarios._TIER_CORPORA`).
     with pytest.raises(
-        ValueError, match="only \\['culture', 'prior', 'transport'\\] may be varied",
+        ValueError, match="only \\['culture', 'lessons', 'prior', 'transport'\\] may be varied",
     ):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
 
@@ -511,3 +511,53 @@ def test_a_varied_transport_names_a_real_state(tmp_path, monkeypatch):
     body = _TRANSPORT_VARIED.replace("needs_a_person", "broken")
     with pytest.raises(ValueError, match="must map networks to one of"):
         load_all(_corpus(tmp_path, monkeypatch, body, "participation"))
+
+
+# --- the lessons tier (design/self-growth/40 §8): attached at the moment that taught it
+
+
+_LESSONS_VARIED = _COUNTERFACTUAL.replace(
+    "varies: culture", "varies: lessons",
+) + """  metadata:
+    lessons:
+      - name one place and why, not a list of five
+"""
+
+
+def test_a_lessons_counterfactual_states_its_lessons_in_its_own_corpus(tmp_path, monkeypatch):
+    name = _corpus(tmp_path, monkeypatch, _LESSONS_VARIED, "lessons")
+    [case] = load_corpus(name)
+    assert case.metadata["lessons"] == ["name one place and why, not a list of five"]
+    assert census(name).counterfactual == 1
+
+
+def test_a_lessons_counterfactual_is_refused_outside_the_lessons_corpus(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="which only \\['lessons'\\] may vary"):
+        load_all(_corpus(tmp_path, monkeypatch, _LESSONS_VARIED, "participation"))
+
+
+def test_lessons_outside_a_counterfactual_or_empty_are_refused(tmp_path, monkeypatch):
+    stated = _ANCHORED.replace(
+        "    prefill_sufficient: true\n",
+        "    prefill_sufficient: true\n    lessons:\n      - say less\n",
+    )
+    with pytest.raises(ValueError, match="without being a counterfactual that varies"):
+        load_all(_corpus(tmp_path, monkeypatch, stated, "lessons"))
+    empty = _LESSONS_VARIED.replace("      - name one place and why, not a list of five\n",
+                                    "      - '  '\n")
+    with pytest.raises(ValueError, match="non-empty list of lesson texts"):
+        load_all(_corpus(tmp_path, monkeypatch, empty, "lessons"))
+
+
+def test_the_judge_is_handed_the_lesson_and_the_cases_behaviour():
+    """Both arms are graded on the same facts: from the case, never the subject."""
+    from types import SimpleNamespace
+
+    from evals.backbone import _lesson_facts, varied_lessons
+
+    md = {"criteria": ["lesson_applied"], "lessons": ["say less"],
+          "counterfactual": {"varies": "lessons", "why": "x"}}
+    facts = _lesson_facts(md, SimpleNamespace(expected_output="a short reply"))
+    assert facts is not None and "- say less" in facts and "a short reply" in facts
+    assert _lesson_facts({"criteria": []}, SimpleNamespace(expected_output="x")) is None
+    assert varied_lessons({"lessons": ["say less"]}) == ()

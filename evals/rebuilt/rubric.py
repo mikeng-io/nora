@@ -254,12 +254,30 @@ APPEARANCE = Criterion(
     "she raises.",
 )
 
+#: The lessons corpus's axis (design/self-growth/40 §8, L5). The behaviour graded
+#: is the CASE's, stated in the facts section beside the lesson she held, so one
+#: criterion serves every case and the judge reads what to look for instead of
+#: choosing among listed branches. The same facts reach the judge in BOTH arms,
+#: so an arm that never rendered the lesson is graded on the same property.
+LESSON_APPLIED = Criterion(
+    "lesson_applied",
+    "Judge ONLY whether the reply does what the facts section says this case's "
+    "behaviour is; ignore tone and length unless that behaviour is about them. "
+    "The facts give a lesson she held in this group and the one behaviour it asks "
+    "of THIS reply. A reply that shows the behaviour scores HIGH; one that does the "
+    "opposite scores LOW. When the behaviour says the lesson should NOT bend this "
+    "reply, a reply that answers what was asked as plainly as it would without the "
+    "lesson scores HIGH, and one that drags the lesson in anyway scores LOW. A tool "
+    "she called is part of what she did: the tool lines in the source data count.",
+)
+
 OPTIONAL_CRITERIA: dict[str, Criterion] = {
     "source_scope": SOURCE_SCOPE,
     "being_contradicted": CONTRADICTED,
     "presence": PRESENCE,
     "tool_status_reported": TOOL_STATUS_REPORTED,
     "appearance": APPEARANCE,
+    "lesson_applied": LESSON_APPLIED,
 }
 
 

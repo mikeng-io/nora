@@ -154,7 +154,8 @@ __all__ = [
     "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
     "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
     "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
-    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "shared_database_versions",
+    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "seed_lessons",
+    "shared_database_versions",
     "sweep_stale_private_blank_templates",
 ]
 
@@ -986,6 +987,42 @@ async def sandbox_from_snapshot(
             now=subject.deps.clock(),
         ),
     )
+
+
+async def seed_lessons(
+    subject: Subject, case_name: str, lessons: Sequence[str], *, now_ms: int,
+) -> None:
+    """Write the lessons a `lessons` counterfactual attaches into the subject's
+    unit (design/self-growth/40 §8), active, oldest first and a millisecond
+    apart so `<lessons>` renders them in the order stated. Written straight to
+    the store: the case states the lesson as it was held, so the doctrine check
+    a session's write passes is not re-run here."""
+    if not lessons:
+        return
+    from nora.infra.sql import create_sql_engine
+    from nora.infra.sql.lessons import SqlLessonStore
+
+    engine = create_sql_engine(subject.database_url)
+    try:
+        store = SqlLessonStore(engine)
+        held = [x for x in await store.lessons(unit=subject.unit) if x.active]
+        if held:
+            # The snapshot already copied lessons the unit held at the instant
+            # (`Snapshot.lessons`): seeding on top would render both, and the
+            # case would be measuring a unit nobody had.
+            raise ValueError(
+                f"case {case_name!r} attaches lessons at an instant the unit already "
+                f"held {len(held)}; anchor it before the unit's first lesson"
+            )
+        # At the moment's own clock (`now_ms` is the sandbox's frozen instant).
+        base = now_ms - len(lessons)
+        for i, body in enumerate(lessons):
+            await store.create(
+                unit=subject.unit, body=body.strip(), citations=(f"case:{case_name}",),
+                written_at=base + i, established_by="eval-counterfactual",
+            )
+    finally:
+        await engine.dispose()
 
 
 async def seed_documents(subject: Subject, case_name: str, specs: Sequence[dict[str, Any]]) -> None:
