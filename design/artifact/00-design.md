@@ -46,6 +46,7 @@ marker, and the code wins.
 Decisions 3 and 4 remove the reason Drop's artifact half exists (§2), so this design retires it.
 *As built (2026-10-01):* not retired yet. `computer_export(to="link")` still publishes files through Drop's
 `POST`/`PATCH /api/artifacts`, and old links keep reading (DEC-254); only the document use of it is gone.
+**Superseded (ADR 0023, 2026-10-08):** Drop, its artifact half and its shortener are all retired; a link export now opens in the portal's `/artifacts` page behind sign-in, and old Drop links stop resolving.
 
 ## 2. Scope and the line with the sandbox session
 
@@ -84,7 +85,7 @@ The one contract between them (amended 2026-10-01, see the note at the top):
   hardening, its own image, a RustFS client, a Postgres client, a token API and a network
   membership, all there so Smith, an untrusted container, could publish. With Smith gone and
   access behind sign-in, Nora can write the row herself. Drop's **link shortener** is a
-  different feature and stays.
+  different feature and stays. **Superseded (ADR 0023, 2026-10-08):** the shortener is deleted too, and `maps_url` is the full Google Maps URL.
 
 ## 4. Architecture
 
@@ -133,7 +134,7 @@ A test fails when the committed `document.schema.json` is stale against the cata
   retired, and the study's list was wrong about them:** the `artifacts` table, Drop's `POST`/`PATCH
   /api/artifacts`, `DropArtifactIngest` and the `ArtifactIngest` port, because `computer_export`
   (`to="link"`) is their caller (S3a, #649). The 4 real HTML artifacts (and 11 other stored files) were
-  open decision 6, now settled in §12.
+  open decision 6, now settled in §12. **Superseded (ADR 0023, 2026-10-08):** all of these are deleted with Drop, except the `artifacts` table, which stays in place, unread.
 
 ## 6. In the web app
 
@@ -284,7 +285,7 @@ S4 needs nothing from the sandbox session; the `path` form of `document_publish`
 
 **Status (2026-10-01).** The steps were built under the names W1 to W7 and a lifecycle step (§17 to §31), not
 S0 to S6. S6, retiring Drop's artifact half, is NOT done and is not wanted yet: `computer_export` publishes
-files through it (§5). The `path` form of `document_publish` was not built.
+files through it (§5). **Superseded (ADR 0023, 2026-10-08):** S6 is done, as a whole-service retirement. The `path` form of `document_publish` was not built.
 
 ## 12. The decisions that were open (settled by 2026-10-01)
 
@@ -309,7 +310,7 @@ here is open except decision 9.
    sha256 by Nora), never a URL; no external images in v1. **Reversed (§35, DEC-269):** a web picture she looked at with
    `media_fetch` is kept and named by its code, never by its URL.
 6. **The 4 existing HTML artifacts: settled (DEC-254).** Drop's artifact READ path and `POST`/`PATCH
-   /api/artifacts` stay, so every old link keeps working, and Drop's artifact half is not retired (§5).
+   /api/artifacts` stay, so every old link keeps working, and Drop's artifact half is not retired (§5). **Superseded (ADR 0023, 2026-10-08):** Drop is retired and those old links stop resolving.
 7. **Maps: settled (§14, §21).** A custom `Map` component over the portal's MapLibre, with coordinates and
    never an address. **Amended (§40, DEC-272):** the model writes place names only and the service looks the
    coordinates up.

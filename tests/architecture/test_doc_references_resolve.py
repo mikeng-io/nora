@@ -258,6 +258,14 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    (
+        "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
+        "deploy/drop/rendering.py",
+    ): (
+        "deleted 2026-10-08 with the whole Drop service (ADR 0023). ADR 0020 is "
+        "accepted, so only its Status line may change; its Context text keeps "
+        "naming the file as it was. checked 2026-10-08 (`git log -- deploy/drop`)"
+    ),
     # --- hidden by a NEIGHBOURING table row until 2026-09-24, TRIAGED (#422) ---
     #
     # A table was one «paragraph» to this gate, so one row carrying a

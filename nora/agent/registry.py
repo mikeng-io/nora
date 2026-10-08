@@ -64,7 +64,6 @@ from ..domain.reminders import ReminderCaps, ReminderStore
 from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.routes import RouteClient
-from ..infra.shortener import LinkShortener
 from ..infra.transit import TransitClient
 from ..infra.version import VersionManifest
 from ..infra.vision import VisionCache, VisionClient
@@ -200,7 +199,6 @@ class ToolRegistry:
         # `unavailable`, honest and inert (R-5). The per-call R-31 guard lives
         # in the tool itself, through the same `DisclosureGuard` seam.
         mobility: Any = None,
-        shortener: LinkShortener | None = None,
         ai_peer: str = "nora",
         reminders: ReminderStore | None = None,
         reminder_caps: ReminderCaps | None = None,
@@ -410,12 +408,6 @@ class ToolRegistry:
         # offline/eval compositions, where the tool answers `unavailable`
         # rather than a guessed empty (R-5).
         self._mobility = mobility
-        # The drop-service mint client ([shortener], cutover 2026-08-12 to
-        # `drop`'s internal API; was n.example.net's Worker before that) — None
-        # leaves long URLs in replies, and a failed mint does the same; never
-        # load-bearing, so no capability line and no budget: it is not a tool,
-        # it is a post-processing step inside `route`.
-        self._shortener = shortener
         # The OBSERVER peer — Nora's Honcho peer id (cfg.memory.ai_peer). The
         # `about`/`ask_memory` tools read her model of a person as
         # (observer=ai_peer, observed=person), so the registry threads it like any
@@ -1056,7 +1048,6 @@ class ToolRegistry:
             mobility=self._mobility,
             refresher=self._refresher,
             geocoder=self._geocoder,
-            shortener=self._shortener,
             question=question, context_window=context_window,
             transcript=transcript, lookup_window=lookup_window,
             ai_peer=self._ai_peer, fire_turn=fire_turn, dream_adaptor=dream_adaptor,

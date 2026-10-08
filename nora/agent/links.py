@@ -5,8 +5,8 @@ leave. This is the positive half: a fact a tool already minted, that the model
 then throws away.
 
 **Why it exists (DEC-89).** `place_info` returns a `maps_url` for every place it
-resolves — a real Google deep link, minted short through Nora's own shortener
-(`https://nora.example.net/i/9DpAk8g`), already screened, already in the tool result the
+resolves — a real Google deep link (the full Maps URL, ADR 0023: no
+shortener), already screened, already in the tool result the
 model is reasoning over, and named in the tool's own docstring («include it in
 your reply so they can tap through»). Measured live 2026-08-10: in one
 stress-test session she recommended four restaurants, `place_info` returned a

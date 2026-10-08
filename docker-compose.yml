@@ -291,17 +291,9 @@ services:
       # the SAME two values `rustfs:`'s own environment below already
       # requires (`:?`) whenever this compose file runs at all — reusing them
       # here costs a deployment that already runs `rustfs` no new secret,
-      # only new wiring, the same as `drop`'s own RustFS client already does.
+      # only new wiring.
       - RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:-}
       - RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:-}
-      #   NORA_DROP_TOKEN       — minting nora.example.net short links / drop
-      #   artifact registration ([shortener]; cut over 2026-08-12 from the
-      #   n.example.net Worker's own NORA_SHORTENER_TOKEN to the SAME secret the
-      #   `drop` service below already authenticates its internal listener
-      #   with — config.toml's `[shortener].token_env` now names this var
-      #   instead, so there's one bearer value for the whole mint/register
-      #   path, not two names for what has to be the same shared secret).
-      - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:-}
       #   NORA_COMPUTER_TOKEN   — computerd's bearer token ([computer].token_env,
       #   design/sandbox-runtime, DEC-243). Nora refuses to start with
       #   [computer] enabled and this empty: it was missing here on
@@ -554,7 +546,7 @@ services:
     entrypoint: ["uv", "run", "--no-sync", "python", "-m", "nora.analytics"]
     command: ["--config", "config.toml"]
     networks: [nora]
-    # :9103, next free port after nora's own :9100, presence's :9101, and drop's :9102.
+    # :9103, next free port after nora's own :9100, and presence's :9101 (:9102 was the retired `drop`).
     ports: ["127.0.0.1:9103:9103"]
     depends_on:
       db:
@@ -582,43 +574,16 @@ services:
       start_period: 20s
       retries: 3
 
-  # valkey — dedicated slug -> URL store for the `drop` service (Nora Drop
-  # spec, docs/superpowers/specs/2026-08-12-nora-drop-design.md §3/§4). NOT
-  # the same Redis Honcho already runs for its own cache (`redis:8.2`,
-  # CACHE_URL) — the spec's own §4 is explicit ("do not mix it"): a dedicated
-  # instance avoids relying on a DB-index or key-prefix convention staying
-  # correct forever. Valkey over Redis per §4's licensing/protocol argument
-  # (BSD-3, RESP2/RESP3-compatible, no code-level cost).
+  # rustfs — S3-compatible object store: Nora's blob store ([media.rustfs],
+  # DEC-136) holds every attachment, generated image and computer export, and
+  # the portal's /artifacts page streams them back (ADR 0023). The old `drop`
+  # service's bucket (`drop-artifacts`) is left in place, unread. Chosen over
+  # MinIO (OSS repo archived Apr 2026), SeaweedFS (built for a multi-node
+  # distribution problem this single-box deployment doesn't have) and Garage
+  # (AGPL, built for geo-distributed/unreliable infra). Pinned to a release
+  # candidate; still pre-stable (RustFS has not cut a 1.0.0 final).
   #
-  # Publishes NOTHING — same network-containment posture as `signal-cli`
-  # above: reachable only as `valkey:6379` on the private `nora` network,
-  # never a host port, never a Tunnel rule.
-  valkey:
-    image: valkey/valkey:9.1.1-alpine  # latest stable release tag as of 2026-08-12
-    container_name: valkey
-    restart: unless-stopped
-    networks: [nora]
-    volumes:
-      - valkey-data:/data
-    healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      start_period: 10s
-      retries: 5
-
-  # rustfs — S3-compatible object store for `drop`'s artifact bytes (same
-  # spec, §4). Chosen over MinIO (OSS repo archived Apr 2026), SeaweedFS
-  # (built for a multi-node distribution problem this single-box deployment
-  # doesn't have) and Garage (AGPL, built for geo-distributed/unreliable
-  # infra) — full comparison in the spec. Pinned to the newest release
-  # candidate available as of 2026-08-12; still pre-stable (RustFS has not
-  # cut a 1.0.0 final), accepted per the spec's §4 argument: drop artifacts
-  # are regenerable compute output, not Nora's system of record, so the
-  # failure mode of an immature storage engine here is "regenerate the file,"
-  # not data loss of anything irreplaceable.
-  #
-  # Publishes NOTHING — same posture as `signal-cli`/`valkey`: reachable only
+  # Publishes NOTHING — same posture as `signal-cli`: reachable only
   # as `rustfs:9000` (S3 API) / `rustfs:9001` (console) on the private `nora`
   # network.
   rustfs:
@@ -628,11 +593,9 @@ services:
     networks: [nora]
     environment:
       # Root credentials for the S3 API. Required (`:?`, not `:-`) the same
-      # way POSTGRES_PASSWORD is below — an object store holding artifact
-      # bytes shouldn't ever fall back to RustFS's own built-in default
-      # credential. `drop`'s own environment below reuses these SAME values
-      # to authenticate `deploy/drop/artifacts.py`'s S3 client. Values live
-      # in the host `.env`, never in this file (DEC-8).
+      # way POSTGRES_PASSWORD is below — an object store holding Nora's files
+      # shouldn't ever fall back to RustFS's own built-in default
+      # credential. Values live in the host `.env`, never in this file (DEC-8).
       - RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:?set RUSTFS_ROOT_USER in .env}
       - RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in .env}
     volumes:
@@ -656,115 +619,6 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 5
-
-  # drop (docs/superpowers/specs/2026-08-12-nora-drop-design.md; routing shape
-  # superseded post-spec -- see deploy/drop/server.py's module docstring for
-  # why: drop.nora.example.net can't get a cert without paying for Cloudflare's
-  # Advanced Certificate Manager, so both capabilities now live on the ONE
-  # working hostname, nora.example.net, split by PATH not Host header). One
-  # process, two listeners, split by which socket a route is bound on
-  # (§3/§5a). The INTERNAL listener's write API is real: `POST /api/links`
-  # (mint, §5) and `POST /api/artifacts` (register, §7a) — both write through
-  # to `valkey`/`rustfs`/`db` below. The PUBLIC listener: `GET /i/<slug>`
-  # 301-redirects, `GET /drop/<slug>` renders an artifact with a real
-  # Content-Disposition (inline vs. attachment per `deploy/drop/rendering.py`)
-  # — which handler answers is decided by the request path, not any Host
-  # header (`deploy/drop/server.py`'s own module docstring has the full
-  # account).
-  #
-  # Own image, own dependency set (deploy/drop/pyproject.toml) — NOT built
-  # from the top-level Dockerfile / nora:latest. Starlette + uvicorn,
-  # matching the separate `ridgeline-drop` project's own shape (its
-  # drop/server.py) per the spec's §8 open question ("no strong reason
-  # surfaced either way"); picking the precedent that already exists in this
-  # operator's infra over inventing a second stack.
-  drop:
-    build:
-      context: ./deploy/drop
-      # Same reason as `nora`'s and `signal-cli`'s own `network: host` above
-      # (operational constraint 1): BuildKit's default bridge can't resolve
-      # deb.debian.org here, and this Dockerfile's own `apt-get install curl`
-      # would otherwise stall/fail the build.
-      network: host
-    image: drop:latest
-    container_name: drop
-    restart: unless-stopped
-    networks: [nora]
-    # Only the PUBLIC listener gets a host port (§6): `cloudflared` runs
-    # `network_mode: host` in its own separate compose project and reaches
-    # every backend via `localhost:<port>`, never by container DNS name, so
-    # it needs a loopback publish here — same pattern `nora` (:9100) and
-    # `presence` (:9101) already use for their own `/health` endpoints
-    # (docker-compose.yml, above). The INTERNAL listener (port 8081, §5a)
-    # deliberately has NO `ports:` entry at all — reachable only as
-    # `drop:8081` on the private `nora` network, never published, never
-    # given a Tunnel rule. That asymmetry is the network-containment control
-    # itself, not an oversight.
-    ports: ["127.0.0.1:9102:9102"]
-    depends_on:
-      # `presence`'s own dependency below is the model this copies: drop's
-      # artifact metadata lives in the same Postgres (§4), so it needs a
-      # SERVING db, not merely a spawned container. valkey/rustfs are now
-      # actually called by POST /api/links and POST /api/artifacts.
-      #
-      # NOTE: this does NOT guarantee the `artifacts` table exists by the
-      # time `drop` starts accepting writes — that migration
-      # (nora/infra/sql/migrations/versions/0007_drop_artifacts.py) is owned
-      # and applied by Nora's own alembic chain, run at `nora`'s/`presence`'s
-      # startup (or by hand against `127.0.0.1:5435` — `db`'s own comment
-      # below), not by this service. Bringing up `drop` before `nora` has
-      # migrated at least once leaves `POST /api/artifacts` failing with a
-      # Postgres "relation does not exist" 503 until a migration runs.
-      db:
-        condition: service_healthy
-      valkey:
-        condition: service_healthy
-      rustfs:
-        condition: service_healthy
-    environment:
-      - DROP_INTERNAL_PORT=8081
-      - DROP_PUBLIC_PORT=9102
-      # The ONE public hostname slugs are eventually served from — NOT where
-      # this service listens; used only to build the URLs the mint/register
-      # responses hand back (server.py's own comment on why). Path prefix
-      # (`/i/` vs `/drop/`) is added by server.py itself, not part of this
-      # value.
-      #
-      # Moved off nora.example.net onto nora.67.zone (operator, 2026-08-19) —
-      # the web portal's own domain, path-routed alongside it (see
-      # ~/workspace/cloudflared/terraform/tunnel.tf's ingress_rule comment).
-      # nora.example.net's own Tunnel ingress rule + DNS record stay live,
-      # pointed at this same service, so an already-shared old link still
-      # resolves — server.py's own DROP_LEGACY_PUBLIC_HOSTNAME check below
-      # is what 301s it onto this new value instead of serving it directly.
-      - DROP_PUBLIC_BASE_URL=https://nora.67.zone
-      - DROP_LEGACY_PUBLIC_HOSTNAME=nora.example.net
-      # Same `DATABASE_URL` shape/value `nora`'s own environment above uses
-      # (DEC-8: one name for one secret) — `drop`'s own Postgres client
-      # (deploy/drop/artifacts.py, raw asyncpg) reads the `artifacts` table
-      # Nora's alembic chain owns, over the same `db` service.
-      - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db/nora
-      - VALKEY_URL=redis://valkey:6379/0
-      - RUSTFS_ENDPOINT=http://rustfs:9000
-      - RUSTFS_BUCKET=drop-artifacts
-      - RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:?set RUSTFS_ROOT_USER in .env}
-      - RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:?set RUSTFS_ROOT_PASSWORD in .env}
-      # Bearer token for BOTH internal-listener write routes (§5a defence in
-      # depth; the network-level control — no `ports:` entry, no Tunnel rule —
-      # is the primary one). Same shape as NORA_SHORTENER_TOKEN, a new,
-      # separate value since `drop` is a different service.
-      - NORA_DROP_TOKEN=${NORA_DROP_TOKEN:?set NORA_DROP_TOKEN in .env}
-    healthcheck:
-      # Matches `nora`'s own healthcheck pattern (curl against /health).
-      # Checks the public listener; both listeners are one process (see
-      # deploy/drop/server.py's module docstring) so either both come up or
-      # neither does — there's no state where this passes while the internal
-      # listener is actually down.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9102/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
 
   # db — Nora's own PostgreSQL record store (design/20 §3). Reached as `db:5432`
   # on the private network; loopback publish (127.0.0.1:5435) lets host-side ops
@@ -792,7 +646,7 @@ services:
 
   # stt — Nora's local Cantonese STT. Own image, own dependency set
   # (deploy/stt/), NOT built from nora:latest — the same "separate app that
-  # lives in this repo" shape `drop` uses.
+  # lives in this repo" shape.
   #
   # Two engines behind one OpenAI-compatible /v1/audio/transcriptions
   # (decision: design/voice-channel/06-stt-provider-decision.md, 2026-09-15):
@@ -802,7 +656,7 @@ services:
   # the box. SenseVoiceSmall (FunASR) stays as the always-loaded backup —
   # the latency floor (RTF ~0.04) and zero-new-infrastructure failover.
   #
-  # Posture mirrors signal-cli/drop: NO `ports:` publish at all — reachable
+  # Posture mirrors signal-cli: NO `ports:` publish at all — reachable
   # only as `stt:8000` on the private `nora` network. Audio from the group
   # stays on the box; there is no reason to ever expose the transcription
   # surface to the host or the internet.
@@ -1103,9 +957,6 @@ volumes:
   prometheus-data:
   alertmanager-data:
   db-data:
-  # slug -> URL data (valkey) and artifact bytes (rustfs) for the `drop`
-  # service (docs/superpowers/specs/2026-08-12-nora-drop-design.md).
-  valkey-data:
   rustfs-data:
   # ModelScope weights cache for the `stt` service (~/.cache/modelscope inside
   # the container) — pins the ~936MB SenseVoiceSmall backup download across

@@ -101,12 +101,12 @@ async def test_mark_writes_the_terminal_result(store):
     await store.claim(job.id)
     changed = await store.mark(
         job.id, ComputeJobState.DONE, completed_at=datetime.now(UTC),
-        result_url="https://nora.example.net/drop/x", result_summary="a haiku",
+        result_url="https://portal.example.net/artifacts/x", result_summary="a haiku",
     )
     assert changed is True
     fetched = await store.get(job.id)
     assert fetched.state is ComputeJobState.DONE
-    assert fetched.result_url == "https://nora.example.net/drop/x"
+    assert fetched.result_url == "https://portal.example.net/artifacts/x"
 
 
 async def test_sweep_firing_resolves_to_failed(store):

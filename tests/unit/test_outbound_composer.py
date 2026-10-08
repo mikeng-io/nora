@@ -636,7 +636,7 @@ async def test_only_the_id_the_platform_confirmed_is_sent():
 # ------------------------------------------------------------------- previews
 
 CARD = LinkPreview(
-    url="https://n.example.net/abc", title="A shortened link",
+    url="https://links.example.net/abc", title="A shortened link",
     description="What it points at",
 )
 
@@ -731,11 +731,11 @@ async def test_a_card_mentioning_a_model_name_is_deliberately_not_dropped():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("睇下 https://n.example.net/abc", "https://n.example.net/abc"),
-        ("睇下 https://n.example.net/abc。", "https://n.example.net/abc"),
-        ("(https://n.example.net/abc)", "https://n.example.net/abc"),
+        ("睇下 https://links.example.net/abc", "https://links.example.net/abc"),
+        ("睇下 https://links.example.net/abc。", "https://links.example.net/abc"),
+        ("(https://links.example.net/abc)", "https://links.example.net/abc"),
         ("no link here", None),
-        ("ftp://n.example.net/abc", None),
+        ("ftp://links.example.net/abc", None),
     ],
 )
 def test_first_url_extracts_a_substring_of_the_body(text, expected):

@@ -2550,7 +2550,7 @@ async def build_dependencies(
                 "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
             )
     # Image generation ([image_gen], DEC-137): enabled AND refresh token
-    # present → build the lane (same `route`-keyless gate the shortener uses).
+    # present → build the lane (the same keyless-`enabled` gate `route` uses).
     # Off (or tokenless) leaves the `generate_image` tool answering
     # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
     # access-token state file lives in the same repo-tree state dir
@@ -2559,9 +2559,7 @@ async def build_dependencies(
     image_generator = None
     image_refs_allowed = False
     # Image custody (Miles 2026-08-26): generated images are stored in Nora's
-    # OWN blob_store (rustfs) and sent as platform attachments — the
-    # `drop`/shortener path is NOT involved (drop's own rustfs backend serves
-    # HTML artifacts, a different concern).
+    # OWN blob_store (rustfs) and sent as platform attachments.
     if cfg.image_gen.enabled:
         image_refs_allowed = cfg.image_gen.allow_reference_images
         xai_cfg = cfg.image_gen.xai
@@ -2590,26 +2588,8 @@ async def build_dependencies(
                 "image_gen enabled but %s is unset — generate_image stays unavailable",
                 xai_cfg.refresh_token_env,
             )
-    # The link shortener ([shortener], 2026-08-07): enabled AND token present,
-    # the `route`-keyless gate. Off (or tokenless) leaves long URLs in replies —
-    # never load-bearing either way.
-    shortener_client = None
-    if cfg.shortener.enabled:
-        shortener_token = os.environ.get(cfg.shortener.token_env, "")
-        if shortener_token:
-            from nora.infra.shortener import LinkShortener
-            shortener_client = LinkShortener(
-                base_url=cfg.shortener.base_url, token=shortener_token,
-                timeout_seconds=cfg.shortener.timeout_seconds,
-            )
-        else:
-            log.warning(
-                "shortener enabled but %s is unset — links stay long",
-                cfg.shortener.token_env,
-            )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
-    # whole gate — unlike the shortener above, there is no token whose absence
-    # could leave it half-wired. Off is the shipped default and is not a
+    # whole gate. Off is the shipped default and is not a
     # degradation: a reply carrying a link goes out with no card, exactly as
     # every deployment before this section existed. It is ONE instance for the
     # process (it holds no per-turn state), handed to the pipeline and the fire
@@ -2884,7 +2864,6 @@ async def build_dependencies(
         rooms=presence_reader,
         refresher=refresher,
         geocoder=geocoder,
-        shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
         mcp_tools=mcp_tool_groups,
         # The SAME store the tick reads from — two would be two queues, and the

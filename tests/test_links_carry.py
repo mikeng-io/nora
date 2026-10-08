@@ -19,8 +19,8 @@ from nora.obs.metrics import Metrics
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
-SHORT = "https://n.example.net/9DpAk8g"
-OTHER = "https://n.example.net/zzz1111"
+SHORT = "https://www.google.com/maps/search/?api=1&query=Soi.29"
+OTHER = "https://www.google.com/maps/search/?api=1&query=zzz1111"
 
 
 # ---- LinkCarry on its own ---------------------------------------------------
@@ -115,11 +115,6 @@ class _Places:
                 "address": "銅鑼灣", "rating": 4.3}
 
 
-class _Shortener:
-    async def shorten(self, url: str) -> str:
-        return SHORT
-
-
 def _place_info_tool(links):
     from nora.agent.room import Room
     from nora.persons import Persons
@@ -130,7 +125,7 @@ def _place_info_tool(links):
         persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
-        transit_source=None, route_source=_Places(), shortener=_Shortener(),
+        transit_source=None, route_source=_Places(),
         question="Soi.29 好唔好食", links=links,
     )
     return {t.tool_name: t for t in tools}["place_info"]

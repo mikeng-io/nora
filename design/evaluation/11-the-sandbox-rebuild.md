@@ -678,7 +678,7 @@ Not a preference. Measured: with the deployment's features on, composition
 | Honcho `host.docker.internal:8000` | same — every peer write fails |
 
 Beyond startup, a long tail DEGRADES rather than fails: `route`, `search`,
-`online`, `image_gen` and `shortener` each warn "enabled but $KEY is unset" and
+`online` and `image_gen` each warn "enabled but $KEY is unset" and
 carry on with the tool unavailable. **That degradation is a divergence**:
 production's Nora holds `web_search`; a subject composed without its key does
 not, and a case whose turn would have reached one measures a Nora missing it.
