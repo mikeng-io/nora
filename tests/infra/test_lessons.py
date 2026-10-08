@@ -431,3 +431,12 @@ async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
     assert await _lessons(env.engine, unit=UNIT, before_ms=15) == (ONE,)
     assert await _lessons(env.engine, unit=UNIT, before_ms=25) == ()
     assert await _lessons(env.engine, unit=UNIT, before_ms=35) == (TWO,)
+    third = await env.store.create(unit=UNIT, body="a third practice, said short",
+                                   citations=("112",), written_at=40, established_by="t")
+    await env.store.append(lesson_id=first.id, expected_seq=2, body=ONE, citations=("110",),
+                           state="active", retired_by=None, relearn_after=None,
+                           note="rollback to revision 1", written_at=50, established_by="t")
+    # Oldest lesson first, and a lesson rolled back to active is shown again.
+    assert await _lessons(env.engine, unit=UNIT, before_ms=60) == (
+        ONE, TWO, "a third practice, said short")
+    assert third.id

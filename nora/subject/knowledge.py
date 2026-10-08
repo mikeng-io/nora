@@ -936,10 +936,15 @@ async def know(
                 )
             if knowledge.lessons:
                 lesson_store = SqlLessonStore(engine)
-                for body in knowledge.lessons:
+                # STAGGERED by a millisecond each, oldest first: the block is
+                # ordered by `created_at`, and a shared one falls back to a
+                # random UUID, so the order would change draw to draw (review
+                # of #766).
+                for i, body in enumerate(knowledge.lessons):
                     await lesson_store.create(
                         unit=subject.unit, body=body, citations=("case-seed",),
-                        written_at=now_ms, established_by="case-seed",
+                        written_at=now_ms - (len(knowledge.lessons) - i),
+                        established_by="case-seed",
                     )
             if knowledge.nora_account is not None:
                 await culture_store.append(
