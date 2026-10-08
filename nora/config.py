@@ -4469,6 +4469,16 @@ class Config(BaseModel):
                 "[lessons] enabled = true needs [dreamer] enabled = true: "
                 "the Lessons session runs on the Dreamer"
             )
+        # The doctrine check is "a model other than the session" (design/
+        # cognition-loop/50 §6): a judge on the writer's own model grades its
+        # own homework. Compared by the configured name, so an operator who
+        # points two aliases at one model is not caught; a same-name one is.
+        judge = self.lessons.check_model or self.llm.model
+        if self.lessons.enabled and judge == self.dreamer_model():
+            raise ValueError(
+                f"[lessons] check_model resolves to {judge!r}, the Dreamer's own model: "
+                "the doctrine check must be a model other than the one writing lessons"
+            )
         return self
 
     @model_validator(mode="after")

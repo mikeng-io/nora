@@ -3812,18 +3812,26 @@ async def build_dependencies(
             }
             # THE DOCTRINE CHECK (L3): every lesson is read against the law by a
             # separate call before it is written; a conflict is a tension row.
+            # Its instruction is read once HERE so a missing file stops startup
+            # instead of refusing every lesson as `check_unavailable`.
+            if not dreamer_instructions.objective_body(CHECK_OBJECTIVE).strip():
+                raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")
             lesson_check = DoctrineCheck(
-                client=_DebriefModelClient(
-                    base_url=cfg.llm.base_url,
-                    api_key=os.environ.get(cfg.llm.api_key_env, ""),
+                # The relevance gate's raw JSON completion, not the Strands
+                # `_DebriefModelClient`: measured 2026-10-09, the Strands path
+                # returned an EMPTY answer (`end_turn`) on a live lesson every
+                # time at every effort, while the same request raw came back
+                # `{"verdict": "consistent"}`. Empty is an `error`, so every such
+                # lesson would have been refused.
+                client=_RelevanceGateModelClient(
+                    client=client,
                     model=cfg.lessons.check_model or cfg.llm.model,
+                    max_tokens=cfg.lessons.check_max_tokens, temperature=0.0,
                     timeout_seconds=cfg.lessons.check_timeout_seconds + 1.0,
                     reasoning_effort=_reasoning_effort(
                         cfg.lessons.check_reasoning_effort or "low",
                         source="[lessons] check_reasoning_effort",
                     ),
-                    max_tokens=cfg.lessons.check_max_tokens, temperature=0.0,
-                    agent_name="doctrine-check",
                 ),
                 law=doctrine_store.law_rules,
                 instruction=lambda: dreamer_instructions.objective_body(CHECK_OBJECTIVE),

@@ -25,6 +25,7 @@ from nora.domain.doctrine_check import (
     LawRule,
     parse_verdict,
 )
+from nora.domain.prompt import escape
 from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
@@ -80,8 +81,12 @@ def render_check_input(*, lesson: str, rules: Sequence[LawRule]) -> str:
             attrs=lambda r, i: (("n", str(i)), ("file", r.file)),
             body=lambda r: r.text,
         )),
+        # ESCAPED: the lesson is model-written from members' messages, and a
+        # `</lesson_to_check>` in it would otherwise close the block and let
+        # it forge a verdict (review of #764). The law is escaped by
+        # `render_elements`.
         ContextBlock(name="lesson_to_check", order=_ROW["lesson_to_check"][0],
-                     key=_ROW["lesson_to_check"][1], body=lesson),
+                     key=_ROW["lesson_to_check"][1], body=escape(lesson)),
     ], sep="\n\n")
 
 

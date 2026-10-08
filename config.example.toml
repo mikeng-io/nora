@@ -1506,7 +1506,9 @@ horizon_seconds = 5184000
 batch_limit = 100
 # The doctrine check (L3): a separate call reads every lesson against the law
 # before it is written; a conflict is refused and kept for you as a tension row
-# (`nora lessons tensions`). "" is [llm] model, never the session's own model.
+# (`nora lessons tensions`). "" is [llm] model. It must differ from the
+# Dreamer's model (config refuses a match): a judge on the writer's model grades
+# its own homework.
 check_model = ""
 check_reasoning_effort = ""            # "" is low
 check_timeout_seconds = 60

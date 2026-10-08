@@ -299,7 +299,10 @@ def test_lessons_ship_off_and_need_the_dreamer():
     assert _example_config().lessons.enabled is False
     with pytest.raises(ValueError, match=r"\[lessons\] enabled = true needs \[dreamer\]"):
         _example_config(lessons={"enabled": True}, dreamer={"enabled": False})
-    on = _example_config(lessons={"enabled": True}, dreamer={"enabled": True})
+    with pytest.raises(ValueError, match="the Dreamer's own model"):
+        _example_config(lessons={"enabled": True}, dreamer={"enabled": True})
+    on = _example_config(lessons={"enabled": True, "check_model": "judge"},
+                         dreamer={"enabled": True})
     assert (on.lessons.wake_batch, on.lessons.horizon_seconds) == (50, 5_184_000)
 
 

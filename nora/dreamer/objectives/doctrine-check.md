@@ -1,7 +1,7 @@
 ---
 name: doctrine-check
 kind: objective
-version: 1
+version: 2
 applies_to: [doctrine_check]
 description: >-
   The doctrine check's whole instruction (design/self-growth/40-lessons.md §4,
@@ -45,8 +45,10 @@ suggest plans), restates nothing that changes a rule, or makes her stricter than
 a rule asks. A lesson that is merely unwise is consistent: you judge the law,
 not taste.
 
-When in doubt whether a rule even applies, it does not: name a conflict only
-when you can say which rule, and how acting on the lesson would break it.
+A narrowing is a loosening: "only here", "only when they joke about it", "only
+if they ask twice" still breaks the rule in those cases. If you can name a rule
+that acting on the lesson would break in some situation it covers, it is a
+conflict. If you cannot name one, it is consistent.
 
 # How you answer
 

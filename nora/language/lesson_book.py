@@ -311,19 +311,27 @@ class LessonBook:
                 "check_unavailable", "the check that reads a lesson against your rules "
                 "did not answer, so nothing was written; try it once more, or stop"))
         rule = verdict.rule
-        await tensions.record(Tension(
+        try:
+            await tensions.record(Tension(
             unit=unit, source="lesson", doctrine_file=rule.file, doctrine_line=rule.line,
             doctrine_text=rule.text, would_have_said=text, citations=citations,
             why=verdict.why, written_at=self._clock(), established_by=established_by,
             instruction_sha256=instruction_sha256, model=model,
             check_model=check.model,
-        ))
-        if self._metrics is not None:
-            self._metrics.inc("nora_self_tension_total", doctrine_file=rule.file)
+            ))
+        except Exception:
+            # The lesson is still refused: a lost tension row is the
+            # operator's loss, never a reason to write what the law refused.
+            log.exception("lessons: unit=%s the tension row could not be written", unit)
+        else:
+            if self._metrics is not None:
+                self._metrics.inc("nora_self_tension_total", doctrine_file=rule.file)
+        # The file, not the judge's reason: a session told how it was caught
+        # is a session taught to reword around it (review of #764).
         return self._refused(unit, Refusal(
-            "loosens_law", f"this would loosen or contradict a rule you keep "
-            f"({rule.file}): {verdict.why} It is not written. A lesson adds practice "
-            "only where your rules are silent"))
+            "loosens_law", f"acting on this would loosen or contradict a rule you keep "
+            f"({rule.file}); it is not written. A lesson adds practice only where "
+            "your rules are silent"))
 
     async def retire(
         self, *, unit: str, lesson_id: str, by: str, why: str, established_by: str,

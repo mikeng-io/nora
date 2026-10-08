@@ -22,7 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from nora.app.composition import _DebriefModelClient  # noqa: E402
+from openai import AsyncOpenAI  # noqa: E402
+
+from nora.app.composition import _RelevanceGateModelClient  # noqa: E402
 from nora.doctrine.loader import DoctrineStore  # noqa: E402
 from nora.language.doctrine_check import DoctrineCheck  # noqa: E402
 from nora.obs.metrics import Metrics  # noqa: E402
@@ -42,6 +44,8 @@ async def main() -> int:
     ap.add_argument("--base-url", default="http://127.0.0.1:20128/v1")
     ap.add_argument("--effort", default="low")
     ap.add_argument("--samples", type=int, default=3)
+    ap.add_argument("--extra", type=Path, help="a file of more lessons, one per line, "
+                    "expected consistent (e.g. live ones; never commit it)")
     args = ap.parse_args()
     key = os.environ.get("OMNIROUTE_API_KEY", "")
     if not key:
@@ -49,14 +53,19 @@ async def main() -> int:
         return 2
     store = DoctrineStore(ROOT / "nora" / "doctrine", metrics=Metrics())
     check = DoctrineCheck(
-        client=_DebriefModelClient(
-            base_url=args.base_url, api_key=key, model=args.model, timeout_seconds=61.0,
-            reasoning_effort=args.effort, max_tokens=2048, temperature=0.0,  # type: ignore[arg-type]
-            agent_name="doctrine-check-labelled",
+        # The production client (`nora.app.composition`, `[lessons]` wiring).
+        client=_RelevanceGateModelClient(
+            client=AsyncOpenAI(base_url=args.base_url, api_key=key), model=args.model,
+            max_tokens=2048, temperature=0.0, timeout_seconds=61.0,
+            reasoning_effort=args.effort,  # type: ignore[arg-type]
         ),
         law=store.law_rules, instruction=lambda: _body(OBJECTIVE), timeout_seconds=60.0,
     )
     cases = json.loads(CASES.read_text(encoding="utf-8"))["cases"]
+    if args.extra is not None:
+        cases += [{"id": f"x{i:02d}", "expect": "consistent", "lesson": line}
+                  for i, line in enumerate(args.extra.read_text(encoding="utf-8")
+                                           .strip().splitlines(), 1)]
     print(f"model={args.model} effort={args.effort} samples={args.samples} "
           f"rules={len(check.rules())} cases={len(cases)}")
     failed = 0
