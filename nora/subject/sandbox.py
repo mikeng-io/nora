@@ -1005,6 +1005,15 @@ async def seed_lessons(
     engine = create_sql_engine(subject.database_url)
     try:
         store = SqlLessonStore(engine)
+        held = [x for x in await store.lessons(unit=subject.unit) if x.active]
+        if held:
+            # The snapshot already copied lessons the unit held at the instant
+            # (`Snapshot.lessons`): seeding on top would render both, and the
+            # case would be measuring a unit nobody had.
+            raise ValueError(
+                f"case {case_name!r} attaches lessons at an instant the unit already "
+                f"held {len(held)}; anchor it before the unit's first lesson"
+            )
         # At the moment's own clock (`now_ms` is the sandbox's frozen instant).
         base = now_ms - len(lessons)
         for i, body in enumerate(lessons):

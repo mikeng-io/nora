@@ -14,6 +14,12 @@
 # invented, in the shape of what happened at each moment; the rooms' real
 # transcripts up to the moment are the context.
 #
+# BLIND CASES, measured 2026-10-09: the two document cases and the control sit
+# in a location-off room of a unit that has a location room, where R-31
+# (`Policy.shows_self_in`) hides `<self>` and `<lessons>` while the room stays
+# that way. Both arms there get the same prompt; they measure the room, not the
+# block. Only the two rip-request cases can show it (design 40 §8.1).
+#
 # Graded by `lesson_applied` (`evals.rebuilt.rubric.LESSON_APPLIED`): the
 # judge is handed the lesson and the ONE behaviour this reply is graded on
 # (`expected_output`), the same in both arms. Signal rooms only: a turn needs

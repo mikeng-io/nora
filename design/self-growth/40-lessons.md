@@ -209,7 +209,8 @@ source refreshed to newest_ts 1791486142460, build bf5ae12.
 per-draw `available` list). The three cases in the operator's room carried
 neither `<self>` nor `<lessons>`: that room is location-off in a unit with a
 location room, so `Policy.shows_self_in` (R-31) hides both there, in production
-too. The document lesson can never render in the room that taught it.
+too. While that room stays location-off, the document lesson cannot render in
+the room that taught it, and three of the five cases measure nothing.
 
 | case | block shown | before P/F | after P/F |
 |---|---|---|---|
