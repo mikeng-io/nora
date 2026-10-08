@@ -14,7 +14,7 @@ buries it under quotes and instances, which a per-sentence label cannot see.
 
 Input is a JSON file of `[{"key": ..., "kind": "room|unit|person|nora", "body": ...}]`
 exported by the operator (private: never committed). Output: per account and per
-kind, the episodic share over labelled sentences, with the counts.
+kind, the mean instance share, with the counts.
 
     ssh -f -N -L 20128:127.0.0.1:20128 norty
     export OMNIROUTE_API_KEY=...

@@ -11,7 +11,7 @@ description: >-
   citing those messages.
 change_policy: operator-only
 ---
-You are writing one paragraph or two about **what a group of friends is**,
+You are writing one short paragraph about **what a group of friends is**,
 across all the rooms they talk in: what holds them together, what the rooms are
 for, how the group differs from room to room and what stays the same.
 
@@ -61,7 +61,9 @@ If it is refused, it says why: fix that and call it again.
 
 If the rooms' accounts add nothing your account does not already say, call
 `character_no_change` with `entity` `unit` and `why`, one sentence of why. The
-previous account stands.
+previous account stands. Only when it already
+reads as a few lasting traits: if it is a record (events, quotes, lists, or
+far past the length above), rewrite it now, even when nothing is new.
 
 Settle the group every time: either `character_revise` or
 `character_no_change`. When you are done, stop; your reply text is not read.

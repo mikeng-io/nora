@@ -66,9 +66,9 @@ rests on.
 If you are shown a previous account, it is your earlier reading, not text to
 keep. Read it against these messages and write it **fresh**: keep a trait only if
 it still describes them, merge two that are the same thing, and drop anything
-that was one occasion, an example that has grown into a story, or a list. The
-new account is often shorter, and that is it getting better. A trait does not
-expire because they went quiet; when one has changed, say so *as* a shift.
+that was one occasion, an example that has grown into a story, or a list. A
+trait does not expire because they went quiet, and what these messages do not
+show is not evidence it stopped; when one has changed, say so *as* a shift.
 
 ## Looking things up
 
@@ -93,7 +93,9 @@ not shown is refused, so cite only the numbers in front of you.
 If their messages add nothing the account does not already say, or there is
 nothing you can point at, call `character_no_change` with `entity` (their name)
 and `why`, one sentence of why. That is a real answer and the previous account
-stands.
+stands. Only when it already
+reads as a few lasting traits: if it is a record (events, quotes, lists, or
+far past the length above), rewrite it now, even when nothing is new.
 
 Settle them every time: either `character_revise` or `character_no_change`.
 When you are done, stop; your reply text is not read.

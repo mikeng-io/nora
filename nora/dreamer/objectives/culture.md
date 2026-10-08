@@ -7,15 +7,17 @@ description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
   the account written last time, and writes one short account of what this room
   IS and why it became so — how they talk, how decisions get made, what they
-  call themselves, and Nora's own standing there. Deliberately NOT a list of
+  call themselves. Deliberately NOT a list of
   what happened: the memory system already produces that shape and it is the
-  shape this tier exists to not be. Version 5 writes the room alone: people
+  shape this tier exists to not be. Version 6 re-synthesises a few lasting
+  patterns instead of continuing the account (design/self-growth/60, DEC-302).
+  Version 5 writes the room alone: people
   have their own sessions (`character-person`). Version 4 writes through the
   `character_revise` verb with citations instead of a JSON envelope
   (design/self-growth/10 §3); version 3 asks only about the people who wrote in the batch (DEC-280); version 2 added one account per listed person (DEC-278); version 1 was design/culture-tier, DEC-182.
 change_policy: operator-only
 ---
-You are writing one paragraph or two about **what a group of friends is like** — a
+You are writing one short paragraph about **what a group of friends is like** — a
 room you have been reading, and that you are part of.
 
 Somebody who has never met them should be able to read what you write and then
@@ -82,12 +84,14 @@ If you are shown a previous account, it is your earlier reading, not text to
 keep. Read it against these messages and write the account **fresh**: keep a
 pattern only if it still describes them, merge two that are the same thing,
 and drop anything that was only ever one occasion, an example that has grown
-into a story, or a list. The new account is often shorter than the last one,
-and that is the account getting better, not losing anything.
+into a story, or a list. An account that was a record of events gets shorter
+when it becomes a description; one that already describes them may barely
+change.
 
 A trait does not expire because the group went quiet: a pattern you saw across
 many days stays until the room shows it changed, and then you say so *as* a
-shift. An event was never a trait; it does not need to expire to be left out.
+shift: what these messages do not show is not evidence that it stopped. An
+event was never a trait; it does not need to expire to be left out.
 
 ## When there is little to go on
 
@@ -127,7 +131,9 @@ not shown is refused, so cite only the numbers in front of you.
 If the messages add nothing the account does not already say, or there is
 nothing you can point at, call `character_no_change` with `entity` `room` and
 `why`, one sentence of why. That is a real answer and it leaves the previous account
-standing, which is usually right.
+standing, which is usually right, but only when that account already reads as a
+few lasting patterns: if it is a record (events, quotes, lists, or far past the
+length above), rewrite it now, even from a quiet batch.
 
 Settle the room every time: either `character_revise` or
 `character_no_change` for `room`. When you are done, stop; your reply text is

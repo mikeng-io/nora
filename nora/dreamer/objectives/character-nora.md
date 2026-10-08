@@ -69,7 +69,9 @@ If it is refused, it says why: fix that and call it again.
 
 If these episodes add nothing your account does not already say, call
 `character_no_change` with `entity` `nora` and `why`, one sentence of why. The
-previous account stands.
+previous account stands. Only when it already
+reads as a few lasting traits: if it is a record (events, quotes, lists, or
+far past the length above), rewrite it now, even when nothing is new.
 
 Settle it every time: either `character_revise` or `character_no_change`. When
 you are done, stop; your reply text is not read.

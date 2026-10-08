@@ -208,6 +208,8 @@ _CITATION_DETAILS = {
             "episodes that show how people responded, or did not",
     "thin_evidence": "a lesson is a pattern: cite at least {n} different "
                      "`response:<n>` episodes you were shown",
+    "ids_in_body": "the lesson's text carries message numbers; keep them in "
+                   "`citations` only and say the practice in words",
 }
 
 
