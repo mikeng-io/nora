@@ -33,7 +33,8 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          quote=None, platform="signal", tagger_card=(), notes=(),
          standing=None, decisions=(), people_in_window=(), culture=None,
          room_members=(), computer=None, documents=None, character=(),
-         subagents=None, unit_culture=None, self_account=None) -> TagContext:
+         subagents=None, unit_culture=None, self_account=None,
+         lessons=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
@@ -43,7 +44,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
               "room_members": tuple(room_members), "computer": computer,
               "documents": documents, "character": tuple(character),
               "subagents": subagents, "unit_culture": unit_culture,
-              "self_account": self_account}
+              "self_account": self_account, "lessons": tuple(lessons)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       **kwargs)
 
@@ -280,6 +281,7 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",),
         self_account=_culture("She is dry and brief."),
+        lessons=("Name one place, not five.",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
         notes=(_note(),),
         standing=_standing(working_set=(_working_set_item(),)),

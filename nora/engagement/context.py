@@ -53,6 +53,7 @@ from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
 from nora.language.culture_render import read_character, read_culture
+from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -108,6 +109,7 @@ class TranscriptInjection:
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
         culture: CultureReader | None = None,
+        lessons: ActiveLessons | None = None,
         lineage: LineagePolicy | None = None,
         computer: ComputerContextReader | None = None,
         documents: DocumentsContextReader | None = None,
@@ -173,6 +175,8 @@ class TranscriptInjection:
         # Keyed on the room's `primary_id`, resolved through `policy` — see
         # `_culture`.
         self._culture_reader = culture
+        # `<lessons>` (L5): `None` while `[lessons] render` is off.
+        self._lessons_reader = lessons
         # WHO THIS ROOM IS, for lineage (design/cognition-loop/10-tiers.md §3).
         # A pure value built at the composition root; `None` is `[lineage]
         # mode = "off"` for a harness that wires none. No read: the room's
@@ -237,7 +241,7 @@ class TranscriptInjection:
             ((transcript, character), card, tagger_card, standing, notes),
             presence,
             culture,
-            (unit_culture, self_account),
+            (unit_culture, self_account, lessons),
             (computer, documents, subagents),
         ) = await asyncio.gather(
             asyncio.gather(
@@ -250,7 +254,7 @@ class TranscriptInjection:
             self._presence(msg),
             self._culture(msg),
             asyncio.gather(
-                self._unit_culture(msg), self._self_account(msg),
+                self._unit_culture(msg), self._self_account(msg), self._lessons(msg),
             ),
             asyncio.gather(
                 self._computer(msg),
@@ -300,6 +304,7 @@ class TranscriptInjection:
             character=character,
             unit_culture=unit_culture,
             self_account=self_account,
+            lessons=lessons,
             computer=computer,
             documents=documents,
             subagents=subagents,
@@ -443,6 +448,24 @@ class TranscriptInjection:
             traced_read("culture", "head", self._culture_reader.head(
                 key=nora_character_key(convo.unit))),
             stage="tag_self", platform=msg.platform, metrics=self._metrics,
+        )
+
+    async def _lessons(self, msg: NormalizedMessage) -> tuple[str, ...]:
+        """Her active lessons in this room's UNIT (design/self-growth/40, L5),
+        bounded, fail-soft and counted (`stage="tag_lessons"`); `()` with no
+        reader (`[lessons] render` off), no unit, or a room that may not show
+        `<self>` (`Policy.shows_self_in`, R-31): lessons are written from her
+        sends in every room of the unit, as her account is."""
+        if self._lessons_reader is None or self._policy is None:
+            return ()
+        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        if convo is None or not convo.unit:
+            return ()
+        if not self._policy.shows_self_in(msg.platform, msg.conversation_id):
+            return ()
+        return await read_lessons(
+            traced_read("lessons", "active", self._lessons_reader.bodies(unit=convo.unit)),
+            stage="tag_lessons", platform=msg.platform, metrics=self._metrics,
         )
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:

@@ -170,4 +170,27 @@ and line quoted, the evidence cited, and what the lesson would have said.
 | L2 | **built (DEC-297), off by default:** the Lessons adaptor, its objective and its wake (`[lessons] wake_batch` 50 closed episodes, `stale_seconds`, or a held lesson at its horizon); every closed episode is handed with her send's text, `unanswered` included and citable; a write cites three episodes; code retires a lesson not re-evidenced in `horizon_seconds` (60 days); an unsettled session holds its batch, bounded at three. **Not yet run:** the labelled set of `unanswered` sends (questions and not) judged correctly, which needs `[lessons] enabled` on the deploy host and a read-back of what the session writes | wake, settle, citation floor and decay in tests (`tests/unit/test_lessons_adaptor.py`, `tests/contract/test_character_evidence_contract.py`) |
 | L3 | **built (DEC-298):** `DoctrineCheck` (`nora/language/doctrine_check.py`), a separate call on `[lessons] check_model` (default the tag model, never the session's) reading each lesson against the law rules of `core/` and `rooms/` (38 of 58) with `nora/dreamer/objectives/doctrine-check.md`; a conflict refuses the write and appends a `self_tension` row (migration `0101_self_tension`), an error refuses and writes nothing; `nora lessons tensions` is the operator's read. **Measured 2026-10-09** on the deployed `nora` alias, effort low, instruction v2: 32 labelled lessons (16 loosening one rule, four of them only "in this group" or "when they joke", 16 practice, stricter or near-miss) × 3 samples, 96 of 96 verdicts right, every conflict naming the targeted file; and the first 4 live lessons × 3, all `consistent` (`scripts/doctrine_check_labelled.py`, `tests/fixtures/doctrine_check_labelled.json`). The live run found the Strands client returning an EMPTY answer on one live lesson at every effort, so the check uses the relevance gate's raw JSON client. Author-written labelled cases are cleaner than real lessons: re-run on the first month | a labelled set of loosening lessons all refused and written as tension |
 | L4 | **built (DEC-299):** the correction fast path above; the runtime also counts a verb that writes when called as an `ok` run (four live lessons had read `nothing_found`) | a correction wakes Lessons within the cue quiet, in tests (`tests/unit/test_lessons_adaptor.py`, `tests/contract/test_character_evidence_contract.py`) |
-| L5 | the `lessons` block, after `self` | before/after eval (`nora-eval`) |
+| L5 | **built, render OFF (DEC-300):** `<lessons>` (`nora/language/lesson_render.py`) is the unit's active lessons, row 2 of the tag and fire prefill right after `<self>`, gated like `<self>` by `Policy.shows_self_in` (R-31), under `[lessons] render` (default false); the eval sandbox copies the lessons active at a case's instant (`Snapshot.lessons`, `Knowledge.lessons`). Not on Cognition's prompt. **Not measured, so not switched on:** see §8 | before/after eval (`nora-eval`) |
+
+## 8. L5: why `<lessons>` ships off, and what measures it (2026-10-09)
+
+The first lessons were written at 17:43 UTC on 2026-10-08, about an hour before
+L5 was built. The eval sandbox is as-of (`Snapshot.lessons` copies the
+lessons active at a case's instant), and every case in the suite is anchored
+before that moment, so both arms of a before/after would render no `<lessons>`
+and the run would measure nothing (the same position as the self block,
+[20](20-self-block.md) §5). So `[lessons] render` stays `false` and nothing
+renders.
+
+Two ways to measure it, either the operator's call:
+
+- **Wait for anchors.** Cases anchored after lessons exist in a unit, on
+  moments a held lesson bears on (an unanswered question re-asked; a file
+  claimed without re-reading it; a request already refused once). The sandbox
+  copies them with no change.
+- **A `lessons` counterfactual tier** (`evals/scenarios.py`
+  `COUNTERFACTUAL_TIERS`, closed on purpose, opened only on an operator ruling):
+  attach a stated lesson at an earlier real moment it would have bent.
+
+To switch it on after a passing run: `[lessons] render = true` in the live
+config and recreate (no rebuild).

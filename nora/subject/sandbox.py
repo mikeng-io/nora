@@ -737,6 +737,8 @@ def as_knowledge(shot: Snapshot) -> Knowledge:
             person_id: _account_seed(account, before_ms=shot.before_ms)
             for person_id, account in shot.characters
         },
+        # `<lessons>` as the unit held them at the instant (L5).
+        lessons=shot.lessons,
         notes=tuple(_note_seed(note, revision) for note, revision in shot.notes),
         # OFFSETS measured against the instant itself, which is what keeps
         # the copy at the moment's own clock: `know()` is handed
