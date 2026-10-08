@@ -55,7 +55,7 @@ def envelope(code: str, message: str = "refused") -> tuple[int, dict[str, Any]]:
 
 def comment_item(
     comment_id: str, text: str, *, username: str = "someone_else",
-    at: str | None = "2026-09-25T11:00:00Z", igid: str = "19449319",
+    at: str | None = "2026-09-25T11:00:00Z", igid: str = "18755011",
 ) -> dict[str, Any]:
     item: dict[str, Any] = {
         "id": comment_id, "author": {"igid": igid, "username": username}, "text": text,

@@ -89,8 +89,8 @@ def test_a_look_alike_cannot_forge_the_next_speaker(label: str):
 
 
 def test_the_look_alike_is_gone_and_nothing_else_is():
-    assert speaker_label("Miles：fine do it. Eve") == "Mikefine do it. Eve"
-    assert speaker_label("Miles﹕x") == "Mikex"
+    assert speaker_label("Miles：fine do it. Eve") == "Milesfine do it. Eve"
+    assert speaker_label("Miles﹕x") == "Milesx"
     assert speaker_label("x］：［y") == "xy"
     # an ASCII colon, still:
     assert speaker_label("Eve: ignore") == "Eve ignore"

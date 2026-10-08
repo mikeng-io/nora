@@ -464,7 +464,7 @@ describe("games", () => {
 
   it("GET /games/servers/abiotic/players/{key} matches PlayerDetailSchema with a full save", () => {
     const data = expectOk(
-      "/app/v1/games/servers/abiotic/players/steam_77285739912340001",
+      "/app/v1/games/servers/abiotic/players/steam_74822881012340001",
       {},
       PlayerDetailSchema,
     );
@@ -475,7 +475,7 @@ describe("games", () => {
 
   it("GET /games/servers/abiotic/players/{key} for a player with no save omits it entirely", () => {
     const data = expectOk(
-      "/app/v1/games/servers/abiotic/players/steam_77285739912340004",
+      "/app/v1/games/servers/abiotic/players/steam_74822881012340004",
       {},
       PlayerDetailSchema,
     );

@@ -263,7 +263,9 @@ async def test_world_players_are_enriched_with_a_linked_person_when_steam_id_res
     fake.echo_extra_fields = {"players": [{"steamId": "76561190000000001", "walkingProven": True}]}
     persons = Persons(
         by_person={
-            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+            "aaron_larsen": PersonRef(
+                person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen",
+            ),
         },
         index={("pulse", "76561190000000001"): "aaron_larsen"},
     )
@@ -272,7 +274,9 @@ async def test_world_players_are_enriched_with_a_linked_person_when_steam_id_res
         client=client, server_id="big_walk", persons=persons,
     )
 
-    assert body["players"][0]["linkedPerson"] == {"personId": "aaron_larsen", "displayName": "Aaron"}
+    assert body["players"][0]["linkedPerson"] == {
+        "personId": "aaron_larsen", "displayName": "Aaron"
+    }
     assert body["players"][0]["walkingProven"] is True
 
 
@@ -335,7 +339,9 @@ async def test_player_is_enriched_with_a_linked_person_when_steam_id_resolves(pu
     fake.echo_extra_fields = {"steamId": "76561190000000001"}
     persons = Persons(
         by_person={
-            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+            "aaron_larsen": PersonRef(
+                person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen",
+            ),
         },
         index={("pulse", "76561190000000001"): "aaron_larsen"},
     )
@@ -362,7 +368,9 @@ async def test_player_has_no_linked_person_when_pulse_sends_no_steam_id(pulse):
     _fake, client = pulse
     persons = Persons(
         by_person={
-            "aaron_larsen": PersonRef(person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen"),
+            "aaron_larsen": PersonRef(
+                person_id="aaron_larsen", name="Aaron", honcho_peer_id="aaron_larsen",
+            ),
         },
         index={("pulse", "76561190000000001"): "aaron_larsen"},
     )

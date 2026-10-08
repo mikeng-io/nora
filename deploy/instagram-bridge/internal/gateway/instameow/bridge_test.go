@@ -30,7 +30,7 @@ func eventBridge(t *testing.T) *Bridge {
 		Store: session.Store{Dir: t.TempDir()},
 		Sink:  stream.NewHub(),
 		State: domain.StateAuthenticated,
-		Self:  domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
+		Self:  domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"},
 	})
 	b.threads = newThreadIndex((&fakeIG{}).FetchThreadID)
 	return b
@@ -246,7 +246,7 @@ func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 	defer hubOf(b).Unsubscribe(ch)
 
 	if err := b.onEvent(t.Context(), &slidetypes.TypingNotification{
-		ThreadID: threadLong, SenderID: 110966695387753, ActivityStatus: 1,
+		ThreadID: threadLong, SenderID: 186217604552756, ActivityStatus: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := b.onEvent(t.Context(), &slidetypes.TypingNotification{
-		ThreadID: threadLong, SenderID: 14963523149149302, ActivityStatus: 1,
+		ThreadID: threadLong, SenderID: 18247361241432477, ActivityStatus: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestTypingClaimsARoomOnlyWhenTheCacheCanVouchForIt(t *testing.T) {
 // `last_event_age_seconds` would make the socket-death detector unable to tell
 // a live room from a dead socket, which is the one thing it exists for.
 func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
-	msg := &slidetypes.Message{MessageID: "mid.$m", SenderFBID: 110966695387753, TextBody: "hi"}
+	msg := &slidetypes.Message{MessageID: "mid.$m", SenderFBID: 186217604552756, TextBody: "hi"}
 	cases := []struct {
 		name string
 		data slidetypes.DeltaEvent
@@ -295,9 +295,9 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 		{"join", &slidetypes.ParticipantJoinEvent{Message: msg}, kindMessage},
 		{"leave", &slidetypes.ParticipantLeaveEvent{Message: msg}, kindMessage},
 		{"reaction", &slidetypes.CreateReactionEvent{MessageID: "mid.$m",
-			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 110966695387753}}, kindReaction},
+			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, kindReaction},
 		{"reaction removed", &slidetypes.DeleteReactionEvent{MessageID: "mid.$m",
-			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 110966695387753}}, kindReaction},
+			Reaction: slidetypes.Reaction{Reaction: "👍", SenderFBID: 186217604552756}}, kindReaction},
 		{"edit", &slidetypes.EditMessageEvent{MessageID: "mid.$m", TextBody: "fixed"}, kindEdit},
 		{"unsend", &slidetypes.DeleteMessageEvent{MessageID: "mid.$m"}, kindUnsend},
 		// Not conversation. Forwarding these would age the socket-death
@@ -354,7 +354,7 @@ func TestEveryMeaningfulDeltaIsForwardedAndTheRestAreNot(t *testing.T) {
 // /health that looked wrong. The only symptom is an account that stops
 // noticing it was spoken to.
 func TestAZeroOwnFBIDDoesNotDestroyTheCachedIdentity(t *testing.T) {
-	good := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
+	good := domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"}
 	b := eventBridge(t)
 	b.setSelf(good)
 	if err := b.store.SaveSelf(good); err != nil {
@@ -399,9 +399,9 @@ func TestAZeroOwnFBIDOnAFirstBootIsReportedButNotPersisted(t *testing.T) {
 func TestARealOwnFBIDIsRecordedAndPersisted(t *testing.T) {
 	b := eventBridge(t)
 	b.setSelf(domain.Self{})
-	b.recordSelf(14963523149149302, "79597894900", "not_____nora")
+	b.recordSelf(18247361241432477, "79597894900", "not_____nora")
 
-	want := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
+	want := domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"}
 	if got := b.selfSnapshot(); got != want {
 		t.Fatalf("self = %+v", got)
 	}

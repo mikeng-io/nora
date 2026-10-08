@@ -44,7 +44,7 @@ import { proto } from '@whiskeysockets/baileys';
 test('normalizeJid strips the multi-device suffix from the user part', () => {
   assert.equal(normalizeJid('85290000100:10@s.whatsapp.net'), '85255080100@s.whatsapp.net');
   assert.equal(normalizeJid('60000000000001:3@lid'), '60000000000001@lid');
-  assert.equal(normalizeJid('176569000000000000@g.us'), '176569000000000000@g.us');
+  assert.equal(normalizeJid('152099000000000000@g.us'), '152099000000000000@g.us');
   assert.equal(normalizeJid(''), '');
   assert.equal(normalizeJid(null), '');
 });
@@ -56,7 +56,7 @@ test('jidUserDigits returns bare digits, no device suffix or domain', () => {
 });
 
 test('jid classification', () => {
-  assert.equal(isGroupJid('176569000000000000@g.us'), true);
+  assert.equal(isGroupJid('152099000000000000@g.us'), true);
   assert.equal(isGroupJid('85255080100@s.whatsapp.net'), false);
   assert.equal(isLidJid('60000000000001@lid'), true);
   assert.equal(isLidJid('85255080100@s.whatsapp.net'), false);
@@ -64,10 +64,10 @@ test('jid classification', () => {
 
 test('isValidTargetJid accepts person/group/lid and rejects the rest', () => {
   assert.equal(isValidTargetJid('85255080100@s.whatsapp.net'), true);
-  assert.equal(isValidTargetJid('176569000000000000@g.us'), true);
+  assert.equal(isValidTargetJid('152099000000000000@g.us'), true);
   assert.equal(isValidTargetJid('60000000000001@lid'), true);
   assert.equal(isValidTargetJid('status@broadcast'), false);
-  assert.equal(isValidTargetJid('176569@newsletter'), false);
+  assert.equal(isValidTargetJid('152099@newsletter'), false);
   assert.equal(isValidTargetJid('not-a-jid'), false);
   assert.equal(isValidTargetJid(''), false);
 });
@@ -85,14 +85,14 @@ test('timestampMs coerces numbers, numeric strings, and Long-likes to ms', () =>
 test('buildLidMap reads lid-mapping-<phone>.json files into a reverse map', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'nora-wa-lid-'));
   writeFileSync(path.join(dir, 'lid-mapping-85290000100.json'), JSON.stringify('60000000000001'));
-  writeFileSync(path.join(dir, 'lid-mapping-85202411020.json'), JSON.stringify(['14924244741244']));
+  writeFileSync(path.join(dir, 'lid-mapping-86183254648.json'), JSON.stringify(['14575433319544']));
   writeFileSync(path.join(dir, 'creds.json'), '{}'); // ignored
   writeFileSync(path.join(dir, 'lid-mapping-broken.json'), 'not json'); // ignored
   writeFileSync(path.join(dir, 'lid-mapping-.json'), JSON.stringify('9')); // no phone digits — ignored
 
   const map = buildLidMap(dir);
   assert.equal(map['60000000000001'], '85290000100');
-  assert.equal(map['14924244741244'], '85202411020');
+  assert.equal(map['14575433319544'], '86183254648');
   assert.equal(Object.keys(map).length, 2);
 });
 
@@ -104,8 +104,8 @@ test('resolveIdentity maps phone JIDs, known LIDs, unknown LIDs, and groups', ()
   const lidToPhone = { '60000000000001': '85290000100' };
   const phoneToLid = invertLidMap(lidToPhone);
 
-  assert.deepEqual(resolveIdentity('85202411020:5@s.whatsapp.net', lidToPhone, phoneToLid), {
-    phone: '85202411020', lid: null,
+  assert.deepEqual(resolveIdentity('86183254648:5@s.whatsapp.net', lidToPhone, phoneToLid), {
+    phone: '86183254648', lid: null,
   });
   // BOTH directions ride every event: a phone-form JID still carries its lid
   // when the session map knows one, so the adapter's both-forms membership
@@ -116,10 +116,10 @@ test('resolveIdentity maps phone JIDs, known LIDs, unknown LIDs, and groups', ()
   assert.deepEqual(resolveIdentity('60000000000001@lid', lidToPhone, phoneToLid), {
     phone: '85290000100', lid: '60000000000001',
   });
-  assert.deepEqual(resolveIdentity('97399293222369@lid', lidToPhone, phoneToLid), {
-    phone: null, lid: '97399293222369',
+  assert.deepEqual(resolveIdentity('97473932324970@lid', lidToPhone, phoneToLid), {
+    phone: null, lid: '97473932324970',
   });
-  assert.deepEqual(resolveIdentity('176569000000000000@g.us', lidToPhone, phoneToLid), {
+  assert.deepEqual(resolveIdentity('152099000000000000@g.us', lidToPhone, phoneToLid), {
     phone: null, lid: null,
   });
 });
@@ -136,17 +136,17 @@ test('invertLidMap is the pointwise inverse and tolerates an empty map', () => {
 test('recent-message cache remembers key material and resolves quoted timestamps', () => {
   const cache = createRecentMessageCache(3);
   cache.remember({
-    key: { id: 'A', remoteJid: '176569@g.us', participant: '60000000000001@lid', fromMe: false },
+    key: { id: 'A', remoteJid: '152099@g.us', participant: '60000000000001@lid', fromMe: false },
     messageTimestamp: 1756963100,
   });
 
   const hit = cache.get('A');
-  assert.equal(hit.chat_jid, '176569@g.us');
+  assert.equal(hit.chat_jid, '152099@g.us');
   assert.equal(hit.sender_jid, '60000000000001@lid');
   assert.equal(hit.from_me, false);
   assert.equal(hit.timestamp_ms, 1756963100000);
   assert.deepEqual(hit.key, {
-    id: 'A', remoteJid: '176569@g.us', fromMe: false, participant: '60000000000001@lid',
+    id: 'A', remoteJid: '152099@g.us', fromMe: false, participant: '60000000000001@lid',
   });
   assert.equal(cache.get('nope'), null);
 });
@@ -255,7 +255,7 @@ const LID_MAP = { '60000000000001': '85290000100' };
 
 test('extracts a group text message with LID sender resolved to phone', () => {
   const event = extractMessageEvent({
-    key: { id: '3EB0F1', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    key: { id: '3EB0F1', remoteJid: '152099000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
     pushName: 'Alice',
     messageTimestamp: 1756963200,
     message: { conversation: 'hello' },
@@ -264,7 +264,7 @@ test('extracts a group text message with LID sender resolved to phone', () => {
   assert.deepEqual(event, {
     type: 'message',
     id: '3EB0F1',
-    chat_jid: '176569000000000000@g.us',
+    chat_jid: '152099000000000000@g.us',
     is_group: true,
     from_me: false,
     sender_jid: '60000000000001@lid',
@@ -282,7 +282,7 @@ test('extracts a group text message with LID sender resolved to phone', () => {
 
 test('1:1 sender is the chat JID; mentions resolve to phone and lid forms', () => {
   const event = extractMessageEvent({
-    key: { id: 'M1', remoteJid: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'M1', remoteJid: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963200,
     message: {
       extendedTextMessage: {
@@ -295,8 +295,8 @@ test('1:1 sender is the chat JID; mentions resolve to phone and lid forms', () =
   }, { lidToPhone: LID_MAP });
 
   assert.equal(event.is_group, false);
-  assert.equal(event.sender_jid, '85202411020@s.whatsapp.net');
-  assert.equal(event.sender_phone, '85202411020');
+  assert.equal(event.sender_jid, '86183254648@s.whatsapp.net');
+  assert.equal(event.sender_phone, '86183254648');
   assert.equal(event.sender_lid, null);
   assert.deepEqual(event.mentioned, [
     { jid: '60000000000001@lid', phone: '85290000100', lid: '60000000000001' },
@@ -307,19 +307,19 @@ test('1:1 sender is the chat JID; mentions resolve to phone and lid forms', () =
 test('quoted messages carry participant resolution and cache-resolved timestamp', () => {
   const cache = createRecentMessageCache(10);
   cache.remember({
-    key: { id: '3EB0AA', remoteJid: '176569@g.us', participant: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: '3EB0AA', remoteJid: '152099@g.us', participant: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963100,
   });
 
   const event = extractMessageEvent({
-    key: { id: 'Q1', remoteJid: '176569@g.us', participant: '60000000000001@lid', fromMe: false },
+    key: { id: 'Q1', remoteJid: '152099@g.us', participant: '60000000000001@lid', fromMe: false },
     messageTimestamp: 1756963200,
     message: {
       extendedTextMessage: {
         text: 'reply',
         contextInfo: {
           stanzaId: '3EB0AA',
-          participant: '85202411020:7@s.whatsapp.net',
+          participant: '86183254648:7@s.whatsapp.net',
           quotedMessage: { conversation: 'earlier message' },
         },
       },
@@ -328,8 +328,8 @@ test('quoted messages carry participant resolution and cache-resolved timestamp'
 
   assert.deepEqual(event.quoted, {
     id: '3EB0AA',
-    participant_jid: '85202411020@s.whatsapp.net',
-    participant_phone: '85202411020',
+    participant_jid: '86183254648@s.whatsapp.net',
+    participant_phone: '86183254648',
     participant_lid: null,
     timestamp_ms: 1756963100000,
     text: 'earlier message',
@@ -338,7 +338,7 @@ test('quoted messages carry participant resolution and cache-resolved timestamp'
 
 test('quoted timestamp is null when the parent predates the cache', () => {
   const event = extractMessageEvent({
-    key: { id: 'Q2', remoteJid: '176569@g.us', participant: '1@s.whatsapp.net', fromMe: false },
+    key: { id: 'Q2', remoteJid: '152099@g.us', participant: '1@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963200,
     message: {
       extendedTextMessage: {
@@ -358,7 +358,7 @@ test('quoted timestamp is null when the parent predates the cache', () => {
 
 test('voice note surfaces as audio media descriptor with ptt flag — no bytes', () => {
   const event = extractMessageEvent({
-    key: { id: 'V1', remoteJid: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'V1', remoteJid: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963200,
     message: {
       audioMessage: {
@@ -385,7 +385,7 @@ test('voice note surfaces as audio media descriptor with ptt flag — no bytes',
 
 test('document media keeps filename and caption; caption becomes text', () => {
   const event = extractMessageEvent({
-    key: { id: 'D1', remoteJid: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'D1', remoteJid: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963200,
     message: {
       documentMessage: {
@@ -411,12 +411,12 @@ test('document media keeps filename and caption; caption becomes text', () => {
 
 test('MESSAGE_EDIT protocol message becomes an event with edit_of set', () => {
   const event = extractMessageEvent({
-    key: { id: 'E1', remoteJid: '176569@g.us', participant: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'E1', remoteJid: '152099@g.us', participant: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963250,
     message: {
       protocolMessage: {
         type: 'MESSAGE_EDIT',
-        key: { id: 'ORIG1', remoteJid: '176569@g.us', fromMe: false },
+        key: { id: 'ORIG1', remoteJid: '152099@g.us', fromMe: false },
         editedMessage: { conversation: 'new text' },
       },
     },
@@ -431,14 +431,14 @@ test('a phone edit wrapped in editedMessage is unwrapped into an edit event', ()
   // The shape a phone sends (Baileys rc13 normalizeMessageContent unwraps it
   // the same way). Before, this produced NO event at all.
   const event = extractMessageEvent({
-    key: { id: 'E2', remoteJid: '176569@g.us', participant: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'E2', remoteJid: '152099@g.us', participant: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963250,
     message: {
       editedMessage: {
         message: {
           protocolMessage: {
             type: 14,
-            key: { id: 'ORIG2', remoteJid: '176569@g.us', fromMe: false },
+            key: { id: 'ORIG2', remoteJid: '152099@g.us', fromMe: false },
             editedMessage: { conversation: 'fixed text' },
             timestampMs: '1756963250123',
           },
@@ -457,12 +457,12 @@ test('non-edit protocol messages and contentless messages produce no event', () 
   // REVOKE is not in this list any more: it is a `delete` event since
   // design/cognition-loop step 1 (pinned at the end of this file).
   assert.equal(extractMessageEvent({
-    key: { id: 'P1', remoteJid: '176569@g.us', participant: '1@s.whatsapp.net' },
+    key: { id: 'P1', remoteJid: '152099@g.us', participant: '1@s.whatsapp.net' },
     message: { protocolMessage: { type: 'EPHEMERAL_SETTING', key: { id: 'X' } } },
   }, {}), null);
 
   assert.equal(extractMessageEvent({
-    key: { id: 'P2', remoteJid: '176569@g.us', participant: '1@s.whatsapp.net' },
+    key: { id: 'P2', remoteJid: '152099@g.us', participant: '1@s.whatsapp.net' },
     message: { senderKeyDistributionMessage: {} },
   }, {}), null);
 
@@ -471,7 +471,7 @@ test('non-edit protocol messages and contentless messages produce no event', () 
 
 test('ephemeral wrappers are unwrapped before extraction', () => {
   const event = extractMessageEvent({
-    key: { id: 'W1', remoteJid: '85202411020@s.whatsapp.net', fromMe: false },
+    key: { id: 'W1', remoteJid: '86183254648@s.whatsapp.net', fromMe: false },
     messageTimestamp: 1756963200,
     message: { ephemeralMessage: { message: { conversation: 'disappearing' } } },
   }, {});
@@ -511,7 +511,7 @@ test('redactJid keeps only last-4 digits plus domain', () => {
 // -- Secret-encrypted edits (a phone's edit since 2026) ----------------------
 // Vector generated by whatsmeow ITSELF (generateMsgSecretKey + gcmutil.Encrypt,
 // go.mau.fi/whatsmeow msgsecret.go) for: secret 00..1f, original id
-// 3EB0ORIGID, original sender and editor 149242447412@lid, iv 0a..15,
+// 3EB0ORIGID, original sender and editor 145754333195@lid, iv 0a..15,
 // plaintext = Message{conversation:"hello"}. Matching it byte for byte is what
 // says this port derives the same key WhatsApp's peers do.
 const WM_SECRET = Buffer.from('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', 'hex');
@@ -520,7 +520,7 @@ const WM_IV = Buffer.from('0a0b0c0d0e0f101112131415', 'hex');
 const WM_CT = Buffer.from('f898ea0de5de134a60b3e93b344bc18468ee4268f31822', 'hex');
 
 test('the edit key matches whatsmeow byte for byte', () => {
-  const key = deriveEditKey(WM_SECRET, '3EB0ORIGID', '149242447412@lid', '149242447412@lid');
+  const key = deriveEditKey(WM_SECRET, '3EB0ORIGID', '145754333195@lid', '145754333195@lid');
   assert.equal(key.toString('hex'), WM_KEY);
 });
 
@@ -528,24 +528,24 @@ test('the key orders original sender before editor, both without device, as what
   // A second whatsmeow vector with the two sides DIFFERENT (the editor's JID
   // carries a device part, ":3", which whatsmeow strips): swapping them, or
   // keeping the device, gives a different key.
-  const key = deriveEditKey(WM_SECRET, '3EB0ORIGID', '149242447412@lid', '85202411020@s.whatsapp.net');
+  const key = deriveEditKey(WM_SECRET, '3EB0ORIGID', '145754333195@lid', '86183254648@s.whatsapp.net');
   assert.equal(key.toString('hex'), 'b87c3f1eaf124da257537ee2bb7d26c8c9f847813aa7caa3698b2077881154b8');
 });
 
-function secretEditFixture({ originalParticipant = '149242447412@lid', lidToPhone = {} } = {}) {
+function secretEditFixture({ originalParticipant = '145754333195@lid', lidToPhone = {} } = {}) {
   const cache = createRecentMessageCache();
   cache.remember({
-    key: { id: '3EB0ORIGID', remoteJid: '176569@g.us', participant: originalParticipant, fromMe: false },
+    key: { id: '3EB0ORIGID', remoteJid: '152099@g.us', participant: originalParticipant, fromMe: false },
     messageTimestamp: 1756963000,
     message: { conversation: 'helo', messageContextInfo: { messageSecret: WM_SECRET } },
   });
   const edit = {
-    key: { id: '3EB0EDIT', remoteJid: '176569@g.us', participant: '149242447412@lid', fromMe: false },
+    key: { id: '3EB0EDIT', remoteJid: '152099@g.us', participant: '145754333195@lid', fromMe: false },
     messageTimestamp: 1756963100,
     message: {
       messageContextInfo: {},
       secretEncryptedMessage: {
-        targetMessageKey: { id: '3EB0ORIGID', remoteJid: '176569@g.us', participant: originalParticipant, fromMe: false },
+        targetMessageKey: { id: '3EB0ORIGID', remoteJid: '152099@g.us', participant: originalParticipant, fromMe: false },
         encPayload: WM_CT, encIv: WM_IV, secretEncType: SECRET_ENC_MESSAGE_EDIT,
       },
     },
@@ -567,10 +567,10 @@ test('a secret-encrypted phone edit decrypts into an edit event', () => {
 test('it decrypts when the original was recorded under the phone form of the same person', () => {
   // WhatsApp is mid-migration to LIDs: the cache may hold the phone JID while
   // the key was derived with the LID. Every known form is tried.
-  const { cache, edit } = secretEditFixture({ originalParticipant: '85202411020@s.whatsapp.net' });
+  const { cache, edit } = secretEditFixture({ originalParticipant: '86183254648@s.whatsapp.net' });
   const opened = decryptSecretEdit(edit, {
     recentCache: cache, decode: (b) => proto.Message.decode(b),
-    lidToPhone: { '149242447412': '85202411020' }, phoneToLid: { '85202411020': '149242447412' },
+    lidToPhone: { '145754333195': '86183254648' }, phoneToLid: { '86183254648': '145754333195' },
   });
   assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
 });
@@ -591,7 +591,7 @@ test('a wrong secret never yields a message', () => {
 // Encrypt a plaintext Message the way a sender would, with the key scheme the
 // whatsmeow vectors above pin — so the tests below can choose the SHAPE of
 // the plaintext, which a vector with a fixed plaintext cannot.
-function sealEdit(plainMessage, { origId = '3EB0ORIGID', orig = '149242447412@lid', editor = '149242447412@lid' } = {}) {
+function sealEdit(plainMessage, { origId = '3EB0ORIGID', orig = '145754333195@lid', editor = '145754333195@lid' } = {}) {
   const key = deriveEditKey(WM_SECRET, origId, orig, editor);
   const iv = Buffer.alloc(12, 3);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -610,7 +610,7 @@ test('a plaintext that is itself a MESSAGE_EDIT is unwrapped, with its own milli
   // yielded an event with no text, silently dropped downstream.
   const { cache, edit } = sealedFixture({
     protocolMessage: {
-      type: 14, key: { id: '3EB0ORIGID', remoteJid: '176569@g.us' },
+      type: 14, key: { id: '3EB0ORIGID', remoteJid: '152099@g.us' },
       editedMessage: { conversation: 'dinner at 8' }, timestampMs: 1756963100456,
     },
   });
@@ -644,7 +644,7 @@ test('an over-long original id is «cannot decrypt», never a throw', () => {
   const { cache, edit } = secretEditFixture();
   const longId = 'X'.repeat(1100);
   cache.remember({
-    key: { id: longId, remoteJid: '176569@g.us', participant: '149242447412@lid' },
+    key: { id: longId, remoteJid: '152099@g.us', participant: '145754333195@lid' },
     message: { conversation: 'x', messageContextInfo: { messageSecret: WM_SECRET } },
   });
   edit.message.secretEncryptedMessage.targetMessageKey.id = longId;
@@ -666,7 +666,7 @@ test('the editor is tried as the original sender, whatsmeow\'s first choice', ()
 
 test('a reactionMessage becomes a reaction event naming its target', () => {
   const event = extractMessageEvent({
-    key: { id: '3EB0F2', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    key: { id: '3EB0F2', remoteJid: '152099000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
     pushName: 'Alice',
     messageTimestamp: 1756963200,
     message: { reactionMessage: { key: { id: '3EB0F1' }, text: '👍', senderTimestampMs: 1756963200123 } },
@@ -681,7 +681,7 @@ test('a reactionMessage becomes a reaction event naming its target', () => {
 
 test('an empty reaction text is a removal', () => {
   const event = extractMessageEvent({
-    key: { id: '3EB0F4', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    key: { id: '3EB0F4', remoteJid: '152099000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
     messageTimestamp: 1756963200,
     message: { reactionMessage: { key: { id: '3EB0F1' }, text: '' } },
   }, { lidToPhone: LID_MAP });
@@ -692,7 +692,7 @@ test('an empty reaction text is a removal', () => {
 
 test('a REVOKE protocolMessage becomes a delete event naming its target', () => {
   const event = extractMessageEvent({
-    key: { id: '3EB0F3', remoteJid: '176569000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
+    key: { id: '3EB0F3', remoteJid: '152099000000000000@g.us', participant: '60000000000001:2@lid', fromMe: false },
     messageTimestamp: 1756963200,
     message: { protocolMessage: { type: 'REVOKE', key: { id: '3EB0F1' } } },
   }, { lidToPhone: LID_MAP });
@@ -701,7 +701,7 @@ test('a REVOKE protocolMessage becomes a delete event naming its target', () => 
 });
 
 test('a reaction or revoke naming no target is dropped', () => {
-  const base = { key: { id: 'X', remoteJid: '176569000000000000@g.us', participant: '1@s.whatsapp.net' }, messageTimestamp: 1 };
+  const base = { key: { id: 'X', remoteJid: '152099000000000000@g.us', participant: '1@s.whatsapp.net' }, messageTimestamp: 1 };
   assert.equal(extractMessageEvent({ ...base, message: { reactionMessage: { text: '👍' } } }), null);
   assert.equal(extractMessageEvent({ ...base, message: { protocolMessage: { type: 0 } } }), null);
 });

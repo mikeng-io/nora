@@ -43,7 +43,9 @@ def _at(day: int, hour: int, minute: int, second: int = 0) -> int:
 @pytest.fixture
 def persons(tmp_path):
     path = tmp_path / "identity.toml"
-    path.write_text('[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n')
+    path.write_text(
+        '[persons.miles]\nname = "Miles"\n[[persons.miles.signal]]\nphone = "+852111"\n'
+    )
     return load_persons(path)
 
 

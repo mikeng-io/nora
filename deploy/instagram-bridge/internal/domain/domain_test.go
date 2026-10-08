@@ -25,22 +25,22 @@ func TestAUsernameDoesNotParseAsAnIGID(t *testing.T) {
 	}
 }
 
-// "0221731317" and "221731317" are one account. Left alone they would be two
+// "0246967358" and "246967358" are one account. Left alone they would be two
 // cache keys and two identities for one person.
 func TestLeadingZerosCanonicalize(t *testing.T) {
-	id, err := ParseIGID("0221731317")
+	id, err := ParseIGID("0246967358")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.String() != "221731317" {
-		t.Errorf("ParseIGID(0221731317) = %s, want 221731317", id)
+	if id.String() != "246967358" {
+		t.Errorf("ParseIGID(0246967358) = %s, want 246967358", id)
 	}
-	other, _ := ParseIGID("221731317")
+	other, _ := ParseIGID("246967358")
 	if id != other {
 		t.Error("two spellings of one igid are not equal values")
 	}
-	thread, err := ParseThreadFBID("01009543911792316")
-	if err != nil || thread.String() != "1009543911792316" {
+	thread, err := ParseThreadFBID("01183780976338188")
+	if err != nil || thread.String() != "1183780976338188" {
 		t.Errorf("ParseThreadFBID with a leading zero = %s, %v", thread, err)
 	}
 }
@@ -77,7 +77,7 @@ func TestZeroIsNoFBID(t *testing.T) {
 	if _, ok := FBIDOf(0); ok {
 		t.Error("FBIDOf(0) claimed an fbid; 0 is 'no fbid' on every field read")
 	}
-	if id, ok := FBIDOf(14963523149149302); !ok || id.String() != "14963523149149302" {
+	if id, ok := FBIDOf(18247361241432477); !ok || id.String() != "18247361241432477" {
 		t.Errorf("FBIDOf = %v, %v", id, ok)
 	}
 	if _, err := NewThreadIGID(""); !errors.Is(err, ErrInvalidID) {

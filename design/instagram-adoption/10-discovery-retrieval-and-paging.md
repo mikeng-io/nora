@@ -76,7 +76,7 @@ from Honcho, and this matters more than it looks.**
 Honcho holds what Nora *remembers and infers* about people — representations,
 conclusions, things that are true-ish and improve over time. That is the right
 home for "Miles posts a lot of food photos". It is the wrong home for "Miles is
-igid 221731317", for three reasons:
+igid 246967358", for three reasons:
 
 1. **It is an authorization key.** Tier 0/1 permission is decided on it
    (`07`). A binding that can drift is a permission that can drift.
@@ -114,8 +114,8 @@ messaging one.
 
    ```toml
    [[persons.miles.instagram]]
-   fbid = "110966695387753"   # messaging identity — who spoke
-   igid = "221731317"         # social identity — whose profile
+   fbid = "186217604552756"   # messaging identity — who spoke
+   igid = "246967358"         # social identity — whose profile
    ```
 
 4. **Restart** (reload is startup-only in v2).
@@ -241,13 +241,13 @@ The concrete path, with the measured values from this study.
 
 | # | Step | What happens |
 |---|---|---|
-| 1 | **ingest** | the message arrives on whatever platform; `sender_fbid 110966695387753` resolves to person `miles` through the person index |
+| 1 | **ingest** | the message arrives on whatever platform; `sender_fbid 186217604552756` resolves to person `miles` through the person index |
 | 2 | **engage** | Nora is addressed, the engagement pipeline decides to answer, an agent turn starts |
-| 3 | **resolve subject** | "my" = the speaker = person `miles` → `persons.miles.instagram.igid = 221731317`. The model never supplies a handle. **No entry → `ambiguous`, never a guess from the name** |
+| 3 | **resolve subject** | "my" = the speaker = person `miles` → `persons.miles.instagram.igid = 246967358`. The model never supplies a handle. **No entry → `ambiguous`, never a guess from the name** |
 | 4 | **authorize** | `miles` is a known person in a room Nora is in → tier 0. Story reads are permitted (operator, 2026-09-21). Tier 3 would refuse here |
 | 5 | **route** | `(instagram, story)` is the one exception row → instameow, through the instagram-bridge, which re-checks its own allowlist before reading |
-| 6 | **discover** | `GetProfile(221731317).latest_reel_media` — one cheap call, no media. Nothing there → `nothing_found` ("no story up") and the turn stops here |
-| 7 | **retrieve** | `FetchReel(["221731317"])`, newest first, clamped to `limit=1` for "latest" → one item |
+| 6 | **discover** | `GetProfile(246967358).latest_reel_media` — one cheap call, no media. Nothing there → `nothing_found` ("no story up") and the turn stops here |
+| 7 | **retrieve** | `FetchReel(["246967358"])`, newest first, clamped to `limit=1` for "latest" → one item |
 | 8 | **return references** | `{status:"ok", items:[{id, kind:"video", taken_at, url}], expires_at}` — no bytes, no description |
 | 9 | **comprehend** | the model calls `media_fetch(url=…)` for that one item. Measured: fetches `200` unauthenticated. **This is the step that collides with retention — see below** |
 | 10 | **answer** | Nora says what the story shows, in the room |

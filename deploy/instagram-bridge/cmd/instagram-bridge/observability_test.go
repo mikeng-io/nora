@@ -98,7 +98,7 @@ func TestServerSpanContinuesTheCallersTraceAndIsNamedByPattern(t *testing.T) {
 	rec := recordSpans(t)
 	b := newTestBridge(t, &fakeIG{})
 
-	req := httptest.NewRequest(http.MethodGet, "/accounts/221731317", nil)
+	req := httptest.NewRequest(http.MethodGet, "/accounts/246967358", nil)
 	req.Header.Set("traceparent", "00-"+incomingTraceID+"-"+incomingParent+"-01")
 	w := httptest.NewRecorder()
 	b.routes().ServeHTTP(w, req)
@@ -128,7 +128,7 @@ func TestUpstreamSpanIsAChildAndClassifiesAChallenge(t *testing.T) {
 	rec := recordSpans(t)
 	b := newTestBridge(t, &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired})
 
-	w := getProfile(t, b, "221731317")
+	w := getProfile(t, b, "246967358")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("/accounts answered %d, want 409 for a checkpoint", w.Code)
 	}

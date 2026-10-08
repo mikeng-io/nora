@@ -3,7 +3,7 @@ name: participation
 description: The Relevance Gate's whole instruction — when an untagged room is worth Nora's attention.
 order: 5
 applies_to: [relevance_gate]
-version: 6
+version: 7
 kind: instrument
 authority_above: []
 authority_below: []

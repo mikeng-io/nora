@@ -141,7 +141,7 @@ func newCommentRig(t *testing.T, policy CommentPolicy) *commentRig {
 		social: &fakePorts{},
 		session: &fakeSession{snap: domain.Session{
 			State: domain.StateAuthenticated, HasClient: true,
-			Self: domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: selfName},
+			Self: domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: selfName},
 		}},
 		clk: &clock{t: t0},
 		dir: t.TempDir(),

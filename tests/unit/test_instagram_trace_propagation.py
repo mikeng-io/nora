@@ -24,7 +24,7 @@ from nora.platform.instagram.react import InstagramReactor
 from nora.platform.instagram.roster import InstagramRoster
 from nora.platform.instagram.send import InstagramSender
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 GROUP = ConversationTarget("instagram", ROOM, "group")
 
 # A local provider, not the global one: installing a global provider in a unit

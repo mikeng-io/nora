@@ -318,7 +318,7 @@ async def test_the_live_discord_handle_beats_the_declared_one(policy):
     reader taking whatever callable it is handed, but the ACTUAL DiscordAdapter
     registered under "discord"."""
     async def me(request):
-        return web.json_response({"id": "9", "username": "nora", "discriminator": "4214"})
+        return web.json_response({"id": "9", "username": "nora", "discriminator": "1234"})
 
     app = web.Application()
     app.router.add_get("/users/@me", me)
@@ -336,7 +336,7 @@ async def test_the_live_discord_handle_beats_the_declared_one(policy):
     finally:
         await server.close()
 
-    assert "@nora#0000 on Discord" in body
+    assert "@nora#1234 on Discord" in body
     assert "old-name" not in body
 
 
@@ -408,7 +408,7 @@ async def test_the_instagram_username_is_read_but_never_becomes_an_identifier():
     async def health(_request):
         return web.json_response({
             "ok": True, "session": "authenticated", "connected": True,
-            "self": {"fbid": "14963523149149302", "igid": "79597894900",
+            "self": {"fbid": "18247361241432477", "igid": "79597894900",
                      "username": "noraexample"},
         })
 

@@ -341,13 +341,13 @@ async def test_mentions_and_styles_ride_the_same_message_under_separate_keys(rpc
 
     await sender.send(
         TARGET, "@Grant hi",
-        mentions=(Mention(start=0, length=8, recipient=ACI),),
-        styles=(TextStyle(start=9, length=2, style=Style.BOLD),),
+        mentions=(Mention(start=0, length=6, recipient=ACI),),
+        styles=(TextStyle(start=7, length=2, style=Style.BOLD),),
     )
 
     params = rpc_server.calls[0]["params"]
-    assert params["mention"] == [f"0:8:{ACI}"]
-    assert params["textStyle"] == ["9:2:BOLD"]
+    assert params["mention"] == [f"0:6:{ACI}"]
+    assert params["textStyle"] == ["7:2:BOLD"]
 
 
 async def test_a_style_range_past_the_end_of_the_text_is_dropped(rpc_server):

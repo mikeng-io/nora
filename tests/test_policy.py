@@ -439,7 +439,7 @@ def test_two_voice_rooms_in_one_guild_refuse_to_start(tmp_path):
     extra = f"""
 [[conversations]]
 platform = "discord"
-id       = "{VOICE_GUILD}/1785459208793411409"
+id       = "{VOICE_GUILD}/1302899882047175451"
 label    = "Ridgeline #other"
 persons  = ["miles"]
 voice = true
@@ -591,10 +591,10 @@ def test_two_rooms_naming_a_music_channel_in_one_guild_refuse_to_start(tmp_path)
     extra = f"""
 [[conversations]]
 platform = "discord"
-id       = "{MUSIC_GUILD}/1785459208793411409"
+id       = "{MUSIC_GUILD}/1302899882047175451"
 label    = "Ridgeline #other"
 persons  = ["miles"]
-music_channel = "1154499909661864825"
+music_channel = "1419979384793289708"
 """
     with pytest.raises(PolicyError, match="two music channels"):
         load_policy(_write(tmp_path, _music_toml(extra=extra)))

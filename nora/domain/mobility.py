@@ -538,9 +538,8 @@ def cluster_trips(
     input order and is wrong both ways round — judging the cluster by its
     first trip discards a whole real cluster when that trip is the empty
     one, and contaminates a real corridor's sample count and speed
-    percentiles when it is not (reproduced in both directions in
-    `tests/unit/test_analytics_rollup.py::
-    test_an_address_less_trip_clustered_with_real_ones_is_held_out`; this
+    percentiles when it is not (it was reproduced in both directions by a
+    test deleted in the 2026-10 PII scrub with its real traces; this
     docstring previously claimed the opposite and was simply false).
 
     Tier 5's own caller enforces the hold-out at the QUERY:

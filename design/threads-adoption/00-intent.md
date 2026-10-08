@@ -158,7 +158,7 @@ account restored. Read back from norty the same day:
 
 | call | answer |
 |---|---|
-| `GET /me?fields=id,username` | `27316499435041440`, `noraexample` |
+| `GET /me?fields=id,username` | `25168681017396334`, `noraexample` |
 | `GET /debug_token` | valid, `USER`, issued 2026-09-24, expires 2026-11-23; scopes `threads_basic`, `threads_content_publish`, `threads_manage_replies`, `threads_manage_insights`, `threads_read_replies` |
 | `GET /{uid}/threads_publishing_limit` | 0/250 posts, 0/1000 replies per 24 h |
 | `GET /{uid}/mentions` | HTTP 500, «An unknown error occurred» |

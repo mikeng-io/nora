@@ -32,9 +32,9 @@ from nora.obs.metrics import Metrics
 from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.registry import AdapterRegistry
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 GROUP = ConversationTarget("instagram", ROOM, "group")
-NORA_FBID = "14963523149149302"
+NORA_FBID = "18247361241432477"
 
 
 # --- config stand-ins, structurally satisfying `_PlatformsConfig` -----------

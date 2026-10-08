@@ -4,7 +4,7 @@ recv.js, via node), so a parse failure here means the Python half drifted
 from the wire format, not from a re-implemented encoder that drifted with it.
 
 Fixture content: 7 frames for user "111222333444555666" and 3 for user
-"297528967164586076", each 3840 bytes of deterministic PCM (the same
+"287278638861462136", each 3840 bytes of deterministic PCM (the same
 `(seed * 7919 + i) % 65536 - 32768` formula, re-derived below — counts alone
 would pass a parser that swapped payloads between users).
 """
@@ -34,7 +34,7 @@ _needs_fixture = pytest.mark.skipif(
            "a live sidecar (deploy/voice-sidecar/consume.mjs) to re-enable",
 )
 USER_A = "111222333444555666"
-USER_B = "297528967164586076"
+USER_B = "287278638861462136"
 FRAME_BYTES = 3840
 
 

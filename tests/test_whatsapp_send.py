@@ -21,7 +21,7 @@ from nora.platform.whatsapp.send import WhatsAppSender, _bridge_media_kind
 # in the production set cannot also hide from its own test.
 _BRIDGE_VALID_KINDS = frozenset({"image", "video", "audio", "sticker", "document"})
 
-TARGET = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+TARGET = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ async def test_a_dm_to_a_jid_not_in_identity_toml_is_refused_without_an_http_cal
     """Operator rule 2026-10-05: a 1:1 message goes only to somebody in
     identity.toml. A sender handed no JIDs refuses every one; one handed some
     refuses the rest."""
-    dm = ConversationTarget("whatsapp", "85202411020@s.whatsapp.net", "dm")
+    dm = ConversationTarget("whatsapp", "86183254648@s.whatsapp.net", "dm")
     assert (await _sender(bridge).send(dm, "hi")).ok is False
     url = str(bridge.make_url("")).rstrip("/")
     other = WhatsAppSender(url, dm_recipients=frozenset({"85250000000@s.whatsapp.net"}))
@@ -79,7 +79,7 @@ async def test_a_dm_to_a_jid_not_in_identity_toml_is_refused_without_an_http_cal
 
 
 async def test_a_dm_to_a_known_jid_is_sent_to_that_jid(bridge, caplog):
-    jid = "85202411020@s.whatsapp.net"
+    jid = "86183254648@s.whatsapp.net"
     url = str(bridge.make_url("")).rstrip("/")
     caplog.set_level("INFO")
     result = await WhatsAppSender(url, dm_recipients=frozenset({jid})).send(
@@ -87,7 +87,7 @@ async def test_a_dm_to_a_known_jid_is_sent_to_that_jid(bridge, caplog):
     )
     assert result.ok is True
     assert bridge.calls == [("/send", {"jid": jid, "text": "hi"})]
-    assert "85202411020" not in caplog.text
+    assert "86183254648" not in caplog.text
 
 
 async def test_http_503_is_retryable_because_the_socket_reconnects(aiohttp_server):
