@@ -102,7 +102,7 @@ class LessonBook:
         check: _Check | None = None, tensions: _Tensions | None = None,
         metrics: Metrics | None = None,
     ) -> None:
-        """`law` returns the text of each LARSEN rule now, the doctrine's own words
+        """`law` returns the text of each LAW rule now, the doctrine's own words
         (`DoctrineStore.law_rules()`, DEC-291). It is a required argument and not
         defaulted to nothing: a book built without the law would pass every
         doctrine echo, and nothing would say so. `screen` is the Dreamer's egress

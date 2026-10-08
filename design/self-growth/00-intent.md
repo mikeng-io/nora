@@ -36,7 +36,7 @@ to weave memory in. While that text is law:
    most interesting possible result. It only means something when it is
    pressure against a real law, not taste against taste.
 4. **The doctrine check gets harder.** It is a model reading a lesson against
-   the doctrine. Larsen mixed with style asks it to judge whether "be drier here"
+   the doctrine. Law mixed with style asks it to judge whether "be drier here"
    contradicts a line about humour (AGENTS.md: a model's input has to explain
    itself).
 

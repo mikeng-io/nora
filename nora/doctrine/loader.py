@@ -587,7 +587,7 @@ def check_authority_graph(sections: Sequence[DoctrineSection]) -> None:
 
 CLASSIFICATION_FILE = "classification.yaml"
 BUCKETS = ("law", "practice", "character")
-LARSEN = "law"
+LAW = "law"
 
 # Audiences with no unit behind them: the `self` block (Character) and Lessons are
 # per unit, so neither reaches these, and what the doctrine says there about
@@ -751,7 +751,7 @@ def classify(
                     rules.append(Rule(
                         file=rel, section=heading, bucket=bucket, text=text,
                         line=raw.count("\n", 0, start_at) + 1, reason=reason,
-                        no_unit_surface=no_unit and bucket != LARSEN,
+                        no_unit_surface=no_unit and bucket != LAW,
                     ))
     for rel in table.keys() - seen:
         problems.append(f"{rel}: in {CLASSIFICATION_FILE}, but no such doctrine file")
@@ -769,7 +769,7 @@ def law_text(rules: Iterable[Rule]) -> str:
     the text under it is the doctrine's own words, unedited.
     """
     return "\n\n".join(
-        f"[{r.file}:{r.line} § {r.section}]\n{r.text}" for r in rules if r.bucket == LARSEN
+        f"[{r.file}:{r.line} § {r.section}]\n{r.text}" for r in rules if r.bucket == LAW
     )
 
 
@@ -907,7 +907,7 @@ class DoctrineStore:
     def law_rules(self) -> tuple[Rule, ...]:
         """The law subset: what the doctrine check (design/self-growth/40-lessons
         §4) reads. Nothing in a turn calls this yet."""
-        return tuple(r for r in self.rules() if r.bucket == LARSEN)
+        return tuple(r for r in self.rules() if r.bucket == LAW)
 
     def get(self, *, applies_to: str = "tag") -> Doctrine:
         sections = self._current_sections()
