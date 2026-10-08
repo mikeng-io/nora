@@ -96,7 +96,7 @@ def test_a_link_row_without_its_url_is_refused_before_any_store():
     with pytest.raises(ValueError, match="artifact_id and url"):
         _export(url=None)
     with pytest.raises(ValueError, match="not exportable"):
-        _export(media_type="application/zip")
+        _export(media_type="")
     with pytest.raises(ValueError, match="not exportable"):
         _export(media_type="text/html")
     with pytest.raises(ValueError, match="never published as a link"):

@@ -1570,7 +1570,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # attachment in the room) or stores. `unknown` because a Drop call that
     # times out may still have made the link; `non_idempotent`/`never`
     # because a second `register` mints a second link. Level 3: `refused`
-    # (too large, a type that may not leave, another room's artifact, nobody
+    # (too large, a web page, another room's artifact, nobody
     # asked) must read differently from `unavailable`, and `held_for_review`
     # from both.
     "computer_export": NativeTool(3,
@@ -13914,17 +13914,17 @@ Args:
         """Send a file from your computer out as a link, a chat attachment or
         a kept copy. Call this when a file you made is ready.
 
-        MUST: it sends files (images, charts, CSV, PDF, data), never a web
-        page.
+        MUST: it sends any kind of file (images, charts, PDF, data, audio,
+        video, archives), never a web page. For many files, put them in one
+        zip on your computer and send that.
 
         Returns `status`: ok, nothing_found, refused, held_for_review or
         unavailable, with a `note` on how to read it.
         - ok: sent. A link carries `url` and `artifact_id`; a kept picture
           its media `code`.
         - nothing_found: there is no such file.
-        - refused: too large, a kind of file that may not leave (a web page,
-          an SVG as a link), an artifact_id this room did not make, or nobody
-          here asked for it.
+        - refused: too large, a web page, an SVG as a link, an artifact_id
+          this room did not make, or nobody here asked for it.
         - held_for_review: made, and held by review or this room's cooldown.
         - unavailable: the computer, or where it was going, could not be reached.
 
@@ -14038,9 +14038,10 @@ Args:
             media_type = sniff_export_type(data, path)
             if media_type is None:
                 outcome, row = "refused", {**received, "reason": "type not allowed"}
-                return {"status": "refused", "reason": "not a kind of file that may leave",
-                        "note": "Nothing was sent: a web page cannot leave your "
-                                "computer. Send the data, an image or a PDF instead."}
+                return {"status": "refused", "reason": "a web page may not leave",
+                        "note": "Nothing was sent: this file is a web page (HTML), the "
+                                "one kind of file that cannot leave your computer. Put "
+                                "its content in a document instead, or send the data."}
             if to == "link" and media_type in NOT_AS_LINK:
                 outcome, row = "refused", {**received, "media_type": media_type,
                                            "reason": "svg as a link"}

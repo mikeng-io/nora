@@ -366,9 +366,11 @@ The export path:
 computer_export(path, to="link", title, artifact_id?)
   1. SandboxRuntime.fetch(scope, path, max_bytes)   bytes out of the VM
   2. validate on Nora's side:
-       size cap · MIME sniffed from bytes (not the extension) · type allowlist
-       (as built: `html` is refused on its sniffed bytes and `svg` never goes
-       to a link; `sniff_export_type`, `NOT_AS_LINK`) · sha256 computed HERE
+       size cap · MIME sniffed from bytes (not the extension) · any type but
+       a page (as built 2026-10-08: `html` is refused on its sniffed bytes,
+       `svg` never goes to a link, an unknown binary leaves as
+       application/octet-stream; `sniff_export_type`, `NOT_AS_LINK`) · sha256
+       computed HERE
   3. ArtifactIngest.register(data, title, media_type)      new link
      ArtifactIngest.update(artifact_id, data, …)           same link, new bytes
   4. manifest row: room, path, sha256, artifact_id, url, turn
