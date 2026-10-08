@@ -11,7 +11,7 @@ import os
 import re
 import tomllib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -3914,14 +3914,6 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
-    # DEPRECATED (ADR 0023, 2026-10-08) and read by nothing: the link
-    # shortener is gone and `maps_url` is the full Google Maps URL. The key
-    # stays declared, untyped, because `extra="forbid"` is on every model in
-    # this file and the deployment's `config.toml` is untracked: deleting it
-    # would turn a live file that still carries `[shortener]` into a container
-    # that refuses to boot. It goes when the operator has removed the section
-    # from that file (the `rollup_delay_seconds` precedent).
-    shortener: dict[str, Any] | None = None
     # Optional and defaulted — see `PreviewConfig`. Off unless an operator turns
     # it on; off means a reply carrying a link goes out with no card, which is
     # every deployment's behaviour before this section existed.
