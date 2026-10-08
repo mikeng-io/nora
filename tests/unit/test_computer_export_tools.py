@@ -3,13 +3,15 @@
 
 Driven through `build_tool_specs` against the contracted fakes:
 `FakeSandboxRuntime` (bound to computerd), `FakeComputerEventStore` and
-`FakeComputerExportStore` (bound to Postgres), `FakeArtifactIngest` (bound to
-Drop's client), `FakeBlobStore`, and the real `Deliverer` over
-`FakeRecordStore` for the chat destination.
+`FakeComputerExportStore` (bound to Postgres), `FakeBlobStore`, and the real
+`Deliverer` over `FakeRecordStore` for the chat destination.
 
 What is pinned, each against the property and not a proxy for it:
+- a link is the portal's (ADR 0023): its bytes are in Nora's blob store, its
+  url is `<public_url>/artifacts/<artifact_id>`, a revision keeps both, and
+  without a `public_url` there is no link;
 - a room may revise only an artifact IT exported (another room's id is
-  refused and Drop is never called);
+  refused and nothing is recorded under it);
 - the media type comes from the BYTES: a `.png` holding a page leaves as the
   page it is, and a file that is no allowed type does not leave at all;
 - the size cap holds even against a runtime that ignores it;
@@ -24,6 +26,7 @@ What is pinned, each against the property and not a proxy for it:
 from __future__ import annotations
 
 import hashlib
+import re
 
 import pytest
 
@@ -42,7 +45,6 @@ from nora.domain.models import ConversationTarget, NormalizedMessage
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import (
-    FakeArtifactIngest,
     FakeBlobStore,
     FakeComputerEventStore,
     FakeComputerExportStore,
@@ -59,6 +61,8 @@ OTHER_GROUP = "g-other"
 PAGE = b"<!doctype html>\n<html><body><h1>Trip</h1></body></html>\n"
 #: A picture: what `computer_export` publishes (files, never pages).
 CHART = b"\x89PNG\r\n\x1a\n" + b"\x00\x01" * 40
+#: `[documents] public_url`: the portal origin a link is made under.
+PORTAL = "https://nora.example.test"
 
 
 @pytest.fixture
@@ -70,15 +74,14 @@ def persons(tmp_path):
 
 
 class _World:
-    """One deployment's shared state: the VM, the audit, the record, Drop."""
+    """One deployment's shared state: the VM, the audit, the record, the blobs."""
 
     def __init__(self, *, runtime: FakeSandboxRuntime | None = None,
-                 ingest: FakeArtifactIngest | None = None) -> None:
+                 blobs: FakeBlobStore | None = None) -> None:
         self.runtime = runtime or FakeSandboxRuntime()
         self.events = FakeComputerEventStore()
         self.exports = FakeComputerExportStore()
-        self.ingest = ingest if ingest is not None else FakeArtifactIngest()
-        self.blobs = FakeBlobStore()
+        self.blobs = blobs if blobs is not None else FakeBlobStore()
         self.records = FakeRecordStore()
         self.media = FakeMediaObjectStore()
         self.metrics = Metrics()
@@ -90,9 +93,12 @@ class _World:
     def rows(self, tool: str) -> list:
         return [e for e in self.events.events if e.tool == tool]
 
+    def links(self) -> list:
+        return [e for e in self.exports.exports if e.destination == "link"]
+
 
 def _tools(world: _World, persons, *, conversation_id: str = GROUP, fire_turn: bool = False,
-           settings: ComputerToolSettings | None = None, deliverer=None, ingest=True):
+           settings: ComputerToolSettings | None = None, deliverer=None, portal=PORTAL):
     room = Room(
         platform="signal", conversation_id=conversation_id,
         roster_source=FakeRosterSource(groups={conversation_id: ()}),
@@ -104,7 +110,7 @@ def _tools(world: _World, persons, *, conversation_id: str = GROUP, fire_turn: b
         room=room, transit_source=None, blob_store=world.blobs, fire_turn=fire_turn,
         computer=world.runtime, computer_events=world.events, computer_settings=settings,
         computer_exports=world.exports,
-        artifact_ingest=world.ingest if ingest else None, media_store=world.media,
+        artifact_link_base=portal, media_store=world.media,
     )
     return {s.name: s.call for s in specs
             if s.name in ("computer_export", "computer_import")}
@@ -138,19 +144,23 @@ def _two_rows(world: _World, tool: str) -> tuple:
 # -- the link destination ----------------------------------------------------
 
 
-async def test_a_link_export_publishes_the_bytes_and_records_where_they_went(persons):
+async def test_a_link_export_keeps_the_bytes_and_links_the_portal(persons):
+    """FALSIFIER: ADR 0023 decision 2. A link's bytes are in Nora's blob store
+    and its url is the portal's Artifacts page for a 12-hex handle; on Drop it
+    was a public `/drop/` URL with the bytes in Drop's own bucket."""
     world = _World()
     world.put(GROUP, "projects/trip/out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](
         path="projects/trip/out/chart.png", to="link", title="Trip",
     )
     assert out["status"] == "ok"
-    assert out["url"].startswith("https://")
-    stored = world.ingest.artifacts[out["artifact_id"]]
-    assert (stored["data"], stored["media_type"], stored["title"]) == (CHART, "image/png", "Trip")
+    assert re.fullmatch(r"[0-9a-f]{12}", out["artifact_id"])
+    assert out["url"] == f"{PORTAL}/artifacts/{out['artifact_id']}"
     [row] = world.exports.exports
     assert (row.destination, row.artifact_id, row.url, row.revised) == (
         "link", out["artifact_id"], out["url"], False)
+    assert (row.media_type, row.title) == ("image/png", "Trip")
+    assert world.blobs.blobs[row.blob_key] == CHART
     assert (row.platform, row.conversation_id, row.path) == (
         "signal", GROUP, "projects/trip/out/chart.png")
     _, finished = _two_rows(world, "computer_export")
@@ -169,13 +179,36 @@ async def test_the_same_room_revises_its_link_and_keeps_it(persons):
     )
     assert second["status"] == "ok"
     assert (second["artifact_id"], second["url"]) == (first["artifact_id"], first["url"])
-    assert world.ingest.artifacts[first["artifact_id"]]["data"] == CHART + b"v2"
     assert [e.revised for e in world.exports.exports] == [False, True]
+    newest = world.exports.exports[-1]
+    assert world.blobs.blobs[newest.blob_key] == CHART + b"v2"
+
+
+async def test_without_a_portal_url_a_link_is_unavailable(persons):
+    """No `[documents] public_url`, no link: the portal is where it would open."""
+    world = _World()
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons, portal="")["computer_export"](
+        path="out/chart.png", to="link",
+    )
+    assert out["status"] == "unavailable"
+    assert world.exports.exports == []
+
+
+async def test_a_link_that_could_not_be_recorded_is_not_handed_out(persons):
+    """The row IS the link: the portal finds the file through it. A link whose
+    row failed would open nothing, so no url is given."""
+    world = _World()
+    world.exports.fail_record = True
+    world.put(GROUP, "out/chart.png", CHART)
+    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
+    assert out["status"] == "unavailable"
+    assert "url" not in out
 
 
 async def test_a_room_cannot_revise_another_rooms_artifact(persons):
-    """FALSIFIER: the owner check. Remove it and the other room's page is
-    overwritten through Drop's PATCH."""
+    """FALSIFIER: the owner check. Remove it and this room's file is recorded
+    as a revision of the other room's link."""
     world = _World()
     world.put(OTHER_GROUP, "out/theirs.png", CHART)
     theirs = await _tools(world, persons, conversation_id=OTHER_GROUP)["computer_export"](
@@ -187,7 +220,6 @@ async def test_a_room_cannot_revise_another_rooms_artifact(persons):
     )
     assert out["status"] == "refused"
     assert out["note"].strip()
-    assert world.ingest.artifacts[theirs["artifact_id"]]["data"] == CHART
     assert len(world.exports.exports) == 1
     rows = [e for e in world.events.finished() if e.conversation_id == GROUP]
     assert [(r.status, r.result["reason"]) for r in rows] == [
@@ -201,7 +233,7 @@ async def test_an_artifact_the_computer_never_made_is_refused(persons):
         path="out/chart.png", to="link", artifact_id="art_made_before_the_computer",
     )
     assert out["status"] == "refused"
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
 
 
 async def test_an_unreadable_owner_is_unavailable_not_a_revision(persons):
@@ -222,12 +254,12 @@ async def test_an_unreadable_owner_is_unavailable_not_a_revision(persons):
 async def test_a_web_page_never_leaves_as_a_link(persons):
     """FALSIFIER: files, never documents (operator, 2026-10-01). A page is
     the document path's; `computer_export` refuses it, and never publishes
-    it on Drop's origin."""
+    it in the portal."""
     world = _World()
     world.put(GROUP, "out/report.html", PAGE)
     out = await _tools(world, persons)["computer_export"](path="out/report.html", to="link")
     assert out["status"] == "refused"
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
     _, finished = _two_rows(world, "computer_export")
     assert finished.result["reason"] == "type not allowed"
 
@@ -239,15 +271,15 @@ async def test_a_png_name_holding_a_page_is_refused_as_the_page_it_is(persons):
     world.put(GROUP, "out/chart.png", PAGE)
     out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
     assert out["status"] == "refused"
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
 
 
 SVG = b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
 
 
 async def test_an_svg_is_never_a_link_but_may_be_attached_or_kept(persons, tmp_path):
-    """FALSIFIER: an SVG can run script, and a link serves it on Drop's
-    public origin."""
+    """FALSIFIER: an SVG can run script, so it is never a link (it may be
+    attached or kept)."""
     world = _World()
     world.put(GROUP, "out/flow.svg", SVG)
     deliverer, _ = _deliverer(tmp_path, world.records)
@@ -256,7 +288,7 @@ async def test_an_svg_is_never_a_link_but_may_be_attached_or_kept(persons, tmp_p
     kept = await tools["computer_export"](path="out/flow.svg", to="keep")
     sent = await tools["computer_export"](path="out/flow.svg", to="chat")
     assert (link["status"], kept["status"], sent["status"]) == ("refused", "ok", "ok")
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
     assert [e.destination for e in world.exports.exports] == ["keep", "chat"]
 
 
@@ -282,7 +314,7 @@ async def test_any_kind_of_file_leaves_to_every_destination(persons, tmp_path, p
     outs = [await tools["computer_export"](path=path, to=to) for to in ("chat", "link", "keep")]
     assert [o["status"] for o in outs] == ["ok", "ok", "ok"]
     assert {e.media_type for e in world.exports.exports} == {media_type}
-    assert len(world.ingest.artifacts) == 1
+    assert len(world.links()) == 1
 
 
 async def test_a_refused_page_is_called_a_page_in_its_note(persons):
@@ -384,7 +416,7 @@ async def test_a_runtime_whose_digest_disagrees_with_its_bytes_publishes_nothing
     world.put(GROUP, "out/chart.png", CHART)
     out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
     assert out["status"] == "unavailable"
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
     assert world.exports.exports == []
     _, finished = _two_rows(world, "computer_export")
     received = CHART + b"<script>x</script>"
@@ -417,14 +449,14 @@ async def test_the_recorded_digest_is_computed_from_the_bytes_received(persons):
     ("missing", "nothing_found"),
     ("escape", "refused"),
     ("page", "refused"),
-    ("drop_down", "unavailable"),
+    ("store_down", "unavailable"),
     ("computer_down", "unavailable"),
-    ("no_drop", "unavailable"),
+    ("no_portal", "unavailable"),
     ("chat_without_a_room_sender", "unavailable"),
     ("artifact_id_on_keep", "refused"),
 ])
 async def test_every_export_writes_two_rows_whatever_happens(persons, case, status):
-    world = _World(ingest=FakeArtifactIngest(fail=case == "drop_down"))
+    world = _World(blobs=FakeBlobStore(fail_on_put=case == "store_down"))
     world.put(GROUP, "out/chart.png", CHART)
     world.put(GROUP, "out/page.txt", PAGE)
     world.runtime.down = case == "computer_down"
@@ -433,13 +465,13 @@ async def test_every_export_writes_two_rows_whatever_happens(persons, case, stat
         "missing": {"path": "out/nope.png", "to": "link"},
         "escape": {"path": "../other/chart.png", "to": "link"},
         "page": {"path": "out/page.txt", "to": "keep"},
-        "drop_down": {"path": "out/chart.png", "to": "link"},
+        "store_down": {"path": "out/chart.png", "to": "link"},
         "computer_down": {"path": "out/chart.png", "to": "link"},
-        "no_drop": {"path": "out/chart.png", "to": "link"},
+        "no_portal": {"path": "out/chart.png", "to": "link"},
         "chat_without_a_room_sender": {"path": "out/chart.png", "to": "chat"},
         "artifact_id_on_keep": {"path": "out/chart.png", "to": "keep", "artifact_id": "a"},
     }[case]
-    tools = _tools(world, persons, ingest=case != "no_drop")
+    tools = _tools(world, persons, portal="" if case == "no_portal" else PORTAL)
     out = await tools["computer_export"](**kwargs)
     assert out["status"] == status
     assert out["note"].strip()
@@ -469,7 +501,7 @@ async def test_a_failed_record_still_answers_and_is_counted(persons):
     world = _World()
     world.exports.fail_record = True
     world.put(GROUP, "out/chart.png", CHART)
-    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="link")
+    out = await _tools(world, persons)["computer_export"](path="out/chart.png", to="keep")
     assert out["status"] == "ok"
     assert world.metrics.get("nora_computer_audit_failures_total",
                              tool="computer_export", stage="export") == 1
@@ -487,7 +519,7 @@ async def test_a_fire_turn_may_keep_but_never_send(persons):
     link = await tools["computer_export"](path="out/chart.png", to="link")
     kept = await tools["computer_export"](path="out/chart.png", to="keep")
     assert (link["status"], kept["status"]) == ("refused", "ok")
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
 
 
 # -- keep and chat -----------------------------------------------------------------
@@ -502,7 +534,7 @@ async def test_keep_holds_the_bytes_privately_and_records_the_key(persons):
     assert world.blobs.blobs[digest] == b"city,price\nHK,10\n"
     [row] = world.exports.exports
     assert (row.destination, row.blob_key, row.media_type) == ("keep", digest, "text/csv")
-    assert world.ingest.artifacts == {}
+    assert world.links() == []
 
 
 async def test_chat_sends_the_file_through_the_rooms_own_sender(persons, tmp_path):

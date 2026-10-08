@@ -42,7 +42,6 @@ from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
-    ArtifactIngest,
     BlobStore,
     BrowserRunner,
     CultureReader,
@@ -225,12 +224,13 @@ class ToolRegistry:
         computer_sessions: ComputerSessionStore | None = None,
         computer_leases: ComputerLeases | None = None,
         # `computer_export`'s record of what left the computer (always built
-        # by the composition root) and its link destination, Drop (`None`
-        # without Drop's token: a link export then answers `unavailable`).
+        # by the composition root).
         computer_exports: ComputerExportStore | None = None,
         # `computer_browse` (B2): None while `[computer.browse]` is off.
         browser: BrowserRunner | None = None,
-        artifact_ingest: ArtifactIngest | None = None,
+        # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
+        # public_url`; `""` answers a link export `unavailable`.
+        artifact_link_base: str = "",
         clock: Callable[[], datetime] = utc_now,
         mcp_tools: Mapping[str, McpToolGroup] | None = None,
         versions: VersionManifest | None = None,
@@ -470,7 +470,7 @@ class ToolRegistry:
         self._computer_leases = computer_leases
         self._computer_exports = computer_exports
         self._browser = browser
-        self._artifact_ingest = artifact_ingest
+        self._artifact_link_base = artifact_link_base
         # §9's three anti-runaway caps, as the DOMAIN value — never
         # `nora.config.RemindersConfig`. Import-linter's "only app and __main__
         # read config" contract names `nora.agent` as a source module and
@@ -1084,7 +1084,7 @@ class ToolRegistry:
             computer_leases=self._computer_leases,
             computer_exports=self._computer_exports,
             browser=self._browser,
-            artifact_ingest=self._artifact_ingest,
+            artifact_link_base=self._artifact_link_base,
             music=self._music,
             online_source=self._online, voice_source=self._voice,
             presence=self._discord_presence,

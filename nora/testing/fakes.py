@@ -34,7 +34,12 @@ from nora.domain.computer import (
     TmuxSession,
 )
 from nora.domain.computer_events import ComputerEvent, normalise_computer_event
-from nora.domain.computer_exports import ComputerExport, normalise_export
+from nora.domain.computer_exports import (
+    SHARED_DESTINATIONS,
+    ComputerExport,
+    SharedPage,
+    normalise_export,
+)
 from nora.domain.computer_sessions import (
     EXPIRED,
     OPEN,
@@ -1820,6 +1825,37 @@ class FakeComputerExportStore:
         rows = [e for e in self.exports if e.artifact_id == artifact_id]
         rows.sort(key=lambda e: (e.created_at, str(e.id)))
         return rows[0] if rows else None
+
+    def _shared(self, rooms: frozenset[tuple[str, str]]) -> list[ComputerExport]:
+        if self.fail_read:
+            raise RuntimeError("fake computer_exports read failure")
+        return [e for e in self.exports if e.destination in SHARED_DESTINATIONS
+                and (e.platform, e.conversation_id) in rooms]
+
+    async def list_shared(
+        self, *, rooms: frozenset[tuple[str, str]], limit: int, offset: int, query: str = "",
+    ) -> SharedPage:
+        newest: dict[str, ComputerExport] = {}
+        for e in sorted(self._shared(rooms), key=lambda e: (e.created_at, e.id.int)):
+            newest[e.artifact_id or str(e.id)] = e
+        needle = normalize_query(query).lower()
+        rows = [e for e in newest.values() if needle in e.title.lower()]
+        rows.sort(key=lambda e: (-e.created_at.timestamp(), str(e.id)))
+        limit, offset = max(limit, 0), max(offset, 0)
+        return SharedPage(items=tuple(rows[offset:offset + limit]), total=len(rows))
+
+    async def shared_link(
+        self, *, artifact_id: str, rooms: frozenset[tuple[str, str]],
+    ) -> ComputerExport | None:
+        rows = [e for e in self._shared(rooms)
+                if e.destination == "link" and e.artifact_id == artifact_id]
+        return max(rows, key=lambda e: (e.created_at, e.id.int)) if rows else None
+
+    async def shared_attachment(
+        self, *, export_id: UUID, rooms: frozenset[tuple[str, str]],
+    ) -> ComputerExport | None:
+        return next((e for e in self._shared(rooms)
+                     if e.destination == "chat" and e.id == export_id), None)
 
 
 class FakeComputerEventStore:

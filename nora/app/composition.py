@@ -113,7 +113,6 @@ from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
-    ArtifactIngest,
     BlobStore,
     ComputeBackend,
     ContextAssembler,
@@ -1022,6 +1021,9 @@ class Dependencies:
     # its pictures by sha256). `None` when media custody is off: the route then answers
     # `unavailable`, never a picture.
     blobs: BlobStore | None
+    # Artifacts (ADR 0023): `computer_export`'s record, which the portal lists for the
+    # rooms that name the viewer (`rooms_of`), with the bytes from `blobs`.
+    artifacts: ComputerExportStore
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -2698,26 +2700,11 @@ async def build_dependencies(
         lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
     # `computer_export` (design/sandbox-runtime §6): its record of what left the
-    # computer, built unconditionally like the audit store, and its link
-    # destination, `DropArtifactIngest`, ONLY when the computer is on. Drop's
-    # internal listener and its token are `[shortener]`'s pair, the one
-    # `LinkShortener` already uses for the same listener. A missing
-    # token leaves the link destination `unavailable`, never the boot: `chat`
-    # and `keep` do not need Drop.
+    # computer, built unconditionally like the audit store. The same store is the
+    # portal's Artifacts read (ADR 0023), and a link is the portal's
+    # `<[documents] public_url>/artifacts/<artifact_id>`: without a `public_url` a
+    # link export answers `unavailable`, never the boot (`chat` and `keep` need none).
     computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
-    artifact_ingest: ArtifactIngest | None = None
-    if computer is not None:
-        drop_token = os.environ.get(cfg.shortener.token_env, "")
-        if drop_token:
-            from nora.infra.drop import DropArtifactIngest
-            artifact_ingest = DropArtifactIngest(
-                base_url=cfg.shortener.base_url, token=drop_token,
-            )
-        else:
-            log.warning(
-                "computer enabled but %s is unset: computer_export to a link stays "
-                "unavailable", cfg.shortener.token_env,
-            )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -2923,7 +2910,8 @@ async def build_dependencies(
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
         computer_sessions=computer_sessions, computer_leases=computer_leases,
-        computer_exports=computer_exports, artifact_ingest=artifact_ingest,
+        computer_exports=computer_exports,
+        artifact_link_base=cfg.documents.public_url,
         browser=browser,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
@@ -4214,7 +4202,7 @@ async def build_dependencies(
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_label=functools.partial(room_label, allowlist),
-        blobs=blobs,
+        blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,

@@ -207,7 +207,7 @@ VM is the boundary.
 | `computer_edit(path, old, new)` | one exact replacement, refused when `old` is missing or ambiguous; instead of `sed` |
 | `computer_browse(objective, session?)` | S4, **not built**: one call delegates a whole browser task to a sub-agent (§14) |
 | `computer_import(code)` | S3a, built: a file sent in this chat (named by its media code) → `inbox/` |
-| `computer_export(path, to, title?, artifact_id?)` | S3a, built: `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7). Files only: never a page (the §6 amendment) |
+| `computer_export(path, to, title?, artifact_id?)` | S3a, built: `to="link"` → a portal link to the file in Nora's blob store, behind sign-in (ADR 0023; Drop until 2026-10-08) (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7). Files only: never a page (the §6 amendment) |
 
 **As built (2026-10-01): seven tools**, `COMPUTER_TOOLS` in
 `nora/agent/tools.py`: the four above (S2b-1, #639), `computer_session_list`
