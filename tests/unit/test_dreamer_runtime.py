@@ -2384,3 +2384,19 @@ async def test_a_verb_that_writes_when_called_is_handed_the_runs_provenance(monk
     (prov,) = adaptor.provenance
     assert prov.instruction_sha256 == SHA and prov.model == "deepseek-v4-flash"
     assert prov.established_by.startswith("dream:test-adaptor:g1:")
+
+
+async def test_a_run_whose_verbs_wrote_is_ok_not_nothing_found(monkeypatch):
+    """A verb that writes when called answers through what `commit` says
+    landed (DEC-299 (4)): measured live, four lessons written read as
+    `nothing_found`, which says «there was nothing»."""
+    sink = _Sink()
+
+    class _Landed(_WritingVerbAdaptor):
+        async def commit(self, *, key, proposals, now_ms):
+            await super().commit(key=key, proposals=proposals, now_ms=now_ms)
+            return 1
+
+    runtime, _ = _runtime(monkeypatch, raw="")
+    outcome = await runtime.run(adaptor=_Landed(sink=sink), key="g1", batch=())
+    assert outcome.status == "ok" and outcome.written == 1
