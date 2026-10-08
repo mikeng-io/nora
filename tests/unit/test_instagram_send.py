@@ -29,7 +29,7 @@ from nora.domain.models import ConversationTarget
 from nora.domain.ports import Mention, OutboundAttachment, OutboundQuote
 from nora.platform.instagram.send import InstagramSender
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 GROUP = ConversationTarget("instagram", ROOM, "group")
 DM = ConversationTarget("instagram", ROOM, "dm")
 PNG = OutboundAttachment(content=b"\x89PNG\r\n", media_type="image/png", filename="a.png")
@@ -225,34 +225,34 @@ async def test_a_mention_with_no_handle_is_forwarded_with_the_text_unchanged(bri
 
     _room, body = box["calls"][0]
     assert body["text"] == "@Miles Novak 你好"
-    assert body["mentions"] == [{"fbid": "1784", "offset": 0, "length": 8}]
+    assert body["mentions"] == [{"fbid": "1784", "offset": 0, "length": 12}]
 
 
 async def test_two_mentions_one_substituted_shifts_the_LATER_offset_correctly(bridge):
-    """The cascading case: `"@Miles Novak"` (8 units) becomes `"@nka_bpumvg"` (11
-    units), 3 units LONGER — so the second mention, unsubstituted, has to
-    report an offset 3 units further right than the one it was drafted at, or
-    it would point at the middle of "and " instead of "@Ada Lam".
+    """The cascading case: `"@Miles Novak"` (12 units) becomes `"@nka_bpumvg"` (11
+    units), 1 unit SHORTER — so the second mention, unsubstituted, has to
+    report an offset 1 unit further left than the one it was drafted at, or
+    it would point one unit into "@Ada Lawson" instead of at its "@".
 
     PROBE: revert `_apply_mention_handles` to the naive per-mention `m.start`
     (no running `delta`) and this goes red — the second mention's `offset`
-    comes back 13, not 16, and no longer names its own span in the rewritten
+    comes back 17, not 16, and no longer names its own span in the rewritten
     text.
     """
     box, sender = bridge
     miles = Mention(start=0, length=len("@Miles Novak"), recipient="1784", handle="nka_bpumvg")
-    ada = Mention(start=13, length=len("@Ada Lam"), recipient="2222", handle=None)
+    ada = Mention(start=17, length=len("@Ada Lawson"), recipient="2222", handle=None)
 
-    await sender.send(GROUP, "@Miles Novak and @Ada Lam hi", mentions=(miles, ada))
+    await sender.send(GROUP, "@Miles Novak and @Ada Lawson hi", mentions=(miles, ada))
 
     _room, body = box["calls"][0]
-    assert body["text"] == "@nka_bpumvg and @Ada Lam hi"
+    assert body["text"] == "@nka_bpumvg and @Ada Lawson hi"
     assert body["mentions"] == [
         {"fbid": "1784", "offset": 0, "length": len("@nka_bpumvg")},
-        {"fbid": "2222", "offset": 16, "length": len("@Ada Lam")},
+        {"fbid": "2222", "offset": 16, "length": len("@Ada Lawson")},
     ]
     offset, length = body["mentions"][1]["offset"], body["mentions"][1]["length"]
-    assert body["text"][offset:offset + length] == "@Ada Lam"
+    assert body["text"][offset:offset + length] == "@Ada Lawson"
 
 
 async def test_a_mention_naming_NOBODY_is_dropped_rather_than_sent_empty(bridge):
@@ -276,7 +276,7 @@ async def test_a_quote_threads_the_reply_by_the_platform_message_id(bridge):
     box, sender = bridge
 
     await sender.send(GROUP, "hi", quote=OutboundQuote(
-        ts=1, author_id="110966695387753", platform_message_id="mid.$parent",
+        ts=1, author_id="186217604552756", platform_message_id="mid.$parent",
     ))
 
     assert box["calls"][0][1]["reply_to"] == "mid.$parent"

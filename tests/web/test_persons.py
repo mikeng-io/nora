@@ -48,7 +48,7 @@ async def test_profile_is_none_for_an_unrecognized_person():
 
 async def test_profile_has_no_game_profiles_without_a_games_client():
     persons = _persons(
-        MILES, index={("pulse", "772857399"): "miles_novak"},
+        MILES, index={("pulse", "748228810"): "miles_novak"},
     )
 
     profile = await build_person_profile_payload(
@@ -87,15 +87,15 @@ class _FakePulseForProfiles:
         self.world_by_server: dict[str, object] = {
             "big_walk": {
                 "game": "big-walk",
-                "players": [{"steamId": "77285739900000001", "walkingProven": True}],
+                "players": [{"steamId": "74822881000000001", "walkingProven": True}],
             },
         }
         self.players_by_server: dict[str, object] = {
             "abiotic_factor": {"data": [{"playerKey": "pk1"}, {"playerKey": "pk2"}]},
         }
         self.player_detail: dict[tuple[str, str], object] = {
-            ("abiotic_factor", "pk1"): {"steamId": "77285739900000002"},
-            ("abiotic_factor", "pk2"): {"steamId": "77285739900000003"},
+            ("abiotic_factor", "pk1"): {"steamId": "74822881000000002"},
+            ("abiotic_factor", "pk2"): {"steamId": "74822881000000003"},
         }
         self.seen: list[str] = []
 
@@ -145,7 +145,7 @@ async def pulse_for_profiles():
 
 async def test_profile_finds_a_matching_local_save_server_by_steam_id(pulse_for_profiles):
     fake, client = pulse_for_profiles
-    persons = _persons(MILES, index={("pulse", "77285739900000001"): "miles_novak"})
+    persons = _persons(MILES, index={("pulse", "74822881000000001"): "miles_novak"})
 
     profile = await build_person_profile_payload(
         persons=persons, games_client=client, person_id="miles_novak",
@@ -166,7 +166,7 @@ async def test_profile_finds_a_matching_container_backed_server_via_player_detai
     pulse_for_profiles,
 ):
     fake, client = pulse_for_profiles
-    persons = _persons(AARON, index={("pulse", "77285739900000002"): "aaron_larsen"})
+    persons = _persons(AARON, index={("pulse", "74822881000000002"): "aaron_larsen"})
 
     profile = await build_person_profile_payload(
         persons=persons, games_client=client, person_id="aaron_larsen",
@@ -184,7 +184,7 @@ async def test_profile_finds_a_matching_container_backed_server_via_player_detai
 
 async def test_profile_has_no_game_profiles_when_the_steam_id_does_not_match(pulse_for_profiles):
     _fake, client = pulse_for_profiles
-    persons = _persons(AARON, index={("pulse", "77285739999999999"): "aaron_larsen"})
+    persons = _persons(AARON, index={("pulse", "74822881099999999"): "aaron_larsen"})
 
     profile = await build_person_profile_payload(
         persons=persons, games_client=client, person_id="aaron_larsen",
@@ -195,7 +195,7 @@ async def test_profile_has_no_game_profiles_when_the_steam_id_does_not_match(pul
 
 
 async def test_profile_is_fail_soft_when_pulse_is_unreachable():
-    persons = _persons(MILES, index={("pulse", "772857399"): "miles_novak"})
+    persons = _persons(MILES, index={("pulse", "748228810"): "miles_novak"})
     client = PulseGamesClient(
         token="test-token", base_url="http://127.0.0.1:1", timeout_seconds=1.0,  # noqa: S106
     )

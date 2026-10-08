@@ -60,8 +60,8 @@ _ID_KINDS: MappingProxyType[str, frozenset[str]] = MappingProxyType(
         # what `mentions[].fbid` carries, and what `client.GetOwnFBID()`
         # returns. It is the MESSAGING identity and the only number "was this
         # sender Nora?" may compare against. `viewer.GetFBID()` is a DIFFERENT
-        # number for the same account (18781497603028340 against
-        # 14963523149149302, measured 2026-09-21) and it is the one a reader
+        # number for the same account (15553308125534842 against
+        # 18247361241432477, measured 2026-09-21) and it is the one a reader
         # reaches for, because `LoadIndex` returns it right beside the
         # username. Choosing it produces no error anywhere: Nora simply never
         # notices she was tagged, in every room, forever.

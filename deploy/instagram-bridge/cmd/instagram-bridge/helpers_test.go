@@ -80,7 +80,7 @@ func newTestBridgeWithComments(t *testing.T, f *fakeIG, commentPolicy app.Commen
 		State:     domain.StateAuthenticated,
 		Connected: true,
 		Seq:       22,
-		Self:      domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"},
+		Self:      domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"},
 		Client:    f,
 		// The fake records every upload, so a test can assert what reached
 		// the library (filename, mimetype, bytes), not only that one happened.

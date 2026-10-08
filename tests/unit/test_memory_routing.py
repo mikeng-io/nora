@@ -83,7 +83,9 @@ def test_the_live_mapping_routes_two_workspaces_apart(tmp_path):
     ) == HonchoRoute("nora", "friends")
     assert router.for_conversation("sig-wedding") == HonchoRoute("nora", "wedding")
     assert router.for_conversation("sig-ridgeline") == HonchoRoute("nora-ridgeline", "ridgeline")
-    assert router.for_conversation("sig-ridgeline-old") == HonchoRoute("nora-ridgeline", "ridgeline")
+    assert router.for_conversation("sig-ridgeline-old") == HonchoRoute(
+        "nora-ridgeline", "ridgeline",
+    )
     assert router.for_conversation("sig-unlisted") is None
     assert router.workspaces() == ("nora", "nora-ridgeline")
     assert router.for_workspace("67") == HonchoRoute("nora")

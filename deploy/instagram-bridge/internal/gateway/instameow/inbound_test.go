@@ -25,10 +25,10 @@ import (
 // interop_messaging_user_fbid. The two are here together because the single
 // most consequential test in this file is that they are told apart.
 const (
-	noraFBID   = 14963523149149302
-	mikengFBID = 110966695387753
-	otherFBID  = 12116372067347151
-	roomShort  = "1009543911792316"
+	noraFBID   = 18247361241432477
+	mikengFBID = 186217604552756
+	otherFBID  = 18457536310970624
+	roomShort  = "1183780976338188"
 )
 
 // cdnURL is shaped like a real Instagram CDN url: query parameters joined by
@@ -73,32 +73,32 @@ func messageOf(t *testing.T, raw string) *slidetypes.Message {
 // and nothing else.
 func TestMentionDiscriminatesNoraFromAnotherMember(t *testing.T) {
 	tagsSomeoneElse := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","uq_seq_id":"63","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$a",
-	    "sender_fbid":"12116372067347151","text_body":"@member_b GH","timestamp_ms":"1789995788303",
+	  "__typename":"SlideUQPPNewMessage","uq_seq_id":"63","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$a",
+	    "sender_fbid":"18457536310970624","text_body":"@member_b GH","timestamp_ms":"1789995788303",
 	    "content":{"__typename":"SlideMessageText","text_body":"@member_b GH"},
 	    "content_type":"TEXT",
-	    "mentions":[{"user_fbid":"110966695387753","length":11,"profile_range_type":"PROFILE","offset":0}],
-	    "sender":{"name":"Member B","id":"12116372067347151","igid":"70503037937",
-	      "user_dict":{"username":"member_b","interop_messaging_user_fbid":"12116372067347151","id":"70503037937"}}}}`)
+	    "mentions":[{"user_fbid":"186217604552756","length":11,"profile_range_type":"PROFILE","offset":0}],
+	    "sender":{"name":"Member B","id":"18457536310970624","igid":"79425202704",
+	      "user_dict":{"username":"member_b","interop_messaging_user_fbid":"18457536310970624","id":"79425202704"}}}}`)
 
 	tagsNora := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","uq_seq_id":"64","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$b",
-	    "sender_fbid":"12116372067347151","text_body":"@not_____nora love I","timestamp_ms":"1789995792632",
+	  "__typename":"SlideUQPPNewMessage","uq_seq_id":"64","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$b",
+	    "sender_fbid":"18457536310970624","text_body":"@not_____nora love I","timestamp_ms":"1789995792632",
 	    "content":{"__typename":"SlideMessageText","text_body":"@not_____nora love I"},
 	    "content_type":"TEXT",
-	    "mentions":[{"user_fbid":"14963523149149302","length":13,"profile_range_type":"PROFILE","offset":0}],
-	    "sender":{"name":"Member B","id":"12116372067347151","igid":"70503037937",
-	      "user_dict":{"username":"member_b","interop_messaging_user_fbid":"12116372067347151","id":"70503037937"}}}}`)
+	    "mentions":[{"user_fbid":"18247361241432477","length":13,"profile_range_type":"PROFILE","offset":0}],
+	    "sender":{"name":"Member B","id":"18457536310970624","igid":"79425202704",
+	      "user_dict":{"username":"member_b","interop_messaging_user_fbid":"18457536310970624","id":"79425202704"}}}}`)
 
 	a := normalizeMessage(roomShort, tagsSomeoneElse, noraFBID)
 	b := normalizeMessage(roomShort, tagsNora, noraFBID)
 
-	if len(a.Mentions) != 1 || a.Mentions[0].FBID != "110966695387753" {
+	if len(a.Mentions) != 1 || a.Mentions[0].FBID != "186217604552756" {
 		t.Fatalf("mention of another member: got %+v", a.Mentions)
 	}
-	if len(b.Mentions) != 1 || b.Mentions[0].FBID != "14963523149149302" {
+	if len(b.Mentions) != 1 || b.Mentions[0].FBID != "18247361241432477" {
 		t.Fatalf("mention of Nora: got %+v", b.Mentions)
 	}
 	// The negative half. A capability recorded only from what worked is
@@ -117,18 +117,18 @@ func TestMentionDiscriminatesNoraFromAnotherMember(t *testing.T) {
 // silently disable whichever subsystem needed the other.
 func TestSenderCarriesBothIDSpaces(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$c","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$c","sender_fbid":"186217604552756",
 	    "text_body":"hello","timestamp_ms":"1789985625166","content_type":"TEXT",
 	    "content":{"__typename":"SlideMessageText","text_body":"hello"},
-	    "sender":{"name":"Member A","id":"110966695387753","igid":"221731317",
-	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"110966695387753","id":"221731317"}}}}`)
+	    "sender":{"name":"Member A","id":"186217604552756","igid":"246967358",
+	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"186217604552756","id":"246967358"}}}}`)
 
 	ev := normalizeMessage(roomShort, msg, noraFBID)
-	if ev.Sender.FBID != "110966695387753" {
+	if ev.Sender.FBID != "186217604552756" {
 		t.Errorf("sender.fbid = %q, want the interop messaging fbid", ev.Sender.FBID)
 	}
-	if ev.Sender.IGID != "221731317" {
+	if ev.Sender.IGID != "246967358" {
 		t.Errorf("sender.igid = %q, want the public instagram id", ev.Sender.IGID)
 	}
 	if ev.Sender.Username != "member_a" {
@@ -147,8 +147,8 @@ func TestSenderCarriesBothIDSpaces(t *testing.T) {
 
 func TestFromMeIsSetForOurOwnEcho(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$d","sender_fbid":"14963523149149302",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$d","sender_fbid":"18247361241432477",
 	    "text_body":"mine","timestamp_ms":"1789996158355","content_type":"TEXT",
 	    "content":{"__typename":"SlideMessageText","text_body":"mine"}}}`)
 	if ev := normalizeMessage(roomShort, msg, noraFBID); !ev.FromMe {
@@ -166,12 +166,12 @@ func TestFromMeIsSetForOurOwnEcho(t *testing.T) {
 
 func TestImageMediaComesFromAttachments(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$e","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$e","sender_fbid":"186217604552756",
 	    "text_body":null,"timestamp_ms":"1789996158355","content_type":"IMAGES",
 	    "igd_snippet":"Sent a photo.",
 	    "content":{"__typename":"SlideMessageImageContent","attachments":[
-	      {"__typename":"XFBSlideAttachment","attachment_fbid":"956319016010109","attachment_type":2,
+	      {"__typename":"XFBSlideAttachment","attachment_fbid":"977490213779166","attachment_type":2,
 	       "preview_width":720,"preview_height":960,
 	       "preview_cdn_url":"`+cdnURL+`","attachment_cdn_url":"`+cdnURL+`"}]}}}`)
 
@@ -189,7 +189,7 @@ func TestImageMediaComesFromAttachments(t *testing.T) {
 	if !strings.Contains(*ev.Media.URL, "&_nc_cat=108") || !strings.Contains(*ev.Media.URL, "%3D") {
 		t.Error("url lost a query separator or an escape — this is the 403 Bad URL hash failure")
 	}
-	if ev.Media.AttachmentFBID != "956319016010109" {
+	if ev.Media.AttachmentFBID != "977490213779166" {
 		t.Errorf("attachment_fbid = %q", ev.Media.AttachmentFBID)
 	}
 	if ev.Media.Width != 720 || ev.Media.Height != 960 {
@@ -209,8 +209,8 @@ func TestImageMediaComesFromAttachments(t *testing.T) {
 // passes every image test and fails here.
 func TestVideoMediaComesFromVideosNotAttachments(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$f","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$f","sender_fbid":"186217604552756",
 	    "content_type":"VIDEOS","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageVideosContent","attachments":[],"videos":[
 	      {"__typename":"XFBSlideAttachment","attachment_fbid":"555","preview_width":480,"preview_height":854,
@@ -230,8 +230,8 @@ func TestVideoMediaComesFromVideosNotAttachments(t *testing.T) {
 
 func TestAnimatedMediaComesFromAnimatedMedia(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$g","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$g","sender_fbid":"186217604552756",
 	    "content_type":"INSTAGRAM_MESSAGING_ANIMATED_IMAGE","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageAnimatedMediaContent","animated_media":[
 	      {"attachment_mp4_url":"`+cdnURL+`","attachment_webp_url":"https://example.net/x.webp",
@@ -260,8 +260,8 @@ func TestAnimatedMediaComesFromAnimatedMedia(t *testing.T) {
 func TestOneTimeMediaAnnouncesItselfAndCarriesNothing(t *testing.T) {
 	for _, viewMode := range []int{0, 1} {
 		msg := messageOf(t, `{
-		  "__typename":"SlideUQPPNewRavenMessage","thread_fbid":"1009543911792316",
-		  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$h","sender_fbid":"110966695387753",
+		  "__typename":"SlideUQPPNewRavenMessage","thread_fbid":"1183780976338188",
+		  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$h","sender_fbid":"186217604552756",
 		    "content_type":"RAVEN_IMAGE","timestamp_ms":"1789996158355",
 		    "content":{"__typename":"SlideMessageRavenImageContent","view_mode":`+string(rune('0'+viewMode))+`,"attachment":null}}}`)
 
@@ -288,8 +288,8 @@ func TestOneTimeMediaAnnouncesItselfAndCarriesNothing(t *testing.T) {
 // an ephemeral mode and erasing that would misreport what happened.
 func TestKeepInChatRavenSurfacesItsBytes(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewRavenMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$i","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewRavenMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$i","sender_fbid":"186217604552756",
 	    "content_type":"RAVEN_IMAGE","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageRavenImageContent","view_mode":2,
 	      "attachment":{"attachment_fbid":"777","preview_width":100,"preview_height":200,
@@ -313,8 +313,8 @@ func TestKeepInChatRavenSurfacesItsBytes(t *testing.T) {
 // lost engagement rather than a cosmetic gap.
 func TestAudioMediaCarriesDuration(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$j","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$j","sender_fbid":"186217604552756",
 	    "content_type":"AUDIO","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageAudiosContent","audio_attachments":[
 	      {"attachment_fbid":"888","playable_duration_ms":4200,"attachment_cdn_url":"`+cdnURL+`"}]}}}`)
@@ -330,8 +330,8 @@ func TestAudioMediaCarriesDuration(t *testing.T) {
 
 func TestTextMessageHasNoMedia(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$k","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$k","sender_fbid":"186217604552756",
 	    "text_body":"plain","content_type":"TEXT","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageText","text_body":"plain"}}}`)
 	ev := normalizeMessage(roomShort, msg, noraFBID)
@@ -347,12 +347,12 @@ func TestTextMessageHasNoMedia(t *testing.T) {
 
 func TestReplyCarriesTheParentPointer(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$l","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$l","sender_fbid":"186217604552756",
 	    "text_body":"answering","content_type":"TEXT","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageText","text_body":"answering"},
 	    "replied_to_message_id":"mid.$parent",
-	    "replied_to_message":{"message_id":"mid.$parent","sender_fbid":"14963523149149302",
+	    "replied_to_message":{"message_id":"mid.$parent","sender_fbid":"18247361241432477",
 	      "text_body":"the question","timestamp_ms":"1789996100000"}}}`)
 
 	ev := normalizeMessage(roomShort, msg, noraFBID)
@@ -362,7 +362,7 @@ func TestReplyCarriesTheParentPointer(t *testing.T) {
 	if ev.ReplyTo.MessageID != "mid.$parent" {
 		t.Errorf("reply_to.message_id = %q", ev.ReplyTo.MessageID)
 	}
-	if ev.ReplyTo.SenderFBID != "14963523149149302" {
+	if ev.ReplyTo.SenderFBID != "18247361241432477" {
 		t.Errorf("reply_to.sender_fbid = %q — this is what ReplyToNora binds on", ev.ReplyTo.SenderFBID)
 	}
 	if ev.ReplyTo.TimestampMS != 1789996100000 {
@@ -375,8 +375,8 @@ func TestReplyCarriesTheParentPointer(t *testing.T) {
 // whatsapp-bridge takes on a quote older than its cache.
 func TestReplyWithoutParentBodyKeepsTheRelation(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$m","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$m","sender_fbid":"186217604552756",
 	    "text_body":"answering","content_type":"TEXT","timestamp_ms":"1789996158355",
 	    "content":{"__typename":"SlideMessageText","text_body":"answering"},
 	    "replied_to_message_id":"mid.$gone","replied_to_message":null}}`)
@@ -398,8 +398,8 @@ func TestReplyWithoutParentBodyKeepsTheRelation(t *testing.T) {
 // messages — including the last_event_age detector.
 func TestMissingTimestampIsZeroNotNegative(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$n","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$n","sender_fbid":"186217604552756",
 	    "text_body":"no clock","content_type":"TEXT",
 	    "content":{"__typename":"SlideMessageText","text_body":"no clock"}}}`)
 	ev := normalizeMessage(roomShort, msg, noraFBID)
@@ -415,13 +415,13 @@ func TestMissingTimestampIsZeroNotNegative(t *testing.T) {
 // a rename here is invisible to the Go compiler and total to the consumer.
 func TestInboundJSONMatchesTheContract(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$o","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$o","sender_fbid":"186217604552756",
 	    "text_body":"@not_____nora","content_type":"TEXT","timestamp_ms":"1789985625166",
 	    "content":{"__typename":"SlideMessageText","text_body":"@not_____nora"},
-	    "mentions":[{"user_fbid":"14963523149149302","length":13,"offset":0,"profile_range_type":"PROFILE"}],
-	    "sender":{"name":"Member A","id":"110966695387753","igid":"221731317",
-	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"110966695387753","id":"221731317"}}}}`)
+	    "mentions":[{"user_fbid":"18247361241432477","length":13,"offset":0,"profile_range_type":"PROFILE"}],
+	    "sender":{"name":"Member A","id":"186217604552756","igid":"246967358",
+	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"186217604552756","id":"246967358"}}}}`)
 
 	blob, err := json.Marshal(normalizeMessage(roomShort, msg, noraFBID))
 	if err != nil {
@@ -478,15 +478,15 @@ func TestNilMessageNormalizesToNothing(t *testing.T) {
 // case that already worked.
 func TestEveryoneMentionIsLabelledNotDisguisedAsAPerson(t *testing.T) {
 	msg := messageOf(t, `{
-	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1009543911792316",
-	  "message":{"thread_fbid":"1009543911792316","message_id":"mid.$e","sender_fbid":"110966695387753",
+	  "__typename":"SlideUQPPNewMessage","thread_fbid":"1183780976338188",
+	  "message":{"thread_fbid":"1183780976338188","message_id":"mid.$e","sender_fbid":"186217604552756",
 	    "text_body":"@everyone and @not_____nora","content_type":"TEXT","timestamp_ms":"1789985625166",
 	    "content":{"__typename":"SlideMessageText","text_body":"@everyone and @not_____nora"},
 	    "mentions":[
-	      {"user_fbid":"1009543911792316","length":9,"offset":0,"profile_range_type":"THREAD"},
-	      {"user_fbid":"14963523149149302","length":13,"offset":14,"profile_range_type":"PROFILE"}],
-	    "sender":{"name":"Member A","id":"110966695387753","igid":"221731317",
-	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"110966695387753","id":"221731317"}}}}`)
+	      {"user_fbid":"1183780976338188","length":9,"offset":0,"profile_range_type":"THREAD"},
+	      {"user_fbid":"18247361241432477","length":13,"offset":14,"profile_range_type":"PROFILE"}],
+	    "sender":{"name":"Member A","id":"186217604552756","igid":"246967358",
+	      "user_dict":{"username":"member_a","interop_messaging_user_fbid":"186217604552756","id":"246967358"}}}}`)
 
 	ev := normalizeMessage(roomShort, msg, noraFBID)
 	if len(ev.Mentions) != 2 {
@@ -504,7 +504,7 @@ func TestEveryoneMentionIsLabelledNotDisguisedAsAPerson(t *testing.T) {
 	if everyone.FBID == person.FBID {
 		t.Fatal("the thread id and the person's fbid compared equal")
 	}
-	if person.RangeType != "PROFILE" || person.FBID != "14963523149149302" {
+	if person.RangeType != "PROFILE" || person.FBID != "18247361241432477" {
 		t.Fatalf("the ordinary mention was damaged: %+v", person)
 	}
 	// And it survives serialization under the name the adapter reads.
@@ -595,7 +595,7 @@ func xmaMessage(x *slidetypes.XMAContent, textBody string) *slidetypes.Message {
 	return &slidetypes.Message{
 		MessageID:   "mid.$xma",
 		ThreadFBID:  threadShort,
-		SenderFBID:  110966695387753,
+		SenderFBID:  186217604552756,
 		ContentType: "XMA",
 		Content: slidetypes.MessageContentWrapper{
 			Content: &slidetypes.MessageContentXMA{XMA: x, XMATextBody: textBody},
@@ -636,7 +636,7 @@ func TestSharedReelCarriesCaptionAndAuthorForFree(t *testing.T) {
 	// The sharer and the author are different people and must stay different
 	// fields. Attributing a stranger's reel to a member of the room is the one
 	// wrong answer here that reads as a right one.
-	if ev.Sender.FBID != "110966695387753" {
+	if ev.Sender.FBID != "186217604552756" {
 		t.Errorf("sender = %q, want the person who shared it", ev.Sender.FBID)
 	}
 }

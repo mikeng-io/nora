@@ -23,7 +23,7 @@ from aiohttp import web
 
 from nora.platform.instagram.roster import InstagramRoster
 
-ROOM = "1009543911792316"
+ROOM = "1183780976338188"
 
 # The measured three-person room, as the bridge serves it: TWO rows, because
 # `Users[]` excludes the viewer and Nora is not a member of her own room. The
@@ -31,9 +31,9 @@ ROOM = "1009543911792316"
 # which is exactly why no length or prefix rule may ever be used to tell an
 # fbid from an igid.
 MEMBERS = [
-    {"fbid": "110966695387753", "igid": "60739041440",
+    {"fbid": "186217604552756", "igid": "61652861337",
      "username": "nka_bpumvg", "full_name": "Miles"},
-    {"fbid": "12116372067347151", "igid": "74340223606",
+    {"fbid": "18457536310970624", "igid": "72038255145",
      "username": "third_member", "full_name": ""},
 ]
 
@@ -84,10 +84,10 @@ async def test_one_frozenset_per_member_holding_the_MESSAGING_fbid(bridge):
 
     assert roster.available is True
     assert set(roster.members) == {
-        frozenset({"110966695387753"}),
-        frozenset({"12116372067347151"}),
+        frozenset({"186217604552756"}),
+        frozenset({"18457536310970624"}),
     }
-    assert "60739041440" not in set().union(*roster.members), (
+    assert "61652861337" not in set().union(*roster.members), (
         "the public igid must never be a membership token"
     )
 
@@ -191,7 +191,7 @@ async def test_a_member_with_no_fbid_refuses_the_WHOLE_roster(bridge, caplog):
     read is refused instead, which costs an honest «I couldn't look».
     """
     bridge.state["body"] = {
-        "members": [MEMBERS[0], {"igid": "74340223606", "username": "third_member"}],
+        "members": [MEMBERS[0], {"igid": "72038255145", "username": "third_member"}],
     }
 
     with caplog.at_level(logging.ERROR, logger="nora.instagram.roster"):
@@ -230,7 +230,7 @@ async def test_a_conversation_id_that_is_not_a_string_never_raises():
     PROBE: drop the isinstance guard and this raises instead of degrading.
     """
     source = InstagramRoster(base_url="http://127.0.0.1:1")
-    for bad in (None, 12345, object(), b"1009543911792316"):
+    for bad in (None, 12345, object(), b"1183780976338188"):
         out = await source.roster(conversation_id=bad)  # type: ignore[arg-type]
         assert out.available is False
         assert out.members == ()

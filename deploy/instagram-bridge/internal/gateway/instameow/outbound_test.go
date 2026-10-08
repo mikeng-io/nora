@@ -143,11 +143,11 @@ func TestRoomForAnswersBothIDSpacesAndAdmitsIgnorance(t *testing.T) {
 func TestOutboundMentionPopulatesBothFields(t *testing.T) {
 	f := &fakeIG{}
 	_, err := sendText(t.Context(), f, threadShort, "@member_a hi",
-		[]domain.Mention{{FBID: "110966695387753", Offset: 0, Length: 9}}, "")
+		[]domain.Mention{{FBID: "186217604552756", Offset: 0, Length: 9}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.TextReq.Mentions) != 1 || f.TextReq.Mentions[0].FBID != 110966695387753 {
+	if len(f.TextReq.Mentions) != 1 || f.TextReq.Mentions[0].FBID != 186217604552756 {
 		t.Fatalf("Mentions = %+v", f.TextReq.Mentions)
 	}
 	if f.TextReq.Mentions[0].Offset != 0 || f.TextReq.Mentions[0].Length != 9 {
@@ -157,7 +157,7 @@ func TestOutboundMentionPopulatesBothFields(t *testing.T) {
 	// which one Instagram actually reads was never isolated. Dropping the one
 	// that turns out to matter yields a mention that renders as plain text —
 	// the exact Discord plaintext-tag failure this adaptor exists not to repeat.
-	if len(f.TextReq.MentionedUserIDs) != 1 || f.TextReq.MentionedUserIDs[0] != "110966695387753" {
+	if len(f.TextReq.MentionedUserIDs) != 1 || f.TextReq.MentionedUserIDs[0] != "186217604552756" {
 		t.Fatalf("MentionedUserIDs = %v", f.TextReq.MentionedUserIDs)
 	}
 }
@@ -168,8 +168,8 @@ func TestOutboundMentionPopulatesBothFields(t *testing.T) {
 func TestMentionIDsOfDifferentLengthsAreBothAccepted(t *testing.T) {
 	f := &fakeIG{}
 	_, err := sendText(t.Context(), f, threadShort, "both", []domain.Mention{
-		{FBID: "110966695387753", Offset: 0, Length: 1},   // 15 digits
-		{FBID: "12116372067347151", Offset: 2, Length: 1}, // 17 digits
+		{FBID: "186217604552756", Offset: 0, Length: 1},   // 15 digits
+		{FBID: "18457536310970624", Offset: 2, Length: 1}, // 17 digits
 	}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -251,17 +251,17 @@ func okUpload(fbid int64) Uploader {
 func TestSendMediaUsesTheShortThreadIDForBothLegs(t *testing.T) {
 	f := &fakeIG{}
 	var uploadedTo int64
-	inner := okUpload(2280432885466163)
+	inner := okUpload(2991842530094532)
 	up := func(ctx context.Context, short int64, media *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
 		uploadedTo = short
 		return inner(ctx, short, media)
 	}
-	res, err := sendMedia(t.Context(), f, up, 1009543911792316,
+	res, err := sendMedia(t.Context(), f, up, 1183780976338188,
 		&httpclient.MercuryUploadMedia{Filename: "x.png", MimeType: "image/png", MediaData: []byte{1}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if uploadedTo != 1009543911792316 {
+	if uploadedTo != 1183780976338188 {
 		t.Errorf("upload addressed %d, want the short thread id", uploadedTo)
 	}
 	if f.MediaReq.ThreadID != threadShort {
@@ -272,7 +272,7 @@ func TestSendMediaUsesTheShortThreadIDForBothLegs(t *testing.T) {
 		t.Errorf("the upload and the send addressed different threads: %d vs %q",
 			uploadedTo, f.MediaReq.ThreadID)
 	}
-	if f.MediaReq.AttachmentFBID != "2280432885466163" {
+	if f.MediaReq.AttachmentFBID != "2991842530094532" {
 		t.Errorf("attachment fbid = %q", f.MediaReq.AttachmentFBID)
 	}
 	if res.ID != "mid.$media" {
@@ -294,7 +294,7 @@ func TestUploadWithoutMetadataIsAnError(t *testing.T) {
 		},
 		"zero fbid": okUpload(0),
 	} {
-		if _, err := sendMedia(t.Context(), f, up, 1009543911792316,
+		if _, err := sendMedia(t.Context(), f, up, 1183780976338188,
 			&httpclient.MercuryUploadMedia{MediaData: []byte{1}}, ""); err == nil {
 			t.Errorf("%s: upload failure was reported as a successful send", name)
 		}
@@ -386,7 +386,7 @@ func TestReactionWithNoOwnFBIDIsRefusedRatherThanAssumed(t *testing.T) {
 // landed. Without this the post-state check would pass on any non-empty list.
 func TestAnotherMembersReactionIsNotOurReceipt(t *testing.T) {
 	f := &fakeIG{Reactions: map[string][]slidetypes.Reaction{
-		"mid.$x": {{Reaction: "❤️", SenderFBID: 110966695387753}},
+		"mid.$x": {{Reaction: "❤️", SenderFBID: 186217604552756}},
 	}}
 	if err := sendReaction(t.Context(), f, threadLong, "mid.$x", "👍", false, selfFBID); err == nil {
 		t.Fatal("another member's reaction was read as our own receipt")
@@ -441,7 +441,7 @@ func TestSendWithNoMessageIDIsAnErrorNotA200(t *testing.T) {
 			return sendText(t.Context(), f, threadShort, "hi", nil, "")
 		},
 		"media": func(f *fakeIG) (domain.Sent, error) {
-			return sendMedia(t.Context(), f, okUpload(2280432885466163), 1009543911792316,
+			return sendMedia(t.Context(), f, okUpload(2991842530094532), 1183780976338188,
 				&httpclient.MercuryUploadMedia{MediaData: []byte{1}}, "")
 		},
 	} {
@@ -519,7 +519,7 @@ func TestAFailedUploadCarriesAFixedTextAndKeepsItsKind(t *testing.T) {
 			up := func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
 				return nil, tc.err
 			}
-			_, err := sendMedia(t.Context(), &fakeIG{}, up, 1009543911792316,
+			_, err := sendMedia(t.Context(), &fakeIG{}, up, 1183780976338188,
 				&httpclient.MercuryUploadMedia{Filename: filename, MimeType: "image/png", MediaData: []byte("x")}, "")
 			if err == nil {
 				t.Fatal("a failed upload returned no error")
@@ -542,10 +542,10 @@ func TestAFailedMediaMessageCarriesAFixedText(t *testing.T) {
 	const words = "refusal-quoting-caller-input-91d3"
 	up := func(context.Context, int64, *httpclient.MercuryUploadMedia) (*types.MercuryUploadResponse, error) {
 		return &types.MercuryUploadResponse{
-			Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
+			Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2991842530094532}},
 		}, nil
 	}
-	_, err := sendMedia(t.Context(), &fakeIG{SendErr: errors.New("refused " + words)}, up, 1009543911792316,
+	_, err := sendMedia(t.Context(), &fakeIG{SendErr: errors.New("refused " + words)}, up, 1183780976338188,
 		&httpclient.MercuryUploadMedia{Filename: "a.png", MimeType: "image/png", MediaData: []byte("x")}, "")
 	if err == nil || strings.Contains(err.Error(), words) {
 		t.Fatalf("err = %v, want a fixed text", err)

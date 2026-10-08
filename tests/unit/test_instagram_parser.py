@@ -12,9 +12,9 @@ from nora.domain.media import body_with_handles, label_for, placeholders_in
 from nora.domain.models import EditTarget
 from nora.platform.instagram.parser import parse_event
 
-ROOM = "1009543911792316"
-SENDER_FBID = "110966695387753"
-NORA_FBID = "14963523149149302"
+ROOM = "1183780976338188"
+SENDER_FBID = "186217604552756"
+NORA_FBID = "18247361241432477"
 
 
 def _event(**over) -> dict:
@@ -23,7 +23,7 @@ def _event(**over) -> dict:
         "kind": "message",
         "room_id": ROOM,
         "message_id": "mid.$gAASG4nvQLWim9MCLrWgw3tChgAAq",
-        "sender": {"fbid": SENDER_FBID, "igid": "221731317", "username": "example_handle"},
+        "sender": {"fbid": SENDER_FBID, "igid": "246967358", "username": "example_handle"},
         "from_me": False,
         "timestamp_ms": 1789985625166,
         "text": "hello",
@@ -58,7 +58,7 @@ def test_the_sender_id_is_the_FBID_never_the_igid_or_the_username():
 
     assert msg is not None
     assert msg.sender_id == SENDER_FBID
-    assert msg.sender_id != "221731317"
+    assert msg.sender_id != "246967358"
     assert msg.sender_id != "example_handle"
 
 
@@ -99,7 +99,7 @@ def test_an_edit_names_its_target_and_no_sender():
     from the message it edits — never the `sender` block a message would
     carry, which an edit event does not have."""
     msg = parse_event({
-        "kind": "edit", "room_id": "1009543911792316", "message_id": "mid.$m",
+        "kind": "edit", "room_id": "1183780976338188", "message_id": "mid.$m",
         "text": "fixed", "timestamp_ms": 1_700_000_000_500, "from_me": None,
     })
     assert msg is not None
@@ -113,7 +113,7 @@ def test_an_edit_names_its_target_and_no_sender():
 def test_an_edit_without_a_timestamp_is_stamped_on_arrival_not_zero():
     """Zero would sort before every other edit and render no `edited` age."""
     msg = parse_event({
-        "kind": "edit", "room_id": "1009543911792316", "message_id": "mid.$m",
+        "kind": "edit", "room_id": "1183780976338188", "message_id": "mid.$m",
         "text": "fixed", "from_me": None,
     })
     assert msg is not None and msg.timestamp > 1_700_000_000_000
@@ -121,7 +121,7 @@ def test_an_edit_without_a_timestamp_is_stamped_on_arrival_not_zero():
 
 def test_an_edit_naming_no_target_is_dropped():
     assert parse_event({
-        "kind": "edit", "room_id": "1009543911792316", "message_id": "",
+        "kind": "edit", "room_id": "1183780976338188", "message_id": "",
         "text": "fixed", "from_me": None,
     }) is None
 

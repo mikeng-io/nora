@@ -26,10 +26,10 @@ rather than found in production.
 
 | Source | Value | Is it what a mention carries? |
 |---|---|---|
-| `viewer.GetFBID()` | `18781497603028340` | **no** |
+| `viewer.GetFBID()` | `15553308125534842` | **no** |
 | `viewer.GetUserId()` / `viewer.ID` | `79597894900` | no |
 | cookie `ds_user_id` | `79597894900` | no |
-| **`client.GetOwnFBID()`** | **`14963523149149302`** | **yes** |
+| **`client.GetOwnFBID()`** | **`18247361241432477`** | **yes** |
 
 `viewer.GetFBID()` is returned by `LoadIndex` directly beside the username,
 which is exactly why it is the one a reader reaches for. It does not match.
@@ -38,19 +38,19 @@ The same split appears for other people. A live inbound message from the
 operator carried:
 
 ```json
-"sender":  {"name":"Miles Novak", "id":"110966695387753", "igid":"221731317"},
-"mentions":[{"user_fbid":"14963523149149302","offset":0,"length":13,
+"sender":  {"name":"Miles Novak", "id":"186217604552756", "igid":"246967358"},
+"mentions":[{"user_fbid":"18247361241432477","offset":0,"length":13,
              "profile_range_type":"PROFILE"}]
 ```
 
 and the thread's member list gave `@nka_bpumvg` an
-`interop_messaging_user_fbid` of `110966695387753` — the same number as
+`interop_messaging_user_fbid` of `186217604552756` — the same number as
 `sender.id`. So:
 
 - **`interop_messaging_user_fbid`** is the messaging identity. It is what
   `sender.id` carries, what `mentions[].user_fbid` carries, and what
   `GetOwnFBID()` returns. **This is the id `identity.toml` must record.**
-- **`igid`** (`221731317`) is the public Instagram numeric id. It is what
+- **`igid`** (`246967358`) is the public Instagram numeric id. It is what
   `GetProfile`, `FetchReel` and the rest of the Phase 2 social surface take.
   It is NOT a messaging id.
 - `ds_user_id` identifies the logged-in session, not the messaging peer.
@@ -63,10 +63,10 @@ An Instagram person entry therefore carries **two** identifiers, not one.
 `GetThread` returns `ThreadInfo.Users[]`, and each entry carries **both**:
 
 ```
-member @nka_bpumvg   interop_messaging_user_fbid=110966695387753   ID=221731317
+member @nka_bpumvg   interop_messaging_user_fbid=186217604552756   ID=246967358
 ```
 
-`User.ID` is the igid — the same `221731317` that `GetProfile` and
+`User.ID` is the igid — the same `246967358` that `GetProfile` and
 `FetchReel` accept. So for anyone in a room Nora is already in, the mapping
 from "person in this group" to "whose story can be read" is **derivable from
 the thread itself**. No hand-maintained handle table is needed for a room's
@@ -78,8 +78,8 @@ thread membership, and it resolves itself.
 Verified on a three-person room (2026-09-21), after a second member joined:
 
 ```
-member @nka_bpumvg        interop_fbid=110966695387753     ID=221731317
-member @second_member   interop_fbid=12116372067347151   ID=70503037937
+member @nka_bpumvg        interop_fbid=186217604552756     ID=246967358
+member @second_member   interop_fbid=18457536310970624   ID=79425202704
 ```
 
 Every message's `sender_fbid` matched that member's `interop_messaging_user_fbid`
@@ -91,18 +91,18 @@ R-12's discrimination was then exercised directly. Two messages from the same
 third-party sender, in the same room, seconds apart:
 
 ```
-"@nka_bpumvg GH"        mentions[0].user_fbid = 110966695387753     -> not Nora
-"@not_____nora love I"  mentions[0].user_fbid = 14963523149149302   -> IS Nora
+"@nka_bpumvg GH"        mentions[0].user_fbid = 186217604552756     -> not Nora
+"@not_____nora love I"  mentions[0].user_fbid = 18247361241432477   -> IS Nora
 ```
 
-`14963523149149302` is exactly `client.GetOwnFBID()`. So "was I tagged?"
+`18247361241432477` is exactly `client.GetOwnFBID()`. So "was I tagged?"
 reduces to one integer comparison against that value, with no name matching
 anywhere in the path — and Nora correctly hears mentions of *other* people
 without treating them as her own. This is the behaviour the Discord
 plaintext-tag bug got wrong, measured before a line of adapter code exists.
 
 **Do not validate the id by shape.** The two interop fbids above are
-`110966695387753` (15 digits) and `12116372067347151` (17 digits, sharing the
+`186217604552756` (15 digits) and `18457536310970624` (17 digits, sharing the
 `1784…` prefix with Nora's own). The space is not uniformly formatted, so any
 length or prefix check would reject real members.
 
@@ -110,7 +110,7 @@ length or prefix check would reject real members.
 
 | Field | Value (group "Ridgeline") | Used for |
 |---|---|---|
-| `thread_fbid` / `ShortID` | `1009543911792316` | inbound deltas (`Delta.ThreadIGID`), `GetThread`, upload |
+| `thread_fbid` / `ShortID` | `1183780976338188` | inbound deltas (`Delta.ThreadIGID`), `GetThread`, upload |
 | `thread_igid` / `LongID` | `340282366841710301281152937372201004392` | **every send**: text, media, reaction, edit, unsend |
 
 `FetchThreadID(shortID)` returns both. A send addressed with the short id does
@@ -125,7 +125,7 @@ use, so the existing normalization has somewhere to land:
 
 ```json
 "text_body": "@not_____nora",
-"mentions": [{"user_fbid":"14963523149149302","offset":0,"length":13}]
+"mentions": [{"user_fbid":"18247361241432477","offset":0,"length":13}]
 ```
 
 Outbound, `SendTextRequest` carries `Mentions []InputMention{Offset, Length,

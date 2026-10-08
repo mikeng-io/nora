@@ -24,9 +24,9 @@ is answered by WHICH FIELD it arrived in, never by its shape. So these
 functions normalise (strip, reject empty) and refuse to classify.
 
 **Do not validate an id by shape** (02 §"Measured"). The measured interop
-fbids on one three-person room were `110966695387753` (15 digits) and
-`12116372067347151` (17 digits, sharing the `1784…` prefix with Nora's own
-`14963523149149302`). Any length or prefix check would reject real members —
+fbids on one three-person room were `186217604552756` (15 digits) and
+`18457536310970624` (17 digits, sharing the `1784…` prefix with Nora's own
+`18247361241432477`). Any length or prefix check would reject real members —
 silently, because a rejected sender is simply a sender Nora cannot name.
 
 The one shape check a reader reaches for — "is this all digits?" — is also

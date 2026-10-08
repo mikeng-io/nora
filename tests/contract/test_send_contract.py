@@ -45,10 +45,10 @@ from nora.testing import FakeAdapter
 
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
 DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
-WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+WHATSAPP_GROUP = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 #: The SHORT thread id — the only one `03` exposes, and the only one every
 #: send verb takes.
-INSTAGRAM_GROUP = ConversationTarget("instagram", "1009543911792316", "group")
+INSTAGRAM_GROUP = ConversationTarget("instagram", "1183780976338188", "group")
 
 
 def _target_for(adapter):

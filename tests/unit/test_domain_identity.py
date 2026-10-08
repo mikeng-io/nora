@@ -135,7 +135,7 @@ def test_an_instagram_igid_is_not_accepted_as_an_fbid_and_vice_versa():
     both hold digits), so what is pinned here is that they stay two NAMED
     kinds rather than collapsing into one `id`, which is what would make the
     confusion unreportable."""
-    fbid = Identifier(platform="instagram", kind="fbid", value="14963523149149302")
-    igid = Identifier(platform="instagram", kind="igid", value="14963523149149302")
+    fbid = Identifier(platform="instagram", kind="fbid", value="18247361241432477")
+    igid = Identifier(platform="instagram", kind="igid", value="18247361241432477")
     assert fbid != igid
     assert {fbid, igid} == {fbid, igid}  # both hashable, and distinct

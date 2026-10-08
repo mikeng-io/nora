@@ -272,8 +272,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # an edit to the file the gate's 40-case suite grades. NOT RE-RUN: the
     # suite was known-broken on 2026-09-17 and that run is owed before this is
     # trusted on the gate path.
+    # v7 (2026-10-09, the PII scrub's clean-forward): the example names in the
+    # served text are pseudonyms now; no wording, rule or shape changed. An
+    # edit to the file the 40-case suite grades all the same: NOT RE-RUN here.
     "participation": (
-        6, "1cc2d5dbc564b6ff07a33ea03fe8e11389540fc968f48d454979febbb088f6ad",
+        7, "d227d69d7f62971df6c8b1e0c5934d75a55e1919657213d7e322d68606db1525",
     ),
     # The reaction picker's instruction (`nora.agent.reaction`), measured over
     # the same 104 replayed replies each time, both calls and real Giphy

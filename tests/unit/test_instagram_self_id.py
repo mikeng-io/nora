@@ -17,7 +17,7 @@ from aiohttp.test_utils import TestServer
 from nora.domain.identity import Identifier
 from nora.platform.instagram.self_id import InstagramIdentityError, derive_identity
 
-NORA_FBID = "14963523149149302"
+NORA_FBID = "18247361241432477"
 NORA_IGID = "79597894900"
 
 

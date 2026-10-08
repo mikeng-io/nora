@@ -136,7 +136,7 @@ async def test_voice_wake_transcript_engages() -> None:
     decision = await policy.should_engage(
         message=_msg("喂Nora你好").__class__(
             platform="discord",
-            conversation_id="100000000000000203/1710045761601186165",
+            conversation_id="100000000000000203/1476449443033260077",
             conversation_type="group",
             sender_id="100000000000000001",
             sender_name=None,

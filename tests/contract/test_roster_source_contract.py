@@ -92,15 +92,15 @@ async def _discord(aiohttp_server, *, members: list[dict], status: int = 200):
     return DiscordRoster("tok", base_url=str(server.make_url("")).rstrip("/"))
 
 
-INSTAGRAM_ROOM = "1009543911792316"
+INSTAGRAM_ROOM = "1183780976338188"
 INSTAGRAM_OTHER = "9999999999999999"
 # The measured three-person room: TWO rows, because `Users[]` excludes the
 # viewer and Nora is not a member of her own room. Both id spaces are on the
 # wire; only the messaging fbid becomes a membership token (see the roster
 # module's docstring).
 INSTAGRAM_MEMBERS = [
-    {"fbid": "110966695387753", "igid": "60739041440", "username": "nka_bpumvg"},
-    {"fbid": "12116372067347151", "igid": "74340223606", "username": "third"},
+    {"fbid": "186217604552756", "igid": "61652861337", "username": "nka_bpumvg"},
+    {"fbid": "18457536310970624", "igid": "72038255145", "username": "third"},
 ]
 
 
@@ -181,8 +181,8 @@ async def sources(request, aiohttp_server):
             "platform": "instagram",
             "conversation": INSTAGRAM_ROOM,
             "members": (
-                frozenset({"110966695387753"}),
-                frozenset({"12116372067347151"}),
+                frozenset({"186217604552756"}),
+                frozenset({"18457536310970624"}),
             ),
             # ONE, and not because Instagram has one id kind — it has two, and
             # both are on the wire. Only the messaging fbid is a membership

@@ -23,7 +23,7 @@ func TestALogLineCarriesItsTraceID(t *testing.T) {
 	logger := slog.New(TraceLogHandler{slog.NewJSONHandler(&buf, nil)})
 
 	ctx, span := Tracer().Start(context.Background(), "unit")
-	logger.WarnContext(ctx, "something happened", "room", "1009543911792316")
+	logger.WarnContext(ctx, "something happened", "room", "1183780976338188")
 	span.End()
 
 	var line map[string]any

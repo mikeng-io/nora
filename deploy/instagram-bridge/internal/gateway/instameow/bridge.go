@@ -402,7 +402,7 @@ func (b *Bridge) ensureSession(ctx context.Context, libLog zerolog.Logger) error
 	// THE THREE ID SPACES. GetOwnFBID() is `interop_messaging_user_fbid` —
 	// the id a mention carries, the only one "was I tagged?" may compare
 	// against. viewer.GetFBID() is a DIFFERENT number for this same account
-	// (measured: 18781497603028340 vs 14963523149149302) and matches no
+	// (measured: 15553308125534842 vs 18247361241432477) and matches no
 	// mention, anywhere, ever — and choosing it produces no error at all,
 	// just an account that never notices it was tagged. viewer.GetUserId()
 	// is the public igid, which the Phase 2 social calls take.

@@ -95,8 +95,8 @@ var errNoProfile = domain.Classify(domain.ErrNotFound, errors.New("profile read 
 // anywhere: a messaging fbid is also a decimal string, so it validates, and
 // then names a different account or none at all.
 func readProfile(ctx context.Context, cli Client, igid domain.IGID) (domain.Account, error) {
-	// Canonical by construction (domain.ParseIGID): "0903771081" and
-	// "276321323" are the same id, so a caller cannot address one account two
+	// Canonical by construction (domain.ParseIGID): "0197003061" and
+	// "286113965" are the same id, so a caller cannot address one account two
 	// ways and a cache cannot hold it twice.
 	canonical := igid.String()
 

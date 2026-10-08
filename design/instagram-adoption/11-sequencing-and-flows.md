@@ -111,7 +111,7 @@ agent turn ── social_fetch(platform="instagram", what="story", target="miles
 tool: screen target for identifiers (egress), validate (platform, what)
         │
         ▼
-SocialRouter ── resolve: persons.miles.instagram.igid = 221731317
+SocialRouter ── resolve: persons.miles.instagram.igid = 246967358
         │              (no entry -> `ambiguous`, never a guess)
         │       ── tier:    known person in a room with Nora -> Tier 0 -> allowed
         │       ── route:   (instagram, story) is THE exception row

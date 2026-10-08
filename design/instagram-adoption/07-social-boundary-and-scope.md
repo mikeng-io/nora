@@ -111,7 +111,7 @@ the host-side bridge, per `(network, verb)`, and nothing above it knows:
 >    every field zero. There was no ordering effect to explain; there was an
 >    error this code was never looking at.
 >
-> With both fixed, `data.user` on a real account (igid `221731317`, measured
+> With both fixed, `data.user` on a real account (igid `246967358`, measured
 > whole rather than through the typed struct) carries **65 keys**, including
 > `is_private`, `followed_by` (friendship_status), `follower_count`,
 > `following_count`, `mutual_followers_count`, `media_count`,

@@ -21,9 +21,9 @@ import (
 // The two ids for the same thread, from 02-identity-and-policy.md, and the own
 // fbid every reaction read-back is checked against.
 const (
-	ThreadShort = "1009543911792316"
+	ThreadShort = "1183780976338188"
 	ThreadLong  = "340282366841710301281152937372201004392"
-	SelfFBID    = int64(14963523149149302)
+	SelfFBID    = int64(18247361241432477)
 )
 
 // A SYNTHETIC thread, for the shared contract fixtures
@@ -200,8 +200,8 @@ type IG struct {
 // and 17 digits, the second sharing Nora's `1784…` prefix — which is why no
 // length or prefix rule may ever be used to tell an fbid from an igid.
 var MeasuredUsers = []*slidetypes.User{
-	{InteropMessagingUserFBID: 110966695387753, ID: "60739041440", Username: "nka_bpumvg", FullName: "Miles"},
-	{InteropMessagingUserFBID: 12116372067347151, ID: "74340223606", Username: "third_member", FullName: ""},
+	{InteropMessagingUserFBID: 186217604552756, ID: "61652861337", Username: "nka_bpumvg", FullName: "Miles"},
+	{InteropMessagingUserFBID: 18457536310970624, ID: "72038255145", Username: "third_member", FullName: ""},
 }
 
 // GetThread answers ONLY for the short thread id.
@@ -251,8 +251,8 @@ func (f *IG) GetThread(_ context.Context, req *slidetypes.GetThreadInfoRequest) 
 // `slidetypes.User`, and if it ever arrives it arrives in here, so the fake
 // has to be able to produce it or the route's `extra` passthrough is untested.
 var MeasuredProfile = &slidetypes.User{
-	InteropMessagingUserFBID: 110966695387753,
-	ID:                       "221731317",
+	InteropMessagingUserFBID: 186217604552756,
+	ID:                       "246967358",
 	Username:                 "nka_bpumvg",
 	FullName:                 "Miles Novak",
 	LatestReelMedia:          1789935673,
@@ -290,7 +290,7 @@ func (f *IG) GetProfile(_ context.Context, igid string) (*slidetypes.ProfilePage
 // caller can look without downloading a clip.
 func MeasuredReel() *responses.ReelInfoResponse {
 	image := &responses.ReelItem{ExpiringAt: 1790097673}
-	image.Pk = "3575332932625258692"
+	image.Pk = "3811649187021092147"
 	image.TakenAt = 1790000432
 	image.MediaType = 1
 	image.AccessibilityCaption = "a photo of a plate"
@@ -300,7 +300,7 @@ func MeasuredReel() *responses.ReelInfoResponse {
 	}
 
 	video := &responses.ReelItem{ExpiringAt: 1790097673}
-	video.Pk = "3993554204431792593"
+	video.Pk = "3236689281856363849"
 	video.TakenAt = 1790011844
 	video.MediaType = 2
 	video.ImageVersions2.Candidates = []responses.Candidates{
@@ -313,8 +313,8 @@ func MeasuredReel() *responses.ReelInfoResponse {
 
 	return &responses.ReelInfoResponse{
 		Reels: map[string]responses.ReelInfo{
-			"221731317": {
-				ID:         "221731317",
+			"246967358": {
+				ID:         "246967358",
 				ExpiringAt: 1790097673,
 				Seen:       1789935673,
 				User:       &responses.User{Username: "nka_bpumvg"},
@@ -471,7 +471,7 @@ func (f *IG) Upload(_ context.Context, _ int64, media *httpclient.MercuryUploadM
 	defer f.mu.Unlock()
 	f.Uploads = append(f.Uploads, media)
 	return &types.MercuryUploadResponse{
-		Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2280432885466163}},
+		Payload: types.MediaPayloads{RealMetadata: &types.FileMetadata{ImageID: 2991842530094532}},
 	}, nil
 }
 

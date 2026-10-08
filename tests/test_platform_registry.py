@@ -327,7 +327,7 @@ async def _instagram_health_server(aiohttp_server, *, session: str = "authentica
     async def handler(request):
         return web.json_response({
             "ok": True, "session": session, "connected": True, "seq": 1,
-            "self": {"fbid": "14963523149149302", "igid": "79597894900",
+            "self": {"fbid": "18247361241432477", "igid": "79597894900",
                      "username": "not_____nora"},
         })
 
@@ -366,7 +366,7 @@ async def test_an_enabled_instagram_platform_is_built_and_its_identity_resolved(
     # The interop fbid, which is what a mention carries — NOT the igid, and
     # not `viewer.GetFBID()`, both of which are different numbers for the same
     # account and match nothing (design/instagram-adoption/02, measured).
-    assert identity.primary == "14963523149149302"
+    assert identity.primary == "18247361241432477"
 
 
 async def test_a_CHECKPOINTED_instagram_does_NOT_fail_the_whole_registry(aiohttp_server):

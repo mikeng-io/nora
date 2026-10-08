@@ -20,8 +20,8 @@ from nora.platform.instagram.ids import (
 # The two shapes 02 measured on ONE three-person room. They are 15 and 17
 # digits, and the 17-digit one shares the `1784…` prefix with Nora's own fbid —
 # which is exactly why no length or prefix check may exist anywhere.
-SHORT_FBID = "110966695387753"
-LONG_FBID = "12116372067347151"
+SHORT_FBID = "186217604552756"
+LONG_FBID = "18457536310970624"
 
 
 def test_an_fbid_keeps_its_digits_and_gains_no_plus():
@@ -41,7 +41,7 @@ def test_fbids_of_DIFFERENT_LENGTHS_both_survive():
 
 def test_surrounding_whitespace_is_stripped():
     assert fbid_form(f"  {SHORT_FBID}\n") == SHORT_FBID
-    assert igid_form(" 221731317 ") == "221731317"
+    assert igid_form(" 246967358 ") == "246967358"
 
 
 def test_a_missing_or_non_string_id_becomes_empty_never_a_guess():
@@ -56,7 +56,7 @@ def test_the_conversation_id_is_the_short_thread_id_VERBATIM():
     """`policy.toml` matches exact-string, and the bridge has already chosen
     the id space. A second spelling invented here is a second thing the
     operator's policy line can fail to equal."""
-    assert conversation_id_for("1009543911792316") == "1009543911792316"
+    assert conversation_id_for("1183780976338188") == "1183780976338188"
 
 
 def test_the_conversation_id_does_not_reject_a_LONG_thread_id():
