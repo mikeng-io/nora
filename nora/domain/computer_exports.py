@@ -1,11 +1,14 @@
 """Files leaving Nora's computer (design/sandbox-runtime §6, §7): the record
 of every `computer_export`, and the one rule that types what leaves.
 
-**Files, never documents** (operator, 2026-10-01). What leaves is a picture,
-a chart, a PDF, a CSV or other data. A page people open as a document is the
-document path's (ADR 0020: a JSON spec the portal renders), so HTML never
-leaves here at all, and an SVG, which can carry script, may be attached or
-kept but never published as a link on Drop's origin.
+**Any file, never a web page** (operator, 2026-10-01; widened 2026-10-08).
+What leaves is a file of any kind: a picture, a chart, a PDF, data, audio,
+video, an archive. The one exception is a page people open as a document,
+which is the document path's (ADR 0020: a JSON spec the portal renders), so
+HTML never leaves here at all, and an SVG, which can carry script, may be
+attached or kept but never published as a link on Drop's origin. The
+allowlist of ten types this replaced refused an MP3 and an MP4 three ways
+each in one live turn (2026-10-08), with a note calling them web pages.
 
 **The VM only produces files; Nora publishes.** `computer_export` fetches the
 bytes out of the VM, and everything that decides what they ARE happens on
@@ -23,15 +26,17 @@ this table has never seen (one made before the computer existed, or one
 another room made) is refused, not revised.
 
 **The type rule** (`sniff_export_type`): read off the BYTES, never the
-extension. The binary formats come from their magic numbers
-(`nora.domain.media.sniff_media_type` for the image four, `%PDF-` for PDF);
-a text file is HTML when it opens the way the WHATWG MIME sniffing standard
-says an HTML document opens (so a `.png` holding a page is refused as the
-page it is, never typed as an image), SVG when its root element is `<svg`,
-JSON when it parses as an object or an array. Only a text file that is none
-of those, plain UTF-8 with no markup the standard recognises, takes its
-subtype (`csv`, `md`, `txt`) from the file name, and every one of those three
-is inert text. HTML, and anything else, is not exportable (`None`).
+extension. A binary file is typed by its magic number
+(`nora.domain.media.sniff_media_type` for the image four and ISO MP4, the
+signatures in `_BINARY_SIGNATURES` for the rest), and a binary nothing
+recognises leaves as `application/octet-stream`, which Drop serves as a
+download. A text file is HTML when it opens the way the WHATWG MIME sniffing
+standard says an HTML document opens (so a `.png` holding a page is refused
+as the page it is, never typed as an image), SVG when its root element is
+`<svg`, JSON when it parses as an object or an array. Only a text file that
+is none of those, plain UTF-8 with no markup the standard recognises, takes
+its subtype (`csv`, `md`, `txt`) from the file name, and every one of those
+three is inert text. HTML is the only thing that is not exportable (`None`).
 
 Every datetime crossing this port is UTC-aware.
 """
@@ -49,8 +54,9 @@ from nora.domain.media import sniff_media_type
 
 __all__ = [
     "DESTINATIONS",
-    "EXPORT_MEDIA_TYPES",
+    "NEVER_EXPORTED",
     "NOT_AS_LINK",
+    "OPAQUE",
     "ComputerExport",
     "ComputerExportStore",
     "normalise_export",
@@ -61,21 +67,26 @@ __all__ = [
 #: attachment in the room, or Nora's own blob store.
 DESTINATIONS: frozenset[str] = frozenset({"link", "chat", "keep"})
 
-#: The allowlist: the media types a file may leave the computer as, by the
-#: short name the tool's result and the audit row use.
-EXPORT_MEDIA_TYPES: dict[str, str] = {
-    "svg": "image/svg+xml",
-    "png": "image/png",
-    "jpeg": "image/jpeg",
-    "webp": "image/webp",
-    "gif": "image/gif",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "md": "text/markdown",
-    "txt": "text/plain",
-    "json": "application/json",
-}
-_ALLOWED: frozenset[str] = frozenset(EXPORT_MEDIA_TYPES.values())
+#: What a file nothing else recognises leaves as: Drop serves it with
+#: `nosniff` as a download (`deploy/drop/rendering.py`), so it is inert there.
+OPAQUE = "application/octet-stream"
+
+#: The one media type that never leaves: a page is the document path's.
+NEVER_EXPORTED: frozenset[str] = frozenset({"text/html"})
+
+#: Magic numbers past the ones `sniff_media_type` reads, checked in order.
+#: Each is a format definition, matched on the leading bytes only.
+_BINARY_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"%PDF-", "application/pdf"),
+    (b"ID3", "audio/mpeg"),
+    (b"OggS", "audio/ogg"),
+    (b"fLaC", "audio/flac"),
+    (b"\x1aE\xdf\xa3", "video/webm"),
+    (b"PK\x03\x04", "application/zip"),
+    (b"PK\x05\x06", "application/zip"),
+    (b"\x1f\x8b", "application/gzip"),
+    (b"7z\xbc\xaf\x27\x1c", "application/x-7z-compressed"),
+)
 
 #: Allowed out, but never as a Drop link: an SVG can run script, and a link
 #: serves it on Drop's public origin. It may be attached or kept.
@@ -126,20 +137,26 @@ def _looks_like_svg(head: str) -> bool:
 
 
 def sniff_export_type(data: bytes, path: str) -> str | None:
-    """The media type `data` leaves the computer as, or None when it may not
-    leave at all. `path` is consulted only to name plain text (see the
-    module docstring); it never overrules what the bytes are."""
+    """The media type `data` leaves the computer as, or None when it is a web
+    page, the one kind of file that may not leave. `path` is consulted only
+    to name plain text (see the module docstring); it never overrules what
+    the bytes are."""
     binary = sniff_media_type(data)
     if binary:
-        return binary if binary in _ALLOWED else None
-    if data.startswith(b"%PDF-"):
-        return "application/pdf"
+        return binary
+    for magic, media_type in _BINARY_SIGNATURES:
+        if data.startswith(magic):
+            return media_type
+    if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "audio/wav"
+    if len(data) > 1 and data[0] == 0xFF and data[1] & 0xE0 == 0xE0:
+        return "audio/mpeg"  # an MPEG audio frame sync: an MP3 with no ID3 tag
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return None
+        return OPAQUE
     if "\x00" in text:
-        return None
+        return OPAQUE
     text = text.removeprefix("﻿")
     head = text.lstrip(" \t\n\r\f")[:_HEAD_CHARS]
     if _looks_like_html(head):
@@ -197,7 +214,7 @@ class ComputerExport:
     def __post_init__(self) -> None:
         if self.destination not in DESTINATIONS:
             raise ValueError(f"unknown export destination {self.destination!r}")
-        if self.media_type not in _ALLOWED:
+        if not self.media_type or self.media_type in NEVER_EXPORTED:
             raise ValueError(f"media type {self.media_type!r} is not exportable")
         if self.destination == "link" and self.media_type in NOT_AS_LINK:
             raise ValueError(f"{self.media_type} is never published as a link")

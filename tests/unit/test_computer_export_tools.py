@@ -260,14 +260,39 @@ async def test_an_svg_is_never_a_link_but_may_be_attached_or_kept(persons, tmp_p
     assert [e.destination for e in world.exports.exports] == ["keep", "chat"]
 
 
-async def test_a_file_of_no_allowed_type_does_not_leave_whatever_its_name(persons):
+MP3 = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x00" * 64
+MP4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
+
+
+@pytest.mark.parametrize(("path", "data", "media_type"), [
+    ("projects/ytdl/audio.mp3", MP3, "audio/mpeg"),
+    ("projects/ytdl/video_480.mp4", MP4, "video/mp4"),
+    ("out/photos.zip", b"PK\x03\x04" + b"\x00\x01\x02" * 50, "application/zip"),
+    ("out/model.bin", b"\x00\x01\x02\x03" * 50, "application/octet-stream"),
+], ids=["mp3", "mp4", "zip", "opaque"])
+async def test_any_kind_of_file_leaves_to_every_destination(persons, tmp_path, path, data,
+                                                            media_type):
+    """FALSIFIER: 2026-10-08, an MP3 and an MP4 were refused as chat, link
+    and keep in one live Signal turn by a ten-type allowlist. Any file but a
+    web page leaves now, typed off its bytes."""
     world = _World()
-    world.put(GROUP, "out/report.pdf", b"PK\x03\x04" + b"\x00\x01\x02" * 50)
-    out = await _tools(world, persons)["computer_export"](path="out/report.pdf", to="link")
+    world.put(GROUP, path, data)
+    deliverer, _ = _deliverer(tmp_path, world.records)
+    tools = _tools(world, persons, deliverer=deliverer)
+    outs = [await tools["computer_export"](path=path, to=to) for to in ("chat", "link", "keep")]
+    assert [o["status"] for o in outs] == ["ok", "ok", "ok"]
+    assert {e.media_type for e in world.exports.exports} == {media_type}
+    assert len(world.ingest.artifacts) == 1
+
+
+async def test_a_refused_page_is_called_a_page_in_its_note(persons):
+    """A page is still the one refusal, and its note says so: the old note
+    called every refused file a web page, an MP3 included (2026-10-08)."""
+    world = _World()
+    world.put(GROUP, "out/report.html", PAGE)
+    out = await _tools(world, persons)["computer_export"](path="out/report.html", to="keep")
     assert out["status"] == "refused"
-    assert world.ingest.artifacts == {}
-    _, finished = _two_rows(world, "computer_export")
-    assert finished.result["reason"] == "type not allowed"
+    assert "web page" in out["note"]
 
 
 @pytest.mark.parametrize(("data", "path", "expected"), [
@@ -282,8 +307,18 @@ async def test_a_file_of_no_allowed_type_does_not_leave_whatever_its_name(person
     (b"  <P>hello</P>", "x.md", None),
     (b"<!-- c -->", "x.txt", None),
     (b"<!doctype html><html></html>", "x.png", None),
-    (b"\x00\x00binary", "x.txt", None),
-    (b"\x00\x00\x00\x18ftypmp42", "x.png", None),
+    (b"\x00\x00binary", "x.txt", "application/octet-stream"),
+    (b"\xc3\x28\xa0\xa1", "x.txt", "application/octet-stream"),
+    (b"\x00\x00\x00\x18ftypmp42", "x.png", "video/mp4"),
+    (b"\x00\x00\x00\x18ftypM4A ", "x.mp4", "audio/mp4"),
+    (b"ID3\x04\x00", "x.txt", "audio/mpeg"),
+    (b"\xff\xfb\x90\x00", "x.bin", "audio/mpeg"),
+    (b"OggS\x00\x02", "x.mp3", "audio/ogg"),
+    (b"fLaC\x00", "x", "audio/flac"),
+    (b"RIFF\x24\x00\x00\x00WAVEfmt ", "x", "audio/wav"),
+    (b"\x1aE\xdf\xa3\x01", "x", "video/webm"),
+    (b"PK\x03\x04\x14\x00", "x.pdf", "application/zip"),
+    (b"\x1f\x8b\x08\x00", "x", "application/gzip"),
 ])
 def test_the_type_is_read_off_the_bytes(data, path, expected):
     assert sniff_export_type(data, path) == expected
@@ -373,7 +408,7 @@ async def test_the_recorded_digest_is_computed_from_the_bytes_received(persons):
     ("ok", "ok"),
     ("missing", "nothing_found"),
     ("escape", "refused"),
-    ("zip", "refused"),
+    ("page", "refused"),
     ("drop_down", "unavailable"),
     ("computer_down", "unavailable"),
     ("no_drop", "unavailable"),
@@ -383,13 +418,13 @@ async def test_the_recorded_digest_is_computed_from_the_bytes_received(persons):
 async def test_every_export_writes_two_rows_whatever_happens(persons, case, status):
     world = _World(ingest=FakeArtifactIngest(fail=case == "drop_down"))
     world.put(GROUP, "out/chart.png", CHART)
-    world.put(GROUP, "out/archive.bin", b"PK\x03\x04\x00\x00")
+    world.put(GROUP, "out/page.txt", PAGE)
     world.runtime.down = case == "computer_down"
     kwargs = {
         "ok": {"path": "out/chart.png", "to": "link"},
         "missing": {"path": "out/nope.png", "to": "link"},
         "escape": {"path": "../other/chart.png", "to": "link"},
-        "zip": {"path": "out/archive.bin", "to": "keep"},
+        "page": {"path": "out/page.txt", "to": "keep"},
         "drop_down": {"path": "out/chart.png", "to": "link"},
         "computer_down": {"path": "out/chart.png", "to": "link"},
         "no_drop": {"path": "out/chart.png", "to": "link"},
