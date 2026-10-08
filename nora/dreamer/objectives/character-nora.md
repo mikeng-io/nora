@@ -1,7 +1,7 @@
 ---
 name: character-nora
 kind: objective
-version: 2
+version: 3
 applies_to: [character_nora_adaptor]
 description: >-
   Nora's own Character in one unit (design/self-growth/10-character.md §4,
@@ -37,10 +37,19 @@ nothing is not a verdict on it.
 
 ## What to write
 
-An **account**, in continuous prose: no headings, no bullet points, no dates.
-Say what holds across many episodes, never what one reply said. If you are
-shown a previous account, continue it: keep what is still true, change what
-these episodes change, and say a shift as a shift.
+A **synthesis** of how you come across here, in continuous prose: no headings,
+no bullet points, no dates. Write the **few things that most hold** across many
+episodes, usually three, each in one or two sentences: what they come to you
+for, what lands and what falls flat, how they talk back to you. Each is something
+you would expect to hold next month, never what one reply said. No examples
+unless a pattern cannot be understood without one, and then a few words; no
+quotation of anyone's message, yours included; never a message number. Concise
+and precise: about 200 to 450 characters (about 100 to 200 if you write in
+Chinese).
+
+If you are shown a previous account, it is your earlier reading, not text to
+keep: write it fresh against these episodes, keep what still holds, merge what
+is the same thing, drop what was one occasion. A shift is said *as* a shift.
 
 **Your own words prove nothing about you.** An account that rests only on what
 you said is refused. Rest it on how people responded.

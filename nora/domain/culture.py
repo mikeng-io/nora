@@ -352,10 +352,13 @@ class CultureProposal:
 #: - `echo`: a Character · Nora revision whose citations are only her own
 #:   sends (design/cognition-loop/10-tiers.md §2 rule 4, the echo rule);
 #: - `identifier`, `coordinate`: R-18/R-28, the Dreamer's egress screen
-#:   (`nora.agent.dream_screen`), applied to the body before it is staged.
+#:   (`nora.agent.dream_screen`), applied to the body before it is staged;
+#: - `ids_in_body`: the account's text carries a message number it was handed
+#:   (design/self-growth/60): numbers belong in `citations`, and an account
+#:   that reads "(6888, 7020)" is a record of messages, not a description.
 REVISE_REFUSALS = frozenset({
     "unknown_entity", "empty", "too_long", "uncited", "unresolved_citation",
-    "echo", "thin_evidence", "identifier", "coordinate",
+    "echo", "thin_evidence", "identifier", "coordinate", "ids_in_body",
 })
 
 #: `response:<her send's message id>`: how a session cites a Rollup response
@@ -423,6 +426,10 @@ def check_revision(
     if not body.strip():
         return Refusal("empty", "the body is empty; write the account, or close "
                        "this entity as unchanged")
+    shown = citable.messages
+    if shown and any(int(n) in shown for n in re.findall(r"(?<![\d.])\d{3,}(?![\d.])", body)):
+        return Refusal("ids_in_body", "the account's text carries message numbers; put "
+                       "them in `citations` only, and write the account as a description")
     if len(body) > BODY_MAX_CHARS:
         return Refusal("too_long", f"the body is {len(body)} characters, past the "
                        f"{BODY_MAX_CHARS} cap; write it shorter")

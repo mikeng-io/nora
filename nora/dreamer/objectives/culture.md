@@ -1,7 +1,7 @@
 ---
 name: culture
 kind: objective
-version: 5
+version: 6
 applies_to: [culture_adaptor]
 description: >-
   The culture tier's only pass. Reads a batch of one room's own messages and
@@ -36,52 +36,58 @@ normal batch and it is not a problem — see "When there is little to go on".
 
 ## What to write
 
-An **account**, not a record. The difference is the whole job, so here it is
-plainly:
+A **synthesis**, not a record and not a summary. The difference is the whole
+job:
 
 - A record says *what happened*. «On the 12th they argued about the restaurant.»
-- An account says *what this is, and why it became so*. «Nothing gets decided
-  until the one who complains most has complained; that is how they check an
-  idea, and nobody finds it rude.»
+- A summary packs in *what happened lately, with a point attached*. «They argue
+  about restaurants: on the 12th it was the dim sum place, then the hotpot one,
+  then 「求其啦」 from Ken.»
+- A synthesis says *what this room is, and why*. «Nothing gets decided until
+  the one who complains most has complained; that is how they check an idea,
+  and nobody finds it rude.»
 
-Write in continuous prose. No headings, no bullet points, no dates. If a
-sentence you have written could be swapped for a different date's sentence
-without changing the meaning, it was a record and you should cut it.
+Write the **few patterns that most define this room**, usually three, each in
+one or two sentences: the behaviour, then why it is like that if the room gives
+you any way to know. A pattern describes how they behave, a practice, a norm or
+a trait, and you would expect to see it again next month, on a different topic.
+If a sentence would only be true of this week, of one thread, or of what one
+person said once, it is not a pattern: leave it out, however vivid it is.
 
-**Things worth noticing, when they are there** — not a checklist, and an
-account that speaks to one of them well is better than one that touches all of
-them thinly:
+No examples unless a pattern cannot be understood without one, and then a few
+words, not an event. Do not quote messages; a single word or name the group
+itself uses is the most you carry over. No lists of names, items, prices, games,
+places or dates, and never a message number: those go in `citations`.
 
-- How they talk to each other. The register, the language they mix, what
-  counts as affection here and what counts as an insult, and whether those are
-  the same thing.
-- How things get decided. Who moves first, what makes a plan real, how a plan
+Concise and precise: one paragraph, about 300 to 600 characters (about 150 to
+280 if you write in Chinese). No headings, no bullet points, no dates.
+
+**Things worth noticing, when they are there** (not a checklist; an account
+that speaks to two of them well is better than one that touches all of them
+thinly):
+
+- How they talk to each other: the register, the languages they mix, what counts
+  as affection and what counts as an insult here, and whether those are the same
+  thing.
+- How things get decided: who moves first, what makes a plan real, how a plan
   dies.
-- What they call themselves and each other, and **where those names came
-  from**. A name whose origin you can explain is worth more than five you can
-  only list.
-- Where **you** stand with them. What they come to you for, what they never
-  would, whether they treat you as a member or a utility. Be honest about this,
-  including if it is unflattering.
+- What they call themselves and each other, and **where those names came from**.
+  A name whose origin you can explain is worth more than five you can only list.
 
-And always, for anything you say: **why it is like that**, if the room gives
-you any way to know. A trait with a reason is an account. A trait without one
-is an observation.
+How the room treats **you** belongs in your account of yourself, not here.
 
-## Building on what you wrote before
+## Re-judging what you wrote before
 
-If you are shown a previous account, you are continuing it, not replacing it.
+If you are shown a previous account, it is your earlier reading, not text to
+keep. Read it against these messages and write the account **fresh**: keep a
+pattern only if it still describes them, merge two that are the same thing,
+and drop anything that was only ever one occasion, an example that has grown
+into a story, or a list. The new account is often shorter than the last one,
+and that is the account getting better, not losing anything.
 
-Keep what is still true — you do not need to find something new to say, and a
-new account that differs from the last one mainly in wording is worse than one
-that repeats it. Change what this batch actually changed. If something has
-shifted, say so *as* a shift: what it used to be, and what it is now.
-
-**Nothing you write expires.** A group that has gone quiet has not become a
-different group. An old name that fell out of use does not stop mattering —
-it is part of what the current one means, and the account is richer for saying
-where it came from. Never write that something is "no longer" true unless the
-room shows you it changed.
+A trait does not expire because the group went quiet: a pattern you saw across
+many days stays until the room shows it changed, and then you say so *as* a
+shift. An event was never a trait; it does not need to expire to be left out.
 
 ## When there is little to go on
 
@@ -107,12 +113,13 @@ You write with `character_revise`, never in your reply:
 - `body`: the account, in prose, and nothing but the prose. No headings, no
   bullets, no dates, no quotation of individual messages. Give the whole
   account, not a change to it.
-- `citations`: the `n` of every message the account rests on, at least one.
+- `citations`: the `n` of the messages in front of you that show the patterns,
+  at least one.
 
 A room's account, for the shape and the length (the citations are whichever
 `n` it rests on):
 
-> They talk almost entirely in Cantonese with English for anything technical, and the shorthand is dense enough that a newcomer would miss half of it — 「開車」 means someone is starting a game session, not driving. Decisions happen by attrition rather than agreement: somebody floats a plan, the others poke at it until either it survives or everyone stops replying, and a plan nobody has poked at yet is not real. They call themselves 六七小隊 after a channel name that stuck, and they use it mock-formally, which is most of the joke. With me they are direct and a little rough, the way they are with each other; they ask me for things they could look up themselves, which I take as being treated as part of the furniture rather than as a service.
+> They talk almost entirely in Cantonese with English for anything technical, and the shorthand is dense enough that a newcomer would miss half of it — 「開車」 means someone is starting a game session, not driving. Decisions happen by attrition rather than agreement: somebody floats a plan, the others poke at it until either it survives or everyone stops replying, and a plan nobody has poked at yet is not real. They call themselves 六七小隊 after a channel name that stuck, and they use it mock-formally, which is most of the joke.
 
 If it is refused, it says why: fix that and call it again. A citation you were
 not shown is refused, so cite only the numbers in front of you.
