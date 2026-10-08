@@ -61,6 +61,7 @@ _INLINE_PREFIXES = ("audio/", "video/")
 #: What a download file name may hold: anything else becomes `_`.
 _UNSAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _NAME_CHARS = 120
+_SUFFIX_CHARS = 16
 _FULL_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
@@ -82,10 +83,43 @@ def download_name(export: ComputerExport) -> str:
     if "." in base.lstrip("."):
         suffix = "." + base.rsplit(".", 1)[-1]
     name = _UNSAFE_NAME.sub("_", export.title).strip("._-")[:_NAME_CHARS] or "file"
-    safe_suffix = _UNSAFE_NAME.sub("_", suffix)
+    # Capped too: the portal repeats a name of at most 160 characters, and falls
+    # back to "file" (losing the suffix) past that.
+    safe_suffix = _UNSAFE_NAME.sub("_", suffix)[:_SUFFIX_CHARS]
     if safe_suffix and not name.lower().endswith(safe_suffix.lower()):
         name += safe_suffix
     return name
+
+
+def ranged_response(
+    request: web.Request, data: bytes, headers: dict[str, str],
+) -> web.Response:
+    """`data`, whole or the one byte range the request asks for. Safari plays a video
+    only after a 206 answers its `Range: bytes=0-1`, and seeking needs ranges
+    everywhere. One range only; a multi-range or unreadable header is served whole
+    (RFC 9110 §14.2 lets a server ignore Range), and a range past the end is a 416."""
+    size = len(data)
+    headers = {**headers, "Accept-Ranges": "bytes"}
+    raw = request.headers.get("Range", "")
+    if not raw.startswith("bytes=") or "," in raw:
+        return web.Response(body=data, headers=headers)
+    try:
+        rng = request.http_range
+    except ValueError:
+        return web.Response(body=data, headers=headers)
+    start, stop = rng.start, rng.stop
+    if start is None and stop is None:
+        return web.Response(body=data, headers=headers)
+    if start is not None and start < 0:  # a suffix range, `bytes=-N`
+        start, stop = max(size + start, 0), size
+    start = start or 0
+    stop = size if stop is None else min(stop, size)
+    if start >= size or start >= stop:
+        return web.Response(status=416, headers={**headers, "Content-Range": f"bytes */{size}"})
+    return web.Response(
+        status=206, body=data[start:stop],
+        headers={**headers, "Content-Range": f"bytes {start}-{stop - 1}/{size}"},
+    )
 
 
 def download_headers(media_type: str, filename: str) -> dict[str, str]:
@@ -305,7 +339,7 @@ def register_artifact_routes(app: web.Application) -> None:
             return _unavailable()
         if found.status == "not_found" or found.headers is None:
             return _not_found()
-        return web.Response(body=found.data, headers=found.headers)
+        return ranged_response(request, found.data, found.headers)
 
     app.router.add_get("/app/v1/artifacts", artifacts_list)
     app.router.add_get("/app/v1/artifacts/{ref}", artifacts_detail)

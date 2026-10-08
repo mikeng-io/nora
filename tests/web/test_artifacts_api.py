@@ -227,3 +227,40 @@ def test_the_download_name_is_plain_ascii_whatever_the_title_says():
     assert not any(ch in name for ch in '"/\\\r\n;')
     assert download_headers("application/pdf", name)["Content-Disposition"] == (
         f'attachment; filename="{name}"')
+
+
+# ----------------------------------------------------------------- byte ranges
+@pytest.mark.parametrize(("header", "status", "body", "content_range"), [
+    ("bytes=0-1", 206, MP3[0:2], f"bytes 0-1/{len(MP3)}"),
+    ("bytes=3-", 206, MP3[3:], f"bytes 3-{len(MP3) - 1}/{len(MP3)}"),
+    ("bytes=-4", 206, MP3[-4:], f"bytes {len(MP3) - 4}-{len(MP3) - 1}/{len(MP3)}"),
+    (f"bytes={len(MP3)}-", 416, b"", f"bytes */{len(MP3)}"),
+    ("bytes=0-1,4-5", 200, MP3, None),
+    ("items=0-1", 200, MP3, None),
+], ids=["first-two", "open-end", "suffix", "past-end", "multi", "other-unit"])
+async def test_a_byte_range_is_answered_with_206(world_client, header, status, body,
+                                                 content_range):
+    """FALSIFIER (review of #758): Safari plays a <video> only after a 206 answers
+    its `Range: bytes=0-1`, and seeking needs ranges everywhere. A whole-file 200
+    to every request left the portal's video and long audio unplayable on iOS."""
+    client, world = world_client
+    row = await world.export(MP3, to="chat", path="out/song.mp3", media_type="audio/mpeg")
+    resp = await client.get(f"/app/v1/artifacts/{row.id}/download?personId=mei",
+                            headers={"Range": header})
+    assert resp.status == status
+    assert await resp.read() == body
+    assert resp.headers.get("Content-Range") == content_range
+    assert resp.headers["Accept-Ranges"] == "bytes"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_a_long_suffix_never_pushes_the_name_past_what_the_portal_repeats():
+    """The portal repeats a name of at most 160 characters and says "file" past
+    that, losing the suffix (review of #758)."""
+    row = ComputerExport(
+        id=uuid4(), created_at=T0, platform="signal", conversation_id="r1", scope="s",
+        path="out/x." + "e" * 300, destination="chat", sha256="c" * 64, size_bytes=1,
+        media_type="application/octet-stream", title="t" * 300, tag_id="t",
+        operation_id=uuid4(), blob_key="b" * 64,
+    )
+    assert len(download_name(row)) <= 160
