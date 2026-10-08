@@ -107,6 +107,15 @@ shapes, each measured in the log before this rule was written:
 are installed per clone with `make hooks` and bypassed with `--no-verify`; if
 you bypass, name the reason in the commit body.
 
+The same hooks, with a `pre-commit`, also refuse a change that ADDS a real
+identifier (#283): the message, the author identity and the staged blobs at
+commit time, every object and tag the target remote does not have at push
+time. `git commit --no-verify` moves the refusal to `git push`; `git push
+--no-verify` removes it, and there is no server-side or CI check behind it.
+Setup (a private denylist outside the repo), acknowledgement
+(`NORA_PII_ACK=<id>`, recorded as a `PII-Ack:` trailer) and declarations are
+in `.githooks/README.md`.
+
 ## Merge strategy
 
 A real merge commit — `git merge --no-ff`, or `gh pr merge --merge`. Never
