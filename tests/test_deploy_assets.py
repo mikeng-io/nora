@@ -223,3 +223,15 @@ def test_signal_cli_runs_as_the_account_the_deployment_states_in_env():
     command = compose["services"]["signal-cli"]["command"]
     account = command[command.index("--account") + 1]
     assert account.startswith("${SIGNAL_ACCOUNT:?"), account
+
+
+def test_nora_is_handed_the_pulse_base_it_reads():
+    """`PulseGamesClient`'s base comes from `PULSE_API_BASE`; compose hands the
+    `nora` service only the variables it lists, so it must list this one too
+    (it did not, and the games tool called the scrubbed placeholder host)."""
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    env = compose["services"]["nora"]["environment"]
+    names = {e.split("=", 1)[0] for e in env} if isinstance(env, list) else set(env)
+    assert {"PULSE_API_TOKEN", "PULSE_API_BASE"} <= names
