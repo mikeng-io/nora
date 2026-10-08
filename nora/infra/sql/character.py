@@ -37,7 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.mobility import current_build_id
-from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES, ROLLUP_RESPONSE
+from nora.infra.sql.schema import (
+    CONSOLIDATION_WATERMARK,
+    CULTURE_REVISION,
+    MESSAGES,
+    ROLLUP_RESPONSE,
+)
 
 __all__ = ["SqlCharacterEvidence"]
 
@@ -115,6 +120,58 @@ class SqlCharacterEvidence:
         out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
         out.reverse()
         return out, int(cursor or after)
+
+    # -- corrections (Lessons L4) ---------------------------------------------
+
+    async def addressed_since(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int,
+    ) -> list[RoomMessage]:
+        """Human messages in `rooms` sent in `(since_ms, until_ms]` that address
+        Nora: they quote one of her messages in the same room, or name her
+        («nora», any case). Oldest first, at most the newest `limit`. Whether one
+        is a CORRECTION is the caller's (`nora.domain.lessons.is_correction`)."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        hers = MESSAGES.alias("hers")
+        quotes_her = sa.exists(
+            sa.select(hers.c.id).where(
+                hers.c.is_nora == 1,
+                hers.c.platform == MESSAGES.c.platform,
+                hers.c.conversation_id == MESSAGES.c.conversation_id,
+                hers.c.ts == MESSAGES.c.quoted_ts,
+            )
+        )
+        stmt = (
+            transcript_select().add_columns(MESSAGES.c.conversation_id)
+            .where(
+                _in_rooms(rooms), MESSAGES.c.is_nora == 0,
+                MESSAGES.c.hidden_at.is_(None),
+                MESSAGES.c.ts > since_ms, MESSAGES.c.ts <= until_ms,
+                sa.or_(
+                    sa.and_(MESSAGES.c.quoted_ts.isnot(None), quotes_her),
+                    MESSAGES.c.body.ilike("%nora%"),
+                ),
+            )
+            .order_by(MESSAGES.c.id.desc()).limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out.reverse()
+        return out
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None:
+        """When `adaptor` last ran for `key` (its watermark row's `updated_at`,
+        which every run that is not `unavailable` sets), in epoch ms, or None
+        when it never has."""
+        stmt = sa.select(CONSOLIDATION_WATERMARK.c.updated_at).where(
+            CONSOLIDATION_WATERMARK.c.consolidator_name == adaptor,
+            CONSOLIDATION_WATERMARK.c.scope_id == key,
+        )
+        async with self._engine.connect() as conn:
+            at = (await conn.execute(stmt)).scalar_one_or_none()
+        return None if at is None else int(at.timestamp() * 1000)
 
     # -- a unit --------------------------------------------------------------
 

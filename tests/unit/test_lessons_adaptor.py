@@ -259,7 +259,9 @@ async def test_the_horizon_wakes_the_key_and_commit_retires_what_was_not_reinfor
         lesson_id=kept["lesson_id"],
         citations=["response:100", "response:120", "response:130"])
     await env.adaptor.accept(key=UNIT, items=())
-    assert await env.adaptor.commit(key=UNIT, proposals=(), now_ms=env.clock.now) == 1
+    # The run wrote two rows: the session's reinforcement (landed through its
+    # verb, which the runtime now counts as `ok`) and the decay's retirement.
+    assert await env.adaptor.commit(key=UNIT, proposals=(), now_ms=env.clock.now) == 2
     [left] = await env.book.active(unit=UNIT)
     assert left.head.body.endswith("then go quiet")
     assert env.count("decayed") == 1
@@ -332,3 +334,82 @@ async def test_fewer_than_three_new_episodes_are_not_handed_over_or_consumed(env
     env.episodes.add_episode(unit=UNIT, episode=EPISODES[2])
     got, cursor = await env.evidence.newest(key=UNIT, after=0, limit=10)
     assert [e.send_id for e in got] == [100, 110, 120] and cursor == 120
+
+
+
+# -- L4: the correction fast path ------------------------------------------
+
+def _correction_env(quiet_s: int = 600) -> _Env:
+    env = _Env()
+    env.evidence = LessonEvidence(
+        store=env.episodes, book=env.book, keys={UNIT: LK}, wake_batch=50,
+        horizon_seconds=HORIZON, clock_ms=env.clock, correction_quiet_seconds=quiet_s,
+        metrics=env.metrics)
+    env.adaptor.evidence = env.evidence
+    return env
+
+
+def _say(env: _Env, mid: int, body: str, *, ago_s: int, quoted_ts: int | None = None,
+         is_nora: bool = False) -> int:
+    ts = env.clock.now - ago_s * 1000
+    env.episodes.add_message(id=mid, platform="signal", room="room-a",
+                             person_id=None if is_nora else "ada", body=body, ts=ts,
+                             is_nora=is_nora, quoted_ts=quoted_ts)
+    return ts
+
+
+async def test_a_correction_to_her_wakes_the_unit_once_it_has_settled():
+    """One message that speaks to her and tells her how to act is enough to
+    wake the unit, without the 50-episode batch, once it is `quiet` old; before
+    that it waits, and a message that does not address her never wakes it."""
+    env = _correction_env()
+    sent = _say(env, 500, "here are five places: a, b, c, d, e", ago_s=900, is_nora=True)
+    _say(env, 501, "stop giving five options, one is enough", ago_s=300, quoted_ts=sent)
+    _say(env, 502, "don't forget the cake", ago_s=900)
+    assert await env.evidence.count(key=UNIT, after=0) == 0
+    env.clock.now += 400_000
+    assert await env.evidence.count(key=UNIT, after=0) == 50
+    assert env.metrics.get("nora_lessons_correction_wake_total") == 1
+    got, cursor = await env.evidence.newest(key=UNIT, after=0, limit=10)
+    assert [m.row.id for m in got] == [501] and cursor == 0
+
+
+async def test_a_lesson_citing_a_correction_needs_no_three_episodes():
+    env = _correction_env()
+    sent = _say(env, 500, "here are five places", ago_s=900, is_nora=True)
+    _say(env, 501, "nora 唔好每次都俾五個選擇", ago_s=700, quoted_ts=sent)
+    got, _ = await env.evidence.newest(key=UNIT, after=0, limit=10)
+    prompt = await env.adaptor.inputs(key=UNIT, batch=got)
+    assert "<lesson_corrections" in prompt and 'n="501"' in prompt and 'from="Ada"' in prompt
+    assert "<lesson_episodes" not in prompt
+    v = {f.__name__: f for f in env.adaptor.verbs(key=UNIT, provenance=PROV)}
+    out = await v["lesson_write"](body="when someone asks for options, give one, not five",
+                                  citations=["501"])
+    assert out["status"] == "ok", out
+    assert await env.adaptor.accept(key=UNIT, items=()) == ()
+    assert await env.adaptor.commit(key=UNIT, proposals=(), now_ms=env.clock.now) == 1
+
+
+async def test_a_correction_already_seen_by_a_session_does_not_wake_again():
+    env = _correction_env()
+    _say(env, 501, "nora stop asking so many questions", ago_s=900)
+    assert await env.evidence.count(key=UNIT, after=0) == 50
+    env.episodes.set_last_run(adaptor="lessons", key=UNIT, at_ms=env.clock.now)
+    assert await env.evidence.count(key=UNIT, after=0) == 0
+    assert await env.evidence.corrections(UNIT) == []
+
+
+async def test_the_fast_path_off_never_reads_corrections():
+    env = _Env()
+    _say(env, 501, "nora stop asking so many questions", ago_s=900)
+    assert await env.evidence.count(key=UNIT, after=0) == 0
+    assert await env.evidence.corrections(UNIT) == []
+
+
+def test_the_correction_pattern_reads_both_languages_and_skips_plain_requests():
+    from nora.domain.lessons import is_correction
+    for text in ("nora stop sending five options", "@Nora next time just give one",
+                 "nora 唔好每次都問咁多", "nora 你成日講好長", "nora that was too long"):
+        assert is_correction(text), text
+    for text in ("nora can you book a table", "what time nora", "nora 幾點食飯", None, ""):
+        assert not is_correction(text), text

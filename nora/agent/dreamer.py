@@ -1724,8 +1724,11 @@ class DreamerRuntime:
         # how many rows survived: a batch whose every item was screened out, or
         # whose every verdict was `not_covered`, was still a batch that was
         # read. Collapsing them would make a working screen look like a silent
-        # model. A verb adaptor returns no items; what it staged is its answer.
-        status: DreamStatus = "ok" if items or proposals else "nothing_found"
+        # model. A verb adaptor returns no items; what it staged is its answer,
+        # and a verb that WRITES when called (Lessons) answers through what its
+        # `commit` says landed: measured 2026-10-09, four lessons written live
+        # were reported as `nothing_found`.
+        status: DreamStatus = "ok" if items or proposals or written else "nothing_found"
         return self._finish(adaptor, status, written, sha, stop_reason, started)
 
     async def _sample(

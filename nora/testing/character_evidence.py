@@ -27,6 +27,7 @@ class _Message:
     ts: int
     is_nora: bool
     hidden: bool
+    quoted_ts: int | None = None
 
 
 class InMemoryCharacterEvidence:
@@ -35,6 +36,7 @@ class InMemoryCharacterEvidence:
         #: Culture revisions, as (room key, written_at), in write order.
         self._revisions: list[tuple[str, int]] = []
         self._episodes: list[tuple[str, Episode, bool]] = []
+        self._last_run: dict[tuple[str, str], int] = {}
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
@@ -65,6 +67,32 @@ class InMemoryCharacterEvidence:
         cursor = found[-1].send_id if found else after
         return (found[-limit:] if limit > 0 else []), cursor
 
+    async def addressed_since(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int,
+    ) -> list[RoomMessage]:
+        """`SqlCharacterEvidence.addressed_since`: a human message in `rooms`
+        in `(since_ms, until_ms]` that quotes one of her messages in the same
+        room or names «nora»."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        wanted = set(rooms)
+        hers = {(m.platform, m.room, m.ts) for m in self._messages if m.is_nora}
+        found = [
+            m for m in sorted(self._messages, key=lambda m: m.id)
+            if (m.platform, m.room) in wanted and not m.is_nora and not m.hidden
+            and since_ms < m.ts <= until_ms
+            and ((m.quoted_ts is not None and (m.platform, m.room, m.quoted_ts) in hers)
+                 or "nora" in (m.body or "").casefold())
+        ]
+        return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]]
+
+    def set_last_run(self, *, adaptor: str, key: str, at_ms: int) -> None:
+        self._last_run[(adaptor, key)] = at_ms
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None:
+        return self._last_run.get((adaptor, key))
+
     def add_revision(self, *, key: str, written_at: int) -> None:
         self._revisions.append((key, written_at))
 
@@ -89,12 +117,16 @@ class InMemoryCharacterEvidence:
     def add_message(
         self, *, id: int, platform: str, room: str, person_id: str | None,
         body: str = "a line", ts: int = 0, is_nora: bool = False,
-        hidden: bool = False,
+        hidden: bool = False, quoted_ts: int | None = None,
     ) -> None:
         self._messages.append(_Message(
             id=id, platform=platform, room=room, person_id=person_id, body=body,
-            ts=ts, is_nora=is_nora, hidden=hidden,
+            ts=ts, is_nora=is_nora, hidden=hidden, quoted_ts=quoted_ts,
         ))
+
+    @staticmethod
+    def _row(m: _Message) -> TranscriptRow:
+        return replace(_ROW, id=m.id, ts=m.ts, body=m.body, person_id=m.person_id)
 
     def _person(
         self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,

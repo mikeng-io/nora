@@ -300,3 +300,70 @@ async def test_lessons_count_and_read_every_closed_episode(episodes):
     assert cursor == ids["fmix"]
     newest, _ = await store.episodes(unit="friends", after=0, limit=2, evidence_only=False)
     assert [e.send_id for e in newest] == [ids["fonly"], ids["fmix"]]
+
+
+@pytest.fixture(params=["memory", "sql"])
+async def addressed(request: Any) -> AsyncIterator[Any]:
+    """Room-a: her message at ts 1000; a reply quoting it (2000); a message
+    naming her (3000); one quoting a non-her message (3500); a plain one (4000);
+    a hidden one naming her (4500); her own message naming herself (4600).
+    Room-b (another room) names her (5000)."""
+    rows = [
+        # id, room, ts, body, is_nora, quoted_ts, hidden
+        (1, "room-a", 1000, "here are five", True, None, False),
+        (2, "room-a", 2000, "stop it", False, 1000, False),
+        (3, "room-a", 3000, "NORA too long", False, None, False),
+        (4, "room-a", 3500, "quoting a friend", False, 2000, False),
+        (5, "room-a", 4000, "plain", False, None, False),
+        (6, "room-a", 4500, "nora hidden", False, None, True),
+        (7, "room-a", 4600, "I am Nora", True, None, False),
+        (8, "room-b", 5000, "nora elsewhere", False, None, False),
+    ]
+    if request.param == "memory":
+        fake = InMemoryCharacterEvidence()
+        for i, room, ts, body, nora, quoted, hidden in rows:
+            fake.add_message(id=i, platform="signal", room=room, person_id=None if nora else "ada",
+                             body=body, ts=ts, is_nora=nora, quoted_ts=quoted, hidden=hidden)
+        fake.set_last_run(adaptor="lessons", key="friends", at_ms=1_234_000)
+        yield fake
+        return
+    from nora.infra.sql.schema import CONSOLIDATION_WATERMARK
+
+    engine = create_sql_engine(request.getfixturevalue("_db"))
+    try:
+        async with engine.begin() as conn:
+            for _i, room, ts, body, nora, quoted, hidden in rows:
+                await conn.execute(sa.insert(MESSAGES).values(
+                    platform="signal", conversation_id=room, conversation_type="group",
+                    sender_id="+85200000000", sender_name="x", ts=ts, body=body,
+                    is_nora=int(nora), person_id=None if nora else "ada", quoted_ts=quoted,
+                    hidden_at=ts if hidden else None,
+                ))
+            await conn.execute(sa.insert(CONSOLIDATION_WATERMARK).values(
+                consolidator_name="lessons", scope_id="friends", last_message_id=0,
+                updated_at=sa.func.to_timestamp(1234),
+            ))
+        yield SqlCharacterEvidence(engine)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
+            await conn.execute(sa.text("truncate messages, consolidation_watermark cascade"))
+        await engine.dispose()
+
+
+async def test_addressed_messages_quote_her_or_name_her_in_the_rooms_asked(addressed):
+    """L4: what may be a correction. A reply quoting HER message, or one naming
+    her in any case, in the rooms asked, in the time window; never her own, a
+    hidden one, a reply quoting someone else, or another room's."""
+    got = await addressed.addressed_since(
+        rooms=[("signal", "room-a")], since_ms=0, until_ms=10_000, limit=10)
+    assert [m.row.body for m in got] == ["stop it", "NORA too long"]
+    assert all(m.room == "room-a" for m in got)
+    window = await addressed.addressed_since(
+        rooms=[("signal", "room-a")], since_ms=2000, until_ms=10_000, limit=10)
+    assert [m.row.body for m in window] == ["NORA too long"]
+    newest = await addressed.addressed_since(
+        rooms=[("signal", "room-a")], since_ms=0, until_ms=10_000, limit=1)
+    assert [m.row.body for m in newest] == ["NORA too long"]
+    assert await addressed.last_run_ms(adaptor="lessons", key="friends") == 1_234_000
+    assert await addressed.last_run_ms(adaptor="lessons", key="other") is None

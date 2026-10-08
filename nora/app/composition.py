@@ -3862,6 +3862,9 @@ async def build_dependencies(
                         keys=lessons_keys, wake_batch=cfg.lessons.wake_batch,
                         horizon_seconds=cfg.lessons.horizon_seconds,
                         clock_ms=_now_ms,
+                        correction_quiet_seconds=(
+                            cfg.lessons.correction_quiet_seconds or None),
+                        stale_seconds=cfg.lessons.stale_seconds, metrics=metrics,
                     ),
                     keys=lessons_keys,
                     name_of=lambda pid: (
