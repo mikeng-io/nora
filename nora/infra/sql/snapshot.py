@@ -166,6 +166,8 @@ from nora.infra.sql.notes import _row_to_note, _row_to_revision
 from nora.infra.sql.reminders import _row_to_reminder
 from nora.infra.sql.schema import (
     CULTURE_REVISION,
+    LESSON,
+    LESSON_REVISION,
     MESSAGES,
     NOTE,
     NOTE_REVISION,
@@ -262,6 +264,11 @@ class Snapshot:
     #: none (design/self-growth/20).
     nora_account: CultureRevision | None = None
 
+    #: Her active lessons in this unit as they stood at `before_ms`, oldest
+    #: first, what `<lessons>` renders (design/self-growth/40, L5): each lesson's
+    #: revision current at the instant, kept when that revision is active.
+    lessons: tuple[str, ...] = ()
+
 
 async def snapshot(
     engine: AsyncEngine,
@@ -348,6 +355,7 @@ async def snapshot(
             )
             if account is not None:
                 characters.append((person_id, account))
+        lessons = await _lessons(engine, unit=unit, before_ms=before_ms)
         notes = await _notes(engine, unit=unit, before_ms=before_ms)
         reminders = await _reminders(
             engine, platform=platform, conversation_id=conversation_id,
@@ -379,7 +387,34 @@ async def snapshot(
         unit_culture=unit_culture,
         characters=tuple(characters),
         nora_account=nora_account,
+        lessons=lessons,
     )
+
+
+async def _lessons(engine: AsyncEngine, *, unit: str, before_ms: int) -> tuple[str, ...]:
+    """The bodies of `unit`'s lessons ACTIVE at `before_ms`, oldest lesson
+    first: per lesson, the revision with the highest `seq` written at or before
+    the instant (a lesson is a revision chain, append-only), kept when its state
+    is `active`. A lesson created after the instant has no such revision."""
+    rev = LESSON_REVISION
+    current = (
+        sa.select(rev.c.lesson_id, sa.func.max(rev.c.seq).label("seq"))
+        .where(rev.c.written_at <= before_ms)
+        .group_by(rev.c.lesson_id)
+        .subquery()
+    )
+    stmt = (
+        sa.select(rev.c.body)
+        .select_from(
+            LESSON.join(current, current.c.lesson_id == LESSON.c.id)
+            .join(rev, sa.and_(rev.c.lesson_id == current.c.lesson_id,
+                               rev.c.seq == current.c.seq))
+        )
+        .where(LESSON.c.unit == unit, rev.c.state == "active")
+        .order_by(LESSON.c.created_at, LESSON.c.id)
+    )
+    async with engine.connect() as conn:
+        return tuple(r.body for r in (await conn.execute(stmt)).all())
 
 
 async def _transcript(

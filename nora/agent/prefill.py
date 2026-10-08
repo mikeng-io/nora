@@ -36,6 +36,7 @@ from ..language.culture_render import (
     render_unit_culture,
 )
 from ..language.documents_render import render_documents
+from ..language.lesson_render import render_lessons
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.standing_render import render_standing, render_standing_working_set
@@ -132,6 +133,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # `TagContext.self_account` is filled, and a unit with no account renders
     # none.
     ("self", 1, "unit"),
+    # WHAT SHE HAS LEARNED HERE (design/self-growth/40, L5): her active lessons
+    # for this unit, right after `<self>` and so after the doctrine, which
+    # wins. Renders only where `TagContext.lessons` is filled.
+    ("lessons", 2, "unit"),
     # design/tool-catalogue phase C. Ahead of `presence`, because it is the
     # steadier of the two: it varies by the room's tool SCOPE (a Discord room carries the
     # music verbs, a Signal room does not), never by the turn or the person.
@@ -1033,6 +1038,7 @@ def build_prefill(
             _block("tool_catalogue", body=catalogue) if catalogue else None,
             _room_members_block(ctx),
             _restamp(render_self(ctx.self_account, now=clock)),
+            _restamp(render_lessons(ctx.lessons)),
             _restamp(_presence_block(ctx)),
             _peer_card_block(ctx),
             _peer_history_block(ctx),

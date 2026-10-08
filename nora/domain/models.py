@@ -549,6 +549,11 @@ class TagContext:
     # Nora, read through `read_culture` keyed `nora_character_key(unit)` on the
     # tag and fire turns. `None` until the unit has one.
     self_account: CultureRevision | None = None
+    # What she has learned to do differently in this unit (design/self-growth/
+    # 40, L5): the bodies of its active lessons, oldest first, read under
+    # `[lessons] render` on tag and fire turns where `<self>` may show.
+    # Empty: no block.
+    lessons: tuple[str, ...] = ()
     # The shared decision log (issue #199) — what NORA'S OWN LOOP already did
     # across this UNIT, as `<loop_decisions>`. `(room label, rows)` per
     # group, because the row that matters is usually from the OTHER room: a
