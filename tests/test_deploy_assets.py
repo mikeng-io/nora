@@ -211,3 +211,15 @@ def test_the_subagent_doctrine_is_data_declared_as_package_data():
     assert (ROOT / "nora" / "subagent" / "doctrine" / "subagent.md").is_file()
     assert not list((ROOT / "nora" / "subagent").rglob("*.py"))
     assert not (ROOT / "nora" / "subagent" / "__init__.py").exists()
+
+
+def test_signal_cli_runs_as_the_account_the_deployment_states_in_env():
+    """The account is the deployment's own number: it comes from `.env`
+    (`SIGNAL_ACCOUNT`), never a literal in git. A literal was scrubbed to a
+    pseudonym (#767) and signal-cli came up unregistered, taking nora down."""
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    command = compose["services"]["signal-cli"]["command"]
+    account = command[command.index("--account") + 1]
+    assert account.startswith("${SIGNAL_ACCOUNT:?"), account

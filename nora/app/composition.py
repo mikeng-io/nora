@@ -253,7 +253,7 @@ from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
-from nora.web.games import PulseGamesClient
+from nora.web.games import PULSE_API_BASE, PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
@@ -2755,7 +2755,13 @@ async def build_dependencies(
         )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
-        games_client = PulseGamesClient(token=pulse_api_token)
+        # The base URL names a private tailnet host, so the deployment states it
+        # in `.env` (`PULSE_API_BASE`); the identifier scrub (#767) left only a
+        # placeholder in the source.
+        games_client = PulseGamesClient(
+            token=pulse_api_token,
+            base_url=os.environ.get("PULSE_API_BASE") or PULSE_API_BASE,
+        )
     # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
     # turn into the destination (DEC-99's ruling), so R-1b's three links hold
     # and the relayed message is audited into the room it lands in.
