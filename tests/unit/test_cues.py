@@ -33,9 +33,20 @@ def test_amounts_and_splits_carry_the_amount_cue(text):
 
 @pytest.mark.parametrize("text", [
     "記低", "記低呢個", "keep that", "write that down", "note this down",
+    "記住呢個", "Nora 記住：wifi 係 orchid-19", "remember this", "the code is 4471, remember that",
 ])
 def test_keep_instructions_carry_the_keep_cue(text):
     assert "keep" in cues_of(text)
+
+
+@pytest.mark.parametrize("text", [
+    "記住啦你 😤", "我唔記住喇", "我記住咗喇", "remember that time we got lost?",
+    "do you remember the trip",
+])
+def test_banter_and_reminiscing_carry_no_keep_cue(text):
+    """DEC-306 review: the widened keep cue stays narrow; a cue only wakes a
+    session, but a wake per joke is a model call paid for nothing."""
+    assert "keep" not in cues_of(text)
 
 
 @pytest.mark.parametrize("text", [

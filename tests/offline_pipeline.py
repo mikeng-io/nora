@@ -168,6 +168,8 @@ def build_offline_pipeline(
         # takes.
         quote_window=quote_window,
         presence=presence_reader,
+        # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
+        memos=None,
         # `<culture>` (DEC-207) — `None` here for the fire path's reason
         # below: the eval subject (`nora.subject`) reconstructs a room's real
         # account at a real instant, and this harness has no store to hold one.
@@ -278,6 +280,8 @@ def build_offline_pipeline(
             computer=None,
             # `<documents>`: `None`, the assembler's reason above.
             documents=None,
+            # `<memos>`: `None`, the assembler's reason above.
+            memos=None,
             quote_window=quote_window,
             doctrine_store=doctrine_store, metrics=metrics,
             runner=runner, adapters={adapter.platform: adapter},

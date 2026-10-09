@@ -67,6 +67,7 @@ from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Any, Literal, Protocol
 
 from nora.agent import cognition_pace as pace
+from nora.agent.dream_screen import offence
 from nora.agent.fetch_watch import Fetched, watch_reads
 from nora.app.proactive_screen import CANCELLED_NOTE_RETIRED
 from nora.domain.cognition_ground import Grounding, RecordItem, rollup_status
@@ -102,6 +103,17 @@ from nora.domain.gatherings import (
     InvalidEventFieldModeError,
     StaleEventRevisionError,
     field_mode,
+)
+from nora.domain.memo import (
+    MEMO_BODY_MAX_CHARS,
+    MEMO_TITLE_MAX_CHARS,
+    Memo,
+    MemoWithdrawnError,
+    StaleMemoError,
+    citations_of,
+    parse_memo_body,
+    screened_parts,
+    title_carries_value,
 )
 from nora.domain.note_body import (
     NORA_NAMES,
@@ -166,7 +178,8 @@ COGNITION_PATH_PREFIX = "cognition:"
 #: names: it would shadow (or be shadowed by) a session verb.
 SESSION_VERB_NAMES: frozenset[str] = frozenset({
     "close", "note_create", "note_update", "note_retire", "note_merge",
-    "event_propose", "event_revise", "event_set_status", "standing_revise",
+    "memo_write", "memo_revise", "memo_withdraw", "event_propose", "event_revise",
+    "event_set_status", "standing_revise",
     "wake_at", "wake_move", "wake_cancel", "remind", "remind_move", "remind_cancel",
 })
 
@@ -592,7 +605,7 @@ class CognitionSessionRunner:
         remind_min_lead_seconds: int | None = None,
         remind_max_horizon_days: int | None = None,
         notes: Any = None, events: Any = None, standing: Any = None,
-        reminders: Any = None, ai_peer: str = "nora",
+        reminders: Any = None, ai_peer: str = "nora", memos: Any = None,
     ) -> None:
         """`doctrine_source`, when given, is read at the start of EVERY session
         and replaces `doctrine_text`/`doctrine_sha256` (which then serve only
@@ -613,6 +626,8 @@ class CognitionSessionRunner:
         `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
         (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
         stores the tag path writes through; the session's writes land there.
+        `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
+        session writes; None answers every memo verb `unavailable`.
         `ai_peer` is Nora's own requester id, the owner of every reminder she
         sets herself.
 
@@ -645,6 +660,7 @@ class CognitionSessionRunner:
         check_session_timeouts(budget.timeout_seconds, session_timeout_seconds)
         self._store = store
         self._notes = notes
+        self._memos = memos
         self._events = events
         self._standing = standing
         self._reminders = reminders
@@ -1579,8 +1595,8 @@ class CognitionSessionRunner:
             nothing is left open about it. A retired note leaves the index; its
             revisions are kept.
 
-            If the answer is worth keeping, write it into the note with
-            note_update first, then retire it.
+            If the group will need the answer again, keep it with memo_write
+            first, then retire the note.
 
             Returns `status`: ok, refused or unavailable, with a `reason` and
             `detail` when it is not ok.
@@ -1680,6 +1696,260 @@ class CognitionSessionRunner:
                 return _STALE_NOTE
             except ValueError as exc:
                 return _refused("invalid_revision", str(exc))
+            return wrote(platform, conversation_id, item)
+
+        # -- memos (DEC-306, 40-register §2): settled and kept, never closed --
+
+        def _memo_screen(verb: str, parts: Mapping[str, object]) -> dict[str, object] | None:
+            """The Dreamer's identifier and coordinate screen (R-18/R-28,
+            `dream_screen.offence`) over what a memo write says OUTSIDE its `##
+            Kept` lines (`nora.domain.memo.screened_parts`): a Kept line holds
+            what the room said, verbatim (D5, DEC-230). Refused with the field,
+            never the text."""
+            found = offence(parts)
+            if found is None:
+                return None
+            reason, path = found
+            self._inc("nora_dream_screened_total", adaptor="cognition", reason=reason)
+            return _refused(
+                reason,
+                f"`{path}` carries an {reason}; only a `## Kept` line may hold what "
+                f"was said verbatim, so move it there or write {verb} without it",
+            )
+
+        def _memos_off() -> dict[str, object]:
+            return {"status": "unavailable", "reason": "unwired",
+                    "detail": "the memo store is not wired here; nothing was written"}
+
+        async def _memo_body(
+            verb: str, title: str, body: str, platform: str, conversation_id: str,
+            carried: frozenset[int] = frozenset(),
+        ) -> tuple[Any, tuple[str, ...]] | dict[str, object]:
+            """`(parsed body, citations)` of a memo write, or its refusal: the
+            title and body caps, the 12-schemas §3 grammar over what this session
+            was shown (and what the head already cites), then the screen."""
+            if not title.strip() or len(title) > MEMO_TITLE_MAX_CHARS:
+                return _refused(
+                    "bad_title", f"a memo title is 1 to {MEMO_TITLE_MAX_CHARS} characters",
+                )
+            if len(body) > MEMO_BODY_MAX_CHARS:
+                return _refused(
+                    "too_long", f"a memo body is at most {MEMO_BODY_MAX_CHARS} characters",
+                )
+            shown = await shown_for(platform, conversation_id, body)
+            if isinstance(shown, dict):
+                return shown
+            try:
+                parsed = parse_memo_body(
+                    body, shown=replace(shown, carried=shown.carried | carried),
+                )
+            except NoteBodyError as exc:
+                return _refused(exc.rule, str(exc))
+            value = title_carries_value(title, parsed)
+            if value is not None:
+                return _refused(
+                    "title_carries_value",
+                    f"the title holds {value!r}, which a `## Kept` line keeps; a title "
+                    "names the thing (wifi password, door code), never its value",
+                )
+            screened = _memo_screen(verb, screened_parts(title, parsed))
+            if screened is not None:
+                return screened
+            return parsed, citations_of(parsed)
+
+        async def _duplicate(title: str, but: str | None = None) -> Memo | None:
+            """The kept memo of this unit that already answers to `title`, other
+            than `but`."""
+            for kept in await self._memos.kept(unit=unit):
+                if kept.id != but and has_duplicate_open_title(title, [kept.title]):
+                    return kept  # type: ignore[no-any-return]
+            return None
+
+        async def memo_write(
+            title: str, body: str, mode: Literal["told", "deduced", "abduced"] = "told",
+            room: str = "", item: int | None = None,
+        ) -> dict[str, object]:
+            """Keep something the group has settled and will need again. Call
+            this when a room settles a fact about the group, someone else or the
+            world (a password, a deposit split, a booking reference), or asks you
+            to keep one. Most settled things need no memo.
+
+            A person's explicit ask to keep something about the group is
+            written, not weighed. A fact about the speaker alone is not a memo,
+            nor is anything still open (a note) or dated and attended (an
+            event). A memo never closes; it is revised or withdrawn. A `##
+            Kept` line holds what was said exactly as said; the title names
+            the thing, never its value, and a title or condition carrying a
+            value, a phone, an email or a key-like string is refused.
+
+            Returns `status`: ok (with the `memo_id`), refused or unavailable,
+            with a `reason` and `detail` when it is not ok. A memo already kept
+            under that title is refused `duplicate`, naming it: revise that one.
+
+            Args:
+                title: A short handle, at most 80 characters, that names the
+                    thing (wifi password, door code), never its value.
+                body: `## Kept`, then optionally `## Conditions` (when it holds,
+                    its exceptions). Each line is one "- " item ending in the
+                    ids of the messages it rests on, as [<id>, <id>]: a message
+                    you were shown or read, your own included (cite the
+                    person's message asking to keep it too, when there is one).
+                mode: `told` when a person said it, `deduced` when it follows
+                    from what you were shown, `abduced` as a best explanation.
+                room: Optional when the agenda is one room, required when it
+                    spans several. The room it was settled in, as
+                    `platform:conversation_id`.
+                item: Optional. The agenda item this write is for, by its
+                    number. A `written` close of that item is backed by it.
+            """
+            if self._memos is None:
+                return _memos_off()
+            resolved = _write_target(room, item, state)
+            if isinstance(resolved, dict):
+                return resolved
+            (platform, conversation_id), item = resolved
+            checked = await _memo_body("memo_write", title, body, platform, conversation_id)
+            if isinstance(checked, dict):
+                return checked
+            parsed, citations = checked
+            async with self._lock(unit):
+                twin = await _duplicate(title)
+                if twin is not None:
+                    return _refused(
+                        "duplicate",
+                        f"memo {twin.id} is already kept as {twin.title!r}; revise it "
+                        "with memo_revise instead of keeping a second one",
+                    )
+                memo = await self._memos.create(
+                    unit=unit, platform=platform, conversation_id=conversation_id,
+                    title=title, body=parsed.text, citations=citations, mode=mode,
+                    established_by=established_by, model=self._model_id,
+                    now_ms=self._now_ms(),
+                )
+            return wrote(platform, conversation_id, item, memo_id=memo.id,
+                         revision_id=memo.head.id)
+
+        async def _memo_head(memo_id: str) -> Memo | dict[str, object]:
+            memo = await self._memos.get(unit=unit, memo_id=memo_id)
+            if memo is None:
+                return _refused("not_found", "there is no memo by that id in this group")
+            if not memo.is_kept:
+                return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
+            return memo  # type: ignore[no-any-return]
+
+        async def memo_revise(
+            memo_id: str, base_revision_id: str, body: str, title: str = "",
+            mode: Literal["told", "deduced", "abduced"] = "told",
+            room: str = "", item: int | None = None,
+        ) -> dict[str, object]:
+            """Revise a kept memo. Call this when what the group settled has
+            changed or gained a detail. Give back the WHOLE memo with your change
+            folded in: `body` replaces it, and the old revision is kept.
+
+            Returns `status`: ok (with the new `revision_id`), refused or
+            unavailable, with a `reason` and `detail` when it is not ok
+            (`stale_base` when the memo changed since you read it).
+
+            Args:
+                memo_id: The memo's id, as <memos> shows it.
+                base_revision_id: The `revision_id` memo_read last showed.
+                body: The whole memo after your change, in memo_write's
+                    sections, every line ending in the ids it rests on.
+                title: Optional. A new title; left out, the title stays.
+                mode: How you reached the change: `told`, `deduced` or `abduced`.
+                room: Optional when the agenda is one room, required when it
+                    spans several, as for memo_write.
+                item: Optional. The agenda item this write is for, by its number.
+            """
+            if self._memos is None:
+                return _memos_off()
+            resolved = _write_target(room, item, state)
+            if isinstance(resolved, dict):
+                return resolved
+            (platform, conversation_id), item = resolved
+            head = await _memo_head(memo_id)
+            if isinstance(head, dict):
+                return head
+            new_title = title or head.title
+            checked = await _memo_body(
+                "memo_revise", new_title, body, platform, conversation_id,
+                carried=cited_ids_in(head.head.body),
+            )
+            if isinstance(checked, dict):
+                return checked
+            parsed, citations = checked
+            async with self._lock(unit):
+                twin = await _duplicate(new_title, but=head.id) if title else None
+                if twin is not None:
+                    return _refused(
+                        "duplicate", f"memo {twin.id} is already kept as {twin.title!r}",
+                    )
+                try:
+                    revision = await self._memos.append(
+                        unit=unit, memo_id=head.id, base_revision_id=base_revision_id,
+                        title=new_title, body=parsed.text, citations=citations, mode=mode,
+                        state="kept", established_by=established_by, model=self._model_id,
+                        now_ms=self._now_ms(),
+                    )
+                except StaleMemoError:
+                    return _refused(
+                        "stale_base", f"the memo's head is now {head.head.id}; read it "
+                        "again with memo_read and redo your change against what it says",
+                    )
+                except MemoWithdrawnError:
+                    return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
+            return wrote(platform, conversation_id, item, revision_id=revision.id)
+
+        async def memo_withdraw(
+            memo_id: str, base_revision_id: str, cited_ids: list[str],
+            room: str = "", item: int | None = None,
+        ) -> dict[str, object]:
+            """Withdraw a kept memo for good. Call this only when someone in the
+            group says it no longer holds (the password changed, the booking was
+            cancelled). It leaves <memos>; its revisions are kept.
+
+            Returns `status`: ok, refused or unavailable, with a `reason` and
+            `detail` when it is not ok.
+
+            Args:
+                memo_id: The memo's id, as <memos> shows it.
+                base_revision_id: The `revision_id` memo_read last showed.
+                cited_ids: The ids of the messages saying it no longer holds, at
+                    least one, each one you were shown or read.
+                room: Optional when the agenda is one room, required when it
+                    spans several, as for memo_write.
+                item: Optional. The agenda item this write is for, by its number.
+            """
+            if self._memos is None:
+                return _memos_off()
+            resolved = _write_target(room, item, state)
+            if isinstance(resolved, dict):
+                return resolved
+            (platform, conversation_id), item = resolved
+            head = await _memo_head(memo_id)
+            if isinstance(head, dict):
+                return head
+            shown = await shown_for(platform, conversation_id, "")
+            if isinstance(shown, dict):
+                return shown
+            try:
+                ids, keys = check_citations(cited_ids, shown, what="memo_withdraw")
+            except NoteBodyError as exc:
+                return _refused(exc.rule, str(exc))
+            try:
+                await self._memos.append(
+                    unit=unit, memo_id=head.id, base_revision_id=base_revision_id,
+                    title=head.title, body=head.head.body,
+                    citations=(*(str(i) for i in ids), *(f"rollup({k})" for k in keys)),
+                    mode="told", state="withdrawn", established_by=established_by,
+                    model=self._model_id, now_ms=self._now_ms(),
+                )
+            except StaleMemoError:
+                return _refused(
+                    "stale_base", "the memo changed since you read it; read it again first",
+                )
+            except MemoWithdrawnError:
+                return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
             return wrote(platform, conversation_id, item)
 
         def _evidence(
@@ -2248,9 +2518,10 @@ class CognitionSessionRunner:
 
         verbs = (
             close, *(acting(v) for v in (
-                note_create, note_update, note_retire, note_merge, event_propose,
-                event_revise, event_set_status, standing_revise, wake_at, wake_move,
-                wake_cancel, remind, remind_move, remind_cancel,
+                note_create, note_update, note_retire, note_merge, memo_write,
+                memo_revise, memo_withdraw, event_propose, event_revise, event_set_status,
+                standing_revise, wake_at, wake_move, wake_cancel, remind, remind_move,
+                remind_cancel,
             )),
         )
         return [*read_tools, *(self._counted(v.__name__, v) for v in verbs)]

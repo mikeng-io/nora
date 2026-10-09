@@ -232,10 +232,11 @@ a name this table leaves open:
 - «A strong cue may cut it once» is read as: a wake that cut a cooldown
   leaves a cooldown no cue can cut.
 - **A strong cue does not chain (DEC-281).** While the unit's newest wake has
-  reason `strong_cue`, only an RSVP or a place link (`REARMING_CUES` in
-  `nora/domain/cues.py`) trips `strong cue` or cuts a cooldown; a date or
-  time (and a keep instruction) said again waits for `settled`, `max age` or
-  `batch`. Measured live, all-time (82 sessions): `strong_cue` wakes wrote
+  reason `strong_cue`, only an RSVP, a place link or a keep instruction
+  (`REARMING_CUES` in `nora/domain/cues.py`; `keep` joined it with DEC-306,
+  2026-10-09, because the tag turn now answers «記低» with «it will be kept»
+  and only a session keeps it) trips `strong cue` or cuts a cooldown; a date
+  or time said again waits for `settled`, `max age` or `batch`. Measured live, all-time (82 sessions): `strong_cue` wakes wrote
   something in 8/20, the best of any reason, but one conversation woke 6 in
   2h13m, 5 writing nothing, each paying a full prompt to read a fragment.
   Any wake of another reason lifts it, and so does a `strong_cue` wake whose session failed, timed out or was cancelled (its stimuli were put back unread, so the retry is as before). Derived from the newest `cognition_wake`

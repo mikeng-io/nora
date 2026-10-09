@@ -10,7 +10,7 @@ import pytest
 
 from evals.corpora_assess import GATES, NEGATIVE_KINDS, census, load_assess_corpus
 
-_CORPORA = ("assess_event", "assess_note")
+_CORPORA = ("assess_event", "assess_note", "assess_memo")
 
 
 @pytest.mark.parametrize("name", _CORPORA)
@@ -53,11 +53,12 @@ def test_no_case_input_row_is_missing_a_speaker_or_text(name):
 @pytest.mark.parametrize("name", _CORPORA)
 def test_no_placeholder_speaker_reads_as_a_real_persons_name(name):
     """This branch's own constraint: never a real member name. Placeholder
-    speakers are `P<n>` or the Rollup stand-in `rollup`, nothing else."""
+    speakers are `P<n>`, the Rollup stand-in `rollup`, or `Nora` for her own
+    send (the memo corpus: a memo may cite it, DEC-306), nothing else."""
     for case in load_assess_corpus(name):
         for row in case.input:
             speaker = row["speaker"]
-            assert speaker == "rollup" or (
+            assert speaker in ("rollup", "Nora") or (
                 speaker.startswith("P") and speaker[1:].isdigit()
             ), f"{case.name}: unexpected speaker {speaker!r}"
 
@@ -125,3 +126,17 @@ def test_a_negative_case_must_expect_outcome_none(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "_CORPORA", tmp_path)
     with pytest.raises(ValueError, match="must expect outcome: none"):
         mod.load_assess_corpus("bad")
+
+
+def test_the_memo_corpus_routes_every_settled_looking_negative_somewhere():
+    """DEC-306's routing rule (40-register §1): a speaker's own fact is
+    `remember`'s, an open one a note's, a dated one an event's, never a memo;
+    and the corpus carries revisions, withdrawals and her own send cited."""
+    cases = load_assess_corpus("assess_memo")
+    routes = {"about_the_speaker": "remember", "still_open": "note", "dated": "event"}
+    for case in cases:
+        if case.negative_kind in routes:
+            assert case.expect["routes_to"] == routes[case.negative_kind], case.name
+    outcomes = {c.expect["outcome"] for c in cases if c.category == "positive"}
+    assert outcomes == {"write", "revise", "withdraw"}
+    assert any(r["speaker"] == "Nora" for c in cases for r in c.input)

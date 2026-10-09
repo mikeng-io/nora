@@ -83,6 +83,7 @@ _NOT_A_TRANSCRIPT = {
     # unification is the other half of #292 and is gated by
     # `test_one_block_injector`.
     "nora/language/note_render.py": "renders the note index, not a transcript",
+    "nora/language/memo_render.py": "renders the memo index (DEC-306), not a transcript",
     # The `<lessons>` block: one element per active lesson, her own practice.
     "nora/language/lesson_render.py": "renders her lessons, not a transcript",
     # The doctrine check's law list: one element per law rule, doctrine text.

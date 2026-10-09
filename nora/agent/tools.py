@@ -49,6 +49,7 @@ import contextlib
 import copy
 import hashlib
 import inspect
+import itertools
 import json
 import logging
 import mimetypes
@@ -147,6 +148,7 @@ from ..domain.media import (
 )
 from ..domain.media import LABELS as MEDIA_LABELS
 from ..domain.media_join import MediaJoin
+from ..domain.memo import MemoRevision, MemoStore
 from ..domain.mobility_forecast import (
     detect_stay_anomalies,
     forecast_hour,
@@ -1490,6 +1492,15 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               source_tier="remembered", read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
                               output_contract="three_state", level=2),
+    # `memo_read` (DEC-306, design/cognition-loop/40-register.md §2): one kept memo
+    # of this unit by the id `<memos>` shows, for the tag, fire and Cognition
+    # turns. 3 like `note_read`: a turn may need a couple of memos and a re-read.
+    # `remembered`: the unit's own notebook. `cacheable=False`: a revision or a
+    # withdrawal can land between two calls. `level=1`: what, when, returns.
+    "memo_read": NativeTool(3,
+                            source_tier="remembered", cacheable=False, read_only=True,
+                            side_effect_state="none", idempotency="idempotent", retry="safe",
+                            output_contract="three_state", level=1),
     # 4 like its room-scoped sibling `search_memory`: it IS that verb with
     # the scope widened to the unit (32 §5 closed decision 1), sized by
     # the same "search, then refine once or twice" reasoning.
@@ -4251,6 +4262,31 @@ class EventsCollaborator(Protocol):
     ) -> VenueSuggestions: ...
 
 
+#: How many earlier revisions `memo_read`'s `superseded` shows, newest first.
+SUPERSEDED_SHOWN = 5
+
+
+def _superseded(chain: Sequence[MemoRevision]) -> list[str]:
+    """A memo's `## Superseded` (12-schemas §3), rendered by CODE from its
+    revision chain (`chain`, newest first), never written by a model: each
+    earlier revision's `## Kept` lines and the day the next one replaced it, the
+    newest `SUPERSEDED_SHOWN`."""
+    lines: list[str] = []
+    for newer, older in itertools.pairwise(chain):
+        kept: list[str] = []
+        inside = False
+        for line in older.body.splitlines():
+            if line.startswith("## "):
+                inside = line[3:].strip() == "Kept"
+            elif inside and line.startswith("- "):
+                kept.append(line[2:].strip())
+        day = datetime.fromtimestamp(newer.written_at / 1000, tz=UTC).date().isoformat()
+        lines.append(f"{older.title}: {' / '.join(kept)} (until {day})")
+        if len(lines) == SUPERSEDED_SHOWN:
+            break
+    return lines
+
+
 class NoteCollaborator(Protocol):
     """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
     in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
@@ -4544,6 +4580,7 @@ def build_tool_specs(
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
     note_unit: Callable[[str, str], str | None] | None = None,
+    memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
     music: MusicToolBridge | None = None,
@@ -12565,6 +12602,61 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ],
         }
 
+    # ── memos (DEC-306, design/cognition-loop/40-register.md §2) ────────────
+    memos_off = {
+        "status": "unavailable",
+        "note": "I can't reach what this group has kept right now. Say so plainly: "
+                "«nothing is kept» and «I couldn't look» are different answers.",
+    }
+
+    async def memo_read(memo_id: str) -> dict:
+        """Read what a memo keeps, when you need it.
+
+        <memos> lists each kept memo's id and title, never what it keeps.
+
+        Returns `status`: ok (`title`, `body`, `superseded`, `revision_id`),
+        nothing_found or unavailable, with a `note` on how to report the last
+        two.
+
+        Args:
+            memo_id: The memo's id, exactly as <memos> shows it.
+        """
+        unit = _unit()
+        if memos is None or not unit:
+            _record(metrics, "memo_read", "unavailable")
+            return dict(memos_off)
+        try:
+            memo = await memos.get(unit=unit, memo_id=memo_id.strip())
+            chain = (
+                await memos.revisions(unit=unit, memo_id=memo.id)
+                if memo is not None and memo.is_kept else ()
+            )
+        except Exception:
+            log.exception("memo_read failed")
+            _record(metrics, "memo_read", "unavailable")
+            return dict(memos_off)
+        if memo is None or not memo.is_kept:
+            _record(metrics, "memo_read", "nothing_found")
+            return {
+                "status": "nothing_found",
+                "note": "No memo by that id is kept here. Only the ones in <memos> "
+                        "exist, so check it, and don't describe one that isn't there.",
+            }
+        _record(metrics, "memo_read", "ok", chars=len(memo.head.body))
+        result: dict = {
+            "status": "ok", "memo_id": memo.id, "title": memo.title,
+            "body": memo.head.body, "superseded": _superseded(chain),
+            "revision_id": memo.head.id,
+        }
+        superseded = result["superseded"]
+        if any(scan_identifiers(t) is not None for t in (memo.head.body, *superseded)):
+            result["note"] = (
+                "This memo holds a value a reply cannot carry (a phone number, an "
+                "id or a key-shaped string): a reply containing it is not sent. "
+                "Say what it is and that it is kept, not the value itself."
+            )
+        return result
+
     async def search_memory_workspace(query: str) -> dict:
         """Find where something was actually SAID, across EVERY room of this
         workspace. Call this when the words you need could have been said
@@ -12650,10 +12742,10 @@ somebody tells you something about themselves that is now just TRUE.
 
 The trigger word is «記低». It writes to your long-term memory of THAT
 person, which `about` and `ask_memory` read back; nothing else can write a
-person's settled fact. Check what it is first: a settled fact about the
-speaker is this tool, an open question nothing settles is `note_create`,
-something that happens later is `remind`. It is not a transcript or a
-scratchpad.
+person's settled fact. Check what it is first: a fact about the speaker
+is this tool; one about the group or anyone else your notebook keeps after
+this turn, so say it will be kept; an open question nothing settles is
+`note_create`, something later is `remind`. It is not a scratchpad.
 
 Returns `status`: ok, refused or unavailable, with a `note` on how to
 report it.
@@ -15277,6 +15369,7 @@ Args:
         _spec("search_memory_workspace", search_memory_workspace),
         _spec("note_read", note_read),
         _spec("note_search", note_search),
+        _spec("memo_read", memo_read),
         _spec("note_create", note_create),
         _spec("note_update", note_update),
         _spec("remember", remember),
@@ -15466,6 +15559,7 @@ def build_tools(
     links: LinkCarry | None = None,
     notes: NoteCollaborator | None = None,
     note_unit: Callable[[str, str], str | None] | None = None,
+    memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
     # Forwarded, not defaulted away: `build_tool_specs` gates
@@ -15516,7 +15610,7 @@ def build_tools(
         lookup_window=lookup_window,
         ai_peer=ai_peer,
         links=links, giphy_source=giphy_source, reaction_picker=reaction_picker,
-        notes=notes, note_unit=note_unit,
+        notes=notes, note_unit=note_unit, memos=memos,
         unit_for=unit_for,
         supplied_unit=supplied_unit,
         dream_adaptor=dream_adaptor,

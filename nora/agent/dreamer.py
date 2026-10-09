@@ -636,6 +636,8 @@ UNIT_SAFE_TOOLS: frozenset[str] = frozenset({
     # because the fix belongs where the audience is known. The missing axis
     # here is still missing.
     "note_read", "note_search",
+    # `memo_read` (DEC-306) resolves its unit the way the note reads do.
+    "memo_read",
     "search_memory_workspace",
     # `load_tools` (design/tool-catalogue/02) reads neither a room nor a
     # unit: it registers tools from THIS run's own shelf onto THIS run's own

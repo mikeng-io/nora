@@ -77,6 +77,7 @@ _ROLLUP = object()
 _STANDING = object()
 #: `character_read`'s culture store, never called.
 _CULTURE = object()
+_MEMOS = object()
 #: The document service, never called: both document tools are offered only when one
 #: is wired (`[documents] enabled`).
 _DOCUMENTS = object()
@@ -166,6 +167,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     assert {t.tool_name for t in tools} == {
@@ -237,6 +239,8 @@ def test_the_registry_exposes_every_declared_tool():
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # DEC-306: one kept memo of the unit.
+        "memo_read",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
         # The memory search variant, built for the Dreamer's unit key but
@@ -490,6 +494,8 @@ def test_budgets_match_todays_table():
         # meaningful: under one `note_write` an accidental create would spend
         # the revision budget instead.
         "note_read": 3, "note_search": 2, "note_create": 1, "note_update": 2,
+        # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
+        "memo_read": 3,
         # 1, like `note_create`: one write answers the ask; a second call is the
         # model looping on a tool it should have trusted to have worked (the
         # remember verb's write lane, 2026-08-30).
@@ -549,6 +555,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     )
     tools = _built_tools(ToolRegistry(
         record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, culture=_CULTURE,
+        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
     ))
     agent = factory.create_agent(
@@ -910,6 +917,8 @@ READ_ONLY = frozenset({
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
     "note_read", "note_search",
+    # DEC-306: one kept memo of the unit, a SELECT.
+    "memo_read",
     # design/cognition-loop/25 §5, 50 §2: Dreamer-only SELECTs of the Rollup's
     # current build and of a room's Standing head.
     "rollup_read", "standing_read", "character_read",

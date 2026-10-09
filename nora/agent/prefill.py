@@ -9,7 +9,7 @@ for its own injected XML, with the label replaced by the sentence (#314).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ..domain.blocks import (
     BlockKey,
@@ -37,6 +37,7 @@ from ..language.culture_render import (
 )
 from ..language.documents_render import render_documents
 from ..language.lesson_render import render_lessons
+from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
 from ..language.standing_render import render_standing, render_standing_working_set
@@ -159,6 +160,10 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
     ("notes", 40, "unit"),
+    # WHAT THE GROUP SETTLED AND KEEPS (DEC-306): unit-wide like `notes`, right
+    # after them, titles and ids only. Renders only where `TagContext.memos` is
+    # filled.
+    ("memos", 42, "unit"),
     ("loop_decisions", 50, "unit"),
     # CULTURE (#324, rebased 2026-09-22). The catalogue line #324 carried
     # here is gone — #314 made every block say what it is from its own
@@ -1044,6 +1049,7 @@ def build_prefill(
             _peer_history_block(ctx),
             _people_in_window_block(ctx),
             _restamp(_notes_block(ctx, now=clock, view=view)),
+            _restamp(render_memos(ctx.memos, tz=clock.tzinfo or UTC)),
             _restamp(_decisions_block(ctx, now=clock)),
             _restamp(_culture_block(ctx, now=clock, view=view)),
             _restamp(render_unit_culture(ctx.unit_culture, now=clock)),

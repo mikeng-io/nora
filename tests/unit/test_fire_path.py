@@ -1162,7 +1162,7 @@ async def test_a_hanging_standing_read_cannot_wedge_a_fire_turn(
 
 async def _fire_path_with_tiers(
     persons, record_store, memory_store, doctrine_store, metrics, *,
-    notes=None, policy="permissive", culture=None, standing=None,
+    notes=None, policy="permissive", culture=None, standing=None, memos=None,
 ) -> FirePath:
     """`fire_path`'s own builder plus the tier collaborators — same
     model-side-collaborators-are-None shape, for the same reason: these tests
@@ -1175,7 +1175,7 @@ async def _fire_path_with_tiers(
         canary="test-canary", display_name="Nora",
         ai_peer="nora", context_window=40, limits={},
         timeout_seconds=120.0, clock=lambda: T0,
-        notes=notes, culture=culture, standing=standing,
+        notes=notes, culture=culture, standing=standing, memos=memos,
         policy=permissive_policy() if policy == "permissive" else None,
     )
 
@@ -3140,3 +3140,35 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
     await path.run([_reminder()])
 
     assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen
+
+
+async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
+    persons, record_store, memory_store, doctrine_store, metrics,
+) -> None:
+    """`<memos>` on the fire path (DEC-306), `_read_notes` mirrored: the unit's
+    kept memos, another unit's never, and a failed read counted."""
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    memos = InMemoryMemoStore()
+    for unit in ("nora", "elsewhere"):
+        await memos.create(
+            unit=unit, platform="signal", conversation_id="conv-1", title=f"{unit} wifi",
+            body="## Kept\n- kept [1]", citations=("1",), mode="told",
+            established_by="cognition:u", model=None, now_ms=1,
+        )
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics, memos=memos,
+    )
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    assert [m.title for m in ctx.memos] == ["nora wifi"]
+
+    class _Down:
+        async def kept(self, *, unit: str):
+            raise RuntimeError("db down")
+
+    fire = await _fire_path_with_tiers(
+        persons, record_store, memory_store, doctrine_store, metrics, memos=_Down(),
+    )
+    ctx = await fire.build_context(reminder_occasion([_reminder()]))
+    assert ctx.memos == ()
+    assert metrics.get("nora_errors_total", stage="fire_memos") == 1

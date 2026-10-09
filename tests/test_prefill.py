@@ -34,7 +34,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          standing=None, decisions=(), people_in_window=(), culture=None,
          room_members=(), computer=None, documents=None, character=(),
          subagents=None, unit_culture=None, self_account=None,
-         lessons=()) -> TagContext:
+         lessons=(), memos=()) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote)
     kwargs = {"tagger_card": tuple(tagger_card),
@@ -44,7 +44,8 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
               "room_members": tuple(room_members), "computer": computer,
               "documents": documents, "character": tuple(character),
               "subagents": subagents, "unit_culture": unit_culture,
-              "self_account": self_account, "lessons": tuple(lessons)}
+              "self_account": self_account, "lessons": tuple(lessons),
+              "memos": tuple(memos)}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       **kwargs)
 
@@ -283,7 +284,7 @@ def _full_prefill_body() -> str:
         self_account=_culture("She is dry and brief."),
         lessons=("Name one place, not five.",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles", "miles"),
-        notes=(_note(),),
+        notes=(_note(),), memos=(_memo(),),
         standing=_standing(working_set=(_working_set_item(),)),
         culture=_culture(), decisions=_decisions(),
         people_in_window=(("Grant", ("asked about dinner",)),),
@@ -1685,3 +1686,57 @@ def test_the_units_culture_renders_after_the_rooms_and_before_the_people():
     assert body.index("<culture ") < body.index("<unit_culture ") < body.index("<character ")
     bare = build_prefill(_ctx(_rows("hello")), display_name="Nora", context_window=40)
     assert "<unit_culture" not in bare[1]["content"][0]["text"]
+
+
+# ---- <memos> (DEC-306) ---------------------------------------------------------
+
+
+def _memo(title: str = "wifi password") -> object:
+    from nora.domain.memo import Memo, MemoRevision
+
+    head = MemoRevision(
+        id="r1", memo_id="00000000-0000-4000-8000-0000000000aa", seq=1, title=title,
+        body="## Kept\n- the wifi password is hunter-two [101]", citations=("101",),
+        mode="told", state="kept", written_at=1_790_000_000_000,
+        established_by="cognition:u",
+    )
+    return Memo(id=head.memo_id, unit="u", platform="signal", conversation_id="g1",
+                created_at=head.written_at, head=head)
+
+
+def test_the_memos_block_lists_titles_and_ids_after_the_notes_and_never_the_kept_line():
+    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),), memos=(_memo(),)),
+                            display_name="Nora", context_window=40)
+    body = prefill[1]["content"][0]["text"]
+    assert "<memos" not in prefill[0]["content"][0]["text"]
+    block = body[body.index("<memos"):body.index("</memos>")]
+    assert 'id="00000000-0000-4000-8000-0000000000aa"' in block
+    assert ">wifi password</memo>" in block and 'updated="' in block
+    assert "hunter-two" not in body, "what a memo keeps is pulled, never pushed"
+    assert body.index("<notes") < body.index("<memos") < body.index("<group_transcript")
+
+
+def test_the_memos_block_is_absent_when_nothing_is_kept():
+    prefill = build_prefill(_ctx(_rows("hi")), display_name="Nora", context_window=40)
+    assert "<memos" not in "\n".join(m["content"][0]["text"] for m in prefill)
+
+
+def test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest():
+    """Review of #781: the tag and fire `<memos>` were uncapped."""
+    from dataclasses import replace
+
+    from nora.language.memo_render import MEMO_LINES
+
+    base = _memo()
+    memos = tuple(
+        replace(base, id=f"m-{i}", head=replace(base.head, memo_id=f"m-{i}", title=f"memo {i}",
+                                                 written_at=1_790_000_000_000 + i))
+        for i in range(MEMO_LINES + 5)
+    )
+    prefill = build_prefill(_ctx(_rows("hi"), memos=memos), display_name="Nora",
+                            context_window=40)
+    body = prefill[1]["content"][0]["text"]
+    block = body[body.index("<memos"):body.index("</memos>")]
+    assert block.count("<memo ") == MEMO_LINES
+    assert f'id="m-{MEMO_LINES + 4}"' in block and 'id="m-0"' not in block
+    assert 'not_listed="5"' in block
