@@ -258,9 +258,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # this reaches the answers that read only a transcript placeholder.
     # v35 (2026-10-09, operator: «she decides» to say what she is doing before
     # long work, any kind, not only search): «Getting to an answer» keeps the
-    # no-filler rule for a quick check and adds one heads-up line, sent with
-    # `more=true`, when the work will keep the room waiting (DEC-294's flag).
-    "conduct": (35, "8b2ed2cd2f2d7225ad1293c4d8d4f5053ae3a51258d0757a63202ca558706ce1"),
+    # no-filler rule for a quick check and adds one line marked as a heads-up
+    # when the work will keep the room waiting (DEC-294's `heads_up`).
+    "conduct": (35, "b10526ea91c737082b13c7b4210578903fe6b5705f05747d16e8644a080647e0"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

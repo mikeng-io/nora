@@ -778,7 +778,7 @@ async def test_a_heads_up_then_work_then_prose_answer_is_recovered(monkeypatch):
     pipeline, metrics, _audit, _memory, background = _build_pipeline(
         adapter=adapter,
         runner=ScriptedRunner([ScriptedTurn(
-            tool_calls=[("send_reply", {"text": "let me check", "more": True}),
+            tool_calls=[("send_reply", {"text": "let me check", "heads_up": True}),
                         ("now", {})],
             final_text="it is Thursday",
         )]),

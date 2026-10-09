@@ -166,7 +166,7 @@ files:
     Getting to an answer:
       parts:
         - {starts: "Check a fact you do not hold", bucket: law, reason: "never state a guess as fact; saying you do not know beats guessing confidently", sha: "5686acd0540a"}
-        - {starts: "Do not re-check what you know", bucket: practice, reason: "how many checks, in what order", sha: "cf9d4a8bd0f1"}
+        - {starts: "Do not re-check what you know", bucket: practice, reason: "how many checks, in what order", sha: "f43c4c404d7d"}
         - {starts: "When something comes back empty", bucket: law, reason: "empty versus broken are different outcomes; never fill the gap; an unchecked thing stays unchecked", sha: "22b729ef6f99"}
     Talking about a person:
       parts:

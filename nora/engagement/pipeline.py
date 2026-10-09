@@ -894,7 +894,9 @@ class EngagementPipeline:
             # a DELIBERATE silence she is allowed (strict-silence, R-4/R-2) and must
             # stay silent. If she already sent something (multi-message cut off
             # mid-stream), `deliverer.delivered` is True and this is skipped — that
-            # is a partial delivery, not a void.
+            # is a partial delivery, not a void. Except a heads-up whose answer
+            # is still owed (`_nothing_answered`): the room was told an answer
+            # is coming, and the cut-off means it is not.
             cut_off_before_reply = (
                 # Occasion-gated like the salvage above: the participation
                 # occasion's exhaustion is silence, never the canned line.
@@ -1008,8 +1010,9 @@ class EngagementPipeline:
                 self._metrics.inc("nora_recovered_replies_total", platform=msg.platform)
                 log.warning(
                     "recovered a reply the model wrote WITHOUT calling send_reply "
-                    "(tag=%s, %d chars) — the route is not honouring "
-                    "tool_choice=required", request.tag_id, len(final_text),
+                    "(tag=%s, %d chars, after_heads_up=%s) — without a heads-up "
+                    "the route is not honouring tool_choice=required",
+                    request.tag_id, len(final_text), handle.deliverer.delivered,
                 )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it

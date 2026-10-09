@@ -12971,6 +12971,7 @@ Args:
 
     async def send_reply(
         text: str, reply_to: int | None = None, more: bool | None = False,
+        heads_up: bool | None = False,
     ) -> str:
         """Send your reply in words. Call this when your reply is text; a
         reaction GIF goes through `send_gif`.
@@ -13006,11 +13007,12 @@ Args:
                 since a reply threaded onto the obvious message is clutter. Never
                 guess a number that is not on a message you can see.
             more: True if you will do anything after this message: another
-                message, or any tool such as a search, the computer, an image
-                or a note. A short line saying what you are about to do,
-                sent before longer work, carries it, and your answer then
-                follows in its own send_reply. Leave it false otherwise; the
-                turn then ends.
+                message, or any tool such as a note or a publish. Leave it
+                false otherwise; the turn then ends.
+            heads_up: True when this message only says what you are about
+                to do before longer work, such as a search, the computer or
+                an image, and your answer follows in a later send_reply. It
+                keeps the turn open like `more`.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS

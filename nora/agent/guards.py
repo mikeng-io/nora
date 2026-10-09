@@ -44,10 +44,11 @@ log = logging.getLogger("nora.guards")
 _MORE: TypeAdapter[bool | None] = TypeAdapter(bool | None)
 
 
-def _more_of(tool_input: Mapping[str, Any]) -> bool:
-    """`more` read the way the tool reads it (pydantic's lax bool); unreadable is False."""
+def _flag(tool_input: Mapping[str, Any], key: str) -> bool:
+    """A `send_reply` flag read the way the tool reads it (pydantic's lax
+    bool); unreadable is False."""
     try:
-        return bool(_MORE.validate_python(tool_input.get("more")))
+        return bool(_MORE.validate_python(tool_input.get(key)))
     except ValueError:
         return False
 
@@ -896,10 +897,8 @@ class ReplyGuard(HookProvider):
         self._spoke = False
         self._turn_is_over = False
         # A heads-up that still owes its answer: the last LANDED `send_reply`
-        # carried `more=true`, and some other tool has run since it. Read by
-        # `reply_still_owed`.
-        self._last_send_continued = False
-        self._work_since_send = False
+        # carried `heads_up=true`. Read by `reply_still_owed`.
+        self._heads_up_owed = False
         # Did THIS guard cancel a model call? Public because
         # `nora.engagement.pipeline` and `nora.app.fire` read it to refuse
         # DEC-93's recovery — the text such a turn ends with is this class's
@@ -1304,17 +1303,20 @@ class ReplyGuard(HookProvider):
 
     @property
     def reply_still_owed(self) -> bool:
-        """She sent a heads-up (`more=true`), did work after it, and has not
-        sent since: the answer she announced has not reached the room.
+        """Her last landed `send_reply` was a heads-up (`heads_up=true`): the
+        answer she announced has not reached the room.
 
-        `nora.engagement.pipeline` reads it to let DEC-93's recovery and the
-        cut-off fallback run although something WAS delivered. Without it a
-        heads-up, which is delivered, silently disabled both, and an answer she
-        then wrote as prose was dropped while the turn read as `replied`
-        (review of #754, 2026-10-09). Work since the last send is the line
-        between «the heads-up» and «the answer, sent with `more=true` by
-        mistake»: after the second, prose would be a duplicate."""
-        return self._last_send_continued and self._work_since_send
+        `nora.engagement.pipeline` reads it to let DEC-93's recovery, the
+        salvage and the cut-off fallback run although something WAS
+        delivered. Without it a heads-up, which is delivered, silently
+        disabled all three, and an answer she then wrote as prose was dropped
+        while the turn read as `replied` (review of #754, 2026-10-09).
+
+        Her own flag, not an inference. «A `more=true` send, then work» was
+        tried first and could not tell a heads-up from an answer followed by a
+        note, after which closing prose would have reached the room (second
+        review, same day)."""
+        return self._heads_up_owed
 
     @staticmethod
     def _landed(result: Any) -> bool:
@@ -1353,11 +1355,12 @@ class ReplyGuard(HookProvider):
         # failed validation, so it never carries a `sent` word below.
         if not isinstance(tool_input, dict):
             return False
-        try:
-            if _MORE.validate_python(tool_input.get("more")):
+        for key in ("more", "heads_up"):
+            try:
+                if _MORE.validate_python(tool_input.get(key)):
+                    return False
+            except ValueError:
                 return False
-        except ValueError:
-            return False
         return ReplyGuard._landed(result)
 
     def _before_model(self, event: BeforeModelCallEvent) -> None:
@@ -1605,12 +1608,9 @@ class ReplyGuard(HookProvider):
                 ).get("title") or ""
                 if title:
                     self._notes_read.add(note_handle(title))
-            if name not in self._terminal:
-                self._work_since_send = True
-            elif self._landed(getattr(event, "result", None)):
-                self._last_send_continued = name == "send_reply" and _more_of(
-                    tool_use.get("input") or {})
-                self._work_since_send = False
+            if name in self._terminal and self._landed(getattr(event, "result", None)):
+                self._heads_up_owed = name == "send_reply" and _flag(
+                    tool_use.get("input") or {}, "heads_up")
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget
