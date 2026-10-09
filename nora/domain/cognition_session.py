@@ -25,7 +25,9 @@ saw — see `Agenda.deferred`).
 
 **Every item binds one room.** A `message` stimulus is bound to the room
 it came from (R-21); every other kind (`social`, `play`, `rollup`, `time`,
-`self`) has no room of its own and is bound to the unit's HOME room
+`self`) has no room of its own and is bound to the unit's HOME room, except
+the daily look ahead (`UPCOMING_ITEM`, a `time` stimulus that names the room
+its event is in, and is bound to it)
 (design 39 D2, generalised — `30-cognition.md` §1's "for an item with none
 ... the unit's home room"). `home_room` is a required argument for exactly
 this reason: this module does not resolve it (that is `policy.toml`'s unit
@@ -56,6 +58,11 @@ COGNITION_ADAPTOR = "cognition"
 #: The kinds bound to the room they came from; every other kind binds the
 #: unit's home room (30-cognition.md §1).
 _ROOM_BOUND_KINDS: frozenset[str] = frozenset({"message"})
+#: The daily look ahead (DEC-303): a `time` stimulus the wake evaluator raises
+#: with each floor for a room holding an event that is coming up. Unlike the
+#: floor it names a room, and is bound to it, so the look reads and writes
+#: where the event is.
+UPCOMING_ITEM = "upcoming"
 
 #: An item closes with a write that cites it, or with one of these reasons
 #: (30-cognition.md §2 "Closing"); `struck` is code's own close at
@@ -153,7 +160,8 @@ class Situation:
 
 def _room_of(stimulus: Stimulus, *, home_room: Room) -> Room:
     if (
-        stimulus.kind in _ROOM_BOUND_KINDS
+        (stimulus.kind in _ROOM_BOUND_KINDS
+         or (stimulus.kind == "time" and stimulus.item == UPCOMING_ITEM))
         and stimulus.platform is not None
         and stimulus.conversation_id is not None
     ):
@@ -196,6 +204,9 @@ def _summary(kind: str, room: Room, item: str, count: int) -> str:
             return ("the daily look at the notebook: the note index marks the notes "
                     "whose day has passed, whose revisit has come, or that may be "
                     "duplicates")
+        if item == UPCOMING_ITEM:
+            return ("the daily look ahead: this room has an event coming up, listed "
+                    "under its events; no event reminds anyone by itself")
         return f"a time stimulus is due: {item}"
     if kind == "self":
         return f"a self-wake is due: {item}"

@@ -51,8 +51,8 @@
   {
     "name": "evaluator: a session unit raises no time floor while no skill ships",
     "file": "nora/app/wake.py",
-    "old": "                self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else ()",
-    "new": "                self._floor_stimuli(unit, now_ms)",
+    "old": "            floors = self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else []",
+    "new": "            floors = self._floor_stimuli(unit, now_ms)",
     "target": "tests/unit/test_wake_evaluator.py -k a_unit_whose_wakes_start_sessions_raises_no_floor"
   },
   {

@@ -11,11 +11,9 @@ from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOLS
 from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
-from nora.domain.reminders import ReminderCaps
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore, FakeRosterSource
 from nora.testing.gatherings import FakeGatheringStore
-from nora.testing.reminders import FakeReminderStore
 from tests.fakes import SinkSender
 
 MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles")
@@ -43,8 +41,6 @@ async def test_r52_two_open_events_refuses_a_third_rather_than_guessing():
 
     svc = GatheringService(
         store=FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",
@@ -137,8 +133,6 @@ def _tools(
 def _events_service(*, store: FakeGatheringStore | None = None) -> GatheringService:
     return GatheringService(
         store=store or FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",

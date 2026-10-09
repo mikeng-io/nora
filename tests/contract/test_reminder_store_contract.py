@@ -753,14 +753,14 @@ async def test_kind_and_payload_round_trip_through_both_stores(store):
     """DEC-139: `kind`/`payload` are first-class Reminder fields — both
     implementations must round-trip them (fake-fidelity rule)."""
     r = _row(
-        kind="gathering", payload={"title": "Dinner"},
+        kind="proactive", payload={"note_title": "Dinner"},
     )
     await store.create(r)
 
     back = await store.get(r.id)
     assert back is not None
-    assert back.kind == "gathering"
-    assert back.payload == {"title": "Dinner"}
+    assert back.kind == "proactive"
+    assert back.payload == {"note_title": "Dinner"}
 
 
 async def test_default_kind_is_reminder(store):

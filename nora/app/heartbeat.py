@@ -447,7 +447,7 @@ def _by_turn(rows: Sequence[Reminder]) -> dict[TurnKey, list[Reminder]]:
       A's identity, A's memory and A's room.
     - One KIND, because `FirePath.run` renders the batch through the factory
       `rows[0].kind` selects — a mixed batch (one plain reminder + one
-      gathering-notify, same person, same conversation, same tick) would have
+      proactive row, same person, same conversation, same tick) would have
       its kind decided by whichever row sorts first and the other row's payload
       rendered through the wrong factory. Same conversation, same tick, two
       kinds: two turns, no cross-kind mixing.

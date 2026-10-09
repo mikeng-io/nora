@@ -266,7 +266,7 @@ async def test_per_field_reasoning_round_trips_through_the_head_and_the_revision
 
 def _service(store: SqlGatheringStore) -> GatheringService:
     return GatheringService(
-        store=store, reminders=None, reminder_caps=None,  # type: ignore[arg-type]
+        store=store,
         route_source=None, honcho=None, ai_peer="nora",
     )
 

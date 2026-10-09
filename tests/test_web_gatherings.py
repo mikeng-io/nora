@@ -7,9 +7,7 @@ import pytest
 
 from nora.app.gatherings import GatheringService
 from nora.domain.gatherings import RSVPResponse
-from nora.domain.reminders import ReminderCaps
 from nora.testing.gatherings import FakeGatheringStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
 
 pytestmark = pytest.mark.asyncio
@@ -18,8 +16,6 @@ pytestmark = pytest.mark.asyncio
 async def _service() -> GatheringService:
     return GatheringService(
         store=FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",

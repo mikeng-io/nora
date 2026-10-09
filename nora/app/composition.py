@@ -81,6 +81,7 @@ from nora.app.cognition_wiring import (
     read_surface,
     require_session_hook,
     units_with_home_rooms,
+    upcoming_reader,
 )
 from nora.app.cognition_wiring import (
     agenda_skills as cognition_agenda_skills,
@@ -263,7 +264,6 @@ from .compute_poller import recover as compute_poller_recover
 from .dispatch import Dispatcher
 from .fire import (
     FirePath,
-    gathering_occasion,
     lost_job_occasion,
     proactive_occasion,
     relay_occasion,
@@ -379,6 +379,7 @@ def _build_wake_evaluator(
     metrics: Metrics, on_wake: WakeHook | None,
     session_units: Callable[[], Collection[str]] | None = None,
     floors_ready: bool = True,
+    upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
 ) -> WakeEvaluator:
     """The cognition loop's wake evaluator (design/cognition-loop/20 §3): every
     wake starts a session through `on_wake`."""
@@ -405,6 +406,7 @@ def _build_wake_evaluator(
         on_wake=on_wake,
         session_units=session_units,
         floors_ready=floors_ready,
+        upcoming=upcoming,
     )
 
 
@@ -1179,8 +1181,8 @@ class Dependencies:
     # several, which is the whole reason a unit-keyed adaptor could not
     # ride the per-scope schedule.
     unit_scopes: Callable[[], Sequence[str]]
-    # The SAME `GatheringService` built above alongside `event_store`/
-    # `reminder_caps` and already threaded to `ToolRegistry(events=events)` —
+    # The SAME `GatheringService` built above alongside `event_store` and
+    # already threaded to `ToolRegistry(events=events)` —
     # exposed here too so `nora.web.api.register_web_routes`'s read-only
     # `/app/v1/events(/{id})` pair serves from the identical instance the
     # agent's event tools use, rather than a second `GatheringService` over the
@@ -2215,12 +2217,9 @@ async def build_dependencies(
         total_tokens=tier.limits.total_tokens,
     )
 
-    # §9's caps as the DOMAIN value, extracted to a variable (not built inline
-    # at the `ToolRegistry(...)` call below the way it was before Events) so
-    # `GatheringService` and `ToolRegistry` share the exact SAME `ReminderCaps` —
-    # an event's linked reminder must respect the identical anti-runaway caps
-    # a manually requested one does, and two separately constructed instances
-    # read as "the same value" only by coincidence of both reading `cfg.reminders`.
+    # §9's caps as the DOMAIN value, built once so every reminder writer (the
+    # tag path's `ToolRegistry` and the Cognition session) holds the exact SAME
+    # `ReminderCaps`, not two instances equal only by both reading `cfg.reminders`.
     reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
     # `GatheringService` (Gathering module design spec): the ONE use-case layer for
     # Gathering business rules. `event_store` REUSES `engine` for the same reason
@@ -2244,8 +2243,6 @@ async def build_dependencies(
 
     events = GatheringService(
         store=event_store,
-        reminders=reminders,
-        reminder_caps=reminder_caps,
         route_source=route_client,
         honcho=memory,
         ai_peer=cfg.memory.ai_peer,
@@ -2923,9 +2920,9 @@ async def build_dependencies(
         computer_exports=computer_exports,
         artifact_link_base=cfg.documents.public_url,
         browser=browser,
-        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
-        # `GatheringService` was built with above — see that variable's own
-        # comment for why they must not be two separately constructed copies.
+        # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance the
+        # Cognition session is built with — see that variable's own comment for
+        # why they must not be two separately constructed copies.
         # `nora.agent` may not import `nora.config` (import-linter's "only app
         # and __main__ read config"), so THAT construction is the conversion
         # point: `RemindersConfig`'s fields are `ReminderCaps`'s fields, and
@@ -3210,12 +3207,12 @@ async def build_dependencies(
             # The reminder-derived Event registry (DEC-139,
             # design/event-abstraction/04): kind -> factory, wired here at
             # the composition root so the domain type stays free of app
-            # wiring. Today the registry has exactly the two kinds whose
-            # Events are PRODUCED BY a due Reminder row; compute/relay/
-            # lost-job call speak directly and are not registry entries.
+            # wiring. The registry holds the kinds whose Events are PRODUCED
+            # BY a due Reminder row; compute/relay/lost-job call speak
+            # directly and are not registry entries. An event no longer owns
+            # a reminder (DEC-303): a reminder is a person's or Nora's own.
             event_registry={
                 "reminder": reminder_occasion,
-                "gathering": gathering_occasion,
                 # The proactive act turn (39 D4): a row the Cognition session's `remind` writes
                 # (the decide turn did before 2026-10-03), built `person_id=None`. Registered
                 # unconditionally — a row of this kind can only exist if a writer
@@ -3637,6 +3634,7 @@ async def build_dependencies(
     cognition_runner: CognitionSessionRunner | None = None
     #: The units a session can run for (a home room each); only they are woken.
     cognition_session_units: Collection[str] | None = None
+    cognition_upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None
     if cfg.dreamer.enabled:
         # THE CULTURE TIER (design/culture-tier, DEC-182..185). An account of
         # how each room works and why, folded from that room's own messages
@@ -4142,6 +4140,19 @@ async def build_dependencies(
                 cognition_unit_rooms.setdefault(conv.unit, set()).update(
                     (conv.platform, cid) for cid in conv.ids
                 )
+            if cfg.cognition.upcoming_days > 0:
+                upcoming_rooms: dict[str, list[tuple[str, str, Collection[str]]]] = {}
+                for conv in allowlist.conversations:
+                    upcoming_rooms.setdefault(conv.unit, []).append(
+                        (conv.platform, conv.primary_id, conv.ids),
+                    )
+                cognition_upcoming = upcoming_reader(
+                    _open_events, lambda unit: upcoming_rooms.get(unit, []),
+                    days=cfg.cognition.upcoming_days,
+                    room_proactive=lambda platform, cid: allowlist.proactive_allowed(
+                        platform=platform, conversation_id=cid,
+                    ),
+                )
             # The policy's label for each of those ids (m5): the prompt calls a
             # room by it and never by the conversation id.
             cognition_room_labels: dict[tuple[str, str], str] = {
@@ -4254,6 +4265,7 @@ async def build_dependencies(
                 None if cognition_session_units is None else (lambda: cognition_session_units)
             ),
             floors_ready="time" in agenda_skills.by_kind,
+            upcoming=cognition_upcoming,
         )
         if cognition_runner is not None:
             cognition_shutdown = CognitionShutdown(
