@@ -91,9 +91,25 @@ def test_a_detached_span_does_not_take_another_rooms_session(rig):
 
 def test_a_span_with_no_conversation_gets_no_session(rig):
     tracer, exporter = rig
-    with tracer.start_as_current_span("dream.pass"):
+    with tracer.start_as_current_span("dream:culture"):
         pass
-    assert "session.id" not in _attrs(exporter)["dream.pass"]
+    assert "session.id" not in _attrs(exporter)["dream:culture"]
+
+
+def test_a_dreamer_unit_takes_its_pass_as_its_session(rig):
+    """A Dreamer unit has no room. Its root carries the tick that dispatched it,
+    so one pass's units group as one Langfuse session (`dream_loop`)."""
+    tracer, exporter = rig
+    with (
+        tracer.start_as_current_span(
+            "dream:culture", attributes={"nora.dreamer.pass_id": "dream.pass:T1"},
+        ),
+        tracer.start_as_current_span("invoke_agent dreamer:culture"),
+    ):
+        pass
+    got = _attrs(exporter)
+    assert got["dream:culture"]["session.id"] == "dream.pass:T1"
+    assert got["invoke_agent dreamer:culture"]["session.id"] == "dream.pass:T1"
 
 
 @pytest.mark.parametrize("bad", ["x" * 201, "房間/頻道", ""])

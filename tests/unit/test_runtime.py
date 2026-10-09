@@ -709,7 +709,7 @@ async def _tick(loop_coro, *, ticks: float = 0.06):
 
 class _SpanningRunner:
     """Opens the SAME shape `DreamerRuntime.run` does (`nora/agent/dreamer.py`)
-    around each call — a root-declaring `dream:{adaptor.name}` span — without
+    around each call — a `dream:{adaptor.name}` span — without
     dragging that whole collaborator graph (models/instructions/tools/store
     timeouts) into a test of `dream_loop`'s OWN dispatch shape. `gate` holds
     every call open until the test releases it, which is what makes the
@@ -736,17 +736,20 @@ class _SpanningRunner:
             return _StubOutcome(status="ok")
 
 
-async def test_dream_pass_opens_one_root_with_children_per_adaptor(exported_spans):
-    """Issue #55's third unlit boundary: THE LOOP. `DreamerRuntime.run`'s own
-    span declares itself a root (R-76) for the standalone callers that reach
-    it with no pass around them at all — so before `dream_loop` opened
-    anything, every (adaptor, key) pair in one tick rendered as its own
-    unrelated trace. One tick over two adaptors must now be ONE trace: one
-    `dream.pass` root, two `dream:*` children.
+async def test_each_dream_unit_is_its_own_root_and_its_pass_is_the_session(
+    exported_spans,
+):
+    """One unit, one trace, named for its adaptor, the tick as its session.
 
-    PROBE: delete the `with span("dream.pass", ...)` wrapper around the
-    dispatch loop in `dream_loop` and the two `dream:*` spans below become
-    roots of two SEPARATE traces instead of children of one.
+    Issue #55 grouped a tick under one `dream.pass` root, and that root named
+    nothing: read back 2026-10-09, the Langfuse trace list showed identical
+    `dream.pass` rows holding up to 356 interleaved observations of two
+    adaptors, so culture was findable only by opening each. Each unit is now
+    its own `dream:<adaptor>` root carrying adaptor, key, outcome and the
+    pass id `TraceIdentityProcessor` turns into the session.
+
+    PROBE: dispatch `_run_adaptor` instead of `_run_unit` and the runner's
+    spans have no `dream_loop` root above them and no pass id.
     """
     language = _KeyedLanguage(lag=99)
     gate = asyncio.Event()
@@ -768,29 +771,34 @@ async def test_dream_pass_opens_one_root_with_children_per_adaptor(exported_span
     assert sorted(runner.calls) == [("lexemes", "g1"), ("notes", "g1")]
 
     finished = exported_spans.get_finished_spans()
-    by_name: dict[str, list] = {}
-    for recorded in finished:
-        by_name.setdefault(recorded.name, []).append(recorded)
+    assert not [s for s in finished if s.name == "dream.pass"]
+    # Every tick opens a root per unit; the later ones find nothing to read
+    # and close `skipped`. The units that RAN are the roots holding the
+    # runner's span, which is what this test is about.
+    inner = [s for s in finished if s.parent is not None and s.name.startswith("dream:")]
+    ran = {s.context.trace_id for s in inner}
+    roots = {s.name: s for s in finished
+             if s.parent is None and s.context.trace_id in ran}
+    assert set(roots) == {"dream:lexemes", "dream:notes"}
+    assert all(s.name.startswith("dream:")
+               for s in finished if s.parent is None), "no unit may root elsewhere"
+    lexemes, notes = roots["dream:lexemes"], roots["dream:notes"]
+    assert lexemes.context.trace_id != notes.context.trace_id, \
+        "each unit must be a trace of its own"
+    for root, name in ((lexemes, "lexemes"), (notes, "notes")):
+        attrs = dict(root.attributes or {})
+        assert attrs["nora.trace_kind"] == "generation"
+        assert attrs["nora.dreamer.adaptor"] == name
+        assert attrs["nora.dreamer.key"] == "g1"
+        assert attrs["nora.outcome"] == "ok"
+    pass_ids = {dict(r.attributes or {})["nora.dreamer.pass_id"] for r in (lexemes, notes)}
+    assert len(pass_ids) == 1, "both units of ONE tick must carry ONE pass id"
+    assert next(iter(pass_ids)).startswith("dream.pass:")
 
-    # EVERY tick opens its own `dream.pass` (several fire inside the gated
-    # window above — see the in-flight lock discussion), and every one of
-    # them is a genuine root: an empty pass is exactly the "ends visibly, at
-    # a named stage, even with nothing dispatched" property, not noise to
-    # filter out. Only the FIRST one actually dispatched work, so that is the
-    # one both children must point at.
-    assert by_name["dream.pass"], "no pass was ever opened"
-    assert all(p.parent is None for p in by_name["dream.pass"])
-    assert len(by_name["dream:lexemes"]) == 1
-    assert len(by_name["dream:notes"]) == 1
-    lexemes = by_name["dream:lexemes"][0]
-    notes = by_name["dream:notes"][0]
-    pass_roots = {p.context.span_id: p for p in by_name["dream.pass"]}
-    assert lexemes.parent.span_id in pass_roots
-    assert lexemes.parent.span_id == notes.parent.span_id, \
-        "both adaptors of ONE tick must share ONE pass root"
-    pass_root = pass_roots[lexemes.parent.span_id]
-    assert lexemes.context.trace_id == pass_root.context.trace_id
-    assert notes.context.trace_id == pass_root.context.trace_id
+    # The runner's own span (`DreamerRuntime.run`'s shape) nests in the unit.
+    assert sorted(s.name for s in inner) == ["dream:lexemes", "dream:notes"]
+    by_trace = {s.context.trace_id: s.name for s in inner}
+    assert by_trace[lexemes.context.trace_id] == "dream:lexemes"
 
 
 async def test_an_adaptor_is_ticked_over_the_scopes_when_it_is_scope_keyed():
