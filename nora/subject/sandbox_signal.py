@@ -14,8 +14,9 @@ rule `nora.subject.transport` holds for health.
 Only the wire is replaced (`SignalSender._rpc`): the direct-message
 allow-list, the conversation-type refusal and the payload building in
 `SignalSender.send` stay real. The answer carries no platform timestamp, so
-`Deliverer` keeps its own stamp from the sandbox clock rather than a wall-clock
-one landing in the anchored past's future.
+the row keeps the stamp `Deliverer` wrote before sending. That stamp is the
+wall clock, not the sandbox clock, so in an anchored case her reply sits in the
+anchor's future; that was already so before sends landed, and is not fixed here.
 """
 
 from __future__ import annotations
