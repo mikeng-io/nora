@@ -30,6 +30,7 @@ the model reads with a `detail` saying what to do instead:
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -38,17 +39,21 @@ from nora.domain.culture import Citable, Refusal, check_revision
 __all__ = [
     "ECHO_COVERAGE",
     "ECHO_GRAM",
+    "LESSONS_OUTCOMES",
     "LESSON_BODY_MAX_CHARS",
     "LESSON_BODY_MIN_CHARS",
     "LESSON_MAX_ACTIVE",
+    "LESSON_MIN_EPISODES",
     "LESSON_REFUSALS",
     "LESSON_UNIT_MAX_CHARS",
+    "NAMES_HER",
     "Lesson",
     "LessonConflictError",
     "LessonRevision",
     "check_lesson",
     "echoes",
     "evidence_ceiling",
+    "is_correction",
 ]
 
 #: **Sizing, stated as what it is.** The design starts a unit at about 800
@@ -76,6 +81,22 @@ class LessonConflictError(Exception):
     """The lesson's head moved between a writer's read and its append (the
     operator retired it, or another writer revised it): the write was judged
     against a head that is no longer the head, so it is not made."""
+
+#: Different episodes a Lessons session's write must cite (`Citable.min_episodes`,
+#: L2): a lesson is a pattern across many outcomes, and one episode is one data
+#: point (design/self-growth/40 §1). Three is Character · Nora's floor
+#: (`NORA_MIN_EVIDENCE_EPISODES`) for the same reason; unlike hers it is not
+#: lowered to what a stale wake showed, because a lesson changes what she DOES.
+LESSON_MIN_EPISODES = 3
+
+#: `nora_lessons_session_total`'s `outcome`: `written` and `retired` count
+#: verb calls that landed, `kept` a session closed with `lessons_no_change`,
+#: `unsettled` a session that did none of those (the batch is held),
+#: `abandoned` the third unsettled run of one batch (it advances, DEC-280), and
+#: `decayed` a lesson retired by code at its horizon.
+LESSONS_OUTCOMES = frozenset({
+    "written", "retired", "kept", "unsettled", "abandoned", "decayed",
+})
 
 #: Active lessons a unit holds at once, and the characters they hold together.
 LESSON_MAX_ACTIVE = 12
@@ -105,7 +126,7 @@ LESSON_REFUSALS = frozenset({
     "empty", "too_long", "uncited", "unresolved_citation", "echo", "thin_evidence",
     "identifier", "coordinate",
     "echoes_doctrine", "echoes_lesson", "relearn", "cap", "too_short", "conflict",
-    "unknown_lesson", "not_active",
+    "unknown_lesson", "not_active", "loosens_law", "check_unavailable",
 })
 
 
@@ -180,6 +201,18 @@ def evidence_ceiling(citations: Iterable[str]) -> int:
     return max(_ids(citations), default=0)
 
 
+_CITATION_DETAILS = {
+    "unresolved_citation": "cite only the `response:<n>` of an episode you were "
+                           "shown, or the `n` of a reply someone else wrote",
+    "echo": "every citation is one of your own messages; cite the `response:<n>` "
+            "episodes that show how people responded, or did not",
+    "thin_evidence": "a lesson is a pattern: cite at least {n} different "
+                     "`response:<n>` episodes you were shown",
+    "ids_in_body": "the lesson's text carries message numbers; keep them in "
+                   "`citations` only and say the practice in words",
+}
+
+
 def check_lesson(
     *, body: str, citations: tuple[str, ...], citable: Citable,
     law: Sequence[str], active: Sequence[Lesson], retired_by_operator: Sequence[Lesson],
@@ -205,7 +238,13 @@ def check_lesson(
                        "and digits; say what to do differently in a clause")
     refused = check_revision(body=text, citations=citations, citable=citable)
     if refused is not None:
-        return refused
+        # `check_revision`'s details are written for Character · Nora, who may
+        # cite only episodes someone responded to. A Lessons session may cite
+        # every episode it was shown (`unanswered` too, design/self-growth/40
+        # §6), so its refusal says that instead.
+        detail = _CITATION_DETAILS.get(refused.reason)
+        return refused if detail is None else Refusal(refused.reason, detail.format(
+            n=citable.min_episodes))
     for rule in law:
         if echoes(text, rule):
             return Refusal("echoes_doctrine", "this restates a law you already carry; a "
@@ -232,3 +271,34 @@ def check_lesson(
         return Refusal("cap", f"the unit's lessons would hold {held + len(text)} characters, "
                        f"past the {LESSON_UNIT_MAX_CHARS} cap; retire or shorten one first")
     return None
+
+
+#: «nora» as a word, any case (Postgres `~*` and Python `re` agree on this form):
+#: not "ignorance", "Leonora" or "anorak". A CJK character beside it is not a
+#: letter here, so «nora你» still names her.
+NAMES_HER = r"(^|[^a-z])nora([^a-z]|$)"
+
+#: A message that tells her how to act (Lessons L4, design/self-growth/40 §3):
+#: a prohibition, a "too much", a "next time", a "you always". Read only on a
+#: message that ADDRESSES her (`SqlCharacterEvidence.addressed_since`), and
+#: leaning towards recall: a false positive costs one Lessons session that
+#: judges it and closes unchanged; a miss costs only the wait for the batch.
+#: Not a parser, and never what the correction says: the session reads that.
+_CORRECTION = re.compile(
+    "|".join((
+        # U+2019: iOS types a curly apostrophe by default, and NFKC keeps it.
+        r"\b(?:don['\u2019]?t|do\s+not|never|stop|quit|no\s+need\s+to|no\s+more)\b",
+        r"\btoo\s+(?:long|much|many|wordy|formal|serious|slow|often)\b",
+        r"\b(?:shorter|briefer|less\s+(?:often|long|text))\b",
+        r"\bnext\s+time\b",
+        r"\byou\s+(?:always|keep|never)\b",
+        r"唔好|咪再|咪咁|唔使|唔洗|少啲|講少|短啲|太長|太多|太囉嗦|好囉嗦|下次|你成日|你次次|你又|收聲|別再|别再|不要",
+    )),
+    re.IGNORECASE,
+)
+
+
+def is_correction(text: str | None) -> bool:
+    """Whether `text` reads as an instruction about how she acts (see
+    `_CORRECTION`). NFKC first, as `nora.domain.cues.cues_of` does."""
+    return bool(text) and _CORRECTION.search(unicodedata.normalize("NFKC", text or "")) is not None

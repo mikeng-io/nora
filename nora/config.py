@@ -857,9 +857,9 @@ class RustfsBlobConfig(BaseModel):
     always the safe fallback, matching `encryption_key_env`'s own posture.
 
     `access_key_env`/`secret_key_env` NAME the env vars (DEC-8), never inline
-    credentials — and default to the SAME names `drop`'s own RustFS client
-    already reads (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment
-    that already runs `drop` needs no new secret, only new wiring.
+    credentials — and default to the RustFS service's own root credentials
+    (`RUSTFS_ROOT_USER`/`RUSTFS_ROOT_PASSWORD`), so a deployment that runs
+    RustFS needs no new secret, only new wiring.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -1124,40 +1124,10 @@ class RouteConfig(BaseModel):
     api_key_env: str = "GOOGLE_MAPS_API_KEY"
 
 
-class ShortenerConfig(BaseModel):
-    """Nora's own link shortener — `drop`'s internal `POST /api/links`
-    (the `2026-08-12-nora-drop-design` spec under `docs/superpowers/specs/`
-    §5, cutover 2026-08-12; the mint contract itself is unchanged from the
-    Worker it replaced, `deploy/shortener/` — same bearer-auth, same
-    `{"url"}` in / `{"slug","short_url"}` out shape — so this class did not
-    need to change, only its default `base_url` and `token_env` did).
-
-    **Optional, defaulted, `enabled` False** — the `[route]` shape: off (or an
-    unset token) leaves long URLs in replies, never a failure. The shortener is
-    SELF-HOSTED on purpose — a third-party one would see every destination the
-    group routes to — and it is never load-bearing: a mint that fails leaves
-    the long URL exactly as it was. `token_env` NAMES the env var holding the
-    mint bearer token (DEC-8); the same value is `drop`'s own secret.
-
-    `base_url` points at `drop`'s INTERNAL listener (`http://drop:8081` in
-    this deployment) — the write API is deliberately unreachable from the
-    public internet (spec §5a); the public `short_url` a mint returns is
-    built server-side by `drop` from its own `DROP_PUBLIC_BASE_URL`
-    (`https://nora.example.net`), which this class never needs to know.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
-    base_url: str = "http://drop:8081"
-    token_env: str = "NORA_DROP_TOKEN"  # noqa: S105 — names an env var, not a secret
-    timeout_seconds: float = Field(default=5.0, gt=0)
-
-
 class PreviewConfig(BaseModel):
     """Sender-generated link previews on Nora's outbound messages.
 
-    **Optional, defaulted, `enabled` False** — the `[route]`/`[shortener]`
+    **Optional, defaulted, `enabled` False** — the `[route]`
     shape, and off for a sharper reason than either of those: this is the one
     capability that makes Nora FETCH a URL that came out of a model, from her
     own network. DEC-73 deleted `web_fetch` and its whole SSRF apparatus
@@ -2806,6 +2776,73 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
+class LessonsConfig(BaseModel):
+    """`[lessons]` — the Lessons session (design/self-growth/40-lessons.md, L2):
+    one Dreamer session per unit, woken by closed `response` episodes, writing
+    lessons through `lesson_write` and `lesson_retire`.
+
+    **Off by default, and off is the safe reading.** Nothing renders a lesson
+    until L5, and the doctrine check that refuses a lesson loosening law is L3:
+    on, the session writes into a store no prompt reads, which is what L3 and
+    L5 need data from. Needs `[dreamer] enabled`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+
+    #: Closed episodes in a unit (her sends with what followed, `unanswered`
+    #: included) that wake its session at once. **50**, the read-back's
+    #: proposal (design/self-growth/50 §4): about every 3 to 4 days in the
+    #: busiest unit (260 closed sends in 14 days, 2026-10-07); every quieter
+    #: unit is woken by `stale_seconds` instead. 30, the design's start, would
+    #: induce from about two days of one unit.
+    wake_batch: int = Field(default=50, ge=1)
+
+    #: Seconds after a unit's last session at which ANY new closed episode
+    #: wakes it, so a quiet unit is still read weekly. **604800** (7 days), the
+    #: Character sessions' rule; a unit with nothing new never fires.
+    stale_seconds: int = Field(default=604_800, ge=3600)
+
+    #: A lesson not re-evidenced (written or reinforced) for this long is
+    #: retired by code (40 §2 step 7). **5184000** (60 days), the design's
+    #: number; unmeasured, since no lesson exists yet.
+    horizon_seconds: int = Field(default=5_184_000, ge=86_400)
+
+    #: Closed episodes one session is handed, the newest. Twice `wake_batch`,
+    #: so a stale wake after a long gap reads two batches, not the whole gap;
+    #: what is past it is consumed, as a Character session's backlog is.
+    batch_limit: int = Field(default=100, ge=1)
+
+    #: Render the unit's active lessons as `<lessons>` on tag and fire turns
+    #: (L5), after `<self>`. **Off by default**: it changes what she reads on
+    #: every turn of a unit that has lessons, so it is switched on after its
+    #: before/after eval, not by the deploy that ships it. Independent of
+    #: `enabled`: lessons already written keep rendering if the session stops.
+    render: bool = False
+
+    #: The correction fast path (L4, design/self-growth/40 §3): a message that
+    #: speaks to her and reads as an instruction about how she acts wakes the
+    #: unit's session once it is this many seconds old, instead of waiting for
+    #: `wake_batch` episodes. **600** (10 minutes): long enough for the
+    #: conversation around it to settle, short enough that the lesson lands the
+    #: same evening. `0` turns the fast path off.
+    correction_quiet_seconds: int = Field(default=600, ge=0)
+
+    #: The doctrine check's model (L3): a separate call that reads each lesson
+    #: against the law before it is written. `""` is `[llm] model`, the tag
+    #: model, so the judge is never the Dreamer model that wrote the lesson
+    #: (design/cognition-loop/50 §6: "a model other than the session").
+    check_model: str = ""
+    #: Its reasoning effort; `""` is `low`. A verdict over ~40 rules is a
+    #: judgement, and `none` measured worse on the gate's comparable judgement.
+    check_reasoning_effort: str = ""
+    #: Its wall clock and output ceiling. The answer is one JSON object with a
+    #: sentence in it; 2048 leaves a reasoning model room before it answers.
+    check_timeout_seconds: float = Field(default=60.0, gt=0)
+    check_max_tokens: int = Field(default=2048, ge=128)
+
+
 class NotesConfig(BaseModel):
     """The note tier's gate. `enabled` defaults to **False**, because a new
     subsystem does not switch itself on. On: the store is built, `<notes>`
@@ -3901,7 +3938,7 @@ class AgentConfig(BaseModel):
 class McpMountConfig(BaseModel):
     """One MCP server Nora may mount as conversation tools (spec §2.1/§2.2).
 
-    Optional and defaulted like `RouteConfig`/`ShortenerConfig`: `enabled`
+    Optional and defaulted like `RouteConfig`: `enabled`
     defaults False, so a section existing in a committed config doesn't mean
     it's live. `token_env` NAMES the environment variable holding the bearer
     token (DEC-8's `api_key_env`/`token_env` shape) — the value is never here,
@@ -3944,9 +3981,6 @@ class Config(BaseModel):
     # Optional and defaulted — see `RouteConfig`. Off unless an operator turns
     # it on; a config.toml without a `[route]` section keeps loading.
     route: RouteConfig = RouteConfig()
-    # Optional and defaulted — see `ShortenerConfig`. Off unless an operator
-    # turns it on; never load-bearing (a failed mint leaves the long URL).
-    shortener: ShortenerConfig = ShortenerConfig()
     # Optional and defaulted — see `PreviewConfig`. Off unless an operator turns
     # it on; off means a reply carrying a link goes out with no card, which is
     # every deployment's behaviour before this section existed.
@@ -3997,6 +4031,7 @@ class Config(BaseModel):
     # (`enabled = false`): off, composition builds no adaptor, no schedule
     # entry and no store, so the tier is absent rather than idle.
     culture: CultureConfig = CultureConfig()
+    lessons: LessonsConfig = LessonsConfig()
     # Optional and defaulted — see `StandingConfig`. Ships INERT
     # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
     # debrief stage returns without awaiting anything, and `<standing>` never
@@ -4437,6 +4472,27 @@ class Config(BaseModel):
             raise ValueError(
                 "[cognition] enabled = true needs [dreamer] enabled = true: "
                 "a session runs on the Dreamer's model, tools and objectives"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _lessons_need_the_dreamer(self) -> Config:
+        """A Lessons session is a Dreamer adaptor; `[lessons] enabled` without
+        the Dreamer would build nothing and say nothing."""
+        if self.lessons.enabled and not self.dreamer.enabled:
+            raise ValueError(
+                "[lessons] enabled = true needs [dreamer] enabled = true: "
+                "the Lessons session runs on the Dreamer"
+            )
+        # The doctrine check is "a model other than the session" (design/
+        # cognition-loop/50 §6): a judge on the writer's own model grades its
+        # own homework. Compared by the configured name, so an operator who
+        # points two aliases at one model is not caught; a same-name one is.
+        judge = self.lessons.check_model or self.llm.model
+        if self.lessons.enabled and judge == self.dreamer_model():
+            raise ValueError(
+                f"[lessons] check_model resolves to {judge!r}, the Dreamer's own model: "
+                "the doctrine check must be a model other than the one writing lessons"
             )
         return self
 

@@ -16,6 +16,13 @@ describes something that was not built that way, it says so and the code wins;
 the original study text is kept, marked, where it records how the design got
 here. Open decisions: none; the five decided on 2026-10-01 are at the end,
 and Chromium RSS is a measurement still to take (S1).
+**Superseded in part (ADR 0023, 2026-10-08): Drop is retired.** Everywhere below that
+routes `computer_export(to="link")` through Drop, `ArtifactIngest`,
+`DropArtifactIngest`, `drop:8081`, `[shortener]` or `NORA_DROP_TOKEN`, read it as
+history: the `drop` and `valkey` services, `deploy/drop/`, the port and its fake
+are deleted, and a link export puts the bytes in Nora's blob store and returns a
+portal `/artifacts` URL behind sign-in. The code wins.
+
 Operator direction (2026-09-30):
 
 - **Nora remains a container** and stays the trusted control plane. She is
@@ -95,7 +102,7 @@ computer_* tool
   ← typed result ←──────────────────────────────────────────────────  (Chromium: S4, not built)
 
 computer_export(to="link")
-  → ArtifactIngest (existing port) → drop:8081 (nora network) → RustFS + artifacts row
+  → (superseded, ADR 0023) ArtifactIngest → drop:8081 → RustFS + artifacts row; now: blob store → portal /artifacts
 
 lifecycle (never on the data path)
   nora-computer.service ── `nora-computer serve`, Restart=always:
@@ -207,7 +214,7 @@ VM is the boundary.
 | `computer_edit(path, old, new)` | one exact replacement, refused when `old` is missing or ambiguous; instead of `sed` |
 | `computer_browse(objective, session?)` | S4, **not built**: one call delegates a whole browser task to a sub-agent (§14) |
 | `computer_import(code)` | S3a, built: a file sent in this chat (named by its media code) → `inbox/` |
-| `computer_export(path, to, title?, artifact_id?)` | S3a, built: `to="link"` → Drop (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7). Files only: never a page (the §6 amendment) |
+| `computer_export(path, to, title?, artifact_id?)` | S3a, built: `to="link"` → a portal link to the file in Nora's blob store, behind sign-in (ADR 0023; Drop until 2026-10-08) (new link, or the same link revised); `to="chat"` → sent as an attachment to the room; `to="keep"` → private blob + manifest (§6, §7). Files only: never a page (the §6 amendment) |
 
 **As built (2026-10-01): seven tools**, `COMPUTER_TOOLS` in
 `nora/agent/tools.py`: the four above (S2b-1, #639), `computer_session_list`
@@ -331,7 +338,7 @@ over the computer tools, so it becomes the `document-creation` runtime skill (AD
 
 Revising an artifact is the same skill with `artifact_id`.
 
-- **Drop stays a separate service; only its tool face moves.** Drop is the
+- **(Superseded, ADR 0023, 2026-10-08: Drop is retired.) Drop stays a separate service; only its tool face moves.** Drop is the
   public server with its own hardening, and it must never live in the VM,
   because a public-facing renderer inside the untrusted machine is exactly
   the exposure this design removes. `computer_export(to="link")` is the only
@@ -366,9 +373,11 @@ The export path:
 computer_export(path, to="link", title, artifact_id?)
   1. SandboxRuntime.fetch(scope, path, max_bytes)   bytes out of the VM
   2. validate on Nora's side:
-       size cap · MIME sniffed from bytes (not the extension) · type allowlist
-       (as built: `html` is refused on its sniffed bytes and `svg` never goes
-       to a link; `sniff_export_type`, `NOT_AS_LINK`) · sha256 computed HERE
+       size cap · MIME sniffed from bytes (not the extension) · any type but
+       a page (as built 2026-10-08: `html` is refused on its sniffed bytes,
+       `svg` never goes to a link, an unknown binary leaves as
+       application/octet-stream; `sniff_export_type`, `NOT_AS_LINK`) · sha256
+       computed HERE
   3. ArtifactIngest.register(data, title, media_type)      new link
      ArtifactIngest.update(artifact_id, data, …)           same link, new bytes
   4. manifest row: room, path, sha256, artifact_id, url, turn
@@ -553,7 +562,7 @@ are built. The figures are estimates, not measured.
 | where | what |
 |---|---|
 | **nora container** | intent, governance, memory, identity, secrets, the manifest, publishing (ArtifactIngest), composing replies |
-| **Drop** | the only writer of published artifacts (RustFS + `artifacts`), the public renderer |
+| **Drop** | (retired 2026-10-08, ADR 0023; the portal serves published files now) the only writer of published artifacts (RustFS + `artifacts`), the public renderer |
 | **lifecycle unit** | `sbx` create/start/stop/rm; no data path |
 | **sbx daemon** | microVM, egress policy, placeholder secrets |
 | **nora-computer VM** | `computerd`, files under `/workspace/<scope>`, processes, toolchains (Chromium + profiles: S4, not built) |
@@ -641,7 +650,7 @@ with who, when, how and what, as a full trail for auditing.**
   `LocalDockerBackend`, the `docker.sock` mount, `nora-compute` with
   `compute-egress`, and Drop's `POST /api/tokens` are retired; the job outbox,
   poller, `ComputeBackend` port and `compute_jobs` stay wired but idle (decision
-  4). Drop's artifact read path and link shortener stay.
+  4). Drop's artifact read path and link shortener stayed then; **retired 2026-10-08 (ADR 0023)** with the whole service.
 - **S4: not built.** The browser spike (§14), then `computer_browse`, then
   persistent browser profiles per room (which wait on a ruling on browser
   logins: decision 3).

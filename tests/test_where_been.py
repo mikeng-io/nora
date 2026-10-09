@@ -863,7 +863,9 @@ async def test_the_routes_arm_says_how_long_their_repeated_trips_take(persons):
     mobility = _FakeMobilityWithHistory(
         history=stays,
         derived_places=[
-            DerivedPlace(1, "miles_novak", "c", 22.47, 114.0, 100.0, "home", 1.0, "Miles Home", "t"),
+            DerivedPlace(
+                1, "miles_novak", "c", 22.47, 114.0, 100.0, "home", 1.0, "Miles Home", "t",
+            ),
             DerivedPlace(3, "miles_novak", "c", 22.28, 114.18, 100.0, "work", 1.0, None, None),
         ],
         trips=TRIPS,

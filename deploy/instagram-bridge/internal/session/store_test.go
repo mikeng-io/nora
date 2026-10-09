@@ -182,7 +182,7 @@ func TestSelfIdentityCacheSurvivesARestart(t *testing.T) {
 	if _, ok := s.LoadSelf(); ok {
 		t.Fatal("an empty directory reported an identity")
 	}
-	want := domain.Self{FBID: "14963523149149302", IGID: "79597894900", Username: "not_____nora"}
+	want := domain.Self{FBID: "18247361241432477", IGID: "79597894900", Username: "not_____nora"}
 	if err := s.SaveSelf(want); err != nil {
 		t.Fatal(err)
 	}

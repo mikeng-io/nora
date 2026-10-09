@@ -148,6 +148,8 @@ APPEND_ONLY: dict[str, str] = {
     # 0100_lessons: a lesson is an identity, and every change to it a revision.
     "lesson": "recorded_at",
     "lesson_revision": "recorded_at",
+    # 0101_self_tension: a refused lesson and the law it pulled against.
+    "self_tension": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",

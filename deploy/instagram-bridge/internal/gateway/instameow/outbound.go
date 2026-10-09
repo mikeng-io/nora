@@ -3,7 +3,7 @@ package instameow
 // Outbound: the send half, and the trap that makes it non-trivial.
 //
 // THE TRAP. Instagram gives one thread two numeric identities. Inbound deltas
-// carry the SHORT id (`thread_fbid`, measured `1009543911792316`); the LONG
+// carry the SHORT id (`thread_fbid`, measured `1183780976338188`); the LONG
 // one (`thread_igid`, `340282366841710301281152937372201004392`) comes back
 // from a route lookup. They are NOT interchangeable everywhere — but they are
 // interchangeable in more places than the first reading of this file assumed,

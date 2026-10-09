@@ -1092,11 +1092,11 @@ function nref(id, en, zhHant, known = true) {
 // gameProfiles (miles/ken/jo are linked identity.toml people; tao/vic are
 // invented friends with no portal identity).
 const ABIOTIC_PLAYERS = [
-  { personId: "ken", playerName: "Ken", steamId: "77285739912340001", online: true, hasSave: true },
-  { personId: "jo", playerName: "Jo", steamId: "77285739912340002", online: true, hasSave: true },
-  { personId: "miles", playerName: "Miles", steamId: "77285739912340003", online: false, hasSave: true },
-  { personId: null, playerName: "Tao", steamId: "77285739912340004", online: false, hasSave: false },
-  { personId: null, playerName: "Vic", steamId: "77285739912340005", online: false, hasSave: false },
+  { personId: "ken", playerName: "Ken", steamId: "74822881012340001", online: true, hasSave: true },
+  { personId: "jo", playerName: "Jo", steamId: "74822881012340002", online: true, hasSave: true },
+  { personId: "miles", playerName: "Miles", steamId: "74822881012340003", online: false, hasSave: true },
+  { personId: null, playerName: "Tao", steamId: "74822881012340004", online: false, hasSave: false },
+  { personId: null, playerName: "Vic", steamId: "74822881012340005", online: false, hasSave: false },
 ];
 function abioticPlayerKey(p) {
   return `steam_${p.steamId}`;

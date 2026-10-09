@@ -100,9 +100,9 @@ Nothing there collides with the portal (`/_next/`, `/api/`, `/zh-Hant/…`,
 `/en/…`, `/manifest.webmanifest`, `/sw.js`, `/offline.html`, `/icons/`,
 `/vendor/`, `/screenshots/`; app/README.md), so the site can share the portal's
 hostname: the tunnel sends those paths to `:3401` and everything else to the
-portal, as it already does for `/i/` and `/drop/`. Owning `/robots.txt` means
-answering for drop too: `src/pages/robots.txt.ts` keeps drop's "never index"
-for `/drop/` and `/i/`. In order:
+portal. Owning `/robots.txt` means answering for the portal too:
+`src/pages/robots.txt.ts` keeps "never index" for `/artifacts/`, `/api/` and the
+signed-in locale pages (Drop's `/drop/` and `/i/` rules left with Drop, ADR 0023). In order:
 
 1. `docker compose --profile site build site && docker compose --profile site up -d site`
 2. The tunnel's ingress: the paths above to `http://localhost:3401`, before the

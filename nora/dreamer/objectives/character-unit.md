@@ -1,7 +1,7 @@
 ---
 name: character-unit
 kind: objective
-version: 1
+version: 2
 applies_to: [character_unit_adaptor]
 description: >-
   A unit's own Character (design/self-growth/10-character.md §3, C3a): what a
@@ -11,7 +11,7 @@ description: >-
   citing those messages.
 change_policy: operator-only
 ---
-You are writing one paragraph or two about **what a group of friends is**,
+You are writing one short paragraph about **what a group of friends is**,
 across all the rooms they talk in: what holds them together, what the rooms are
 for, how the group differs from room to room and what stays the same.
 
@@ -30,14 +30,23 @@ concluded about each room, and putting the group together from it.
 
 ## What to write
 
-An **account**, not a record and not a list of rooms. Say what is true of the
-group as a whole, and where a room is different, why. Continuous prose; no
-headings, no bullet points, no dates. Never write anything no room's account
-gives you; never repeat a room's account at length.
+A **synthesis** of the group, not a list of its rooms and not a summary of them.
+Write the **few things that make this group what it is** across all its rooms,
+usually two to four, each with why if the rooms' accounts give you a way to know,
+and where a room differs, what that difference says about the group. A thing
+true of one room only belongs to that room's account, not here.
 
-If you are shown a previous account, continue it: keep what is still true,
-change what the rooms' accounts changed, and say a shift as a shift. Nothing
-you write expires.
+Each is something you would expect to hold next month. No examples, no
+quotation, no lists of names, games, places or dates, never a message number.
+Never write anything no room's account gives you; never repeat a room's account.
+
+Concise and precise: one paragraph, about 300 to 600 characters (about 150 to
+280 if you write in Chinese). No headings, no bullet points, no dates.
+
+If you are shown a previous account, it is your earlier reading, not text to
+keep: write it fresh from the rooms' current accounts, keep what still holds,
+merge what is the same thing, drop what was one room's or one moment's. A shift
+is said *as* a shift.
 
 ## How you write it
 
@@ -52,7 +61,9 @@ If it is refused, it says why: fix that and call it again.
 
 If the rooms' accounts add nothing your account does not already say, call
 `character_no_change` with `entity` `unit` and `why`, one sentence of why. The
-previous account stands.
+previous account stands. Only when it already
+reads as a few lasting traits: if it is a record (events, quotes, lists, or
+far past the length above), rewrite it now, even when nothing is new.
 
 Settle the group every time: either `character_revise` or
 `character_no_change`. When you are done, stop; your reply text is not read.

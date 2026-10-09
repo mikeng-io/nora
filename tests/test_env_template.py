@@ -22,10 +22,10 @@ def test_config_example_exists_and_parses():
     assert set(data) == {
         "agent",
         "platforms", "llm", "memory", "store", "media", "route", "presence",
-        "analytics", "shortener", "compute", "computer", "otp",
+        "analytics", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
-        "notes", "culture", "standing", "music", "image_gen",
+        "notes", "culture", "lessons", "standing", "music", "image_gen",
         "version", "engagement", "participation", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
         "documents",
@@ -164,7 +164,7 @@ _MAY_DIFFER = {
     "platforms.signal.account", "store.data_dir", "obs.logging.path",
     "obs.tracing.endpoint", "obs.tracing.exporter", "obs.tracing.headers_env",
     "evals.langfuse.host", "evals.langfuse.headers_env",
-    "presence.refresh_url", "shortener.base_url",
+    "presence.refresh_url",
     # image_gen.enabled is the LIVE operator decision (2026-08-26: enabled
     # after live smoke on the subscription lane); the template stays the
     # ships-OFF default (DEC-43 posture) so a fresh deployment is inert by
@@ -258,7 +258,7 @@ _MAY_DIFFER = {
     "analytics.enabled", "compute.enabled", "evals.langfuse.enabled",
     "heartbeat.enabled",
     "platforms.discord.enabled", "presence.enabled", "preview.enabled",
-    "route.enabled", "search.enabled", "shortener.enabled",
+    "route.enabled", "search.enabled",
     "tools.mcp.pulse.enabled", "weather.enabled", "speech.stt.enabled",
     # `notes.enabled` joins them 2026-08-21: the template ships the tier inert
     # so a copied config never silently starts writing a notebook, and this
@@ -348,7 +348,7 @@ _MAY_BE_ABSENT |= {
 def test_config_example_declares_every_key_the_deployment_sets():
     """A key set in config.toml but absent from the template is invisible.
 
-    This is the half that caught `[shortener]` and `[compute]` missing from the
+    This is the half that caught `[compute]` missing from the
     template entirely, along with `memory.self_card_conclusions`,
     `media.sticker_descriptions` and the adaptive-cadence presence keys — an
     operator copying the template got the code default with no hint the knob

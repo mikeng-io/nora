@@ -61,8 +61,8 @@ func TestRosterCarriesBothIDSpacesPerMember(t *testing.T) {
 	}
 	body := decodeRoster(t, rec)
 	want := []rosterMember{
-		{FBID: "110966695387753", IGID: "60739041440", Username: "nka_bpumvg", FullName: "Miles"},
-		{FBID: "12116372067347151", IGID: "74340223606", Username: "third_member", FullName: ""},
+		{FBID: "186217604552756", IGID: "61652861337", Username: "nka_bpumvg", FullName: "Miles"},
+		{FBID: "18457536310970624", IGID: "72038255145", Username: "third_member", FullName: ""},
 	}
 	if len(body.Members) != len(want) {
 		t.Fatalf("roster returned %d members, want %d: %+v", len(body.Members), len(want), body.Members)
@@ -143,7 +143,7 @@ func TestRosterDoesNotInventSelfAsAMember(t *testing.T) {
 func TestRosterDropsSelfIfTheWireEverIncludesIt(t *testing.T) {
 	f := &fakeIG{ThreadUsersSet: true, ThreadUsers: append(
 		[]*slidetypes.User{{
-			InteropMessagingUserFBID: 14963523149149302,
+			InteropMessagingUserFBID: 18247361241432477,
 			ID:                       "79597894900",
 			Username:                 "not_____nora",
 		}},
@@ -158,7 +158,7 @@ func TestRosterDropsSelfIfTheWireEverIncludesIt(t *testing.T) {
 			len(body.Members), len(measuredUsers), body.Members)
 	}
 	for _, member := range body.Members {
-		if member.FBID == "14963523149149302" {
+		if member.FBID == "18247361241432477" {
 			t.Fatalf("self survived the filter: %+v", member)
 		}
 	}
@@ -208,7 +208,7 @@ func TestRosterRefusesAThreadThatReadsBackAbsent(t *testing.T) {
 func TestRosterRefusesRatherThanUnderReportTheRoom(t *testing.T) {
 	f := &fakeIG{ThreadUsersSet: true, ThreadUsers: []*slidetypes.User{
 		measuredUsers[0],
-		{InteropMessagingUserFBID: 0, ID: "74340223606", Username: "third_member"},
+		{InteropMessagingUserFBID: 0, ID: "72038255145", Username: "third_member"},
 	}}
 	b := newTestBridge(t, f)
 

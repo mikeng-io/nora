@@ -33,8 +33,8 @@ import (
 // and FetchReel take. It is NOT a messaging address.
 type IGID struct{ n int64 }
 
-// ParseIGID accepts a positive decimal and canonicalizes it, so "0221731317"
-// and "221731317" are one account and cannot be cached or addressed twice.
+// ParseIGID accepts a positive decimal and canonicalizes it, so "0246967358"
+// and "246967358" are one account and cannot be cached or addressed twice.
 func ParseIGID(s string) (IGID, error) {
 	n, ok := parsePositive(s)
 	if !ok {
@@ -73,7 +73,7 @@ func (id FBID) String() string { return strconv.FormatInt(id.n, 10) }
 func (id FBID) Int64() int64   { return id.n }
 func (id FBID) IsZero() bool   { return id.n == 0 }
 
-// ThreadFBID is a thread's SHORT id (`thread_fbid`, e.g. 1009543911792316):
+// ThreadFBID is a thread's SHORT id (`thread_fbid`, e.g. 1183780976338188):
 // what inbound deltas carry, and the room key on every route.
 type ThreadFBID struct{ n int64 }
 

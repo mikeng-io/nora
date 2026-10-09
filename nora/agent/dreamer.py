@@ -78,6 +78,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import json
 import logging
 import time
@@ -92,6 +93,7 @@ from ..domain.ports import (
     DreamAdaptor,
     Proposal,
     RosterSource,
+    VerbProvenance,
 )
 from ..domain.reasoning_strip import dreamer_path
 from ..domain.turn_deadline import turn_deadline
@@ -1519,7 +1521,8 @@ class DreamerRuntime:
             # provenance are exactly what an envelope adaptor gets.
             verbs = getattr(adaptor, "verbs", None)
             own = (
-                [_as_tool(self._screened(adaptor.name, v)) for v in verbs(key=key)]
+                [_as_tool(self._screened(adaptor.name, v))
+                 for v in self._bind_verbs(adaptor, key, verbs, sha)]
                 if verbs is not None else []
             )
             # The BUDGETS, not the guard. A `DreamGuard` owns a
@@ -1721,8 +1724,11 @@ class DreamerRuntime:
         # how many rows survived: a batch whose every item was screened out, or
         # whose every verdict was `not_covered`, was still a batch that was
         # read. Collapsing them would make a working screen look like a silent
-        # model. A verb adaptor returns no items; what it staged is its answer.
-        status: DreamStatus = "ok" if items or proposals else "nothing_found"
+        # model. A verb adaptor returns no items; what it staged is its answer,
+        # and a verb that WRITES when called (Lessons) answers through what its
+        # `commit` says landed: measured 2026-10-09, four lessons written live
+        # were reported as `nothing_found`.
+        status: DreamStatus = "ok" if items or proposals or written else "nothing_found"
         return self._finish(adaptor, status, written, sha, stop_reason, started)
 
     async def _sample(
@@ -1851,6 +1857,24 @@ class DreamerRuntime:
             )
             return None, stop_reason
         return items, stop_reason
+
+    def _bind_verbs(
+        self, adaptor: DreamAdaptor, key: str, verbs: Callable[..., Any], sha: str,
+    ) -> Sequence[Callable[..., Any]]:
+        """`adaptor.verbs(key=key)`, plus `provenance` when the adaptor's
+        `verbs` takes it: a verb that WRITES when called (Lessons) stamps what
+        a `Proposal` would carry, so its rows name the same run and the same
+        instruction digest an envelope adaptor's do. A staging verb
+        (Character) takes none and is called as before."""
+        if "provenance" not in inspect.signature(verbs).parameters:
+            bound: Sequence[Callable[..., Any]] = verbs(key=key)
+            return bound
+        provenance = VerbProvenance(
+            instruction_sha256=sha, model=self._model_name,
+            established_by=f"dream:{adaptor.name}:{key}:{int(time.time() * 1000)}",
+        )
+        written: Sequence[Callable[..., Any]] = verbs(key=key, provenance=provenance)
+        return written
 
     def _screened(
         self, adaptor: str, verb: Callable[..., Any],

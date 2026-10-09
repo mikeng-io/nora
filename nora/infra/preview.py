@@ -9,9 +9,8 @@ out of a model.
 
 **NEVER load-bearing.** Every failure — a bad scheme, a private address, a
 timeout, a 404, a non-HTML body, a page with no title, an oversized document —
-is `None`, and `None` means the message goes out without a card. `LinkShortener`
-is the shape being copied deliberately (a mint that fails leaves the long URL);
-a reply that failed over a preview would be R-5 with extra steps.
+is `None`, and `None` means the message goes out without a card. A reply that
+failed over a preview would be R-5 with extra steps.
 
 THE SSRF GUARD, AND WHY THIS MODULE NEEDS ONE WHEN `web_search`/`web_fetch` DO NOT
 -----------------------------------------------------------------------------------
@@ -38,8 +37,8 @@ with it, in the narrowest form that does the job:
 3. **Redirects are followed BY HAND, at most twice, re-validating each hop.**
    `allow_redirects=True` would validate the first URL and connect to whatever
    the last one named — the "post-redirect re-validation" DEC-73's list names.
-   Two hops is enough for the shortener case that motivated the feature and
-   short enough that a redirect chain cannot become a fetch loop.
+   Two hops is enough for a redirecting link (the case that motivated the
+   feature) and short enough that a redirect chain cannot become a fetch loop.
 4. A byte ceiling on the read, so a hostile or merely enormous document costs a
    bounded amount of memory and time; OpenGraph tags live in `<head>`.
 5. One total timeout across the whole thing, small (seconds), because this sits
@@ -91,9 +90,7 @@ DEFAULT_MAX_BYTES = 262_144
 # it into a JSON-RPC body is not a problem. Signal re-encodes it anyway.
 DEFAULT_IMAGE_MAX_BYTES = 262_144
 
-# Two hops covers `https://nora.example.net/i/x` -> the real page (was
-# `https://n.example.net/x` before the 2026-08-12 cutover to `drop` — same single
-# 301, so the hop count this constant was sized around is unchanged). A third
+# Two hops covers a link that redirects once to the real page. A third
 # is a chain, and a chain is not something a preview should be chasing on the
 # reply path.
 MAX_REDIRECTS = 2
@@ -260,7 +257,7 @@ class OpenGraphPreviewSource:
 
     Constructed by the composition root when `[preview].enabled` is true and
     held by the pipeline, which hands it to each turn's `OutboundComposer` —
-    the same lifetime as `LinkShortener`. It holds no per-turn state, so one
+    the same lifetime as the pipeline. It holds no per-turn state, so one
     instance is safe across concurrent turns.
     """
 
@@ -287,7 +284,7 @@ class OpenGraphPreviewSource:
         and that is a wire requirement rather than a preference: signal-cli says
         "The same url must also appear in the message body, otherwise the
         preview won't be displayed by the apps", and the body carries what she
-        wrote. Following a shortener to its target and reporting the target
+        wrote. Following a redirect to its target and reporting the target
         would produce a message carrying a preview payload that no client shows.
         """
         try:

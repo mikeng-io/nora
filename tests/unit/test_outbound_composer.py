@@ -322,8 +322,8 @@ def _discord_composer(
     )
 
 
-IG_FBID = "110966695387753"
-IG_CONVERSATION = "1009543911792316"
+IG_FBID = "186217604552756"
+IG_CONVERSATION = "1183780976338188"
 
 
 def _instagram_persons(**extra: PersonRef) -> Persons:
@@ -384,7 +384,7 @@ async def test_the_REAL_instagram_roster_is_what_lets_a_mention_resolve(aiohttp_
     async def handler(request):
         assert request.match_info["thread_fbid"] == IG_CONVERSATION
         return web.json_response({"members": [
-            {"fbid": IG_FBID, "igid": "60739041440", "username": "nka_bpumvg"},
+            {"fbid": IG_FBID, "igid": "61652861337", "username": "nka_bpumvg"},
         ]})
 
     app = web.Application()
@@ -636,7 +636,7 @@ async def test_only_the_id_the_platform_confirmed_is_sent():
 # ------------------------------------------------------------------- previews
 
 CARD = LinkPreview(
-    url="https://n.example.net/abc", title="A shortened link",
+    url="https://links.example.net/abc", title="A shortened link",
     description="What it points at",
 )
 
@@ -731,11 +731,11 @@ async def test_a_card_mentioning_a_model_name_is_deliberately_not_dropped():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("睇下 https://n.example.net/abc", "https://n.example.net/abc"),
-        ("睇下 https://n.example.net/abc。", "https://n.example.net/abc"),
-        ("(https://n.example.net/abc)", "https://n.example.net/abc"),
+        ("睇下 https://links.example.net/abc", "https://links.example.net/abc"),
+        ("睇下 https://links.example.net/abc。", "https://links.example.net/abc"),
+        ("(https://links.example.net/abc)", "https://links.example.net/abc"),
         ("no link here", None),
-        ("ftp://n.example.net/abc", None),
+        ("ftp://links.example.net/abc", None),
     ],
 )
 def test_first_url_extracts_a_substring_of_the_body(text, expected):

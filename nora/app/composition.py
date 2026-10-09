@@ -35,6 +35,7 @@ from opentelemetry.util.types import AttributeValue
 
 from nora.agent import factory, tool_choice
 from nora.agent.browse import BrowseAgentRunner, BrowseSettings
+from nora.agent.dream_screen import offence as dream_offence
 from nora.agent.dreamer import (
     TOOL_RESULT_CAPS,
     AdaptorBudget,
@@ -113,7 +114,6 @@ from nora.domain.decision_log import DecisionLogRecorder
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
 from nora.domain.ports import (
-    ArtifactIngest,
     BlobStore,
     ComputeBackend,
     ContextAssembler,
@@ -166,6 +166,7 @@ from nora.infra.sql.documents import SqlDocumentStore
 from nora.infra.sql.dream_schedule import SqlDreamScheduleClock
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.language import SqlLanguageStore
+from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.mobility import SqlMobilityStore
@@ -185,6 +186,7 @@ from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
 from nora.infra.sql.tag_traces import SqlTagTraceStore
+from nora.infra.sql.tension import SqlTensionStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.infra.sql.video_readings import SqlVideoReadingStore
 from nora.infra.tts import TextFormatter as SpeechTextFormatter
@@ -227,6 +229,15 @@ from nora.language.character import (
 )
 from nora.language.cognition_render import RenderBudget
 from nora.language.culture import CULTURE_ADAPTOR_NAME, CultureAdaptor
+from nora.language.doctrine_check import CHECK_OBJECTIVE, DoctrineCheck
+from nora.language.lesson_book import LessonBook
+from nora.language.lesson_render import ActiveLessons
+from nora.language.lessons import (
+    LESSONS_ADAPTOR_NAME,
+    LessonEvidence,
+    LessonsAdaptor,
+    LessonsKey,
+)
 from nora.obs.health import LLMState
 from nora.obs.metrics import Metrics
 from nora.persons import DIRECT_PLATFORMS, Persons, PersonsError, load_persons
@@ -242,7 +253,7 @@ from nora.platform.signal.media import SignalMediaSource
 from nora.platform.signal.roster import SignalRoster
 from nora.policy import Policy, PolicyError, load_policy
 from nora.tag import Debounce
-from nora.web.games import PulseGamesClient
+from nora.web.games import PULSE_API_BASE, PulseGamesClient
 
 from .agent_runner import LiveAgentRunner
 from .announce import AnnouncementTarget, VersionAnnouncer
@@ -911,6 +922,11 @@ CHARACTER_ADAPTOR_NAMES: tuple[str, ...] = (
 )
 
 
+def _now_ms() -> int:
+    """Wall-clock epoch milliseconds, the Lessons book's and evidence's clock."""
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
 def character_unit_keys(allowlist: Any) -> dict[str, UnitKey]:
     """One key per unit, with its rooms in policy order (C3a)."""
     rooms_of: dict[str, list[CharacterRoom]] = {}
@@ -1022,6 +1038,9 @@ class Dependencies:
     # its pictures by sha256). `None` when media custody is off: the route then answers
     # `unavailable`, never a picture.
     blobs: BlobStore | None
+    # Artifacts (ADR 0023): `computer_export`'s record, which the portal lists for the
+    # rooms that name the viewer (`rooms_of`), with the bytes from `blobs`.
+    artifacts: ComputerExportStore
     assembler: ContextAssembler
     ingest: IngestPipeline
     engagement: EngagementPipeline
@@ -1964,6 +1983,11 @@ async def build_dependencies(
     culture_reader: CultureReader | None = (
         SqlCultureStore(engine) if cfg.culture.enabled else None
     )
+    # `<lessons>` on tag and fire turns (design/self-growth/40, L5): read-only,
+    # bodies of active lessons. `None` while `[lessons] render` is off.
+    lessons_reader: ActiveLessons | None = (
+        ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
+    )
     # The join from a note to its room's account (DEC-207; the note curator it was
     # built for was deleted 2026-10-03, DEC-277):
     # EVERY id a room is known by — `Note.established_in` holds whichever one
@@ -2026,6 +2050,9 @@ async def build_dependencies(
         quote_window=quote_window,
         presence=presence_reader,
         culture=culture_reader,
+        # `<lessons>` (design/self-growth/40, L5): `None` while `[lessons]
+        # render` is off. The same reader the fire path gets.
+        lessons=lessons_reader,
         # `<computer>` (design/sandbox-runtime §15.3): `None` while
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,
@@ -2548,7 +2575,7 @@ async def build_dependencies(
                 "([[persons.<id>.life360]] with circle_id) — whereis stays unavailable"
             )
     # Image generation ([image_gen], DEC-137): enabled AND refresh token
-    # present → build the lane (same `route`-keyless gate the shortener uses).
+    # present → build the lane (the same keyless-`enabled` gate `route` uses).
     # Off (or tokenless) leaves the `generate_image` tool answering
     # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
     # access-token state file lives in the same repo-tree state dir
@@ -2557,9 +2584,7 @@ async def build_dependencies(
     image_generator = None
     image_refs_allowed = False
     # Image custody (Miles 2026-08-26): generated images are stored in Nora's
-    # OWN blob_store (rustfs) and sent as platform attachments — the
-    # `drop`/shortener path is NOT involved (drop's own rustfs backend serves
-    # HTML artifacts, a different concern).
+    # OWN blob_store (rustfs) and sent as platform attachments.
     if cfg.image_gen.enabled:
         image_refs_allowed = cfg.image_gen.allow_reference_images
         xai_cfg = cfg.image_gen.xai
@@ -2588,26 +2613,8 @@ async def build_dependencies(
                 "image_gen enabled but %s is unset — generate_image stays unavailable",
                 xai_cfg.refresh_token_env,
             )
-    # The link shortener ([shortener], 2026-08-07): enabled AND token present,
-    # the `route`-keyless gate. Off (or tokenless) leaves long URLs in replies —
-    # never load-bearing either way.
-    shortener_client = None
-    if cfg.shortener.enabled:
-        shortener_token = os.environ.get(cfg.shortener.token_env, "")
-        if shortener_token:
-            from nora.infra.shortener import LinkShortener
-            shortener_client = LinkShortener(
-                base_url=cfg.shortener.base_url, token=shortener_token,
-                timeout_seconds=cfg.shortener.timeout_seconds,
-            )
-        else:
-            log.warning(
-                "shortener enabled but %s is unset — links stay long",
-                cfg.shortener.token_env,
-            )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
-    # whole gate — unlike the shortener above, there is no token whose absence
-    # could leave it half-wired. Off is the shipped default and is not a
+    # whole gate. Off is the shipped default and is not a
     # degradation: a reply carrying a link goes out with no card, exactly as
     # every deployment before this section existed. It is ONE instance for the
     # process (it holds no per-turn state), handed to the pipeline and the fire
@@ -2698,26 +2705,11 @@ async def build_dependencies(
         lapsed_visible_hours=cfg.computer.sessions.lapsed_visible_hours,
     )
     # `computer_export` (design/sandbox-runtime §6): its record of what left the
-    # computer, built unconditionally like the audit store, and its link
-    # destination, `DropArtifactIngest`, ONLY when the computer is on. Drop's
-    # internal listener and its token are `[shortener]`'s pair, the one
-    # `LinkShortener` already uses for the same listener. A missing
-    # token leaves the link destination `unavailable`, never the boot: `chat`
-    # and `keep` do not need Drop.
+    # computer, built unconditionally like the audit store. The same store is the
+    # portal's Artifacts read (ADR 0023), and a link is the portal's
+    # `<[documents] public_url>/artifacts/<artifact_id>`: without a `public_url` a
+    # link export answers `unavailable`, never the boot (`chat` and `keep` need none).
     computer_exports: ComputerExportStore = SqlComputerExportStore(engine)
-    artifact_ingest: ArtifactIngest | None = None
-    if computer is not None:
-        drop_token = os.environ.get(cfg.shortener.token_env, "")
-        if drop_token:
-            from nora.infra.drop import DropArtifactIngest
-            artifact_ingest = DropArtifactIngest(
-                base_url=cfg.shortener.base_url, token=drop_token,
-            )
-        else:
-            log.warning(
-                "computer enabled but %s is unset: computer_export to a link stays "
-                "unavailable", cfg.shortener.token_env,
-            )
     # `nora.agent` may not import `nora.config` (import-linter's "only app and
     # __main__ read config") — this is the conversion point, the same shape
     # `ReminderCaps(**cfg.reminders.model_dump())` already uses just below.
@@ -2763,7 +2755,13 @@ async def build_dependencies(
         )
     games_client = None
     if pulse_api_token := os.environ.get("PULSE_API_TOKEN"):
-        games_client = PulseGamesClient(token=pulse_api_token)
+        # The base URL names a private tailnet host, so the deployment states it
+        # in `.env` (`PULSE_API_BASE`); the identifier scrub (#767) left only a
+        # placeholder in the source.
+        games_client = PulseGamesClient(
+            token=pulse_api_token,
+            base_url=os.environ.get("PULSE_API_BASE") or PULSE_API_BASE,
+        )
     # DEC-105: the cross-room relay. It does NOT send — it occasions a fire
     # turn into the destination (DEC-99's ruling), so R-1b's three links hold
     # and the relayed message is audited into the room it lands in.
@@ -2897,7 +2895,6 @@ async def build_dependencies(
         rooms=presence_reader,
         refresher=refresher,
         geocoder=geocoder,
-        shortener=shortener_client,
         ai_peer=cfg.memory.ai_peer,
         mcp_tools=mcp_tool_groups,
         # The SAME store the tick reads from — two would be two queues, and the
@@ -2923,7 +2920,8 @@ async def build_dependencies(
         computer=computer, computer_events=computer_events,
         computer_settings=computer_settings,
         computer_sessions=computer_sessions, computer_leases=computer_leases,
-        computer_exports=computer_exports, artifact_ingest=artifact_ingest,
+        computer_exports=computer_exports,
+        artifact_link_base=cfg.documents.public_url,
         browser=browser,
         # §9's caps as the DOMAIN value, the SAME `reminder_caps` instance
         # `GatheringService` was built with above — see that variable's own
@@ -3241,6 +3239,7 @@ async def build_dependencies(
             # path resolves the occasion through the policy it already holds
             # before reading (`FirePath._read_culture`).
             culture=culture_reader,
+            lessons=lessons_reader,
             standing_store_timeout_seconds=cfg.standing.store_timeout_seconds,
             # The participation turn's memory reads (issue #210). ONE knob set,
             # read at the composition root exactly as the tag assembler reads
@@ -3818,6 +3817,82 @@ async def build_dependencies(
                 ),
             )
 
+        # LESSONS (design/self-growth/40, L2): one session per unit, woken by
+        # closed response episodes, writing through the book's checked verbs.
+        # Gated on `[lessons] enabled` alone (off by default): nothing renders a
+        # lesson before L5, and the doctrine check is L3.
+        if cfg.lessons.enabled:
+            lessons_keys = {
+                uk.unit: LessonsKey(unit=uk.unit, rooms=uk.rooms)
+                for uk in character_unit_keys(allowlist).values()
+            }
+            # THE DOCTRINE CHECK (L3): every lesson is read against the law by a
+            # separate call before it is written; a conflict is a tension row.
+            # Its instruction is read once HERE so a missing file stops startup
+            # instead of refusing every lesson as `check_unavailable`.
+            if not dreamer_instructions.objective_body(CHECK_OBJECTIVE).strip():
+                raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")
+            lesson_check = DoctrineCheck(
+                # The relevance gate's raw JSON completion, not the Strands
+                # `_DebriefModelClient`: measured 2026-10-09, the Strands path
+                # returned an EMPTY answer (`end_turn`) on a live lesson every
+                # time at every effort, while the same request raw came back
+                # `{"verdict": "consistent"}`. Empty is an `error`, so every such
+                # lesson would have been refused.
+                client=_RelevanceGateModelClient(
+                    client=client,
+                    model=cfg.lessons.check_model or cfg.llm.model,
+                    max_tokens=cfg.lessons.check_max_tokens, temperature=0.0,
+                    timeout_seconds=cfg.lessons.check_timeout_seconds + 1.0,
+                    reasoning_effort=_reasoning_effort(
+                        cfg.lessons.check_reasoning_effort or "low",
+                        source="[lessons] check_reasoning_effort",
+                    ),
+                ),
+                law=doctrine_store.law_rules,
+                instruction=lambda: dreamer_instructions.objective_body(CHECK_OBJECTIVE),
+                timeout_seconds=cfg.lessons.check_timeout_seconds,
+                metrics=metrics,
+            )
+            lesson_book = LessonBook(
+                store=SqlLessonStore(engine),
+                law=lambda: [r.text for r in doctrine_store.law_rules()],
+                screen=dream_offence,
+                clock_ms=_now_ms,
+                check=lesson_check, tensions=SqlTensionStore(engine), metrics=metrics,
+            )
+            dream_schedules = {
+                **dream_schedules,
+                LESSONS_ADAPTOR_NAME: AdaptorSchedule(
+                    min_interval_seconds=cfg.lessons.stale_seconds,
+                    wake_batch=cfg.lessons.wake_batch,
+                    batch_limit=cfg.lessons.batch_limit,
+                ),
+            }
+            dream_adaptors = (
+                *dream_adaptors,
+                LessonsAdaptor(
+                    book=lesson_book,
+                    evidence=LessonEvidence(
+                        store=SqlCharacterEvidence(engine), book=lesson_book,
+                        keys=lessons_keys, wake_batch=cfg.lessons.wake_batch,
+                        horizon_seconds=cfg.lessons.horizon_seconds,
+                        clock_ms=_now_ms,
+                        correction_quiet_seconds=(
+                            cfg.lessons.correction_quiet_seconds or None),
+                        stale_seconds=cfg.lessons.stale_seconds, metrics=metrics,
+                        self_ids=frozenset(registry.self_aliases()),
+                    ),
+                    keys=lessons_keys,
+                    name_of=lambda pid: (
+                        ref.name if pid and (ref := persons.by_person.get(pid)) is not None
+                        else "someone"
+                    ),
+                    horizon_seconds=cfg.lessons.horizon_seconds,
+                    metrics=metrics,
+                ),
+            )
+
         # A SECOND `ModelSource`, not the tag path's. `tool_choice` lives on
         # `ModelSpec`, and the Dreamer needs `"auto"`: under `"required"` the
         # model must call something on every pass, and the only thing that ends
@@ -3949,9 +4024,10 @@ async def build_dependencies(
         # A Character session with no block of its own runs on the room
         # fold's numbers when the deployment set them: the same loop shape (a
         # handed batch, a few reads, one account written), and a live config
-        # needs no new block for it.
+        # needs no new block for it. The Lessons session too: a handed batch
+        # and a few checked writes.
         if "culture" in dream_budgets:
-            for name in CHARACTER_ADAPTOR_NAMES:
+            for name in (*CHARACTER_ADAPTOR_NAMES, LESSONS_ADAPTOR_NAME):
                 dream_budgets.setdefault(name, dream_budgets["culture"])
         # An adaptor with no block of its own. `budget_for` returns a freshly
         # constructed default rather than a shared constant (DEC-13 forbids a
@@ -4214,7 +4290,7 @@ async def build_dependencies(
         documents=documents_store, document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
         room_label=functools.partial(room_label, allowlist),
-        blobs=blobs,
+        blobs=blobs, artifacts=computer_exports,
         dispatcher=dispatcher, adapter=adapter, registry=registry,
         participation_trigger=participation_trigger,
         relevance_gate=gate,

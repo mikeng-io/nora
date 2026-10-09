@@ -9,7 +9,7 @@ from nora.domain.models import ConversationTarget
 from nora.domain.ports import ReactionResult
 from nora.platform.whatsapp.react import WhatsAppReactor
 
-TARGET = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+TARGET = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 MESSAGE_ID = "3EB0F1A2B3C4"
 EYES = "\U0001f440"
 

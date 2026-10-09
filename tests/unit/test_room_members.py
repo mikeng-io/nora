@@ -143,5 +143,7 @@ async def test_the_fire_path_fills_room_members_through_build_context(tmp_path):
         limits={}, timeout_seconds=120.0, clock=lambda: datetime(2026, 9, 28, tzinfo=UTC),
         policy=load_policy(tmp_path / "p2.toml"),
     )
-    ctx = await path.build_context(reminder_occasion([_reminder(requester_person_id="miles_novak")]))
+    ctx = await path.build_context(reminder_occasion([_reminder(
+        requester_person_id="miles_novak"
+    )]))
     assert [m.name for m in ctx.room_members] == ["Miles Novak"]

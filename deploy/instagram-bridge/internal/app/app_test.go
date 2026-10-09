@@ -71,7 +71,7 @@ func (f *fakePorts) Unsend(_ context.Context, _ domain.ThreadRef, messageID stri
 }
 
 func (f *fakePorts) Members(context.Context, domain.ThreadRef) (domain.Thread, error) {
-	return domain.Thread{Title: "the group", Members: []domain.Member{{FBID: "110966695387753"}}}, nil
+	return domain.Thread{Title: "the group", Members: []domain.Member{{FBID: "186217604552756"}}}, nil
 }
 
 func (f *fakePorts) Account(_ context.Context, igid domain.IGID) (domain.Account, error) {
@@ -97,7 +97,7 @@ func (f *fakePorts) SearchAccounts(_ context.Context, query string) ([]domain.Ac
 	if f.searchHits != nil {
 		return f.searchHits, nil
 	}
-	return []domain.AccountSummary{{IGID: "221731317", Username: "nka_bpumvg"}}, nil
+	return []domain.AccountSummary{{IGID: "246967358", Username: "nka_bpumvg"}}, nil
 }
 
 func (f *fakePorts) Post(_ context.Context, code domain.Shortcode) (domain.Post, error) {
@@ -199,12 +199,12 @@ func TestASessionBeingRebuiltIsUnavailable(t *testing.T) {
 // igid. The social half keyed on the username was a real bug (2026-09-22).
 func TestBothHalvesOfAnAccountReadUseTheParsedIGID(t *testing.T) {
 	p := &fakePorts{}
-	read, err := service(ready(), p).ReadAccount(t.Context(), mustIGID(t, "0221731317"))
+	read, err := service(ready(), p).ReadAccount(t.Context(), mustIGID(t, "0246967358"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.accounts) != 1 || p.accounts[0] != "221731317" ||
-		len(p.socials) != 1 || p.socials[0] != "221731317" {
+	if len(p.accounts) != 1 || p.accounts[0] != "246967358" ||
+		len(p.socials) != 1 || p.socials[0] != "246967358" {
 		t.Fatalf("account read keyed on %v, social on %v; want the canonical igid for both",
 			p.accounts, p.socials)
 	}

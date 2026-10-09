@@ -399,7 +399,7 @@ def _export_rows(path: str, at: datetime, *, status="ok", artifact_id="art_1",
               "trace_id": "", "span_id": ""}
     result = {"to": "link", "title": title}
     if status == "ok":
-        result |= {"artifact_id": artifact_id, "url": f"https://nora.example.net/drop/{artifact_id}",
+        result |= {"artifact_id": artifact_id, "url": f"https://portal.example.net/artifacts/{artifact_id}",
                    "revised": revised}
     return [
         ComputerEvent(id=uuid.uuid4(), phase="started", created_at=at, started_at=at,
@@ -422,7 +422,7 @@ async def test_a_link_the_room_made_shows_with_the_artifact_id_that_revises_it()
     view = await _reader(FakeSandboxRuntime(clock=lambda: NOW), FakeComputerSessionStore(),
                          events).read(platform="signal", conversation_id=ROOM)
     body = render_computer(view).body
-    assert ('link "Trip report" · artifact_id art_1 · https://nora.example.net/drop/art_1 · '
+    assert ('link "Trip report" · artifact_id art_1 · https://portal.example.net/artifacts/art_1 · '
             "from out/r.html · revised 10 min ago") in body
     assert body.count("artifact_id art_1") == 1
     assert "art_theirs" not in body

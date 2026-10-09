@@ -158,17 +158,21 @@ def test_a_lesson_at_the_per_lesson_cap_is_accepted(n):
     assert _check(body=("one " * 200)[:n]) is None
 
 
-def test_no_model_can_call_the_lesson_verbs_yet():
-    """L1 ships the store and the verbs, not the adaptor: nothing under `nora/`
-    but the operator's CLI imports the book, so nothing builds a `LessonBook` for a model and
-    `lesson_write` and `lesson_retire` are on no model's tool surface. L2 wires the
-    adaptor and takes this test out with the sentence it pins."""
+def test_only_the_cli_and_the_lessons_session_build_a_book():
+    """L2 put the verbs on ONE model surface, the Lessons session, which the
+    composition root builds only under `[lessons] enabled`; the operator's CLI
+    is the other builder. A third importer would be a second model surface for
+    the verbs (a turn, Cognition), which the design does not have: a turn reads
+    lessons (L5), it never writes one."""
     root = Path(__file__).resolve().parents[2] / "nora"
     users = {
         str(p.relative_to(root.parent)) for p in root.rglob("*.py")
         if "from nora.language.lesson_book import" in p.read_text(encoding="utf-8")
     }
-    assert users == {"nora/app/lessons_cli.py"}
+    assert users == {"nora/app/lessons_cli.py", "nora/app/composition.py"}
+    composition = (root / "app" / "composition.py").read_text(encoding="utf-8")
+    assert composition.count("LessonBook(") == 1
+    assert composition.index("if cfg.lessons.enabled:") < composition.index("LessonBook(")
 
 
 def test_a_lesson_too_short_to_say_anything_is_refused_before_it_can_pass_echo():

@@ -5,8 +5,8 @@ leave. This is the positive half: a fact a tool already minted, that the model
 then throws away.
 
 **Why it exists (DEC-89).** `place_info` returns a `maps_url` for every place it
-resolves — a real Google deep link, minted short through Nora's own shortener
-(`https://nora.example.net/i/9DpAk8g`), already screened, already in the tool result the
+resolves — a real Google deep link (the full Maps URL, ADR 0023: no
+shortener), already screened, already in the tool result the
 model is reasoning over, and named in the tool's own docstring («include it in
 your reply so they can tap through»). Measured live 2026-08-10: in one
 stress-test session she recommended four restaurants, `place_info` returned a
@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import unquote_plus
 
 log = logging.getLogger("nora.links")
 
@@ -228,9 +229,11 @@ class LinkCarry:
             text, added = self._apply_documents(text, self._doc_pattern)
         if text and self._offered:
             haystack = text.casefold()
+            decoded = unquote_plus(text)
             additions = [
                 url for url, anchors in self._offered.items()
-                if url not in text and any(a.casefold() in haystack for a in anchors)
+                if not _present(url, text, decoded)
+                and any(a.casefold() in haystack for a in anchors)
             ]
             if additions:
                 log.info("reply_links_carried: %d link(s) the reply had earned and dropped",
@@ -291,3 +294,11 @@ class LinkCarry:
             return text, 0
         self._documents_added += len(missing)
         return text.rstrip() + "\n" + "\n".join(missing), len(missing)
+
+
+def _present(url: str, text: str, decoded: str) -> bool:
+    """Whether the reply already carries `url`, as sent or percent-decoded. A full Maps
+    URL with a Chinese place name is mostly `%E9...` escapes, and a model copying it
+    often writes the characters themselves (or `+` for a space); read as absent, the
+    link would be appended a second time under the model's own copy (ADR 0023 review)."""
+    return url in text or unquote_plus(url) in decoded

@@ -10,10 +10,12 @@ every person would pass a test that the real query fails.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from nora.domain.culture import Episode, RoomMessage
+from nora.domain.lessons import NAMES_HER
 from nora.domain.models import DeliveryStatus, TranscriptRow
 
 
@@ -27,6 +29,8 @@ class _Message:
     ts: int
     is_nora: bool
     hidden: bool
+    quoted_ts: int | None = None
+    mentions: frozenset[str] = frozenset()
 
 
 class InMemoryCharacterEvidence:
@@ -35,30 +39,63 @@ class InMemoryCharacterEvidence:
         #: Culture revisions, as (room key, written_at), in write order.
         self._revisions: list[tuple[str, int]] = []
         self._episodes: list[tuple[str, Episode, bool]] = []
+        self._last_run: dict[tuple[str, str], int] = {}
 
     def add_episode(self, *, unit: str, episode: Episode, open_: bool = False) -> None:
         """One `response` episode of the current build; `open_` is one whose
-        window has not closed (never counted, never read). Only an evidence
-        episode (`Episode.is_evidence`) is counted or read, as in the SQL."""
+        window has not closed (never counted, never read). With
+        `evidence_only` (the default, Character · Nora) only an evidence episode
+        (`Episode.is_evidence`) is counted or read, as in the SQL; without it
+        (Lessons) every closed one is."""
         self._episodes.append((unit, episode, open_))
 
-    def _eps(self, unit: str, after: int) -> list[Episode]:
+    def _eps(self, unit: str, after: int, evidence_only: bool) -> list[Episode]:
         return sorted(
             (e for u, e, o in self._episodes if u == unit and not o
-             and e.outcome not in ("open", "unknown") and e.is_evidence
+             and e.outcome not in ("open", "unknown")
+             and (e.is_evidence or not evidence_only)
              and e.send_id > after),
             key=lambda e: e.send_id,
         )
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
-        return len(self._eps(unit, after))
+    async def episode_count(
+        self, *, unit: str, after: int, evidence_only: bool = True,
+    ) -> int:
+        return len(self._eps(unit, after, evidence_only))
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, evidence_only: bool = True,
     ) -> tuple[list[Episode], int]:
-        found = self._eps(unit, after)
+        found = self._eps(unit, after, evidence_only)
         cursor = found[-1].send_id if found else after
         return (found[-limit:] if limit > 0 else []), cursor
+
+    async def addressed_since(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int, self_ids: frozenset[str] = frozenset(),
+    ) -> list[RoomMessage]:
+        """`SqlCharacterEvidence.addressed_since`: a human message in `rooms`
+        in `(since_ms, until_ms]` that quotes one of her messages in the same
+        room or names «nora»."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        wanted = set(rooms)
+        hers = {(m.platform, m.room, m.ts) for m in self._messages if m.is_nora}
+        found = [
+            m for m in sorted(self._messages, key=lambda m: m.id)
+            if (m.platform, m.room) in wanted and not m.is_nora and not m.hidden
+            and since_ms < m.ts <= until_ms
+            and ((m.quoted_ts is not None and (m.platform, m.room, m.quoted_ts) in hers)
+                 or re.search(NAMES_HER, m.body or "", re.IGNORECASE) is not None
+                 or bool(m.mentions & self_ids))
+        ]
+        return [RoomMessage(room=m.room, row=self._row(m)) for m in found[-limit:]]
+
+    def set_last_run(self, *, adaptor: str, key: str, at_ms: int) -> None:
+        self._last_run[(adaptor, key)] = at_ms
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None:
+        return self._last_run.get((adaptor, key))
 
     def add_revision(self, *, key: str, written_at: int) -> None:
         self._revisions.append((key, written_at))
@@ -84,12 +121,18 @@ class InMemoryCharacterEvidence:
     def add_message(
         self, *, id: int, platform: str, room: str, person_id: str | None,
         body: str = "a line", ts: int = 0, is_nora: bool = False,
-        hidden: bool = False,
+        hidden: bool = False, quoted_ts: int | None = None,
+        mentions: frozenset[str] = frozenset(),
     ) -> None:
         self._messages.append(_Message(
             id=id, platform=platform, room=room, person_id=person_id, body=body,
-            ts=ts, is_nora=is_nora, hidden=hidden,
+            ts=ts, is_nora=is_nora, hidden=hidden, quoted_ts=quoted_ts,
+            mentions=mentions,
         ))
+
+    @staticmethod
+    def _row(m: _Message) -> TranscriptRow:
+        return replace(_ROW, id=m.id, ts=m.ts, body=m.body, person_id=m.person_id)
 
     def _person(
         self, rooms: Sequence[tuple[str, str]], person_id: str, after: int,

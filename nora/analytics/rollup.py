@@ -95,7 +95,7 @@ log = logging.getLogger("nora.analytics.rollup")
 class MobilityStore(Protocol):
     """The presence Rollup store, bound to ONE build for writing
     (`SqlMobilityStore.scoped`); readers use it unbound and read the current
-    build. Bound by `tests/contract/test_mobility_store_contract.py`."""
+    build. Bound by `tests/contract/test_mobility_store_contract_synthetic.py`."""
 
     # -- the fold
     async def fold_state(self, *, subject_id: str) -> FoldState | None: ...

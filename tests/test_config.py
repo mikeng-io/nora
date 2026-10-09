@@ -494,6 +494,16 @@ def test_the_deprecated_summons_poll_interval_is_still_accepted(toml_path):
     assert load(toml_path).social.instagram.summons.poll_seconds == 120
 
 
+def test_a_shortener_section_is_refused(toml_path):
+    """DEC-296: the shortener is gone and so is its key. Kept as a deprecated table
+    while the live config.toml still carried `[shortener]`; that section was
+    removed from every live and eval config on 2026-10-08, so a file that brings
+    it back is a mistake to report, not a setting to ignore."""
+    toml_path.write_text(toml_path.read_text() + '\n[shortener]\nenabled = true\n')
+    with pytest.raises(ConfigError, match="shortener"):
+        load(toml_path)
+
+
 def test_the_summons_mode_is_a_closed_set(toml_path):
     toml_path.write_text(_in_section(
         toml_path.read_text(), "[social.instagram.summons]",

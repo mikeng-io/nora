@@ -84,7 +84,8 @@ def test_the_note_tells_her_it_is_NOT_about_anything_recent():
     trial: if the two seeds score the same, this sentence is decoration."""
     lowered = BLOCK_TYPES["culture"].description.lower()
     assert "not a summary of anything" in lowered
-    assert "expires" in lowered or "expire" in lowered
+    # DEC-302: it describes LASTING patterns, so age does not make it stale.
+    assert "lasting patterns" in lowered and "not out of date" in lowered
 
 
 def test_the_note_says_it_is_not_an_instruction():

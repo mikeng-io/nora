@@ -31,7 +31,7 @@ from nora.domain.ports import LinkPreview, LinkPreviewSource
 from nora.infra.preview import OpenGraphPreviewSource
 from nora.testing import FakeLinkPreviewSource
 
-CARD = LinkPreview(url="https://n.example.net/abc", title="A page", description="about it")
+CARD = LinkPreview(url="https://links.example.net/abc", title="A page", description="about it")
 
 
 @pytest.fixture(params=["opengraph", "fake"])

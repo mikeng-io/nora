@@ -384,3 +384,84 @@ async def test_losing_the_unique_seq_race_is_a_conflict_and_other_integrity_erro
     monkeypatch.setattr(env.store, "_append", losing("ck_lesson_revision_state"))
     with pytest.raises(sa.exc.IntegrityError):
         await env.store.append(**kw)
+
+
+async def test_a_tension_row_round_trips_and_lists_newest_first(env):
+    """L3: the operator's record of a lesson the doctrine check refused, with the
+    rule quoted (`nora.infra.sql.tension`, migration `0101_self_tension`)."""
+    from nora.domain.doctrine_check import Tension
+    from nora.infra.sql.tension import SqlTensionStore
+
+    store = SqlTensionStore(env.engine)
+    for n, unit in enumerate(("friends", "ridgeline", "friends")):
+        await store.record(Tension(
+            unit=unit, source="lesson", doctrine_file="core/constraints.md",
+            doctrine_line=10 + n, doctrine_text=LAW[0], would_have_said=f"{ONE} {n}",
+            citations=("response:110", "response:111"), why="it shares a place",
+            written_at=1_790_000_000_000 + n, established_by="dream:lessons:friends:1",
+            instruction_sha256="a" * 64, model="writer", check_model="judge"))
+    mine = await store.recent(unit="friends")
+    assert [t.doctrine_line for t in mine] == [12, 10]
+    assert mine[0].citations == ("response:110", "response:111") and mine[0].id
+    assert mine[0].check_model == "judge" and mine[0].doctrine_text == LAW[0]
+    assert len(await store.recent()) == 3
+    with pytest.raises(sa.exc.IntegrityError):
+        await store.record(Tension(
+            unit="friends", source="character", doctrine_file="x", doctrine_line=1,
+            doctrine_text="y", would_have_said="z", citations=(), why="w",
+            written_at=1, established_by="t"))
+
+
+async def test_the_snapshot_holds_the_lessons_active_at_the_instant(env):
+    """The eval sandbox's copy of `<lessons>` (L5): per lesson, the revision
+    current at `before_ms`, kept when active; a lesson written after the instant
+    is absent."""
+    from nora.infra.sql.snapshot import _lessons
+
+    first = await env.store.create(unit=UNIT, body=ONE, citations=("110",), written_at=10,
+                                   established_by="t")
+    await env.store.append(lesson_id=first.id, expected_seq=1, body=ONE, citations=("110",),
+                           state="retired", retired_by="session", relearn_after=None,
+                           note="gone", written_at=20, established_by="t")
+    await env.store.create(unit=UNIT, body=TWO, citations=("111",), written_at=30,
+                           established_by="t")
+    await env.store.create(unit="ridgeline", body=TWO, citations=("111",), written_at=5,
+                           established_by="t")
+    assert await _lessons(env.engine, unit=UNIT, before_ms=5) == ()
+    assert await _lessons(env.engine, unit=UNIT, before_ms=15) == (ONE,)
+    assert await _lessons(env.engine, unit=UNIT, before_ms=25) == ()
+    assert await _lessons(env.engine, unit=UNIT, before_ms=35) == (TWO,)
+    third = await env.store.create(unit=UNIT, body="a third practice, said short",
+                                   citations=("112",), written_at=40, established_by="t")
+    await env.store.append(lesson_id=first.id, expected_seq=2, body=ONE, citations=("110",),
+                           state="active", retired_by=None, relearn_after=None,
+                           note="rollback to revision 1", written_at=50, established_by="t")
+    # Oldest lesson first, and a lesson rolled back to active is shown again.
+    assert await _lessons(env.engine, unit=UNIT, before_ms=60) == (
+        ONE, TWO, "a third practice, said short")
+    assert third.id
+
+
+async def test_a_lessons_counterfactual_seeds_active_lessons_in_the_stated_order(env):
+    """design/self-growth/40 §8: the eval's `lessons` tier writes the case's
+    lessons into the subject's unit, active, oldest first, at the sandbox's own
+    instant, so `<lessons>` renders them in the order the case states."""
+    from nora.subject.sandbox import seed_lessons
+
+    subject = SimpleNamespace(database_url=env.url, unit=UNIT)
+    await seed_lessons(subject, "probe", [ONE, TWO], now_ms=1_790_000_000_000)
+    held = await env.book.active(unit=UNIT)
+    assert [x.head.body for x in held] == [ONE, TWO]
+    assert held[0].head.written_at < held[1].head.written_at <= 1_790_000_000_000
+    assert held[0].head.citations == ("case:probe",)
+    await seed_lessons(subject, "probe", [], now_ms=1)
+    assert len(await env.book.active(unit=UNIT)) == 2
+
+
+async def test_a_lessons_counterfactual_is_refused_where_the_unit_already_held_lessons(env):
+    from nora.subject.sandbox import seed_lessons
+
+    subject = SimpleNamespace(database_url=env.url, unit=UNIT)
+    await seed_lessons(subject, "probe", [ONE], now_ms=1_790_000_000_000)
+    with pytest.raises(ValueError, match="already held 1"):
+        await seed_lessons(subject, "probe", [TWO], now_ms=1_790_000_000_000)

@@ -1159,6 +1159,10 @@ VERSION_ANNOUNCEMENTS = sa.Table(
 )
 
 
+# RETIRED (ADR 0023, 2026-10-08): nothing reads or writes `artifacts` any more.
+# Drop and its `deploy/drop` service are gone; the table and its 15 rows stay
+# in place, unread, until someone chooses the irreversible delete.
+#
 # `artifacts` — `drop`'s own artifact metadata (Nora Drop spec §3, §4, §7a).
 # Written by `deploy/drop`'s internal `POST /api/artifacts`, a SEPARATE Python
 # app/venv from Nora herself that reaches this table with its own Postgres
@@ -1174,16 +1178,16 @@ VERSION_ANNOUNCEMENTS = sa.Table(
 # before either is written, the same reason `reminders.id` cannot come from a
 # sequence (this file's own note on that table, above).
 #
-# `slug` is a SEPARATE, short, public-facing value (the same base58-ish
-# alphabet `deploy/shortener/worker/shortener.js` uses for link slugs) — the
+# `slug` is a SEPARATE, short, public-facing value (a base58-ish
+# alphabet, the retired link shortener's) — the
 # thing a `GET /d/<slug>` URL path actually contains. Kept apart from `id` so
 # `artifact_id` can keep naming the row for a future admin/expiry surface
 # without that surface reparsing it back out of a URL
-# (`ArtifactRegistration`'s own docstring, `nora/domain/ports.py`). UNIQUE,
+# (the retired `ArtifactRegistration`). UNIQUE,
 # not primary — the row's identity is `id`.
 #
 # `expires_at` is epoch-MILLISECONDS, matching `PresenceFix.ts`'s unit
-# (`ArtifactIngest.register`'s own docstring) and deliberately NOT a
+# (the retired `ArtifactIngest.register`) and deliberately NOT a
 # `DateTime` like `reminders.due_at`: this value crosses the HTTP boundary
 # from a caller (a future Compute tool, or `drop`'s own client) that never
 # gets a live SQLAlchemy type to compare against, so the wire format IS the
@@ -4620,4 +4624,42 @@ LESSON_REVISION = sa.Table(
 # lesson at the same moment cannot both take the next `seq`.
 UQ_LESSON_REVISION_SEQ = sa.Index(
     "uq_lesson_revision_seq", LESSON_REVISION.c.lesson_id, LESSON_REVISION.c.seq, unique=True,
+)
+
+# `0101_self_tension` (design/self-growth/40 §4-§5, L3): a lesson the doctrine check
+# refused because it would loosen or contradict a LAW rule, with the rule quoted.
+# OPERATOR-ONLY: no read tool returns a row and no block renders one.
+SELF_TENSION = sa.Table(
+    "self_tension",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("source", sa.Text, nullable=False),
+    sa.Column("doctrine_file", sa.Text, nullable=False),
+    sa.Column("doctrine_line", sa.Integer, nullable=False),
+    sa.Column("doctrine_text", sa.Text, nullable=False),
+    sa.Column("would_have_said", sa.Text, nullable=False),
+    sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("why", sa.Text, nullable=False),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("instruction_sha256", sa.Text),
+    sa.Column("model", sa.Text),
+    sa.Column("check_model", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_self_tension_has_a_unit"),
+    sa.CheckConstraint("source IN ('lesson')", name="ck_self_tension_source"),
+    sa.CheckConstraint(
+        "length(btrim(doctrine_text)) > 0", name="ck_self_tension_quotes_the_law",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(would_have_said)) > 0", name="ck_self_tension_says_what_it_would",
+    ),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0", name="ck_self_tension_names_its_writer",
+    ),
+)
+IDX_SELF_TENSION_UNIT = sa.Index(
+    "idx_self_tension_unit", SELF_TENSION.c.unit, SELF_TENSION.c.written_at,
 )

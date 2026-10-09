@@ -1113,7 +1113,7 @@ One tree. If it is not under `~/workspace/nora/`, Nora does not own it.
 ```
 ~/workspace/nora/
   docker-compose.yml        every service: nora, db, signal-cli, whatsapp-bridge,
-                            presence, analytics, drop/rustfs/valkey, stt,
+                            presence, analytics, rustfs, stt,
                             prometheus, alertmanager, alert-bridge
   deploy/signal-cli/        Dockerfile + fetch.sh (16K; the 115MB tarball is
                             fetched on demand, never committed)
@@ -1318,7 +1318,7 @@ probe, `deploy/honcho-closed-probe.sh`. Who reaches Honcho, read on norty
 | nora (the tag path, the Dreamer, `nora memory ...` in the container) | `host.docker.internal:8000` | `honcho:8000` on `honcho_memory` |
 | the eval suite, host-side scripts, a host `curl` | `127.0.0.1:8000` | unchanged (loopback still published) |
 | another machine on the tailnet (the Mac's Honcho plugin) | `tailscale serve` forwards `:18000` to `localhost:8000` | unchanged |
-| presence, analytics, voice, drop, the portal | none: no environment or config names Honcho | none |
+| presence, analytics, voice, the portal | none: no environment or config names Honcho | none |
 
 The tailnet forward is deliberate and stays unauthenticated, as it was; that is
 the operator's tailnet, not the LAN. A caller found later that is not in this

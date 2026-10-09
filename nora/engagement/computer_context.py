@@ -190,7 +190,7 @@ def _runs(rows: list[ComputerEvent]) -> tuple[RunLine, ...]:
 
 
 def _links(rows: list[ComputerEvent]) -> tuple[LinkLine, ...]:
-    """The room's Drop links from `computer_export`'s rows, newest first, one
+    """The room's portal links from `computer_export`'s rows, newest first, one
     per artifact (its newest export): only an export that answered `ok`
     with a link, so a refused or failed one never shows as a link."""
     started = {r.operation_id: r for r in rows if r.phase == "started"}

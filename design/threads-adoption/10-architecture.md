@@ -265,17 +265,19 @@ actually be posted.
 
 The Threads API takes `image_url`, a URL Meta fetches. It does not accept an
 upload. `generate_image` returns bytes (`xai_adapter.py` asks for
-`b64_json`), so the flush has to host them first. The candidate is `drop`:
+`b64_json`), so the flush has to host them first. **Drop was retired 2026-10-08 (ADR 0023), so this candidate and its two
+conditions below are history; image hosting for phase 4 needs a new host.**
+The candidate was `drop`:
 `POST /api/artifacts` on its internal listener already stores bytes with an
 `expires_at` and returns a public slug. Two things stand in the way, and
 both are measured before phase 4:
 
 1. `drop`'s public listener already serves `/drop/{slug}` as the stored
    bytes with their stored media type (`deploy/drop/server.py`,
-   `render_artifact`), so no new route is needed for the bytes. What is
+   `render_artifact`, deleted 2026-10-08), so no new route is needed for the bytes. What is
    needed is that the served URL stops working at `expires_at`.
 2. `drop`'s public listener **rejects every bot user agent** (an operator
-   requirement, `deploy/drop/hardening.py`). Meta fetches `image_url` with a
+   requirement, `deploy/drop/hardening.py`, deleted 2026-10-08). Meta fetches `image_url` with a
    crawler user agent that has not been measured. Exempting it on `/m/` only
    narrows that operator rule, so it is the operator's decision (20 §"Needs
    the operator").

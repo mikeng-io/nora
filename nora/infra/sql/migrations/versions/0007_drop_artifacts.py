@@ -53,8 +53,8 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
         # Epoch MILLISECONDS (`PresenceFix.ts`'s unit), NULL meaning "apply
-        # whatever default the caller/implementation has" — see
-        # `ArtifactIngest.register`'s own docstring, `nora/domain/ports.py`.
+        # whatever default the caller/implementation has" (the
+        # `ArtifactIngest` port that wrote it retired with Drop, ADR 0023).
         sa.Column("expires_at", sa.BigInteger, nullable=True),
     )
 

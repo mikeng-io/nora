@@ -714,13 +714,13 @@ async def test_deliver_appends_the_link_the_reply_earned(store, doctrine):
 
     Delete the call and this reds."""
     links = LinkCarry()
-    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    links.offer(anchor="燒烤堂", url="https://links.example.net/9DpAk8g")
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink, links=links)
 
     assert await d.deliver("燒烤堂 好正，諾士佛臺") is True
 
-    assert "https://n.example.net/9DpAk8g" in sink.texts[0]
+    assert "https://links.example.net/9DpAk8g" in sink.texts[0]
     row = (await store.recent(conversation_id="g1", limit=1))[0]
     assert row.body == sink.texts[0]          # the audit carries what the group saw
 
@@ -733,7 +733,7 @@ async def test_a_link_never_rescues_an_empty_reply(store, doctrine):
     which mutation-testing showed nothing else catches."""
     metrics = Metrics()
     links = LinkCarry()
-    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    links.offer(anchor="燒烤堂", url="https://links.example.net/9DpAk8g")
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink, metrics, links=links)
 
@@ -747,12 +747,12 @@ async def test_a_reply_that_does_not_name_the_place_gets_no_link(store, doctrine
     mentions the place carries no url, so a fake that appended unconditionally
     would fail here rather than passing the test above by accident."""
     links = LinkCarry()
-    links.offer(anchor="燒烤堂", url="https://n.example.net/9DpAk8g")
+    links.offer(anchor="燒烤堂", url="https://links.example.net/9DpAk8g")
     sink = SinkSender()
     d = _deliverer(store, doctrine, sink, links=links)
 
     assert await d.deliver("今日好熱") is True
-    assert "n.example.net" not in sink.texts[0]
+    assert "links.example.net" not in sink.texts[0]
 
 
 async def test_a_reply_carrying_a_coordinate_pair_is_blocked(store, doctrine):

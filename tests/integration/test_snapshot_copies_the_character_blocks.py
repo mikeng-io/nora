@@ -75,12 +75,16 @@ async def source(pg_url: str, pg_template: str, tmp_path: Any, monkeypatch: Any)
         await write(nora_character_key(UNIT), "she answers short and dry", BEFORE_MS - 3 * HOUR)
         await write(nora_character_key(UNIT), "AFTER: she changed", BEFORE_MS + HOUR)
         await write(nora_character_key("elsewhere"), "OTHER UNIT: her", BEFORE_MS - HOUR)
-        await write(character_key(UNIT, "miles_novak"), "Miles plans, then waits", BEFORE_MS - 2 * HOUR)
+        await write(
+            character_key(UNIT, "miles_novak"), "Miles plans, then waits", BEFORE_MS - 2 * HOUR,
+        )
         await write(character_key(UNIT, "miles_novak"), "AFTER: Miles stopped", BEFORE_MS + HOUR)
         # The room does not list Bo, and Miles's account in another unit is not
         # this unit's: neither may reach the sandbox.
         await write(character_key(UNIT, "bo"), "UNLISTED: Bo is loud", BEFORE_MS - HOUR)
-        await write(character_key("elsewhere", "miles_novak"), "OTHER UNIT: Miles", BEFORE_MS - HOUR)
+        await write(character_key(
+            "elsewhere", "miles_novak",
+        ), "OTHER UNIT: Miles", BEFORE_MS - HOUR)
     finally:
         await engine.dispose()
     return src

@@ -341,13 +341,13 @@ async def test_mentions_and_styles_ride_the_same_message_under_separate_keys(rpc
 
     await sender.send(
         TARGET, "@Grant hi",
-        mentions=(Mention(start=0, length=8, recipient=ACI),),
-        styles=(TextStyle(start=9, length=2, style=Style.BOLD),),
+        mentions=(Mention(start=0, length=6, recipient=ACI),),
+        styles=(TextStyle(start=7, length=2, style=Style.BOLD),),
     )
 
     params = rpc_server.calls[0]["params"]
-    assert params["mention"] == [f"0:8:{ACI}"]
-    assert params["textStyle"] == ["9:2:BOLD"]
+    assert params["mention"] == [f"0:6:{ACI}"]
+    assert params["textStyle"] == ["7:2:BOLD"]
 
 
 async def test_a_style_range_past_the_end_of_the_text_is_dropped(rpc_server):
@@ -397,15 +397,15 @@ async def test_a_preview_is_sent_as_the_four_camelcase_scalars(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
 
     await sender.send(
-        TARGET, "https://n.example.net/a",
+        TARGET, "https://links.example.net/a",
         preview=LinkPreview(
-            url="https://n.example.net/a", title="A page", description="about it",
+            url="https://links.example.net/a", title="A page", description="about it",
             image_data_uri="data:image/png;base64,AAAA",
         ),
     )
 
     params = rpc_server.calls[0]["params"]
-    assert params["previewUrl"] == "https://n.example.net/a"
+    assert params["previewUrl"] == "https://links.example.net/a"
     assert params["previewTitle"] == "A page"
     assert params["previewDescription"] == "about it"
     assert params["previewImage"] == "data:image/png;base64,AAAA"
@@ -417,8 +417,8 @@ async def test_the_optional_preview_scalars_are_omitted_when_empty(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
 
     await sender.send(
-        TARGET, "https://n.example.net/a",
-        preview=LinkPreview(url="https://n.example.net/a", title="A page"),
+        TARGET, "https://links.example.net/a",
+        preview=LinkPreview(url="https://links.example.net/a", title="A page"),
     )
 
     params = rpc_server.calls[0]["params"]
@@ -436,9 +436,9 @@ async def test_a_preview_image_travels_as_a_data_uri_not_a_path(rpc_server):
     sender = SignalSender(str(rpc_server.make_url("")).rstrip("/"))
 
     await sender.send(
-        TARGET, "https://n.example.net/a",
+        TARGET, "https://links.example.net/a",
         preview=LinkPreview(
-            url="https://n.example.net/a", title="A page",
+            url="https://links.example.net/a", title="A page",
             image_data_uri="data:image/jpeg;base64,/9j/4AAQ",
         ),
     )
@@ -509,8 +509,8 @@ async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aioht
     sender = SignalSender(str(server.make_url("")).rstrip("/"))
 
     result = await sender.send(
-        TARGET, "去呢間 https://n.example.net/9DpAk8g",
-        preview=LinkPreview(url="https://n.example.net/9DpAk8g", title="Google Maps"),
+        TARGET, "去呢間 https://links.example.net/9DpAk8g",
+        preview=LinkPreview(url="https://links.example.net/9DpAk8g", title="Google Maps"),
         attachments=(OutboundAttachment(b"GIF89a", "image/gif", "reaction.gif"),),
     )
 
@@ -519,7 +519,7 @@ async def test_a_rejected_decorated_send_is_retried_without_the_decoration(aioht
     assert "previewUrl" in seen[0]
     assert not any(k in seen[1] for k in ("previewUrl", "previewTitle", "mention", "textStyle"))
     assert seen[1]["attachments"] == ["data:image/gif;filename=reaction.gif;base64,R0lGODlh"]
-    assert seen[1]["message"] == "去呢間 https://n.example.net/9DpAk8g"   # same words
+    assert seen[1]["message"] == "去呢間 https://links.example.net/9DpAk8g"   # same words
 
 
 async def test_an_undecorated_rejection_is_not_retried(aiohttp_server):

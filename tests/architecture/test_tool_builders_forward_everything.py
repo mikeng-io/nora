@@ -98,9 +98,9 @@ _SPECS_ONLY = frozenset({
     # Its sessions and the process's one lease table (design/sandbox-runtime
     # §15.2, §15.4), threaded the same way.
     "computer_sessions", "computer_leases",
-    # `computer_export`'s record of what left the computer and its Drop
-    # client (S3a), threaded the same way.
-    "computer_exports", "artifact_ingest",
+    # `computer_export`'s record of what left the computer (S3a) and its link's
+    # portal origin (ADR 0023), threaded the same way.
+    "computer_exports", "artifact_link_base",
     # `computer_browse`'s sub-agent (design/browser-runtime B2), threaded the
     # same way as the computer runtime above; its tests build through
     # `build_tool_specs` (tests/unit/test_computer_browse_tool.py).

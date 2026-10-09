@@ -190,7 +190,7 @@ def _apply_mention_handles(
     UNTOUCHED span's `Mention.start` alone is sufficient there. This function
     also has to hand the BRIDGE a `{offset, length}` for the string it is
     about to become, and a substituted handle is rarely the same UTF-16 length
-    as the name Nora drafted (`"@Miles Novak"` is 8 units, `"@nka_bpumvg"` is 11)
+    as the name Nora drafted (`"@Miles Novak"` is 12 units, `"@nka_bpumvg"` is 11)
     — so the SECOND mention in one message needs an offset shifted by however
     much the FIRST one's substitution grew or shrank the string, and going
     right-to-left would report that first (leftmost) mention's own offset

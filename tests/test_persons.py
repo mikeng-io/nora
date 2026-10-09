@@ -139,12 +139,12 @@ def test_an_instagram_username_is_readable_as_the_handle_for_its_fbid(tmp_path):
     p.write_text(
         '[persons.miles]\nname = "Miles Novak"\n'
         '[[persons.miles.instagram]]\n'
-        'fbid = "110966695387753"\n'
-        'igid = "60739041440"\n'
+        'fbid = "186217604552756"\n'
+        'igid = "61652861337"\n'
         'username = "nka_bpumvg"\n'
     )
     persons = load_persons(p)
-    assert persons.instagram_handle("110966695387753") == "nka_bpumvg"
+    assert persons.instagram_handle("186217604552756") == "nka_bpumvg"
 
 
 def test_an_instagram_fbid_with_no_username_on_file_has_no_handle(tmp_path):
@@ -155,10 +155,10 @@ def test_an_instagram_fbid_with_no_username_on_file_has_no_handle(tmp_path):
     p = tmp_path / "identity.toml"
     p.write_text(
         '[persons.miles]\nname = "Miles Novak"\n'
-        '[[persons.miles.instagram]]\nfbid = "110966695387753"\nigid = "60739041440"\n'
+        '[[persons.miles.instagram]]\nfbid = "186217604552756"\nigid = "61652861337"\n'
     )
     persons = load_persons(p)
-    assert persons.instagram_handle("110966695387753") is None
+    assert persons.instagram_handle("186217604552756") is None
 
 
 def test_instagram_handle_answers_empty_for_an_fbid_it_has_never_heard_of(persons):
@@ -175,12 +175,12 @@ def test_an_instagram_handle_is_scoped_to_the_account_it_was_recorded_beside(tmp
     p.write_text(
         '[persons.miles]\nname = "Miles Novak"\n'
         '[[persons.miles.instagram]]\n'
-        'label = "personal"\nfbid = "110966695387753"\nusername = "nka_bpumvg"\n'
+        'label = "personal"\nfbid = "186217604552756"\nusername = "nka_bpumvg"\n'
         '[[persons.miles.instagram]]\n'
         'label = "business"\nfbid = "200000000000001"\nusername = "miles_biz"\n'
     )
     persons = load_persons(p)
-    assert persons.instagram_handle("110966695387753") == "nka_bpumvg"
+    assert persons.instagram_handle("186217604552756") == "nka_bpumvg"
     assert persons.instagram_handle("200000000000001") == "miles_biz"
 
 
@@ -690,7 +690,7 @@ name = "Ada"
 [[persons.ada.signal]]
 phone = "+85287654321"
 [[persons.ada.whatsapp]]
-lid = "14924244741244"
+lid = "14575433319544"
 """
 
 
@@ -710,7 +710,7 @@ def test_a_direct_target_prefers_the_aci_on_signal_and_the_phone_on_whatsapp(dir
     assert direct.direct_target("whatsapp", "miles").conversation_id == (
         "85212345678@s.whatsapp.net"
     )
-    assert direct.direct_target("whatsapp", "ada").conversation_id == "14924244741244@lid"
+    assert direct.direct_target("whatsapp", "ada").conversation_id == "14575433319544@lid"
 
 
 def test_somebody_not_in_identity_toml_has_no_direct_target(direct):
@@ -723,7 +723,7 @@ def test_the_direct_addresses_are_every_account_in_the_file_and_nothing_else(dir
         "+85212345678", "8185b8fa-359a-4c0a-c6ed-24814dc655bb", "+85287654321",
     }
     assert direct.direct_addresses("whatsapp") == {
-        "85212345678@s.whatsapp.net", "60000000000001@lid", "14924244741244@lid",
+        "85212345678@s.whatsapp.net", "60000000000001@lid", "14575433319544@lid",
     }
     # Every target `direct_target` builds is one the senders will accept.
     for platform in ("signal", "whatsapp"):

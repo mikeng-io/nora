@@ -704,7 +704,7 @@ comprehension_max_concurrent = 4
 enabled = false
 endpoint = ""              # e.g. "http://rustfs:9000"
 bucket = "nora-media"
-access_key_env = "RUSTFS_ROOT_USER"      # same var `drop`'s RustFS client uses
+access_key_env = "RUSTFS_ROOT_USER"      # the RustFS service's own root credentials
 secret_key_env = "RUSTFS_ROOT_PASSWORD"
 
 # Image generation (design/proposed/29, DEC-137): provider-agnostic
@@ -750,29 +750,6 @@ model = "grok-imagine-image-2.0"
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
-
-# Nora's own link shortener / drop delivery (deploy/drop/, this repo's own
-# compose service — docs/superpowers/specs/2026-08-12-nora-drop-design.md §5).
-# The WHOLE SECTION IS OPTIONAL and every key defaults; off (or an unset token)
-# leaves long URLs in replies, never a failure. Self-hosted on purpose — a
-# third-party shortener would see every destination the group routes to — and
-# never load-bearing: a mint that fails leaves the long URL exactly as it was.
-#
-# `base_url` points at `drop`'s INTERNAL listener, NOT the public hostname.
-# `drop` deliberately splits an internal listener (`drop:8081`, no `ports:`
-# entry, no Tunnel rule — spec §5a) carrying `POST /api/links` from a PUBLIC
-# listener carrying only the read-only `GET /i/<slug>` redirect, so the public
-# host has no `/api/links` route at all and minting against it 404s. Nora's own
-# container sits on the same Docker network and reaches `drop:8081` by
-# container DNS. The public `short_url` a mint returns is unaffected — `drop`
-# builds it server-side from its own DROP_PUBLIC_BASE_URL and hands it back.
-#
-# `token_env` NAMES the env var holding the mint bearer (DEC-8); the value is
-# `drop`'s own secret.
-[shortener]
-enabled = false
-base_url = "http://drop:8081"
-token_env = "NORA_DROP_TOKEN"
 
 # Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
 # and every key defaults — a config.toml without it behaves as if routing is
@@ -838,9 +815,9 @@ enabled = false
 # max_read_chars = 20000         # one computer_read, cut beyond this
 # export_max_bytes = 26214400    # the largest file computer_export sends out (25 MiB; at most 50 MiB)
 # import_max_bytes = 26214400    # the largest attachment computer_import copies in (25 MiB; at most 50 MiB)
-# computer_export's link destination is Drop's internal listener, reached with
-# [shortener]'s base_url and token_env:
-# without that token a link export answers unavailable.
+# computer_export's link destination is the portal's /artifacts page
+# ([documents] public_url, ADR 0023): without a public_url a link export
+# answers unavailable.
 #
 # Reserved: per-command resource limits. None is applied today (operator,
 # 2026-09-30: the computer is semi-trusted) and computerd ignores the field;
@@ -1498,12 +1475,51 @@ person_wake_batch = 100
 unit_wake_batch = 5
 # Closed response episodes that ARE evidence (people replied, reacted or edited,
 # or a question drew silence; an `unanswered` one is not) that wake her own
-# account in a unit. Written only: nothing reads it yet.
+# account in a unit, read on her turns as the <self> block (DEC-292).
 nora_wake_batch = 100
 # Messages read per ROOM fold (a person's session reads person_wake_batch, and
 # Nora's reads nora_wake_batch). THE BATCH IS THE CORPUS — the account is written from
 # it — so this is not a throttle, it is how much of the room the model sees.
 batch_limit = 300
+
+[lessons]
+# Lessons (design/self-growth/40-lessons.md, L2). ON, one background session
+# per unit reads her messages whose response window has closed (each with the
+# replies, reactions and silence that followed) and writes LESSONS: practice
+# for that group, each citing at least three of those episodes, through checked
+# write verbs (`nora lessons list` to read them, `retire`/`rollback` to undo).
+#
+# OFF BY DEFAULT, and off is the safe reading: nothing renders a lesson into
+# any prompt yet (L5), and the doctrine check that refuses a lesson loosening
+# law is not built (L3). On only fills the store L3 and L5 are measured from.
+# Needs [dreamer] enabled. Its model budget is [dreamer.budgets.culture]'s
+# unless a [dreamer.budgets.lessons] block is set.
+enabled = false
+# Closed episodes in a unit that wake its session at once. 50 is about every 3
+# to 4 days in the busiest unit (260 closed sends in 14 days, 2026-10-07).
+wake_batch = 50
+# Seconds after a unit's last session at which ANY new closed episode wakes it.
+stale_seconds = 604800
+# A lesson not written or reinforced for this long is retired by code (60 days).
+horizon_seconds = 5184000
+# Closed episodes one session is handed, the newest.
+batch_limit = 100
+# Render the unit's active lessons as <lessons> on tag and fire turns (L5),
+# after <self>. OFF until its before/after eval: it changes what she reads.
+render = false
+# The correction fast path (L4): a message that speaks to her and reads as an
+# instruction about how she acts ("stop", "唔好", "next time") wakes the unit's
+# session once it is this old, instead of waiting for wake_batch. 0 is off.
+correction_quiet_seconds = 600
+# The doctrine check (L3): a separate call reads every lesson against the law
+# before it is written; a conflict is refused and kept for you as a tension row
+# (`nora lessons tensions`). "" is [llm] model. It must differ from the
+# Dreamer's model (config refuses a match): a judge on the writer's model grades
+# its own homework.
+check_model = ""
+check_reasoning_effort = ""            # "" is low
+check_timeout_seconds = 60
+check_max_tokens = 2048
 
 [standing]
 # The debrief stage's gate (design/dreamer-agent-loop/26-standing.md). ON, a

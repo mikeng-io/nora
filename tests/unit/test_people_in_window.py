@@ -53,7 +53,9 @@ from nora.testing.fakes import FakeMemoryStore, FakeRecordStore
 
 T0 = datetime(2026, 9, 11, 22, 20, tzinfo=UTC)
 
-MILES = PersonRef(person_id="miles", name="Miles Novak", honcho_peer_id="miles", aliases=("阿Miles",))
+MILES = PersonRef(
+    person_id="miles", name="Miles Novak", honcho_peer_id="miles", aliases=("阿Miles",),
+)
 ADA = PersonRef(person_id="ada", name="Ada", honcho_peer_id="ada")
 BEN = PersonRef(person_id="ben", name="Ben", honcho_peer_id="ben")
 

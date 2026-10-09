@@ -15,22 +15,26 @@ forced by the data:
   a new revision, never an edit, and an operator's retirement is undone the same
   way (`rollback` to an earlier, active revision).
 
-**Not registered on any model-facing surface yet.** `verbs` is what L2's adaptor
-will hand its session; nothing in `nora.app.composition` builds a book, so no
-model can call `lesson_write` today. The CLI is the only caller in production.
+**One model-facing surface: the Lessons session** (L2,
+`nora.language.lessons.LessonsAdaptor`), built only under `[lessons] enabled`
+(default off). No turn holds these verbs, and nothing renders a lesson until L5.
 
-**Nothing here awaits a model.** The doctrine check (L3) is a separate
-instrument and is not applied: a lesson that loosens law passes this file's
-checks (it echoes nothing) until L3 reads it. L1 therefore ships off.
+**The doctrine check (L3) runs last**, when the book is built with one: a separate
+instrument call (`nora.language.doctrine_check.DoctrineCheck`) reads the lesson
+against the law. A conflict refuses the write and records a tension row for the
+operator; an instrument error refuses it and records nothing. The operator's CLI
+book is built without one, because it never writes a lesson.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from nora.domain.culture import Citable, Refusal
+from nora.domain.doctrine_check import CheckVerdict, Tension
 from nora.domain.lessons import (
     Lesson,
     LessonConflictError,
@@ -38,10 +42,29 @@ from nora.domain.lessons import (
     check_lesson,
     evidence_ceiling,
 )
+from nora.obs.metrics import Metrics
 
 log = logging.getLogger(__name__)
 
+#: A lesson id as it appears in a refusal's detail.
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
 __all__ = ["LessonBook", "LessonStore"]
+
+
+class _Check(Protocol):
+    """`nora.language.doctrine_check.DoctrineCheck`."""
+
+    @property
+    def model(self) -> str: ...
+
+    async def judge(self, lesson: str) -> CheckVerdict: ...
+
+
+class _Tensions(Protocol):
+    """`nora.infra.sql.tension.SqlTensionStore`."""
+
+    async def record(self, tension: Tension) -> str: ...
 
 
 class LessonStore(Protocol):
@@ -76,6 +99,8 @@ class LessonBook:
         self, *, store: LessonStore, law: Callable[[], Sequence[str]],
         screen: Callable[[Mapping[str, object]], tuple[str, str] | None],
         clock_ms: Callable[[], int],
+        check: _Check | None = None, tensions: _Tensions | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         """`law` returns the text of each LAW rule now, the doctrine's own words
         (`DoctrineStore.law_rules()`, DEC-291). It is a required argument and not
@@ -88,6 +113,16 @@ class LessonBook:
         self._law = law
         self._screen = screen
         self._clock = clock_ms
+        # The doctrine check (L3) and where its conflicts go: both or neither. A
+        # check with nowhere to write a tension would refuse silently; a tension
+        # store with no check would never be written. The operator's CLI book
+        # has neither: it never writes a lesson.
+        if (check is None) != (tensions is None):
+            raise ValueError("a LessonBook takes the doctrine check and the tension "
+                             "store together, or neither")
+        self._check = check
+        self._tensions = tensions
+        self._metrics = metrics
 
     # -- reads ---------------------------------------------------------------
 
@@ -99,10 +134,52 @@ class LessonBook:
     def verbs(
         self, *, unit: str, citable: Citable, established_by: str,
         instruction_sha256: str | None = None, model: str | None = None,
+        handles: dict[str, str] | None = None,
+        on_ok: Callable[[str], None] | None = None,
     ) -> list[Callable[..., Awaitable[dict[str, object]]]]:
         """`lesson_write` and `lesson_retire`, bound to one unit's session.
         `citable` is what code handed the model (`Citable`); provenance is the
-        runtime's, never the model's."""
+        runtime's, never the model's.
+
+        `handles` maps the short name a session was shown (`L1`) to the lesson's
+        id, and is extended with every lesson the session writes. A session
+        never sees an id: the Dreamer's screen refuses any argument carrying a
+        UUID (`DreamerRuntime._screened`), so a verb taking one could never be
+        called. `None` passes ids through (the tests' and the CLI's shape).
+        `on_ok` is told the verb's name after each call that was not refused."""
+
+        def _resolve(name: str | None) -> str | None:
+            if name is None or handles is None:
+                return name
+            # An unknown handle is passed on as itself and refused as
+            # `unknown_lesson` by the book, with the handle in its detail.
+            return handles.get(name.strip().upper(), name)
+
+        def _shown(out: dict[str, object], verb: str) -> dict[str, object]:
+            if out.get("status") != "ok":
+                if handles is None or not isinstance(out.get("detail"), str):
+                    return out
+                # A refusal names the lesson it is about (`echoes_lesson`,
+                # `relearn`) by id. Shown to a session that addresses lessons by
+                # handle, the id is advice it cannot follow (the screen refuses
+                # it as an argument), so it reads the handle, or, for a lesson
+                # it was never shown (an operator's retirement), a description.
+                by_id = {i: h for h, i in handles.items()}
+                detail = _UUID.sub(
+                    lambda m: by_id.get(m.group(0), "a lesson the operator retired"),
+                    str(out["detail"]),
+                )
+                return {**out, "detail": detail}
+            if handles is not None:
+                lesson_id = str(out["lesson_id"])
+                handle = next((h for h, i in handles.items() if i == lesson_id), None)
+                if handle is None:
+                    handle = f"L{len(handles) + 1}"
+                    handles[handle] = lesson_id
+                out = {**out, "lesson_id": handle}
+            if on_ok is not None:
+                on_ok(verb)
+            return out
 
         async def lesson_write(
             body: str, citations: list[str], lesson_id: str | None = None,
@@ -118,17 +195,20 @@ class LessonBook:
 
             Args:
                 body: The lesson, in prose.
-                citations: What it rests on, at least one, as strings: the `n`
-                    of a message you were shown, or a `response:<n>` episode you
-                    were shown. Never only your own sends.
-                lesson_id: A lesson you hold, to revise it. Omit for a new one.
+                citations: What it rests on, as strings: the `response:<n>` of
+                    episodes you were shown (as many different ones as your
+                    instructions ask for), and any `n` of a reply someone else
+                    wrote. Never only your own messages.
+                lesson_id: A lesson you hold, exactly as you were shown it, to
+                    revise it. Omit for a new one.
             """
-            return await self.learn(
+            return _shown(await self.learn(
                 unit=unit, citable=citable, body=body,
-                citations=tuple(str(c) for c in citations), lesson_id=lesson_id,
+                citations=tuple(str(c) for c in citations),
+                lesson_id=_resolve(lesson_id),
                 established_by=established_by, instruction_sha256=instruction_sha256,
                 model=model,
-            )
+            ), "lesson_write")
 
         async def lesson_retire(lesson_id: str, why: str) -> dict[str, object]:
             """Retire a lesson you hold: it is no longer true or no longer
@@ -141,11 +221,11 @@ class LessonBook:
                 lesson_id: The lesson, exactly as you were shown it.
                 why: One short sentence.
             """
-            return await self.retire(
-                unit=unit, lesson_id=lesson_id, by="session", why=why,
-                established_by=established_by, instruction_sha256=instruction_sha256,
-                model=model,
-            )
+            return _shown(await self.retire(
+                unit=unit, lesson_id=_resolve(lesson_id) or lesson_id, by="session",
+                why=why, established_by=established_by,
+                instruction_sha256=instruction_sha256, model=model,
+            ), "lesson_retire")
 
         return [lesson_write, lesson_retire]
 
@@ -185,6 +265,14 @@ class LessonBook:
         if refusal is not None:
             return self._refused(unit, refusal)
         text = body.strip()
+        if self._check is not None:
+            judged = await self._judged(
+                unit=unit, text=text, citations=citations,
+                established_by=established_by, instruction_sha256=instruction_sha256,
+                model=model,
+            )
+            if judged is not None:
+                return judged
         now = self._clock()
         if replacing is None:
             made = await self._store.create(
@@ -203,6 +291,47 @@ class LessonBook:
         if isinstance(revision, dict):
             return revision
         return {"status": "ok", "lesson_id": replacing.id, "revision": revision.seq}
+
+    async def _judged(
+        self, *, unit: str, text: str, citations: tuple[str, ...], established_by: str,
+        instruction_sha256: str | None, model: str | None,
+    ) -> dict[str, object] | None:
+        """The doctrine check (L3), last and only once every cheap check has
+        passed: it is a model call. `None` lets the write go on. A conflict writes
+        one tension row for the operator and refuses; an error refuses and writes
+        nothing (an instrument error is not a pass, 50 §6)."""
+        check, tensions = self._check, self._tensions
+        if check is None or tensions is None:
+            return None
+        verdict = await check.judge(text)
+        if verdict.outcome == "consistent":
+            return None
+        if verdict.outcome != "conflict" or verdict.rule is None:
+            return self._refused(unit, Refusal(
+                "check_unavailable", "the check that reads a lesson against your rules "
+                "did not answer, so nothing was written; try it once more, or stop"))
+        rule = verdict.rule
+        try:
+            await tensions.record(Tension(
+            unit=unit, source="lesson", doctrine_file=rule.file, doctrine_line=rule.line,
+            doctrine_text=rule.text, would_have_said=text, citations=citations,
+            why=verdict.why, written_at=self._clock(), established_by=established_by,
+            instruction_sha256=instruction_sha256, model=model,
+            check_model=check.model,
+            ))
+        except Exception:
+            # The lesson is still refused: a lost tension row is the
+            # operator's loss, never a reason to write what the law refused.
+            log.exception("lessons: unit=%s the tension row could not be written", unit)
+        else:
+            if self._metrics is not None:
+                self._metrics.inc("nora_self_tension_total", doctrine_file=rule.file)
+        # The file, not the judge's reason: a session told how it was caught
+        # is a session taught to reword around it (review of #764).
+        return self._refused(unit, Refusal(
+            "loosens_law", f"acting on this would loosen or contradict a rule you keep "
+            f"({rule.file}); it is not written. A lesson adds practice only where "
+            "your rules are silent"))
 
     async def retire(
         self, *, unit: str, lesson_id: str, by: str, why: str, established_by: str,

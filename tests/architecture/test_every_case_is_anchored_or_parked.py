@@ -42,7 +42,7 @@ KNOWN_ROOMS = {
     ("signal", "x5hcBMQITtdUfSC0o9AHsqJKU7ywYMrOG5hcBMQITtc="),
     ("discord", "100000000000000201/100000000000000202"),
     ("discord", "100000000000000203/100000000000000204"),
-    ("whatsapp", "175356896463213715@g.us"),
+    ("whatsapp", "165393256957216018@g.us"),
 }
 #: The clone's history begins 2026-08-05 (`messages` from the cutover).
 FIRST_ROW_MS = 1_785_928_686_349
@@ -283,9 +283,11 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     measured are deleted with their adaptors, the cognition session owns
     notes and reminders now), plus 2 `tool_selection` cases for `computer_browse`
     (2026-10-07, design/browser-runtime B2: a search box to operate and a page
-    to click through; browse-on arm only); a change to it
+    to click through; browse-on arm only), plus the 5 `lessons` cases
+    (2026-10-09, design/self-growth/40 §8: 4 lessons counterfactuals and a
+    control, the `<lessons>` block's before/after); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 257
-    assert sum(c.active + c.parked for c in totals) == 257
+    assert sum(c.total for c in totals) == 262
+    assert sum(c.active + c.parked for c in totals) == 262

@@ -13,7 +13,7 @@ The incident, with the timestamps this case replays (all HKT, 2026-09-11):
 
 | when | stage | what happened |
 |---|---|---|
-| 16:42:43 | Observe | Miles, untagged, in the Signal room: how to get to Cyberport at 10 tomorrow? |
+| 16:42:43 | Observe | Miles, untagged, on Signal: how to get to Cyberport at 10 tomorrow? |
 | 16:42:54 | Decide · gate | the Relevance Gate ADMITS the closed window |
 | 16:43:00 | Act · participation | the participation turn runs |
 | 16:43:57 | Act | the full route is SENT — one `is_nora` row, `delivery_status=sent` |

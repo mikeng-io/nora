@@ -45,10 +45,10 @@ from nora.testing import FakeAdapter
 
 GROUP = ConversationTarget("signal", "Z3JvdXA=", "group")
 DISCORD_GROUP = ConversationTarget("discord", "111/222", "group")
-WHATSAPP_GROUP = ConversationTarget("whatsapp", "176569000000000000@g.us", "group")
+WHATSAPP_GROUP = ConversationTarget("whatsapp", "152099000000000000@g.us", "group")
 #: The SHORT thread id — the only one `03` exposes, and the only one every
 #: send verb takes.
-INSTAGRAM_GROUP = ConversationTarget("instagram", "1009543911792316", "group")
+INSTAGRAM_GROUP = ConversationTarget("instagram", "1183780976338188", "group")
 
 
 def _target_for(adapter):
@@ -65,7 +65,7 @@ def _target_for(adapter):
 ACI = "b9f1c2de-4a55-4c1e-9a77-0c1d2e3f4a5b"
 MENTION = Mention(start=0, length=8, recipient=ACI)
 STYLE = TextStyle(start=0, length=5, style=Style.BOLD)
-PREVIEW = LinkPreview(url="https://n.example.net/a", title="A page", description="about it")
+PREVIEW = LinkPreview(url="https://links.example.net/a", title="A page", description="about it")
 
 
 async def _signal_adapter(aiohttp_server, *, status: int = 200):
@@ -205,14 +205,14 @@ async def test_a_send_carrying_a_style_succeeds(working):
 
 async def test_a_send_carrying_a_preview_succeeds(working):
     result = await working.send(
-        target=_target_for(working), text="https://n.example.net/a", preview=PREVIEW,
+        target=_target_for(working), text="https://links.example.net/a", preview=PREVIEW,
     )
     assert result.ok is True
 
 
 async def test_a_send_carrying_every_decoration_at_once_succeeds(working):
     result = await working.send(
-        target=_target_for(working), text="@Grant https://n.example.net/a",
+        target=_target_for(working), text="@Grant https://links.example.net/a",
         mentions=(MENTION,), styles=(STYLE,), preview=PREVIEW,
     )
     assert result.ok is True

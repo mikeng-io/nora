@@ -44,7 +44,7 @@ from nora.infra.preview import (
     next_hop,
 )
 
-URL = "https://n.example.net/abc"
+URL = "https://links.example.net/abc"
 
 
 def _card(body: str):
@@ -230,7 +230,7 @@ def test_every_redirect_status_produces_a_next_hop(status):
 
 
 def test_a_relative_location_is_resolved_against_the_url_it_came_from():
-    assert next_hop(302, "/real-page", "https://n.example.net/abc") == "https://n.example.net/real-page"
+    assert next_hop(302, "/real-page", "https://links.example.net/abc") == "https://links.example.net/real-page"
 
 
 def test_a_non_redirect_status_is_not_a_hop():
@@ -289,7 +289,7 @@ async def test_a_malformed_url_is_a_missing_card_not_an_exception():
 
 
 @pytest.mark.network
-async def test_a_real_shortened_maps_url_produces_a_real_card():
+async def test_a_real_public_page_produces_a_real_card():
     """The whole path against the LIVE internet: DNS, the SSRF address check, a
     real redirect hop, real OpenGraph tags, a real image body.
 
@@ -299,18 +299,18 @@ async def test_a_real_shortened_maps_url_produces_a_real_card():
     thing it exists to refuse. That is a real limit, and it means the fixtures
     can only ever prove the REFUSALS. This is the test that proves the accept.
 
-    `n.example.net` is the operator's own shortener and the exact URL shape DEC-89
-    now appends to restaurant replies, so this is the production input, not a
-    representative one. Network-marked, so it is deselected by default and run
+    The URL is a real public page that serves OpenGraph tags (the shortener
+    URL this used to chase was retired by ADR 0023). Network-marked, so it is
+    deselected by default and run
     deliberately: `uv run pytest -m network`.
     """
     source = OpenGraphPreviewSource(timeout_seconds=10.0, fetch_image=True)
-    card = await source.preview_for(url="https://n.example.net/9DpAk8g")
+    card = await source.preview_for(url="https://github.com/")
 
-    assert card is not None, "the live shortener served no card"
+    assert card is not None, "the live page served no card"
     # The url is the one PASSED IN, never the post-redirect target — signal-cli
     # requires the body to carry the same url, and the body carries what she wrote.
-    assert card.url == "https://n.example.net/9DpAk8g"
+    assert card.url == "https://github.com/"
     assert card.title                       # real og:title
     assert card.image_data_uri is None or card.image_data_uri.startswith("data:image/")
 

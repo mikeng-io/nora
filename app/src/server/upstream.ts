@@ -36,6 +36,9 @@ const UUID = /^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 // UUID, so a reply may carry it); Nora resolves it among what the viewer may read.
 const DOCUMENT_REF = /^(?:[0-9a-f]{12}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
 
+// An artifact is a link's 12-hex artifact_id or an attachment's UUID (nora/web/artifacts.py).
+export const ARTIFACT_REF = /^(?:[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
 const DOCUMENT_UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const REVISION = /^[1-9][0-9]{0,8}$/;
 
@@ -64,6 +67,11 @@ export const ROUTES: RouteSpec[] = [
     scope: "self",
     params: { id: DOCUMENT_UUID, n: REVISION },
   },
+  // Artifacts (ADR 0023): the files Nora sent in the rooms that name the viewer. The
+  // viewer is the session's; a file they may not see is Nora's same 404 as no such file.
+  // The download is its own route (src/server/artifact-download.ts): this proxy is JSON only.
+  { pattern: ["artifacts"], scope: "self", query: ["page", "pageSize"], freeText: ["q"] },
+  { pattern: ["artifacts", ":id"], scope: "self", params: { id: ARTIFACT_REF } },
   { pattern: ["presence"] },
   { pattern: ["presence", "places"] },
   { pattern: ["presence", "analytics", "places"] },

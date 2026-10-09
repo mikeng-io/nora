@@ -76,6 +76,7 @@ from .sandbox import (
     sandbox_database,
     sandbox_from_snapshot,
     seed_documents,
+    seed_lessons,
     shared_database_versions,
     sweep_stale_private_blank_templates,
 )
@@ -120,6 +121,7 @@ __all__ = [
     "sandbox_database",
     "sandbox_from_snapshot",
     "seed_documents",
+    "seed_lessons",
     "settle",
     "shared_database_versions",
     "silent_failures",

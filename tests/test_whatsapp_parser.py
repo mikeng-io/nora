@@ -8,7 +8,7 @@ from nora.domain.models import EditTarget
 from nora.platform.whatsapp.jid import lid_form, phone_form
 from nora.platform.whatsapp.parser import parse_event
 
-GROUP_JID = "176569000000000000@g.us"
+GROUP_JID = "152099000000000000@g.us"
 ALICE_PHONE = "85290000100"
 ALICE_LID = "60000000000001"
 
@@ -93,12 +93,12 @@ def test_a_sender_with_no_resolution_falls_back_to_the_raw_jid():
 
 def test_a_dm_with_a_phone_jid_normalizes_to_phone_at_server():
     msg = parse_event(event(
-        chat_jid="85202411020@s.whatsapp.net", is_group=False,
-        sender_jid="85202411020@s.whatsapp.net",
-        sender_phone="85202411020", sender_lid=None,
+        chat_jid="86183254648@s.whatsapp.net", is_group=False,
+        sender_jid="86183254648@s.whatsapp.net",
+        sender_phone="86183254648", sender_lid=None,
     ))
     assert msg.conversation_type == "dm"
-    assert msg.conversation_id == "85202411020@s.whatsapp.net"
+    assert msg.conversation_id == "86183254648@s.whatsapp.net"
 
 
 def test_a_dm_on_a_lid_jid_resolves_to_the_phone_form_when_the_map_knows_it():
@@ -108,16 +108,16 @@ def test_a_dm_on_a_lid_jid_resolves_to_the_phone_form_when_the_map_knows_it():
         chat_jid=f"{ALICE_LID}@lid", is_group=False,
         sender_jid=f"{ALICE_LID}@lid", sender_phone=ALICE_PHONE, sender_lid=ALICE_LID,
     ))
-    assert msg.conversation_id == "85255080100@s.whatsapp.net"
+    assert msg.conversation_id == "85290000100@s.whatsapp.net"
 
 
 def test_a_dm_on_an_unresolved_lid_jid_keeps_the_raw_jid():
     msg = parse_event(event(
-        chat_jid="99479987242@lid", is_group=False,
-        sender_jid="99479987242@lid", sender_phone=None, sender_lid="99479987242",
+        chat_jid="96850026752@lid", is_group=False,
+        sender_jid="96850026752@lid", sender_phone=None, sender_lid="96850026752",
     ))
     assert msg.conversation_type == "dm"
-    assert msg.conversation_id == "99479987242@lid"
+    assert msg.conversation_id == "96850026752@lid"
 
 
 # ── mentions: both forms, matching the self-alias contract ───────────────────
@@ -128,10 +128,10 @@ def test_mentions_carry_phone_and_lid_forms_together():
     `registry.self_aliases()`, and which form that set carries depends on
     `GET /self` — so BOTH normalized forms ride every resolved entry."""
     msg = parse_event(event(mentioned=[
-        {"jid": "85202411020@s.whatsapp.net", "phone": "85202411020",
+        {"jid": "86183254648@s.whatsapp.net", "phone": "86183254648",
          "lid": "60000000000001"},
     ]))
-    assert msg.mentions == frozenset({"+85202411020", "60000000000001"})
+    assert msg.mentions == frozenset({"+86183254648", "60000000000001"})
 
 
 def test_a_mention_of_the_bot_matches_the_alias_self_id_would_derive():
@@ -157,10 +157,10 @@ def test_an_unresolved_mention_normalizes_off_its_own_jid():
     """No phone/lid fields — a `@s.whatsapp.net` mention still yields its
     phone form; a `@lid` mention its lid form."""
     msg = parse_event(event(mentioned=[
-        {"jid": "85202411020@s.whatsapp.net", "phone": None, "lid": None},
+        {"jid": "86183254648@s.whatsapp.net", "phone": None, "lid": None},
         {"jid": "60000000000001@lid", "phone": None, "lid": None},
     ]))
-    assert msg.mentions == frozenset({"+85202411020", "60000000000001"})
+    assert msg.mentions == frozenset({"+86183254648", "60000000000001"})
 
 
 # ── quote: the ReplyToNoraPolicy shape ────────────────────────────────────────
@@ -168,12 +168,12 @@ def test_an_unresolved_mention_normalizes_off_its_own_jid():
 
 def test_a_quote_normalizes_its_author_and_carries_the_parent_ts():
     msg = parse_event(event(quoted={
-        "id": "3EB0AA", "participant_jid": "85202411020@s.whatsapp.net",
-        "participant_phone": "85202411020", "participant_lid": None,
+        "id": "3EB0AA", "participant_jid": "86183254648@s.whatsapp.net",
+        "participant_phone": "86183254648", "participant_lid": None,
         "timestamp_ms": 1756963100000, "text": "earlier message",
     }))
     assert msg.quote is not None
-    assert msg.quote.author_id == "+85202411020"
+    assert msg.quote.author_id == "+86183254648"
     assert msg.quote.text == "earlier message"
     assert msg.quote.quoted_ts == 1756963100000
 
@@ -183,8 +183,8 @@ def test_a_quote_whose_parent_predates_the_bridge_cache_degrades_to_ts_zero():
     parent pointer does not — a `by_ts` lookup misses on 0 and renders no
     parent, rather than rendering a wrong one."""
     msg = parse_event(event(quoted={
-        "id": "3EB0AA", "participant_jid": "85202411020@s.whatsapp.net",
-        "participant_phone": "85202411020", "participant_lid": None,
+        "id": "3EB0AA", "participant_jid": "86183254648@s.whatsapp.net",
+        "participant_phone": "86183254648", "participant_lid": None,
         "timestamp_ms": None, "text": "earlier message",
     }))
     assert msg.quote is not None
@@ -259,7 +259,7 @@ def test_status_broadcast_is_dropped():
 
 
 def test_a_newsletter_is_dropped():
-    assert parse_event(event(chat_jid="176569000000000000@newsletter",
+    assert parse_event(event(chat_jid="152099000000000000@newsletter",
                              is_group=False)) is None
 
 

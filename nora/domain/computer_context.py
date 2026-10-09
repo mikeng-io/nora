@@ -62,7 +62,7 @@ class RunLine:
 
 @dataclass(frozen=True)
 class LinkLine:
-    """One Drop link the room made with `computer_export(to="link")`, from
+    """One portal link the room made with `computer_export(to="link")`, from
     its two audit rows: the link's `artifact_id` (what a revision passes to
     keep the same link), its `url`, the title and workspace `path` it was
     made from, whether this was a revision, and when."""

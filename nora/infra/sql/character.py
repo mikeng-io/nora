@@ -35,9 +35,15 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import EPISODE_EVIDENCE_OUTCOMES, Episode, RoomMessage
+from nora.domain.lessons import NAMES_HER
 from nora.infra.sql.audit import transcript_row, transcript_select
 from nora.infra.sql.mobility import current_build_id
-from nora.infra.sql.schema import CULTURE_REVISION, MESSAGES, ROLLUP_RESPONSE
+from nora.infra.sql.schema import (
+    CONSOLIDATION_WATERMARK,
+    CULTURE_REVISION,
+    MESSAGES,
+    ROLLUP_RESPONSE,
+)
 
 __all__ = ["SqlCharacterEvidence"]
 
@@ -116,6 +122,61 @@ class SqlCharacterEvidence:
         out.reverse()
         return out, int(cursor or after)
 
+    # -- corrections (Lessons L4) ---------------------------------------------
+
+    async def addressed_since(
+        self, *, rooms: Sequence[tuple[str, str]], since_ms: int, until_ms: int,
+        limit: int, self_ids: frozenset[str] = frozenset(),
+    ) -> list[RoomMessage]:
+        """Human messages in `rooms` sent in `(since_ms, until_ms]` that address
+        Nora: they quote one of her messages in the same room, @-mention one of
+        `self_ids` (`mentions_json`: Signal stores a mention as U+FFFC in the
+        body, so the body alone never shows it), or name her («nora» as a word,
+        any case). Oldest first, at most the newest `limit`. Whether one is a
+        CORRECTION is the caller's (`nora.domain.lessons.is_correction`)."""
+        if limit <= 0 or until_ms <= since_ms:
+            return []
+        hers = MESSAGES.alias("hers")
+        quotes_her = sa.exists(
+            sa.select(hers.c.id).where(
+                hers.c.is_nora == 1,
+                hers.c.platform == MESSAGES.c.platform,
+                hers.c.conversation_id == MESSAGES.c.conversation_id,
+                hers.c.ts == MESSAGES.c.quoted_ts,
+            )
+        )
+        stmt = (
+            transcript_select().add_columns(MESSAGES.c.conversation_id)
+            .where(
+                _in_rooms(rooms), MESSAGES.c.is_nora == 0,
+                MESSAGES.c.hidden_at.is_(None),
+                MESSAGES.c.ts > since_ms, MESSAGES.c.ts <= until_ms,
+                sa.or_(
+                    sa.and_(MESSAGES.c.quoted_ts.isnot(None), quotes_her),
+                    MESSAGES.c.body.op("~*")(NAMES_HER),
+                    *(MESSAGES.c.mentions_json.contains(f'"{i}"') for i in sorted(self_ids)),
+                ),
+            )
+            .order_by(MESSAGES.c.id.desc()).limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        out = [RoomMessage(room=r.conversation_id, row=transcript_row(r)) for r in rows]
+        out.reverse()
+        return out
+
+    async def last_run_ms(self, *, adaptor: str, key: str) -> int | None:
+        """When `adaptor` last ran for `key` (its watermark row's `updated_at`,
+        which every run that is not `unavailable` sets), in epoch ms, or None
+        when it never has."""
+        stmt = sa.select(CONSOLIDATION_WATERMARK.c.updated_at).where(
+            CONSOLIDATION_WATERMARK.c.consolidator_name == adaptor,
+            CONSOLIDATION_WATERMARK.c.scope_id == key,
+        )
+        async with self._engine.connect() as conn:
+            at = (await conn.execute(stmt)).scalar_one_or_none()
+        return None if at is None else int(at.timestamp() * 1000)
+
     # -- a unit --------------------------------------------------------------
 
     async def revision_count(self, *, keys: Sequence[str]) -> int:
@@ -150,10 +211,22 @@ class SqlCharacterEvidence:
 
     # -- Nora ----------------------------------------------------------------
 
-    def _closed(self, unit: str, after: int) -> list[Any]:
-        return [
+    def _closed(self, unit: str, after: int, *, evidence_only: bool = True) -> list[Any]:
+        """Settled episodes of the current build for `unit` past `after`.
+        `evidence_only` (Character · Nora) narrows them to `Episode.is_evidence`;
+        off (Lessons, design/self-growth/40 §6), every CLOSED episode is read,
+        `unanswered` included, because the Lessons session is handed each send's
+        text and judges whether an unanswered one asked something."""
+        closed = [
             ROLLUP_RESPONSE.c.build_id == current_build_id(),
             ROLLUP_RESPONSE.c.unit == unit,
+            ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
+            ROLLUP_RESPONSE.c.message_id > after,
+        ]
+        if not evidence_only:
+            return closed
+        return [
+            *closed,
             # EVIDENCE ONLY, `Episode.is_evidence` in SQL (DEC-290 (4)): people
             # answered, or silence was proved against an expected answer.
             # `unanswered` (none expected) is neither, and `open`/`unknown`
@@ -173,29 +246,29 @@ class SqlCharacterEvidence:
                 ROLLUP_RESPONSE.c.reactions == 0,
                 ROLLUP_RESPONSE.c.edits == 0,
             )),
-            ROLLUP_RESPONSE.c.outcome.notin_(("open", "unknown")),
-            ROLLUP_RESPONSE.c.message_id > after,
         ]
 
-    async def episode_count(self, *, unit: str, after: int) -> int:
+    async def episode_count(
+        self, *, unit: str, after: int, evidence_only: bool = True,
+    ) -> int:
         """`response` episodes of the current build for `unit` whose send is
         past Record id `after` that ARE EVIDENCE (`Episode.is_evidence`). An
         `open` one is never counted (its outcome can still change), nor an
-        `unknown` one (no proof the platform was up), nor an `unanswered` one
-        (none was expected, so nothing happened)."""
+        `unknown` one (no proof the platform was up), nor, with `evidence_only`,
+        an `unanswered` one (none was expected, so nothing happened)."""
         stmt = sa.select(sa.func.count()).select_from(ROLLUP_RESPONSE).where(
-            *self._closed(unit, after),
+            *self._closed(unit, after, evidence_only=evidence_only),
         )
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
     async def episodes(
-        self, *, unit: str, after: int, limit: int,
+        self, *, unit: str, after: int, limit: int, evidence_only: bool = True,
     ) -> tuple[list[Episode], int]:
         """The newest `limit` of those evidence episodes, oldest first, each with her
         send's text and the replies that quoted it inside its window, and the
         cursor: the newest send id among all of them."""
-        where = self._closed(unit, after)
+        where = self._closed(unit, after, evidence_only=evidence_only)
         head = sa.select(sa.func.max(ROLLUP_RESPONSE.c.message_id)).where(*where)
         send = MESSAGES.alias("send")
         stmt = (

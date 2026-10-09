@@ -93,7 +93,6 @@ _PLACEHOLDER_TOKEN_ENV = "NORA_EVAL_SUBJECT_DISCORD_TOKEN"  # noqa: S105
 #: whose absence downgrades a tool the deployment's Nora holds. Filled with
 #: `setdefault`, so the deploy host's real values always win.
 _CREDENTIALS_ENABLED_FEATURES_DEMAND = (
-    "NORA_DROP_TOKEN",          # [shortener] — the Drop credential
     "GOOGLE_MAPS_API_KEY",      # [route]
     "OMNIROUTE_API_KEY",        # the model key Nora herself runs on
 )
@@ -375,8 +374,8 @@ def _baseline(cfg: Config, workdir: Path) -> Config:
     # warns about per feature rather than failing.
     #
     # THAT DEGRADATION IS A DIVERGENCE, and the honest place to say so is here:
-    # production's Nora holds `web_search`, `route`, `online`, `generate_image`
-    # and the shortener; a subject composed without their keys does not, and a
+    # production's Nora holds `web_search`, `route`, `online`, and
+    # `generate_image`; a subject composed without their keys does not, and a
     # case whose turn would have reached one measures a Nora missing it. Full
     # fidelity means running where the deployment runs
     # (`design/evaluation/11-the-sandbox-rebuild.md` §1.2).

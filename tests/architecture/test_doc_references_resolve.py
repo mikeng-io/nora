@@ -258,6 +258,21 @@ def _tracked_markdown_files() -> list[str]:
 # the operator; do not mass-rewrite the docs to clear it, and do not add to it
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
+    (
+        "docs/adr/0014-a-tagged-place-outranks-an-auto-identified-one.md",
+        "design/proposed/27-presence-analytics.md",
+    ): (
+        "deleted in the 2026-10 PII scrub (the design held real locations). "
+        "ADR 0014 is accepted, so its text keeps naming the file as it was."
+    ),
+    (
+        "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
+        "deploy/drop/rendering.py",
+    ): (
+        "deleted 2026-10-08 with the whole Drop service (ADR 0023). ADR 0020 is "
+        "accepted, so only its Status line may change; its Context text keeps "
+        "naming the file as it was. checked 2026-10-08 (`git log -- deploy/drop`)"
+    ),
     # --- hidden by a NEIGHBOURING table row until 2026-09-24, TRIAGED (#422) ---
     #
     # A table was one «paragraph» to this gate, so one row carrying a
@@ -459,13 +474,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
         "channel went the sidecar route, design/voice-channel/05) — the brief is a "
         "historical record of the proposal, not a link to fix"
-    ),
-    ("scrub/README.md", "docs/ai-thinkathon-2026-09.md"): (
-        "the note was removed from HEAD once its event had happened, and the "
-        "scrub rewrites HISTORY, where the file still is — so the citation "
-        "still points at the scrub's actual subject. The entry it sits in is "
-        "the lesson that path deletion misses renames; repointing it at a live "
-        "path would delete the example"
     ),
     ("docs/CONVENTIONS.md", "tests/fixtures/presence_corpus_sample.py"): (
         "the war-story's subject: 11,431 real GPS fixes, deleted from the tree by "

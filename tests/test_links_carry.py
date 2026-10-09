@@ -19,8 +19,8 @@ from nora.obs.metrics import Metrics
 from tests.fakes import SinkSender
 from tests.test_doctrine_loader import write
 
-SHORT = "https://n.example.net/9DpAk8g"
-OTHER = "https://n.example.net/zzz1111"
+SHORT = "https://www.google.com/maps/search/?api=1&query=Soi.29"
+OTHER = "https://www.google.com/maps/search/?api=1&query=zzz1111"
 
 
 # ---- LinkCarry on its own ---------------------------------------------------
@@ -45,6 +45,18 @@ def test_a_reply_that_already_carries_the_link_is_untouched():
     original = f"Soi.29 啦，{SHORT}"
     text, added = carry.apply(original)
     assert (text, added) == (original, 0)
+
+
+def test_a_reply_carrying_the_link_decoded_is_untouched():
+    """FALSIFIER (ADR 0023 review): with no shortener the link is the full Maps URL,
+    mostly `%E9...` escapes for a Chinese name. A model that writes it with the
+    characters themselves, or `+` for a space, already carries it; read as missing,
+    the link was appended a second time under her own copy."""
+    url = "https://www.google.com/maps/search/?api=1&query=%E9%8A%85%E9%91%BC%E7%81%A3+Times"
+    carry = LinkCarry()
+    carry.offer(anchor="銅鑼灣", url=url)
+    reply = "去銅鑼灣啦 https://www.google.com/maps/search/?api=1&query=銅鑼灣 Times"
+    assert carry.apply(reply) == (reply, 0)
 
 
 def test_two_names_for_one_place_append_one_line():
@@ -115,11 +127,6 @@ class _Places:
                 "address": "銅鑼灣", "rating": 4.3}
 
 
-class _Shortener:
-    async def shorten(self, url: str) -> str:
-        return SHORT
-
-
 def _place_info_tool(links):
     from nora.agent.room import Room
     from nora.persons import Persons
@@ -130,7 +137,7 @@ def _place_info_tool(links):
         persons=persons, honcho=None, deliverer=None, metrics=Metrics(),
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
-        transit_source=None, route_source=_Places(), shortener=_Shortener(),
+        transit_source=None, route_source=_Places(),
         question="Soi.29 好唔好食", links=links,
     )
     return {t.tool_name: t for t in tools}["place_info"]

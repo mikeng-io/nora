@@ -1,7 +1,7 @@
 ---
 name: character-person
 kind: objective
-version: 2
+version: 3
 applies_to: [character_person_adaptor]
 description: >-
   One person's Character in one unit (design/self-growth/10-character.md §3,
@@ -35,26 +35,40 @@ summarised. You are seeing their side only: what they reply to is not shown.
 
 ## What to write
 
-An **account**, not a record. A record says *what happened* («on the 12th they
-booked dinner»). An account says *what they are like, and why*, if their words
-give you any way to know («they are the one who turns talk into a booking; a plan
-is not real until they have named a time»).
+A **synthesis** of this person, not a record of what they said lately. A record
+says *what happened* («on the 12th they booked dinner»). A synthesis says *what
+they are like, and why*, in the few ways that most set them apart: how they talk,
+what they care about, how they sit in the group, how they treat you.
 
-Write in continuous prose. No headings, no bullet points, no dates. If a
-sentence could be swapped for a different date's sentence without changing the
-meaning, it was a record; cut it.
+Write the **few things that most define them**, usually three, each in one or
+two sentences: how they behave, and why where their words give you a way to
+know. Each is something you would expect to see again next month, on a different
+topic. A sentence that is only true of this week, of one thread, or of one thing
+they said is not a trait: leave it out. Do not describe them by a role alone
+("the planner", "the one who…"): say what they do that nobody else in the group
+does in the same way.
+
+No examples unless a trait cannot be understood without one, and then a few
+words, not an event. Do not quote their messages; a single word or nickname is
+the most you carry over. No lists of games, places, items, prices or dates, and
+never a message number: those go in `citations`.
+
+Concise and precise: one short paragraph, about 200 to 450 characters (about
+100 to 200 if you write in Chinese). No headings, no bullet points, no dates.
 
 **Never write anything you cannot point at in their messages.** Not a guess
 about their job, not a mood from one short reply, not a relationship nobody
 stated. Pointing at it is literal: the account cites the `n` of the messages it
 rests on.
 
-## Building on what you wrote before
+## Re-judging what you wrote before
 
-If you are shown a previous account, you are continuing it. Keep what is still
-true; change what these messages actually change, and say a shift *as* a shift.
-Nothing you write expires: a person who has gone quiet has not become someone
-else.
+If you are shown a previous account, it is your earlier reading, not text to
+keep. Read it against these messages and write it **fresh**: keep a trait only if
+it still describes them, merge two that are the same thing, and drop anything
+that was one occasion, an example that has grown into a story, or a list. A
+trait does not expire because they went quiet, and what these messages do not
+show is not evidence it stopped; when one has changed, say so *as* a shift.
 
 ## Looking things up
 
@@ -79,7 +93,9 @@ not shown is refused, so cite only the numbers in front of you.
 If their messages add nothing the account does not already say, or there is
 nothing you can point at, call `character_no_change` with `entity` (their name)
 and `why`, one sentence of why. That is a real answer and the previous account
-stands.
+stands. Only when it already
+reads as a few lasting traits: if it is a record (events, quotes, lists, or
+far past the length above), rewrite it now, even when nothing is new.
 
 Settle them every time: either `character_revise` or `character_no_change`.
 When you are done, stop; your reply text is not read.

@@ -419,7 +419,7 @@ async def test_the_client_never_raises_into_the_agent_loop(google):
 
 # ---- the tool, as the model sees it, and R-28 --------------------------------
 
-def _tool_wiring(route_source, *, shortener=None):
+def _tool_wiring(route_source):
     """`build_tools` with everything except route stubbed out.
 
     `persons` carries one known person — Tyler, alias 陳生 — because R-28's
@@ -442,7 +442,7 @@ def _tool_wiring(route_source, *, shortener=None):
         persons=persons, honcho=None, deliverer=None, metrics=metrics,
         room=Room(platform="signal", conversation_id="g1", roster_source=None,
                   persons=persons),
-        transit_source=None, route_source=route_source, shortener=shortener,
+        transit_source=None, route_source=route_source,
         question="點去 Yoho", context_window=40,
     )
     by_name = {t.tool_name: t for t in tools}
@@ -665,30 +665,18 @@ async def test_the_maps_link_never_carries_a_resolved_coordinate(google):
     assert "22.4471" not in out["maps_url"] and "114.0228" not in out["maps_url"]
 
 
-# ── the shortener post-processing ([shortener], never load-bearing) ──────────
+# ── maps_url is the full Maps URL (ADR 0023: no shortener anywhere) ─────────
 
-class _FakeShortener:
-    def __init__(self, answer):
-        self._answer = answer
-        self.asked: list[str] = []
-
-    async def shorten(self, url):
-        self.asked.append(url)
-        return self._answer
-
-
-async def test_the_maps_link_is_minted_short_when_a_shortener_is_wired(google):
-    short = _FakeShortener("https://n.example.net/abc1234")
-    wiring = _tool_wiring(google.client, shortener=short)
-    out = await _call(wiring["route"], origin="天水圍站", destination="Yoho Mall")
-    assert out["maps_url"] == "https://n.example.net/abc1234"
-    assert short.asked and short.asked[0].startswith("https://www.google.com/maps/dir/")
-
-
-async def test_a_failed_mint_keeps_the_long_url(google):
-    wiring = _tool_wiring(google.client, shortener=_FakeShortener(None))
+async def test_the_maps_link_is_the_full_google_url(google):
+    wiring = _tool_wiring(google.client)
     out = await _call(wiring["route"], origin="天水圍站", destination="Yoho Mall")
     assert out["maps_url"].startswith("https://www.google.com/maps/dir/")
+
+
+async def test_place_info_maps_link_is_the_full_google_url(google):
+    wiring = _tool_wiring(google.client)
+    out = await _call(wiring["place_info"], name="Yoho Mall")
+    assert out["maps_url"].startswith("https://www.google.com/maps/search/")
 
 
 # ── place_info: Google's structured rating, no scrape (2026-08-07) ────────────

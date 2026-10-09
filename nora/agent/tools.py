@@ -91,6 +91,7 @@ from ..domain.computer_exports import (
     NOT_AS_LINK,
     ComputerExport,
     ComputerExportStore,
+    mint_artifact_id,
     sniff_export_type,
 )
 from ..domain.computer_leases import ComputerLeases, Lease, lease_key
@@ -178,7 +179,6 @@ from ..domain.notes import (
     note_handle,
 )
 from ..domain.ports import (
-    ArtifactIngest,
     BrowserRunner,
     CultureReader,
     DiscordPresenceSource,
@@ -1098,7 +1098,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # on a subscription lane that is quota-bounded, not metered. Budget 2:
     # one generate, possibly one re-run with a size/quality tweak — the reply
     # rides `send_reply`'s own budget. `read_only=False` because it
-    # commits an artifact to external custody (`drop`) — an act verb, never
+    # commits an image to Nora's blob store — an act verb, never
     # claimable as read-only (the `media_fetch` cache exemption does NOT
     # extend here).
     #
@@ -1566,11 +1566,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                 output_contract="three_state", level=3),
     # `computer_export` 3 (design/sandbox-runtime §6, S3a): one file out, one
     # revision after a look at it, and one spare for a second file (a page
-    # and its data). Not `read_only`: it publishes (a Drop link, an
-    # attachment in the room) or stores. `unknown` because a Drop call that
-    # times out may still have made the link; `non_idempotent`/`never`
-    # because a second `register` mints a second link. Level 3: `refused`
-    # (too large, a type that may not leave, another room's artifact, nobody
+    # and its data). Not `read_only`: it publishes (a portal link, an
+    # attachment in the room) or stores. `unknown` because a chat send that
+    # times out may still have arrived; `non_idempotent`/`never` because a
+    # second link export mints a second link. Level 3: `refused`
+    # (too large, a web page, another room's artifact, nobody
     # asked) must read differently from `unavailable`, and `held_for_review`
     # from both.
     "computer_export": NativeTool(3,
@@ -4342,7 +4342,7 @@ DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status"}
 )
 
-#: `computer_export`'s title, cut: Drop turns it into a download file name.
+#: `computer_export`'s title, cut: the portal turns it into a download file name.
 _EXPORT_TITLE_CHARS = 200
 
 #: The characters a kept file-name suffix may carry into `inbox/`.
@@ -4471,7 +4471,6 @@ def build_tool_specs(
     mobility=None,
     refresher=None,
     geocoder=None,
-    shortener=None,
     question: str = "",
     context_window: int = 40,
     transcript: tuple[TranscriptRow, ...] | None = None,
@@ -4512,14 +4511,17 @@ def build_tool_specs(
     computer_sessions: ComputerSessionStore | None = None,
     computer_leases: ComputerLeases | None = None,
     # `computer_export` (design/sandbox-runtime §6): its record of what left
-    # the computer, and its link destination (Drop). `None` answers the
-    # destinations that need them `unavailable`.
+    # the computer. `None` answers the destinations that need it
+    # `unavailable`.
     computer_exports: ComputerExportStore | None = None,
     # `computer_browse` (design/browser-runtime 00 §5, B2): the sub-agent that
     # drives the room's browser. `None` (`[computer.browse]` off) answers the
     # tool `unavailable`; the registry withholds it then.
     browser: BrowserRunner | None = None,
-    artifact_ingest: ArtifactIngest | None = None,
+    # `computer_export(to="link")`'s portal origin (ADR 0023), `[documents]
+    # public_url`: a link is `<origin>/artifacts/<artifact_id>`. `""` answers a
+    # link `unavailable`.
+    artifact_link_base: str = "",
     relay: Relay | None = None,
     events: EventsCollaborator | None = None,
     notes: NoteCollaborator | None = None,
@@ -6432,14 +6434,6 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 f"&destination={urllib.parse.quote(destination)}"
                 f"&travelmode={_MAPS_TRAVELMODE.get(str(out.get('mode', '')), 'transit')}"
             )
-            # Minted through Nora's OWN shortener when one is wired
-            # ([shortener], self-hosted so no third party sees the trip). Never
-            # load-bearing: any failure keeps the long URL, which was already a
-            # fine answer.
-            if shortener is not None:
-                short = await shortener.shorten(out["maps_url"])
-                if short:
-                    out["maps_url"] = short
             # ADR 0015 §3: the link's reporting rule rides with the link.
             out["note"] = " ".join(filter(None, (
                 str(out.get("note") or ""),
@@ -6527,14 +6521,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if out.get("status") == "ok":
             # A Google Maps link to the PLACE (search deep link, keyless), built
             # from the asked name — never a resolved coordinate (R-28, the same
-            # rule route's maps_url follows). Minted short when the shortener is
-            # wired; never load-bearing.
+            # rule route's maps_url follows). The full URL, never shortened (ADR 0023).
             maps_url = ("https://www.google.com/maps/search/?api=1&query="
                         + urllib.parse.quote(name))
-            if shortener is not None:
-                short = await shortener.shorten(maps_url)
-                if short:
-                    maps_url = short
             out["maps_url"] = maps_url
             # DEC-89: offer it to the turn's carrier so that a reply which NAMES
             # this place carries the link whether or not the model remembered to
@@ -13922,24 +13911,27 @@ Args:
         """Send a file from your computer out as a link, a chat attachment or
         a kept copy. Call this when a file you made is ready.
 
-        MUST: it sends files (images, charts, CSV, PDF, data), never a web
-        page.
+        MUST: it sends any kind of file (images, charts, PDF, data, audio,
+        video, archives), never a web page. For many files, put them in one
+        zip on your computer and send that.
+
+        A link opens the file in the portal for people in this room who
+        have signed in; for anyone else, send it to chat.
 
         Returns `status`: ok, nothing_found, refused, held_for_review or
         unavailable, with a `note` on how to read it.
         - ok: sent. A link carries `url` and `artifact_id`; a kept picture
           its media `code`.
         - nothing_found: there is no such file.
-        - refused: too large, a kind of file that may not leave (a web page,
-          an SVG as a link), an artifact_id this room did not make, or nobody
-          here asked for it.
+        - refused: too large, a web page, an SVG as a link, an artifact_id
+          this room did not make, or nobody here asked for it.
         - held_for_review: made, and held by review or this room's cooldown.
         - unavailable: the computer, or where it was going, could not be reached.
 
         Args:
             path: The file, relative to the workspace folder.
-            to: link gives a web link that opens the file; chat attaches it
-                here; keep stores it privately and sends nothing.
+            to: link gives a portal link that opens the file; chat attaches
+                it here; keep stores it privately and sends nothing.
             title: The name people see. Defaults to the file name.
             artifact_id: Only with to=link: the id of a link this room made,
                 to replace its file and keep the same link.
@@ -13982,7 +13974,7 @@ Args:
                         "note": "Nothing was sent: a link or an attachment goes out only "
                                 "when somebody asked for it now. Keep it instead, or wait "
                                 "to be asked."}
-            if (to == "link" and (artifact_ingest is None or computer_exports is None)) or (
+            if (to == "link" and (not artifact_link_base or computer_exports is None)) or (
                 to == "keep" and computer_exports is None
             ) or (to == "chat" and deliverer is None):
                 outcome, row = "unavailable", {"to": to, "reason": "destination not wired"}
@@ -14046,9 +14038,10 @@ Args:
             media_type = sniff_export_type(data, path)
             if media_type is None:
                 outcome, row = "refused", {**received, "reason": "type not allowed"}
-                return {"status": "refused", "reason": "not a kind of file that may leave",
-                        "note": "Nothing was sent: a web page cannot leave your "
-                                "computer. Send the data, an image or a PDF instead."}
+                return {"status": "refused", "reason": "a web page may not leave",
+                        "note": "Nothing was sent: this file is a web page (HTML), the "
+                                "one kind of file that cannot leave your computer. Put "
+                                "its content in a document instead, or send the data."}
             if to == "link" and media_type in NOT_AS_LINK:
                 outcome, row = "refused", {**received, "media_type": media_type,
                                            "reason": "svg as a link"}
@@ -14068,37 +14061,9 @@ Args:
                     operation_id=operation_id, session_id=session_id, **target,
                 )
 
-            if to == "link":
-                ingest = cast(ArtifactIngest, artifact_ingest)  # checked wired above
-                try:
-                    if artifact_id:
-                        made = await ingest.update(
-                            artifact_id=artifact_id, data=data, title=shown_title,
-                            media_type=media_type,
-                        )
-                    else:
-                        made = await ingest.register(
-                            data=data, title=shown_title, media_type=media_type,
-                        )
-                except Exception as exc:
-                    log.exception("computer_export: Drop refused or unreachable")
-                    outcome, row = "unavailable", {**received, "reason": type(exc).__name__}
-                    return {"status": "unavailable", "reason": "the link could not be made",
-                            "note": "No link was made: the link service did not answer. "
-                                    "Say so; never write a link you were not given."}
-                recorded = await _export_record(tool, _export_row(
-                    artifact_id=made.artifact_id, url=made.url, revised=bool(artifact_id),
-                ))
-                outcome, row = "ok", {**received, "artifact_id": made.artifact_id,
-                                      "url": made.url, "revised": bool(artifact_id),
-                                      "recorded": recorded}
-                return {"status": "ok", "url": made.url, "artifact_id": made.artifact_id,
-                        "media_type": media_type, "size": len(data),
-                        "note": "The link opens the file. Put it in your reply in your own "
-                                "words. To change the file later and keep this link, export "
-                                "again with this artifact_id."}
-            # `chat` and `keep` both hold the bytes in Nora's own custody, the
-            # blob store (RustFS in production, content-addressed).
+            # Every destination holds the bytes in Nora's own custody, the blob
+            # store (RustFS in production, content-addressed); a link is the
+            # portal's Artifacts route over them (ADR 0023).
             try:
                 key = await blob_store.put(data=data)
             except Exception:
@@ -14106,6 +14071,34 @@ Args:
                 outcome, row = "unavailable", {**received, "reason": "blob put failed"}
                 return {"status": "unavailable", "reason": "the file could not be stored",
                         "note": "Nothing was sent: I couldn't store the file. Say so."}
+            if to == "link":
+                made = artifact_id or await _new_artifact_id()
+                if made is None:
+                    outcome, row = "unavailable", {**received, "reason": "no free artifact_id"}
+                    return {"status": "unavailable", "reason": "the link could not be made",
+                            "note": "No link was made. Say so; never write a link you "
+                                    "were not given."}
+                url = f"{artifact_link_base.rstrip('/')}/artifacts/{made}"
+                recorded = await _export_record(tool, _export_row(
+                    artifact_id=made, url=url, revised=bool(artifact_id), blob_key=key,
+                ))
+                if not recorded:
+                    # The row IS the link: the portal finds the file through it. No row,
+                    # no link, so none is handed out.
+                    outcome, row = "unavailable", {**received, "blob_key": key,
+                                                   "reason": "not recorded"}
+                    return {"status": "unavailable", "reason": "the link could not be made",
+                            "note": "No link was made: I couldn't record it. Say so; never "
+                                    "write a link you were not given."}
+                outcome, row = "ok", {**received, "artifact_id": made, "url": url,
+                                      "revised": bool(artifact_id), "blob_key": key,
+                                      "recorded": recorded}
+                return {"status": "ok", "url": url, "artifact_id": made,
+                        "media_type": media_type, "size": len(data),
+                        "note": "The link opens the file in the portal for people in this "
+                                "room who have signed in. Put it in your reply in your own "
+                                "words. To change the file later and keep this link, export "
+                                "again with this artifact_id."}
             if to == "keep":
                 recorded = await _export_record(tool, _export_row(blob_key=key))
                 # A kept IMAGE joins the room's media index, the custody path
@@ -14164,6 +14157,21 @@ Args:
         finally:
             await _computer_finish(tool, operation_id, outcome, started=started,
                                    finished=now_fn(), result=row, session_id=session_id)
+
+    async def _new_artifact_id() -> str | None:
+        """A fresh `artifact_id` no row holds yet, or None when three draws
+        all collided or the record could not be read (48 random bits: a
+        collision is a second draw, never two rooms on one link)."""
+        exports = cast(ComputerExportStore, computer_exports)  # checked wired by the caller
+        for _ in range(3):
+            candidate = mint_artifact_id()
+            try:
+                if await exports.for_artifact(artifact_id=candidate) is None:
+                    return candidate
+            except Exception:
+                log.exception("computer_export: artifact_id check failed")
+                return None
+        return None
 
     async def _kept_image_code(
         key: str, media_type: str, size: int, title: str, path: str,
@@ -15292,7 +15300,6 @@ def build_tools(
     mobility=None,
     refresher=None,
     geocoder=None,
-    shortener=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
     question: str = "",
@@ -15347,7 +15354,6 @@ def build_tools(
         mobility=mobility,
         refresher=refresher,
         geocoder=geocoder,
-        shortener=shortener,
         question=question, context_window=context_window, transcript=transcript,
         lookup_window=lookup_window,
         ai_peer=ai_peer,

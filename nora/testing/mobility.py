@@ -1,4 +1,4 @@
-"""In-memory MobilityStore. Passes tests/contract/test_mobility_store_contract.py.
+"""In-memory MobilityStore. Passes tests/contract/test_mobility_store_contract_synthetic.py.
 
 The behavioural twin of `nora.infra.sql.mobility.SqlMobilityStore`, builds
 included: every row carries the build that wrote it, an instance is bound to
