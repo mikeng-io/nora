@@ -550,6 +550,12 @@ def _pin_memory_to_the_eval_workspace(workdir: Path, workspace: str, deployment:
 _EVAL_WORKSPACE = "eval"
 
 
+class RoomNotInPolicyError(ValueError):
+    """The subject's room is one the policy does not name. Its own type so a
+    caller that knows WHY a room can be unnamed (a pseudonymised eval anchor,
+    #776) can say so without matching on this message."""
+
+
 def _conversation_for(spec: SubjectSpec) -> Conversation:
     """The policy entry `spec.room` composes with — RESOLVED, not grepped.
 
@@ -569,7 +575,7 @@ def _conversation_for(spec: SubjectSpec) -> Conversation:
     """
     convo = load_policy(spec.workdir / "policy.toml").conversation(*spec.room)
     if convo is None:
-        raise ValueError(
+        raise RoomNotInPolicyError(
             f"policy names no conversation for the subject's room "
             f"{spec.room!r}; ingest would refuse every message and nothing "
             "would raise"

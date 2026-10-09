@@ -29,6 +29,7 @@ from typing import Any
 import yaml
 from strands_evals import Case, Experiment
 
+from evals import pseudonyms
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
 from nora.subject.transport import TRANSPORT_STATES
 
@@ -264,6 +265,10 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
 
 
 def _case(row: dict[str, Any]) -> Case:
+    # Resolved ONCE, here, before anything reads the case (#776): the anchor,
+    # the person, the input, the expectation, every metadata string. The
+    # `name` is not: it is how `--case` selects, and it names no one.
+    row = {**pseudonyms.resolve(row), "name": row["name"]}
     return Case(
         name=str(row["name"]),
         input=str(row.get("input", "")),
@@ -274,7 +279,7 @@ def _case(row: dict[str, Any]) -> Case:
             "snapshot": dict(row.get("snapshot") or {}),
             "parked": dict(row.get("parked") or {}),
             "counterfactual": dict(row.get("counterfactual") or {}),
-            "person": str(row.get("person") or "miles_novak"),
+            "person": str(row.get("person") or pseudonyms.resolve("miles_novak")),
             "mention": bool(row.get("mention", False)),
             "category": row.get("category", ""),
         },
