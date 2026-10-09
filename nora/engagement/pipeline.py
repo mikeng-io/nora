@@ -1012,7 +1012,8 @@ class EngagementPipeline:
                     "recovered a reply the model wrote WITHOUT calling send_reply "
                     "(tag=%s, %d chars, after_heads_up=%s) — without a heads-up "
                     "the route is not honouring tool_choice=required",
-                    request.tag_id, len(final_text), handle.deliverer.delivered,
+                    request.tag_id, len(final_text),
+                    bool(getattr(handle.guard, "reply_still_owed", False)),
                 )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it
