@@ -44,6 +44,7 @@ from nora.domain.summons import (
     SUMMONS_MODES,
     SUMMONS_OUTCOMES,
 )
+from nora.domain.video import VIDEO_OUTCOMES
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -972,6 +973,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "or failed for a reason (" + " / ".join(SUBAGENT_OUTCOMES[2:]) + "). The limit "
         "reasons are the loop's own bounds and timeout the wall clock; a rising rate "
         "of them is work that cannot finish inside its bounds (DEC-247, amended).",
+        ("outcome",),
+    ),
+    _CounterSpec(
+        "nora_video_jobs_total",
+        "Video clips (`video_create`, design/video-generation) by outcome: at create "
+        + " / ".join(VIDEO_OUTCOMES[:3]) + "; how a started clip ended "
+        + " / ".join(VIDEO_OUTCOMES[3:]) + ". A terminal outcome may count again when "
+        "delivery is deferred by a held room and the next tick polls the same clip.",
         ("outcome",),
     ),
     _CounterSpec(

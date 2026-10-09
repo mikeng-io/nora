@@ -25,7 +25,7 @@ def test_config_example_exists_and_parses():
         "analytics", "compute", "computer", "otp",
         "search", "online", "weather", "preview", "heartbeat", "reminders",
         "speech", "social",
-        "notes", "culture", "lessons", "standing", "music", "image_gen",
+        "notes", "culture", "lessons", "standing", "music", "image_gen", "video_gen",
         "version", "engagement", "participation", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
         "documents",

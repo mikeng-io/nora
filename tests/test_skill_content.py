@@ -40,6 +40,10 @@ _SCENARIOS: dict[str, tuple[str, ...]] = {
     # `itinerary` is the TOOL's example and stays there.
     "document-creation": ("trip", "itinerary", "holiday", "flight", "hotel", "tokyo",
                           "budget", "birthday", "旅行", "行程", "報告"),
+    # The video skill is about making ANY clip and judging whether she is in it; a named
+    # occasion or subject is the closed set that fails its neighbour.
+    "video-generation": ("birthday", "dance", "meme", "wedding", "cat", "tiktok",
+                         "生日", "跳舞"),
 }
 
 #: The scenarios that produced #227: a bare hostname and a question about a

@@ -62,6 +62,9 @@ class Event:
     # URLs of documents code read back for this occasion (R-100). The fire turn seeds its link
     # carrier with them so a link the body names survives delivery; nothing else may mint one.
     document_urls: tuple[str, ...] = ()
+    # Links code attaches to the turn's message itself (`LinkCarry.attach`): a finished job's
+    # result URL (a video clip), which the model is told about and never has to copy.
+    attached_urls: tuple[str, ...] = ()
     # The brief's intent (`tell`/`ask`, nora.domain.cognition_remind.INTENTS) when the occasion has
     # one; None otherwise. The Deliverer records it on every message the turn sends, so the
     # Rollup knows whether the send expected an answer (design/cognition-loop/25 §3).

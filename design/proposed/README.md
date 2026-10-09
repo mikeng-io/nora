@@ -39,7 +39,6 @@ description.
 | `30-media-architecture.md` | the media custody and description architecture | **BUILT** — `nora/domain/media.py` plus DEC-45; issues #116/#117 are the live continuation. |
 | `31-recall-query-generation.md` | model-generated queries for recall tools | **BUILT** — landed in PR #92. |
 | `32-shared-media-register.md` | framing a shared picture, clip or Instagram item as her own notes rather than a report to relay: the `media_fetch` and Instagram read notes, and one `conduct.md` paragraph | **built on a branch, not deployed** (2026-09-26); the study is the evidence, a live read-back after deploy confirms or reopens it |
-| `33-video-generation.md` | `generate_video` as a deferred job: MiniMax-H3, 480P, 15 s, reference image, hard daily cap; delivery blocked on a network path to mainland Aliyun storage | **proposal only**; cost and reference-at-480P measured at 4 s, 15 s unverified |
 
 Each carries corrections applied after an adversarial review on the day it was
 written. Read the corrections — several are recorded as struck-through claims

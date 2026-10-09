@@ -62,10 +62,13 @@ DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
 DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | DREAMER_LOOP_TOOLS
 
 #: Tag-turn tools only (design/subagent §3): the four `subagent_*` tools are a person's
-#: tool for handing work to a background worker, so a fire turn, a Dreamer pass, a cognition
+#: tool for handing work to a background worker, and `video_create` starts a clip delivered
+#: to the person who asked, so a fire turn, a Dreamer pass, a cognition
 #: session and the worker itself (which would recurse) are never offered them.
 TAG_ONLY_TOOLS: frozenset[str] = frozenset({
     "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
+    # design/video-generation: a clip is delivered to the person who asked, in their room.
+    "video_create",
 })
 
 

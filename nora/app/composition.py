@@ -61,6 +61,7 @@ from nora.agent.telemetry import (
 )
 from nora.agent.telemetry import timed as telemetry_timed
 from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
+from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import (
     build_grounder,
@@ -140,6 +141,7 @@ from nora.domain.speech_markup import normalise as normalise_for_speech
 from nora.domain.stimuli import WakeHook, WakePolicy
 from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.tool_call_log import ToolCallLogStore
+from nora.domain.video import VIDEO_KIND
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.pipeline import EngagementPipeline
@@ -2700,8 +2702,37 @@ async def build_dependencies(
     # plug an adapter into. Until one is assigned here the poller below is
     # never built: wired, idle.
     # `kind -> ComputeBackend`: the poller resolves a row's backend by its `kind`
-    # (design/subagent §6). Empty today; step 2 registers the sub-agent worker here.
+    # (design/subagent §6). `[video_gen]` registers the video backend just below; the
+    # sub-agent worker is registered once the tool registry exists.
     compute_backends: dict[str, ComputeBackend] = {}
+    # Video generation ([video_gen], design/video-generation): enabled AND the key named by
+    # `[video_gen.minimax_cn] api_key_env` present builds the MiniMax CN backend, registered
+    # under `VIDEO_KIND` for the poller, and the desk `video_create` calls. The config refuses
+    # `enabled` without `[compute] enabled`. Enabled without the key builds nothing: the
+    # registry withholds the tool and this warns, never a crash (R-5/R-27).
+    video_desk: VideoDesk | None = None
+    if cfg.video_gen.enabled:
+        video_cfg = cfg.video_gen.minimax_cn
+        video_key = os.environ.get(video_cfg.api_key_env, "")
+        if video_key:
+            from nora.infra.video_gen import MiniMaxVideoBackend
+            video_backend = MiniMaxVideoBackend(
+                api_key=video_key, model=video_cfg.model,
+                resolution=cfg.video_gen.resolution,
+                duration_seconds=cfg.video_gen.duration_seconds, ratio=cfg.video_gen.ratio,
+                metrics=metrics, host=video_cfg.host,
+                timeout_seconds=video_cfg.timeout_seconds,
+            )
+            compute_backends[VIDEO_KIND] = video_backend
+            video_desk = VideoDesk(
+                jobs=compute_jobs, backend=video_backend, clock=clock,
+                tz=cfg.analytics.tz_name, max_per_day=cfg.video_gen.max_clips_per_day,
+            )
+        else:
+            log.warning(
+                "[video_gen] enabled but %s is unset; video_create is withheld",
+                video_cfg.api_key_env,
+            )
     # Nora's computer (design/sandbox-runtime, DEC-243): `ComputerdRuntime`,
     # built ONLY when `[computer] enabled`. Off leaves it `None` and every
     # computer tool answers `unavailable` (R-5). `ComputerToolSettings` is the
@@ -2868,6 +2899,8 @@ async def build_dependencies(
     ) if cfg.subagent.enabled else None
     tool_registry = ToolRegistry(
         subagent=subagent_desk,
+        video=video_desk,
+        video_refs_allowed=cfg.video_gen.allow_reference_images,
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
@@ -3016,7 +3049,8 @@ async def build_dependencies(
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "
             "per-job container backend was retired, design/sandbox-runtime "
-            "decision 4; `[subagent] enabled` registers the sub-agent worker); the "
+            "decision 4; `[subagent] enabled` registers the sub-agent worker, `[video_gen]` "
+            "the video backend); the "
             "compute-job poller stays idle. Set enabled = false."
         )
     if presence_store is not None:
@@ -3157,6 +3191,11 @@ async def build_dependencies(
     # below, once `fire_path` exists.
     lost_jobs = await compute_poller_recover(
         store=compute_jobs, metrics=metrics, now=clock(),
+        # A video row's handle is the provider's task id, not memory: when the video backend
+        # is wired its pending rows are polled again rather than swept as lost.
+        durable_kinds=(
+            frozenset({VIDEO_KIND}) if VIDEO_KIND in compute_backends else frozenset()
+        ),
     )
     # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
     # otherwise every deployment on the shipped default (`enabled = false`)

@@ -86,6 +86,7 @@ from .tools import (
     NATIVE_TOOL_BUDGETS,
     NATIVE_TOOLS,
     SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
     DocumentPublisher,
     EventsCollaborator,
     ImageGenerator,
@@ -98,6 +99,7 @@ from .tools import (
     hot_tools,
     utc_now,
 )
+from .video_desk import VideoDesk
 from .whereis import Circle, PresenceReader
 
 log = logging.getLogger("nora.agent.registry")
@@ -262,6 +264,10 @@ class ToolRegistry:
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools call. Without
         # it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
+        # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
+        # gate. Without the desk the registry withholds the tool from every turn.
+        video: VideoDesk | None = None,
+        video_refs_allowed: bool = False,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
@@ -287,8 +293,11 @@ class ToolRegistry:
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
             | (frozenset() if subagent is not None else SUBAGENT_TOOLS)
+            | (frozenset() if video is not None else VIDEO_TOOLS)
         )
         self._subagent = subagent
+        self._video = video
+        self._video_refs_allowed = video_refs_allowed
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -1084,6 +1093,7 @@ class ToolRegistry:
             media_store=self._media_store,
             documents=self._documents,
             subagent=self._subagent,
+            video=self._video, video_refs_allowed=self._video_refs_allowed,
             shelf=shelf,
             on_rows=on_rows,
         )

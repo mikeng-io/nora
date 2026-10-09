@@ -1,0 +1,15 @@
+{
+  "type": "feature",
+  "summary": "Nora can make a short video clip when asked, delivered to the chat a few minutes later as a link. It ships switched off.",
+  "details": [
+    "A clip is 15 seconds at 480P, in portrait 3:4 unless the operator sets another ratio.",
+    "She starts the clip and carries on; the link arrives in the same chat when it is ready, and she says it stops working after 24 hours.",
+    "A daily limit (one clip a day by default) is checked before anything is spent, and a restart does not reset it. A clip the service failed does not count.",
+    "With reference photos switched on, she can use a photo already sent in the chat, or her own picture, never a link from the web."
+  ],
+  "limitations": [
+    "Off until the operator turns it on: it needs the compute poller and the MiniMax CN key.",
+    "The link opens only on a device that can reach mainland China's Aliyun storage, and only for 24 hours.",
+    "Not yet tried live: the first 15 second clip, its real quota cost, and how reliably Nora chooses this tool are still to be measured."
+  ]
+}
