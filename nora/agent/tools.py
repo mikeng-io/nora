@@ -9263,7 +9263,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # conversation-scoped window `media_fetch` uses — a code that is not in
     # view is `nothing_found`, never a fetch attempt.
     #
-    # The list is `reference_images`, not `references` (DEC-306): Strands ends
+    # The list is `reference_images`, not `references` (DEC-307): Strands ends
     # the `Args:` section at any line starting `references:` (it reads it as a
     # «References:» header), and every argument line after it would be sent
     # as description text.
@@ -9325,7 +9325,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "feature is switched off. I can still make an image "
                         "from text alone.",
             }
-        # The provider's limit, refused rather than truncated (DEC-306): a
+        # The provider's limit, refused rather than truncated (DEC-307): a
         # dropped reference is a person or object silently missing from the
         # picture, and nothing downstream would say so.
         max_refs = image_generator.max_reference_images
@@ -9576,7 +9576,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         }.get(reason, "I can't make images right now. Say so plainly.")
         return {"status": "unavailable", "note": note}
 
-    # The reference limit is the ACTIVE provider's (DEC-306), so the sentence
+    # The reference limit is the ACTIVE provider's (DEC-307), so the sentence
     # stating it is rendered here, once per build, from the generator wired in.
     # The docstring above stays a literal (an f-string is no docstring at all,
     # see `load_transcript`) and carries the placeholder. No generator: the

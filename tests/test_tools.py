@@ -1304,7 +1304,7 @@ async def test_generate_image_references_passed_as_custody_handle(wiring):
 
 async def test_generate_image_references_up_to_the_limit_travel_in_call_order(wiring):
     """As many photos as the provider takes, all of them, in the order passed
-    (DEC-306): the first is not special and none is dropped."""
+    (DEC-307): the first is not special and none is dropped."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
     result = await _call(
@@ -1319,7 +1319,7 @@ async def test_generate_image_references_up_to_the_limit_travel_in_call_order(wi
 async def test_generate_image_over_the_provider_limit_is_refused_not_truncated(wiring):
     """One reference past the ACTIVE provider's limit is refused before the
     provider is called, and the note says the limit, so she can ask which to
-    keep (DEC-306). Truncating would draw the picture with somebody missing."""
+    keep (DEC-307). Truncating would draw the picture with somebody missing."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
     result = await _call(
@@ -1347,7 +1347,7 @@ async def test_generate_image_limit_follows_the_wired_provider(wiring):
 
 def test_generate_image_description_states_the_live_limit(wiring):
     """The description the model reads names the wired provider's number, and
-    with no provider wired it names none (DEC-306)."""
+    with no provider wired it names none (DEC-307)."""
     five, sixteen = _ImageGenerator(), _ImageGenerator()
     five.max_reference_images, sixteen.max_reference_images = 5, 16
     for gen, said in ((five, "at most 5 in one call"), (sixteen, "at most 16 in one call")):

@@ -591,7 +591,7 @@ async def test_drop_is_not_involved(tmp_path):
     assert result.media_type == "image/png"
 
 
-# -- the reference limit is the provider's (DEC-306) ------------------------
+# -- the reference limit is the provider's (DEC-307) ------------------------
 
 _PNG = b"\x89PNG\r\n\x1a\n"
 

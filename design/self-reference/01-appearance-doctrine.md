@@ -81,7 +81,7 @@ was not built; see the banner.
    images via `images[]` (`XaiImageGenerator`). With no operator anchor, "self
    wins over a second user image" is doctrine guidance, labelled advisory not
    mechanical — it decides slot order, not correctness.
-   **Superseded in part 2026-10-09 (DEC-306):** the three slots are now one
+   **Superseded in part 2026-10-09 (DEC-307):** the three slots are now one
    `reference_images` list whose limit IS the active provider's (xAI 5,
    Codex 16; `design/proposed/29-image-generation.md` §12). The ordering
    guidance above is unchanged.

@@ -201,7 +201,7 @@ never takes the daemon down" posture DEC-136's RustFS wiring took.
 
 xAI's `/v1/images/edits` accepts source images as **public URL / base64 data
 URI / file_id**, up to 3 per request (**superseded 2026-10-09**: xAI documents 5,
-and the tool now follows the provider's limit, §12, DEC-306), and supports style transfer and
+and the tool now follows the provider's limit, §12, DEC-307), and supports style transfer and
 multi-turn editing. So the answer to "can she use a reference image, or only a
 prompt?" is: **yes, reference images work.**
 
@@ -446,7 +446,7 @@ provider, so a skill loaded on xAI does not carry advice for a model it is not
 using. `image_gen.provider` is not in the drift allowlist of
 `tests/test_env_template.py`: switching the live value means arguing it there.
 
-## 12. The reference limit is the provider's (2026-10-09, DEC-306)
+## 12. The reference limit is the provider's (2026-10-09, DEC-307)
 
 Operator 2026-10-09: «The reference image limit should follow the image
 provider.» Until then `generate_image` took three fixed slots (`reference`,

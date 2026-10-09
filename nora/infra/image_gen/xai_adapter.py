@@ -45,7 +45,7 @@ XAI_EDITS_URL = f"{XAI_API_BASE}/v1/images/edits"
 #: The most source images one `/v1/images/edits` call takes: «Use up to five
 #: source images for a single image edit» (docs.x.ai, developers/model-capabilities/
 #: images/multi-image-editing, read 2026-10-09). Documented, not probed: Nora's xAI
-#: token was dead that day (DEC-306, design/proposed/29 §12).
+#: token was dead that day (DEC-307, design/proposed/29 §12).
 XAI_MAX_REFERENCE_IMAGES = 5
 
 

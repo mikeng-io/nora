@@ -2869,7 +2869,7 @@ class ImageGenerator(Protocol):
     `max_reference_images` is how many references this provider takes in one
     call: its vendor's limit, or a lower operator override from its config
     section. The tool states it and refuses a call above it; the provider is
-    the only thing that knows it (DEC-306, design/proposed/29 §12).
+    the only thing that knows it (DEC-307, design/proposed/29 §12).
     """
 
     @property
