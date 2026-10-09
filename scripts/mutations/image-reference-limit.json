@@ -2,16 +2,30 @@
   {
     "name": "generate_image refuses a call above the provider's reference limit",
     "file": "nora/agent/tools.py",
-    "old": "        if len(wanted_refs) > max_refs:\n",
-    "new": "        if False:\n",
+    "old": "            if len(markers) > max_refs:\n",
+    "new": "            if False:\n",
     "target": "tests/test_tools.py::test_generate_image_over_the_provider_limit_is_refused_not_truncated"
   },
   {
     "name": "the limit is read off the wired generator, not a constant",
     "file": "nora/agent/tools.py",
-    "old": "        max_refs = image_generator.max_reference_images\n",
-    "new": "        max_refs = 3\n",
+    "old": "            max_refs = image_generator.max_reference_images\n",
+    "new": "            max_refs = 3\n",
     "target": "tests/test_tools.py::test_generate_image_limit_follows_the_wired_provider"
+  },
+  {
+    "name": "a repeated code takes one slot and is sent once",
+    "file": "nora/agent/tools.py",
+    "old": "            markers = list(dict.fromkeys(markers))\n",
+    "new": "            markers = list(markers)\n",
+    "target": "tests/test_tools.py::test_generate_image_counts_a_repeated_code_once"
+  },
+  {
+    "name": "an empty code is a bad reference, not dropped",
+    "file": "nora/agent/tools.py",
+    "old": "        wanted_refs = [r for r in (reference_images or ()) if r is not None]\n",
+    "new": "        wanted_refs = [r for r in (reference_images or ()) if r]\n",
+    "target": "tests/test_tools.py::test_generate_image_an_empty_code_is_not_a_text_only_picture"
   },
   {
     "name": "the description states the wired provider's limit",

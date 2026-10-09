@@ -1331,6 +1331,30 @@ async def test_generate_image_over_the_provider_limit_is_refused_not_truncated(w
     assert "at most 3" in result["note"] and "4 photos" in result["note"]
 
 
+async def test_generate_image_counts_a_repeated_code_once(wiring):
+    """The same photo named twice (as a code and as its marker) is one
+    reference: it takes one slot of the limit and is sent once."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(
+        tools["generate_image"], prompt="us",
+        reference_images=["111aaa", "[image 111aaa]", "222bbb", "333ccc"],
+    )
+    assert result["status"] == "ok"
+    assert [r.marker_code for r in gen.calls[0]["reference_images"]] == [
+        "111aaa", "222bbb", "333ccc"]
+
+
+async def test_generate_image_an_empty_code_is_not_a_text_only_picture(wiring):
+    """An empty code is a bad reference, `nothing_found`, never dropped into a
+    picture made from the prompt alone."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(tools["generate_image"], prompt="edit", reference_images=[""])
+    assert result["status"] == "nothing_found"
+    assert gen.calls == []
+
+
 async def test_generate_image_limit_follows_the_wired_provider(wiring):
     """The limit is read off the generator wired in, not a constant in the
     tool: the same four references are fine for a provider that takes five."""
@@ -1357,6 +1381,11 @@ def test_generate_image_description_states_the_live_limit(wiring):
         # No `Args:` line leaked into the description: a parameter named
         # `references` did, because Strands reads `references:` as a header.
         assert "Optional marker codes" not in doc, doc
+        # The rendered text, not the source docstring, is what the Level 3
+        # ceiling (ADR 0015 §3, 320 cl100k tokens) is about.
+        import tiktoken
+
+        assert len(tiktoken.get_encoding("cl100k_base").encode(doc)) <= 320
     unwired = _with_image_tools(wiring, generator=None)["generate_image"].tool_spec["description"]
     assert "at most" not in unwired and "{reference_limit}" not in unwired
 

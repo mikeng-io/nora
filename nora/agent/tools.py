@@ -9317,24 +9317,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # The schema says list; a caller that bypasses it with one code
             # still means one reference, not its characters.
             reference_images = [reference_images]
-        wanted_refs = [r for r in (reference_images or ()) if r]
+        # Only `None` is "no reference": an empty code is a bad code, and it
+        # reaches the `nothing_found` below rather than a text-only picture.
+        wanted_refs = [r for r in (reference_images or ()) if r is not None]
         if wanted_refs and not image_refs_allowed:
             return {
                 "status": "unavailable",
                 "note": "I can't use reference photos right now: that "
                         "feature is switched off. I can still make an image "
                         "from text alone.",
-            }
-        # The provider's limit, refused rather than truncated (DEC-307): a
-        # dropped reference is a person or object silently missing from the
-        # picture, and nothing downstream would say so.
-        max_refs = image_generator.max_reference_images
-        if len(wanted_refs) > max_refs:
-            return {
-                "status": "unavailable",
-                "note": f"That is {len(wanted_refs)} photos, and I can use at most "
-                        f"{max_refs} in one picture. Nothing was made. Ask which "
-                        f"{max_refs} to use, or make it from fewer.",
             }
 
         refs: tuple[ImageReference, ...] = ()
@@ -9359,6 +9350,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                                 "can't use it rather than guessing.",
                     }
                 markers.append(marker)
+            # The same code twice is one photo: it takes one slot, and is sent once.
+            markers = list(dict.fromkeys(markers))
+            # The provider's limit, refused rather than truncated (DEC-307): a
+            # dropped reference is a person or object silently missing from the
+            # picture, and nothing downstream would say so.
+            max_refs = image_generator.max_reference_images
+            if len(markers) > max_refs:
+                return {
+                    "status": "unavailable",
+                    "note": f"That is {len(markers)} photos, and I can use at most "
+                            f"{max_refs} in one picture. Nothing was made. Ask which "
+                            f"{max_refs} to use, or make it from fewer.",
+                }
             refs = tuple(ImageReference(marker_code=m) for m in markers)
 
         image_size = None

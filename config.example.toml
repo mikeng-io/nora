@@ -777,7 +777,7 @@ high_quality = "high"
 refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
 timeout_seconds = 180.0
 # References per generate_image call. Unset = OpenAI's documented gpt-image
-# limit, 16 (DEC-307; 17 measured accepted on this lane, design 29 §12); a
+# limit, 16 (DEC-307; one probe on this lane accepted 17, design 29 §12); a
 # value may only lower it (1..16, refused at load otherwise).
 # max_reference_images = 16
 
