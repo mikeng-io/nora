@@ -2,8 +2,9 @@
 `[image_gen].provider` name to a concrete `ImageGenerator` implementation.
 
 DEC-137: the port is provider-agnostic; the composition root asks for a
-named provider and this module answers. `provider` values other than `xai`
-degrade to None (M6): the `generate_image` tool answers `unavailable` with
+named provider and this module answers: `xai` (DEC-137) or `openai_codex`
+(DEC-304, design/proposed/29 §11). Any other `provider` value degrades to
+None (M6): the `generate_image` tool answers `unavailable` with
 a composition-side warning, exactly like an unset token — never a raise at
 boot and never a guessed provider.
 """
@@ -14,6 +15,8 @@ from pathlib import Path
 
 from nora.domain.ports import ImageGenerator
 
+from .openai_codex_adapter import OpenAICodexImageGenerator
+from .openai_codex_oauth import OpenAICodexOAuth
 from .xai_adapter import XaiImageGenerator
 from .xai_oauth import XaiOAuth
 
@@ -27,6 +30,9 @@ def build_image_generator(
     model: str = "grok-imagine-image",
     quality_model: str = "grok-imagine-image-quality",
     timeout_seconds: float = 90.0,
+    responses_model: str = "gpt-5.5",
+    standard_quality: str = "medium",
+    high_quality: str = "high",
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
@@ -38,6 +44,21 @@ def build_image_generator(
     unknown provider name degrades to None with a composition-side warning,
     matching the weather/presence lanes, instead of raising at boot.
     """
+    if provider == "openai_codex":
+        # `refresh_token` is the BOOTSTRAP token from `.env`; the live,
+        # rotating one is kept in `state_file` (openai_codex_oauth).
+        if not refresh_token or state_file is None:
+            return None
+        return OpenAICodexImageGenerator(
+            oauth=OpenAICodexOAuth(
+                bootstrap_refresh_token=refresh_token, state_file=state_file,
+            ),
+            model=model,
+            responses_model=responses_model,
+            standard_quality=standard_quality,
+            high_quality=high_quality,
+            timeout_seconds=timeout_seconds,
+        )
     if provider == "xai":
         lane = oauth
         if lane is None:
@@ -63,4 +84,10 @@ def build_image_generator(
     return None
 
 
-__all__ = ["XaiImageGenerator", "XaiOAuth", "build_image_generator"]
+__all__ = [
+    "OpenAICodexImageGenerator",
+    "OpenAICodexOAuth",
+    "XaiImageGenerator",
+    "XaiOAuth",
+    "build_image_generator",
+]
