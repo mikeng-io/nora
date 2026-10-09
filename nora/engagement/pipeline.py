@@ -160,6 +160,19 @@ def _outcome_label(trace: TagTrace | None) -> str:
     return label
 
 
+
+def _nothing_answered(handle: Any) -> bool:
+    """Nothing reached the room, OR only a heads-up did and its answer is still
+    owed (`ReplyGuard.reply_still_owed`, DEC-294).
+
+    The three nets below (salvage, the cut-off fallback, DEC-93's recovery)
+    were gated on «nothing delivered». A heads-up sent with `more=true` IS
+    delivered, so before this an answer she then wrote as prose, or a turn cut
+    off mid-work, was dropped while the turn read as `replied` (review of
+    #754, 2026-10-09)."""
+    return (not handle.deliverer.delivered
+            or bool(getattr(handle.guard, "reply_still_owed", False)))
+
 class EngagementPipeline:
     def __init__(
         self,
@@ -841,7 +854,7 @@ class EngagementPipeline:
                     # would speak words she concluded without the tool.
                     request.occasion != "participation"
                     and stop_reason == "max_tokens"
-                    and not handle.deliverer.delivered
+                    and _nothing_answered(handle)
                     and final_text.strip()
                 )
                 if salvable:
@@ -881,13 +894,15 @@ class EngagementPipeline:
             # a DELIBERATE silence she is allowed (strict-silence, R-4/R-2) and must
             # stay silent. If she already sent something (multi-message cut off
             # mid-stream), `deliverer.delivered` is True and this is skipped — that
-            # is a partial delivery, not a void.
+            # is a partial delivery, not a void. Except a heads-up whose answer
+            # is still owed (`_nothing_answered`): the room was told an answer
+            # is coming, and the cut-off means it is not.
             cut_off_before_reply = (
                 # Occasion-gated like the salvage above: the participation
                 # occasion's exhaustion is silence, never the canned line.
                 request.occasion != "participation"
                 and stop_reason in deliver.BUDGET_STOP_REASONS
-                and not handle.deliverer.delivered
+                and _nothing_answered(handle)
             )
             # The local record of WHICH branch below fires (Task 6):
             # `deliverer.delivered` alone cannot tell "her own words,
@@ -956,7 +971,9 @@ class EngagementPipeline:
             # place. Narrow on purpose:
             #   - `end_turn` ONLY. A budget cut-off is handled above and a
             #     timeout produced no considered ending at all.
-            #   - nothing delivered, so this can never append to a real reply.
+            #   - nothing delivered, so this can never append to a real reply;
+            #     or only a heads-up whose answer is still owed (DEC-294,
+            #     `_nothing_answered`), which is the reply it completes.
             #   - `_EXHAUSTED_FALLBACK` is preferred when both could apply, by
             #     ordering: a cut-off turn is not a deliberate ending.
             #   - it goes through `deliver`, so R-4/R-6/R-18, the Markdown
@@ -985,7 +1002,7 @@ class EngagementPipeline:
                 # unless she WROTE it» — because that string passes R-6 and R-18
                 # trivially and nothing else downstream would stop it.
                 and not handle.guard.cancelled_model_call
-                and not handle.deliverer.delivered
+                and _nothing_answered(handle)
                 and final_text.strip()
                 and await handle.deliverer.deliver(final_text, source="recovered")
             ):
@@ -993,8 +1010,10 @@ class EngagementPipeline:
                 self._metrics.inc("nora_recovered_replies_total", platform=msg.platform)
                 log.warning(
                     "recovered a reply the model wrote WITHOUT calling send_reply "
-                    "(tag=%s, %d chars) — the route is not honouring "
-                    "tool_choice=required", request.tag_id, len(final_text),
+                    "(tag=%s, %d chars, after_heads_up=%s) — without a heads-up "
+                    "the route is not honouring tool_choice=required",
+                    request.tag_id, len(final_text),
+                    bool(getattr(handle.guard, "reply_still_owed", False)),
                 )
 
             # `stop_reason` is threaded rather than dropped (R-23): without it
