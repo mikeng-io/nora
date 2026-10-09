@@ -51,8 +51,8 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
-from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.memo import SqlMemoStore
+from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.infra.sql.rollup_read import SqlRollupRead
