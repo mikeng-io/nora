@@ -9299,12 +9299,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
     # lookup miss). When on, each marker code resolves through the SAME
     # conversation-scoped window `media_fetch` uses — a code that is not in
     # view is `nothing_found`, never a fetch attempt.
+    #
+    # The list is `reference_images`, not `references` (DEC-307): Strands ends
+    # the `Args:` section at any line starting `references:` (it reads it as a
+    # «References:» header), and every argument line after it would be sent
+    # as description text.
 
     async def generate_image(
         prompt: str,
-        reference: str | None = None,
-        reference_2: str | None = None,
-        reference_3: str | None = None,
+        reference_images: list[str] | None = None,
         size: Literal["small", "medium", "large"] | None = None,
         aspect: Literal["1:1", "16:9", "9:16", "3:2", "2:3"] | None = None,
         quality: Literal["standard", "quality"] | None = None,
@@ -9317,13 +9320,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         holds the canonical reference and the appearance rules, which this
         tool does not repeat.
 
-        `reference`, `reference_2` and `reference_3` each take the marker code
-        of one photo (`a3f2c1` from `[image a3f2c1]`), up to 3 in one call.
-        Each must already be in this conversation, except your own canonical
-        picture, which works in any room. With references and no `aspect`, the
-        first one sets the picture's shape. With neither `size` nor `aspect`
-        the shape is the provider's choice; set one and the other defaults to
-        medium or 1:1.
+        `reference_images` takes the marker codes of photos (`a3f2c1` from
+        `[image a3f2c1]`){reference_limit}. Each must already be in this
+        conversation, except your own canonical picture, which works in any
+        room. With references and no `aspect`, the first one sets the
+        picture's shape. With neither `size` nor `aspect` the shape is the
+        provider's choice; set one and the other defaults to medium or 1:1.
 
         MUST: the prompt goes to an outside service, so it never carries a
         name, phone number, address or other identifier.
@@ -9337,9 +9339,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         Args:
             prompt: What the picture shows, written for the image model.
-            reference: Optional marker code of a photo, or your canonical picture.
-            reference_2: Optional second marker code.
-            reference_3: Optional third marker code.
+            reference_images: Optional marker codes of photos, or your canonical picture.
             size: Optional size tier.
             aspect: Optional aspect ratio.
             quality: Optional model tier; "quality" is the costlier one.
@@ -9350,7 +9350,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "note": "I can't make images right now. Say so, but do not invent "
                         "one and do not say there is no such thing.",
             }
-        wanted_refs = [r for r in (reference, reference_2, reference_3) if r is not None]
+        if isinstance(reference_images, str):
+            # The schema says list; a caller that bypasses it with one code
+            # still means one reference, not its characters.
+            reference_images = [reference_images]
+        # Only `None` is "no reference": an empty code is a bad code, and it
+        # reaches the `nothing_found` below rather than a text-only picture.
+        wanted_refs = [r for r in (reference_images or ()) if r is not None]
         if wanted_refs and not image_refs_allowed:
             return {
                 "status": "unavailable",
@@ -9381,6 +9387,19 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                                 "can't use it rather than guessing.",
                     }
                 markers.append(marker)
+            # The same code twice is one photo: it takes one slot, and is sent once.
+            markers = list(dict.fromkeys(markers))
+            # The provider's limit, refused rather than truncated (DEC-307): a
+            # dropped reference is a person or object silently missing from the
+            # picture, and nothing downstream would say so.
+            max_refs = image_generator.max_reference_images
+            if len(markers) > max_refs:
+                return {
+                    "status": "unavailable",
+                    "note": f"That is {len(markers)} photos, and I can use at most "
+                            f"{max_refs} in one picture. Nothing was made. Ask which "
+                            f"{max_refs} to use, or make it from fewer.",
+                }
             refs = tuple(ImageReference(marker_code=m) for m in markers)
 
         image_size = None
@@ -9597,6 +9616,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "in a bit.",
         }.get(reason, "I can't make images right now. Say so plainly.")
         return {"status": "unavailable", "note": note}
+
+    # The reference limit is the ACTIVE provider's (DEC-307), so the sentence
+    # stating it is rendered here, once per build, from the generator wired in.
+    # The docstring above stays a literal (an f-string is no docstring at all,
+    # see `load_transcript`) and carries the placeholder. No generator: the
+    # tool answers `unavailable` to everything, so it states no number.
+    generate_image.__doc__ = (generate_image.__doc__ or "").replace(
+        "{reference_limit}",
+        f", at most {image_generator.max_reference_images} in one call"
+        if image_generator is not None else "",
+    )
 
     # ---- video_create (design/video-generation, DEC at merge) ----------------
     #

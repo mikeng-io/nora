@@ -750,6 +750,9 @@ model = "grok-imagine-image-2.0"
 quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
+# References per generate_image call. Unset = xAI's documented limit, 5
+# (DEC-307); a value may only lower it (1..5, refused at load otherwise).
+# max_reference_images = 5
 
 [image_gen.openai_codex]
 # OpenAI gpt-image through the ChatGPT subscription (the lane the `codex` CLI
@@ -773,6 +776,10 @@ standard_quality = "medium"
 high_quality = "high"
 refresh_token_env = "OPENAI_CODEX_REFRESH_TOKEN"
 timeout_seconds = 180.0
+# References per generate_image call. Unset = OpenAI's documented gpt-image
+# limit, 16 (DEC-307; one probe on this lane accepted 17, design 29 §12); a
+# value may only lower it (1..16, refused at load otherwise).
+# max_reference_images = 16
 
 # Video generation (`video_create`, design/video-generation, operator 2026-10-02):
 # MiniMax CN, MiniMax-H3, 480P, 15 s. A clip renders for one to three minutes and

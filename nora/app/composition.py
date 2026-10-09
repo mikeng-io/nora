@@ -2609,6 +2609,7 @@ async def build_dependencies(
                 standard_quality=codex_cfg.standard_quality,
                 high_quality=codex_cfg.high_quality,
                 timeout_seconds=codex_cfg.timeout_seconds,
+                max_reference_images=codex_cfg.max_reference_images,
             )
         else:
             xai_cfg = cfg.image_gen.xai
@@ -2621,6 +2622,7 @@ async def build_dependencies(
                 model=xai_cfg.model,
                 quality_model=xai_cfg.quality_model,
                 timeout_seconds=xai_cfg.timeout_seconds,
+                max_reference_images=xai_cfg.max_reference_images,
             )
         if refresh_token:
             image_generator = build(refresh_token=refresh_token)

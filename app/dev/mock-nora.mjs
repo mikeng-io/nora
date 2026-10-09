@@ -518,7 +518,7 @@ const TOOLS = [
   {
     name: "generate_image",
     description:
-      "Make an image from a prompt, optionally from photos in this conversation, and post it to this chat. Call this when somebody asks you to make, draw or edit a picture.\n\nMUST: load the image-generation skill before calling this tool. It holds the canonical reference and the appearance rules, which this tool does not repeat.\n\n`reference`, `reference_2` and `reference_3` each take the marker code of one photo, up to 3 in one call. With neither `size` nor `aspect` the shape is the provider's choice.\n\nMUST: the prompt goes to an outside service, so it never carries a name, phone number, address or other identifier.",
+      "Make an image from a prompt, optionally from photos in this conversation, and post it to this chat. Call this when somebody asks you to make, draw or edit a picture.\n\nMUST: load the image-generation skill before calling this tool. It holds the canonical reference and the appearance rules, which this tool does not repeat.\n\n`reference_images` takes the marker codes of photos, at most 5 in one call. With neither `size` nor `aspect` the shape is the provider's choice.\n\nMUST: the prompt goes to an outside service, so it never carries a name, phone number, address or other identifier.",
     budget: 2, terminal: false, time_shiftable: null, source_tier: null,
     cacheable: false, read_only: false, side_effect_state: "unknown",
     idempotency: "non_idempotent", retry: "never", output_contract: "three_state",

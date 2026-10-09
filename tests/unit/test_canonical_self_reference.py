@@ -53,6 +53,8 @@ class _ResolvingGenerator:
         self.provider_calls = 0
         self.sizes: list[object] = []
 
+    max_reference_images = 3
+
     async def generate(self, *, prompt, reference_images=None, size=None,
                        quality=None, reference_resolver=None) -> ImageResult:
         self.sizes.append(size)
@@ -121,7 +123,7 @@ def _call(persons, world, **kw):
 async def test_the_canonical_self_resolves_in_a_room_that_never_held_it(persons, world):
     """The positive: this conversation has no media at all, and the full self
     sha still resolves to her own bytes."""
-    result = await _call(persons, world)(prompt="you, in the rain", reference=SELF_SHA)
+    result = await _call(persons, world)(prompt="you, in the rain", reference_images=[SELF_SHA])
     assert result["status"] == "ok"
     assert world["gen"].resolved == [SELF_BYTES]
 
@@ -132,21 +134,21 @@ async def test_only_a_photo_sent_here_asks_the_reply_to_say_so(persons, world):
     description, read on every call and unable to tell the two cases apart;
     it is now in the result, and only when a photo from THIS conversation
     resolved. Her own canonical picture is nobody's photo."""
-    own = await _call(persons, world)(prompt="you, in the rain", reference=SELF_SHA)
+    own = await _call(persons, world)(prompt="you, in the rain", reference_images=[SELF_SHA])
     assert own["status"] == "ok"
     assert "photos sent here" not in own["note"]
 
     local = "ab" * 32
     world["blobs"].blobs[local] = b"LOCAL"
     await _post(world["store"], HERE, MediaBlob(sha256=local, media_type="image/png", size=5))
-    theirs = await _call(persons, world)(prompt="edit", reference=local[:6])
+    theirs = await _call(persons, world)(prompt="edit", reference_images=[local[:6]])
     assert theirs["status"] == "ok"
     assert "Say in your reply that it was made from photos sent here." in theirs["note"]
 
 
 async def test_the_marker_form_of_the_canonical_self_resolves_too(persons, world):
     """The skill writes it as `[image <sha>]`; she may pass it back in that form."""
-    result = await _call(persons, world)(prompt="you", reference=f"[image {SELF_SHA}]")
+    result = await _call(persons, world)(prompt="you", reference_images=[f"[image {SELF_SHA}]"])
     assert result["status"] == "ok"
     assert world["gen"].resolved == [SELF_BYTES]
 
@@ -162,7 +164,7 @@ async def test_a_role_other_than_exactly_self_never_gets_the_exemption(persons, 
     if role is not None:
         provenance["role"] = role
     world["media"].objs[other] = _self_row(sha=other, provenance=provenance)
-    result = await _call(persons, world)(prompt="edit", reference=other)
+    result = await _call(persons, world)(prompt="edit", reference_images=[other])
     assert result["status"] == "nothing_found"
     assert world["gen"].resolved == [None]
     assert world["gen"].provider_calls == 0
@@ -172,7 +174,7 @@ async def test_a_role_other_than_exactly_self_never_gets_the_exemption(persons, 
 async def test_a_short_handle_of_the_canonical_self_never_reaches_it(persons, world, cut):
     """The exemption matches the FULL sha. A prefix is a conversation handle,
     and this conversation holds nothing, so it resolves to nothing."""
-    result = await _call(persons, world)(prompt="you", reference=SELF_SHA[:cut])
+    result = await _call(persons, world)(prompt="you", reference_images=[SELF_SHA[:cut]])
     assert result["status"] == "nothing_found"
     assert world["gen"].resolved == [None]
 
@@ -185,7 +187,7 @@ async def test_a_conversation_blob_sharing_the_short_handle_wins_over_the_canoni
     local = SELF_SHA[:6] + "0" * 58
     world["blobs"].blobs[local] = b"LOCAL"
     await _post(world["store"], HERE, MediaBlob(sha256=local, media_type="image/png", size=5))
-    result = await _call(persons, world)(prompt="edit", reference=SELF_SHA[:6])
+    result = await _call(persons, world)(prompt="edit", reference_images=[SELF_SHA[:6]])
     assert result["status"] == "ok"
     assert world["gen"].resolved == [b"LOCAL"]
 
@@ -197,7 +199,7 @@ async def test_an_ambiguous_conversation_handle_resolves_to_nothing(persons, wor
         sha = SELF_SHA[:6] + tail * 58
         world["blobs"].blobs[sha] = tail.encode()
         await _post(world["store"], HERE, MediaBlob(sha256=sha, media_type="image/png", size=1))
-    result = await _call(persons, world)(prompt="edit", reference=SELF_SHA[:6])
+    result = await _call(persons, world)(prompt="edit", reference_images=[SELF_SHA[:6]])
     assert result["status"] == "nothing_found"
     assert world["gen"].resolved == [None]
 
@@ -210,7 +212,7 @@ async def test_the_full_self_sha_still_resolves_beside_a_short_handle_collision(
     local = SELF_SHA[:6] + "0" * 58
     world["blobs"].blobs[local] = b"LOCAL"
     await _post(world["store"], HERE, MediaBlob(sha256=local, media_type="image/png", size=5))
-    result = await _call(persons, world)(prompt="you", reference=SELF_SHA)
+    result = await _call(persons, world)(prompt="you", reference_images=[SELF_SHA])
     assert result["status"] == "ok"
     assert world["gen"].resolved == [SELF_BYTES]
 
@@ -224,7 +226,7 @@ async def test_an_external_reference_is_refused_before_the_provider(persons, wor
     """A URL is never a reference, even one that wraps the canonical sha: the
     hex-extraction that reads `[image a3f2c1]` would otherwise turn it into
     the self handle. Refused before any lookup and before the provider."""
-    result = await _call(persons, world)(prompt="edit", reference=code)
+    result = await _call(persons, world)(prompt="edit", reference_images=[code])
     assert result["status"] == "nothing_found"
     assert world["gen"].resolved == []
     assert world["gen"].provider_calls == 0
@@ -234,14 +236,14 @@ async def test_without_a_media_store_the_canonical_self_resolves_to_nothing(pers
     """The exemption reads the media index; unwired, it fails closed."""
     tool = _tool(persons, store=world["store"], media_store=None,
                  blob_store=world["blobs"], generator=world["gen"])
-    result = await tool(prompt="you", reference=SELF_SHA)
+    result = await tool(prompt="you", reference_images=[SELF_SHA])
     assert result["status"] == "nothing_found"
 
 
 async def test_a_self_row_whose_bytes_are_missing_resolves_to_nothing(persons, world):
     """The row is a promise about the blob store; a broken promise is nothing."""
     del world["blobs"].blobs[SELF_SHA]
-    result = await _call(persons, world)(prompt="you", reference=SELF_SHA)
+    result = await _call(persons, world)(prompt="you", reference_images=[SELF_SHA])
     assert result["status"] == "nothing_found"
 
 
@@ -257,7 +259,7 @@ async def test_the_skills_embedded_handle_resolves_to_the_ingested_asset(persons
     gen = _ResolvingGenerator()
     tool = _tool(persons, store=FakeRecordStore(), media_store=media, blob_store=blobs,
                  generator=gen)
-    result = await tool(prompt="you", reference=f"[image {handle}]")
+    result = await tool(prompt="you", reference_images=[f"[image {handle}]"])
     assert result["status"] == "ok"
     assert gen.resolved == [data]
 
@@ -273,9 +275,9 @@ async def test_with_no_size_or_aspect_the_shape_is_left_to_the_provider(persons,
     image's shape — docs.x.ai multi-image editing). Naming either fills the
     other: `size` alone fixes 1:1."""
     tool = _call(persons, world)
-    await tool(prompt="you", reference=SELF_SHA)
-    await tool(prompt="you", reference=SELF_SHA, size="large")
-    await tool(prompt="you", reference=SELF_SHA, aspect="16:9")
+    await tool(prompt="you", reference_images=[SELF_SHA])
+    await tool(prompt="you", reference_images=[SELF_SHA], size="large")
+    await tool(prompt="you", reference_images=[SELF_SHA], aspect="16:9")
     unset, size_only, aspect_only = world["gen"].sizes
     assert unset is None
     assert (size_only.tier, size_only.aspect_ratio) == ("large", "1:1")
@@ -288,8 +290,8 @@ async def test_an_unknown_size_or_aspect_falls_back_to_the_documented_default(pe
     not carry an unknown value to the provider. It gets the default the
     docstring names (medium, 1:1), as it did before the types existed."""
     tool = _call(persons, world)
-    await tool(prompt="you", reference=SELF_SHA, size="huge", aspect="4:3")
-    await tool(prompt="you", reference=SELF_SHA, size="small", aspect="bogus")
+    await tool(prompt="you", reference_images=[SELF_SHA], size="huge", aspect="4:3")
+    await tool(prompt="you", reference_images=[SELF_SHA], size="small", aspect="bogus")
     both_bad, aspect_bad = world["gen"].sizes
     assert (both_bad.tier, both_bad.aspect_ratio) == ("medium", "1:1")
     assert (aspect_bad.tier, aspect_bad.aspect_ratio) == ("small", "1:1")

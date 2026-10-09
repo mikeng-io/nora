@@ -33,6 +33,7 @@ def build_image_generator(
     responses_model: str = "gpt-5.5",
     standard_quality: str = "medium",
     high_quality: str = "high",
+    max_reference_images: int | None = None,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
@@ -58,6 +59,7 @@ def build_image_generator(
             standard_quality=standard_quality,
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     if provider == "xai":
         lane = oauth
@@ -74,6 +76,7 @@ def build_image_generator(
             model=model,
             quality_model=quality_model,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     # M6 (Kimi audit): an unknown provider must DEGRADE, not crash the
     # production daemon at boot — the same fail-soft posture every sibling

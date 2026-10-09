@@ -200,7 +200,8 @@ never takes the daemon down" posture DEC-136's RustFS wiring took.
 ## 5. Reference images — supported, via the edits API
 
 xAI's `/v1/images/edits` accepts source images as **public URL / base64 data
-URI / file_id**, up to 3 per request, and supports style transfer and
+URI / file_id**, up to 3 per request (**superseded 2026-10-09**: xAI documents 5,
+and the tool now follows the provider's limit, §12, DEC-307), and supports style transfer and
 multi-turn editing. So the answer to "can she use a reference image, or only a
 prompt?" is: **yes, reference images work.**
 
@@ -444,3 +445,59 @@ gpt-image-2; it is written (nora-runtime-skill) when the operator switches the
 provider, so a skill loaded on xAI does not carry advice for a model it is not
 using. `image_gen.provider` is not in the drift allowlist of
 `tests/test_env_template.py`: switching the live value means arguing it there.
+
+## 12. The reference limit is the provider's (2026-10-09, DEC-307)
+
+Operator 2026-10-09: «The reference image limit should follow the image
+provider.» Until then `generate_image` took three fixed slots (`reference`,
+`reference_2`, `reference_3`) on every provider, a tool-surface convention
+that was neither xAI's limit nor OpenAI's.
+
+Now each `ImageGenerator` declares `max_reference_images` (a port property),
+the vendor's documented limit unless `[image_gen.<provider>]
+max_reference_images` lowers it (validated `1..vendor` at config load, and
+again in the adapter). The tool takes one list, `reference_images`, states
+the wired provider's number in its description at build time, and refuses a
+call above it as `unavailable` with a note naming the limit, before the
+provider is called. It never truncates: a dropped reference is somebody
+missing from the picture, and nothing downstream would say so.
+
+The parameter is `reference_images`, not `references`: Strands
+(`tools/decorator.py`, `_extract_description_from_docstring`) treats a line
+starting `references:` as a «References:» section header, so the `Args:`
+section stopped there and every argument line after it was sent as
+description text (331 tokens, over Level 3's 320; caught by
+`test_a_rewritten_description_fits_its_level`).
+
+### 12.1 The limits, documented and measured
+
+| provider | documented | measured | limit shipped |
+|---|---|---|---|
+| `xai` (`grok-imagine-image-2.0`, `/v1/images/edits`) | 5: «Use up to five source images for a single image edit» (docs.x.ai, `developers/model-capabilities/images/multi-image-editing`, read 2026-10-09) | not probed: Nora's xAI token was dead that day | 5 |
+| `openai_codex` (`gpt-image-2` hosted by `gpt-5.5`, Codex Responses lane) | 16 for GPT image models on `images/edits`: «For GPT image models, you can provide up to 16 images» (developers.openai.com images edit reference, read 2026-10-09). The Responses `image_generation` tool and the Codex lane publish no limit of their own | 17 accepted and drawn (below) | 16 |
+
+Probe, 2026-10-09 from the Mac, on the operator's `~/.codex/auth.json` read
+only (access token and account id; no refresh was called), n=1 per row:
+forced `image_generation` tool, `gpt-image-2` at `quality: "low"`, N
+distinct 256x256 PNG data URIs (each a different colour with its number), the
+prompt asking for a grid with one tile per reference in order, reproducing
+each colour and number.
+
+| N | HTTP | image | `action` | tiles in the output | host input tokens | seconds |
+|---|---|---|---|---|---|---|
+| 4 | 200 | yes, 1254x1254 | `edit` | 4 of 4, colours right, in order | 2,796 | 29.7 |
+| 8 | 200 | yes, 1774x887 | `edit` | 8 of 8, colours right, in order | 3,226 | 33.2 |
+| 16 | 200 | yes, 1254x1254 | `edit` | 16 of 16, colours right, in order | 3,894 | 39.4 |
+| 17 | 200 | yes, 1402x1122 | `edit` | 17 of 17, colours right, in order | 3,976 | 44.6 |
+
+The colours of tiles 16 and 17 (mint, olive) cannot be inferred from the
+prompt, so the request did carry the 17th image into the result. What this
+does NOT separate: whether `gpt-image-2` received all 17 images or the host
+model passed some of them on as text in its revised prompt. Either way the lane
+accepted 17 and drew all 17, one past the documented 16; the shipped limit is
+the documented number, because one probe past a published limit is not a
+contract, and 16 is already more than a group photo request needs. Reading
+that reopens it: a documented Codex-lane limit, or a refusal at or below 16.
+
+The xAI number is documentation only. Reading that reopens it: a live
+`/v1/images/edits` call with 5 images refused, or one with 6 accepted.

@@ -42,6 +42,12 @@ XAI_API_BASE = "https://api.x.ai"
 XAI_GENERATIONS_URL = f"{XAI_API_BASE}/v1/images/generations"
 XAI_EDITS_URL = f"{XAI_API_BASE}/v1/images/edits"
 
+#: The most source images one `/v1/images/edits` call takes: «Use up to five
+#: source images for a single image edit» (docs.x.ai, developers/model-capabilities/
+#: images/multi-image-editing, read 2026-10-09). Documented, not probed: Nora's xAI
+#: token was dead that day (DEC-307, design/proposed/29 §12).
+XAI_MAX_REFERENCE_IMAGES = 5
+
 
 def _hex_handle(raw: str) -> str:
     """The hex handle inside whatever the model passed — `a3f2c1`,
@@ -60,6 +66,17 @@ def _as_data_uri(body: bytes) -> str:
     import base64
 
     return "data:image/png;base64," + base64.b64encode(body).decode("ascii")
+
+
+def _reference_limit(override: int | None, vendor: int) -> int:
+    """The vendor's limit, or an operator override that may only lower it.
+    `[image_gen.*] max_reference_images` is validated against the same bound
+    at config load; this is the adapter's own check for any other caller."""
+    if override is None:
+        return vendor
+    if not 1 <= override <= vendor:
+        raise ValueError(f"max_reference_images must be 1..{vendor}, got {override}")
+    return override
 
 
 class XaiImageGenerator:
@@ -81,7 +98,9 @@ class XaiImageGenerator:
         quality_model: str = "grok-imagine-image-quality",
         timeout_seconds: float = 90.0,
         base_url: str = XAI_API_BASE,
+        max_reference_images: int | None = None,
     ) -> None:
+        self._max_refs = _reference_limit(max_reference_images, XAI_MAX_REFERENCE_IMAGES)
         self._oauth = oauth
         self._model = model
         self._quality_model = quality_model
@@ -93,6 +112,10 @@ class XaiImageGenerator:
         self._edits_url = f"{base_url}/v1/images/edits"
 
     # -- ImageGenerator -----------------------------------------------------
+
+    @property
+    def max_reference_images(self) -> int:
+        return self._max_refs
 
     async def generate(
         self,
