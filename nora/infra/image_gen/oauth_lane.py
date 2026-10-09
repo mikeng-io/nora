@@ -13,15 +13,20 @@ its token exchange (`_exchange`) and the shape its adapter wants back.
   token expires, and the sha256 of the bootstrap token that chain grew from.
   A state file whose fingerprint does not match `.env` belongs to an older
   login and is ignored: a fresh login takes over without anyone deleting a
-  file. (A state file written before the fingerprint existed has none, and
-  is ignored the same way: there is no telling which login it came from.)
+  file.
+- A state file written before the fingerprint existed (the xAI lane's, until
+  DEC-306) names no login. It may hold the LIVE chain (the old code rotated
+  the `.env` token into it, so the bootstrap is already spent) or a DEAD one
+  (a new login since). So its token is tried first, and only if the issuer
+  refuses it is the `.env` bootstrap spent; whichever succeeds is written
+  back with the fingerprint, and the question never comes up again.
 - A refresh is REFUSED when the state file cannot be written: the rotated
   token would be lost with the process, and the chain with it.
 - Refreshes serialise in the process (an asyncio lock) and across processes
   on one host (an `flock` beside the state file), and a process re-reads the
   file under both before it refreshes: two holders of one rotating token is
   how one logs the other out.
-- The daemon's keepalive (`nora.app.image_oauth_keepalive`) refreshes
+- The daemon's keepalive (`nora.app.oauth_keepalive`) refreshes
   through `refresh()`, which takes the SAME locks as a `generate_image` call,
   so the keeper and a live call never both spend one token.
 
@@ -167,16 +172,18 @@ class RotatingOAuthLane:
         try:
             data = json.loads(self._state_file.read_text(encoding="utf-8"))
             access = str(data.get("access_token") or "")
+            # Absent (not empty): a pre-fingerprint file, adopted as LEGACY.
+            fingerprint = str(data["bootstrap_sha256"]) if "bootstrap_sha256" in data else ""
             state = LaneState(
                 access_token=access,
                 refresh_token=str(data["refresh_token"]),
-                bootstrap_sha256=str(data["bootstrap_sha256"]),
+                bootstrap_sha256=fingerprint,
                 expires_at=float(data.get("expires_at") or self._expiry_of(access)),
                 refreshed_at=float(data.get("refreshed_at") or self._issued_of(access)),
             )
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return None
-        if not state.refresh_token or state.bootstrap_sha256 != self._bootstrap_sha:
+        if not state.refresh_token or state.bootstrap_sha256 not in (self._bootstrap_sha, ""):
             return None
         return state
 
@@ -324,19 +331,33 @@ class RotatingOAuthLane:
                     self._observe(state)
                     return state
                 if state is not None:
-                    spend = state.refresh_token
+                    chain = state
                 elif cached is not None:
-                    spend = cached.refresh_token  # the file vanished; ours is current
+                    chain = cached  # the file vanished; ours is current
                 else:
-                    spend = self._bootstrap
-                return await self._spend(spend)
+                    return await self._spend(self._bootstrap)
+                legacy = not chain.bootstrap_sha256
+                outcome = await self._spend(chain.refresh_token, last=not legacy)
+                if outcome == "auth" and legacy:
+                    # A pre-fingerprint chain the issuer refused: it was an
+                    # older login's, so the `.env` login is the live one.
+                    log.warning(
+                        "%s: the unfingerprinted state file's token was refused; "
+                        "spending the .env login instead", self.lane,
+                    )
+                    return await self._spend(self._bootstrap)
+                return outcome
             finally:
                 if not waiter_owns_fd:
                     _release(fd)
 
-    async def _spend(self, refresh_token: str) -> LaneState | str:
+    async def _spend(self, refresh_token: str, *, last: bool = True) -> LaneState | str:
+        """One refresh grant. `last=False` is a try with a fallback behind
+        it: a refusal there is the caller's to report, not a failure yet."""
         outcome = await self._exchange(refresh_token)
         if isinstance(outcome, Refusal):
+            if not last and outcome.reason == "auth":
+                return outcome.reason
             return self._failed(outcome.reason, outcome.detail or "no detail")
         state = LaneState(
             access_token=outcome.access_token,

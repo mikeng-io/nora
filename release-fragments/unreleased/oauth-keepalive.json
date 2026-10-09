@@ -7,7 +7,7 @@
     "A new `nora xai-login` now takes over from an old, dead login without anyone deleting a state file, the way the Codex login already did."
   ],
   "limitations": [
-    "The xAI login that died on 9 October needs one new `nora xai-login` on the deploy host; the keepalive keeps a login alive, it cannot revive one.",
+    "The keepalive keeps a login alive; it cannot revive one the provider has already refused, which still needs a new login.",
     "Why that login died (unused too long, or revoked because another copy of the same token was used elsewhere) is not known; if two checkouts on one host hold the same token, a refresh in one can still log the other out."
   ]
 }

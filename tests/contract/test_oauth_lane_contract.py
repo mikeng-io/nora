@@ -6,7 +6,7 @@ the keeper's. The token server ROTATES on every refresh and REFUSES a spent
 token (both issuers do), so a double spend is a visible 401, never a quiet
 success. No network: a local aiohttp server, a fake clock, a fake sleep.
 """
-# ruff: noqa: S105, S106 — every token here is a fake for a local server.
+# ruff: noqa: S105 — every token here is a fake for a local server.
 
 from __future__ import annotations
 
@@ -233,23 +233,51 @@ async def test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file(kind, tmp
     assert srv["sent"] == ["rt-boot", "rt-new-login"]
 
 
-@pytest.mark.parametrize("kind", LANES)
-async def test_a_state_file_without_a_fingerprint_is_not_adopted(kind, tmp_path, issuer):
-    """The file the xAI lane wrote before DEC-306 names no login: its token
-    may be a dead chain's (it was, on norty), so the .env login wins."""
-    base, srv = issuer
+def _legacy_file(kind: str, tmp_path: Path, refresh_token: str) -> Path:
+    """The state file the xAI lane wrote before DEC-306: no fingerprint."""
     folder = tmp_path / "state"
     folder.mkdir()
     name = "xai-oauth.json" if kind == "xai" else "openai-codex-oauth.json"
     (folder / name).write_text(json.dumps({
-        "access_token": "at-legacy", "expires_at": 1, "refresh_token": "rt-dead",
+        "access_token": "at-legacy", "expires_at": 1, "refresh_token": refresh_token,
     }))
-    lane = _lane(kind, tmp_path, base, srv["clock"])
-    assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
-    assert srv["sent"] == ["rt-boot"]
-    saved = json.loads((folder / name).read_text())
+    return folder / name
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_pre_fingerprint_state_file_holding_the_live_chain_is_kept(
+    kind, tmp_path, issuer, caplog,
+):
+    """norty, 2026-10-09: a new login, then the OLD code refreshed and wrote
+    the rotated token to an unfingerprinted file. The .env token is spent;
+    the file's is the live one. Ignoring the file would log the lane out."""
+    base, srv = issuer
+    srv["live"] = {"rt-legacy-live"}  # rt-boot was spent by the old code
+    path = _legacy_file(kind, tmp_path, "rt-legacy-live")
+    with caplog.at_level(logging.ERROR):
+        assert (await _call(_lane(kind, tmp_path, base, srv["clock"]))()).status == "ok"  # type: ignore[attr-defined]
+    assert srv["sent"] == ["rt-legacy-live"]
+    saved = json.loads(path.read_text())
     assert saved["bootstrap_sha256"] == hashlib.sha256(b"rt-boot").hexdigest()
     assert saved["refresh_token"] == "rt-1"
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login(
+    kind, tmp_path, issuer, caplog,
+):
+    """The precedence bug's shape: the old file's token is dead and a new
+    login is in .env. One refused try, then the login, with no ERROR (the
+    lane is fine) and the file now fingerprinted to the login."""
+    base, srv = issuer
+    path = _legacy_file(kind, tmp_path, "rt-dead")
+    with caplog.at_level(logging.ERROR):
+        assert (await _call(_lane(kind, tmp_path, base, srv["clock"]))()).status == "ok"  # type: ignore[attr-defined]
+    assert srv["sent"] == ["rt-dead", "rt-boot"]
+    saved = json.loads(path.read_text())
+    assert saved["bootstrap_sha256"] == hashlib.sha256(b"rt-boot").hexdigest()
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
 
 @pytest.mark.parametrize("kind", LANES)

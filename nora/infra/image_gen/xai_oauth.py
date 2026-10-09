@@ -14,11 +14,11 @@ Credential split (operator's `.env` rule, review F4; DEC-306):
   the access token, its expiry, the CURRENT refresh token, when it was
   refreshed, and the sha256 of the `.env` token it grew from. `oauth_lane`
   owns it, the same way it owns the Codex lane's: a state file from an older
-  login (or one written before the fingerprint existed) is ignored, so a new
-  `xai-login` takes over without anyone deleting a file. Until DEC-306 the
-  state file's refresh token won unconditionally, and a dead one masked a
-  fresh login.
-- The daemon refreshes it on a schedule (`nora.app.image_oauth_keepalive`):
+  login is ignored, so a new `xai-login` takes over without anyone deleting a
+  file. Until DEC-306 the state file's refresh token won unconditionally, and
+  a dead one masked a fresh login; a file from then has no fingerprint, so
+  its token is tried once and the `.env` login spent only if it is refused.
+- The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`):
   on 2026-10-09 the first call after 12 idle days found the stored token
   refused (`invalid_grant`), and nothing had logged it.
 

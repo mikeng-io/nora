@@ -23,7 +23,7 @@ through `oauth_lane.RotatingOAuthLane`:
   state file), and a process re-reads the file under the lock before it
   refreshes: two processes holding one rotating token is how one logs the
   other out.
-- The daemon refreshes it on a schedule (`nora.app.image_oauth_keepalive`),
+- The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`),
   through the same locks as a call, so a use never meets an expired login.
 
 Endpoints and the client id are the `codex` CLI's own (read from the 0.161.0

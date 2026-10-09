@@ -23,9 +23,30 @@
   {
     "name": "xAI precedence: a state file from an older login is not adopted (fresh login supersedes)",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "        if not state.refresh_token or state.bootstrap_sha256 != self._bootstrap_sha:\n",
+    "old": "        if not state.refresh_token or state.bootstrap_sha256 not in (self._bootstrap_sha, \"\"):\n",
     "new": "        if not state.refresh_token:\n",
     "target": "tests/contract/test_oauth_lane_contract.py::test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file"
+  },
+  {
+    "name": "a pre-fingerprint state file is adopted (it may hold the live chain)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            fingerprint = str(data[\"bootstrap_sha256\"]) if \"bootstrap_sha256\" in data else \"\"\n",
+    "new": "            fingerprint = str(data[\"bootstrap_sha256\"])\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_state_file_holding_the_live_chain_is_kept"
+  },
+  {
+    "name": "a refused pre-fingerprint chain falls back to the .env login",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "                if outcome == \"auth\" and legacy:\n",
+    "new": "                if False:\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login"
+  },
+  {
+    "name": "the refused legacy try is not reported as a failure (no false ERROR)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "                outcome = await self._spend(chain.refresh_token, last=not legacy)\n",
+    "new": "                outcome = await self._spend(chain.refresh_token)\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login"
   },
   {
     "name": "a refused refresh is logged at ERROR with its lane and reason",
