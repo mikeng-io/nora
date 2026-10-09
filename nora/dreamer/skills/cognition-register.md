@@ -135,10 +135,10 @@ at it. Sharing people, a day or a place is not enough, as above.
 
 ## What earns a reminder
 
-A reminder is worth setting for a note whose moment is near and which still has a corner
-nobody has closed, where a word at the right hour helps the people who have to act: where to
-meet, two hours before dinner; a booking someone owes, the evening before its deadline. The
-hour is the judgement: a thing three weeks out has no right moment today.
+A reminder is worth setting for a note or event whose moment is near, with a corner nobody
+has closed, where a word at the right hour helps the people who have to act: where to meet,
+two hours before dinner; a booking someone owes, the evening before its deadline. The hour
+is the judgement: a thing three weeks out has no right moment today.
 
 Not worth it: anything settled; anything you raised that nobody answered, or that somebody
 did answer; anything that would only restate the note. Before you set one, read the note and

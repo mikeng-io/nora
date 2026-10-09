@@ -398,6 +398,29 @@ def open_events_reader(
     return read
 
 
+def upcoming_reader(
+    read_events: Callable[[str], Awaitable[Sequence[Gathering]]],
+    unit_rooms: Callable[[str], Collection[tuple[str, str]]],
+    *, days: float,
+) -> Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]]:
+    """The wake evaluator's `upcoming` seam (DEC-303): the unit's rooms holding
+    an event a session may still move (`open_events_reader`) whose start falls
+    between now and `days` ahead. A room is named once however many events it
+    holds; the session reads them all from its events block."""
+    horizon_ms = int(days * 86_400_000)
+
+    async def read(unit: str, now_ms: int) -> Sequence[tuple[str, str]]:
+        found: list[tuple[str, str]] = []
+        for platform, conversation_id in sorted(unit_rooms(unit)):
+            for e in await read_events(conversation_id):
+                start_ms = None if e.when is None else int(e.when.timestamp() * 1000)
+                if start_ms is not None and now_ms <= start_ms <= now_ms + horizon_ms:
+                    found.append((platform, conversation_id))
+                    break
+        return found
+    return read
+
+
 def build_cognition_runner(
     *,
     cfg: Any,
@@ -536,4 +559,5 @@ __all__ = [
     "read_tools_for",
     "require_session_hook",
     "units_with_home_rooms",
+    "upcoming_reader",
 ]

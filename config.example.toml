@@ -2142,6 +2142,11 @@ reply_quiet_seconds = 600
 time_floors = ["07:00", "00:00"]
 timezone = "Asia/Hong_Kong"
 floor_grace_seconds = 3600
+# With each floor, every room holding an open event that starts within this many
+# days gets its own `time` item, bound to that room (DEC-303): the daily look
+# ahead. No event owns a reminder; whether and when the room hears about one is
+# the session's call. 0 turns the look ahead off.
+upcoming_days = 3
 store_timeout_seconds = 5
 # 30-cognition.md §1/§2 starting values.
 max_items = 12

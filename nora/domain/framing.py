@@ -226,31 +226,6 @@ class ReminderHeader:
 
 
 @dataclass(frozen=True)
-class GatheringHeader:
-    """The situation paragraph for a gathering-notify fire turn (DEC-139).
-
-    Same shape as `ReminderHeader`: nobody called her, and that is not why this
-    turn is happening. `title` arrives from the factory AFTER its payload guard,
-    so it is a `str` here, never a missing key. The requester's name and the
-    title are escaped because everything else a prompt carries is (R-13).
-    """
-
-    title: str
-    tagger: PersonRef | None
-
-    def render(self) -> str:
-        return (
-            "You are in a group chat you have been reading all along. Nobody has "
-            f"just called you. Earlier, {_name(self.tagger)} asked you to remind "
-            f"the room about «{_put(str(self.title))}», and that time has come — "
-            "that is why this turn is happening, and it is the only reason.\n"
-            f"Bring the gathering up to {_name(self.tagger)} and the room now, in "
-            "your own words. Do not read the time back at them unless they asked "
-            "in those terms."
-        )
-
-
-@dataclass(frozen=True)
 class ProactiveHeader:
     """The situation paragraph for a proactive act turn (design/dreamer-agent-
     loop/39 D4, DEC-162).
@@ -489,7 +464,6 @@ class AnnouncementHeader:
 #: header written inline at the construction site.
 FIRE_HEADERS: Mapping[str, type[Header]] = {
     "reminder": ReminderHeader,
-    "gathering": GatheringHeader,
     "proactive": ProactiveHeader,
     "compute": ComputeHeader,
     "relay": RelayHeader,
@@ -693,7 +667,7 @@ class SummonsHead:
 #: the table and a table row cannot outlive its builder.
 FRAMING: Mapping[str, type] = {
     cls.__name__: cls for cls in (
-        RepeatClause, ReminderHeader, GatheringHeader, ProactiveHeader, ComputeHeader,
+        RepeatClause, ReminderHeader, ProactiveHeader, ComputeHeader,
         RelayHeader, LostJobHeader, ParticipationHeader, AnnouncementHeader,
         RequestBody, ComputeBody, LostJobBody, ContextHeader, ClockLine, SummonsHead,
     )

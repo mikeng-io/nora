@@ -15,9 +15,7 @@ from nora.domain.gatherings import (
     GatheringStatus,
     RSVPResponse,
 )
-from nora.domain.reminders import ReminderCaps
 from nora.testing.gatherings import FakeGatheringStore
-from nora.testing.reminders import FakeReminderStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -50,15 +48,12 @@ class _FakeHoncho:
 def _service(
     *,
     store=None,
-    reminders=None,
     route_source=None,
     honcho=None,
     unit_room_ids=None,
 ) -> GatheringService:
     return GatheringService(
         store=store or FakeGatheringStore(),
-        reminders=reminders or FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=route_source or _FakeRouteSource(),
         honcho=honcho or _FakeHoncho(),
         ai_peer="nora",
@@ -79,24 +74,6 @@ async def test_create_event_persists_and_returns_it():
     assert ev.status is GatheringStatus.PROPOSED
     back = await svc.get_event(event_id=ev.id)
     assert back.id == ev.id
-
-
-async def test_create_event_with_when_creates_a_linked_one_shot_reminder():
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    when = NOW + timedelta(days=3)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        when=when,
-        platform="signal",
-    )
-    assert ev.reminder_id is not None
-    row = await reminders.get(ev.reminder_id)
-    assert row is not None
-    assert row.due_at == when
-    assert row.series is None  # never a recurrence — spec §4
 
 
 async def test_update_event_resolves_venue_once_via_route_source():
@@ -176,29 +153,6 @@ async def test_rsvp_records_a_response():
         response=RSVPResponse.YES,
     )
     assert r.response is RSVPResponse.YES
-
-
-async def test_cancel_event_cancels_its_linked_reminder():
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    when = NOW + timedelta(days=3)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        when=when,
-        platform="signal",
-    )
-    cancelled = await svc.cancel_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-    )
-    assert cancelled.status is GatheringStatus.CANCELLED
-
-    row = await reminders.get(ev.reminder_id)
-    from nora.domain.reminders import ReminderState
-
-    assert row.state is ReminderState.CANCELLED
 
 
 async def test_list_events_filters_by_status():
@@ -304,67 +258,6 @@ async def test_create_event_raises_when_two_open_events_already_exist():
         )
 
 
-async def test_create_event_beyond_horizon_creates_event_with_no_reminder():
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    # ReminderCaps().max_horizon_days == 365. 365 days + 12 hours is past the
-    # cap under a full-precision `timedelta` comparison even though the old
-    # `.days`-floored check let it through (Fix 4's regression case).
-    when = NOW + timedelta(days=365, hours=12)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        when=when,
-        platform="signal",
-    )
-    # The event itself is still created — R-5: never silently pretend a
-    # reminder was set.
-    assert ev.when == when
-    assert ev.reminder_id is None
-    # Never a stray reminder minted either.
-    assert list(await reminders.pending_for("signal:group-1")) == []
-
-
-async def test_update_event_reschedule_cancels_old_reminder_and_links_new_one():
-    from nora.domain.reminders import ReminderState
-
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    when1 = NOW + timedelta(days=3)
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        when=when1,
-        platform="signal",
-    )
-    old_reminder_id = ev.reminder_id
-    assert old_reminder_id is not None
-
-    when2 = NOW + timedelta(days=5)
-    updated = await svc.update_event(
-        event_id=ev.id,
-        conversation_id="signal:group-1",
-        when=when2,
-        platform="signal",
-    )
-
-    # A NEW reminder, pointing at the new due_at — never a silently orphaned
-    # old one (Fix 1's regression case).
-    assert updated.reminder_id is not None
-    assert updated.reminder_id != old_reminder_id
-
-    old_row = await reminders.get(old_reminder_id)
-    assert old_row is not None
-    assert old_row.state is ReminderState.CANCELLED
-
-    new_row = await reminders.get(updated.reminder_id)
-    assert new_row is not None
-    assert new_row.state is ReminderState.PENDING
-    assert new_row.due_at == when2
-
-
 # ── Fix I1: past PROPOSED events must not lock out create_event forever ────
 
 
@@ -429,8 +322,7 @@ async def test_create_event_still_refuses_on_two_future_open_events():
 
 
 async def test_update_event_refuses_on_a_cancelled_event():
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
+    svc = _service()
     ev = await svc.create_event(
         conversation_id="signal:group-1",
         requester_person_id="miles",
@@ -446,9 +338,7 @@ async def test_update_event_refuses_on_a_cancelled_event():
             when=NOW + timedelta(days=3),
             platform="signal",
         )
-    # No reminder was minted for the cancelled event, and its other fields
-    # are untouched.
-    assert list(await reminders.pending_for("signal:group-1")) == []
+    # Its other fields are untouched.
     back = await svc.get_event(event_id=ev.id)
     assert back.status is GatheringStatus.CANCELLED
     assert back.when is None
@@ -483,8 +373,7 @@ async def test_rsvp_refuses_on_a_cancelled_event():
 
 @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
 async def test_update_event_refuses_on_every_terminal_status(terminal):
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
+    svc = _service()
     ev = await svc.create_event(
         conversation_id="signal:group-1",
         requester_person_id="miles",
@@ -502,12 +391,7 @@ async def test_update_event_refuses_on_every_terminal_status(terminal):
             when=NOW + timedelta(days=3),
             platform="signal",
         )
-    assert exc_info.value.status is terminal, (
-        "revising a happened event mints a fresh PENDING reminder via "
-        "_link_reminder unless every terminal status is refused, not just "
-        "CANCELLED"
-    )
-    assert list(await reminders.pending_for("signal:group-1")) == []
+    assert exc_info.value.status is terminal
 
 
 @pytest.mark.parametrize("terminal", sorted(TERMINAL_STATUSES, key=lambda s: s.value))
@@ -743,53 +627,6 @@ async def test_get_event_for_person_returns_none_for_unknown_event():
     svc = _service()
     out = await svc.get_event_for_person(event_id=uuid.uuid4(), person_id="miles")
     assert out is None
-
-
-async def test_linked_reminder_is_kind_gathering_with_denormalized_payload():
-    """DEC-139: the linked reminder carries `kind="gathering"` + the
-    denormalized `payload={"title": ...}`, and the REAL platform — never the
-    historical `"event"` sentinel, which is not a wired adapter key and made
-    gathering-notify undeliverable."""
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    when = NOW + timedelta(days=3)
-
-    ev = await svc.create_event(
-        conversation_id="signal:group-1",
-        requester_person_id="miles",
-        title="Dinner",
-        when=when,
-        platform="discord",
-    )
-
-    row = await reminders.get(ev.reminder_id)
-    assert row is not None
-    assert row.kind == "gathering"
-    assert row.payload == {"title": "Dinner"}
-    assert row.platform == "discord"
-    # Legacy text is kept for readers that still consume it.
-    assert row.text == "Event: Dinner"
-
-
-async def test_no_reminder_row_written_with_platform_event_sentinel():
-    """Contract obligation from design/event-abstraction/05: after the fix,
-    `platform="event"` appears in NO row written by GatheringService — the
-    sentinel is removed, not papered over."""
-    reminders = FakeReminderStore()
-    svc = _service(reminders=reminders)
-    when = NOW + timedelta(days=3)
-
-    ev = await svc.create_event(
-        conversation_id="discord:group-2",
-        requester_person_id="daisy",
-        title="Movie night",
-        when=when,
-        platform="discord",
-    )
-
-    row = await reminders.get(ev.reminder_id)
-    assert row is not None
-    assert row.platform != "event"
 
 
 # ── B3(a): search_events finds a legacy unit_id="" event through the

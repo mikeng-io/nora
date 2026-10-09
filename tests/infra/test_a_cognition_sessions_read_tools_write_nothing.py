@@ -47,7 +47,6 @@ from nora.app.cognition_wiring import (
 from nora.app.gatherings import GatheringService
 from nora.domain.cognition_session import Room
 from nora.domain.media_join import MediaJoin
-from nora.domain.reminders import ReminderCaps
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -55,7 +54,6 @@ from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
-from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.rollup_read import SqlRollupRead
 from nora.infra.sql.standing import SqlStandingStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
@@ -187,10 +185,8 @@ class World:
         media_join = MediaJoin(
             store=SqlMediaObjectStore(engine), screen=lambda text: None, metrics=self.metrics,
         )
-        reminders = SqlReminderStore(engine)
         events = GatheringService(
-            store=SqlGatheringStore(engine), reminders=reminders,
-            reminder_caps=ReminderCaps(), route_source=None, honcho=self.memory,
+            store=SqlGatheringStore(engine), route_source=None, honcho=self.memory,
             ai_peer="nora", unit_room_ids=lambda unit: ("ROOM-A", "ROOM-B", "ROOM-C"),
         )
         circle = Circle(

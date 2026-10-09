@@ -135,6 +135,29 @@ async def test_events_commit_with_their_stated_mode_and_move_on_the_live_service
     assert {m.field: m.reasoning for m in event.field_meta}["start"] == "abduced"
 
 
+async def test_an_event_with_a_time_owns_no_reminder():
+    """DEC-303: an event is a record, never a reminder's owner. Proposing one
+    with a start and moving that start write no reminder row; whether, when and
+    what to remind is the session's own `remind`, which cites the event."""
+    answers: list[Any] = []
+
+    async def behave(by: dict[str, Any], tools: list[Any]) -> None:
+        answers.append(await by["event_propose"](
+            title="dinner", reasoning="told", confidence="high", cited_ids=["101"],
+            when=iso(NOW + 86_400_000),
+        ))
+        answers.append(await by["event_revise"](
+            event_id=answers[0]["id"], when=iso(NOW + 2 * 86_400_000),
+            reasoning="told", confidence="high", cited_ids=["102"],
+        ))
+
+    stores, _ = await session(behave)
+    assert [a["status"] for a in answers] == ["ok", "ok"]
+    (event,) = await stores.gatherings.list_for_conversation(conversation_id=A.conversation_id)
+    assert event.when is not None and event.reminder_id is None
+    assert list(await stores.reminders.all_pending(limit=100)) == []
+
+
 async def test_standing_revise_writes_the_rooms_position():
     answers: list[Any] = []
 
@@ -252,3 +275,32 @@ def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noti
         stimuli={7: floor}, grounding=grounding, now_ms=NOW,
     )
     assert 'review="anchor_passed"' in text and 'may_duplicate="n2"' in text
+
+
+async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
+    """DEC-303: the wake evaluator's look-ahead seam names a room holding an
+    event that starts between now and `days` ahead, once; a past event, one
+    beyond the horizon, and one with no time name nothing."""
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    from nora.app.cognition_wiring import upcoming_reader
+
+    day = 86_400_000
+
+    class _E:
+        def __init__(self, start_ms):
+            self.when = None if start_ms is None else _dt.fromtimestamp(start_ms / 1000, UTC)
+
+    by_room = {
+        "room-a": [_E(NOW + day), _E(NOW + 2 * day)],
+        "room-b": [_E(NOW - day), _E(NOW + 5 * day), _E(None)],
+    }
+
+    async def events(conversation_id):
+        return by_room.get(conversation_id, [])
+
+    read = upcoming_reader(
+        events, lambda unit: {("signal", "room-a"), ("signal", "room-b")}, days=3,
+    )
+    assert list(await read("unit-1", NOW)) == [("signal", "room-a")]

@@ -3494,6 +3494,9 @@ class CognitionConfig(BaseModel):
     time_floors: list[str] = Field(default_factory=lambda: ["07:00", "00:00"])
     timezone: str = "Asia/Hong_Kong"
     floor_grace_seconds: float = Field(default=3600.0, ge=0)
+    #: DEC-303: with each floor, a room-bound `time` item for every room holding
+    #: an open event that starts within this many days. 0 turns it off.
+    upcoming_days: float = Field(default=3.0, ge=0)
     store_timeout_seconds: float = Field(default=5.0, gt=0)
     #: 30-cognition.md §1: "starting at 12".
     max_items: int = Field(default=12, ge=1)

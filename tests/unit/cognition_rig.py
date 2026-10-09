@@ -20,7 +20,6 @@ from nora.app.cognition_session import (
 from nora.app.gatherings import GatheringService
 from nora.domain.cognition_ground import Grounding, RecordItem
 from nora.domain.cognition_session import Room
-from nora.domain.reminders import ReminderCaps
 from nora.domain.standing import StandingHead
 from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_grounding import StaticGrounder
@@ -113,8 +112,7 @@ class Stores:
 
     def events(self) -> GatheringService:
         return GatheringService(
-            store=self.gatherings, reminders=self.reminders,
-            reminder_caps=ReminderCaps(), route_source=None, honcho=None,
+            store=self.gatherings, route_source=None, honcho=None,
             ai_peer="nora", now=lambda: datetime.fromtimestamp(NOW / 1000, UTC),
         )
 

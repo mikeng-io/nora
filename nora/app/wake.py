@@ -31,7 +31,7 @@ import datetime as dt
 import inspect
 import logging
 import time
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -101,6 +101,7 @@ class WakeEvaluator:
         on_wake: WakeHook | None = None,
         session_units: Callable[[], Collection[str]] | None = None,
         floors_ready: bool = True,
+        upcoming: Callable[[str, int], Awaitable[Sequence[tuple[str, str]]]] | None = None,
     ) -> None:
         """`settle_seconds` (default: twice `store_timeout_seconds`) is how
         far behind the clock the pending read looks. Ids are assigned at
@@ -147,7 +148,13 @@ class WakeEvaluator:
         `floors_ready` (M8, DEC-245): whether a skill ships for the `time`
         agenda kind (`AgendaSkills.by_kind`; it does since the cut-over, the
         notebook review). False, a unit whose wakes start sessions raises NO
-        floor, because a session woken by one would have nothing to do."""
+        floor, because a session woken by one would have nothing to do.
+
+        `upcoming(unit, now_ms)` (DEC-303): the unit's rooms holding an event
+        that is coming up. With each floor it raises one `time` stimulus per
+        such room, BOUND to that room (`item = "upcoming"`), so the daily look
+        reads and writes where the event is. Whether the room hears anything,
+        and when, is the session's judgement: no event owns a reminder."""
         self._store = store
         self._units = units
         self._policy = policy
@@ -165,6 +172,7 @@ class WakeEvaluator:
         self._on_wake = on_wake
         self._session_units = session_units
         self._floors_ready = floors_ready
+        self._upcoming = upcoming
         #: Held so a background task is never garbage-collected mid-flight
         #: (the classic "Task was destroyed but it is pending" loss) and so
         #: tests can drain them deterministically instead of sleeping.
@@ -370,14 +378,38 @@ class WakeEvaluator:
                 ))
         return out
 
+    async def _upcoming_stimuli(
+        self, unit: str, now_ms: int, floors: Sequence[NewStimulus],
+    ) -> list[NewStimulus]:
+        """One room-bound `time` stimulus per room `upcoming` names, for each
+        floor raised this tick; its ref carries the floor's, so a floor's look
+        ahead is written once however many ticks fall in its grace. A read
+        that fails is logged and raises nothing: the floor itself still
+        stands, and the next tick in the grace reads again."""
+        if self._upcoming is None or not floors:
+            return []
+        try:
+            rooms = await asyncio.wait_for(self._upcoming(unit, now_ms), timeout=self._timeout)
+        except Exception:
+            log.exception("cognition wake: could not read the upcoming events of %s", unit)
+            return []
+        return [
+            NewStimulus(
+                unit=unit, kind="time", item="upcoming",
+                ref=f"upcoming:{platform}:{conversation_id}@{floor.ref.removeprefix('floor:')}",
+                at_ms=floor.at_ms, due_ms=floor.due_ms,
+                platform=platform, conversation_id=conversation_id,
+            )
+            for floor in floors for platform, conversation_id in rooms
+        ]
+
     async def _read(self, unit: str, now_ms: int, cutoff_ms: int) -> UnitView | None:
         try:
             tracked = self._on_wake is not None and (
                 self._session_units is None or unit in set(self._session_units())
             )
-            for stimulus in (
-                self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else ()
-            ):
+            floors = self._floor_stimuli(unit, now_ms) if self._floors_ready or not tracked else []
+            for stimulus in [*floors, *await self._upcoming_stimuli(unit, now_ms, floors)]:
                 sid = await asyncio.wait_for(
                     self._store.append(stimulus=stimulus, recorded_at_ms=now_ms),
                     timeout=self._timeout,

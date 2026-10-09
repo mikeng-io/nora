@@ -48,13 +48,15 @@ class Clock:
         self.ms += int(seconds * 1000)
 
 
-def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0, on_wake=None):
+def _setup(*, units=("nora",), policy=POLICY, floors=(), start=T, settle=0.0, on_wake=None,
+           upcoming=None):
     store = InMemoryStimulusStore()
     clock = Clock(start)
     metrics = Metrics()
     ev = WakeEvaluator(
         store=store, units=lambda: units, policy=policy, metrics=metrics,
         floors=floors, tz=HK, clock=clock, settle_seconds=settle, on_wake=on_wake,
+        upcoming=upcoming,
     )
     return ev, store, clock, metrics
 
@@ -284,6 +286,45 @@ async def test_the_daily_floors_are_raised_once_and_wake_as_time():
     floors = [s for s in store.stimuli if s.kind == "time"]
     assert [s.ref for s in floors] == ["floor:07:00@2026-09-28"]
     assert [w.reason for w in store.wakes] == ["time"]
+
+
+async def test_a_floor_raises_a_room_bound_look_ahead_per_room_with_an_upcoming_event():
+    """DEC-303: with each floor, one `time` stimulus per room `upcoming` names,
+    bound to that room and written once however many ticks fall in the grace."""
+    at_seven = int(dt.datetime(2026, 9, 28, 7, 0, tzinfo=HK).timestamp() * 1000)
+    asked: list[tuple[str, int]] = []
+
+    async def upcoming(unit: str, now_ms: int):
+        asked.append((unit, now_ms))
+        return [("signal", "room-a"), ("discord", "room-b")]
+
+    ev, store, clock, _ = _setup(floors=(Floor.parse("07:00"),), start=at_seven, upcoming=upcoming)
+    await ev.tick()
+    clock.advance(60)
+    await ev.tick()
+    ahead = [s for s in store.stimuli if s.item == "upcoming"]
+    assert [(s.kind, s.platform, s.conversation_id, s.ref) for s in ahead] == [
+        ("time", "signal", "room-a", "upcoming:signal:room-a@07:00@2026-09-28"),
+        ("time", "discord", "room-b", "upcoming:discord:room-b@07:00@2026-09-28"),
+    ]
+    assert asked and asked[0][0] == "nora"
+
+
+async def test_no_floor_no_look_ahead_and_a_failed_read_leaves_the_floor_standing():
+    async def upcoming(unit: str, now_ms: int):
+        raise RuntimeError("store down")
+
+    at_seven = int(dt.datetime(2026, 9, 28, 7, 0, tzinfo=HK).timestamp() * 1000)
+    ev, store, _, _ = _setup(floors=(Floor.parse("07:00"),), start=at_seven, upcoming=upcoming)
+    await ev.tick()
+    assert [s.ref for s in store.stimuli] == ["floor:07:00@2026-09-28"]
+
+    async def never(unit: str, now_ms: int):
+        raise AssertionError("read outside a floor")
+
+    ev, store, _, _ = _setup(floors=(Floor.parse("07:00"),), upcoming=never)  # 15:00
+    await ev.tick()
+    assert store.stimuli == []
 
 
 async def test_a_floor_past_its_grace_is_not_raised():

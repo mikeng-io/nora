@@ -338,7 +338,7 @@ def test_an_event_that_renders_a_typed_builder_is_clean():
 
 def test_a_kind_built_with_the_wrong_builder_is_caught(modules):
     swapped = {"nora/app/x.py": _event_source(
-        "lambda tagger, now: GatheringHeader('t', tagger).render()", kind="reminder")}
+        "lambda tagger, now: ProactiveHeader(tagger).render()", kind="reminder")}
     found, _problems = event_findings(swapped)
     assert found["reminder"] != [framing.FIRE_HEADERS["reminder"].__name__]
 
@@ -358,7 +358,7 @@ def test_the_discovery_sees_every_known_construction_site(modules):
     """A zero from an instrument that cannot see is not evidence."""
     found, _problems = event_findings(modules)
     assert set(found) >= {
-        "reminder", "gathering", "proactive", "compute", "relay", "compute_lost",
+        "reminder", "proactive", "compute", "relay", "compute_lost",
         "participation", "version_announcement",
     }
 

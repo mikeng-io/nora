@@ -5,7 +5,6 @@ from aiohttp import web
 from nora.agent.whereis import Circle
 from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
-from nora.domain.reminders import ReminderCaps
 from nora.persons import Persons
 from nora.testing import FakeMemoryStore, FakeRecordStore
 from nora.testing.gatherings import FakeGatheringStore
@@ -20,8 +19,6 @@ CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,)
 def _events() -> GatheringService:
     return GatheringService(
         store=FakeGatheringStore(),
-        reminders=FakeReminderStore(),
-        reminder_caps=ReminderCaps(),
         route_source=None,
         honcho=None,
         ai_peer="nora",
