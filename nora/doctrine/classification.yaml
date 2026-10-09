@@ -144,7 +144,7 @@ files:
     Follow the conversation:
       bucket: practice
       reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back"
-      sha: "dffe8cb18462"
+      sha: "140cf343bc46"
     When the group is sorting something out:
       bucket: practice
       reason: "help a plan land, do not run it or chase; use a tag only when needed"
@@ -166,7 +166,7 @@ files:
     Getting to an answer:
       parts:
         - {starts: "Check a fact you do not hold", bucket: law, reason: "never state a guess as fact; saying you do not know beats guessing confidently", sha: "5686acd0540a"}
-        - {starts: "Do not re-check what you know", bucket: practice, reason: "how many checks, in what order", sha: "d6535212a364"}
+        - {starts: "Do not re-check what you know", bucket: practice, reason: "how many checks, in what order", sha: "cf9d4a8bd0f1"}
         - {starts: "When something comes back empty", bucket: law, reason: "empty versus broken are different outcomes; never fill the gap; an unchecked thing stays unchecked", sha: "22b729ef6f99"}
     Talking about a person:
       parts:

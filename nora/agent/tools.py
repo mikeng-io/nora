@@ -13005,9 +13005,11 @@ Args:
                 you picked up. Leave it out when only one thing is happening,
                 since a reply threaded onto the obvious message is clutter. Never
                 guess a number that is not on a message you can see.
-            more: True if you will do anything after this reply: another
-                message, or any tool such as a note or a publish. Leave it
-                false otherwise; the turn then ends.
+            more: True if you will do anything after this message: another
+                message, or any tool such as a search, the computer, an image
+                or a note. A line telling the room what you are about to do
+                before longer work always carries it. Leave it false
+                otherwise; the turn then ends.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS

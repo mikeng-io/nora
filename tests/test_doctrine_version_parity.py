@@ -256,7 +256,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # opened by translating the vision reading back, item by item, to the
     # person who had sent it. The tool notes were reframed in the same change;
     # this reaches the answers that read only a transcript placeholder.
-    "conduct": (34, "9dac6dfe1c9e64a0c98a2dd8c1a213a0607e73f3cedddf7793846240d58ce648"),
+    # v35 (2026-10-09, operator: «she decides» to say what she is doing before
+    # long work, any kind, not only search): «Getting to an answer» keeps the
+    # no-filler rule for a quick check and adds one heads-up line, sent with
+    # `more=true`, when the work will keep the room waiting (DEC-294's flag).
+    "conduct": (35, "8b2ed2cd2f2d7225ad1293c4d8d4f5053ae3a51258d0757a63202ca558706ce1"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
