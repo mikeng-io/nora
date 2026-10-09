@@ -12981,7 +12981,7 @@ Args:
         final message instead: that path is an emergency fallback, never a
         choice. If you call neither, nothing is sent. It always goes to the
         conversation you were tagged in; you do not choose where. A send ends
-        your turn unless you pass `more=true`. Do the notes, lookups and
+        your turn unless you pass `more=true` or `heads_up=true`. Do the notes, lookups and
         publishing you owe BEFORE your answer when you can; anything you still
         do after it needs `more=true`.
 
