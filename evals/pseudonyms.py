@@ -43,7 +43,11 @@ def _path() -> Path | None:
     if not raw:
         return None
     path = Path(raw).expanduser()
-    return path if path.is_file() else None
+    if not path.is_file():
+        # Set but absent is a typo, not "no map": refuse rather than run every
+        # anchored case as if the map were off.
+        raise ValueError(f"{ENV} names a file that does not exist")
+    return path
 
 
 @lru_cache(maxsize=4)
@@ -55,6 +59,7 @@ def _load(path: Path, mtime_ns: int) -> tuple[dict[str, str], re.Pattern[str] | 
         if not line.strip() or line.startswith("#"):
             continue
         pseudonym, sep, real = line.partition(_ARROW)
+        pseudonym, real = pseudonym.strip(), real.strip()
         if not sep or not pseudonym or not real or _ARROW in real:
             # The line number only: the line itself is private.
             raise ValueError(f"{ENV}: line {n} is not `pseudonym==>real`")
@@ -68,10 +73,12 @@ def _load(path: Path, mtime_ns: int) -> tuple[dict[str, str], re.Pattern[str] | 
 
 
 def _bounded(token: str) -> str:
-    """`token`, matched only where it is not part of a longer word: a short
-    pseudonym (a first name) must not rewrite the middle of another word."""
-    left = r"(?<!\w)" if re.match(r"\w", token[0]) else ""
-    right = r"(?!\w)" if re.match(r"\w", token[-1]) else ""
+    r"""`token`, matched only where it is not part of a longer Latin word: a
+    short pseudonym (a first name) must not rewrite the middle of another word.
+    The boundary is ASCII only: `\w` counts a CJK character as a word
+    character, and the corpora glue names to Cantonese (`阿<name>而`)."""
+    left = r"(?<![A-Za-z0-9_])" if re.match(r"[A-Za-z0-9_]", token[0]) else ""
+    right = r"(?![A-Za-z0-9_])" if re.match(r"[A-Za-z0-9_]", token[-1]) else ""
     return left + re.escape(token) + right
 
 

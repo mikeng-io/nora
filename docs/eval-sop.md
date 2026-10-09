@@ -43,11 +43,14 @@ uv run python -m evals injections identity_grounding --judge
   mode 600, outside every checkout): one literal `pseudonym==>real` per line.
   `evals/pseudonyms.py` resolves each case in memory when it loads (anchor,
   person, input, expectation, metadata; never the case name) and the run
-  header prints `pseudonym map: N rule(s)`. Unset or missing, nothing is
-  resolved and a pseudonymised anchor refuses with "policy names no
-  conversation", naming the variable. A new case whose pseudonym is not in the
-  map refuses the same way: add its line to the host file, never a real value
-  to the tree.
+  header prints `pseudonym map: N rule(s)`. Unset, nothing is resolved and a
+  pseudonymised anchor refuses with "policy names no conversation", naming the
+  variable; set to a file that does not exist, the run refuses. A new case
+  whose pseudonym is not in the map refuses with its room withheld: add its
+  line to the host file, never a real value to the tree. With the map in
+  effect an eval LOG holds real names and room content: it stays on the host,
+  and only case names, PASS/FAIL/ERROR, counts and spend leave it (never into
+  an issue, PR or commit).
 - `--deployment-config` defaults to the deployment's `config.toml`; the run
   refuses to start if the rebuilt `config.evaluation.toml` differs from it
   outside `ALLOWED_TO_DIFFER`.

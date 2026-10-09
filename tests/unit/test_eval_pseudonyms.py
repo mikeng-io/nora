@@ -93,12 +93,23 @@ def test_without_the_map_the_anchor_refuses_exactly_as_before(corpus, tmp_path, 
         _compose(tmp_path, monkeypatch, _room(case))
 
 
-def test_a_missing_map_file_is_no_map(corpus, tmp_path, monkeypatch):
+def test_a_map_variable_naming_a_missing_file_refuses(corpus, tmp_path, monkeypatch):
+    """Set but absent is a typo: it refuses instead of running as if no map."""
     monkeypatch.setenv(pseudonyms.ENV, str(tmp_path / "absent.txt"))
-    [case] = load_corpus(corpus)
-    assert _room(case) == ("signal", "grp-pseudo")
-    assert not pseudonyms.active()
-    assert "none" in pseudonyms.status()
+    with pytest.raises(ValueError, match="does not exist"):
+        load_corpus(corpus)
+
+
+def test_a_name_glued_to_cantonese_is_translated(mapped):
+    """`\\w` counts CJK as a word character; the corpora write 阿<name>而."""
+    assert pseudonyms.resolve("阿Miles而家 Miles今日 Avery") == "阿Synthop而家 Synthop今日 Quill"
+
+
+def test_map_lines_tolerate_crlf_and_padding(tmp_path, monkeypatch):
+    path = tmp_path / "map.txt"
+    path.write_bytes(b"Miles ==> Synthop \r\n")
+    monkeypatch.setenv(pseudonyms.ENV, str(path))
+    assert pseudonyms.resolve("Miles") == "Synthop"
 
 
 def test_input_speakers_and_expectations_are_translated_but_the_name_is_not(corpus, mapped):
@@ -149,9 +160,10 @@ def test_the_map_is_never_printed(mapped, capsys, tmp_path, monkeypatch):
     assert capsys.readouterr() == ("", "")
 
 
-async def _refusal(monkeypatch) -> str:
-    async def refuse(_spec: Any) -> Any:
+async def _refusal(monkeypatch, refuse: Any = None) -> str:
+    async def _default(_spec: Any) -> Any:
         raise RoomNotInPolicyError("policy names no conversation for the subject's room")
+    refuse = refuse or _default
 
     class _Sandbox:
         def __init__(self, *_: Any, **__: Any) -> None: ...
@@ -180,3 +192,12 @@ async def test_a_refusal_without_the_map_names_the_variable(monkeypatch):
 async def test_a_refusal_with_the_map_in_effect_is_not_blamed_on_it(mapped, monkeypatch):
     message = await _refusal(monkeypatch)
     assert pseudonyms.ENV not in message
+
+
+async def test_a_refusal_with_the_map_in_effect_withholds_the_room(mapped, monkeypatch):
+    """With a map the room in the refusal would be a REAL id, and eval logs are
+    read and quoted: the message withholds it."""
+    async def refuse(_spec):
+        raise RoomNotInPolicyError("policy names no conversation for ('signal', 'grp-synthreal')")
+    message = await _refusal(monkeypatch, refuse)
+    assert "grp-synthreal" not in message and "withheld" in message

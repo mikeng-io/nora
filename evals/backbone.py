@@ -1584,7 +1584,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
         # A pseudonymised anchor with no map in effect (#776) refuses exactly
         # as before, and now says what would resolve it.
         if pseudonyms.active():
-            raise
+            # With a map in effect the room in the message is a REAL id: the
+            # log is read and quoted, so the room is withheld here.
+            raise RoomNotInPolicyError(
+                "the case's room is not in the deployment's policy even through the "
+                "pseudonym map (room withheld); add its pseudonym to the host map"
+            ) from None
         raise RoomNotInPolicyError(f"{exc}; {pseudonyms.HINT}") from exc
     finally:
         # 150 cases at five samples is 750 connection pools. `EvalTaskHandler`'s

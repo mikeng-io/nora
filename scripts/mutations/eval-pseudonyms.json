@@ -16,9 +16,16 @@
   {
     "name": "_bounded: no word boundary, so a short pseudonym rewrites the middle of another word",
     "file": "evals/pseudonyms.py",
-    "old": "    left = r\"(?<!\\w)\" if re.match(r\"\\w\", token[0]) else \"\"\n    right = r\"(?!\\w)\" if re.match(r\"\\w\", token[-1]) else \"\"\n",
+    "old": "    left = r\"(?<![A-Za-z0-9_])\" if re.match(r\"[A-Za-z0-9_]\", token[0]) else \"\"\n    right = r\"(?![A-Za-z0-9_])\" if re.match(r\"[A-Za-z0-9_]\", token[-1]) else \"\"\n",
     "new": "    left = right = \"\"\n",
     "target": "tests/unit/test_eval_pseudonyms.py::test_an_unmapped_or_embedded_token_passes_through_unchanged"
+  },
+  {
+    "name": "_bounded: the boundary is \\w again, so a name glued to Cantonese is never translated",
+    "file": "evals/pseudonyms.py",
+    "old": "    left = r\"(?<![A-Za-z0-9_])\" if re.match(r\"[A-Za-z0-9_]\", token[0]) else \"\"",
+    "new": "    left = r\"(?<!\\w)\" if re.match(r\"\\w\", token[0]) else \"\"",
+    "target": "tests/unit/test_eval_pseudonyms.py::test_a_name_glued_to_cantonese_is_translated"
   },
   {
     "name": "_load: shortest-first alternation, so a contained pseudonym splits a longer one",
@@ -42,11 +49,11 @@
     "target": "tests/unit/test_eval_pseudonyms.py::test_a_refusal_without_the_map_names_the_variable"
   },
   {
-    "name": "_drive_draw: the hint is added even with a map in effect",
+    "name": "_drive_draw: the room is not withheld when a map is in effect",
     "file": "evals/backbone.py",
-    "old": "        if pseudonyms.active():\n            raise\n        raise RoomNotInPolicyError(",
-    "new": "        raise RoomNotInPolicyError(",
-    "target": "tests/unit/test_eval_pseudonyms.py::test_a_refusal_with_the_map_in_effect_is_not_blamed_on_it"
+    "old": "            raise RoomNotInPolicyError(\n                \"the case's room is not in the deployment's policy even through the \"\n                \"pseudonym map (room withheld); add its pseudonym to the host map\"\n            ) from None",
+    "new": "            raise",
+    "target": "tests/unit/test_eval_pseudonyms.py::test_a_refusal_with_the_map_in_effect_withholds_the_room"
   },
   {
     "name": "_hold_the_transport_tier: the handle stand-in is not resolved",
