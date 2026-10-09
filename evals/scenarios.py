@@ -268,8 +268,7 @@ def _case(row: dict[str, Any]) -> Case:
     # Resolved ONCE, here, before anything reads the case (#776): the anchor,
     # the person, the input, the expectation, every metadata string. The
     # `name` is not: it is how `--case` selects, and it names no one.
-    row = {**pseudonyms.resolve({k: v for k, v in row.items() if k != "name"}),
-           "name": row["name"]}
+    row = {**pseudonyms.resolve(row), "name": row["name"]}
     return Case(
         name=str(row["name"]),
         input=str(row.get("input", "")),
