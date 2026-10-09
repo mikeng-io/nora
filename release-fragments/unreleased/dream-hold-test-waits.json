@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Test-only: a dream-loop test waits for its condition instead of a fixed 60 ms window.", "details": [], "limitations": []}
