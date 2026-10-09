@@ -2867,8 +2867,13 @@ class XaiImageGenConfig(BaseModel):
 
     `model` / `quality_model` mirror the same names Hermes' `image_gen/xai`
     plugin uses (`grok-imagine-image` / `grok-imagine-image-quality`).
-    `refresh_token_env` NAMES the env var holding the long-lived OAuth
-    refresh token (DEC-8) — the value never lands in config.toml.
+    `refresh_token_env` NAMES the env var holding the BOOTSTRAP OAuth
+    refresh token `nora xai-login` writes (DEC-8) — the value never lands in
+    config.toml; the rotating token after it lives in the state file.
+
+    `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
+    on a schedule whenever `[image_gen] enabled` and the token is set,
+    whichever provider is selected (DEC-306, `nora.app.oauth_keepalive`).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2877,6 +2882,8 @@ class XaiImageGenConfig(BaseModel):
     quality_model: str = "grok-imagine-image-quality"
     timeout_seconds: float = 90.0
     refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, gt=0, le=168)
 
 
 _GptImageQuality = Literal["low", "medium", "high", "auto"]
@@ -2892,6 +2899,7 @@ class OpenAICodexImageGenConfig(BaseModel):
     `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
     holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
     (DEC-8); the rotating token after it lives in the state file.
+    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-306).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2903,6 +2911,8 @@ class OpenAICodexImageGenConfig(BaseModel):
     timeout_seconds: float = Field(default=180.0, gt=0)
     # Names an env var, not a secret.
     refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, gt=0, le=168)
 
 
 class ImageGenConfig(BaseModel):

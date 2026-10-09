@@ -5,15 +5,22 @@ generation runs on the subscription entitlement (quota-bounded, not metered
 per-call billing) without borrowing Hermes' auth store or a host credential
 proxy.
 
-Credential split (operator's `.env` rule, review F4):
+Credential split (operator's `.env` rule, review F4; DEC-306):
 
-- `.env` (host, immutable, DEC-8) holds ONLY the long-lived refresh token
-  (`XAI_OAUTH_REFRESH_TOKEN`). One secret, one place.
-- `./state/xai-oauth.json` (container-writable, same repo-tree state pattern
-  as `./state/signal-cli`) holds the short-lived access token + its expiry.
-  Boot precedence: read the state file; ONLY if absent/corrupt, derive an
-  initial access token by refreshing with the `.env` refresh token. The
-  access token never lives in `.env` — no two-source-of-truth restart race.
+- `.env` (host, immutable, DEC-8) holds ONLY the BOOTSTRAP refresh token
+  `nora xai-login` wrote (`XAI_OAUTH_REFRESH_TOKEN`). xAI rotates the refresh
+  token on use, so the first refresh spends it.
+- `./state/xai-oauth.json` (container-writable) holds the chain from there:
+  the access token, its expiry, the CURRENT refresh token, when it was
+  refreshed, and the sha256 of the `.env` token it grew from. `oauth_lane`
+  owns it, the same way it owns the Codex lane's: a state file from an older
+  login (or one written before the fingerprint existed) is ignored, so a new
+  `xai-login` takes over without anyone deleting a file. Until DEC-306 the
+  state file's refresh token won unconditionally, and a dead one masked a
+  fresh login.
+- The daemon refreshes it on a schedule (`nora.app.image_oauth_keepalive`):
+  on 2026-10-09 the first call after 12 idle days found the stored token
+  refused (`invalid_grant`), and nothing had logged it.
 
 Endpoint + scope + skew constants mirror Hermes' `hermes_cli/auth.py`
 (`XAI_OAUTH_CLIENT_ID`, `XAI_OAUTH_SCOPE`, `XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS`)
@@ -28,9 +35,7 @@ NEVER raises into the caller: every failure is an `OAuthState` with
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,6 +44,8 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import aiohttp
+
+from .oauth_lane import Exchange, LaneEvent, Refusal, RotatingOAuthLane
 
 log = logging.getLogger("nora.image_gen.xai_oauth")
 
@@ -222,20 +229,17 @@ class OAuthState:
     expires_in: float = 0.0
 
 
-@dataclass
-class _TokenState:
-    access_token: str
-    expires_at: float  # epoch seconds; 0 = unknown
-    refresh_token: str | None = None  # rotated refresh token (M3), if any
+class XaiOAuth(RotatingOAuthLane):
+    """Refresh lane for the xAI subscription (see the module docstring; the
+    chain, the locks and the state file are `oauth_lane`'s).
 
-
-class XaiOAuth:
-    """Device flow + proactive refresh for the xAI subscription lane.
-
-    Constructed by `nora.infra.image_gen.xai_adapter.XaiImageGenerator`,
-    which owns the refresh token (resolved by NAME from config/env — DEC-8)
-    and the state-file path.
+    Constructed by the composition root, which resolves the bootstrap refresh
+    token by NAME from config/env (DEC-8) and hands the SAME object to the
+    adapter and to the keepalive.
     """
+
+    lane = "xai"
+    skew_seconds = XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS
 
     def __init__(
         self,
@@ -247,125 +251,51 @@ class XaiOAuth:
         timeout_seconds: float = 30.0,
         clock: Callable[[], float] | None = None,
         issuer: str = XAI_OAUTH_ISSUER,
+        observer: Callable[[LaneEvent], None] | None = None,
     ) -> None:
         if not refresh_token:
             raise ValueError("XAI_OAUTH_REFRESH_TOKEN must be set")
-        self._refresh_token = refresh_token
-        self._state_file = Path(state_file)
+        super().__init__(
+            bootstrap_refresh_token=refresh_token,
+            state_file=state_file,
+            timeout_seconds=timeout_seconds,
+            clock=clock,
+            observer=observer,
+        )
         self._client_id = client_id
         self._scope = scope
-        self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        self._clock = clock or time.time
-        self._lock = asyncio.Lock()
-        self._cached: _TokenState | None = None
         # M5: resolve the token endpoint from OIDC discovery ONCE per process
         # (cached lazily on first refresh; `XAI_OAUTH_TOKEN_URL` is the
-        # fallback when discovery is unreachable). The module docstring's
-        # "absorbed once at boot, not across three call sites" is only true
-        # if the refresh path — the path that runs in production — shares
-        # the discovery. Test seam: `issuer` lets contract tests point at a
-        # local TestServer the same way `XaiImageGenerator.base_url` does.
+        # fallback when discovery is unreachable). Test seam: `issuer` lets
+        # contract tests point at a local TestServer.
         self._issuer = issuer.rstrip("/")
         self._token_endpoint: str | None = None
 
     def _discovery_url(self) -> str:
         return f"{self._issuer}/.well-known/openid-configuration"
 
-    # -- state file ---------------------------------------------------------
-
-    def _load_state(self) -> _TokenState | None:
-        try:
-            raw = self._state_file.read_text(encoding="utf-8")
-            data = json.loads(raw)
-            token = str(data["access_token"])
-            expires = float(data.get("expires_at") or 0)
-            if not token:
-                return None
-            refresh = data.get("refresh_token")
-            return _TokenState(
-                access_token=token,
-                expires_at=expires,
-                refresh_token=str(refresh) if isinstance(refresh, str) and refresh else None,
-            )
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-
-    def _save_state(
-        self, token: str, expires_at: float, refresh_token: str | None = None,
-    ) -> None:
-        try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            # M4: atomic write — tmp + os.replace, so a crash mid-write never
-            # leaves a corrupt (or half-written) state file. 0o600: the file
-            # holds a live access token; the default umask is not a policy.
-            payload: dict[str, object] = {
-                "access_token": token,
-                "expires_at": expires_at,
-            }
-            if refresh_token:
-                payload["refresh_token"] = refresh_token
-            tmp = self._state_file.with_suffix(self._state_file.suffix + ".tmp")
-            tmp.write_text(
-                json.dumps(payload, sort_keys=True),
-                encoding="utf-8",
-            )
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self._state_file)
-        except OSError:
-            log.warning("xai_oauth: could not persist access token state file")
-
     # -- access -------------------------------------------------------------
 
     async def access_token(self) -> OAuthState:
         """Return a valid access token, refreshing proactively when needed.
 
-        Single-flight: concurrent callers share one refresh. Fail-closed: a
-        dead refresh token / Cloudflare challenge / network failure returns
-        `OAuthState("unavailable", reason=...)` — never a raise and never a
-        stale token.
+        Single-flight in and across processes (`RotatingOAuthLane._acquire`).
+        Fail-closed: a dead refresh token / Cloudflare challenge / network
+        failure returns `OAuthState("unavailable", reason=...)`, never a
+        raise and never a stale token.
         """
-        async with self._lock:
-            cached = self._cached
-            now = self._clock()
-            fresh = (
-                cached is not None
-                and cached.expires_at > now + XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS
-            )
-            if fresh and cached is not None:
-                return OAuthState(status="ok", access_token=cached.access_token)
+        outcome = await self._acquire()
+        if isinstance(outcome, str):
+            return OAuthState("unavailable", reason=outcome)
+        return OAuthState(
+            "ok",
+            access_token=outcome.access_token,
+            expires_in=max(0.0, outcome.expires_at - self._clock()),
+        )
 
-            # Boot precedence: state file first; only absent/corrupt → derive
-            # from the .env refresh token. M3: a rotated refresh token in the
-            # state file (if present) is adopted here even when the access
-            # token is EXPIRED (xAI rotates on use — the `.env` token can be
-            # dead while a newer rotated token in the state file is live).
-            # Adopting the rotated token before refreshing means a restarted
-            # (or state-mutating) lane heals without a re-login, and the
-            # refresh below then persists the next rotation back to state.
-            if cached is None:
-                state = self._load_state()
-                if state is not None:
-                    if state.refresh_token:
-                        self._refresh_token = state.refresh_token
-                    if state.expires_at > now + XAI_ACCESS_TOKEN_REFRESH_SKEW_SECONDS:
-                        self._cached = state
-                        return OAuthState(status="ok", access_token=state.access_token)
-
-            result = await self._refresh()
-            if result.status == "ok":
-                self._cached = _TokenState(
-                    access_token=result.access_token, expires_at=self._clock() + result.expires_in
-                )
-                self._save_state(
-                    result.access_token,
-                    self._clock() + result.expires_in,
-                    refresh_token=self._refresh_token,
-                )
-            return result
-
-    async def _refresh(self) -> OAuthState:
+    async def _exchange(self, refresh_token: str) -> Exchange | Refusal:
         try:
-            timeout = aiohttp.ClientTimeout(total=self._timeout.total)
+            timeout = aiohttp.ClientTimeout(total=self._timeout)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 # M5: resolve the token endpoint from discovery once per
                 # process (cached); hardcoded `XAI_OAUTH_TOKEN_URL` is the
@@ -386,50 +316,49 @@ class XaiOAuth:
                     self._token_endpoint,
                     data={
                         "grant_type": "refresh_token",
-                        "refresh_token": self._refresh_token,
+                        "refresh_token": refresh_token,
                         "client_id": self._client_id,
                     },
                 ) as resp:
-                    body = await resp.json(content_type=None)
-            if resp.status == 200:
-                token = body.get("access_token")
-                if not isinstance(token, str) or not token:
-                    return OAuthState("unavailable", reason="auth")
-                # M3: xAI may rotate the refresh token on use (offline_access).
-                # Adopt it in memory AND persist it to the state file so the
-                # lane survives rotation; `.env` stays the immutable bootstrap
-                # source (DEC-8), the state file the preferred runtime value.
-                rotated = body.get("refresh_token")
-                if isinstance(rotated, str) and rotated and rotated != self._refresh_token:
-                    self._refresh_token = rotated
-                    self._save_state(
-                        token,
-                        self._clock() + float(body.get("expires_in") or 0),
-                        refresh_token=rotated,
-                    )
-                    log.info("xai_oauth: refresh token rotated; state file updated")
-                # M9: `expires_in` may be missing on a 200; a 0-expiry would
-                # re-refresh on every call (endpoint hammering). Conservative
-                # default: treat a missing/invalid value as short-lived but
-                # finite (2h), still fail-safe — and MUST exceed the refresh
-                # skew (3600s) or the fresh-check never passes and every
-                # call re-refreshes.
-                expires_in = body.get("expires_in")
-                try:
-                    expires = float(expires_in) if expires_in not in (None, 0) else 7200.0
-                except (TypeError, ValueError):
-                    expires = 7200.0
-                return OAuthState(
-                    "ok", access_token=token, reason="", expires_in=expires
-                )
-            # Cloudflare challenge: 403 while the token is still valid —
-            # RETRYABLE, not terminal auth (design §4.2).
-            if resp.status == 403:
-                return OAuthState("unavailable", reason="cloudflare")
-            if resp.status in (400, 401):
-                return OAuthState("unavailable", reason="auth")
-            if resp.status == 429:
-                return OAuthState("unavailable", reason="rate_limited")
-            return OAuthState("unavailable", reason="down")
-        except (aiohttp.ClientError, TimeoutError, ValueError):
-            return OAuthState("unavailable", reason="down")
+                    status = resp.status
+                    try:
+                        body = await resp.json(content_type=None)
+                    except ValueError:
+                        body = None
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            return Refusal("down", f"{type(exc).__name__} reaching the token endpoint")
+        if status == 200 and isinstance(body, dict):
+            token = body.get("access_token")
+            if not isinstance(token, str) or not token:
+                return Refusal("auth", "HTTP 200 without an access token")
+            # xAI rotates the refresh token on use (offline_access): the
+            # rotated one is the chain from here on; the spent one is dead.
+            rotated = body.get("refresh_token")
+            # M9: `expires_in` may be missing on a 200; a 0-expiry would
+            # re-refresh on every call (endpoint hammering). Conservative
+            # default: 2h, which MUST exceed the refresh skew (3600s) or the
+            # fresh-check never passes and every call re-refreshes.
+            expires_in = body.get("expires_in")
+            try:
+                expires = float(expires_in) if expires_in not in (None, 0) else 7200.0
+            except (TypeError, ValueError):
+                expires = 7200.0
+            return Exchange(
+                access_token=token,
+                refresh_token=rotated if isinstance(rotated, str) and rotated else refresh_token,
+                expires_at=self._clock() + expires,
+            )
+        code = ""
+        if isinstance(body, dict):
+            err = body.get("error")
+            code = str(err.get("code") if isinstance(err, dict) else err or "")
+        detail = f"HTTP {status} {code}".strip()
+        # Cloudflare challenge: 403 while the token is still valid —
+        # RETRYABLE, not terminal auth (design §4.2).
+        if status == 403:
+            return Refusal("cloudflare", detail)
+        if status in (400, 401):
+            return Refusal("auth", detail)
+        if status == 429:
+            return Refusal("rate_limited", detail)
+        return Refusal("down", detail)

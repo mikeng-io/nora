@@ -23,6 +23,7 @@ and report the reason — never guess from the status alone.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
@@ -404,6 +405,10 @@ async def oauth_server():
     await server.close()
 
 
+def _sha(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def _oauth(tmp_path: Path, base: str, refresh: str = "rt-boot", **kw):
     return XaiOAuth(
         refresh_token=refresh,
@@ -462,6 +467,7 @@ async def test_expired_state_adopts_rotated_refresh_before_refresh(tmp_path, oau
             "access_token": "at-expired",
             "expires_at": 1,               # long-expired: fresh check fails
             "refresh_token": "rt-rotated",
+            "bootstrap_sha256": _sha("rt-boot"),  # this chain grew from rt-boot
         }),
         encoding="utf-8",
     )
@@ -530,7 +536,10 @@ async def test_refresh_boot_precedence_uses_state_file(tmp_path, oauth_server):
     sf = tmp_path / "xai-oauth.json"
     sf.write_text(
         json.dumps(
-            {"access_token": "cached-token", "expires_at": 2_000_000_000},
+            {
+                "access_token": "cached-token", "expires_at": 2_000_000_000,
+                "refresh_token": "rt-rotated", "bootstrap_sha256": _sha("rt-boot"),
+            },
         ),
         encoding="utf-8",
     )

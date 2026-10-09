@@ -283,6 +283,53 @@ groups:
             input/output was not kept (blob). The tool still answered. Check the
             db and the blob store; the rows that failed are not recoverable.
 
+  - name: oauth
+    rules:
+      # The image lanes' logins (DEC-306). 2026-10-09: the xAI lane's refresh
+      # token was refused (`invalid_grant`) on the first call after twelve idle
+      # days, and nothing had said so; the operator found out by asking for a
+      # picture. The keepalive now refreshes every lane at least once per
+      # `refresh_interval_hours`; this fires when one has not succeeded for
+      # twice that. On the TIMESTAMP, never a failure counter: the process
+      # restarts 2-3 times a day and a rare counter reads empty after each, and
+      # the boot republishes this gauge from the state file, so a restart does
+      # not reset it. Absent (image generation off, or no lane token): not
+      # applicable, silent. A lane that never succeeded under its login reads
+      # 0 and fires.
+      - alert: OAuthRefreshStale
+        expr: >-
+          time() - nora_oauth_last_refresh_timestamp_seconds
+          > 2 * nora_oauth_refresh_interval_seconds
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "the {{ $labels.lane }} login has not refreshed for over twice its interval"
+          description: >-
+            Image generation on this lane fails once its access token expires.
+            Read why in the nora log (`oauth_lane` / `oauth keepalive` lines name
+            the lane and the reason). `auth` means the refresh token is dead: run
+            `nora xai-login` (lane xai) or `nora openai-codex-login` (lane
+            openai_codex), then `docker compose up -d --force-recreate nora`. The
+            new login supersedes the old state file; nothing needs deleting.
+
+      # The refresh token itself was refused (or the state dir is unwritable):
+      # no retry fixes either, so this fires at once rather than waiting for
+      # the staleness window above. A gauge, set by every failed refresh and
+      # cleared by the next success, for the restart reason above.
+      - alert: OAuthRefreshRefused
+        expr: nora_oauth_refresh_refused == 1
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "the {{ $labels.lane }} login was refused and needs the operator"
+          description: >-
+            The issuer refused the lane's refresh token (`invalid_grant`), or
+            ./state is not writable. Log in again with `nora xai-login` (lane
+            xai) or `nora openai-codex-login` (lane openai_codex) and recreate
+            nora; the keepalive retries once per interval until then. On norty,
+            no other checkout's .env may hold the same token: a second holder
+            spending one rotating token revokes the chain.
+
   - name: monitoring-itself
     rules:
       # A monitoring stack's own failure mode is to go quiet and leave every

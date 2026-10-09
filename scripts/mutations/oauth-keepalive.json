@@ -1,0 +1,100 @@
+[
+  {
+    "name": "the keeper's refresh is forced past a fresh access token (the interval, not only the expiry)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            and (since is None or state.refreshed_at > since)\n",
+    "new": "",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_the_keeper_refreshes_on_the_interval_with_no_calls"
+  },
+  {
+    "name": "a link minted after the keeper planned is adopted, never spent again (keeper + live calls)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            and (since is None or state.refreshed_at > since)\n",
+    "new": "            and since is None\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_the_keeper_and_live_calls_spend_the_token_once"
+  },
+  {
+    "name": "a link another process minted is adopted by the keeper from the state file",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            and (since is None or state.refreshed_at > since)\n",
+    "new": "            and since is None\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_keeper_from_another_process_adopts_a_refresh_it_did_not_make"
+  },
+  {
+    "name": "xAI precedence: a state file from an older login is not adopted (fresh login supersedes)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "        if not state.refresh_token or state.bootstrap_sha256 != self._bootstrap_sha:\n",
+    "new": "        if not state.refresh_token:\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file"
+  },
+  {
+    "name": "a refused refresh is logged at ERROR with its lane and reason",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "        if reason in TERMINAL_REASONS:\n            log.error(\n",
+    "new": "        if reason in TERMINAL_REASONS:\n            log.debug(\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_refused_refresh_is_logged_with_its_lane_and_never_its_token"
+  },
+  {
+    "name": "the keeper refreshes before the access token expires, not only on the interval",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "            due = min(due, link.expires_at - lane.skew_seconds)\n",
+    "new": "            pass\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_the_keeper_refreshes_before_the_access_token_expires"
+  },
+  {
+    "name": "jitter pulls a refresh earlier, never later",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "        return max(span - jitter, floor)\n",
+    "new": "        return max(span + jitter, floor)\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_jitter_only_pulls_a_refresh_earlier"
+  },
+  {
+    "name": "a terminal failure waits an interval instead of backing off like a transient one",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "            elif outcome in lane.terminal_reasons:\n",
+    "new": "            elif False:\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_a_terminal_failure_stops_hammering_and_stays_loud"
+  },
+  {
+    "name": "a transient failure backs off exponentially",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "                    timing.retry_base_seconds * 2 ** (failures - 1), timing.retry_cap_seconds,\n",
+    "new": "                    timing.retry_base_seconds, timing.retry_cap_seconds,\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_a_transient_failure_backs_off_exponentially_then_returns_to_plan"
+  },
+  {
+    "name": "a crashed keeper loop is logged and restarted, not left dead",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "            except Exception:\n                log.exception(\n",
+    "new": "            except ZeroDivisionError:\n                log.exception(\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_a_crash_is_logged_counted_and_the_loop_restarted"
+  },
+  {
+    "name": "the boot publishes the state file's last refresh, so a restart does not blank the alert",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "            link.refreshed_at if link is not None else 0.0, lane=name,\n",
+    "new": "            0.0, lane=name,\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_the_gauges_follow_the_lane_from_boot_through_a_refusal"
+  },
+  {
+    "name": "the unselected lane is kept alive too",
+    "file": "nora/app/composition.py",
+    "old": "        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),\n",
+    "new": "",
+    "target": "tests/unit/test_oauth_keepalive.py::test_every_lane_with_a_token_is_kept_whichever_provider_is_selected"
+  },
+  {
+    "name": "the adapter and the keeper hold the SAME lane object (one refresh lock)",
+    "file": "nora/app/composition.py",
+    "old": "            oauth=xai_lane,\n",
+    "new": "            refresh_token=xai_token, state_file=state_dir / \"xai-oauth.json\",\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_every_lane_with_a_token_is_kept_whichever_provider_is_selected"
+  },
+  {
+    "name": "staleness fires at twice the interval, not once",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "          > 2 * nora_oauth_refresh_interval_seconds\n",
+    "new": "          > 1 * nora_oauth_refresh_interval_seconds\n",
+    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_rules_pass_their_promtool_cases"
+  }
+]

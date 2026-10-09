@@ -153,9 +153,16 @@ Why A over the alternatives:
   explicit: read the state file; only if it is absent or corrupt, the adapter
   derives an initial access token by refreshing with the `.env` refresh token.
   One secret, one place — no two-source-of-truth restart race.
+  **Superseded 2026-10-09 (DEC-306):** xAI rotates the refresh token on use,
+  so the `.env` token is only a bootstrap and the state file holds the chain,
+  fingerprinted to that bootstrap as the Codex lane's is (§11): a state file
+  from an older login is ignored, so a new `xai-login` takes over. The
+  precedence above let a dead state-file token mask a fresh login.
 - Refresh: standard OIDC `POST /oauth2/token` with `grant_type=refresh_token`,
   reusing the same skew policy Hermes uses (proactive refresh before expiry,
   not on-401). The adapter refreshes lazily under a lock, single-flight, and
+  (since DEC-306, 2026-10-09) the daemon also refreshes it on a schedule,
+  through the same lock, so an idle lane's login does not die unnoticed; and
   **fails closed** to `unavailable` if the refresh_token itself is dead (which
   means: re-run `nora xai-login`, not "retry forever").
 - Refresh flakiness: xAI's refresh endpoint is intermittently blocked by a

@@ -331,6 +331,12 @@ class App:
             ))
         else:
             log.info("cognition loop disabled ([cognition] enabled = false)")
+        # The OAuth keepalive (DEC-306): HERE and not in composition, because
+        # the eval subject composes the same graph and must not spend the
+        # deployment's rotating refresh tokens. `None` with image generation
+        # off or no lane token set.
+        if deps.oauth_keepalive is not None:
+            deps.oauth_keepalive.start(deps.background.spawn)
         # The computer session sweeper (design/sandbox-runtime §15.2):
         # composition builds it only while `[computer] enabled`.
         if deps.computer_sweeper is not None:
