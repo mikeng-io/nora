@@ -56,6 +56,7 @@ from strands_evals.types.evaluation import (
     EvaluationOutput,
 )
 
+from evals import pseudonyms
 from evals.situation import (
     LIVE_HANDLE_STANDINS,
     deployment_handles,
@@ -84,6 +85,7 @@ from nora.subject import (
     seed_documents,
     seed_lessons,
 )
+from nora.subject.obtain import RoomNotInPolicyError
 from nora.subject.transport import held_states, hold_transports
 
 #: Names carried on `environment_state`. A reader must key on these, never on
@@ -857,7 +859,7 @@ def _hold_the_transport_tier(subject: Any, spec: Spec, md: Mapping[str, Any]) ->
         subject,
         networks=networks,
         varied=varied_transport(md),
-        live_handles=LIVE_HANDLE_STANDINS,
+        live_handles=pseudonyms.resolve(dict(LIVE_HANDLE_STANDINS)),
     )
 
 
@@ -1578,6 +1580,12 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     *repeat_state,
                 ],
             }
+    except RoomNotInPolicyError as exc:
+        # A pseudonymised anchor with no map in effect (#776) refuses exactly
+        # as before, and now says what would resolve it.
+        if pseudonyms.active():
+            raise
+        raise RoomNotInPolicyError(f"{exc}; {pseudonyms.HINT}") from exc
     finally:
         # 150 cases at five samples is 750 connection pools. `EvalTaskHandler`'s
         # own hooks are SYNC and `_close()` is not, so teardown cannot live
@@ -1597,7 +1605,7 @@ def _as_nora_case(case: Case, spec: Spec, *, trigger: str) -> Any:
         expect=md.get("expect", "either"),
         input=substitute_trigger(str(case.input), trigger),
         snapshot=dict(md.get("snapshot") or {}),
-        person=str(md.get("person") or "miles_novak"),
+        person=str(md.get("person") or pseudonyms.resolve("miles_novak")),
         mention=bool(md.get("mention", False)),
         # `evals/rebuilt/entry.py`'s `dreamer` reads `case.category or
         # "note-candidates"` to pick WHICH adaptor a `dreamer` pass runs (only

@@ -143,15 +143,15 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
    ssh norty bash -s <<'EOF'
    exec 9>/tmp/nora-eval.lock; flock -w 900 9 || { echo "LOCK_TIMEOUT" > /tmp/eval-<arm>.rc; exit 75; }
    cd ~/workspace/nora-wt-eval-rebuild || exit 1
-   set -a; . ~/workspace/nora/.env; set +a
+   set -a; . ~/workspace/nora/.env; set +a; export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt
    ~/.local/bin/uv run python -m evals relevance_gate --sample 5 \
      > /tmp/eval-<arm>.log 2>&1; echo "RC=$?" > /tmp/eval-<arm>.rc
    EOF
    ssh norty 'cat /tmp/eval-<arm>.rc; grep -E "spend:|PASS|FAIL|ERROR|UNSTABLE" /tmp/eval-<arm>.log'
    ```
-   Check: read the rc file, then the log. `RC=0` means no FAIL, ERROR or UNSTABLE;
-   `RC=1` means at least one, or a crash (the log says which); `RC=2` means
-   refused before spending (read why).
+   Check: the header's `pseudonym map: N rule(s)` (#776), the rc file, then the log.
+   `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
+   (the log says which); `RC=2` means refused before spending (read why).
    Output is block-buffered under a redirect: wait for exit, do not tail.
 
 8. **Read the log honestly.** Per case PASS/FAIL only when every draw agreed;

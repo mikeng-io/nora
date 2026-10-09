@@ -27,6 +27,7 @@ nothing is configurable per case (`design/evaluation/11-the-sandbox-rebuild.md`
 make eval-source                 # refresh nora_eval (pg_dump); ONLY when no run is in flight:
                                  # it drops every sandbox (nora-eval step 4), never between arms
 set -a; source ~/workspace/nora/.env; set +a         # the deployment's keys, so the tools are production's
+export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt   # resolves the scrubbed anchors (#776)
 uv run python -m evals --list    # corpora, entry points, classes
 uv run python -m evals --all     # every corpus; prints "N total, active, parked, unanchored" per corpus
 uv run python -m evals relevance_gate --sample 3
@@ -35,6 +36,18 @@ uv run python -m evals injections identity_grounding --judge
 
 - `--source-url` defaults to the clone on the deploy host (from its `.env`);
   a database whose name is not `*_eval` is refused.
+- The corpora are pseudonymised (the scrub, `0bd34346d`): a case's room id,
+  person and names are pseudonyms, while the clone and the deployment's
+  `policy.toml`/`identity.toml` carry the real values. `NORA_EVAL_PSEUDONYM_MAP`
+  names a private map on the deploy host only (`~/.config/nora/eval-pseudonyms.txt`,
+  mode 600, outside every checkout): one literal `pseudonym==>real` per line.
+  `evals/pseudonyms.py` resolves each case in memory when it loads (anchor,
+  person, input, expectation, metadata; never the case name) and the run
+  header prints `pseudonym map: N rule(s)`. Unset or missing, nothing is
+  resolved and a pseudonymised anchor refuses with "policy names no
+  conversation", naming the variable. A new case whose pseudonym is not in the
+  map refuses the same way: add its line to the host file, never a real value
+  to the tree.
 - `--deployment-config` defaults to the deployment's `config.toml`; the run
   refuses to start if the rebuilt `config.evaluation.toml` differs from it
   outside `ALLOWED_TO_DIFFER`.

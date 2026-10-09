@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from evals import pseudonyms
 from evals.backbone import (
     ERROR,
     FAIL,
@@ -583,6 +584,7 @@ def main() -> int:
             # AFTER the rebuild: the sweep reads Honcho's address and the
             # deployment's workspace off the config every subject composes.
             print(f"run {RUN_ID}: every draw gets its own Honcho workspace")
+            print(pseudonyms.status())
             _sweep_stale_workspaces()
 
             if args.print_input:
