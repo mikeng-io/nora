@@ -95,6 +95,7 @@ from nora.app.memory_routing import (
     build_workspace_router,
     workspaces_of_person,
 )
+from nora.app.oauth_keepalive import KeepaliveTiming, KeptLane, OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.source_health import AdapterHealthRecorder
 from nora.app.subagent_backend import SubagentBackend
@@ -123,6 +124,7 @@ from nora.domain.ports import (
     DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
+    ImageGenerator,
     MemoryStore,
     PlatformAdapter,
     RecordStore,
@@ -1233,6 +1235,103 @@ class Dependencies:
     # `nora/__main__.py` mounts `/app/v1/otp/*` behind `otp_api_token`.
     otp: OtpService | None = None
     otp_api_token: str = ""
+    # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`): `None` unless
+    # `[image_gen] enabled` and at least one lane's token is set with
+    # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
+    # which composes the same graph, does not.
+    oauth_keepalive: OAuthKeepalive | None = None
+
+
+def _image_gen_wiring(
+    cfg: Config,
+    metrics: Metrics,
+    environ: Mapping[str, str],
+    *,
+    state_dir: Path,
+) -> tuple[ImageGenerator | None, OAuthKeepalive | None]:
+    """The `generate_image` provider and the OAuth keepalive ([image_gen]).
+
+    Off: `(None, None)`, and the tool answers `unavailable` (R-5/R-27). On,
+    EVERY OAuth lane whose bootstrap token is set gets one lane object
+    (DEC-308), whichever `provider` is selected; the selected one is also
+    the adapter's, the SAME object, so the keeper and a call share one
+    refresh lock and never both spend a rotating token. Each lane with
+    `keepalive = true` is registered with the one keeper, which
+    `nora/__main__.py` starts (the eval subject composes this graph too and
+    must not refresh the deployment's tokens). The state files live in the
+    repo-tree state dir `./state/signal-cli` already uses (container-
+    writable; the host-immutable `.env` holds only the bootstrap tokens).
+    """
+    if not cfg.image_gen.enabled:
+        return None, None
+    from nora.infra.image_gen import (
+        OpenAICodexOAuth,
+        XaiOAuth,
+        build_image_generator,
+    )
+
+    image_generator: ImageGenerator | None
+    xai_cfg = cfg.image_gen.xai
+    codex_cfg = cfg.image_gen.openai_codex
+    xai_token = environ.get(xai_cfg.refresh_token_env, "")
+    codex_token = environ.get(codex_cfg.refresh_token_env, "")
+    xai_lane = XaiOAuth(
+        refresh_token=xai_token,
+        state_file=state_dir / "xai-oauth.json",
+        timeout_seconds=xai_cfg.timeout_seconds,
+    ) if xai_token else None
+    # DEC-304: the env var holds only the BOOTSTRAP token; the rotating
+    # one lives in the state file beside xAI's.
+    codex_lane = OpenAICodexOAuth(
+        bootstrap_refresh_token=codex_token,
+        state_file=state_dir / "openai-codex-oauth.json",
+    ) if codex_token else None
+    if cfg.image_gen.provider == "openai_codex":
+        token_env = codex_cfg.refresh_token_env
+        image_generator = build_image_generator(
+            provider="openai_codex",
+            oauth=codex_lane,
+            model=codex_cfg.model,
+            responses_model=codex_cfg.responses_model,
+            standard_quality=codex_cfg.standard_quality,
+            high_quality=codex_cfg.high_quality,
+            timeout_seconds=codex_cfg.timeout_seconds,
+            max_reference_images=codex_cfg.max_reference_images,
+        ) if codex_lane is not None else None
+        selected_token = codex_token
+    else:
+        token_env = xai_cfg.refresh_token_env
+        image_generator = build_image_generator(
+            provider=cfg.image_gen.provider,
+            oauth=xai_lane,
+            model=xai_cfg.model,
+            quality_model=xai_cfg.quality_model,
+            timeout_seconds=xai_cfg.timeout_seconds,
+            max_reference_images=xai_cfg.max_reference_images,
+        ) if xai_lane is not None else None
+        selected_token = xai_token
+    if not selected_token:
+        log.warning(
+            "image_gen enabled but %s is unset — generate_image stays unavailable",
+            token_env,
+        )
+    elif image_generator is None:
+        # M6: unknown provider (or unconstructable lane) degrades
+        # the tool, never crashes the daemon.
+        log.warning(
+            "image_gen enabled but provider %r could not be built — "
+            "generate_image stays unavailable",
+            cfg.image_gen.provider,
+        )
+    keeper = OAuthKeepalive(metrics)
+    kept: tuple[tuple[KeptLane | None, bool, float], ...] = (
+        (xai_lane, xai_cfg.keepalive, xai_cfg.refresh_interval_hours),
+        (codex_lane, codex_cfg.keepalive, codex_cfg.refresh_interval_hours),
+    )
+    for lane, wanted, hours in kept:
+        if lane is not None and wanted:
+            keeper.register(lane, KeepaliveTiming(interval_seconds=hours * 3600.0))
+    return image_generator, (keeper if keeper.lanes else None)
 
 
 def wall_clock() -> datetime:
@@ -2584,61 +2683,24 @@ async def build_dependencies(
     # present → build the lane (the same keyless-`enabled` gate `route` uses).
     # Off (or tokenless) leaves the `generate_image` tool answering
     # `unavailable` — never a crash, never `nothing_found` (R-5/R-27). The
-    # access-token state file lives in the same repo-tree state dir
-    # `./state/signal-cli` already uses (container-writable, host-immutable
-    # `.env` holds only the refresh token).
-    image_generator = None
-    image_refs_allowed = False
+    # state files live in the same repo-tree state dir `./state/signal-cli`
+    # already uses (container-writable, host-immutable `.env` holds only the
+    # bootstrap refresh tokens).
+    #
+    # DEC-308: EVERY OAuth lane whose token is set gets its lane object, not
+    # only the selected provider's, and each is registered with the one
+    # keepalive so no login dies idle. The selected lane's object is the SAME
+    # one the adapter holds: one asyncio lock, so the keeper and a call never
+    # both spend a rotating token. `nora/__main__.py` starts the keeper; the
+    # eval subject composes the same graph and never does.
+    image_refs_allowed = (
+        cfg.image_gen.enabled and cfg.image_gen.allow_reference_images
+    )
     # Image custody (Miles 2026-08-26): generated images are stored in Nora's
     # OWN blob_store (rustfs) and sent as platform attachments.
-    if cfg.image_gen.enabled:
-        image_refs_allowed = cfg.image_gen.allow_reference_images
-        from nora.infra.image_gen import build_image_generator
-        if cfg.image_gen.provider == "openai_codex":
-            # DEC-304: the env var holds only the BOOTSTRAP token; the
-            # rotating one lives in the state file beside xAI's.
-            codex_cfg = cfg.image_gen.openai_codex
-            token_env = codex_cfg.refresh_token_env
-            refresh_token = os.environ.get(token_env, "")
-            build = functools.partial(
-                build_image_generator,
-                provider="openai_codex",
-                state_file=Path("/app/state/openai-codex-oauth.json"),
-                model=codex_cfg.model,
-                responses_model=codex_cfg.responses_model,
-                standard_quality=codex_cfg.standard_quality,
-                high_quality=codex_cfg.high_quality,
-                timeout_seconds=codex_cfg.timeout_seconds,
-                max_reference_images=codex_cfg.max_reference_images,
-            )
-        else:
-            xai_cfg = cfg.image_gen.xai
-            token_env = xai_cfg.refresh_token_env
-            refresh_token = os.environ.get(token_env, "")
-            build = functools.partial(
-                build_image_generator,
-                provider=cfg.image_gen.provider,
-                state_file=Path("/app/state/xai-oauth.json"),
-                model=xai_cfg.model,
-                quality_model=xai_cfg.quality_model,
-                timeout_seconds=xai_cfg.timeout_seconds,
-                max_reference_images=xai_cfg.max_reference_images,
-            )
-        if refresh_token:
-            image_generator = build(refresh_token=refresh_token)
-            if image_generator is None:
-                # M6: unknown provider (or unconstructable lane) degrades
-                # the tool, never crashes the daemon.
-                log.warning(
-                    "image_gen enabled but provider %r could not be built — "
-                    "generate_image stays unavailable",
-                    cfg.image_gen.provider,
-                )
-        else:
-            log.warning(
-                "image_gen enabled but %s is unset — generate_image stays unavailable",
-                token_env,
-            )
+    image_generator, oauth_keepalive = _image_gen_wiring(
+        cfg, metrics, os.environ, state_dir=Path("/app/state"),
+    )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
     # whole gate. Off is the shipped default and is not a
     # degradation: a reply carrying a link goes out with no card, exactly as
@@ -4426,6 +4488,7 @@ async def build_dependencies(
         ),
         otp=otp,
         otp_api_token=otp_api_token,
+        oauth_keepalive=oauth_keepalive,
     )
 
 

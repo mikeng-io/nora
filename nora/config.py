@@ -2867,8 +2867,16 @@ class XaiImageGenConfig(BaseModel):
 
     `model` / `quality_model` mirror the same names Hermes' `image_gen/xai`
     plugin uses (`grok-imagine-image` / `grok-imagine-image-quality`).
-    `refresh_token_env` NAMES the env var holding the long-lived OAuth
-    refresh token (DEC-8) — the value never lands in config.toml.
+    `refresh_token_env` NAMES the env var holding the BOOTSTRAP OAuth
+    refresh token `nora xai-login` writes (DEC-8) — the value never lands in
+    config.toml; the rotating token after it lives in the state file.
+
+    `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
+    on a schedule whenever `[image_gen] enabled` and the token is set,
+    whichever provider is selected (DEC-308, `nora.app.oauth_keepalive`).
+    The interval is bounded to 1-72 h: shorter re-asks a refused login
+    every few minutes, longer pushes the staleness alert (twice the
+    interval) toward the 12 days a login sat dead in 2026-10.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2880,6 +2888,8 @@ class XaiImageGenConfig(BaseModel):
     #: References per call. Unset is xAI's documented limit (5, DEC-307); a value
     #: may only lower it. The bound is `XAI_MAX_REFERENCE_IMAGES`, pinned by a test.
     max_reference_images: int | None = Field(default=None, ge=1, le=5)
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
 
 
 _GptImageQuality = Literal["low", "medium", "high", "auto"]
@@ -2895,6 +2905,7 @@ class OpenAICodexImageGenConfig(BaseModel):
     `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
     holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
     (DEC-8); the rotating token after it lives in the state file.
+    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-308).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -2909,6 +2920,8 @@ class OpenAICodexImageGenConfig(BaseModel):
     #: References per call. Unset is OpenAI's documented limit for gpt-image (16,
     #: DEC-307); a value may only lower it. The bound is `CODEX_MAX_REFERENCE_IMAGES`.
     max_reference_images: int | None = Field(default=None, ge=1, le=16)
+    keepalive: bool = True
+    refresh_interval_hours: float = Field(default=24.0, ge=1, le=72)
 
 
 class ImageGenConfig(BaseModel):

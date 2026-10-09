@@ -99,6 +99,23 @@ class _HistogramSpec(NamedTuple):
 # was invisible in the other three): nora_tags_total, nora_replies_total,
 # nora_silent_failures_total, nora_errors_total.
 _COUNTERS: tuple[_CounterSpec, ...] = (
+    # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
+    # the timestamp gauges below, never these: a rare counter reads empty after
+    # the restarts this process sees every day.
+    _CounterSpec(
+        "nora_oauth_refresh_failures_total",
+        "OAuth refresh attempts that failed, by lane (xai / openai_codex) and "
+        "reason (auth: the issuer refused the refresh token, a new login is "
+        "needed; state_unwritable; down; rate_limited; cloudflare). Counts the "
+        "keeper's attempts and live calls' alike.",
+        ("lane", "reason"),
+    ),
+    _CounterSpec(
+        "nora_oauth_keepalive_restarts_total",
+        "Times a lane's OAuth keepalive loop raised and was restarted by its "
+        "supervisor. Any increment is a bug; the traceback is in the log.",
+        ("lane",),
+    ),
     # Music liveness (2026-09-22). There was NO music metric of any kind
     # before this — not "not collected", never declared — so no alert rule
     # could exist and a wedged controller sat green for days. This is the
@@ -2134,6 +2151,34 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
+    # The OAuth keepalive (DEC-308). Published at registration from the state
+    # file, so a restart does not blank them; absent while no lane is kept
+    # (image generation off, or no token): not applicable, never 0.
+    _GaugeSpec(
+        "nora_oauth_last_refresh_timestamp_seconds",
+        "Unix time of the lane's last SUCCESSFUL token refresh (0: none under "
+        "the current login). `time() - this` past twice the interval means the "
+        "keepalive is not keeping the login alive.",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_access_expiry_timestamp_seconds",
+        "Unix time the lane's current access token expires (0: unknown).",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_refresh_interval_seconds",
+        "The lane's configured keepalive interval: the longest it goes without "
+        "a refresh. The staleness alert compares against twice this.",
+        ("lane",),
+    ),
+    _GaugeSpec(
+        "nora_oauth_refresh_refused",
+        "1 when the lane's last refresh failed for a reason no retry fixes (the "
+        "issuer refused the refresh token, or the state file is unwritable); 0 "
+        "after a success or at registration.",
+        ("lane",),
+    ),
     # The divergence itself, which IS the failure rather than a proxy for
     # it: nora's belief on one side, the controller's own report on the
     # other. Both 1 = agreement. expected=1 with controller=0 sustained is
