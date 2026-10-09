@@ -51,7 +51,8 @@ class VideoStarter(Protocol):
 
 @dataclass(frozen=True)
 class VideoOutcome:
-    """`started` with the row's id; `at_cap` when this room's clips today are used (`used` of `cap`);
+    """`started` with the row's id; `at_cap` when this room's clips today are used
+    (`used` of `cap`);
     `refused` when the provider turned the request away (`reason`); `unavailable` otherwise."""
 
     status: Literal["started", "at_cap", "refused", "unavailable"]
@@ -124,7 +125,8 @@ class VideoDesk:
                 log.exception("video_create: today's clip count could not be read")
                 return VideoOutcome("unavailable", reason="cap_unreadable")
             if used >= self._cap:
-                log.info("video_create refused: %d of %d clips used today in this room", used, self._cap)
+                log.info(
+                    "video_create refused: %d of %d clips used today in this room", used, self._cap)
                 return VideoOutcome("at_cap", used=used, cap=self._cap)
             try:
                 started = await self._backend.start(request)

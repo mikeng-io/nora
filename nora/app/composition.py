@@ -2797,7 +2797,8 @@ async def build_dependencies(
             compute_backends[VIDEO_KIND] = video_backend
             video_desk = VideoDesk(
                 jobs=compute_jobs, backend=video_backend, clock=clock,
-                tz=cfg.analytics.tz_name, max_per_room_per_day=cfg.video_gen.max_clips_per_room_per_day,
+                tz=cfg.analytics.tz_name,
+                max_per_room_per_day=cfg.video_gen.max_clips_per_room_per_day,
             )
         else:
             log.warning(

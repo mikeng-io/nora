@@ -223,7 +223,8 @@ class _Starter:
 
 def _desk(store: FakeComputeJobStore, starter: _Starter, *, cap: int = 1,
           now: datetime = NOW) -> VideoDesk:
-    return VideoDesk(jobs=store, backend=starter, clock=lambda: now, tz=HKT, max_per_room_per_day=cap)
+    return VideoDesk(
+        jobs=store, backend=starter, clock=lambda: now, tz=HKT, max_per_room_per_day=cap)
 
 
 OTHER_ROOM = "another-room"

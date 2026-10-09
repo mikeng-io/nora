@@ -2991,8 +2991,9 @@ class VideoGenConfig(BaseModel):
     `video_create` checks in code before a create: clips one room (platform plus conversation)
     may start per local day, counted from `compute_jobs`; the default of one is a placeholder
     until the first 15 s clip is measured. It was `max_clips_per_day`, counted over all rooms
-    together until 2026-10-09; the old key is refused at load, naming the new one. `allow_reference_images` is
-    the privacy gate `[image_gen]` has: a reference leaves the box for a third-party cloud.
+    together until 2026-10-09; the old key is refused at load, naming the new one.
+    `allow_reference_images` is the privacy gate `[image_gen]` has: a reference leaves the box
+    for a third-party cloud.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
