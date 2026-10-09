@@ -707,6 +707,24 @@ async def _tick(loop_coro, *, ticks: float = 0.06):
         await task
 
 
+async def _tick_until(loop_coro, done, *, deadline: float = 5.0):
+    """Run the loop until `done()` holds or `deadline` seconds pass.
+
+    For a property that needs a SECOND tick: a fixed window (`_tick`) can hold
+    fewer than two under a loaded full-suite run, and failed the gate once
+    (2026-10-09, `test_a_schedule_hold_is_counted`, 15178 passed beside it)."""
+    task = asyncio.create_task(loop_coro)
+    try:
+        for _ in range(int(deadline / 0.005)):   # a bounded poll, not an Event:
+            if done():                            # the loop under test owns no
+                break                             # signal to wait on
+            await asyncio.sleep(0.005)
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 class _SpanningRunner:
     """Opens the SAME shape `DreamerRuntime.run` does (`nora/agent/dreamer.py`)
     around each call — a `dream:{adaptor.name}` span — without
@@ -1233,7 +1251,7 @@ async def test_a_schedule_hold_is_counted():
     metrics = Metrics()
     runner = _RecordingRunner()
 
-    await _tick(dream_loop(
+    await _tick_until(dream_loop(
         _FakeRecord({}), _KeyedLanguage(), metrics,
         scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
         quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
@@ -1242,7 +1260,7 @@ async def test_a_schedule_hold_is_counted():
         schedules={"curator": AdaptorSchedule(
             min_interval_seconds=1e9, batch_limit=10)},
         schedule_clock=InMemoryDreamScheduleClock(),
-    ), ticks=0.06)
+    ), lambda: metrics.get("nora_dream_skipped_total", reason="schedule") > 0)
 
     assert metrics.get("nora_dream_skipped_total", reason="schedule") > 0
 
