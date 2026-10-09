@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "Nora decides when to remind a room about an event. An event no longer sets its own reminder at its start time; instead her twice-daily look at each group now also brings up every event in the next three days, room by room, and she chooses whether, when and what to remind.",
+  "details": [
+    "Event reminders that fired at the event's start time, and told her a person had asked for them when nobody had, are retired; any still pending are cancelled when this version starts.",
+    "The daily 07:00 and 00:00 looks now include a look ahead for each room holding an event within `[cognition] upcoming_days` (default 3).",
+    "A note line that leaves out who said it, or uses a first name, is completed from the senders of the messages it cites instead of being refused."
+  ],
+  "limitations": [
+    "If an event moves after she set a reminder, her reminder does not move with it; the reminder's own turn re-reads the room and can stay quiet."
+  ]
+}

@@ -2,12 +2,11 @@
 
 Mirrors `nora.domain.reminders`'s split (types + port in one module, no
 separate `ports.py` entry — a domain module's own port lives with its
-types, matching `ReminderStore`'s own precedent). An `Gathering` OWNS at most
-one `Reminder` (`reminder_id`) when it has a `when` — Gathering never has a
-recurrence concept of its own, so that reminder is always one-shot
-(`Series` is never involved). Notifications are entirely the existing
-`nora.domain.reminders` + `nora.app.fire` path; nothing here re-implements
-scheduling.
+types, matching `ReminderStore`'s own precedent). A `Gathering` owns no
+reminder (DEC-303): whether, when and what to remind about an event is a
+person's request or Nora's own `remind`, which cites the event like any other
+row. `reminder_id` is the column the retired event-owned reminder wrote
+(DEC-139); migration 0102 cleared it and nothing writes it now.
 
 Venue fields are resolved ONCE, at write time, through the same
 `route_source`/`PlaceResolver` `nora.agent.tools`'s `place_info` tool

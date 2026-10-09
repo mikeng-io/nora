@@ -551,19 +551,18 @@ async def test_a_constructed_loop_takes_the_gauge_back_from_the_sentinel():
 
 async def test_rows_of_two_kinds_same_requester_are_two_turns():
     """DEC-139: the grouping key gains `kind`. A plain reminder and a
-    gathering-notify, same requester, same conversation, same tick, are TWO
+    row of another kind, same requester, same conversation, same tick, are TWO
     turns — never a mixed batch whose kind is decided by row order.
     Accounting consequence (design/event-abstraction/04): the turns split
     one→two, and `nora_reminders_fired_total` — which increments PER ROW —
     counts 2 either way."""
     store = FakeReminderStore()
     plain = _row(text="買奶")
-    gathering = _row(
-        text="Event: Dinner", kind="gathering",
-        payload={"title": "Dinner"},
+    other = _row(
+        text="Event: Dinner", kind="other_kind",
     )
     await store.create(plain)
-    await store.create(gathering)
+    await store.create(other)
     metrics = Metrics()
     loop, fired = _build(store=store, metrics=metrics)
 
@@ -571,10 +570,10 @@ async def test_rows_of_two_kinds_same_requester_are_two_turns():
 
     assert len(fired) == 2
     kinds = {rows[0].kind for rows in fired}
-    assert kinds == {"reminder", "gathering"}
+    assert kinds == {"reminder", "other_kind"}
     # Both rows reached a terminal state — nothing was eaten by the split.
     assert (await store.get(plain.id)).state is ReminderState.DONE
-    assert (await store.get(gathering.id)).state is ReminderState.DONE
+    assert (await store.get(other.id)).state is ReminderState.DONE
     # Per-row counter: two reminders resolved, one per row, whatever the
     # turn split.
     assert metrics.get("nora_reminders_fired_total", outcome="sent") == 2

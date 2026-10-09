@@ -102,7 +102,6 @@ from nora.domain.events import Event, EventFactory
 from nora.domain.framing import (
     ComputeBody,
     ComputeHeader,
-    GatheringHeader,
     LostJobBody,
     LostJobHeader,
     ParticipationHeader,
@@ -292,48 +291,6 @@ def reminder_occasion(rows: Sequence[Reminder]) -> Event:
         body=RequestBody(tuple(r.text for r in rows)).render(),
         header=lambda tagger, now: ReminderHeader(tuple(rows), tagger).render(),
         kind="reminder",
-    )
-
-
-def gathering_occasion(rows: Sequence[Reminder]) -> Event:
-    """A gathering's due notify, as the Event it is (DEC-139).
-
-    `kind="gathering"` rows carry the gathering title in
-    `payload["title"]` (denormalized at schedule time —
-    `GatheringService._link_reminder`, design/event-abstraction/05).
-    `body` is that title — the ONE fact she needs to say it back — and the
-    header does the rest, exactly like `reminder_occasion` keeps the
-    requester's own sentence in the body and puts the circumstances in the
-    header.
-
-    A missing `payload["title"]` is a WIRING BUG, not a runtime maybe: the
-    factory raises instead of `KeyError`-ing out of the blue, and the raise
-    lands in the same fail-closed path as an unregistered kind —
-    `HeartbeatLoop._run_turn`'s `_fire` guard resolves the claimed row to
-    FAILED (`failed_error`) immediately, never rendered as a malformed
-    sentence (see design/event-abstraction/04).
-    """
-    row = rows[0]
-    if not isinstance(row.payload, Mapping):
-        raise KeyError(
-            f"kind='gathering' reminder {row.id} has no payload — "
-            "the row was written without its denormalized payload"
-        )
-    title = row.payload.get("title")
-    if not isinstance(title, str):
-        raise KeyError(
-            f"kind='gathering' reminder {row.id} has no string "
-            "payload['title'] — the row was written without its "
-            "denormalized payload"
-        )
-    return Event(
-        platform=row.platform,
-        conversation_id=row.conversation_id,
-        conversation_type=row.conversation_type,
-        person_id=row.requester_person_id,
-        body=title,
-        header=lambda tagger, now: GatheringHeader(title, tagger).render(),
-        kind="gathering",
     )
 
 
@@ -1521,9 +1478,9 @@ class FirePath:
 
         Dispatch by KIND, through the reminder-derived registry
         (DEC-139, design/event-abstraction/04): `rows[0].kind` selects the
-        factory that renders the batch's Event. Today that is
-        `"reminder"` → `reminder_occasion` and `"gathering"` →
-        `gathering_occasion`; an UNREGISTERED kind raises inside this call,
+        factory that renders the batch's Event (`"reminder"` →
+        `reminder_occasion`, `"proactive"` → `proactive_occasion`); an
+        UNREGISTERED kind raises inside this call,
         before `speak`, and `HeartbeatLoop._run_turn`'s `_fire` guard
         resolves the claimed rows to FAILED (`failed_error`) immediately —
         never rendered as a malformed sentence, never left FIRING for boot

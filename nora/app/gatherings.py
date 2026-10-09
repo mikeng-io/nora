@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -52,10 +52,6 @@ from nora.domain.gatherings import (
     StaleEventRevisionError as StaleEventRevisionError,
 )
 from nora.domain.reminders import (
-    Reminder,
-    ReminderCaps,
-    ReminderState,
-    ReminderStore,
     ensure_utc,
 )
 from nora.domain.rollup import room_key
@@ -145,8 +141,6 @@ class GatheringService:
         self,
         *,
         store: GatheringStore,
-        reminders: ReminderStore,
-        reminder_caps: ReminderCaps,
         route_source: _RouteSource | None,
         honcho: _Honcho | None,
         ai_peer: str,
@@ -154,8 +148,6 @@ class GatheringService:
         unit_room_ids: Callable[[str], Sequence[str]] | None = None,
     ) -> None:
         self._store = store
-        self._reminders = reminders
-        self._caps = reminder_caps
         self._route_source = route_source
         self._honcho = honcho
         self._ai_peer = ai_peer
@@ -228,11 +220,6 @@ class GatheringService:
             confidence=confidence,
             field_meta=field_meta,
         )
-        if when is not None:
-            event = await self._link_reminder(
-                event, requester_person_id=requester_person_id,
-                conversation_id=conversation_id, platform=platform,
-            )
         if venue_text is not None:
             event = await self._resolve_venue(
                 event, venue_text, now=now, person_names=person_names,
@@ -258,19 +245,12 @@ class GatheringService:
         current = await self._require_in_conversation(event_id, conversation_id)
         if current.status in TERMINAL_STATUSES:
             # 40-register.md §3: only a status BEFORE `happened` may be
-            # revised. Fix I2 covered `CANCELLED` alone — a new `when` would
-            # run `_link_reminder` and mint a fresh PENDING reminder for a
-            # gathering that was called off; the same is true of `happened`
-            # (re-arming a reminder for an event already over), `lapsed`,
-            # and `evicted` — none of the four is ever revised.
+            # revised: `cancelled`, `happened`, `lapsed` and `evicted` are
+            # never revised.
             raise GatheringCancelledError(event_id, current.status)
         updated = current
         if when is not None:
             updated = replace(updated, when=ensure_utc(when, field="when"))
-            updated = await self._link_reminder(
-                updated, requester_person_id=updated.created_by,
-                conversation_id=updated.conversation_id, platform=platform,
-            )
         if venue_text is not None:
             updated = await self._resolve_venue(
                 updated, venue_text, now=self._now(), person_names=person_names,
@@ -280,7 +260,7 @@ class GatheringService:
         # with the current row" — `base_revision_id` (when the caller passes
         # one; internal callers that predate the event verbs do not) is
         # checked against the row THIS CALL read, not re-read after
-        # `_link_reminder`/`_resolve_venue`, matching every other refusal
+        # `_resolve_venue`, matching every other refusal
         # here being decided on the state `_require_in_conversation` read.
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
@@ -307,10 +287,6 @@ class GatheringService:
             # The same refusal `update_event` gives a cancelled event: no
             # lifecycle move revives one that was called off.
             raise GatheringCancelledError(event_id)
-        if status is GatheringStatus.CANCELLED and current.reminder_id is not None:
-            await self._reminders.cancel(
-                current.reminder_id, conversation_id=current.conversation_id,
-            )
         updated = _stated(replace(current, status=status), reasoning, confidence, field_meta)
         return await self._store.update(
             updated, base_revision_id=base_revision_id,
@@ -487,72 +463,6 @@ class GatheringService:
         if event.conversation_id != conversation_id:
             raise GatheringNotFoundError(event_id)
         return event
-
-    async def _link_reminder(
-        self, event: Gathering, *, requester_person_id: str, conversation_id: str,
-        platform: str,
-    ) -> Gathering:
-        """One-shot reminder only — Gathering never has a recurrence concept
-        (Global Constraints). Respects the SAME `ReminderCaps` a manually
-        requested reminder would, so an event cannot bypass the anti-runaway
-        limits `remind` enforces (`min_lead_seconds`, `max_horizon_days`).
-
-        `platform` is the REAL delivery platform of the conversation this
-        gathering belongs to — the caller (the tool layer, which knows the
-        room) passes `room.platform`. It replaces the historical
-        `platform="event"` sentinel, which was never a wired adapter key, so
-        a gathering reminder written with it could never be delivered
-        (DEC-139; see design/event-abstraction/05-gathering-fold-in.md).
-        """
-        if event.when is None:
-            raise ValueError("_link_reminder requires event.when to be set")
-        now = self._now()
-        lead = (event.when - now).total_seconds()
-        out_of_bounds = (
-            lead < self._caps.min_lead_seconds
-            or event.when - now > timedelta(days=self._caps.max_horizon_days)
-        )
-        # Whatever reminder this event previously pointed to must not survive
-        # `_link_reminder` running again — otherwise it stays PENDING in the
-        # store forever, fires at the wrong time, and `cancel_event` can never
-        # reach it once the event row no longer references it. This holds on
-        # BOTH the happy path (about to mint a replacement) and the
-        # out-of-bounds path (about to clear reminder_id entirely).
-        if event.reminder_id is not None:
-            await self._reminders.cancel(
-                event.reminder_id, conversation_id=conversation_id,
-            )
-        if out_of_bounds:
-            # Out of bounds — the event itself is still created/updated;
-            # it simply has no reminder. R-5: never silently pretend one
-            # was set.
-            return replace(event, reminder_id=None)
-
-        reminder_id = uuid.uuid4()
-        row = Reminder(
-            id=reminder_id,
-            requester_person_id=requester_person_id,
-            # The REAL delivery platform of the conversation — never the
-            # "event" sentinel (DEC-139). A gathering-notify must resolve an
-            # adapter exactly like a plain reminder does.
-            platform=platform,
-            conversation_id=conversation_id,
-            conversation_type="group",
-            # Legacy string kept for readers that still consume `text`;
-            # the fire path reads payload["title"] for kind="gathering"
-            # (design/event-abstraction/03-reminder-schema.md).
-            text=f"Event: {event.title}",
-            created_at=now,
-            due_at=event.when,
-            state=ReminderState.PENDING,
-            fired_at=None,
-            outcome=None,
-            series=None,
-            kind="gathering",
-            payload={"title": event.title},
-        )
-        await self._reminders.create(row)
-        return replace(event, reminder_id=reminder_id)
 
     async def _resolve_venue(
         self, event: Gathering, venue_text: str, *, now: datetime,

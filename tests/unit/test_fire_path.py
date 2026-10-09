@@ -25,7 +25,6 @@ from nora.app import fire as fire_module
 from nora.app.fire import (
     FirePath,
     compute_occasion,
-    gathering_occasion,
     participation_occasion,
     reminder_occasion,
 )
@@ -1014,65 +1013,25 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
 
 
 # ---------------------------------------------------------------------------
-# DEC-139 — kind dispatch, registry fail-closed, gathering-notify
+# DEC-139 — kind dispatch, registry fail-closed
 # ---------------------------------------------------------------------------
-
-
-async def test_run_dispatches_a_gathering_row_through_its_factory(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """A `kind="gathering"` row renders through `gathering_occasion` — the
-    registry maps the row's kind to the factory (DEC-139). The model hears
-    the gathering title in the body and the header names the event; the
-    legacy `text` string is NOT what reaches her."""
-    adapter = _FireAdapter()
-    path = _fire_path(
-        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
-        runner=FakeAgentRunner(_send_turns("收到")), adapter=adapter,
-        event_registry={
-            "reminder": reminder_occasion,
-            "gathering": gathering_occasion,
-        },
-    )
-    row = _reminder(
-        text="Event: Dinner", kind="gathering",
-        payload={"title": "Dinner"},
-    )
-
-    outcome = await path.run([row])
-
-    assert outcome == fire_module.SENT
-    # The body the model saw is the payload title, not the legacy text.
-    assert adapter.texts == ["收到"]
-    # The factory's shape, asserted directly: body is the title, kind is
-    # gathering, and the header names the escaped title.
-    ev = gathering_occasion([row])
-    assert ev.kind == "gathering"
-    assert ev.body == "Dinner"
-    assert ev.platform == "signal"
-    header = ev.header(None, T0)
-    assert "«Dinner»" in header
 
 
 async def test_run_dispatches_by_kind_not_by_row_order(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """Two kinds due for the same requester+conversation become two turns
-    (the heartbeat's `_by_turn` key includes kind) — and a `kind="gathering"`
-    row must go through `gathering_occasion` regardless of sort order."""
+    (the heartbeat's `_by_turn` key includes kind), whatever the sort order."""
     from nora.app.heartbeat import _by_turn
 
     rows = [
         _reminder(id=uuid.uuid4(), text="買奶", kind="reminder"),
-        _reminder(
-            id=uuid.uuid4(), text="Event: Dinner", kind="gathering",
-            payload={"title": "Dinner"},
-        ),
+        _reminder(id=uuid.uuid4(), text="dinner", kind="proactive"),
     ]
     grouped = _by_turn(rows)
     assert len(grouped) == 2
     kinds = {key[3] for key in grouped}
-    assert kinds == {"reminder", "gathering"}
+    assert kinds == {"reminder", "proactive"}
 
 
 async def test_unregistered_kind_fails_closed(
@@ -1088,29 +1047,6 @@ async def test_unregistered_kind_fails_closed(
 
     with pytest.raises(KeyError, match="no event factory registered"):
         await path.run([_reminder(kind="no_such_kind")])
-
-
-async def test_gathering_row_missing_payload_title_fails_closed(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """The per-kind payload validation (04): a `kind="gathering"` row without
-    `payload["title"]` raises instead of `KeyError`-ing out of the blue, and
-    the raise lands in the same fail-closed path as an unregistered kind."""
-    path = _fire_path(
-        persons=persons, doctrine_store=doctrine_store, metrics=metrics,
-        runner=FakeAgentRunner([ScriptedTurn(final_text="never reached")]),
-        event_registry={
-            "reminder": reminder_occasion,
-            "gathering": gathering_occasion,
-        },
-    )
-
-    with pytest.raises(KeyError, match="has no payload"):
-        await path.run([_reminder(kind="gathering", payload=None)])
-    # A malformed map — title present but not a string — fails the type
-    # guard (design 03: malformed payloads fail observably at fire time).
-    with pytest.raises(KeyError, match="no string payload"):
-        await path.run([_reminder(kind="gathering", payload={"title": 123})])
 
 
 async def test_legacy_reminder_row_still_fires_after_the_kind_columns_land(
