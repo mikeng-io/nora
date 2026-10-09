@@ -170,3 +170,26 @@ async def test_two_subjects_do_not_share_an_environment_variable(
     assert b.cfg.store.database_url_env == ""
     assert a.database_url == b.database_url == pg_url
     assert not [k for k in os.environ if k.startswith("NORA_SUBJECT_DATABASE_URL_")]
+
+
+@pytest.mark.asyncio
+async def test_a_subjects_signal_send_lands_as_production_s_does(spec) -> None:
+    """The sandbox has no signal-cli, and production's send answers `sent`.
+    Without `landed_signal_sends` in `obtain`, every send here failed and
+    `send_reply` told the model `refused` on every reply (2026-10-08: 794
+    `send failed` in one `tool_selection` run)."""
+    from nora.domain.models import ConversationTarget
+    from nora.subject.sandbox_signal import LandedSignalSender
+
+    subject = await obtain(spec)
+    try:
+        signal = subject.deps.registry.get("signal")
+        assert isinstance(signal._sender, LandedSignalSender)
+        result = await signal.send(
+            target=ConversationTarget(
+                platform="signal", conversation_id="g1", conversation_type="group"),
+            text="hi",
+        )
+        assert result.ok
+    finally:
+        await subject.deps.background.cancel_all()

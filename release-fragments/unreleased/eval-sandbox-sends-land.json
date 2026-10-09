@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Eval harness only: the sandbox's Signal sends now land instead of failing; nothing a user sees changes.", "details": [], "limitations": []}
