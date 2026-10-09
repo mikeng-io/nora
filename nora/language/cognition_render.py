@@ -94,6 +94,7 @@ from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
+from nora.language.memo_render import render_memo_rows
 from nora.language.note_render import render_note_rows
 
 #: What this prompt carries, declared as data
@@ -117,6 +118,8 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
+    # What the unit settled and keeps (DEC-304), after the open questions.
+    ("memos", 45, "turn"),
     ("events", 50, "turn"),
 )
 
@@ -143,7 +146,7 @@ class RenderBudget:
     message_chars: int = 400
     #: What a single item is always allowed, however many items share the rest.
     min_item_chars: int = 900
-    #: The Register index rows, notes and per-room events each.
+    #: The Register index rows, notes, memos and per-room events each.
     register_lines: int = 40
     #: The Register's rows together, counted as rendered (the blocks' own
     #: description and attributes are not spent from it).
@@ -541,8 +544,9 @@ def _register(
     rooms: Sequence[Room], grounding: Grounding, *, now_ms: int, tz: tzinfo,
     budget: RenderBudget,
 ) -> list[ContextBlock]:
-    """The notes, and the events of each agenda room, already recorded: a
-    `note_index` block and ONE `events` block of `<room_events>` groups. At most
+    """The notes, the memos, and the events of each agenda room, already
+    recorded: a `note_index` block, a `memos` block (DEC-304) and ONE `events`
+    block of `<room_events>` groups. At most
     `register_lines` rows of each list, and every row together within
     `register_chars` as rendered: a row that does not fit, and every row after
     it, is left out, and the block or group says how many (`not_listed`) rather
@@ -577,6 +581,17 @@ def _register(
         left_out = len(notes) - len(rows)
         blocks.append(restamp(ContextBlock(
             name="note_index", body="\n".join(rows),
+            attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
+            when_empty="self_close",
+        ), _ROW))
+    if grounding.memos:
+        kept = [m for m in grounding.memos if m.is_kept]
+        rows = listed([
+            render_memo_rows([m], tz=tz) for m in kept[: budget.register_lines]
+        ])
+        left_out = len(kept) - len(rows)
+        blocks.append(restamp(ContextBlock(
+            name="memos", body="\n".join(rows),
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))

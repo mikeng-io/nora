@@ -278,6 +278,8 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `SubagentBackend.cancel` (design/subagent step 2) is a `ComputeBackend` method, not a
         # store's, and shares its name with a store's.
         "cancel",
+        # `SqlMemoStore.revisions` (DEC-304) shares the name with `SqlLessonStore`'s.
+        "revisions",
     }
 )
 
@@ -302,7 +304,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "computer_sessions.py",
         "character.py", "culture.py", "decision_log.py", "documents.py", "dream_schedule.py",
         "gatherings.py", "geocode_cache.py", "language.py",
-        "media_descriptions.py", "media_objects.py", "mobility.py",
+        "media_descriptions.py", "media_objects.py", "memo.py", "mobility.py",
         "music_queue.py", "music_session.py", "notes.py", "otp.py",
         "participation_state.py", "presence.py",
         "reasoning_strip.py", "record_query.py",

@@ -958,3 +958,45 @@ def test_the_composition_root_hands_the_configured_prompt_window_to_the_assemble
         metrics=Metrics(), policy=permissive_policy(),
     )
     assert assembler._prompt_window == example_config.store.effective_prompt_window == 20
+
+
+
+# ---- <memos> (DEC-304): keyed on the unit, like the notes ------------------------
+
+
+async def _kept(store: object, unit: str, title: str) -> object:
+    return await store.create(  # type: ignore[attr-defined]
+        unit=unit, platform="signal", conversation_id="g1", title=title,
+        body="## Kept\n- kept [1]", citations=("1",), mode="told",
+        established_by="cognition:u", model=None, now_ms=1,
+    )
+
+
+async def test_the_memos_read_is_this_rooms_unit_only():
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    store = InMemoryMemoStore()
+    mine = await _kept(store, "ridgeline", "wifi password")
+    await _kept(store, "friends", "their door code")
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=Metrics(), memos=store,
+        policy=_policy(unit="ridgeline"),
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert [m.id for m in ctx.memos] == [mine.id]
+
+
+async def test_a_failing_memos_read_is_counted_and_renders_none():
+    class _Down:
+        async def kept(self, *, unit: str) -> tuple[object, ...]:
+            raise RuntimeError("memo store is down")
+
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, memos=_Down(), policy=_policy(),
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.memos == ()
+    assert metrics.get("nora_errors_total", stage="memos", platform="signal") == 1

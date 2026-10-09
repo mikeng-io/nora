@@ -52,9 +52,14 @@ _CORPORA = Path(__file__).parent / "corpora"
 _CASE_KEYS = frozenset({"name", "series", "category", "negative_kind", "input", "expect"})
 _INPUT_ROW_KEYS = frozenset({"t", "speaker", "text"})
 
-#: The five negative kinds 30 §6 names, in its own order.
+#: The five negative kinds 30 §6 names, in its own order, then the memo
+#: corpus's own (DEC-304, `assess_memo.yaml`): a memo already withdrawn or
+#: superseded, and the three things that are settled-looking but are not a memo
+#: (the routing rule of 40-register §1): about the speaker alone (`remember`),
+#: still open (a note), dated and attended (an event).
 NEGATIVE_KINDS: tuple[str, ...] = (
     "joke", "hypothetical", "other_unit", "already_cancelled", "already_settled",
+    "already_withdrawn", "about_the_speaker", "still_open", "dated",
 )
 
 #: 30 §6's gates, declared for the run this branch does not perform (see the

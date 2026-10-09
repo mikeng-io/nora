@@ -150,6 +150,10 @@ APPEND_ONLY: dict[str, str] = {
     "lesson_revision": "recorded_at",
     # 0101_self_tension: a refused lesson and the law it pulled against.
     "self_tension": "recorded_at",
+    # 0103_memos: a memo is an identity, and every change to it (a revision, a
+    # withdrawal) a revision.
+    "memo": "recorded_at",
+    "memo_revision": "recorded_at",
     "decision_log": "recorded_at",
     "note_merge_decision": "recorded_at",
     "tool_call_log": "created_at",

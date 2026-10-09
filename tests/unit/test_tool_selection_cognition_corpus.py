@@ -22,6 +22,9 @@ _COGNITION_CATALOGUE = frozenset({
     "remind", "remind_move", "remind_cancel", "close", "record_query", "rollup_read",
     # PR B's two reads and the siblings they are measured against.
     "standing_read", "where_been", "note_read", "note_search",
+    # DEC-304: the memo verbs, the memo read, and the retire a settled note's
+    # memo is followed by.
+    "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
 })
 
 
@@ -32,7 +35,7 @@ def test_the_corpus_is_registered_and_routed():
 
 def test_the_runner_collects_every_case_with_no_error():
     cases = load_corpus(NAME)
-    assert len(cases) == 18
+    assert len(cases) == 24
     for case in cases:
         assert case.metadata["snapshot"], case.name
         assert not case.metadata["parked"], case.name
@@ -40,8 +43,8 @@ def test_the_runner_collects_every_case_with_no_error():
 
 def test_census_reports_every_case_active_and_none_parked():
     result = census(NAME)
-    assert result.total == 18
-    assert result.active == 18
+    assert result.total == 24
+    assert result.active == 24
     assert result.parked == 0
     assert result.unanchored == 0
 

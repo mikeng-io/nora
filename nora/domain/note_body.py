@@ -78,6 +78,9 @@ RULES: frozenset[str] = frozenset({
     "unknown_section", "section_order", "missing_section", "not_a_line",
     "uncited", "unknown_id", "cites_nora", "misattributed", "unknown_owner",
     "bad_date", "unknown_rollup_key",
+    # A memo body's `## Superseded` written by the model (`nora.domain.memo`):
+    # code renders it from the revision chain.
+    "code_written",
 })
 
 _WEEKDAYS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -346,14 +349,18 @@ def resolve_positions(
     return _POSITIONAL.sub(_group, text)
 
 
-def _canonical_heading(name: str) -> str | None:
+def _canonical_heading(name: str, schema: tuple[str, ...] = SECTIONS) -> str | None:
     folded = name.casefold()
-    return next((h for h in SECTIONS if h.casefold() == folded), None)
+    return next((h for h in schema if h.casefold() == folded), None)
 
 
-def _split(text: str) -> list[tuple[str, list[str]]]:
-    """Headings and their raw list items, with the whitespace repairs applied.
-    Refuses `unknown_section`, `section_order` and `not_a_line`."""
+def split_sections(
+    text: str, *, schema: tuple[str, ...] = SECTIONS,
+) -> list[tuple[str, list[str]]]:
+    """Headings and their raw list items, with the whitespace repairs applied,
+    held to `schema`'s headings in `schema`'s order (a note's `SECTIONS` by
+    default; a memo body passes its own, `nora.domain.memo`). Refuses
+    `unknown_section`, `section_order` and `not_a_line`."""
     sections: list[tuple[str, list[str]]] = []
     for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw.rstrip()
@@ -362,18 +369,18 @@ def _split(text: str) -> list[tuple[str, list[str]]]:
         if line.startswith("#"):
             m = _HEADING.match(line)
             hashes, name = (m.group(1), m.group(2)) if m else ("", "")
-            heading = _canonical_heading(name) if hashes == "##" else None
+            heading = _canonical_heading(name, schema) if hashes == "##" else None
             if heading is None:
                 raise NoteBodyError(
                     "unknown_section",
                     f"{line!r} is not one of the headings "
-                    f"{', '.join('## ' + h for h in SECTIONS)}",
+                    f"{', '.join('## ' + h for h in schema)}",
                 )
-            if sections and SECTIONS.index(heading) <= SECTIONS.index(sections[-1][0]):
+            if sections and schema.index(heading) <= schema.index(sections[-1][0]):
                 raise NoteBodyError(
                     "section_order",
                     f"## {heading} comes after ## {sections[-1][0]}; each heading "
-                    f"appears once, in the order {', '.join(SECTIONS)}",
+                    f"appears once, in the order {', '.join(schema)}",
                 )
             sections.append((heading, []))
             continue
@@ -428,6 +435,7 @@ def _ids(item: str, heading: str) -> tuple[str, tuple[int, ...], tuple[str, ...]
 def _check_ids(
     ids: tuple[int, ...], item: str, rendered: Mapping[int, ShownMessage], carried: frozenset[int],
     keys: tuple[str, ...] = (), known_keys: frozenset[str] = frozenset(),
+    *, may_cite_nora: bool = False,
 ) -> None:
     for key in keys:
         if key not in known_keys:
@@ -445,7 +453,7 @@ def _check_ids(
                     f"{item!r} cites [{i}], a message this write was not shown "
                     f"and the note did not already cite",
                 )
-        elif row.is_nora:
+        elif row.is_nora and not may_cite_nora:
             raise NoteBodyError(
                 "cites_nora",
                 f"{item!r} cites [{i}], one of Nora's own messages; a note is "
@@ -556,6 +564,24 @@ def _full_sender(name: str, senders: tuple[str, ...]) -> str:
         return name
     matches = [s for s in senders if s.split(" ", 1)[0] == name]
     return matches[0] if len(matches) == 1 else name
+
+
+def cited_line(
+    heading: str, item: str, shown: Shown, *, may_cite_nora: bool = False,
+) -> NoteLine:
+    """One `<claim> [<ids>]` line under `heading`, held to the grammar every
+    Register line shares (12-schemas §2): absolute dates, ending in the ids and
+    Rollup keys it rests on, each one this write was shown or carries. A line
+    may cite one of Nora's own messages only where `may_cite_nora` says so (a
+    memo, which may keep what she found or said; never a note). The memo
+    body's parser (`nora.domain.memo.parse_memo_body`) is its caller."""
+    _check_dates(item)
+    _rest, ids, keys = _ids(item, heading)
+    _check_ids(
+        ids, item, {m.id: m for m in shown.rendered}, shown.carried, keys,
+        shown.rollup_keys, may_cite_nora=may_cite_nora,
+    )
+    return NoteLine(text=item, ids=ids, rollup_keys=keys)
 
 
 def _line(
@@ -684,7 +710,7 @@ def parse_note_body(text: str, *, shown: Shown, require_open: bool = False) -> N
     least one line there (§4.1). Elsewhere an empty `## Open` means «nothing
     left open as of this revision».
     """
-    split = _split(text)
+    split = split_sections(text)
     present = dict(split)
     missing = [h for h in REQUIRED if h not in present]
     if missing:

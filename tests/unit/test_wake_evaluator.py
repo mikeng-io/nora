@@ -762,6 +762,18 @@ async def test_an_rsvp_after_a_strong_cue_wake_still_wakes_as_strong_cue():
     assert [w.reason for w in store.wakes] == ["strong_cue", "strong_cue"]
 
 
+async def test_a_keep_instruction_after_a_strong_cue_wake_still_wakes_as_strong_cue():
+    """DEC-304: «記低» is answered on the tag turn with «it will be kept», and
+    only a session keeps it, so it re-arms like an RSVP rather than waiting
+    behind the chain rule for `settled`."""
+    ev, store, clock = await _strong_wake_then(("keep",))
+    clock.advance(119)
+    assert await ev.tick() == []
+    clock.advance(1)
+    await ev.tick()
+    assert [w.reason for w in store.wakes] == ["strong_cue", "strong_cue"]
+
+
 async def test_a_place_link_after_a_strong_cue_wake_still_wakes_as_strong_cue():
     ev, store, clock = await _strong_wake_then(("datetime", "place_link"))
     clock.advance(120)

@@ -76,6 +76,7 @@ from nora.domain.cognition_ground import (
 from nora.domain.cognition_session import AgendaItem, Room
 from nora.domain.culture import CultureRevision, nora_character_key
 from nora.domain.gatherings import Gathering
+from nora.domain.memo import Memo
 from nora.domain.mobility_forecast import detect_stay_anomalies, place_words
 from nora.domain.notes import Note, likely_duplicates
 from nora.domain.record_query import RecordHit, RecordRefHit
@@ -360,6 +361,7 @@ def build_grounder(
     place_release: Callable[[str, str], Awaitable[bool]] | None = None,
     self_account: Callable[[str], Awaitable[CultureRevision | None] | None] | None = None,
     metrics: Any = None,
+    memo_index: Callable[[str], Awaitable[Sequence[Memo]]] | None = None,
 ) -> Callable[[str, Sequence[AgendaItem], Sequence[Stimulus]], Awaitable[Grounding]]:
     """The session's `Grounder` (`nora.app.cognition_session.Grounder`).
 
@@ -472,6 +474,9 @@ def build_grounder(
                 may_duplicate=twins.get(n.id),
             ))
         notes = tuple(notes_out)
+        # The unit's kept memos (DEC-304): unit-wide, no lineage (the unit is the
+        # read boundary, DEC-231). A failed read raises like the note index's.
+        memos = tuple(await memo_index(unit)) if memo_index is not None else ()
         events: list[EventLine] = []
         for room in agenda_rooms:
             if (room.platform, room.conversation_id) not in allowed:
@@ -523,7 +528,8 @@ def build_grounder(
             stage="cognition_self", platform="cognition", metrics=metrics,
         )
         return Grounding(
-            records=records_out, notes=notes, events=tuple(events), rollups=rollups,
+            records=records_out, notes=notes, memos=memos, events=tuple(events),
+            rollups=rollups,
             own_sends=own_sends, room_labels=labels, self_account=account,
         )
 

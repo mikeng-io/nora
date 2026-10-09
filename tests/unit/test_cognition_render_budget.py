@@ -243,3 +243,42 @@ def test_an_escaped_cut_keeps_as_much_of_the_words_as_fits():
     assert len(line) + 1 <= 900 and len(line) + 1 > 900 - 12
     (row,) = rows(item)
     assert len(row.text or "") > 100
+
+
+# ---- the memos (DEC-304): unit-wide, titles and ids, under the Register's budget ------
+
+
+def _memo(i: int) -> object:
+    from nora.domain.memo import Memo, MemoRevision
+
+    head = MemoRevision(
+        id=f"r-{i}", memo_id=f"m-{i}", seq=1, title=f"Memo {i}",
+        body=f"## Kept\n- the code is secret-{i} [1]", citations=("1",), mode="told",
+        state="kept", written_at=NOW, established_by="cognition:u",
+    )
+    return Memo(id=f"m-{i}", unit="u", platform="signal", conversation_id="room-0",
+                created_at=NOW, head=head)
+
+
+def test_the_memos_block_follows_the_notes_with_ids_and_never_what_a_memo_keeps():
+    agenda, stimuli, grounding = _world(per_room=1, words=5)
+    grounding = Grounding(
+        records=grounding.records, room_labels=LABELS,
+        notes=(NoteLine(id="n-1", title="T", description="d"),),
+        memos=tuple(_memo(i) for i in range(5)),  # type: ignore[arg-type]
+    )
+    prompt = render_agenda(
+        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+        budget=RenderBudget(register_lines=3),
+    )
+    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda", "note_index", "memos"]
+    (memos,) = named(prompt, "memos")
+    assert [m.attrib["id"] for m in memos] == ["m-0", "m-1", "m-2"]
+    assert memos.attrib["not_listed"] == "2"
+    assert "secret-" not in prompt
+
+
+def test_no_memos_block_when_nothing_is_kept():
+    agenda, stimuli, grounding = _world(per_room=1, words=5)
+    prompt = render_agenda(agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK)
+    assert "<memos" not in prompt

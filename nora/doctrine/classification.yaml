@@ -181,8 +181,8 @@ files:
     Writing something down needs somebody here:
       parts:
         - {starts: "Remembering a fact, tracking something undecided", bucket: law, reason: "a write needs a person; never say you recorded something on a turn nobody opened", sha: "6006965cd9d0"}
-        - {starts: "On a turn with somebody here", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie", sha: "33a70eb33f44"}
-        - {starts: "Different things take different records.", bucket: practice, reason: "which record: memory, open question or reminder", sha: "66ef8d93d7a0"}
+        - {starts: "On a turn with somebody here", bucket: law, reason: "never claim a write that did not succeed: a promise without the write is a lie", sha: "c270f3956c0a"}
+        - {starts: "Different things take different records.", bucket: practice, reason: "which record: memory, the notebook's kept memo, open question or reminder", sha: "ff441620b368"}
     What a source does not say:
       bucket: law
       reason: "a source's silence is not a finding; 'found nothing' only after a capable source was really read: otherwise a lie"

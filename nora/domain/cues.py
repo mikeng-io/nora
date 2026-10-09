@@ -52,13 +52,15 @@ CUES: tuple[str, ...] = get_args(Cue)
 STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link"})
 
 #: After a wake whose reason was `strong_cue`, only these cues trip the trigger
-#: again. A `datetime` (or `keep`) mention in a conversation that just woke a
-#: session is usually the same plan being talked on, and re-waking on each one
-#: slices one conversation into many ~13k-token sessions (measured on the live
-#: record: 6 strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
-#: decision) or a place link (a place) is new information worth catching fast.
-#: The restriction lifts when a wake of any other reason is the unit's newest.
-REARMING_CUES: frozenset[str] = frozenset({"rsvp", "place_link"})
+#: again. A `datetime` mention in a conversation that just woke a session is
+#: usually the same plan being talked on, and re-waking on each one slices one
+#: conversation into many ~13k-token sessions (measured on the live record: 6
+#: strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
+#: decision), a place link (a place) and a keep instruction («記低», DEC-304:
+#: the tag turn tells the person it WILL be kept, and only a session keeps it)
+#: are new information worth catching fast. The restriction lifts when a wake
+#: of any other reason is the unit's newest.
+REARMING_CUES: frozenset[str] = frozenset({"rsvp", "place_link", "keep"})
 
 _WEEKDAYS_EN = (
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"

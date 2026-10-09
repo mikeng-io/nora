@@ -35,6 +35,7 @@ from typing import Literal
 
 from nora.domain.cognition_session import Room
 from nora.domain.culture import CultureRevision
+from nora.domain.memo import Memo
 from nora.domain.stimuli import Stimulus
 
 #: The tables a message stimulus's `ref` names a row of (`nora.ingest.stages.
@@ -235,6 +236,9 @@ class Grounding:
 
     records: Mapping[str, RecordItem] = field(default_factory=dict)
     notes: tuple[NoteLine, ...] = ()
+    #: The unit's kept memos (DEC-304), unit-wide like `notes`: the `memos`
+    #: index, titles and ids, never what they keep.
+    memos: tuple[Memo, ...] = ()
     events: tuple[EventLine, ...] = ()
     #: A Rollup stimulus's readable fields, by the stimulus `ref`. A rollup
     #: stimulus with no entry here cannot be shown, and is not an agenda item.
@@ -263,6 +267,7 @@ class Grounding:
                 for r in self.records.values()
             ],
             "notes": [n.id for n in self.notes],
+            "memos": [m.id for m in self.memos],
             # By revision id, never the words: the account is hers to rewrite.
             "self_revision_id": None if self.self_account is None else self.self_account.id,
             "events": [e.id for e in self.events],

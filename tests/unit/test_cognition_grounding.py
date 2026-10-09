@@ -1027,3 +1027,32 @@ async def test_her_send_that_quotes_a_withdrawn_message_renders_without_the_quot
     assert "sounds good, friday then" in prompt                 # her own words are shown
     assert "FORGOTTEN-PERSONS-WORDS" not in prompt
     assert "FORGOTTEN-PERSONS-WORDS" not in repr(g.as_dict()) and "555" not in repr(g.as_dict())
+
+
+# ---- the memos (DEC-304): the session's unit only ----------------------------------
+
+
+async def test_the_memos_shown_are_the_sessions_units_and_never_another_units():
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    memos = InMemoryMemoStore()
+    for unit, title in (("u", "wifi password"), ("other", "their door code")):
+        await memos.create(
+            unit=unit, platform="signal", conversation_id="room-a", title=title,
+            body="## Kept\n- kept [1]", citations=("1",), mode="told",
+            established_by=f"cognition:{unit}", model=None, now_ms=NOW,
+        )
+
+    async def nothing(*_args: Any) -> tuple[()]:
+        return ()
+
+    ground = build_grounder(
+        records=_Records([]), persons=_PERSONS, media_join=None, note_index=nothing,
+        events_in=nothing, lineage=_lineage(), unit_rooms=lambda u: {("signal", "room-a")},
+        memo_index=lambda unit: memos.kept(unit=unit),
+    )
+    s = _stim(1, A, ago=3, mid=12)
+    sit = build_situation(unit="u", pending=[s], home_room=HOME, now_ms=NOW, last_session_ms=None)
+    g = await ground("u", sit.agenda.items, [s])
+    assert [m.title for m in g.memos] == ["wifi password"]
+    assert g.as_dict()["memos"] == [g.memos[0].id]
