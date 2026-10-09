@@ -1352,6 +1352,8 @@ async def dream_loop(
                 # silently dropped (issue #191 review).
                 log.exception("dream cycle failed for %s", unit)
                 metrics.inc("nora_errors_total", stage="dream")
+                # Swallowed here, so `span` never sees it: say it on the root.
+                annotate(**{"nora.outcome": "error"})
                 _count_failure(unit)
         finally:
             running.discard(unit)

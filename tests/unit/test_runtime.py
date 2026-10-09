@@ -799,6 +799,27 @@ async def test_each_dream_unit_is_its_own_root_and_its_pass_is_the_session(
     assert sorted(s.name for s in inner) == ["dream:lexemes", "dream:notes"]
     by_trace = {s.context.trace_id: s.name for s in inner}
     assert by_trace[lexemes.context.trace_id] == "dream:lexemes"
+    assert by_trace[notes.context.trace_id] == "dream:notes"
+
+
+class _ExplodingRunner:
+    async def run(self, *, adaptor, key, batch):
+        raise RuntimeError("boom")
+
+
+async def test_a_unit_that_raises_says_error_on_its_root(exported_spans):
+    """`_run_adaptor` swallows the exception (log, count, back off), so `span`
+    never records it; without this the unit's trace reads as a clean root."""
+    await _tick(dream_loop(
+        _FakeRecord({"g1": [_row(1)]}), _KeyedLanguage(lag=99), Metrics(),
+        scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
+        quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
+        adaptors=[_StubAdaptor("lexemes")], runtime=_ExplodingRunner(),
+    ))
+    roots = [s for s in exported_spans.get_finished_spans()
+             if s.parent is None and s.name == "dream:lexemes"]
+    assert roots
+    assert dict(roots[0].attributes or {})["nora.outcome"] == "error"
 
 
 async def test_an_adaptor_is_ticked_over_the_scopes_when_it_is_scope_keyed():
