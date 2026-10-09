@@ -9,6 +9,7 @@ use and refuses a spent one, the property this lane is built around.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -87,6 +88,9 @@ async def auth_server():
         state["n"] += 1
         new_rt = f"rt-{state['n']}"
         state["live"].add(new_rt)
+        # The issuer has rotated; a slow answer is where a cancelled caller
+        # would lose the new token.
+        await asyncio.sleep(state.get("delay", 0))
         return web.json_response({"access_token": _jwt(state["n"]), "refresh_token": new_rt})
 
     app = web.Application()
@@ -172,6 +176,8 @@ async def test_a_text_only_reply_is_unavailable_not_ok(tmp_path, auth_server, co
     ("events", "expected"),
     [
         (_image_events(status="failed", result=None), ("unavailable", "no_image")),
+        (_image_events(status="failed"), ("unavailable", "no_image")),
+        (_image_events(status="in_progress"), ("unavailable", "no_image")),
         (_image_events(result=b"not a png"), ("unavailable", "bad_response")),
         (
             _sse({"type": "response.failed",
@@ -179,7 +185,7 @@ async def test_a_text_only_reply_is_unavailable_not_ok(tmp_path, auth_server, co
             ("nothing_found", "refused"),
         ),
     ],
-    ids=["call-failed", "not-a-png", "moderation"],
+    ids=["call-failed", "failed-with-png", "in-progress-with-png", "not-a-png", "moderation"],
 )
 async def test_a_stream_without_a_usable_image_is_never_ok(
     tmp_path, auth_server, codex_server, events, expected,
@@ -373,6 +379,86 @@ async def test_a_refused_refresh_is_auth_and_a_429_is_rate_limited(tmp_path, aut
     assert (limited.status, limited.reason) == ("unavailable", "rate_limited")
 
 
+async def test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_write(
+    tmp_path, auth_server,
+):
+    """Review finding 1: a write failing AFTER the writability check left the
+    rotation only in memory, and the next refresh re-sent the dead bootstrap."""
+    issuer, auth = auth_server
+    state_file = tmp_path / "state" / "openai-codex-oauth.json"
+    state_file.mkdir(parents=True)  # a directory: os.replace onto it fails
+    oauth = OpenAICodexOAuth(
+        bootstrap_refresh_token="rt-boot", state_file=state_file,
+        issuer=issuer, timeout_seconds=5.0,
+    )
+    first = await oauth.access_token()
+    assert first.status == "ok"
+    second = await oauth.access_token(rejected=first.access_token)
+    assert second.status == "ok"
+    assert auth["sent"] == ["rt-boot", "rt-1"]
+    state_file.rmdir()
+    assert (await oauth.access_token()).access_token == second.access_token
+    assert json.loads(state_file.read_text())["refresh_token"] == "rt-2"
+    assert auth["sent"] == ["rt-boot", "rt-1"]
+
+
+async def test_a_cancelled_caller_does_not_lose_a_rotation(tmp_path, auth_server):
+    """Review finding 3: the issuer rotates, the caller is cancelled before
+    the answer lands; the refresh must still finish and be written."""
+    issuer, auth = auth_server
+    auth["delay"] = 0.3
+    oauth = _oauth(tmp_path, issuer)
+    call = asyncio.ensure_future(oauth.access_token())
+    await asyncio.sleep(0.1)
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    await asyncio.sleep(1.0)  # the issuer answers at 0.3 s
+    auth["delay"] = 0
+    later = _oauth(tmp_path, issuer)
+    assert (await later.access_token()).status == "ok"
+    assert auth["sent"] == ["rt-boot"]
+
+
+async def test_the_state_file_is_never_readable_by_others_and_is_synced(
+    tmp_path, auth_server, monkeypatch,
+):
+    """Review finding 4: the token is written into a file that is already
+    0600, and synced before the rename."""
+    issuer, _ = auth_server
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def fsync(fd: int) -> None:
+        synced.append(os.fstat(fd).st_mode & 0o777)
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    old_umask = os.umask(0o022)
+    try:
+        assert (await _oauth(tmp_path, issuer).access_token()).status == "ok"
+    finally:
+        os.umask(old_umask)
+    assert synced == [0o600]
+
+
+async def test_a_lock_failure_is_unavailable_never_a_raise(
+    tmp_path, auth_server, codex_server, monkeypatch,
+):
+    """Review finding 5: an flock error must not escape `generate()`."""
+    import fcntl
+
+    issuer, _ = auth_server
+    base, _cx = codex_server
+
+    def broken_flock(fd: int, op: int) -> None:
+        raise OSError(37, "No locks available")
+
+    monkeypatch.setattr(fcntl, "flock", broken_flock)
+    result = await _gen(_oauth(tmp_path, issuer), base).generate(prompt="a cat")
+    assert (result.status, result.reason) == ("unavailable", "state_unwritable")
+
+
 # -- login ------------------------------------------------------------------
 
 
@@ -425,8 +511,27 @@ async def test_device_login_polls_until_approved_then_exchanges_with_pkce():
     }
 
 
+def test_import_refuses_codex_home_and_a_copy_of_the_operators_token(tmp_path, monkeypatch):
+    """Review finding 2: `$CODEX_HOME/auth.json` is the operator's too, and a
+    copy of their file is the same login whatever its path."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    (home / "auth.json").write_text(json.dumps({"tokens": {"refresh_token": "theirs"}}))
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    with pytest.raises(CodexLoginError, match="refusing"):
+        refresh_token_from_codex_auth(home / "auth.json")
+    copy = tmp_path / "elsewhere" / "auth.json"
+    copy.parent.mkdir()
+    copy.write_text(json.dumps({"tokens": {"refresh_token": "theirs"}}))
+    with pytest.raises(CodexLoginError, match="copy of") as refused:
+        refresh_token_from_codex_auth(copy)
+    assert "theirs" not in str(refused.value)
+
+
 def test_import_refuses_the_operators_own_codex_login(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     own = tmp_path / ".codex" / "auth.json"
     own.parent.mkdir()
     own.write_text(json.dumps({"tokens": {"refresh_token": "theirs"}}))

@@ -410,6 +410,20 @@ refresh token in immutable `.env`) cannot hold, so:
 Nora holds her OWN login. Sharing a `~/.codex/auth.json` with a codex CLI (the
 Mac's, Hermes') means whichever side refreshes first logs the other out.
 
+**One `.env`, one `./state`.** Two checkouts that share the `.env` token but
+keep separate `./state` directories (a second deployment, an eval sandbox
+with its own state dir) each find no state file and spend the bootstrap: the
+second spend is of a dead token, and may cost the first one its chain. The
+file lock only covers processes that share the state file. A second checkout
+that needs this lane gets its own `nora openai-codex-login` and its own `.env`
+line. Not enforced in code.
+
+A write that fails after the writability check (review of #778) keeps the
+rotation in memory: the next refresh spends the in-memory token, never the
+older file's or the bootstrap, and every call retries the write until one
+lands. A restart before then needs a new login. A caller cancelled
+mid-refresh does not cancel the refresh: it runs shielded to its save.
+
 ### 11.3 Login
 
 `nora openai-codex-login` runs the Codex device flow (endpoints read from the

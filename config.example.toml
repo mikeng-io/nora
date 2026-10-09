@@ -764,7 +764,9 @@ timeout_seconds = 90.0
 # the first refresh spends it and the rotated token lives in
 # ./state/openai-codex-oauth.json; losing that file means logging in again.
 # Nora's own ChatGPT login only, never a copy of ~/.codex/auth.json: a shared
-# rotating token logs one side out.
+# rotating token logs one side out. For the same reason, two checkouts must not
+# share this `.env` token with separate ./state dirs: each would spend the
+# bootstrap. A second checkout gets its own login.
 model = "gpt-image-2"
 responses_model = "gpt-5.5"
 standard_quality = "medium"
