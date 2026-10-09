@@ -2879,6 +2879,32 @@ class XaiImageGenConfig(BaseModel):
     refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
 
 
+_GptImageQuality = Literal["low", "medium", "high", "auto"]
+
+
+class OpenAICodexImageGenConfig(BaseModel):
+    """`[image_gen.openai_codex]` — gpt-image through the ChatGPT (Codex)
+    subscription lane (DEC-304, design/proposed/29 §11).
+
+    `model` is the image model the `image_generation` tool runs;
+    `responses_model` is the text model that hosts that tool on the Codex
+    backend. `standard_quality` / `high_quality` map the port's
+    `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
+    holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
+    (DEC-8); the rotating token after it lives in the state file.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = Field(default="gpt-image-2", min_length=1)
+    responses_model: str = Field(default="gpt-5.5", min_length=1)
+    standard_quality: _GptImageQuality = "medium"
+    high_quality: _GptImageQuality = "high"
+    timeout_seconds: float = Field(default=180.0, gt=0)
+    # Names an env var, not a secret.
+    refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
+
+
 class ImageGenConfig(BaseModel):
     """The image-generation tool's gate (design/proposed/29, DEC-137).
 
@@ -2889,8 +2915,10 @@ class ImageGenConfig(BaseModel):
     crashing the daemon (the DEC-136 RustFS posture).
 
     `provider` is the port selector — the composition root builds the
-    `ImageGenerator` implementation the name selects; the model-facing tool
-    never names a provider.
+    `ImageGenerator` implementation the name selects (`xai`, DEC-137, or
+    `openai_codex`, DEC-304); the model-facing tool never names a provider.
+    It stays a plain string: an unknown name degrades the tool to
+    `unavailable` with a logged warning (M6), it does not stop the daemon.
 
     `allow_reference_images` is the privacy gate for the edits API: reference
     images (a friend's photo) upload to a third-party cloud, so the default
@@ -2908,6 +2936,69 @@ class ImageGenConfig(BaseModel):
     allow_reference_images: bool = False
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
+    openai_codex: OpenAICodexImageGenConfig = OpenAICodexImageGenConfig()
+
+
+class MiniMaxCnVideoGenConfig(BaseModel):
+    """`[video_gen.minimax_cn]`: the MiniMax CN adapter's own knobs (design/video-generation §2).
+
+    `model` is the operator's 2026-10-02 decision; `MiniMax-H3-Max` is the fallback inside
+    that decision if the live API refuses H3 at 15 s (design §7), a config change.
+    `api_key_env` NAMES the env var holding the CN plan key (DEC-8), the same one
+    `[speech.tts]` reads; the value never lands in config.toml.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = "MiniMax-H3"
+    api_key_env: str = "MINIMAX_CN_API_KEY"
+    host: str = "https://api.minimaxi.com"
+    timeout_seconds: float = Field(default=45.0, gt=0)
+
+
+class VideoGenConfig(BaseModel):
+    """The `video_create` tool's gate (design/video-generation, operator 2026-10-02).
+
+    `enabled` defaults **False**: a clip of 15 s at 480P is estimated at about 11% of the
+    weekly quota the CN plan shares with her speech and Hermes, so it never switches itself
+    on. On, it needs `[compute] enabled` (the poller that delivers the clip; refused at load)
+    and the key named by `[video_gen.minimax_cn] api_key_env` (absent: the tool is withheld
+    and a warning logged, never a crash).
+
+    One model, one resolution, one duration, by the operator's decision: `resolution` is
+    `480P` only. `ratio` is explicit, never `adaptive`: the live API refused `adaptive` for a
+    reference task (`aspect ratio "adaptive" is not supported for task ref2va`, 2026-10-02),
+    so it is refused here for every task. `max_clips_per_day` is the hard cap `video_create`
+    checks in code before a create, counted per local day from `compute_jobs`; the default of
+    one is a placeholder until the first 15 s clip is measured. `allow_reference_images` is
+    the privacy gate `[image_gen]` has: a reference leaves the box for a third-party cloud.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    provider: Literal["minimax_cn"] = "minimax_cn"
+    resolution: Literal["480P"] = "480P"
+    duration_seconds: int = Field(default=15, ge=4, le=15)
+    ratio: str = "3:4"
+    allow_reference_images: bool = False
+    max_clips_per_day: int = Field(default=1, ge=0)
+
+    minimax_cn: MiniMaxCnVideoGenConfig = MiniMaxCnVideoGenConfig()
+
+    @field_validator("ratio")
+    @classmethod
+    def _ratio_is_explicit(cls, value: str) -> str:
+        text = value.strip()
+        if text.lower() == "adaptive":
+            raise ValueError(
+                '[video_gen] ratio = "adaptive" is refused: the live API rejected it for a '
+                'reference task on 2026-10-02. Name the ratio, e.g. "3:4"'
+            )
+        left, sep, right = text.partition(":")
+        if not (sep and left.isdigit() and right.isdigit() and int(left) and int(right)):
+            raise ValueError(f'[video_gen] ratio must be "W:H", e.g. "3:4"; got {value!r}')
+        return text
 
 
 class MusicConfig(BaseModel):
@@ -4063,6 +4154,9 @@ class Config(BaseModel):
     # unchanged, and a misconfigured lane degrades the tool to `unavailable`
     # rather than crashing the daemon.
     image_gen: ImageGenConfig = ImageGenConfig()
+    # Optional and defaulted, see `VideoGenConfig`. Ships INERT (`enabled = false`): no
+    # backend is built and the registry withholds `video_create`.
+    video_gen: VideoGenConfig = VideoGenConfig()
     # Optional and defaulted — see `VersionConfig` for why this one defaults ON
     # where every other optional capability defaults off.
     version: VersionConfig = VersionConfig()
@@ -4592,6 +4686,18 @@ class Config(BaseModel):
                 "[subagent] enabled = true needs [dreamer] enabled = true (the worker runs "
                 "on the Dreamer's model source) and [compute] enabled = true (the poller "
                 "that delivers its result)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _video_needs_the_poller(self) -> Config:
+        """A clip is delivered by the compute poller, so `[video_gen] enabled = true` needs
+        `[compute] enabled = true`: refused at load, the subagent precedent, rather than found
+        as a clip that renders, is paid for, and is never delivered."""
+        if self.video_gen.enabled and not self.compute.enabled:
+            raise ValueError(
+                "[video_gen] enabled = true needs [compute] enabled = true (the poller that "
+                "delivers the finished clip)"
             )
         return self
 

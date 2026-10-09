@@ -167,6 +167,12 @@ class ComputeJobStore(Protocol):
         (`subagent_list` and `subagent_read` are the readers)."""
         ...
 
+    async def kind_since(self, *, kind: str, since: datetime) -> list[ComputeJob]:
+        """Every row of one `kind` created at or after `since`, any room, any state, oldest
+        first. `video_create`'s daily cap reads it: the count lives in the table, so a restart
+        never resets it."""
+        ...
+
     async def set_checkpoint(
         self, backend_job_id: str, checkpoint: Mapping[str, Any], at: datetime,
     ) -> bool:
@@ -207,7 +213,9 @@ class ComputeJobStore(Protocol):
         who was waiting on them — see `nora.app.compute_poller.recover`."""
         ...
 
-    async def sweep_pending(self, *, now: datetime) -> list[ComputeJob]:
+    async def sweep_pending(
+        self, *, now: datetime, keep_kinds: frozenset[str] = frozenset(),
+    ) -> list[ComputeJob]:
         """Boot recovery for the OTHER half, and it has no `ReminderStore`
         counterpart because the two ports differ in what a `PENDING` row means.
 
@@ -219,6 +227,10 @@ class ComputeJobStore(Protocol):
         this process has never heard of, and `poll` answers `FAILED("unknown
         job_id")` for it. Delivered, that becomes Nora telling the group in her
         own voice that their job failed, which is not something anybody knows.
+
+        `keep_kinds` names the kinds whose handle is NOT in memory and survives a restart (a
+        video job's handle is the provider's task id): their pending rows are left pending and
+        the poller asks about them again.
 
         Sweeping them at boot resolves each to `FAILED` with an honest reason
         instead, and it is the same at-most-once rule `sweep_firing` holds:

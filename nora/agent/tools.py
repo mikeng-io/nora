@@ -223,6 +223,7 @@ from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
 from ..domain.standing import StandingHead
 from ..domain.subagent import Decision, SubagentBrief
 from ..domain.tool_call_log import ToolCallLogStore
+from ..domain.video import VideoReference, VideoRequest
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
@@ -270,6 +271,7 @@ from .standing_read import render_standing
 from .subagent_desk import JobView, SubagentDesk
 from .subagent_progress import SubagentProgress
 from .surface import LOAD_TOOLS_UNAVAILABLE_NOTE, ToolShelf, load_onto
+from .video_desk import VideoDesk
 from .whereis import (
     STALE_AFTER_MS,
     DisclosureGuard,
@@ -1115,6 +1117,18 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                  side_effect_state="unknown", idempotency="non_idempotent",
                                  retry="never",
                                  output_contract="three_state", level=3),
+    # video_create (design/video-generation): starts ONE clip on an external provider, a
+    # job that renders for one to three minutes and is delivered later by the compute
+    # poller. Budget 1: a second call in a turn is a second clip nobody asked for (the
+    # desk returns the first one anyway). Not `read_only`: it spends quota and writes a
+    # `compute_jobs` row. `confirmed`: `started` is the row's own write after the provider
+    # accepted the task. `non_idempotent`/`never`: a retry is a second clip. Level 3: a
+    # status contract and two MUSTs (load the skill; no identifier in the prompt).
+    # Withheld unless `[video_gen]` is wired (`VIDEO_TOOLS`), tag turns only (`ToolScope`).
+    "video_create": NativeTool(1, read_only=False,
+                               side_effect_state="confirmed", idempotency="non_idempotent",
+                               retry="never",
+                               output_contract="three_state", level=3),
     # media_search / media_send (DEC-138 — unified media index): READ side
     # of Nora's OWN stored media (source ∈ generated/fetched) — no provider
     # call, no quota. `media_search(scope="room")` also finds photos PEOPLE
@@ -4369,6 +4383,10 @@ SUBAGENT_TOOLS: frozenset[str] = frozenset({
     "subagent_create", "subagent_list", "subagent_read", "subagent_cancel",
 })
 
+#: `video_create` (design/video-generation). `ToolRegistry` withholds it from every surface
+#: unless `[video_gen]` is wired, and `ToolScope` admits it to a tag turn only.
+VIDEO_TOOLS: frozenset[str] = frozenset({"video_create"})
+
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
@@ -4606,6 +4624,11 @@ def build_tool_specs(
     # (`[subagent] enabled = false`, offline, eval) answers `unavailable`; the registry
     # withholds the four before that matters, and the scope admits them to a tag turn only.
     subagent: SubagentDesk | None = None,
+    # `video_create`'s desk (design/video-generation) and the `[video_gen]
+    # allow_reference_images` gate. `None` answers `unavailable`; the registry withholds the
+    # tool before that matters.
+    video: VideoDesk | None = None,
+    video_refs_allowed: bool = False,
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -9180,6 +9203,86 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             served["note"] = f"{served['note']} {_KEPT_NOTE}"
         return served
 
+    # ---- reference custody, shared by generate_image and video_create -----------
+    #
+    # A reference is a handle Nora holds, never a location (ImageReference, DEC-193).
+
+    async def _canonical_self(marker: str, tool: str) -> str | None:
+        """DEC-193's narrow custody exemption: the sha of her canonical self
+        row, or None. A FULL sha256 only (a short handle is a conversation
+        handle and never reaches this), and the row's role must be exactly
+        the string "self": no case-folding, no strip, no prefix, no set.
+        The marker is written by the operator's ingest alone
+        (`scripts/ingest_self_asset.py`); nothing a message reaches writes
+        `provenance.role`."""
+        if len(marker) != 64 or media_store is None:
+            return None
+        try:
+            row = await media_store.get(sha256=marker)
+        except Exception:
+            log.exception("%s could not read the media index", tool)
+            return None
+        if row is None or row.sha256 != marker:
+            return None
+        role = (row.provenance or {}).get("role")
+        if not isinstance(role, str) or role != "self":
+            return None
+        return marker
+
+    async def _held_image(marker: str, tool: str) -> tuple[str, bytes, bool] | None:
+        """The custody check, conversation FIRST: a code in THIS
+        conversation's own media window resolves to `(sha256, bytes, True)`.
+        Only when the window has no match at all may the one exemption apply
+        (DEC-193): the FULL sha256 of the row whose `provenance.role` is
+        exactly `"self"`, her canonical picture, `(sha256, bytes, False)`.
+        Ambiguity in the window is never settled by it. Anything else is None
+        (never a fetch)."""
+        try:
+            rows = await store.recent(
+                conversation_id=conversation_id, limit=_media_window,
+            )
+        except Exception:
+            log.exception("%s could not read the transcript", tool)
+            return None
+        hex_handle = marker
+        matches: dict[str, str] = {}
+        for row in rows:
+            if not row.media_json:
+                continue
+            try:
+                blobs = json.loads(row.media_json)
+            except (ValueError, TypeError):
+                continue
+            for blob in blobs if isinstance(blobs, list) else ():
+                if not isinstance(blob, dict):
+                    continue
+                sha = str(blob.get("sha256", ""))
+                if sha.startswith(hex_handle):
+                    matches.setdefault(sha, str(blob.get("media_type", "")))
+        if len(matches) > 1:
+            # Ambiguous — "not a resolvable reference for this edit"
+            # (never pick the first, and never fall through to the
+            # canonical row below).
+            return None
+        from_room = bool(matches)
+        if matches:
+            sha256 = next(iter(matches))
+        else:
+            canonical = await _canonical_self(hex_handle, tool)
+            if canonical is None:
+                return None
+            sha256 = canonical
+        if blob_store is None:
+            return None
+        try:
+            data = await blob_store.get(key=sha256)
+        except Exception:
+            log.exception("%s could not open blob %s", tool, sha256[:HANDLE_CHARS])
+            return None
+        if data is None:
+            return None
+        return sha256, data, from_room
+
     # ---- generate_image (DEC-137, design/proposed/29) --------------------
     #
     # Provider-agnostic by construction: this closure knows nothing about xAI
@@ -9313,77 +9416,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return f"{what} Say in your reply that it was made from photos sent here."
             return what
 
-        async def _canonical_self(marker: str) -> str | None:
-            """DEC-193's narrow custody exemption: the sha of her canonical self
-            row, or None. A FULL sha256 only (a short handle is a conversation
-            handle and never reaches this), and the row's role must be exactly
-            the string "self": no case-folding, no strip, no prefix, no set.
-            The marker is written by the operator's ingest alone
-            (`scripts/ingest_self_asset.py`); nothing a message reaches writes
-            `provenance.role`."""
-            if len(marker) != 64 or media_store is None:
-                return None
-            try:
-                row = await media_store.get(sha256=marker)
-            except Exception:
-                log.exception("generate_image could not read the media index")
-                return None
-            if row is None or row.sha256 != marker:
-                return None
-            role = (row.provenance or {}).get("role")
-            if not isinstance(role, str) or role != "self":
-                return None
-            return marker
-
         async def resolve(marker: str) -> bytes | None:
-            """The custody check, conversation FIRST: a code in THIS
-            conversation's own media window resolves to its blob bytes. Only
-            when the window has no match at all may the one exemption apply
-            (DEC-193): the FULL sha256 of the row whose `provenance.role` is
-            exactly `"self"`, her canonical picture. Ambiguity in the window
-            is never settled by it. Anything else is None (never a fetch)."""
-            try:
-                rows = await store.recent(
-                    conversation_id=conversation_id, limit=_media_window,
-                )
-            except Exception:
-                log.exception("generate_image could not read the transcript")
+            held = await _held_image(marker, "generate_image")
+            if held is None:
                 return None
-            hex_handle = marker
-            matches: dict[str, str] = {}
-            for row in rows:
-                if not row.media_json:
-                    continue
-                try:
-                    blobs = json.loads(row.media_json)
-                except (ValueError, TypeError):
-                    continue
-                for blob in blobs if isinstance(blobs, list) else ():
-                    if not isinstance(blob, dict):
-                        continue
-                    sha = str(blob.get("sha256", ""))
-                    if sha.startswith(hex_handle):
-                        matches.setdefault(sha, str(blob.get("media_type", "")))
-            if len(matches) > 1:
-                # Ambiguous — "not a resolvable reference for this edit"
-                # (never pick the first, and never fall through to the
-                # canonical row below).
-                return None
-            if matches:
-                sha256 = next(iter(matches))
+            sha256, data, from_room = held
+            if from_room:
                 room_photos.append(sha256)
-            else:
-                canonical = await _canonical_self(hex_handle)
-                if canonical is None:
-                    return None
-                sha256 = canonical
-            if blob_store is None:
-                return None
-            try:
-                data = await blob_store.get(key=sha256)
-            except Exception:
-                log.exception("generate_image could not open blob %s", sha256[:HANDLE_CHARS])
-                return None
             return data
 
         try:
@@ -9558,6 +9597,117 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "in a bit.",
         }.get(reason, "I can't make images right now. Say so plainly.")
         return {"status": "unavailable", "note": note}
+
+    # ---- video_create (design/video-generation, DEC at merge) ----------------
+    #
+    # A clip renders for one to three minutes, so this STARTS a job and returns; the clip
+    # reaches this room later as a fire turn (`ComputeJobPoller`, `compute_occasion`), with
+    # its link attached by code. Provider-neutral like `generate_image`: the desk and the
+    # backend own the provider. `video=None` (`[video_gen] enabled = false`, no key, or
+    # `[compute]` off) is the wiring gap, `unavailable`, and the registry withholds the tool
+    # then. The daily cap is the desk's, checked in code before anything is spent. A tag turn
+    # only: the clip is delivered to the person who asked, in the room they asked in.
+    video_on_tag = not (fire_turn or dream_adaptor or subagent_job)
+
+    async def video_create(
+        prompt: str,
+        reference: str | None = None,
+        reference_2: str | None = None,
+        reference_3: str | None = None,
+    ) -> dict:
+        """Make a short video clip, posted here later as a link. Call this when
+        somebody asks for a video.
+
+        MUST: load the video-generation skill before calling this tool. It holds the
+        judgement about when you appear and which photo is whom.
+
+        `reference`, `reference_2` and `reference_3` each take the marker code of one
+        photo (`a3f2c1` from `[image a3f2c1]`), up to 3. Each must already be in this
+        conversation, except your own canonical picture, which works in any room.
+
+        MUST: the prompt goes to an outside service, so it never carries a name, phone
+        number, address or other identifier.
+
+        `status` is one of:
+        - `started`: the clip is rendering and will be posted here later.
+        - `refused`: today's video limit is used; nothing was started.
+        - `nothing_found`: a reference is not a photo held here.
+        - `unavailable`: nothing was started.
+        Every result carries a `note` saying how to report it.
+
+        Args:
+            prompt: What the clip shows and how it moves, written for the video model.
+            reference: Optional marker code of a photo, or your canonical picture.
+            reference_2: Optional second marker code.
+            reference_3: Optional third marker code.
+        """
+        tool = "video_create"
+        if video is None:
+            _record(metrics, tool, "unavailable", reason="not_wired")
+            return {"status": "unavailable",
+                    "note": "I can't make videos right now. Say so; nothing was started."}
+        tagger = getattr(room, "tagger", None) if room is not None else None
+        if not video_on_tag or tagger is None:
+            _record(metrics, tool, "unavailable", reason="no_requester")
+            return {"status": "unavailable",
+                    "note": "A video is made for the person who asked, in a turn they "
+                            "started. Nothing was started."}
+        wanted = [r for r in (reference, reference_2, reference_3) if r is not None]
+        if wanted and not video_refs_allowed:
+            _record(metrics, tool, "unavailable", reason="references_off")
+            return {"status": "unavailable",
+                    "note": "I can't use reference photos for videos right now: that "
+                            "feature is switched off. Nothing was started; I can still "
+                            "make one from words alone."}
+        references: list[VideoReference] = []
+        for code in wanted:
+            if _is_external_reference(code):
+                _record(metrics, tool, "nothing_found", reason="external_reference")
+                return {"status": "nothing_found",
+                        "note": "That is a link, not a photo I hold. I can only use photos "
+                                "already sent here, or my own picture. Nothing was started."}
+            marker = _handle_hex(code)
+            held = (
+                await _held_image(marker, tool) if len(marker) >= HANDLE_CHARS else None
+            )
+            if held is None:
+                _record(metrics, tool, "nothing_found", reason="reference_not_held")
+                return {"status": "nothing_found",
+                        "note": "I can't find a photo with that code here. Say you can't "
+                                "use it rather than guessing. Nothing was started."}
+            references.append(VideoReference(sha256=held[0], data=held[1]))
+        out = await video.create(
+            platform=room.platform if room is not None else "",
+            conversation_id=bound_conversation_id, conversation_type=conversation_type,
+            requester_person_id=tagger.person_id, tag_id=current_tag_id() or None,
+            request=VideoRequest(prompt=str(prompt or ""), references=tuple(references)),
+        )
+        if out.status == "at_cap":
+            _record(metrics, tool, "refused", reason="daily_cap", used=out.used, cap=out.cap)
+            return {"status": "refused",
+                    "note": f"Today's video limit is used ({out.used} of {out.cap}), so "
+                            "nothing was started. Say so plainly; it resets tomorrow."}
+        if out.status != "started" and out.reason in ("uncertain", "row_not_written"):
+            _record(metrics, tool, "unavailable", reason=out.reason)
+            return {"status": "unavailable",
+                    "note": "Something broke while starting the video, and it may or may "
+                            "not be rendering; if it is, it will not be posted here. Say "
+                            "so plainly, and do not try again today."}
+        if out.status != "started":
+            _record(metrics, tool, "unavailable", reason=out.reason or out.status)
+            return {"status": "unavailable",
+                    "note": "I couldn't start the video, and nothing is rendering. Say so; "
+                            "don't say you are on it."}
+        if out.repeated:
+            _record(metrics, tool, "started", reason="repeated_in_turn")
+            return {"status": "started",
+                    "note": "This clip was already started earlier in this turn, and "
+                            "nothing new was started. Tell the room once that you are on it."}
+        _record(metrics, tool, "started", used=out.used, cap=out.cap)
+        return {"status": "started",
+                "note": "It is rendering. Tell them you are on it and that the clip will "
+                        "come here as a link in a few minutes. Do not wait for it, and do "
+                        "not describe a clip you have not seen."}
 
     # ---- media_search / media_send (DEC-138 — unified media library) -----
     #
@@ -13060,7 +13210,10 @@ Args:
                           "id": reaction.candidate.id, "type": "gif",
                           "picked_by": "reaction", "mode": reaction.mode}}
 
-    async def send_reply(text: str, reply_to: int | None = None) -> str:
+    async def send_reply(
+        text: str, reply_to: int | None = None, more: bool | None = False,
+        heads_up: bool | None = False,
+    ) -> str:
         """Send your reply in words. Call this when your reply is text; a
         reaction GIF goes through `send_gif`.
 
@@ -13068,7 +13221,10 @@ Args:
         call one of them whenever you reply. Do not return the reply as your
         final message instead: that path is an emergency fallback, never a
         choice. If you call neither, nothing is sent. It always goes to the
-        conversation you were tagged in; you do not choose where.
+        conversation you were tagged in; you do not choose where. A send ends
+        your turn unless you pass `more=true` or `heads_up=true`. Do the notes, lookups and
+        publishing you owe BEFORE your answer when you can; anything you still
+        do after it needs `more=true`.
 
         Returns one of three words. Read the middle one carefully.
           - `sent`: it reached the room.
@@ -13091,6 +13247,13 @@ Args:
                 you picked up. Leave it out when only one thing is happening,
                 since a reply threaded onto the obvious message is clutter. Never
                 guess a number that is not on a message you can see.
+            more: True if you will do anything after this message: another
+                message, or any tool such as a note or a publish. Leave it
+                false otherwise; the turn then ends.
+            heads_up: True when this message only says what you are about
+                to do before longer work, such as a search, the computer or
+                an image, and your answer follows in a later send_reply. It
+                keeps the turn open like `more`.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS
@@ -15170,6 +15333,7 @@ Args:
         _spec("recall_lookups", recall_lookups),
         _spec("media_fetch", media_fetch),
         _spec("generate_image", generate_image),
+        _spec("video_create", video_create),
         _spec("media_search", media_search),
         _spec("media_send", media_send),
         _spec("document_publish", document_publish),
@@ -15417,6 +15581,8 @@ def build_tools(
     standing_head: StandingHeadSource | None = None,
     culture: CultureReader | None = None,
     subagent: SubagentDesk | None = None,
+    video: VideoDesk | None = None,
+    video_refs_allowed: bool = False,
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -15479,5 +15645,6 @@ def build_tools(
         standing_head=standing_head,
         culture=culture,
         subagent=subagent,
+        video=video, video_refs_allowed=video_refs_allowed,
     )
     return [adapt(spec) for spec in specs]

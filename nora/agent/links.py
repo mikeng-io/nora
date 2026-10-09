@@ -128,6 +128,9 @@ class LinkCarry:
         self._document_tried = False                   # ... with a spec, so a save was attempted
         self._document_saved = False                   # ... and one call stored a document
         self._unsaved_noted = False                    # a sent message carries the note
+        # Links code hands the room with this turn's message (a finished job's result URL):
+        # appended when missing, until a sent message carries them.
+        self._attached: list[str] = []
 
     def claim_documents(self, public_url: str) -> None:
         """Arm the document rule for this turn with the origin documents are linked under.
@@ -160,6 +163,15 @@ class LinkCarry:
         if published:
             self._doc_receipts[handle] = url.strip()
 
+    def attach(self, url: str) -> None:
+        """A link the room must receive with this turn's message, carried by code rather than
+        copied by the model: a finished video's signed URL is long and one wrong character
+        breaks its signature. Appended to a message that lacks it, until one that carries it
+        is sent. Not a document link, so the document rule never strips it."""
+        url = (url or "").strip()
+        if url and url not in self._attached:
+            self._attached.append(url)
+
     @property
     def documents_added(self) -> int:
         """How many document links `apply` has added, apart from place links, for the metric."""
@@ -171,6 +183,7 @@ class LinkCarry:
         with no words) stays pending, so the next message still carries it."""
         if UNSAVED_DOCUMENT_NOTE in (text or ""):
             self._unsaved_noted = True
+        self._attached = [url for url in self._attached if url not in (text or "")]
         pattern = self._doc_pattern
         if pattern is None or not self._doc_receipts:
             return
@@ -227,6 +240,11 @@ class LinkCarry:
         added = 0
         if text and self._doc_pattern is not None:
             text, added = self._apply_documents(text, self._doc_pattern)
+        if text and self._attached:
+            missing = [url for url in self._attached if url not in text]
+            if missing:
+                text = text.rstrip() + "\n" + "\n".join(missing)
+                added += len(missing)
         if text and self._offered:
             haystack = text.casefold()
             decoded = unquote_plus(text)

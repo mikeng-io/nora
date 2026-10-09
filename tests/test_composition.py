@@ -897,6 +897,52 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
         await deps.background.cancel_all()
 
 
+async def test_video_off_builds_nothing_and_withholds_the_tool(cfg, no_build_stamp):
+    """`[video_gen] enabled = false`, the shipped default: no backend, no tool."""
+    assert cfg.video_gen.enabled is False
+    deps = await build_dependencies(cfg)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" in registry._withheld and registry._video is None
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_video_on_without_its_key_boots_and_withholds_the_tool(
+    cfg, monkeypatch, no_build_stamp,
+):
+    """Enabled with the key unset is a wiring gap: boot goes on, the tool is withheld, and
+    no backend is registered with the poller. Never a crash."""
+    monkeypatch.delenv("MINIMAX_CN_API_KEY", raising=False)
+    on = override_config(cfg, {"compute.enabled": True, "video_gen.enabled": True,
+                               "heartbeat.enabled": False})
+    deps = await build_dependencies(on)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" in registry._withheld and registry._video is None
+        assert _spawned(deps, "ComputeJobPoller.run") == []
+    finally:
+        await deps.background.cancel_all()
+
+
+async def test_video_on_with_its_key_registers_its_backend_under_its_kind(
+    cfg, monkeypatch, no_build_stamp,
+):
+    from nora.infra.video_gen import MiniMaxVideoBackend
+
+    monkeypatch.setenv("MINIMAX_CN_API_KEY", "test-key")
+    on = override_config(cfg, {"compute.enabled": True, "video_gen.enabled": True,
+                               "heartbeat.enabled": False})
+    deps = await build_dependencies(on)
+    try:
+        registry = deps.engagement._tool_registry
+        assert "video_create" not in registry._withheld and registry._video is not None
+        (poller,) = _spawned(deps, "ComputeJobPoller.run")
+        assert isinstance(poller._backends["video"], MiniMaxVideoBackend)
+    finally:
+        await deps.background.cancel_all()
+
+
 def _resolved_module_name(rel: Path) -> str:
     """The dotted module name `nora/<rel>` would have at import time, e.g.
     `infra/sql/migrations_runner.py` -> `nora.infra.sql.migrations_runner`."""
