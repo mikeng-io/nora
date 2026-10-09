@@ -212,6 +212,8 @@ def test_every_declared_tool_is_built(wiring):
         "version",
         # The note tier's four verbs (note-tier spec §5.2/§6).
         "note_read", "note_search", "note_create", "note_update",
+        # DEC-304: one kept memo of the unit.
+        "memo_read",
         # The remember verb — the conclusion write lane (2026-08-30).
         "remember",
         # The unit-wide memory variant of `search_memory`.

@@ -351,6 +351,16 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
     },
+    # 0103_memos (DEC-304): a kept memo, and one revision of it.
+    "memo": lambda n: {
+        "id": _uuid("mm", n), "unit": "friends", "platform": "signal",
+        "conversation_id": "g1", "created_at": MS0 + n,
+    },
+    "memo_revision": lambda n: {
+        "id": _uuid("mr", n), "memo_id": _uuid("mm", n), "seq": 1, "title": f"memo {n}",
+        "body": f"## Kept\n- kept {n} [{n + 1}]", "citations": [str(n + 1)], "mode": "told",
+        "state": "kept", "written_at": MS0 + n, "established_by": "test",
+    },
     # 0101_self_tension (design/self-growth/40, L3): a lesson refused by the law.
     "self_tension": lambda n: {
         "id": _uuid("st", n), "unit": "friends", "source": "lesson",

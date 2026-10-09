@@ -1,0 +1,100 @@
+[
+ {
+  "name": "D5: a Kept line is screened like the title (the exemption removed)",
+  "file": "nora/domain/memo.py",
+  "old": "        \"title\": title,\n        \"conditions\":",
+  "new": "        \"kept\": body.text,\n        \"title\": title,\n        \"conditions\":",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_a_kept_line_holds_a_key_and_a_phone_verbatim"
+ },
+ {
+  "name": "D5: the Conditions escape the screen (the exemption widened)",
+  "file": "nora/domain/memo.py",
+  "old": "\"conditions\": [ln.text for ln in conditions.lines] if conditions else [],",
+  "new": "\"conditions\": [],",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_the_screen_still_reads_the_title_and_the_conditions"
+ },
+ {
+  "name": "D5: the title escapes the screen (the exemption widened)",
+  "file": "nora/domain/memo.py",
+  "old": "        \"title\": title,\n",
+  "new": "        \"title\": \"\",\n",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_the_screen_still_reads_the_title_and_the_conditions"
+ },
+ {
+  "name": "a model-written ## Superseded is accepted",
+  "file": "nora/domain/memo.py",
+  "old": "    if MEMO_CODE_WRITTEN in present:",
+  "new": "    if False:",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_a_model_written_superseded_section_is_refused"
+ },
+ {
+  "name": "stale base: the fake appends on any head",
+  "file": "nora/testing/memo_store.py",
+  "old": "        if head.id != base_revision_id:",
+  "new": "        if False:",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_memo_revise_appends_and_a_stale_base_is_refused"
+ },
+ {
+  "name": "stale base: the SQL store appends on any head",
+  "file": "nora/infra/sql/memo.py",
+  "old": "                if str(head.id) != base_revision_id:",
+  "new": "                if False:",
+  "target": "tests/contract/test_memo_store_contract.py::test_a_revision_lands_on_its_head_and_a_stale_base_is_refused"
+ },
+ {
+  "name": "unit scoping: SQL get reads another unit's memo",
+  "file": "nora/infra/sql/memo.py",
+  "old": "        stmt = _heads().where(MEMO.c.unit == unit, MEMO.c.id == memo_id)",
+  "new": "        stmt = _heads().where(MEMO.c.id == memo_id)",
+  "target": "tests/contract/test_memo_store_contract.py::test_another_units_memo_is_never_found"
+ },
+ {
+  "name": "unit scoping: SQL kept lists another unit's memos",
+  "file": "nora/infra/sql/memo.py",
+  "old": "_heads().where(MEMO.c.unit == unit, MEMO_REVISION.c.state == \"kept\")",
+  "new": "_heads().where(MEMO_REVISION.c.state == \"kept\")",
+  "target": "tests/contract/test_memo_store_contract.py::test_another_units_memo_is_never_found"
+ },
+ {
+  "name": "unit scoping: the fake reads another unit's memo",
+  "file": "nora/testing/memo_store.py",
+  "old": "        return row if row is not None and row.unit == unit else None",
+  "new": "        return row",
+  "target": "tests/contract/test_memo_store_contract.py::test_another_units_memo_is_never_found"
+ },
+ {
+  "name": "own send: a memo may no longer cite Nora's message",
+  "file": "nora/domain/memo.py",
+  "old": "cited_line(h, item, shown, may_cite_nora=True)",
+  "new": "cited_line(h, item, shown, may_cite_nora=False)",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_a_memo_may_cite_noras_own_send_and_a_note_still_may_not"
+ },
+ {
+  "name": "own send: a note may now cite Nora's message",
+  "file": "nora/domain/note_body.py",
+  "old": "    _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys)\n",
+  "new": "    _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys, may_cite_nora=True)\n",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_a_memo_may_cite_noras_own_send_and_a_note_still_may_not"
+ },
+ {
+  "name": "a second memo under a kept title is accepted",
+  "file": "nora/app/cognition_session.py",
+  "old": "                twin = await _duplicate(title)\n                if twin is not None:",
+  "new": "                twin = await _duplicate(title)\n                if False:",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_a_second_memo_under_a_kept_title_is_refused_naming_the_first"
+ },
+ {
+  "name": "a withdrawn memo can be revised",
+  "file": "nora/app/cognition_session.py",
+  "old": "            if not memo.is_kept:",
+  "new": "            if False:",
+  "target": "tests/unit/test_cognition_memo_writes.py::test_memo_withdraw_needs_a_cited_message_and_leaves_the_memo_unrevisable"
+ },
+ {
+  "name": "<memos> pushes what a memo keeps",
+  "file": "nora/language/memo_render.py",
+  "old": "body=lambda m: m.title,",
+  "new": "body=lambda m: m.head.body,",
+  "target": "tests/test_prefill.py::test_the_memos_block_lists_titles_and_ids_after_the_notes_and_never_the_kept_line"
+ }
+]

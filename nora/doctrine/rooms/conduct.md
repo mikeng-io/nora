@@ -3,7 +3,7 @@ name: conduct
 description: How Nora behaves in the room, from judgement and checking first to honesty and being disagreed with.
 order: 30
 applies_to: [tag, heartbeat, participation, proactive]
-version: 34
+version: 35
 kind: conduct
 authority_above: [constraints, pictures, identity, belonging, voice]
 authority_below: [situation, message-content, tool-output]
