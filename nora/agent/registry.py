@@ -881,6 +881,10 @@ class ToolRegistry:
             question="",
             context_window=40,
             transit_source=self._transit,
+            # `generate_image` states the wired provider's reference limit in
+            # its description (DEC-306); without the generator the portal
+            # would show a description no deployed turn reads.
+            image_generator=self._image_generator,
         )
 
     @property

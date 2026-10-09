@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "Nora can now build a picture from as many photos as the image service she is using accepts in one go: up to 5 on xAI and up to 16 on OpenAI, instead of 3 on either.",
+  "details": [
+    "Asked to use more photos than the service takes, she makes nothing and says how many she can use, so she can ask which ones to keep; no photo is dropped silently.",
+    "The operator can lower the number per service with max_reference_images in its [image_gen] section; a value above the service's limit is refused when the config loads."
+  ],
+  "limitations": [
+    "xAI's limit of 5 comes from its documentation; it was not tried live because Nora's xAI login had expired.",
+    "OpenAI's limit of 16 is its documented number; one test on 9 October 2026 accepted 17, but more than 16 is not offered.",
+    "How often she picks the right tool and photos with the new argument has not been measured yet; that runs on the deploy host."
+  ]
+}

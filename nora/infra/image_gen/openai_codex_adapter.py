@@ -43,13 +43,19 @@ from nora.domain.ports import (
 )
 
 from .openai_codex_oauth import OpenAICodexOAuth
-from .xai_adapter import _hex_handle
+from .xai_adapter import _hex_handle, _reference_limit
 
 log = logging.getLogger("nora.image_gen.openai_codex")
 
 PROVIDER = "openai_codex"
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+#: OpenAI documents «up to 16 images» for GPT image models on `images/edits`
+#: (developers.openai.com, images edit reference, read 2026-10-09). The Codex lane
+#: has no published limit of its own; measured 2026-10-09 it took 17 and drew all
+#: 17 (design/proposed/29 §12). The documented number is the contract.
+CODEX_MAX_REFERENCE_IMAGES = 16
 
 # gpt-image takes three fixed sizes. ponytail: `ImageSize.tier` is not mapped;
 # the measured output ignored even the size asked for, so a tier knob would
@@ -109,7 +115,9 @@ class OpenAICodexImageGenerator:
         high_quality: str = "high",
         timeout_seconds: float = 180.0,
         base_url: str = CODEX_BASE_URL,
+        max_reference_images: int | None = None,
     ) -> None:
+        self._max_refs = _reference_limit(max_reference_images, CODEX_MAX_REFERENCE_IMAGES)
         self._oauth = oauth
         self._model = model
         self._responses_model = responses_model
@@ -117,6 +125,10 @@ class OpenAICodexImageGenerator:
         self._high_quality = high_quality
         self._timeout = timeout_seconds
         self._url = f"{base_url.rstrip('/')}/responses"
+
+    @property
+    def max_reference_images(self) -> int:
+        return self._max_refs
 
     def _unavailable(self, reason: str) -> ImageResult:
         return ImageResult(status="unavailable", reason=reason, provider=PROVIDER)

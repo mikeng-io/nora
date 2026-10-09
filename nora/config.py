@@ -2877,6 +2877,9 @@ class XaiImageGenConfig(BaseModel):
     quality_model: str = "grok-imagine-image-quality"
     timeout_seconds: float = 90.0
     refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    #: References per call. Unset is xAI's documented limit (5, DEC-306); a value
+    #: may only lower it. The bound is `XAI_MAX_REFERENCE_IMAGES`, pinned by a test.
+    max_reference_images: int | None = Field(default=None, ge=1, le=5)
 
 
 _GptImageQuality = Literal["low", "medium", "high", "auto"]
@@ -2903,6 +2906,9 @@ class OpenAICodexImageGenConfig(BaseModel):
     timeout_seconds: float = Field(default=180.0, gt=0)
     # Names an env var, not a secret.
     refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
+    #: References per call. Unset is OpenAI's documented limit for gpt-image (16,
+    #: DEC-306); a value may only lower it. The bound is `CODEX_MAX_REFERENCE_IMAGES`.
+    max_reference_images: int | None = Field(default=None, ge=1, le=16)
 
 
 class ImageGenConfig(BaseModel):
