@@ -56,7 +56,7 @@ STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link
 #: usually the same plan being talked on, and re-waking on each one slices one
 #: conversation into many ~13k-token sessions (measured on the live record: 6
 #: strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
-#: decision), a place link (a place) and a keep instruction («記低», DEC-304:
+#: decision), a place link (a place) and a keep instruction («記低», DEC-306:
 #: the tag turn tells the person it WILL be kept, and only a session keeps it)
 #: are new information worth catching fast. The restriction lifts when a wake
 #: of any other reason is the unit's newest.

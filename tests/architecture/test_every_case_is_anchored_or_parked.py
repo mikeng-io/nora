@@ -286,7 +286,7 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     to click through; browse-on arm only), plus the 5 `lessons` cases
     (2026-10-09, design/self-growth/40 §8: 4 lessons counterfactuals and a
     control, the `<lessons>` block's before/after), plus 8 memo routing cases
-    (2026-10-09, DEC-304: 6 `tool_selection_cognition` for the memo verbs and
+    (2026-10-09, DEC-306: 6 `tool_selection_cognition` for the memo verbs and
     `memo_read`, 2 `tool_selection` for «記低» about the group and about the
     speaker); a change to it
     is a change to what the suite claims to measure and belongs in a commit that

@@ -188,7 +188,7 @@ cases:
     metadata: {tools: [standing_read], not_tools: [note_read, note_search]}
     snapshot: *room_a
 
-  # ---- the memo kind (DEC-304): settled and kept, against its siblings. ------
+  # ---- the memo kind (DEC-306): settled and kept, against its siblings. ------
   # SYNTHETIC, like every case above. NOT RUN when written: the eval owner runs
   # them (`--sample 5 --reasons`, master and branch) and the numbers go in the PR.
 

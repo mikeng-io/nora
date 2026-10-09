@@ -19,7 +19,7 @@ description: >-
   shown as one example, held to the real validator
   (tests/unit/test_cognition_agenda_skills.py). No numbers, no caps. Version 2
   (2026-10-03, the cut-over) adds retiring, merging and reminders; version 3
-  (2026-10-09, DEC-304) the memo: what is settled and kept.
+  (2026-10-09, DEC-306) the memo: what is settled and kept.
 change_policy: operator-only
 ---
 

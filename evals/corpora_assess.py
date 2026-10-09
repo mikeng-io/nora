@@ -53,7 +53,7 @@ _CASE_KEYS = frozenset({"name", "series", "category", "negative_kind", "input", 
 _INPUT_ROW_KEYS = frozenset({"t", "speaker", "text"})
 
 #: The five negative kinds 30 §6 names, in its own order, then the memo
-#: corpus's own (DEC-304, `assess_memo.yaml`): a memo already withdrawn or
+#: corpus's own (DEC-306, `assess_memo.yaml`): a memo already withdrawn or
 #: superseded, and the three things that are settled-looking but are not a memo
 #: (the routing rule of 40-register §1): about the speaker alone (`remember`),
 #: still open (a note), dated and attended (an event).

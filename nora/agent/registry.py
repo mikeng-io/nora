@@ -208,7 +208,7 @@ class ToolRegistry:
         events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
         note_unit: Callable[[str, str], str | None] | None = None,
-        # `memo_read`'s memo store (DEC-304): `None` withholds it.
+        # `memo_read`'s memo store (DEC-306): `None` withholds it.
         memos: MemoStore | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,

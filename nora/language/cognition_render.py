@@ -118,7 +118,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
-    # What the unit settled and keeps (DEC-304), after the open questions.
+    # What the unit settled and keeps (DEC-306), after the open questions.
     ("memos", 45, "turn"),
     ("events", 50, "turn"),
 )
@@ -545,7 +545,7 @@ def _register(
     budget: RenderBudget,
 ) -> list[ContextBlock]:
     """The notes, the memos, and the events of each agenda room, already
-    recorded: a `note_index` block, a `memos` block (DEC-304) and ONE `events`
+    recorded: a `note_index` block, a `memos` block (DEC-306) and ONE `events`
     block of `<room_events>` groups. At most
     `register_lines` rows of each list, and every row together within
     `register_chars` as rendered: a row that does not fit, and every row after

@@ -1,5 +1,5 @@
 """A memo: something the unit SETTLED and keeps (Register · memo,
-design/cognition-loop/40-register.md §2, 12-schemas.md §3, DEC-304).
+design/cognition-loop/40-register.md §2, 12-schemas.md §3, DEC-306).
 
 The three Register kinds differ by whether the thing is settled: a note is not
 (it closes on its closing condition), a memo is (it never closes; it is
@@ -23,7 +23,7 @@ which code renders from the chain and a model never writes. Unlike a note, a
 memo line MAY cite one of Nora's own messages: what she found or said can be
 kept when the room asks her to keep it (operator, 2026-10-09).
 
-**What a `Kept` line may hold** (D5, DEC-230, DEC-304): anything said,
+**What a `Kept` line may hold** (D5, DEC-230, DEC-306): anything said,
 verbatim, a password, a phone number or a booking reference included: it was
 said in the group and is already shared with it. So the Cognition session's
 identifier screen reads a memo's title and `## Conditions` and never its `##

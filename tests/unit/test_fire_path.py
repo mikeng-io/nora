@@ -3145,7 +3145,7 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
 async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
     persons, record_store, memory_store, doctrine_store, metrics,
 ) -> None:
-    """`<memos>` on the fire path (DEC-304), `_read_notes` mirrored: the unit's
+    """`<memos>` on the fire path (DEC-306), `_read_notes` mirrored: the unit's
     kept memos, another unit's never, and a failed read counted."""
     from nora.testing.memo_store import InMemoryMemoStore
 

@@ -42,7 +42,7 @@
   "target": "tests/unit/test_wake_evaluator.py::test_a_strong_cue_wake_that_did_not_run_is_retried_as_strong_cue"
  },
  {
-  "name": "DEC-304: a keep instruction no longer re-arms after a strong_cue wake",
+  "name": "DEC-306: a keep instruction no longer re-arms after a strong_cue wake",
   "file": "nora/domain/cues.py",
   "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"keep\"})",
   "new": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\"})",

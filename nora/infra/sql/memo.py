@@ -1,5 +1,5 @@
 """`SqlMemoStore` — a unit's memos, each a revision chain (Register · memo,
-DEC-304, design/cognition-loop/40-register.md §2).
+DEC-306, design/cognition-loop/40-register.md §2).
 
 Append-only, the lesson store's shape (`nora.infra.sql.lessons`): `create`
 inserts a `memo` and its first revision, `append` adds the next one. The head is

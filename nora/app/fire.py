@@ -585,7 +585,7 @@ class FirePath:
         # `<documents>` (design/artifact §29): the SAME reader the tag path's assembler
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
-        # `<memos>` (DEC-304): the SAME store the tag path's assembler reads,
+        # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
         # keyed on the unit like `notes`. `None` renders no block.
         memos: MemoStore | None = None,
     ) -> None:
@@ -1339,7 +1339,7 @@ class FirePath:
             return ()
 
     async def _read_memos(self, occasion: Event, unit: str | None) -> tuple[Memo, ...]:
-        """The unit's kept memos (DEC-304), `_read_notes` mirrored: no store or
+        """The unit's kept memos (DEC-306), `_read_notes` mirrored: no store or
         no unit renders none; a failed read is counted (`stage="fire_memos"`)
         and renders none, never «nothing is kept» said with confidence."""
         if self._memos is None or unit is None:

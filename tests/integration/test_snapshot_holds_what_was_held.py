@@ -351,7 +351,7 @@ APPEND: dict[str, Callable[[int], dict[str, Any]]] = {
         "citations": [str(n + 1)], "state": "active", "written_at": MS0 + n,
         "established_by": "test",
     },
-    # 0103_memos (DEC-304): a kept memo, and one revision of it.
+    # 0103_memos (DEC-306): a kept memo, and one revision of it.
     "memo": lambda n: {
         "id": _uuid("mm", n), "unit": "friends", "platform": "signal",
         "conversation_id": "g1", "created_at": MS0 + n,

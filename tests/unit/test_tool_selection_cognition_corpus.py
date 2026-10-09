@@ -22,7 +22,7 @@ _COGNITION_CATALOGUE = frozenset({
     "remind", "remind_move", "remind_cancel", "close", "record_query", "rollup_read",
     # PR B's two reads and the siblings they are measured against.
     "standing_read", "where_been", "note_read", "note_search",
-    # DEC-304: the memo verbs, the memo read, and the retire a settled note's
+    # DEC-306: the memo verbs, the memo read, and the retire a settled note's
     # memo is followed by.
     "memo_write", "memo_revise", "memo_withdraw", "memo_read", "note_retire",
 })

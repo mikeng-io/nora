@@ -497,7 +497,7 @@ adaptor's was (**Infer**, above; `30-cognition.md` §2). "Every Dreamer write
 screened" gains one exemption: a memo body skips `dream_screen`'s key-shape
 check (**Remember**, above) and renders normally, because a memo may hold a
 password verbatim by design (`design/cognition-loop/12-schemas.md` §3). Built
-with the memo kind (DEC-304): the Cognition session's memo verbs screen a
+with the memo kind (DEC-306): the Cognition session's memo verbs screen a
 memo's title and `## Conditions` and never its `## Kept` lines, and R-18 still
 refuses a key-shaped value read from a memo in a reply (DEC-226). Each
 rule this table cites gains its own amendment row in the decision index —

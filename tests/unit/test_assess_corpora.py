@@ -54,7 +54,7 @@ def test_no_case_input_row_is_missing_a_speaker_or_text(name):
 def test_no_placeholder_speaker_reads_as_a_real_persons_name(name):
     """This branch's own constraint: never a real member name. Placeholder
     speakers are `P<n>`, the Rollup stand-in `rollup`, or `Nora` for her own
-    send (the memo corpus: a memo may cite it, DEC-304), nothing else."""
+    send (the memo corpus: a memo may cite it, DEC-306), nothing else."""
     for case in load_assess_corpus(name):
         for row in case.input:
             speaker = row["speaker"]
@@ -129,7 +129,7 @@ def test_a_negative_case_must_expect_outcome_none(tmp_path, monkeypatch):
 
 
 def test_the_memo_corpus_routes_every_settled_looking_negative_somewhere():
-    """DEC-304's routing rule (40-register §1): a speaker's own fact is
+    """DEC-306's routing rule (40-register §1): a speaker's own fact is
     `remember`'s, an open one a note's, a dated one an event's, never a memo;
     and the corpus carries revisions, withdrawals and her own send cited."""
     cases = load_assess_corpus("assess_memo")

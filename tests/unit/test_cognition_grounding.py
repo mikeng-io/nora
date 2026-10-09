@@ -1029,7 +1029,7 @@ async def test_her_send_that_quotes_a_withdrawn_message_renders_without_the_quot
     assert "FORGOTTEN-PERSONS-WORDS" not in repr(g.as_dict()) and "555" not in repr(g.as_dict())
 
 
-# ---- the memos (DEC-304): the session's unit only ----------------------------------
+# ---- the memos (DEC-306): the session's unit only ----------------------------------
 
 
 async def test_the_memos_shown_are_the_sessions_units_and_never_another_units():

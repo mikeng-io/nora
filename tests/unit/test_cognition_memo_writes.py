@@ -1,4 +1,4 @@
-"""The Cognition session's memo verbs (DEC-304, design/cognition-loop/40-register.md
+"""The Cognition session's memo verbs (DEC-306, design/cognition-loop/40-register.md
 §2): `memo_write`, `memo_revise`, `memo_withdraw`. Each holds the body to the memo
 schema with the note body's line grammar, screens everything but the `## Kept`
 lines (D5, DEC-230), commits through the memo store stamped `cognition:<unit>`, and

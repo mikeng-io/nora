@@ -1779,7 +1779,7 @@ async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withho
     wired = off.cognition_runner._read_only_tools
     assert {"note_read", "about", "where_been", "event_search"} <= wired
     assert {"rollup_read", "standing_read"} <= wired                    # PR B, DEC-246
-    assert "memo_read" in wired                                         # DEC-304
+    assert "memo_read" in wired                                         # DEC-306
     assert "social_items" not in wired  # not built yet
     # Built for a real room they are real, read-only tools, and only wired ones.
     built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])

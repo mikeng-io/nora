@@ -359,7 +359,7 @@ def test_resolve_positions_maps_each_position_to_the_row_it_showed():
             raise AssertionError(bad)
 
 
-# ---- the memo body (DEC-304, 12-schemas §3): the same line grammar ----------
+# ---- the memo body (DEC-306, 12-schemas §3): the same line grammar ----------
 
 
 def _memo_refused(text: str) -> str:

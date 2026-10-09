@@ -352,7 +352,7 @@ MEMORY (Honcho, beside the flow): fed from the Record; `remember`; read into Vie
 | Register · event | `events`, `event_revision`, `event_rsvps` | origin room, plus `unit_id` | `event_revision` (DEC-237) | per field, but **no writer sets them** (`nora/infra/sql/gatherings.py`) | **none** | **no** |
 | Standing · room | `standing`, `standing_revision` | room | `standing_revision` | yes | one message id, a stand-in | yes |
 | Character · room (culture) | `culture`, `culture_revision` | `culture.key`, the room's `primary_id` from `policy.toml` | `culture_revision` | yes | one message id, a stand-in | yes |
-| Register · memo (DEC-304, 2026-10-09) | `memo`, `memo_revision` | unit, plus the origin room | `memo_revision` (append-only) | no | the ids its body cites, in `citations` | no |
+| Register · memo (DEC-306, 2026-10-09) | `memo`, `memo_revision` | unit, plus the origin room | `memo_revision` (append-only) | no | the ids its body cites, in `citations` | no |
 | Character · person, unit, Nora; Standing · unit, person; Lessons · lesson | not built here (Lessons: DEC-293) | | | | | |
 
 Every table above keeps `row_history` (DEC-232), except the memo's two, which are
@@ -391,7 +391,7 @@ results unchanged byte for byte), measured after the fire-turn fix.
 | order | what | when |
 |---|---|---|
 | E1a | **the citation table widened**: events and every Notebook kind as citing stores, Rollup keys as cited, a `part` column (field or section) for per-field lineage; events brought into the cascade; event lineage written from its field citations | **gates step 4** |
-| E1b | **Register · memo**, written only by Cognition. **As built (DEC-304, 2026-10-09):** memo-specific tables in the lesson's shape, not a generic entry store, and no `about` or `links`; the verbs `memo_write`, `memo_revise`, `memo_withdraw`, the read `memo_read` and the `<memos>` index, in one integrated change with no shadow week (operator) | landed 2026-10-09 |
+| E1b | **Register · memo**, written only by Cognition. **As built (DEC-306, 2026-10-09):** memo-specific tables in the lesson's shape, not a generic entry store, and no `about` or `links`; the verbs `memo_write`, `memo_revise`, `memo_withdraw`, the read `memo_read` and the `<memos>` index, in one integrated change with no shadow week (operator) | landed 2026-10-09 |
 | E1c | **her tool calls and results in the Record**: every call, every status, keyed to the turn; her Instagram comment replies too | **precondition of E2** |
 | E2 | **one writer per tier**: the tag turn's `note_create`, `note_update` and event verbs and the debrief's Standing write move behind Cognition, replaced by the `handoff` stimulus (§7); `remind` and `cancel_reminder` stay on the tag turn | at the cut-over, step 4, or right after it |
 | E3 | Character · person, unit, Nora, Lessons, and Standing · unit, person are born on the entry | step 8 |

@@ -1579,7 +1579,7 @@ async def build_dependencies(
     note_store: SqlNoteStore | None = (
         SqlNoteStore(engine) if cfg.notes.enabled else None
     )
-    # The memo tier (DEC-304): what a unit settled and keeps. No flag: only a
+    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
     # Cognition session writes a memo (`[cognition] enabled`), and with none
     # kept every read renders nothing. ONE instance for the tag and fire
     # `<memos>`, `memo_read` and the session's verbs.
@@ -2919,7 +2919,7 @@ async def build_dependencies(
         standing_head=standing_store,
         # `character_read` (self-growth C4): withheld while `[culture]` is off.
         culture=culture_reader,
-        # `memo_read` (DEC-304): the memo store, unit-resolved like the note reads.
+        # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
         memos=memo_store,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),

@@ -499,7 +499,7 @@ class TagContext:
     # absent. The prompt budget is paid by the per-entry caps in
     # `nora.domain.notes` and by `note_retire`, not here.
     notes: tuple[Note, ...] = ()
-    # The unit's kept memos (DEC-304), the `<memos>` index: unit-wide like
+    # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
     # `notes`, filled by the tag and fire assemblers; `()` renders no block.
     memos: tuple[Memo, ...] = ()
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in

@@ -168,7 +168,7 @@ def build_offline_pipeline(
         # takes.
         quote_window=quote_window,
         presence=presence_reader,
-        # `<memos>` (DEC-304) — `None`: no memo store here, so no block.
+        # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
         memos=None,
         # `<culture>` (DEC-207) — `None` here for the fire path's reason
         # below: the eval subject (`nora.subject`) reconstructs a room's real

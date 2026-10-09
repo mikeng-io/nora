@@ -4664,7 +4664,7 @@ IDX_SELF_TENSION_UNIT = sa.Index(
     "idx_self_tension_unit", SELF_TENSION.c.unit, SELF_TENSION.c.written_at,
 )
 
-# `memo` / `memo_revision` (migration `0103_memos`, DEC-304): what a unit SETTLED
+# `memo` / `memo_revision` (migration `0103_memos`, DEC-306): what a unit SETTLED
 # and keeps (Register · memo, design/cognition-loop/40-register.md §2). The lesson's
 # shape: both APPEND-ONLY, a `memo` row is an identity in a unit with the room it
 # was first kept in, and every change (a revision, a withdrawal) is one more

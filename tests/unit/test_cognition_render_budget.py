@@ -245,7 +245,7 @@ def test_an_escaped_cut_keeps_as_much_of_the_words_as_fits():
     assert len(row.text or "") > 100
 
 
-# ---- the memos (DEC-304): unit-wide, titles and ids, under the Register's budget ------
+# ---- the memos (DEC-306): unit-wide, titles and ids, under the Register's budget ------
 
 
 def _memo(i: int) -> object:

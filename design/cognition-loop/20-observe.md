@@ -233,7 +233,7 @@ a name this table leaves open:
   leaves a cooldown no cue can cut.
 - **A strong cue does not chain (DEC-281).** While the unit's newest wake has
   reason `strong_cue`, only an RSVP, a place link or a keep instruction
-  (`REARMING_CUES` in `nora/domain/cues.py`; `keep` joined it with DEC-304,
+  (`REARMING_CUES` in `nora/domain/cues.py`; `keep` joined it with DEC-306,
   2026-10-09, because the tag turn now answers «記低» with «it will be kept»
   and only a session keeps it) trips `strong cue` or cuts a cooldown; a date
   or time said again waits for `settled`, `max age` or `batch`. Measured live, all-time (82 sessions): `strong_cue` wakes wrote

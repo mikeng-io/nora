@@ -961,7 +961,7 @@ def test_the_composition_root_hands_the_configured_prompt_window_to_the_assemble
 
 
 
-# ---- <memos> (DEC-304): keyed on the unit, like the notes ------------------------
+# ---- <memos> (DEC-306): keyed on the unit, like the notes ------------------------
 
 
 async def _kept(store: object, unit: str, title: str) -> object:

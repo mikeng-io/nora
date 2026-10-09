@@ -1,4 +1,4 @@
-"""`memo_read` (DEC-304): one kept memo of THIS turn's unit by the id `<memos>`
+"""`memo_read` (DEC-306): one kept memo of THIS turn's unit by the id `<memos>`
 shows, with its `## Superseded` rendered by code from the chain. Over the
 in-memory memo store; names and values are invented."""
 

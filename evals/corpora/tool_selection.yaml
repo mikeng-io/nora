@@ -1138,7 +1138,7 @@ cases:
     metadata: {tools: [web_search, weather], not_tools: [subagent_create]}
     snapshot: *room_a
 
-  # --- «記低» routing (DEC-304): about the group it is kept by her notebook ---
+  # --- «記低» routing (DEC-306): about the group it is kept by her notebook ---
   # (Cognition writes the memo after the turn, woken by the `keep` cue), about
   # the speaker it is `remember`'s. ToolRouteGrader needs a tool to expect, so
   # the group case expects the reply and forbids the two writes the turn must

@@ -118,7 +118,7 @@ class TranscriptInjection:
         memos: MemoStore | None = None,
     ) -> None:
         self._audit = audit
-        # `<memos>` (DEC-304): the unit's kept memos, unit-wide like `notes`.
+        # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
         self._memory = memory
@@ -694,7 +694,7 @@ class TranscriptInjection:
         return found
 
     async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
-        """The unit's kept memos for `<memos>` (DEC-304), keyed on the UNIT as
+        """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as
         `_notes` is and for its reason: a memo kept in the group's Signal room
         is the same group's on Discord. Fail-soft and counted
         (`stage="memos"`): a thinner prompt beats no reply, and «I could not

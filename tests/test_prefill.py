@@ -1688,7 +1688,7 @@ def test_the_units_culture_renders_after_the_rooms_and_before_the_people():
     assert "<unit_culture" not in bare[1]["content"][0]["text"]
 
 
-# ---- <memos> (DEC-304) ---------------------------------------------------------
+# ---- <memos> (DEC-306) ---------------------------------------------------------
 
 
 def _memo(title: str = "wifi password") -> object:

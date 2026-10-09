@@ -1492,7 +1492,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                               source_tier="remembered", read_only=True,
                               side_effect_state="none", idempotency="idempotent", retry="safe",
                               output_contract="three_state", level=2),
-    # `memo_read` (DEC-304, design/cognition-loop/40-register.md §2): one kept memo
+    # `memo_read` (DEC-306, design/cognition-loop/40-register.md §2): one kept memo
     # of this unit by the id `<memos>` shows, for the tag, fire and Cognition
     # turns. 3 like `note_read`: a turn may need a couple of memos and a re-read.
     # `remembered`: the unit's own notebook. `cacheable=False`: a revision or a
@@ -12602,7 +12602,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             ],
         }
 
-    # ── memos (DEC-304, design/cognition-loop/40-register.md §2) ────────────
+    # ── memos (DEC-306, design/cognition-loop/40-register.md §2) ────────────
     memos_off = {
         "status": "unavailable",
         "note": "I can't reach what this group has kept right now. Say so plainly: "

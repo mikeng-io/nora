@@ -236,7 +236,7 @@ class Grounding:
 
     records: Mapping[str, RecordItem] = field(default_factory=dict)
     notes: tuple[NoteLine, ...] = ()
-    #: The unit's kept memos (DEC-304), unit-wide like `notes`: the `memos`
+    #: The unit's kept memos (DEC-306), unit-wide like `notes`: the `memos`
     #: index, titles and ids, never what they keep.
     memos: tuple[Memo, ...] = ()
     events: tuple[EventLine, ...] = ()

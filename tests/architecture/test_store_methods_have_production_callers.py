@@ -278,7 +278,7 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `SubagentBackend.cancel` (design/subagent step 2) is a `ComputeBackend` method, not a
         # store's, and shares its name with a store's.
         "cancel",
-        # `SqlMemoStore.revisions` (DEC-304) shares the name with `SqlLessonStore`'s.
+        # `SqlMemoStore.revisions` (DEC-306) shares the name with `SqlLessonStore`'s.
         "revisions",
     }
 )

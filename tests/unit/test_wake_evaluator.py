@@ -763,7 +763,7 @@ async def test_an_rsvp_after_a_strong_cue_wake_still_wakes_as_strong_cue():
 
 
 async def test_a_keep_instruction_after_a_strong_cue_wake_still_wakes_as_strong_cue():
-    """DEC-304: «記低» is answered on the tag turn with «it will be kept», and
+    """DEC-306: «記低» is answered on the tag turn with «it will be kept», and
     only a session keeps it, so it re-arms like an RSVP rather than waiting
     behind the chain rule for `settled`."""
     ev, store, clock = await _strong_wake_then(("keep",))

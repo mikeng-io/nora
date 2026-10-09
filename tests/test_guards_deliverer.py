@@ -377,7 +377,7 @@ async def test_a_key_shaped_string_is_refused(store, doctrine):
 
 async def test_a_key_kept_verbatim_in_a_memo_is_still_refused_in_a_reply(store, doctrine):
     """DEC-226 (R-18 amended): a memo's `## Kept` line may hold a key-shaped value
-    verbatim (D5, DEC-304), and the memo validator and the store accept it; the
+    verbatim (D5, DEC-306), and the memo validator and the store accept it; the
     reply that quotes it back is still refused at egress, like any key."""
     from nora.domain.memo import parse_memo_body
     from nora.domain.note_body import Shown, ShownMessage

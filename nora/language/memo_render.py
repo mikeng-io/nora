@@ -1,5 +1,5 @@
 """Renders a unit's kept memos into the `<memos>` block: the INDEX, not the memos
-(DEC-304, design/cognition-loop/15-map.md: titles pushed, body pulled).
+(DEC-306, design/cognition-loop/15-map.md: titles pushed, body pulled).
 
 One `memo` element per kept memo: its id (what `memo_read`, `memo_revise` and
 `memo_withdraw` take), the day it last changed, and its title as the content.

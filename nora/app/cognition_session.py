@@ -624,7 +624,7 @@ class CognitionSessionRunner:
         `notes` (`SqlNoteStore`), `events` (`GatheringService`), `standing`
         (`SqlStandingStore`) and `reminders` (`ReminderStore`) are the live
         stores the tag path writes through; the session's writes land there.
-        `memos` (`SqlMemoStore`, DEC-304) is the memo tier's, which only a
+        `memos` (`SqlMemoStore`, DEC-306) is the memo tier's, which only a
         session writes; None answers every memo verb `unavailable`.
         `ai_peer` is Nora's own requester id, the owner of every reminder she
         sets herself.
@@ -1696,7 +1696,7 @@ class CognitionSessionRunner:
                 return _refused("invalid_revision", str(exc))
             return wrote(platform, conversation_id, item)
 
-        # -- memos (DEC-304, 40-register §2): settled and kept, never closed --
+        # -- memos (DEC-306, 40-register §2): settled and kept, never closed --
 
         def _memo_screen(verb: str, parts: Mapping[str, object]) -> dict[str, object] | None:
             """The Dreamer's identifier and coordinate screen (R-18/R-28,

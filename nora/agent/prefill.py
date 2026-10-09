@@ -160,7 +160,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
     ("notes", 40, "unit"),
-    # WHAT THE GROUP SETTLED AND KEEPS (DEC-304): unit-wide like `notes`, right
+    # WHAT THE GROUP SETTLED AND KEEPS (DEC-306): unit-wide like `notes`, right
     # after them, titles and ids only. Renders only where `TagContext.memos` is
     # filled.
     ("memos", 42, "unit"),

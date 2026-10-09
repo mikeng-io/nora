@@ -1,6 +1,6 @@
 """memo, memo_revision — what a unit settled and keeps (Register · memo).
 
-DEC-304, design/cognition-loop/40-register.md §2 and 12-schemas.md §3. The
+DEC-306, design/cognition-loop/40-register.md §2 and 12-schemas.md §3. The
 lesson's shape (`0100_lessons`): two APPEND-ONLY tables, a `memo` is an identity
 in one unit with the room it was first kept in, and every change (a revision, a
 withdrawal) is one more `memo_revision`, so the head is the highest `seq`.

@@ -17,7 +17,7 @@ description: >-
   passes are gone, so the daily `time` item (the notebook review) and the
   reminder's own words (`text`, what to raise, read back when it comes due) are
   described here; the judgement those passes carried is in the
-  cognition-register skill. Version 7 (2026-10-09, DEC-304): the memo, what is
+  cognition-register skill. Version 7 (2026-10-09, DEC-306): the memo, what is
   settled and kept, joins what is already written down. Version 5 stopped telling the model it was measured;
   version 4 stopped describing the input's shape, which the block types now say.
 change_policy: operator-only

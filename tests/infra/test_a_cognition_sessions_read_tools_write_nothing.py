@@ -250,7 +250,7 @@ async def _call(tool: Any, **arguments: Any) -> dict[str, Any]:
 CALLS: dict[str, list[dict[str, Any]]] = {
     "note_search": [{"query": "zzz-no-such-word"}, {"query": "Tokyo"}],
     "note_read": [{"title": "Trip"}, {"title": "Nothing Like This"}],
-    # `MEMO` is the seeded memo's id, filled in at call time (DEC-304).
+    # `MEMO` is the seeded memo's id, filled in at call time (DEC-306).
     "memo_read": [{"memo_id": "MEMO"}, {"memo_id": "00000000-0000-4000-8000-000000000000"}],
     "record_query": [{"start": "2026-09-01", "end": "2026-10-30"},
                      {"start": "2026-09-01", "end": "2026-10-30", "text": "dinner",

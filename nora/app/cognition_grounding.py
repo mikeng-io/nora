@@ -474,7 +474,7 @@ def build_grounder(
                 may_duplicate=twins.get(n.id),
             ))
         notes = tuple(notes_out)
-        # The unit's kept memos (DEC-304): unit-wide, no lineage (the unit is the
+        # The unit's kept memos (DEC-306): unit-wide, no lineage (the unit is the
         # read boundary, DEC-231). A failed read raises like the note index's.
         memos = tuple(await memo_index(unit)) if memo_index is not None else ()
         events: list[EventLine] = []

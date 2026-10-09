@@ -1,4 +1,4 @@
-"""Shared contract for the memo store (DEC-304). Every implementation runs every test.
+"""Shared contract for the memo store (DEC-306). Every implementation runs every test.
 
 Two implementations: `nora.infra.sql.memo.SqlMemoStore` over real Postgres in a
 testcontainer, and `nora.testing.memo_store.InMemoryMemoStore`. The property it
