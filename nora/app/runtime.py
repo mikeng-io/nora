@@ -48,7 +48,7 @@ from ..domain.media_join import MediaJoin
 from ..domain.models import TranscriptRow
 from ..domain.ports import DreamAdaptor
 from ..obs.metrics import Metrics
-from ..obs.tracing import TRACE_KIND, span, traced_read
+from ..obs.tracing import TRACE_KIND, annotate, attached, span, traced_read
 
 log = logging.getLogger("nora.app.runtime")
 
@@ -850,8 +850,8 @@ async def _dream_adaptor_once(
     # this. `traced_read` (`nora.obs.tracing`) is the ONE wrapper — no store
     # class under `nora/infra/**` gained a span of its own — named
     # `store.<store>.<method>` per call, nested under whatever `span` is
-    # current (`dream.pass` -> the per-adaptor `dream:<name>` span, or a root
-    # of its own for a standalone caller with no pass around it).
+    # current (`dream_loop`'s per-unit `dream:<name>` root, or a root of its
+    # own for a standalone caller with no loop around it).
     watermark = await traced_read(
         "language", "watermark_for", language.watermark_for(
             consolidator_name=adaptor.name, scope_id=key),
@@ -1188,6 +1188,38 @@ async def dream_loop(
         failures[unit] = failures.get(unit, 0) + 1
         last_failure_at[unit] = time.monotonic()
 
+    async def _run_unit(
+        adaptor: DreamAdaptor, key: str, runner: _AdaptorRunner, pass_id: str,
+    ) -> None:
+        """One unit, ONE Langfuse trace, named for its adaptor.
+
+        Issue #55 put every unit of a tick under one `dream.pass` root. Read
+        back 2026-10-09: that root carried no adaptor, key, outcome, input or
+        output, so Langfuse's trace list showed five identical `dream.pass`
+        rows whose contents were up to 356 interleaved observations of two
+        adaptors at once — culture was findable only by opening each one.
+        `dream:cognition` (`nora.app.cognition_agent_runner`) was readable
+        because it is its own root. So each unit is its own root again, and
+        #55's grouping moves to `nora.dreamer.pass_id`, which
+        `TraceIdentityProcessor` stamps as the Langfuse session: one tick is
+        one session, one unit is one trace in it.
+
+        `attached(None)`, not an inherited context: `create_task` copies
+        whatever span is current, and a unit must never nest under it. The
+        cursor reads in `_dream_adaptor_once` land inside this root, which
+        `DreamerRuntime.run`'s own span could not hold. A unit that fires no
+        model call is a trace with no generation, and the collector's tail
+        sampler keeps it out of Langfuse (`docs/observability.md`).
+        """
+        with attached(None), span(
+            f"dream:{adaptor.name}",
+            **{TRACE_KIND: "generation",
+               "nora.dreamer.adaptor": adaptor.name,
+               "nora.dreamer.key": key,
+               "nora.dreamer.pass_id": pass_id},
+        ):
+            await _run_adaptor(adaptor, key, runner)
+
     async def _run_adaptor(
         adaptor: DreamAdaptor, key: str, runner: _AdaptorRunner
     ) -> None:
@@ -1228,6 +1260,9 @@ async def dream_loop(
                     # non-`unavailable` outcome, so this is 0 in steady state.
                     failure_count=failures.get(unit, 0),
                 )
+            # On the unit's root (`_run_unit`), so the trace list says what
+            # the unit did; `None` is a unit whose conditions held it back.
+            annotate(**{"nora.outcome": status or "skipped"})
             if status == "unavailable":
                 # **A FAILURE, even though nothing raised.**
                 # `DreamerRuntime.run` catches everything the model call can
@@ -1285,6 +1320,7 @@ async def dream_loop(
                 # that is not ours is an ORDINARY failure, not a wedge.
                 metrics.inc(
                     "nora_dream_unit_timeout_total", adaptor=adaptor.name)
+                annotate(**{"nora.outcome": "timeout"})
                 log.error(
                     "dream unit timed out after %.0fs (adaptor=%s key=%s) — "
                     "[dreamer] max_unit_hold_seconds fired and the whole "
@@ -1316,6 +1352,8 @@ async def dream_loop(
                 # silently dropped (issue #191 review).
                 log.exception("dream cycle failed for %s", unit)
                 metrics.inc("nora_errors_total", stage="dream")
+                # Swallowed here, so `span` never sees it: say it on the root.
+                annotate(**{"nora.outcome": "error"})
                 _count_failure(unit)
         finally:
             running.discard(unit)
@@ -1326,52 +1364,36 @@ async def dream_loop(
             _log_instruction_versions(instructions)
             if runtime is None:
                 continue
-            # ONE ROOT PER PASS, CHILDREN PER ADAPTOR (issue #55, the loop
-            # Layer 7 exists to fix). Before this, `DreamerRuntime.run`'s own
-            # `dream:{adaptor.name}` span (`nora/agent/dreamer.py`) was the
-            # only thing this loop ever traced, and it declares its own root
-            # (R-76) for the standalone callers that reach it with no pass
-            # around them at all (`nora.app.eval_support`, a manual one-shot
-            # trigger) — so every (adaptor, key) pair in one tick rendered as
-            # its OWN separate trace, and a tick over N adaptors x M scopes
-            # was N*M unrelated traces with nothing in the collector saying
-            # they were the same pass. `asyncio.create_task` copies contextvars
-            # (`nora.obs.tracing.capture_context`'s own docstring measured
-            # this, 2026-08-28), so every task spawned inside this `with`
-            # inherits it as its parent — no explicit capture/attach needed,
-            # unlike the tag queue, because nothing here crosses a `finally`
-            # boundary onto a LATER tick's context. `ParentBased` then gives
-            # each child this root's sampling decision, so the per-adaptor
-            # span's own `nora.trace_kind` becomes inert once nested (harmless
-            # — see that module's `generation` docstring) rather than
-            # re-deciding anything.
-            with span(
-                "dream.pass",
-                **{TRACE_KIND: "generation", "nora.dreamer.adaptor_count": len(adaptors)},
-            ):
-                for adaptor in adaptors:
-                    for key in _keys_for(adaptor):
-                        # `unit`, not `key`: the lock, the failure count and the
-                        # backoff are all per (adaptor, key) — see the SIXTH note.
-                        unit = f"{adaptor.name}:{key}"
-                        if unit in running:
-                            # A DISTINCT reason value rather than a new label:
-                            # `nora_dream_skipped_total` carries `("reason",)` and
-                            # nothing else, and adding a label to a live series
-                            # breaks whatever is summing it.
-                            metrics.inc(
-                                "nora_dream_skipped_total",
-                                reason="in_flight_adaptor")
-                            continue
-                        if failures.get(unit) and not _backoff_elapsed(
-                            unit, failures[unit], last_failure_at,
-                        ):
-                            continue
-                        running.add(unit)
-                        task = asyncio.create_task(
-                            _run_adaptor(adaptor, key, runtime))
-                        tasks.add(task)
-                        task.add_done_callback(tasks.discard)
+            # ONE ROOT PER UNIT, ONE SESSION PER PASS. Issue #55 grouped a
+            # tick's N adaptors x M keys under one `dream.pass` root; that root
+            # named nothing, so the trace list could not say which adaptor ran
+            # (read back 2026-10-09, `_run_unit`). The pass survives as the
+            # Langfuse session each unit's root carries. Wall-clock seconds:
+            # one tick per id at any `tick_seconds` >= 1, and readable.
+            pass_id = "dream.pass:" + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            for adaptor in adaptors:
+                for key in _keys_for(adaptor):
+                    # `unit`, not `key`: the lock, the failure count and the
+                    # backoff are all per (adaptor, key) — see the SIXTH note.
+                    unit = f"{adaptor.name}:{key}"
+                    if unit in running:
+                        # A DISTINCT reason value rather than a new label:
+                        # `nora_dream_skipped_total` carries `("reason",)` and
+                        # nothing else, and adding a label to a live series
+                        # breaks whatever is summing it.
+                        metrics.inc(
+                            "nora_dream_skipped_total",
+                            reason="in_flight_adaptor")
+                        continue
+                    if failures.get(unit) and not _backoff_elapsed(
+                        unit, failures[unit], last_failure_at,
+                    ):
+                        continue
+                    running.add(unit)
+                    task = asyncio.create_task(
+                        _run_unit(adaptor, key, runtime, pass_id))
+                    tasks.add(task)
+                    task.add_done_callback(tasks.discard)
     finally:
         # `BackgroundTasks.cancel_all`'s own shape, not just its `.cancel()`
         # half: that method's docstring records the exact gap a cancel-only

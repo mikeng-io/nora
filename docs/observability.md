@@ -140,6 +140,11 @@ call) against 4-16 generations.
   OTel's own definition of a conversation is the thread, not a day.
   An id Langfuse would drop (over 200 characters, or non-ASCII) is left
   unstamped, never truncated.
+  A Dreamer unit has no room. `dream_loop` opens each (adaptor, key) unit as
+  its own `dream:<adaptor>` root carrying adaptor, key and `nora.outcome`, and
+  its `nora.dreamer.pass_id` is the session, so one tick's units group as one
+  session. Before 2026-10-09 a tick was one `dream.pass` trace that named no
+  adaptor.
 * **User is not stamped.** A Langfuse trace has one `user.id` and a group
   room has many senders, and it would name a person on a trace whose
   attributes are provenance only (`trace_attributes`). Whether a person's id

@@ -91,7 +91,9 @@ _SESSION_ID_MAX = 200
 #: never start with it: Strands opens a span and sets `trace_attributes` after,
 #: past `on_start`, so they take their session from the parent instead (read
 #: from the installed `strands/telemetry/tracer.py`, review of #680).
-_CONVERSATION_KEYS = ("nora.conversation_id",)
+#: A Dreamer unit has no room; its session is the tick that dispatched it
+#: (`nora.app.runtime.dream_loop`), so one pass's units read as one session.
+_CONVERSATION_KEYS = ("nora.conversation_id", "nora.dreamer.pass_id")
 
 #: First match wins. Langfuse's recognised `langfuse.observation.type` values;
 #: a span not in the table is left to Langfuse, which types the model calls,
