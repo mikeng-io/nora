@@ -2584,19 +2584,37 @@ async def build_dependencies(
     # OWN blob_store (rustfs) and sent as platform attachments.
     if cfg.image_gen.enabled:
         image_refs_allowed = cfg.image_gen.allow_reference_images
-        xai_cfg = cfg.image_gen.xai
-        refresh_token = os.environ.get(xai_cfg.refresh_token_env, "")
-        if refresh_token:
-            from nora.infra.image_gen import build_image_generator
-            state_file = Path("/app/state/xai-oauth.json")
-            image_generator = build_image_generator(
+        from nora.infra.image_gen import build_image_generator
+        if cfg.image_gen.provider == "openai_codex":
+            # DEC-304: the env var holds only the BOOTSTRAP token; the
+            # rotating one lives in the state file beside xAI's.
+            codex_cfg = cfg.image_gen.openai_codex
+            token_env = codex_cfg.refresh_token_env
+            refresh_token = os.environ.get(token_env, "")
+            build = functools.partial(
+                build_image_generator,
+                provider="openai_codex",
+                state_file=Path("/app/state/openai-codex-oauth.json"),
+                model=codex_cfg.model,
+                responses_model=codex_cfg.responses_model,
+                standard_quality=codex_cfg.standard_quality,
+                high_quality=codex_cfg.high_quality,
+                timeout_seconds=codex_cfg.timeout_seconds,
+            )
+        else:
+            xai_cfg = cfg.image_gen.xai
+            token_env = xai_cfg.refresh_token_env
+            refresh_token = os.environ.get(token_env, "")
+            build = functools.partial(
+                build_image_generator,
                 provider=cfg.image_gen.provider,
-                refresh_token=refresh_token,
-                state_file=state_file,
+                state_file=Path("/app/state/xai-oauth.json"),
                 model=xai_cfg.model,
                 quality_model=xai_cfg.quality_model,
                 timeout_seconds=xai_cfg.timeout_seconds,
             )
+        if refresh_token:
+            image_generator = build(refresh_token=refresh_token)
             if image_generator is None:
                 # M6: unknown provider (or unconstructable lane) degrades
                 # the tool, never crashes the daemon.
@@ -2608,7 +2626,7 @@ async def build_dependencies(
         else:
             log.warning(
                 "image_gen enabled but %s is unset — generate_image stays unavailable",
-                xai_cfg.refresh_token_env,
+                token_env,
             )
     # Sender-generated link previews ([preview]). Keyless, so `enabled` is the
     # whole gate. Off is the shipped default and is not a
