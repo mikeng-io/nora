@@ -2879,6 +2879,32 @@ class XaiImageGenConfig(BaseModel):
     refresh_token_env: str = "XAI_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
 
 
+_GptImageQuality = Literal["low", "medium", "high", "auto"]
+
+
+class OpenAICodexImageGenConfig(BaseModel):
+    """`[image_gen.openai_codex]` — gpt-image through the ChatGPT (Codex)
+    subscription lane (DEC-304, design/proposed/29 §11).
+
+    `model` is the image model the `image_generation` tool runs;
+    `responses_model` is the text model that hosts that tool on the Codex
+    backend. `standard_quality` / `high_quality` map the port's
+    `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
+    holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
+    (DEC-8); the rotating token after it lives in the state file.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = Field(default="gpt-image-2", min_length=1)
+    responses_model: str = Field(default="gpt-5.5", min_length=1)
+    standard_quality: _GptImageQuality = "medium"
+    high_quality: _GptImageQuality = "high"
+    timeout_seconds: float = Field(default=180.0, gt=0)
+    # Names an env var, not a secret.
+    refresh_token_env: str = Field(default="OPENAI_CODEX_REFRESH_TOKEN", min_length=1)
+
+
 class ImageGenConfig(BaseModel):
     """The image-generation tool's gate (design/proposed/29, DEC-137).
 
@@ -2889,8 +2915,10 @@ class ImageGenConfig(BaseModel):
     crashing the daemon (the DEC-136 RustFS posture).
 
     `provider` is the port selector — the composition root builds the
-    `ImageGenerator` implementation the name selects; the model-facing tool
-    never names a provider.
+    `ImageGenerator` implementation the name selects (`xai`, DEC-137, or
+    `openai_codex`, DEC-304); the model-facing tool never names a provider.
+    It stays a plain string: an unknown name degrades the tool to
+    `unavailable` with a logged warning (M6), it does not stop the daemon.
 
     `allow_reference_images` is the privacy gate for the edits API: reference
     images (a friend's photo) upload to a third-party cloud, so the default
@@ -2908,6 +2936,7 @@ class ImageGenConfig(BaseModel):
     allow_reference_images: bool = False
 
     xai: XaiImageGenConfig = XaiImageGenConfig()
+    openai_codex: OpenAICodexImageGenConfig = OpenAICodexImageGenConfig()
 
 
 class MiniMaxCnVideoGenConfig(BaseModel):

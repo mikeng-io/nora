@@ -73,7 +73,7 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # roughly two more lines.
 #
 # RE-SET 2026-10-09, 2,500 -> 2,600, for ONE NEW TOOL, from the MEASURED block:
-# `video_create` (25 tokens, design/video-generation, DEC-304) on master's 2,485
+# `video_create` (25 tokens, design/video-generation, DEC-305) on master's 2,485
 # over 77 Discord lines: total 2,510 over 78. The line was cut from 35 to 25
 # before this re-set; no existing line changed. It ships withheld
 # (`[video_gen] enabled = false`), so a live turn pays nothing for it until the

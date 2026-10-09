@@ -15,7 +15,7 @@ edges:
 **Status:** Built 2026-10-09, shipped `enabled = false` (§9). Sections 1 to 8 are the proposal as
 written on 2026-10-02; where the build settled one of its open points, §9 says how.
 **Date:** 2026-10-02 (proposal), 2026-10-09 (built)
-**DEC:** DEC-304 (numbered from `origin/master` at merge time, `nora-decision`)
+**DEC:** DEC-305 (numbered from `origin/master` at merge time, `nora-decision`)
 **Operator decision (2026-10-02):** one model, one resolution, one duration. MiniMax-H3, 480P, 15 s, with reference images supported. Hailuo, 768P and 2K are out of scope.
 
 ## 1. What this is

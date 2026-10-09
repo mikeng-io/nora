@@ -2,8 +2,8 @@
 `nora persons pending`, `nora presence members`, `nora reminders list`) and
 the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). This module's own commands only READ the record
-store; three write elsewhere, each named where it is registered: `xai-login`
-(the host `.env`), and `memory backfill`, `memory carry-conclusions` and
+store; four write elsewhere, each named where it is registered: `xai-login`
+and `openai-codex-login` (the host `.env`), and `memory backfill`, `memory carry-conclusions` and
 `memory detach-unit`, each only with `--apply` (Honcho, DEC-214).
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
@@ -424,6 +424,25 @@ def add_subcommands(
     )
     xai_login.set_defaults(func=cmd_xai_login)
 
+    # `openai-codex-login` (DEC-304): the same shape for the OpenAI Codex
+    # lane — a device login against auth.openai.com (or, with
+    # `--from-codex-auth`, a DEDICATED `codex login`'s auth.json), and the
+    # refresh token appended to the host `.env` as the lane's BOOTSTRAP.
+    codex_login = subparsers.add_parser(
+        "openai-codex-login", parents=[parent],
+        help="OpenAI device login — get OPENAI_CODEX_REFRESH_TOKEN for image generation",
+    )
+    codex_login.add_argument(
+        "--env-file", default=".env",
+        help="host .env file to append the refresh token to (default .env)",
+    )
+    codex_login.add_argument(
+        "--from-codex-auth", default="",
+        help="import from a dedicated `CODEX_HOME=<dir> codex login`'s auth.json "
+             "instead of running the device flow (never ~/.codex/auth.json)",
+    )
+    codex_login.set_defaults(func=cmd_openai_codex_login)
+
 
 def run(args: argparse.Namespace) -> int:
     """Execute the selected subcommand. Returns a process exit code."""
@@ -525,6 +544,42 @@ async def cmd_xai_login(args: argparse.Namespace) -> int:
     print(f"ok — refresh token written to {env_path}")
     print("recreate the container (`docker compose up -d --force-recreate nora`) "
           "for it to pick up the new env; access tokens refresh automatically.")
+    return 0
+
+
+async def cmd_openai_codex_login(args: argparse.Namespace) -> int:
+    """Log Nora's OWN ChatGPT account in and write the bootstrap refresh
+    token to `.env` (DEC-304). Like `xai-login` it touches no database.
+
+    The token is a BOOTSTRAP: OpenAI rotates refresh tokens on use, so the
+    first refresh spends it and the lane keeps the rotated one in
+    `./state/openai-codex-oauth.json`. A new login here replaces that chain
+    on the next start (the state file is fingerprinted to the `.env` token).
+    """
+    from nora.infra.image_gen.openai_codex_oauth import (
+        CodexLoginError,
+        device_flow_login,
+        refresh_token_from_codex_auth,
+    )
+    try:
+        if args.from_codex_auth:
+            refresh_token = refresh_token_from_codex_auth(Path(args.from_codex_auth))
+        else:
+            refresh_token = (await device_flow_login()).refresh_token
+    except CodexLoginError as exc:
+        raise CliError(str(exc)) from exc
+
+    env_path = Path(args.env_file)
+    await asyncio.to_thread(
+        _rewrite_env, env_path, "OPENAI_CODEX_REFRESH_TOKEN=", refresh_token,
+    )
+    print(f"ok — bootstrap refresh token written to {env_path}")
+    if args.from_codex_auth:
+        print(f"delete {args.from_codex_auth} and its CODEX_HOME now: a codex CLI "
+              "that refreshes from it logs Nora out.")
+    print("recreate the container (`docker compose up -d --force-recreate nora`); "
+          "the first refresh spends this token and keeps the rotated one in "
+          "./state/openai-codex-oauth.json.")
     return 0
 
 
