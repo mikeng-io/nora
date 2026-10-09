@@ -1039,13 +1039,13 @@ async def test_a_watermark_free_adaptor_without_a_schedule_still_runs_every_tick
     language = _KeyedLanguage()
     runner = _RecordingRunner()
 
-    await _tick(dream_loop(
+    await _tick_until(dream_loop(
         _FakeRecord({}), language, Metrics(),
         scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
         quiet_seconds=0.0, max_age_seconds=1e9, batch_limit=10,
         adaptors=[_StubAdaptor("curator", uses_watermark=False)],
         runtime=runner,
-    ), ticks=0.08)
+    ), lambda: len([c for c in runner.calls if c[0] == "curator"]) > 1)
 
     assert len([c for c in runner.calls if c[0] == "curator"]) > 1
 
@@ -1508,12 +1508,12 @@ async def test_a_failing_adaptor_does_not_back_off_its_sibling():
     language = _KeyedLanguage(age=1e9)
     runner = _RecordingRunner(raises_for="facts")
 
-    await _tick(dream_loop(
+    await _tick_until(dream_loop(
         _FakeRecord({}), language, Metrics(),
         scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
         quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
         adaptors=[_StubAdaptor("facts"), _StubAdaptor("lexemes")], runtime=runner,
-    ), ticks=0.08)
+    ), lambda: len([c for c in runner.calls if c[0] == "lexemes"]) > 1)
 
     healthy = [c for c in runner.calls if c[0] == "lexemes"]
     failing = [c for c in runner.calls if c[0] == "facts"]
@@ -1538,12 +1538,12 @@ async def test_an_adaptor_still_in_flight_is_skipped_not_re_entered():
 
     runner = _SlowRunner()
 
-    await _tick(dream_loop(
+    await _tick_until(dream_loop(
         _FakeRecord({}), language, metrics,
         scopes=lambda: ["g1"], tick_seconds=0.01, safety_lag=0,
         quiet_seconds=0.0, max_age_seconds=0.0, batch_limit=10,
         adaptors=[_StubAdaptor("facts")], runtime=runner,
-    ), ticks=0.08)
+    ), lambda: metrics.get("nora_dream_skipped_total", reason="in_flight_adaptor") > 0)
 
     assert runner.calls == 1
     # `in_flight_adaptor`, not `in_flight`: one adaptor wedged and one scope
