@@ -94,7 +94,7 @@ from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
 from nora.language.event_render import render_event_rows
-from nora.language.memo_render import render_memo_rows
+from nora.language.memo_render import memo_rows
 from nora.language.note_render import render_note_rows
 
 #: What this prompt carries, declared as data
@@ -118,9 +118,11 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("reads", 20, "turn"),
     ("agenda", 30, "turn"),
     ("note_index", 40, "turn"),
-    # What the unit settled and keeps (DEC-306), after the open questions.
-    ("memos", 45, "turn"),
     ("events", 50, "turn"),
+    # What the unit settled and keeps (DEC-306), LAST of the Register and on
+    # its own budget, so no number of memos can push an agenda room's events
+    # out (review of #781).
+    ("memos", 55, "turn"),
 )
 
 #: `name -> (order, key)`, derived so no call site restates a row `_BLOCKS`
@@ -151,6 +153,11 @@ class RenderBudget:
     #: The Register's rows together, counted as rendered (the blocks' own
     #: description and attributes are not spent from it).
     register_chars: int = 3600
+    #: The memos' OWN rows and characters (DEC-306), never drawn from
+    #: `register_chars`: a memo is a title, and the open questions and the
+    #: room's events are what an agenda acts on. Newest first; the rest counted.
+    memo_lines: int = 20
+    memo_chars: int = 1200
 
 
 def room_key(room: Room) -> str:
@@ -584,17 +591,6 @@ def _register(
             attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
             when_empty="self_close",
         ), _ROW))
-    if grounding.memos:
-        kept = [m for m in grounding.memos if m.is_kept]
-        rows = listed([
-            render_memo_rows([m], tz=tz) for m in kept[: budget.register_lines]
-        ])
-        left_out = len(kept) - len(rows)
-        blocks.append(restamp(ContextBlock(
-            name="memos", body="\n".join(rows),
-            attrs=_attrs([("not_listed", str(left_out) if left_out else None)]),
-            when_empty="self_close",
-        ), _ROW))
     groups: list[str] = []
     for room in rooms:
         events = [e for e in grounding.events if e.room == room]
@@ -612,6 +608,15 @@ def _register(
         ))
     if groups:
         blocks.append(restamp(ContextBlock(name="events", body="\n".join(groups)), _ROW))
+    memo_lines, memos_left = memo_rows(
+        grounding.memos, tz=tz, lines=budget.memo_lines, chars=budget.memo_chars,
+    )
+    if memo_lines or memos_left:
+        blocks.append(restamp(ContextBlock(
+            name="memos", body="\n".join(memo_lines),
+            attrs=_attrs([("not_listed", str(memos_left) if memos_left else None)]),
+            when_empty="self_close",
+        ), _ROW))
     return blocks
 
 

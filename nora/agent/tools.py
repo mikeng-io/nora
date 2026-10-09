@@ -12648,7 +12648,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             "body": memo.head.body, "superseded": _superseded(chain),
             "revision_id": memo.head.id,
         }
-        if scan_identifiers(memo.head.body) is not None:
+        superseded = result["superseded"]
+        if any(scan_identifiers(t) is not None for t in (memo.head.body, *superseded)):
             result["note"] = (
                 "This memo holds a value a reply cannot carry (a phone number, an "
                 "id or a key-shaped string): a reply containing it is not sent. "

@@ -36,6 +36,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -59,10 +60,12 @@ __all__ = [
     "MemoRevision",
     "MemoState",
     "MemoStore",
+    "MemoWithdrawnError",
     "StaleMemoError",
     "citations_of",
     "parse_memo_body",
     "screened_parts",
+    "title_carries_value",
 ]
 
 #: The headings, in their only order (12-schemas §3).
@@ -83,6 +86,11 @@ MEMO_BODY_MAX_CHARS = 2000
 MemoMode = Literal["told", "deduced", "abduced"]
 MemoState = Literal["kept", "withdrawn"]
 MEMO_MODES: frozenset[str] = frozenset({"told", "deduced", "abduced"})
+
+
+class MemoWithdrawnError(Exception):
+    """The head is withdrawn: a withdrawal is final, so the store refuses any
+    revision on top of it, a second withdrawal included."""
 
 
 class StaleMemoError(Exception):
@@ -160,7 +168,7 @@ class MemoStore(Protocol):
     ) -> MemoRevision:
         """The next revision, compare-and-set on the head: `LookupError` when
         `unit` has no such memo, `StaleMemoError` when its head is not
-        `base_revision_id`."""
+        `base_revision_id`, `MemoWithdrawnError` when its head is withdrawn."""
         ...
 
 
@@ -204,6 +212,30 @@ def screened_parts(title: str, body: NoteBody) -> dict[str, object]:
         "title": title,
         "conditions": [ln.text for ln in conditions.lines] if conditions else [],
     }
+
+
+_TOKEN = re.compile(r"[A-Za-z0-9]+")
+_CITATION = re.compile(r"\s*\[[^\[\]]*\]$")
+
+
+def title_carries_value(title: str, body: NoteBody) -> str | None:
+    """The token of `title` that is also a VALUE a `## Kept` line holds, or
+    None. A title renders in `<memos>` on every turn of every room, so it names
+    the thing («wifi password») and never carries what is kept («wifi:
+    hunter2pass»). A value is told from a word by shape: an alphanumeric run
+    of 4 or more characters holding a digit (a password, a code, a booking
+    reference, a number), compared case-folded against the Kept lines with
+    their citation brackets removed. Ordinary words shared by both («wifi»,
+    «deposit») are never refused; a value of letters only is not caught, and
+    the docstring and the skill say the rule instead (DEC-306 review)."""
+    kept = body.section("Kept")
+    if kept is None:
+        return None
+    values = {
+        t.casefold() for ln in kept.lines for t in _TOKEN.findall(_CITATION.sub("", ln.text))
+        if len(t) >= 4 and any(c.isdigit() for c in t)
+    }
+    return next((t for t in _TOKEN.findall(title) if t.casefold() in values), None)
 
 
 def citations_of(body: NoteBody) -> tuple[str, ...]:

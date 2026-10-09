@@ -18,7 +18,7 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.memo import MemoStore, StaleMemoError
+from nora.domain.memo import MemoStore, MemoWithdrawnError, StaleMemoError
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.migrations_runner import run_migrations
@@ -143,3 +143,22 @@ async def test_a_revision_citing_nothing_is_refused(store):
             unit="u", platform="signal", conversation_id="room-a", title="t", body=BODY,
             citations=(), mode="told", established_by="cognition:u", model=None, now_ms=NOW,
         )
+
+
+async def test_a_withdrawn_head_is_final_and_nothing_appends_onto_it(store):
+    """Review of #781: withdrawn is final, so neither a revision nor a second
+    withdrawal lands on it, even against the current head."""
+    memo = await _create(store)
+    gone = await store.append(
+        unit="u", memo_id=memo.id, base_revision_id=memo.head.id, title="wifi", body=BODY,
+        citations=("102",), mode="told", state="withdrawn", established_by="cognition:u",
+        model=None, now_ms=NOW + 1,
+    )
+    for state in ("kept", "withdrawn"):
+        with pytest.raises(MemoWithdrawnError):
+            await store.append(
+                unit="u", memo_id=memo.id, base_revision_id=gone.id, title="wifi",
+                body=BODY, citations=("103",), mode="told", state=state,
+                established_by="cognition:u", model=None, now_ms=NOW + 2,
+            )
+    assert len(await store.revisions(unit="u", memo_id=memo.id)) == 2

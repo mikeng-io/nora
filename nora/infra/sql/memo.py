@@ -21,7 +21,7 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.memo import Memo, MemoRevision, StaleMemoError
+from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
 from nora.infra.sql.schema import MEMO, MEMO_REVISION
 
 __all__ = ["SqlMemoStore"]
@@ -144,6 +144,9 @@ class SqlMemoStore:
                     raise StaleMemoError(
                         f"memo {memo_id} is at revision {head.id}, not {base_revision_id}",
                     )
+                if head.state != "kept":
+                    # Withdrawn is final: nothing appends onto it (review of #781).
+                    raise MemoWithdrawnError(f"memo {memo_id} is withdrawn")
                 row = (await conn.execute(
                     sa.insert(MEMO_REVISION).values(
                         memo_id=memo_id, seq=head.seq + 1, title=title, body=body,

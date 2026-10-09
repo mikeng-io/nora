@@ -699,10 +699,20 @@ class TranscriptInjection:
         is the same group's on Discord. Fail-soft and counted
         (`stage="memos"`): a thinner prompt beats no reply, and «I could not
         read them» must not look like «nothing is kept»."""
-        if self._memos_store is None or self._policy is None:
+        if self._memos_store is None:
             return ()
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
+        convo = (
+            self._policy.conversation(msg.platform, msg.conversation_id)
+            if self._policy is not None else None
+        )
         if convo is None or not convo.unit:
+            # A store wired with no unit to scope it by is a WIRING GAP, not an
+            # empty list: counted, as `_notes` counts it (review of #781).
+            log.warning(
+                "no policy conversation for %s/%s; the memo index cannot be scoped "
+                "to a unit; continuing without it", msg.platform, msg.conversation_id,
+            )
+            self._metrics.inc("nora_errors_total", stage="memos", platform=msg.platform)
             return ()
         try:
             return tuple(await traced_read(

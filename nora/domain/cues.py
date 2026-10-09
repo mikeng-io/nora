@@ -124,8 +124,14 @@ _AMOUNT = re.compile(
 
 _KEEP = re.compile(
     "|".join((
-        r"記低|記錄低|记低|記住呢|記住佢",
+        r"記低|記錄低|记低",
+        # 記住 as an ask (記住呢個, 記住: …, Nora記住), never «記住啦你» banter,
+        # «唔記住» or «記住咗» (DEC-306 review).
+        r"(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)",
         r"\bkeep\s+(?:that|this)\b",
+        # «remember this», or «remember that» closing a clause; never «remember
+        # that time we …», which is reminiscing.
+        r"\bremember\s+this\b|\bremember\s+that\s*(?:[.!:,;]|$)",
         r"\b(?:write|note|jot)\s+(?:that|this|it)\s+down\b",
         r"\b(?:write|note|jot)\s+down\s+(?:that|this)\b",
     )),

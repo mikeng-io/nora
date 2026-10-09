@@ -262,7 +262,8 @@ PINNED: dict[str, tuple[int, str]] = {
     # when the work will keep the room waiting (DEC-294's `heads_up`).
     # v36 (2026-10-09, DEC-306): a «記低» about the group is kept by her
     # notebook and she says it WILL be kept; the kinds of record gain the memo.
-    "conduct": (36, "5367340aa263355f58252ed99d2f4fecf4dd67ecb04be4509416904025295c39"),
+    # v37 (2026-10-09, review of #781): the keep promise names no time.
+    "conduct": (37, "f33b0d8d01bafc76dddd54fe9e7ce7c8b8bd5efa2b80c28157f0065840f8f6f2"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from nora.domain.memo import Memo, MemoRevision, StaleMemoError
+from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
 
 #: Mirrors `nora.infra.sql.schema.MEMO_TITLE_CEILING_CHARS` /
 #: `MEMO_BODY_CEILING_CHARS`; the contract suite pins them equal.
@@ -111,6 +111,8 @@ class InMemoryMemoStore:
         head = row.chain[-1]
         if head.id != base_revision_id:
             raise StaleMemoError(f"memo {memo_id} is at revision {head.id}")
+        if head.state != "kept":
+            raise MemoWithdrawnError(f"memo {memo_id} is withdrawn")
         _check(title=title, body=body, citations=citations, mode=mode, state=state,
                established_by=established_by)
         revision = MemoRevision(

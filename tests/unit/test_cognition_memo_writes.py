@@ -195,3 +195,19 @@ async def test_without_a_memo_store_every_memo_verb_is_unavailable():
         "memo_write", runner_kwargs={"memos": None}, title="wifi", body=KEPT,
     )
     assert answer["status"] == "unavailable"
+
+
+async def test_a_title_carrying_the_kept_value_is_refused_and_a_title_naming_the_thing_is_not():
+    """Review of #781: `<memos>` shows titles on every turn, so a title names
+    the thing and never the value a Kept line keeps."""
+    body = "## Kept\n- the wifi password is hunter2pass [101]\n- the door code is 4721# [102]\n"
+    for title in ("wifi: hunter2pass", "door code 4721#"):
+        _, answer = await _one("memo_write", title=title, body=body)
+        assert answer["status"] == "refused" and answer["reason"] == "title_carries_value"
+    for title in ("Wifi password", "Door code"):
+        _, answer = await _one("memo_write", title=title, body=body)
+        assert answer["status"] == "ok", (title, answer)
+    _, deposit = await _one(
+        "memo_write", title="Deposit", body="## Kept\n- the deposit is $500, split four [101]\n",
+    )
+    assert deposit["status"] == "ok"

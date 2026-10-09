@@ -1,7 +1,7 @@
 ---
 name: cognition-register
 kind: skill
-version: 3
+version: 4
 applies_to: [cognition_session]
 description: >-
   The note, event and reminder judgement the Cognition session writes with,
@@ -19,7 +19,8 @@ description: >-
   shown as one example, held to the real validator
   (tests/unit/test_cognition_agenda_skills.py). No numbers, no caps. Version 2
   (2026-10-03, the cut-over) adds retiring, merging and reminders; version 3
-  (2026-10-09, DEC-306) the memo: what is settled and kept.
+  (2026-10-09, DEC-306) the memo: what is settled and kept; version 4 (the
+  review): an explicit keep request is written, and a title never holds the value.
 change_policy: operator-only
 ---
 
@@ -46,8 +47,9 @@ being decided.
 
 A memo keeps what the group has settled and will need again: a password, a cost's split, a
 booking reference. It never closes: revise it when the room changes it, withdraw it only when
-someone says it no longer holds. Most settled things need no memo; a fact about the speaker
-alone is memory's. A Kept line is what was said, as said.
+someone says it no longer holds. Most settled things need no memo, but an explicit ask to keep
+one is written, not weighed, unless it is about the speaker alone (memory's) or still open. A
+Kept line is what was said, as said; a title names the thing, never its value.
 
 A note's `anchor_date` is the day the thing happens, never the day it was said: work it out
 from the clock line, which gives today's date and weekday, and the message's `at`, which
@@ -116,8 +118,7 @@ Every event write says how you reached it, and you pick the plainest mode that i
 - **abduced**: your best explanation of what nobody said: someone asks the way to a place
   nobody named as the venue; whereabouts that are not fresh.
 
-How sure you are is a separate answer from how you know it. An abduced value goes to the room
-as a question, and a «yes» to your own guess leaves it abduced.
+An abduced value goes to the room as a question, and a «yes» to your own guess leaves it abduced.
 
 A note line carries no mode: it is only what was said. What you worked out goes on an event as
 deduced or abduced, never into a note as if someone had said it.
@@ -139,11 +140,11 @@ the duplicate's open lines with the ids they already cite. Sharing people, a day
 
 A reminder is worth setting for a note or event whose moment is near, with a corner nobody
 has closed, where a word at the right hour helps the people who have to act: where to meet,
-two hours before dinner; a booking someone owes, the evening before its deadline. The hour
-is the judgement: a thing three weeks out has no right moment today.
+two hours before dinner; a booking someone owes, the evening before its deadline. A thing three weeks
+out has no right moment today.
 
-Not worth it: anything settled; anything you raised that nobody answered, or that somebody
-did answer; anything that would only restate the note. Before you set one, read the note and
+Not worth it: anything settled, anything you already raised, or anything that would only
+restate the note. Before you set one, read the note and
 ask memory about the people it names (`about`), so the moment you choose fits how they
 usually settle things. One reminder per thing, few a day, on most looks none: a friend who
 speaks every day is muted.

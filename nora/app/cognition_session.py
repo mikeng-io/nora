@@ -108,10 +108,12 @@ from nora.domain.memo import (
     MEMO_BODY_MAX_CHARS,
     MEMO_TITLE_MAX_CHARS,
     Memo,
+    MemoWithdrawnError,
     StaleMemoError,
     citations_of,
     parse_memo_body,
     screened_parts,
+    title_carries_value,
 )
 from nora.domain.note_body import (
     NORA_NAMES,
@@ -1743,6 +1745,13 @@ class CognitionSessionRunner:
                 )
             except NoteBodyError as exc:
                 return _refused(exc.rule, str(exc))
+            value = title_carries_value(title, parsed)
+            if value is not None:
+                return _refused(
+                    "title_carries_value",
+                    f"the title holds {value!r}, which a `## Kept` line keeps; a title "
+                    "names the thing (wifi password, door code), never its value",
+                )
             screened = _memo_screen(verb, screened_parts(title, parsed))
             if screened is not None:
                 return screened
@@ -1765,18 +1774,21 @@ class CognitionSessionRunner:
             world (a password, a deposit split, a booking reference), or asks you
             to keep one. Most settled things need no memo.
 
-            A memo never closes; it is revised or withdrawn. A fact about the
-            speaker alone is not a memo, and neither is anything still open (a
-            note) or dated and attended (an event). A `## Kept` line holds what
-            was said exactly as said; a title or condition carrying a phone,
-            an email or a key-like string is refused.
+            A person's explicit ask to keep something about the group is
+            written, not weighed. A fact about the speaker alone is not a memo,
+            nor is anything still open (a note) or dated and attended (an
+            event). A memo never closes; it is revised or withdrawn. A `##
+            Kept` line holds what was said exactly as said; the title names
+            the thing, never its value, and a title or condition carrying a
+            value, a phone, an email or a key-like string is refused.
 
             Returns `status`: ok (with the `memo_id`), refused or unavailable,
             with a `reason` and `detail` when it is not ok. A memo already kept
             under that title is refused `duplicate`, naming it: revise that one.
 
             Args:
-                title: A short handle, at most 80 characters, that names it.
+                title: A short handle, at most 80 characters, that names the
+                    thing (wifi password, door code), never its value.
                 body: `## Kept`, then optionally `## Conditions` (when it holds,
                     its exceptions). Each line is one "- " item ending in the
                     ids of the messages it rests on, as [<id>, <id>]: a message
@@ -1884,6 +1896,8 @@ class CognitionSessionRunner:
                         "stale_base", f"the memo's head is now {head.head.id}; read it "
                         "again with memo_read and redo your change against what it says",
                     )
+                except MemoWithdrawnError:
+                    return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
             return wrote(platform, conversation_id, item, revision_id=revision.id)
 
         async def memo_withdraw(
@@ -1934,6 +1948,8 @@ class CognitionSessionRunner:
                 return _refused(
                     "stale_base", "the memo changed since you read it; read it again first",
                 )
+            except MemoWithdrawnError:
+                return _refused("withdrawn", "that memo was withdrawn; nothing moves it now")
             return wrote(platform, conversation_id, item)
 
         def _evidence(

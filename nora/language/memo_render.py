@@ -7,6 +7,11 @@ Never a `## Kept` line: what a memo keeps is read on demand, so a value kept
 verbatim (a password, D5) is never pushed into every turn of every room. Unit-
 wide like `<notes>`: a memo kept in one room renders in every room of its unit
 (operator, 2026-10-09). No block at all when nothing is kept.
+
+**Capped, newest first** (review of #781): at most `lines` rows and `chars`
+characters as rendered, the most recently changed first, and the block says
+how many it left out (`not_listed`) rather than cutting a row. One function for
+the tag, fire and Cognition prompts, so the three cannot cap differently.
 """
 
 from __future__ import annotations
@@ -16,6 +21,12 @@ from datetime import datetime, tzinfo
 
 from ..domain.blocks import ContextBlock, render_elements
 from ..domain.memo import Memo
+
+#: The tag and fire prompts' cap: the same numbers the Cognition prompt's
+#: `RenderBudget` starts from (`memo_lines`, `memo_chars`). A starting guess, like
+#: every cap here; nothing measures a live memo index yet.
+MEMO_LINES = 20
+MEMO_CHARS = 1200
 
 
 def _day(ms: int, tz: tzinfo) -> str:
@@ -32,10 +43,36 @@ def render_memo_rows(memos: Sequence[Memo], *, tz: tzinfo) -> str:
     )
 
 
+def memo_rows(
+    memos: Sequence[Memo], *, tz: tzinfo, lines: int = MEMO_LINES, chars: int = MEMO_CHARS,
+) -> tuple[list[str], int]:
+    """`(rows, left out)`: the kept memos newest first, within `lines` rows
+    and `chars` characters as rendered, and how many did not fit."""
+    kept = sorted(
+        (m for m in memos if m.is_kept), key=lambda m: m.head.written_at, reverse=True,
+    )
+    rows: list[str] = []
+    spent = 0
+    for memo in kept[:lines]:
+        row = render_memo_rows([memo], tz=tz)
+        if spent + len(row) + 1 > chars:
+            break
+        rows.append(row)
+        spent += len(row) + 1
+    return rows, len(kept) - len(rows)
+
+
 def render_memos(memos: Sequence[Memo], *, tz: tzinfo) -> ContextBlock | None:
-    """The tag and fire turns' `<memos>` block, or `None` when nothing is kept."""
-    rows = render_memo_rows(memos, tz=tz)
-    return ContextBlock(name="memos", body=rows) if rows else None
+    """The tag and fire turns' `<memos>` block at the default cap, or `None`
+    when nothing is kept."""
+    rows, left_out = memo_rows(memos, tz=tz)
+    if not rows and not left_out:
+        return None
+    return ContextBlock(
+        name="memos", body="\n".join(rows),
+        attrs=(("not_listed", str(left_out)),) if left_out else (),
+        when_empty="self_close",
+    )
 
 
-__all__ = ["render_memo_rows", "render_memos"]
+__all__ = ["MEMO_CHARS", "MEMO_LINES", "memo_rows", "render_memo_rows", "render_memos"]

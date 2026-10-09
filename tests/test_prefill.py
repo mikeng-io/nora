@@ -1719,3 +1719,24 @@ def test_the_memos_block_lists_titles_and_ids_after_the_notes_and_never_the_kept
 def test_the_memos_block_is_absent_when_nothing_is_kept():
     prefill = build_prefill(_ctx(_rows("hi")), display_name="Nora", context_window=40)
     assert "<memos" not in "\n".join(m["content"][0]["text"] for m in prefill)
+
+
+def test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest():
+    """Review of #781: the tag and fire `<memos>` were uncapped."""
+    from dataclasses import replace
+
+    from nora.language.memo_render import MEMO_LINES
+
+    base = _memo()
+    memos = tuple(
+        replace(base, id=f"m-{i}", head=replace(base.head, memo_id=f"m-{i}", title=f"memo {i}",
+                                                 written_at=1_790_000_000_000 + i))
+        for i in range(MEMO_LINES + 5)
+    )
+    prefill = build_prefill(_ctx(_rows("hi"), memos=memos), display_name="Nora",
+                            context_window=40)
+    body = prefill[1]["content"][0]["text"]
+    block = body[body.index("<memos"):body.index("</memos>")]
+    assert block.count("<memo ") == MEMO_LINES
+    assert f'id="m-{MEMO_LINES + 4}"' in block and 'id="m-0"' not in block
+    assert 'not_listed="5"' in block

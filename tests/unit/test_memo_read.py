@@ -100,3 +100,17 @@ async def test_a_value_a_reply_cannot_carry_comes_with_a_note_saying_so():
     memo = await _seed(memos, body="## Kept\n- the router key is sk-abcdefghijklmnopqrstuvwx [101]")
     got = await _tools(memos)["memo_read"](memo_id=memo.id)
     assert got["status"] == "ok" and "not sent" in got["note"]
+
+
+async def test_a_value_only_an_earlier_revision_held_still_comes_with_the_note():
+    """Review of #781: `superseded` carries earlier Kept lines into the
+    result, so the egress note reads them as well as the head."""
+    memos = InMemoryMemoStore()
+    memo = await _seed(memos, body="## Kept\n- the router key is sk-abcdefghijklmnopqrstuvwx [101]")
+    await memos.append(
+        unit="u", memo_id=memo.id, base_revision_id=memo.head.id, title="wifi",
+        body="## Kept\n- the router key is on the fridge [102]", citations=("102",),
+        mode="told", state="kept", established_by="cognition:u", model=None, now_ms=NOW + 1,
+    )
+    got = await _tools(memos)["memo_read"](memo_id=memo.id)
+    assert "sk-abcdef" in got["superseded"][0] and "not sent" in got["note"]

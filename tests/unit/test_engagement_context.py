@@ -1000,3 +1000,19 @@ async def test_a_failing_memos_read_is_counted_and_renders_none():
     ctx = await assembler.assemble(request=_request())
     assert ctx.memos == ()
     assert metrics.get("nora_errors_total", stage="memos", platform="signal") == 1
+
+
+async def test_a_room_the_policy_does_not_know_reads_no_memos_and_is_counted():
+    """Review of #781: a wired memo store with no unit to scope it by is a
+    wiring gap, counted as `_notes` counts it, never a silent empty list."""
+    from nora.testing.memo_store import InMemoryMemoStore
+
+    metrics = Metrics()
+    assembler = TranscriptInjection(
+        audit=FakeRecordStore(), memory=FakeMemory(), persons=_MILES,
+        context_window=10, metrics=metrics, memos=InMemoryMemoStore(),
+        policy=_policy(conversation_id="some-other-room"),
+    )
+    ctx = await assembler.assemble(request=_request())
+    assert ctx.memos == ()
+    assert metrics.get("nora_errors_total", stage="memos", platform="signal") == 1
