@@ -770,7 +770,9 @@ def _live_inputs() -> tuple[tuple[str, str], ...]:
     #: pins this the same way it pins `_FakeSearchProvider`/`_GifSource`/
     #: `_FakeSocialProvider`: NO_SHARED_FAKE, not a scaffolding exemption).
     class _ImageGenerator:
-        max_reference_images = 3
+        @property
+        def max_reference_images(self) -> int:
+            return 3
 
         async def generate(self, *, prompt, reference_images=None, size=None,
                             quality=None, reference_resolver=None) -> ImageResult:
