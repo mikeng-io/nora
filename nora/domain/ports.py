@@ -2865,7 +2865,15 @@ class ImageGenerator(Protocol):
     Reference images are custody handles only (`ImageReference.marker_code`
     resolved inside the caller's own conversation) — the adapter refuses an
     external URL (design/proposed/29-image-generation §5.1).
+
+    `max_reference_images` is how many references this provider takes in one
+    call: its vendor's limit, or a lower operator override from its config
+    section. The tool states it and refuses a call above it; the provider is
+    the only thing that knows it (DEC-307, design/proposed/29 §12).
     """
+
+    @property
+    def max_reference_images(self) -> int: ...
 
     async def generate(
         self,

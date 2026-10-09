@@ -6,8 +6,8 @@ Nora's OWN ChatGPT login, the way the `codex` CLI does, never on a shared
 
 **Why the refresh token lives in the state file, not only in `.env`.**
 OpenAI's refresh grant ROTATES the refresh token on every use, and a used one
-is dead. xAI's lane (`xai_oauth.py`) can treat `.env` as the long-lived
-source; this one cannot. So:
+is dead, and xAI's does the same (DEC-308), so both lanes keep the chain
+through `oauth_lane.RotatingOAuthLane`:
 
 - `.env` (host, immutable, DEC-8) holds ONLY the bootstrap refresh token the
   login wrote (`OPENAI_CODEX_REFRESH_TOKEN`, named in config). It is spent by
@@ -23,6 +23,8 @@ source; this one cannot. So:
   state file), and a process re-reads the file under the lock before it
   refreshes: two processes holding one rotating token is how one logs the
   other out.
+- The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`),
+  through the same locks as a call, so a use never meets an expired login.
 
 Endpoints and the client id are the `codex` CLI's own (read from the 0.161.0
 binary 2026-10-09: `/api/accounts/deviceauth/usercode`, `/deviceauth/token`,
@@ -41,9 +43,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import contextlib
-import fcntl
-import hashlib
 import hmac
 import json
 import logging
@@ -55,6 +54,15 @@ from pathlib import Path
 from typing import Literal
 
 import aiohttp
+
+from .oauth_lane import (
+    DEAD_TOKEN_CODES,
+    Exchange,
+    LaneEvent,
+    LaneState,
+    Refusal,
+    RotatingOAuthLane,
+)
 
 log = logging.getLogger("nora.image_gen.openai_codex_oauth")
 
@@ -85,17 +93,6 @@ class CodexAuth:
     reason: str = ""
 
 
-@dataclass(frozen=True)
-class _State:
-    access_token: str
-    refresh_token: str
-    bootstrap_sha256: str
-
-
-def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 def jwt_claims(token: str) -> dict[str, object]:
     """The payload of a JWT, unverified: the issuer verifies it, this only
     reads its own token's expiry and account id. `{}` for anything else."""
@@ -124,15 +121,12 @@ def account_id_of(access_token: str) -> str:
     return ""
 
 
-def _release(fd: int) -> None:
-    with contextlib.suppress(OSError):
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    with contextlib.suppress(OSError):
-        os.close(fd)
+class OpenAICodexOAuth(RotatingOAuthLane):
+    """Refresh lane for Nora's own ChatGPT login (see the module docstring;
+    the chain, the locks and the state file are `oauth_lane`'s)."""
 
-
-class OpenAICodexOAuth:
-    """Refresh lane for Nora's own ChatGPT login (see the module docstring)."""
+    lane = "openai_codex"
+    skew_seconds = ACCESS_TOKEN_REFRESH_SKEW_SECONDS
 
     def __init__(
         self,
@@ -143,94 +137,26 @@ class OpenAICodexOAuth:
         issuer: str = OPENAI_AUTH_ISSUER,
         timeout_seconds: float = 30.0,
         clock: Callable[[], float] | None = None,
+        observer: Callable[[LaneEvent], None] | None = None,
     ) -> None:
-        if not bootstrap_refresh_token:
-            raise ValueError("a bootstrap refresh token is required")
-        self._bootstrap = bootstrap_refresh_token
-        self._bootstrap_sha = _sha256(bootstrap_refresh_token)
-        self._state_file = Path(state_file)
-        self._lock_file = self._state_file.with_suffix(self._state_file.suffix + ".lock")
+        super().__init__(
+            bootstrap_refresh_token=bootstrap_refresh_token,
+            state_file=state_file,
+            timeout_seconds=timeout_seconds,
+            clock=clock,
+            observer=observer,
+        )
         self._client_id = client_id
         self._token_url = f"{issuer.rstrip('/')}/oauth/token"
-        self._timeout = timeout_seconds
-        self._clock = clock or time.time
-        self._lock = asyncio.Lock()
-        self._cached: _State | None = None
-        # True while `_cached` holds a rotation the state file does not: the
-        # write failed. The cached token is then the only live one, so it is
-        # what the next refresh spends, and every call retries the write.
-        self._unsaved = False
-        # Shielded refreshes still running after their caller was cancelled
-        # (a strong reference, or the loop may collect them mid-flight).
-        self._inflight: set[asyncio.Future[CodexAuth]] = set()
 
-    # -- state file ---------------------------------------------------------
+    def _expiry_of(self, access_token: str) -> float:
+        return _expires_at(access_token)
 
-    def _load(self) -> _State | None:
-        """The state file, if it belongs to the CURRENT `.env` login."""
-        try:
-            data = json.loads(self._state_file.read_text(encoding="utf-8"))
-            state = _State(
-                access_token=str(data.get("access_token") or ""),
-                refresh_token=str(data["refresh_token"]),
-                bootstrap_sha256=str(data["bootstrap_sha256"]),
-            )
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-        if not state.refresh_token or state.bootstrap_sha256 != self._bootstrap_sha:
-            return None
-        return state
+    def _issued_of(self, access_token: str) -> float:
+        iat = jwt_claims(access_token).get("iat")
+        return float(iat) if isinstance(iat, (int, float)) else 0.0
 
-    def _save(self, state: _State) -> bool:
-        """Atomic, durable, never world-readable: the tmp file is created
-        0600 (not chmod-ed after the token is in it) and fsync-ed before the
-        rename."""
-        payload = json.dumps(
-            {
-                "access_token": state.access_token,
-                "refresh_token": state.refresh_token,
-                "bootstrap_sha256": state.bootstrap_sha256,
-            },
-            sort_keys=True,
-        ).encode("utf-8")
-        tmp = self._state_file.with_suffix(self._state_file.suffix + ".tmp")
-        try:
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            try:
-                os.fchmod(fd, 0o600)  # an older tmp keeps its mode through O_CREAT
-                os.write(fd, payload)
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            os.replace(tmp, self._state_file)
-        except OSError:
-            self._unsaved = True
-            log.error(
-                "openai_codex_oauth: could not write the rotated refresh token to %s; "
-                "it is held only in memory, every call retries the write, and a "
-                "restart before one succeeds needs a new login",
-                self._state_file,
-            )
-            return False
-        self._unsaved = False
-        return True
-
-    def _writable(self) -> bool:
-        try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return False
-        return os.access(self._state_file.parent, os.W_OK)
-
-    def _fresh(self, state: _State | None) -> bool:
-        return (
-            state is not None
-            and bool(state.access_token)
-            and _expires_at(state.access_token)
-            > self._clock() + ACCESS_TOKEN_REFRESH_SKEW_SECONDS
-        )
-
-    def _ok(self, state: _State) -> CodexAuth:
+    def _ok(self, state: LaneState) -> CodexAuth:
         account = account_id_of(state.access_token)
         if not account:
             return CodexAuth("unavailable", reason="auth")
@@ -241,87 +167,13 @@ class OpenAICodexOAuth:
     async def access_token(self, *, rejected: str = "") -> CodexAuth:
         """A usable access token, refreshing when it is near expiry or when
         the caller reports `rejected` (the token a 401 just refused).
+        Single-flight in and across processes (`RotatingOAuthLane._acquire`)."""
+        outcome = await self._acquire(rejected=rejected)
+        if isinstance(outcome, str):
+            return CodexAuth("unavailable", reason=outcome)
+        return self._ok(outcome)
 
-        Single-flight in the process (asyncio lock) and across processes on
-        the host (flock), re-reading the state file under both: if another
-        process already refreshed, its token is adopted and no second
-        refresh spends the (now dead) refresh token.
-        """
-        cached = self._cached
-        if (
-            not self._unsaved
-            and cached is not None
-            and cached.access_token != rejected
-            and self._fresh(cached)
-        ):
-            return self._ok(cached)
-        # Shielded: a caller cancelled mid-refresh (a turn timing out) must
-        # not abandon a refresh the issuer has already rotated, or the new
-        # token is lost and the old one is dead.
-        task = asyncio.ensure_future(self._locked_access(rejected))
-        self._inflight.add(task)
-        task.add_done_callback(self._inflight.discard)
-        return await asyncio.shield(task)
-
-    async def _locked_access(self, rejected: str) -> CodexAuth:
-        async with self._lock:
-            cached = self._cached
-            if cached is not None and cached.access_token != rejected and self._fresh(cached):
-                if self._unsaved:
-                    # Retry the write that failed. No flock needed: while our
-                    # rotation is unsaved no other process can hold a newer
-                    # chain (it would need the token only we have).
-                    self._save(cached)
-                return self._ok(cached)
-            if not self._writable():
-                log.error(
-                    "openai_codex_oauth: %s is not writable; refusing to refresh "
-                    "(the rotated token would be lost)",
-                    self._state_file.parent,
-                )
-                return CodexAuth("unavailable", reason="state_unwritable")
-            try:
-                fd = os.open(self._lock_file, os.O_CREAT | os.O_RDWR, 0o600)
-            except OSError:
-                return CodexAuth("unavailable", reason="state_unwritable")
-            waiter_owns_fd = False
-            try:
-                waiter = asyncio.ensure_future(
-                    asyncio.to_thread(fcntl.flock, fd, fcntl.LOCK_EX)
-                )
-                try:
-                    await asyncio.shield(waiter)
-                except asyncio.CancelledError:
-                    # The thread may still be blocked in flock on this fd:
-                    # closing it now would hand a reused descriptor to that
-                    # thread. Release it when the thread returns instead.
-                    waiter_owns_fd = True
-                    waiter.add_done_callback(lambda _done: _release(fd))
-                    raise
-                except OSError:
-                    log.error("openai_codex_oauth: could not lock %s", self._lock_file)
-                    return CodexAuth("unavailable", reason="state_unwritable")
-                if self._unsaved and cached is not None:
-                    # Our rotation never reached the file, so the file's
-                    # chain is older (dead): spend ours; the refresh's own
-                    # save retries the write.
-                    return await self._refresh(cached.refresh_token)
-                state = self._load()
-                if state is not None and state.access_token != rejected and self._fresh(state):
-                    self._cached = state
-                    return self._ok(state)
-                if state is not None:
-                    spend = state.refresh_token
-                elif cached is not None:
-                    spend = cached.refresh_token  # the file vanished; ours is current
-                else:
-                    spend = self._bootstrap
-                return await self._refresh(spend)
-            finally:
-                if not waiter_owns_fd:
-                    _release(fd)
-
-    async def _refresh(self, refresh_token: str) -> CodexAuth:
+    async def _exchange(self, refresh_token: str) -> Exchange | Refusal:
         try:
             timeout = aiohttp.ClientTimeout(total=self._timeout)
             async with (
@@ -340,31 +192,33 @@ class OpenAICodexOAuth:
                     body = await resp.json(content_type=None)
                 except ValueError:
                     body = None
-        except (aiohttp.ClientError, TimeoutError):
-            return CodexAuth("unavailable", reason="down")
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            return Refusal("down", f"{type(exc).__name__} reaching the token endpoint")
         if status == 200 and isinstance(body, dict):
             access = body.get("access_token")
             if not isinstance(access, str) or not access:
-                return CodexAuth("unavailable", reason="auth")
+                return Refusal("auth", "HTTP 200 without an access token")
             rotated = body.get("refresh_token")
-            state = _State(
+            return Exchange(
                 access_token=access,
                 refresh_token=rotated if isinstance(rotated, str) and rotated else refresh_token,
-                bootstrap_sha256=self._bootstrap_sha,
+                expires_at=_expires_at(access),
             )
-            self._cached = state
-            self._save(state)  # a failure sets `_unsaved`; the next call retries
-            return self._ok(state)
-        if status in (400, 401, 403):
-            code = ""
-            if isinstance(body, dict):
-                err = body.get("error")
-                code = str(err.get("code") if isinstance(err, dict) else err or "")
-            log.warning("openai_codex_oauth: refresh refused (HTTP %s %s)", status, code)
-            return CodexAuth("unavailable", reason="auth")
+        code = ""
+        if isinstance(body, dict):
+            err = body.get("error")
+            code = str(err.get("code") if isinstance(err, dict) else err or "")
+        detail = f"HTTP {status} {code}".strip()
+        # A 403 is terminal only when the issuer says the token is dead; any
+        # other 403 (an edge challenge) heals on retry, and calling it `auth`
+        # would page the operator to log in again for nothing.
+        if status in (400, 401) or (status == 403 and code in DEAD_TOKEN_CODES):
+            return Refusal("auth", detail, code)
+        if status == 403:
+            return Refusal("down", detail, code)
         if status == 429:
-            return CodexAuth("unavailable", reason="rate_limited")
-        return CodexAuth("unavailable", reason="down")
+            return Refusal("rate_limited", detail, code)
+        return Refusal("down", detail, code)
 
 
 # -- operator login ---------------------------------------------------------

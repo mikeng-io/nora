@@ -26,18 +26,20 @@ def build_image_generator(
     provider: str,
     refresh_token: str = "",
     state_file: Path | None = None,
-    oauth: XaiOAuth | None = None,
+    oauth: XaiOAuth | OpenAICodexOAuth | None = None,
     model: str = "grok-imagine-image",
     quality_model: str = "grok-imagine-image-quality",
     timeout_seconds: float = 90.0,
     responses_model: str = "gpt-5.5",
     standard_quality: str = "medium",
     high_quality: str = "high",
+    max_reference_images: int | None = None,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
-    Pass an existing `oauth` (process-lifetime lane with refresh lock) OR a
-    fresh `refresh_token` + `state_file` (for the CLI / one-shot paths).
+    Pass an existing `oauth` (the process-lifetime lane the keepalive also
+    holds, DEC-308: one refresh lock) OR a fresh `refresh_token` +
+    `state_file` (for the CLI / one-shot paths).
     Returns None when the lane cannot be constructed (empty token, or an
     unknown provider — the honest wiring-gap state the tool answers
     `unavailable` for, never a crash and never a guessed provider). M6: an
@@ -47,20 +49,24 @@ def build_image_generator(
     if provider == "openai_codex":
         # `refresh_token` is the BOOTSTRAP token from `.env`; the live,
         # rotating one is kept in `state_file` (openai_codex_oauth).
-        if not refresh_token or state_file is None:
-            return None
-        return OpenAICodexImageGenerator(
-            oauth=OpenAICodexOAuth(
+        codex = oauth if isinstance(oauth, OpenAICodexOAuth) else None
+        if codex is None:
+            if not refresh_token or state_file is None:
+                return None
+            codex = OpenAICodexOAuth(
                 bootstrap_refresh_token=refresh_token, state_file=state_file,
-            ),
+            )
+        return OpenAICodexImageGenerator(
+            oauth=codex,
             model=model,
             responses_model=responses_model,
             standard_quality=standard_quality,
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     if provider == "xai":
-        lane = oauth
+        lane = oauth if isinstance(oauth, XaiOAuth) else None
         if lane is None:
             if not refresh_token or state_file is None:
                 return None
@@ -74,6 +80,7 @@ def build_image_generator(
             model=model,
             quality_model=quality_model,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     # M6 (Kimi audit): an unknown provider must DEGRADE, not crash the
     # production daemon at boot — the same fail-soft posture every sibling

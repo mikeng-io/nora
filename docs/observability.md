@@ -503,6 +503,9 @@ Sentry rather than instead of it — see "what counts as an error" below.
 | `ComputerDown` | `nora_computer_up == 0` for 5m | the 2026-10-01 audit of Nora's computer found no series at all that said computerd was down, hung, stopped by a lapsed Docker login, or answering 401 after a token rotation |
 | `ComputerCallsFailing` | 5+ computer calls answered `unavailable` in 15m | computerd answering and failing (a full disk, an OS error) keeps `nora_computer_up` at 1 |
 | `ComputerAuditFailing` | any computer audit write failing, by stage | `nora_computer_audit_failures_total` was never seen live: its series did not exist until the first failure |
+| `OAuthRefreshStale` | an image OAuth lane has not refreshed for twice its `refresh_interval_hours` (DEC-308), on the timestamp the boot republishes | 2026-10-09: the xAI login was refused on the first call after twelve idle days, and nothing had logged it |
+| `OAuthAccessTokenExpired` | a lane's access token is past its expiry for 30m | xAI's token lives ~6h, so waiting for the 48h staleness window would leave a lane stuck on a transient failure broken for most of two days |
+| `OAuthRefreshRefused` | a lane's refresh token was refused, or its state dir is unwritable | neither heals by retrying: it needs a new login, so it fires at once instead of waiting for the staleness window |
 | `PrometheusNotIngesting` | it stops scraping itself | a monitoring stack's own failure mode is to go quiet and leave everything green |
 
 **What this pipeline cannot say, stated rather than discovered.** There is **no
