@@ -300,7 +300,7 @@ def test_no_tool_asks_the_model_which_conversation_it_is_in(wiring):
     # handle the model can READ — not an id it has to produce.
     assert set(
         wiring["tools"]["send_reply"].tool_spec["inputSchema"]["json"]["properties"]
-    ) == {"text", "reply_to"}
+    ) == {"text", "reply_to", "more", "heads_up"}
 
 
 _DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
@@ -379,7 +379,8 @@ def test_strands_drops_an_out_of_schema_argument_instead_of_rejecting_the_call(w
         # that the two CONVERSATION keys were dropped, not that the result has
         # exactly one key.
         ("send_reply", {"conversation_id": "gEVIL", "conversation_type": "group",
-                        "text": "hi"}, {"text": "hi", "reply_to": None}),
+                        "text": "hi"}, {"text": "hi", "reply_to": None, "more": False,
+                                       "heads_up": False}),
         ("load_transcript", {"conversation_id": "gEVIL", "limit": 5},
          {"limit": 5, "before": None}),
     ):
@@ -1852,3 +1853,11 @@ async def test_send_to_with_no_relay_wired_carries_a_note(wiring):
     out = await _call(_tools_over(wiring, wiring["deliverer"])["send_to"],
                       platform="signal", text="we're starting")
     _assert_noted("send_to/unwired", out, "unavailable")
+
+
+def test_send_reply_accepts_a_null_more_instead_of_failing_the_send(wiring):
+    """A model that writes `"more": null` must still get its reply sent, and a
+    "true" string is the same True the guard reads (DEC-294)."""
+    validate = wiring["tools"]["send_reply"]._metadata.validate_input
+    assert validate({"text": "hi", "more": None})["more"] is None
+    assert validate({"text": "hi", "more": "true"})["more"] is True

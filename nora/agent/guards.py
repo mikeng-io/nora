@@ -11,6 +11,7 @@ from collections.abc import Callable, Collection, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
+from pydantic import TypeAdapter
 from strands.hooks import (
     AfterModelCallEvent,
     AfterToolCallEvent,
@@ -38,6 +39,18 @@ from .outbound import Outbound, OutboundComposer
 from .tools import NATIVE_TOOLS, note_handle, utc_now
 
 log = logging.getLogger("nora.guards")
+
+#: `send_reply`'s `more`, validated as Strands validates the tool's own input.
+_MORE: TypeAdapter[bool | None] = TypeAdapter(bool | None)
+
+
+def _flag(tool_input: Mapping[str, Any], key: str) -> bool:
+    """A `send_reply` flag read the way the tool reads it (pydantic's lax
+    bool); unreadable is False."""
+    try:
+        return bool(_MORE.validate_python(tool_input.get(key)))
+    except ValueError:
+        return False
 
 
 class DeliveredObserver(Protocol):
@@ -883,6 +896,9 @@ class ReplyGuard(HookProvider):
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
         self._turn_is_over = False
+        # A heads-up that still owes its answer: the last LANDED `send_reply`
+        # carried `heads_up=true`. Read by `reply_still_owed`.
+        self._heads_up_owed = False
         # Did THIS guard cancel a model call? Public because
         # `nora.engagement.pipeline` and `nora.app.fire` read it to refuse
         # DEC-93's recovery — the text such a turn ends with is this class's
@@ -1285,6 +1301,68 @@ class ReplyGuard(HookProvider):
             self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
         )
 
+    @property
+    def reply_still_owed(self) -> bool:
+        """Her last landed `send_reply` was a heads-up (`heads_up=true`): the
+        answer she announced has not reached the room.
+
+        `nora.engagement.pipeline` reads it to let DEC-93's recovery, the
+        salvage and the cut-off fallback run although something WAS
+        delivered. Without it a heads-up, which is delivered, silently
+        disabled all three, and an answer she then wrote as prose was dropped
+        while the turn read as `replied` (review of #754, 2026-10-09).
+
+        Her own flag, not an inference. «A `more=true` send, then work» was
+        tried first and could not tell a heads-up from an answer followed by a
+        note, after which closing prose would have reached the room (second
+        review, same day)."""
+        return self._heads_up_owed
+
+    @staticmethod
+    def _landed(result: Any) -> bool:
+        try:
+            text = result["content"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            return False
+        return isinstance(text, str) and text.strip() in ("sent", "held_for_review")
+
+    @staticmethod
+    def _reply_closes_turn(name: str, tool_input: Any, result: Any) -> bool:
+        """True when a `send_reply` that LANDED said it was the last (DEC-42, amended).
+
+        After her first message the relaxed loop made one more FULL model call
+        so she could send a second, and measured live (77 engagement traces,
+        2026-09-30..10-07) that call almost always ended with nothing: only 4 of 45
+        replying turns did anything with it (2 a second message, the rest a
+        note, a publish or a fetch), and each call re-sent ~24k input tokens.
+        So the turn now ends after a `send_reply`
+        unless she passed `more=true` (any work after the reply, not only a
+        second message; 16 of 382 turns over 40 days used it so), which keeps the
+        relaxed path.
+
+        Fail-open on purpose: only the tool's own `sent` or `held_for_review`
+        word ends the turn. A `refused` send (R-6, R-18, an audit or send
+        failure) is not the last word, she may retry with different text, so
+        it keeps today's path. A result this cannot read is also today's path.
+        Only `send_reply` has the argument; `send_gif` is not covered here.
+        """
+        if name != "send_reply":
+            return False
+        # Read `more` the way the TOOL does: Strands validates the input with
+        # pydantic's lax bool, so "true", "True", 1 and "yes" are all True to
+        # the tool. An `is True` here read them as False and ended a turn the
+        # tool saw as continuing. An unreadable value means the call itself
+        # failed validation, so it never carries a `sent` word below.
+        if not isinstance(tool_input, dict):
+            return False
+        for key in ("more", "heads_up"):
+            try:
+                if _MORE.validate_python(tool_input.get(key)):
+                    return False
+            except ValueError:
+                return False
+        return ReplyGuard._landed(result)
+
     def _before_model(self, event: BeforeModelCallEvent) -> None:
         """Relax `tool_choice` once she has spoken; end the turn at the cap.
 
@@ -1530,6 +1608,9 @@ class ReplyGuard(HookProvider):
                 ).get("title") or ""
                 if title:
                     self._notes_read.add(note_handle(title))
+            if name in self._terminal and self._landed(getattr(event, "result", None)):
+                self._heads_up_owed = name == "send_reply" and _flag(
+                    tool_use.get("input") or {}, "heads_up")
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget
@@ -1539,6 +1620,12 @@ class ReplyGuard(HookProvider):
                 # is precisely why collapsing them would look correct today and
                 # cap her at one message forever.
                 self._spoke = True
-                self._turn_is_over = self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                self._turn_is_over = (
+                    self.counts.get(name, 0) >= self._budgets.get(name, 0)
+                    or self._reply_closes_turn(
+                        name, (tool_use.get("input") or {}),
+                        getattr(event, "result", None),
+                    )
+                )
         except Exception:
             log.exception("ReplyGuard._after_tool raised; ignoring")

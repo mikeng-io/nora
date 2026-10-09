@@ -13119,7 +13119,10 @@ Args:
                           "id": reaction.candidate.id, "type": "gif",
                           "picked_by": "reaction", "mode": reaction.mode}}
 
-    async def send_reply(text: str, reply_to: int | None = None) -> str:
+    async def send_reply(
+        text: str, reply_to: int | None = None, more: bool | None = False,
+        heads_up: bool | None = False,
+    ) -> str:
         """Send your reply in words. Call this when your reply is text; a
         reaction GIF goes through `send_gif`.
 
@@ -13127,7 +13130,10 @@ Args:
         call one of them whenever you reply. Do not return the reply as your
         final message instead: that path is an emergency fallback, never a
         choice. If you call neither, nothing is sent. It always goes to the
-        conversation you were tagged in; you do not choose where.
+        conversation you were tagged in; you do not choose where. A send ends
+        your turn unless you pass `more=true` or `heads_up=true`. Do the notes, lookups and
+        publishing you owe BEFORE your answer when you can; anything you still
+        do after it needs `more=true`.
 
         Returns one of three words. Read the middle one carefully.
           - `sent`: it reached the room.
@@ -13150,6 +13156,13 @@ Args:
                 you picked up. Leave it out when only one thing is happening,
                 since a reply threaded onto the obvious message is clutter. Never
                 guess a number that is not on a message you can see.
+            more: True if you will do anything after this message: another
+                message, or any tool such as a note or a publish. Leave it
+                false otherwise; the turn then ends.
+            heads_up: True when this message only says what you are about
+                to do before longer work, such as a search, the computer or
+                an image, and your answer follows in a later send_reply. It
+                keeps the turn open like `more`.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS
