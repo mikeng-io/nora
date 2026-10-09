@@ -1,4 +1,4 @@
-"""Keep every OAuth login Nora generates media with alive, on a schedule (DEC-307).
+"""Keep every OAuth login Nora generates media with alive, on a schedule (DEC-308).
 
 Operator, 2026-10-09: «Both xAI and Codex must refresh their tokens
 proactively, NOT lazily — I should not have to log in again every time», and

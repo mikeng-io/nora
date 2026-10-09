@@ -1235,7 +1235,7 @@ class Dependencies:
     # `nora/__main__.py` mounts `/app/v1/otp/*` behind `otp_api_token`.
     otp: OtpService | None = None
     otp_api_token: str = ""
-    # The OAuth keepalive (DEC-307, `nora.app.oauth_keepalive`): `None` unless
+    # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`): `None` unless
     # `[image_gen] enabled` and at least one lane's token is set with
     # `keepalive = true`. `nora/__main__.py` starts it; the eval subject,
     # which composes the same graph, does not.
@@ -1253,7 +1253,7 @@ def _image_gen_wiring(
 
     Off: `(None, None)`, and the tool answers `unavailable` (R-5/R-27). On,
     EVERY OAuth lane whose bootstrap token is set gets one lane object
-    (DEC-307), whichever `provider` is selected; the selected one is also
+    (DEC-308), whichever `provider` is selected; the selected one is also
     the adapter's, the SAME object, so the keeper and a call share one
     refresh lock and never both spend a rotating token. Each lane with
     `keepalive = true` is registered with the one keeper, which
@@ -1296,6 +1296,7 @@ def _image_gen_wiring(
             standard_quality=codex_cfg.standard_quality,
             high_quality=codex_cfg.high_quality,
             timeout_seconds=codex_cfg.timeout_seconds,
+            max_reference_images=codex_cfg.max_reference_images,
         ) if codex_lane is not None else None
         selected_token = codex_token
     else:
@@ -1306,6 +1307,7 @@ def _image_gen_wiring(
             model=xai_cfg.model,
             quality_model=xai_cfg.quality_model,
             timeout_seconds=xai_cfg.timeout_seconds,
+            max_reference_images=xai_cfg.max_reference_images,
         ) if xai_lane is not None else None
         selected_token = xai_token
     if not selected_token:
@@ -2685,7 +2687,7 @@ async def build_dependencies(
     # already uses (container-writable, host-immutable `.env` holds only the
     # bootstrap refresh tokens).
     #
-    # DEC-307: EVERY OAuth lane whose token is set gets its lane object, not
+    # DEC-308: EVERY OAuth lane whose token is set gets its lane object, not
     # only the selected provider's, and each is registered with the one
     # keepalive so no login dies idle. The selected lane's object is the SAME
     # one the adapter holds: one asyncio lock, so the keeper and a call never

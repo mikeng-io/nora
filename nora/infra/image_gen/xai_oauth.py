@@ -5,7 +5,7 @@ generation runs on the subscription entitlement (quota-bounded, not metered
 per-call billing) without borrowing Hermes' auth store or a host credential
 proxy.
 
-Credential split (operator's `.env` rule, review F4; DEC-307):
+Credential split (operator's `.env` rule, review F4; DEC-308):
 
 - `.env` (host, immutable, DEC-8) holds ONLY the BOOTSTRAP refresh token
   `nora xai-login` wrote (`XAI_OAUTH_REFRESH_TOKEN`). xAI rotates the refresh
@@ -15,7 +15,7 @@ Credential split (operator's `.env` rule, review F4; DEC-307):
   refreshed, and the sha256 of the `.env` token it grew from. `oauth_lane`
   owns it, the same way it owns the Codex lane's: a state file from an older
   login is ignored, so a new `xai-login` takes over without anyone deleting a
-  file. Until DEC-307 the state file's refresh token won unconditionally, and
+  file. Until DEC-308 the state file's refresh token won unconditionally, and
   a dead one masked a fresh login; a file from then has no fingerprint, so
   its token is tried once and the `.env` login spent only if it is refused.
 - The daemon refreshes it on a schedule (`nora.app.oauth_keepalive`):

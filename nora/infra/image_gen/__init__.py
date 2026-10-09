@@ -33,11 +33,12 @@ def build_image_generator(
     responses_model: str = "gpt-5.5",
     standard_quality: str = "medium",
     high_quality: str = "high",
+    max_reference_images: int | None = None,
 ) -> ImageGenerator | None:
     """Build the `ImageGenerator` the config selects.
 
     Pass an existing `oauth` (the process-lifetime lane the keepalive also
-    holds, DEC-307: one refresh lock) OR a fresh `refresh_token` +
+    holds, DEC-308: one refresh lock) OR a fresh `refresh_token` +
     `state_file` (for the CLI / one-shot paths).
     Returns None when the lane cannot be constructed (empty token, or an
     unknown provider — the honest wiring-gap state the tool answers
@@ -62,6 +63,7 @@ def build_image_generator(
             standard_quality=standard_quality,
             high_quality=high_quality,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     if provider == "xai":
         lane = oauth if isinstance(oauth, XaiOAuth) else None
@@ -78,6 +80,7 @@ def build_image_generator(
             model=model,
             quality_model=quality_model,
             timeout_seconds=timeout_seconds,
+            max_reference_images=max_reference_images,
         )
     # M6 (Kimi audit): an unknown provider must DEGRADE, not crash the
     # production daemon at boot — the same fail-soft posture every sibling

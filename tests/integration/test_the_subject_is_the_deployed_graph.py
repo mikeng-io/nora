@@ -93,7 +93,7 @@ async def test_obtain_returns_the_production_graph(spec) -> None:
         "62 -> 63 on 2026-10-08: `artifacts`, `computer_export`'s record, which the "
         "portal's Artifacts routes list and serve for the viewer's rooms (ADR 0023). "
         "63 -> 64 on 2026-10-09: `oauth_keepalive`, the image OAuth lanes' keeper "
-        "(DEC-307), which `nora/__main__.py` starts and the subject never does."
+        "(DEC-308), which `nora/__main__.py` starts and the subject never does."
     )
 
 

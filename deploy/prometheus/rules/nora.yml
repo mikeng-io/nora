@@ -285,7 +285,7 @@ groups:
 
   - name: oauth
     rules:
-      # The image lanes' logins (DEC-307). 2026-10-09: the xAI lane's refresh
+      # The image lanes' logins (DEC-308). 2026-10-09: the xAI lane's refresh
       # token was refused (`invalid_grant`) on the first call after twelve idle
       # days, and nothing had said so; the operator found out by asking for a
       # picture. The keepalive now refreshes every lane at least once per

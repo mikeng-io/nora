@@ -1148,6 +1148,10 @@ class _ImageGenerator:
         )
         self.calls: list[dict] = []
 
+    #: Three, deliberately NOT any real provider's limit (xAI 5, Codex 16), so a
+    #: test that passes against this fake cannot be reading a vendor constant.
+    max_reference_images = 3
+
     async def generate(self, **kwargs) -> ImageResult:
         self.calls.append(kwargs)
         return self.result
@@ -1193,7 +1197,7 @@ async def test_generate_image_reference_respects_the_privacy_gate(wiring):
     NOT a network call."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=False)
-    result = await _call(tools["generate_image"], prompt="edit this", reference="a3f2c1")
+    result = await _call(tools["generate_image"], prompt="edit this", reference_images=["a3f2c1"])
     assert result["status"] == "unavailable"
     assert gen.calls == []  # the gate refused before the provider was touched
 
@@ -1293,38 +1297,99 @@ async def test_generate_image_references_passed_as_custody_handle(wiring):
     URL and not raw bytes — custody stays Nora's, adapter-side."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
-    result = await _call(tools["generate_image"], prompt="edit this", reference="a3f2c1")
+    result = await _call(tools["generate_image"], prompt="edit this", reference_images=["a3f2c1"])
     assert result["status"] == "ok"
     refs = gen.calls[0].get("reference_images")
     assert refs is not None
     assert refs[0].marker_code == "a3f2c1"
 
 
-async def test_generate_image_three_references_travel_in_call_order(wiring):
-    """Up to 3 photos in one call (grok-imagine-image-2.0's multi-image
-    edits): `reference_2`/`reference_3` join `reference` as handles, in the
-    order passed — the first slot is not special."""
+async def test_generate_image_references_up_to_the_limit_travel_in_call_order(wiring):
+    """As many photos as the provider takes, all of them, in the order passed
+    (DEC-307): the first is not special and none is dropped."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
     result = await _call(
         tools["generate_image"],
-        prompt="combine these", reference="111aaa",
-        reference_2="222bbb", reference_3="333ccc",
+        prompt="combine these", reference_images=["111aaa", "222bbb", "333ccc"],
     )
     assert result["status"] == "ok"
     refs = gen.calls[0].get("reference_images") or ()
     assert [r.marker_code for r in refs] == ["111aaa", "222bbb", "333ccc"]
 
 
-async def test_generate_image_gap_in_reference_slots_is_ignored(wiring):
-    """`reference_2` alone (no `reference`) still works — each slot is
-    independent; the tool does not require the first to be set."""
+async def test_generate_image_over_the_provider_limit_is_refused_not_truncated(wiring):
+    """One reference past the ACTIVE provider's limit is refused before the
+    provider is called, and the note says the limit, so she can ask which to
+    keep (DEC-307). Truncating would draw the picture with somebody missing."""
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
-    result = await _call(tools["generate_image"], prompt="edit", reference_2="222bbb")
+    result = await _call(
+        tools["generate_image"],
+        prompt="all of us", reference_images=["111aaa", "222bbb", "333ccc", "444ddd"],
+    )
+    assert result["status"] == "unavailable"
+    assert gen.calls == []
+    assert "at most 3" in result["note"] and "4 photos" in result["note"]
+
+
+async def test_generate_image_counts_a_repeated_code_once(wiring):
+    """The same photo named twice (as a code and as its marker) is one
+    reference: it takes one slot of the limit and is sent once."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(
+        tools["generate_image"], prompt="us",
+        reference_images=["111aaa", "[image 111aaa]", "222bbb", "333ccc"],
+    )
     assert result["status"] == "ok"
-    refs = gen.calls[0].get("reference_images") or ()
-    assert [r.marker_code for r in refs] == ["222bbb"]
+    assert [r.marker_code for r in gen.calls[0]["reference_images"]] == [
+        "111aaa", "222bbb", "333ccc"]
+
+
+async def test_generate_image_an_empty_code_is_not_a_text_only_picture(wiring):
+    """An empty code is a bad reference, `nothing_found`, never dropped into a
+    picture made from the prompt alone."""
+    gen = _ImageGenerator()
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(tools["generate_image"], prompt="edit", reference_images=[""])
+    assert result["status"] == "nothing_found"
+    assert gen.calls == []
+
+
+async def test_generate_image_limit_follows_the_wired_provider(wiring):
+    """The limit is read off the generator wired in, not a constant in the
+    tool: the same four references are fine for a provider that takes five."""
+    gen = _ImageGenerator()
+    gen.max_reference_images = 5
+    tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
+    result = await _call(
+        tools["generate_image"],
+        prompt="all of us", reference_images=["111aaa", "222bbb", "333ccc", "444ddd"],
+    )
+    assert result["status"] == "ok"
+    assert len(gen.calls[0]["reference_images"]) == 4
+
+
+def test_generate_image_description_states_the_live_limit(wiring):
+    """The description the model reads names the wired provider's number, and
+    with no provider wired it names none (DEC-307)."""
+    five, sixteen = _ImageGenerator(), _ImageGenerator()
+    five.max_reference_images, sixteen.max_reference_images = 5, 16
+    for gen, said in ((five, "at most 5 in one call"), (sixteen, "at most 16 in one call")):
+        doc = _with_image_tools(wiring, generator=gen)["generate_image"].tool_spec["description"]
+        assert said in doc, doc
+        assert "{reference_limit}" not in doc
+        # No `Args:` line leaked into the description: a parameter named
+        # `references` did, because Strands reads `references:` as a header.
+        assert "Optional marker codes" not in doc, doc
+        # The rendered text, not the source docstring, is what the Level 3
+        # ceiling (ADR 0015 §3, 320 cl100k tokens) is about.
+        import tiktoken
+
+        assert len(tiktoken.get_encoding("cl100k_base").encode(doc)) <= 320
+    unwired = _with_image_tools(wiring, generator=None)["generate_image"].tool_spec["description"]
+    assert "at most" not in unwired and "{reference_limit}" not in unwired
 
 
 async def test_generate_image_bad_second_reference_is_nothing_found(wiring):
@@ -1333,7 +1398,7 @@ async def test_generate_image_bad_second_reference_is_nothing_found(wiring):
     gen = _ImageGenerator()
     tools = _with_image_tools(wiring, generator=gen, refs_allowed=True)
     result = await _call(
-        tools["generate_image"], prompt="edit", reference="a3f2c1", reference_2="??",
+        tools["generate_image"], prompt="edit", reference_images=["a3f2c1", "??"],
     )
     assert result["status"] == "nothing_found"
     assert gen.calls == []
@@ -1389,6 +1454,8 @@ def _tools_over(wiring, deliverer, **extra) -> dict:
 
 
 class _RaisingGenerator:
+    max_reference_images = 3
+
     async def generate(self, **kwargs) -> ImageResult:
         raise RuntimeError("provider on fire")
 
@@ -1402,15 +1469,19 @@ async def test_every_non_ok_generate_image_status_carries_a_note(wiring):
         "unavailable/unwired": (_with_image_tools(wiring, generator=None), {}),
         "unavailable/refs_off": (
             _with_image_tools(wiring, generator=_ImageGenerator()),
-            {"reference": "a3f2c1"},
+            {"reference_images": ["a3f2c1"]},
+        ),
+        "unavailable/too_many_references": (
+            _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
+            {"reference_images": ["111aaa", "222bbb", "333ccc", "444ddd"]},
         ),
         "nothing_found/link": (
             _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
-            {"reference": "https://example.com/a3f2c1.png"},
+            {"reference_images": ["https://example.com/a3f2c1.png"]},
         ),
         "nothing_found/marker": (
             _with_image_tools(wiring, generator=_ImageGenerator(), refs_allowed=True),
-            {"reference": "??"},
+            {"reference_images": ["??"]},
         ),
         "unavailable/raised": (_with_image_tools(wiring, generator=_RaisingGenerator()), {}),
         "nothing_found/refused": (_with_image_tools(wiring, generator=_ImageGenerator(

@@ -1,4 +1,4 @@
-"""The OAuth keepalive's alert rules (DEC-307) read series the code declares and
+"""The OAuth keepalive's alert rules (DEC-308) read series the code declares and
 publishes, and fire as `deploy/prometheus/tests/oauth.test.yml` says they do.
 
 A rule on a series nobody publishes is silent forever and looks exactly like a

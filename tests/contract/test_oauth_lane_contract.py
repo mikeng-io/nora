@@ -1,4 +1,4 @@
-"""The rotating-refresh-token chain, against BOTH OAuth lanes (DEC-307).
+"""The rotating-refresh-token chain, against BOTH OAuth lanes (DEC-308).
 
 `xai` and `openai_codex` share `oauth_lane.RotatingOAuthLane`; this suite runs
 the same properties against each, through the keepalive where the property is
@@ -235,7 +235,7 @@ async def test_a_fresh_login_supersedes_a_dead_chain_in_the_state_file(kind, tmp
 
 
 def _legacy_file(kind: str, tmp_path: Path, refresh_token: str) -> Path:
-    """The state file the xAI lane wrote before DEC-307: no fingerprint."""
+    """The state file the xAI lane wrote before DEC-308: no fingerprint."""
     folder = tmp_path / "state"
     folder.mkdir()
     name = "xai-oauth.json" if kind == "xai" else "openai-codex-oauth.json"

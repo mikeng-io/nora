@@ -1,4 +1,4 @@
-"""`OAuthKeepalive`'s loop and its wiring (DEC-307), on a scripted lane.
+"""`OAuthKeepalive`'s loop and its wiring (DEC-308), on a scripted lane.
 
 The chain itself (rotation, locks, the state file, a real issuer) is
 `tests/contract/test_oauth_lane_contract.py`; this is the keeper's schedule:
