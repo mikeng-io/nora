@@ -541,6 +541,16 @@ def _check_due(due: str, item: str) -> None:
         )
 
 
+def _full_sender(name: str, senders: tuple[str, ...]) -> str:
+    """`name` as the one cited sender it is the first word of (`Tyler` for a
+    rendered `Tyler Cortez`); unchanged when it is a sender already, or when
+    no sender, or more than one, starts with it."""
+    if name in senders:
+        return name
+    matches = [s for s in senders if s.split(" ", 1)[0] == name]
+    return matches[0] if len(matches) == 1 else name
+
+
 def _line(
     heading: str, item: str, shown: Shown, rendered: Mapping[int, ShownMessage],
 ) -> NoteLine:
@@ -594,12 +604,26 @@ def _line(
 
     m = _NAMED.match(rest)
     names = tuple(n.strip() for n in m.group("names").split(",")) if m else ()
+    content = m.group("content") if m is not None else rest
+    # Who said it is a fact code already holds: the senders of the cited
+    # messages. A line that leaves `(<names>)` out, or writes a first name the
+    # rendered `from` extends, is completed from them rather than refused (6 of
+    # 14 live `note_create` calls, 2026-10-02..09, were refused for exactly this
+    # and rewritten on the next round). Only rendered ids can fill it: a line
+    # resting on carried ids alone still has to name its author.
+    cited = [rendered[i] for i in ids if i in rendered and not rendered[i].is_nora]
+    senders = tuple(dict.fromkeys(s.sender for s in cited))
+    if (not names or not all(names)) and senders:
+        names = senders
+    elif senders:
+        names = tuple(_full_sender(n, senders) for n in names)
     if not names or not all(names):
         raise NoteBodyError(
             "misattributed",
             f"under ## {heading}, {item!r} names nobody; it ends `(<names>) [<ids>]`",
         )
-    content = m.group("content") if m is not None else rest
+    cite = _CITED.match(item)
+    item = f"{content} ({', '.join(names)}) [{cite.group('ids') if cite else ''}]"
     if heading == "Ruled out" and ": " not in content:
         raise NoteBodyError(
             "not_a_line",
