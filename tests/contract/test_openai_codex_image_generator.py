@@ -402,6 +402,39 @@ async def test_a_failed_write_keeps_spending_the_rotated_token_and_retries_the_w
     assert auth["sent"] == ["rt-boot", "rt-1"]
 
 
+async def test_an_unsaved_rotation_beats_the_older_chain_in_the_file(
+    tmp_path, auth_server, monkeypatch,
+):
+    """The file holds rt-1, the write of rt-2 failed: the next refresh spends
+    rt-2 (never re-reads the dead rt-1), and the next call writes rt-3."""
+    issuer, auth = auth_server
+    oauth = _oauth(tmp_path, issuer)
+    first = await oauth.access_token()
+    real_replace = os.replace
+
+    def failing_replace(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    second = await oauth.access_token(rejected=first.access_token)
+    third = await oauth.access_token(rejected=second.access_token)
+    assert third.status == "ok"
+    assert auth["sent"] == ["rt-boot", "rt-1", "rt-2"]
+    monkeypatch.setattr(os, "replace", real_replace)
+    assert (await oauth.access_token()).access_token == third.access_token
+    saved = json.loads((tmp_path / "state" / "openai-codex-oauth.json").read_text())
+    assert saved["refresh_token"] == "rt-3"
+
+
+async def test_a_vanished_state_file_never_resends_the_bootstrap(tmp_path, auth_server):
+    issuer, auth = auth_server
+    oauth = _oauth(tmp_path, issuer)
+    first = await oauth.access_token()
+    (tmp_path / "state" / "openai-codex-oauth.json").unlink()
+    assert (await oauth.access_token(rejected=first.access_token)).status == "ok"
+    assert auth["sent"] == ["rt-boot", "rt-1"]
+
+
 async def test_a_cancelled_caller_does_not_lose_a_rotation(tmp_path, auth_server):
     """Review finding 3: the issuer rotates, the caller is cancelled before
     the answer lands; the refresh must still finish and be written."""
@@ -519,8 +552,9 @@ def test_import_refuses_codex_home_and_a_copy_of_the_operators_token(tmp_path, m
     home.mkdir()
     (home / "auth.json").write_text(json.dumps({"tokens": {"refresh_token": "theirs"}}))
     monkeypatch.setenv("CODEX_HOME", str(home))
-    with pytest.raises(CodexLoginError, match="refusing"):
+    with pytest.raises(CodexLoginError, match="refusing") as by_path:
         refresh_token_from_codex_auth(home / "auth.json")
+    assert "copy of" not in str(by_path.value)
     copy = tmp_path / "elsewhere" / "auth.json"
     copy.parent.mkdir()
     copy.write_text(json.dumps({"tokens": {"refresh_token": "theirs"}}))
