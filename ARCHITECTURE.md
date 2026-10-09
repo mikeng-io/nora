@@ -496,7 +496,10 @@ act is a reminder row the fire path speaks, exactly as the proactive
 adaptor's was (**Infer**, above; `30-cognition.md` §2). "Every Dreamer write
 screened" gains one exemption: a memo body skips `dream_screen`'s key-shape
 check (**Remember**, above) and renders normally, because a memo may hold a
-password verbatim by design (`design/cognition-loop/12-schemas.md` §3). Each
+password verbatim by design (`design/cognition-loop/12-schemas.md` §3). Built
+with the memo kind (DEC-304): the Cognition session's memo verbs screen a
+memo's title and `## Conditions` and never its `## Kept` lines, and R-18 still
+refuses a key-shaped value read from a memo in a reply (DEC-226). Each
 rule this table cites gains its own amendment row in the decision index —
 **Infer**: DEC-219 (R-1), DEC-220 (R-1b). **Act**: DEC-225 (R-49), DEC-228
 (DEC-162). **Disclose**: DEC-221 (R-98), DEC-222 (R-31/DEC-79), DEC-223
