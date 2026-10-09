@@ -291,15 +291,23 @@ def test_many_memos_never_push_an_agenda_rooms_events_out():
         ),
         memos=tuple(_memo(i) for i in range(200)),  # type: ignore[arg-type]
     )
-    prompt = render_agenda(
-        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
-        budget=RenderBudget(register_chars=600),
-    )
-    assert [len(list(g)) for g in events(prompt)] == [1, 1, 1]
+    def shown(register_chars: int) -> tuple[str, list[int], int]:
+        prompt = render_agenda(
+            agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+            budget=RenderBudget(register_chars=register_chars),
+        )
+        (memos,) = named(prompt, "memos")
+        return prompt, [len(list(g)) for g in events(prompt)], len(list(memos))
+
+    prompt, listed_events, listed_memos = shown(600)
+    assert listed_events == [1, 1, 1]
     assert [b.tag for b in blocks(prompt)][-2:] == ["events", "memos"]
     (memos,) = named(prompt, "memos")
-    assert 0 < len(list(memos)) <= 20 and int(memos.attrib["not_listed"]) == 200 - len(list(memos))
+    assert 0 < listed_memos <= 20 and int(memos.attrib["not_listed"]) == 200 - listed_memos
     assert sum(len(ln) + 1 for ln in prompt.splitlines() if ln.startswith("<memo ")) <= 1200
+    # Neither draws on the other: the memos list as many under a tight
+    # Register budget as under a generous one.
+    assert shown(100_000)[2] == listed_memos
 
 
 def test_no_memos_block_when_nothing_is_kept():
