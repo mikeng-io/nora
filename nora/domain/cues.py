@@ -52,13 +52,15 @@ CUES: tuple[str, ...] = get_args(Cue)
 STRONG_CUES: frozenset[str] = frozenset({"datetime", "keep", "rsvp", "place_link"})
 
 #: After a wake whose reason was `strong_cue`, only these cues trip the trigger
-#: again. A `datetime` (or `keep`) mention in a conversation that just woke a
-#: session is usually the same plan being talked on, and re-waking on each one
-#: slices one conversation into many ~13k-token sessions (measured on the live
-#: record: 6 strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
-#: decision) or a place link (a place) is new information worth catching fast.
-#: The restriction lifts when a wake of any other reason is the unit's newest.
-REARMING_CUES: frozenset[str] = frozenset({"rsvp", "place_link"})
+#: again. A `datetime` mention in a conversation that just woke a session is
+#: usually the same plan being talked on, and re-waking on each one slices one
+#: conversation into many ~13k-token sessions (measured on the live record: 6
+#: strong-cue wakes in 2h13m on one unit, 5 wrote nothing). An RSVP (a
+#: decision), a place link (a place) and a keep instruction («記低», DEC-306:
+#: the tag turn tells the person it WILL be kept, and only a session keeps it)
+#: are new information worth catching fast. The restriction lifts when a wake
+#: of any other reason is the unit's newest.
+REARMING_CUES: frozenset[str] = frozenset({"rsvp", "place_link", "keep"})
 
 _WEEKDAYS_EN = (
     r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
@@ -122,8 +124,14 @@ _AMOUNT = re.compile(
 
 _KEEP = re.compile(
     "|".join((
-        r"記低|記錄低|记低|記住呢|記住佢",
+        r"記低|記錄低|记低",
+        # 記住 as an ask (記住呢個, 記住: …, Nora記住), never «記住啦你» banter,
+        # «唔記住» or «記住咗» (DEC-306 review).
+        r"(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)",
         r"\bkeep\s+(?:that|this)\b",
+        # «remember this», or «remember that» closing a clause; never «remember
+        # that time we …», which is reminiscing.
+        r"\bremember\s+this\b|\bremember\s+that\s*(?:[.!:,;]|$)",
         r"\b(?:write|note|jot)\s+(?:that|this|it)\s+down\b",
         r"\b(?:write|note|jot)\s+down\s+(?:that|this)\b",
     )),

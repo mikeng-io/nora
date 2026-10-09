@@ -25,6 +25,7 @@ from nora.domain.stimuli import Stimulus, UnitView
 from nora.testing.cognition_grounding import StaticGrounder
 from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.gatherings import FakeGatheringStore
+from nora.testing.memo_store import InMemoryMemoStore
 from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.reminders import FakeReminderStore
 from nora.testing.standing_store import InMemoryStandingStore
@@ -109,6 +110,7 @@ class Stores:
     notes: InMemoryNoteStore = field(default_factory=InMemoryNoteStore)
     gatherings: FakeGatheringStore = field(default_factory=FakeGatheringStore)
     standing: InMemoryStandingStore = field(default_factory=InMemoryStandingStore)
+    memos: InMemoryMemoStore = field(default_factory=InMemoryMemoStore)
 
     def events(self) -> GatheringService:
         return GatheringService(
@@ -152,7 +154,7 @@ async def session(
         "max_strikes": 3, "clock": lambda: NOW / 1000, "roster_of": _const(ROSTER),
         "nora_names": frozenset({"Nora"}), "metrics": metrics,
         "notes": stores.notes, "events": stores.events(), "standing": stores.standing,
-        "reminders": stores.reminders, "ai_peer": "nora",
+        "reminders": stores.reminders, "ai_peer": "nora", "memos": stores.memos,
         "room_proactive": lambda platform, conversation_id: True,
         "max_pending_per_requester": 20, "remind_min_lead_seconds": 120,
         "remind_max_horizon_days": 30,

@@ -172,6 +172,7 @@ from nora.infra.sql.language import SqlLanguageStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
+from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
@@ -1578,6 +1579,11 @@ async def build_dependencies(
     note_store: SqlNoteStore | None = (
         SqlNoteStore(engine) if cfg.notes.enabled else None
     )
+    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a
+    # Cognition session writes a memo (`[cognition] enabled`), and with none
+    # kept every read renders nothing. ONE instance for the tag and fire
+    # `<memos>`, `memo_read` and the session's verbs.
+    memo_store = SqlMemoStore(engine)
 
     # Resolved here, not inside AdapterRegistry — the same convention every
     # other `*_env` secret (the LLM key, the route key) follows: composition.py
@@ -2030,6 +2036,7 @@ async def build_dependencies(
         # which is what the note index is scoped by. Handing it a different
         # Policy would scope the read to a unit ingest never admitted.
         notes=note_store,
+        memos=memo_store,
         policy=allowlist,
         # Standing's READ half. `None` while `[standing] enabled = false`, the
         # shipped default, so `<standing>` renders nothing. Unlike `notes`
@@ -2914,6 +2921,8 @@ async def build_dependencies(
         standing_head=standing_store,
         # `character_read` (self-growth C4): withheld while `[culture]` is off.
         culture=culture_reader,
+        # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
+        memos=memo_store,
         route=route_client, vision=vision_client,
         describe_models=_describe_models(cfg),
         describe_providers=_describe_providers(cfg),
@@ -3332,6 +3341,7 @@ async def build_dependencies(
             # its unit reads through — two readers each carrying their own
             # idea of a room's unit is the DEC-105 violation.
             notes=note_store,
+            memos=memo_store,
             policy=allowlist,
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
@@ -4228,6 +4238,7 @@ async def build_dependencies(
                 # session must be grounded with the tool off.
                 records=SqlRecordQuery(engine), persons=persons, media_join=media_join,
                 note_index=_note_index, events_in=_room_events,
+                memo_index=lambda unit: memo_store.kept(unit=unit),
                 lineage=lineage,
                 unit_rooms=lambda unit: cognition_unit_rooms.get(unit, set()),
                 ai_display_name=cfg.doctrine.display_name,
@@ -4277,6 +4288,7 @@ async def build_dependencies(
                     store=SqlCognitionStore(engine), stimulus_store=stimulus_store,
                     note_titles=_note_titles, open_events_in=_open_events,
                     notes=note_store, events=events, standing=standing_store,
+                    memos=memo_store,
                     reminders=reminders, ai_peer=cfg.memory.ai_peer,
                     reminder_caps=reminder_caps,
                     room_proactive=lambda platform, conversation_id: allowlist.proactive_allowed(

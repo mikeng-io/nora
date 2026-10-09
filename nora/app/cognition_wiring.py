@@ -87,7 +87,8 @@ READ_TOOL_AUDIT: Mapping[str, str] = {
                    "status=current) and derived places; counters only. It starts, "
                    "advances and switches no build, and folds nothing. No write.",
     "event_search": "SQL read of the unit's gatherings; counters only. No write.",
-    "memo_read": "not built yet; audit it when it lands.",
+    "memo_read": "SQL SELECT of one memo of the unit and its revisions "
+                 "(`SqlMemoStore.get`, `revisions`); counters only. No write.",
     "character_read": "SQL SELECT of `culture` heads (`CultureReader.head`) of the "
                       "unit's own rooms; counters only. It folds and revises nothing. "
                       "No write.",
@@ -467,6 +468,7 @@ def build_cognition_runner(
     model_route: str,
     budget: Any,
     result_caps: Mapping[str, int],
+    memos: Any = None,
 ) -> Any:
     """The session runner. Imported lazily: `LiveCognitionAgentRunner` (and
     with it Strands) is loaded only when a session will actually run."""
@@ -523,7 +525,7 @@ def build_cognition_runner(
     return CognitionSessionRunner(
         store=store, stimulus_store=stimulus_store,
         notes=notes, events=events, standing=standing, reminders=reminders,
-        ai_peer=ai_peer,
+        ai_peer=ai_peer, memos=memos,
         agent_runner=agent_runner, home_rooms=home_rooms,
         read_tools_for=read_tools_for(tools, names=surface.wired),
         read_only_tools=surface.wired,

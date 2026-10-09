@@ -13,6 +13,7 @@ from .decision_log import DecisionRow
 from .documents_context import DocumentsView
 from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
+from .memo import Memo
 from .notes import Note
 from .self_presence import Presence
 from .standing import Standing
@@ -498,6 +499,9 @@ class TagContext:
     # absent. The prompt budget is paid by the per-entry caps in
     # `nora.domain.notes` and by `note_retire`, not here.
     notes: tuple[Note, ...] = ()
+    # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
+    # `notes`, filled by the tag and fire assemblers; `()` renders no block.
+    memos: tuple[Memo, ...] = ()
     # Standing (design/dreamer-agent-loop/26-standing.md) — HER OWN position in
     # THIS conversation, folded from the previous turn by the debrief stage.
     #

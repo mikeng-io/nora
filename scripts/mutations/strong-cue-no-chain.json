@@ -16,7 +16,7 @@
  {
   "name": "DEC-281: an rsvp no longer re-arms after a strong_cue wake",
   "file": "nora/domain/cues.py",
-  "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\"})",
+  "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"keep\"})",
   "new": "REARMING_CUES: frozenset[str] = frozenset()",
   "target": "tests/unit/test_wake_evaluator.py::test_an_rsvp_after_a_strong_cue_wake_still_wakes_as_strong_cue"
  },
@@ -30,8 +30,8 @@
  {
   "name": "DEC-281: the afternoon is sliced as before (every strong cue re-arms)",
   "file": "nora/domain/cues.py",
-  "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\"})",
-  "new": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"datetime\", \"keep\"})",
+  "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"keep\"})",
+  "new": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"keep\", \"datetime\"})",
   "target": "tests/unit/test_wake_evaluator.py::test_a_datetime_after_a_strong_cue_wake_waits_for_settled"
  },
  {
@@ -40,5 +40,12 @@
   "old": "    read = session is None or session.state != \"failed\"",
   "new": "    read = True",
   "target": "tests/unit/test_wake_evaluator.py::test_a_strong_cue_wake_that_did_not_run_is_retried_as_strong_cue"
+ },
+ {
+  "name": "DEC-306: a keep instruction no longer re-arms after a strong_cue wake",
+  "file": "nora/domain/cues.py",
+  "old": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\", \"keep\"})",
+  "new": "REARMING_CUES: frozenset[str] = frozenset({\"rsvp\", \"place_link\"})",
+  "target": "tests/unit/test_wake_evaluator.py::test_a_keep_instruction_after_a_strong_cue_wake_still_wakes_as_strong_cue"
  }
 ]

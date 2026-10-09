@@ -21,6 +21,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.agent.whereis import circles_from_persons
 from nora.config import Config
 from nora.domain.media_join import MediaJoin
+from nora.domain.memo import MemoStore
 from nora.domain.ports import (
     CultureReader,
     MemoryStore,
@@ -72,6 +73,7 @@ def build_assembler(
     computer: ComputerContextReader | None = None,
     documents: DocumentsContextReader | None = None,
     subagents: SubagentsContextReader | None = None,
+    memos: MemoStore | None = None,
 ) -> TranscriptInjection:
     return TranscriptInjection(
         audit=audit, memory=memory, persons=persons,
@@ -87,6 +89,7 @@ def build_assembler(
         ai_peer=cfg.memory.ai_peer,
         tagger_card_conclusions=cfg.memory.tagger_card_conclusions,
         notes=notes, policy=policy,
+        memos=memos,
         standing=standing,
         # The media join (issue #116): the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
