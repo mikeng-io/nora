@@ -17,7 +17,7 @@
   "name": "(e4) a verb name that does not exist",
   "file": "nora/dreamer/skills/cognition-register.md",
   "old": "only that closes `no_change`:",
-  "new": "only that closes `no_change` or `note_retire`:",
+  "new": "only that closes `no_change` or `note_close`:",
   "target": "tests/unit/test_cognition_agenda_skills.py -k test_every_name_the_prelude_and_the_skill_use_is_one_the_session_has"
  },
  {
