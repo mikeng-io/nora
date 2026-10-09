@@ -28,7 +28,7 @@ _MAP = (
 )
 
 _CORPUS = """
-- name: Miles_asks_in_grp-pseudo
+- name: Miles asks in grp-pseudo
   entry: tag
   expect: reply
   input: "Miles asked Avery Stone, then Avery, then Milesy and Ann"
@@ -108,7 +108,7 @@ def test_input_speakers_and_expectations_are_translated_but_the_name_is_not(corp
     assert case.metadata["speakers"] == ["Synthop", "Quill"]
     assert case.metadata["note"] == {"who": "Quill Marsh"}
     assert case.metadata["person"] == "synth_operator", "the default speaker resolves too"
-    assert case.name == "Miles_asks_in_grp-pseudo", "`--case` selects by the name as written"
+    assert case.name == "Miles asks in grp-pseudo", "`--case` selects by the name as written"
 
 
 def test_an_unmapped_or_embedded_token_passes_through_unchanged(mapped):
