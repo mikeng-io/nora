@@ -9660,7 +9660,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
 
         `status` is one of:
         - `started`: the clip is rendering and will be posted here later.
-        - `refused`: today's video limit is used; nothing was started.
+        - `refused`: this room's video limit for today is used; nothing was started.
         - `nothing_found`: a reference is not a photo held here.
         - `unavailable`: nothing was started.
         Every result carries a `note` saying how to report it.
@@ -9715,8 +9715,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if out.status == "at_cap":
             _record(metrics, tool, "refused", reason="daily_cap", used=out.used, cap=out.cap)
             return {"status": "refused",
-                    "note": f"Today's video limit is used ({out.used} of {out.cap}), so "
-                            "nothing was started. Say so plainly; it resets tomorrow."}
+                    "note": f"This room's video limit for today is used ({out.used} of {out.cap}), "
+                            "so nothing was started. Say so plainly; it resets tomorrow."}
         if out.status != "started" and out.reason in ("uncertain", "row_not_written"):
             _record(metrics, tool, "unavailable", reason=out.reason)
             return {"status": "unavailable",
