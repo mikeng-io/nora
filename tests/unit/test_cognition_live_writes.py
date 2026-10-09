@@ -279,8 +279,10 @@ def test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noti
 
 async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
     """DEC-303: the wake evaluator's look-ahead seam names a room holding an
-    event that starts between now and `days` ahead, once; a past event, one
-    beyond the horizon, and one with no time name nothing."""
+    event that starts between now and `days` ahead, once and by its primary id,
+    whichever id form the event is stored under; a past event, one beyond the
+    horizon, one with no time, and a room Nora may not reach unasked name
+    nothing."""
     from datetime import UTC
     from datetime import datetime as _dt
 
@@ -292,15 +294,24 @@ async def test_the_upcoming_reader_names_each_room_once_inside_the_horizon():
         def __init__(self, start_ms):
             self.when = None if start_ms is None else _dt.fromtimestamp(start_ms / 1000, UTC)
 
-    by_room = {
-        "room-a": [_E(NOW + day), _E(NOW + 2 * day)],
+    by_id = {
+        "room-a": [_E(NOW + day)],
+        "room-a-old": [_E(NOW + 2 * day)],
         "room-b": [_E(NOW - day), _E(NOW + 5 * day), _E(None)],
+        "room-c": [_E(NOW + day)],
     }
 
     async def events(conversation_id):
-        return by_room.get(conversation_id, [])
+        return by_id.get(conversation_id, [])
 
+    rooms = [
+        ("signal", "room-a", {"room-a", "room-a-old"}),
+        ("signal", "room-b", {"room-b"}),
+        ("signal", "room-c", {"room-c"}),
+        ("signal", "room-d", {"room-d", "room-a-old"}),
+    ]
     read = upcoming_reader(
-        events, lambda unit: {("signal", "room-a"), ("signal", "room-b")}, days=3,
+        events, lambda unit: rooms, days=3,
+        room_proactive=lambda platform, cid: cid != "room-c",
     )
-    assert list(await read("unit-1", NOW)) == [("signal", "room-a")]
+    assert list(await read("unit-1", NOW)) == [("signal", "room-a"), ("signal", "room-d")]

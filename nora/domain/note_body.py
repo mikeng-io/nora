@@ -22,7 +22,11 @@ repair that changes more than whitespace is code writing content the model
 did not, and a silent repair makes the refusal rate unreadable. The repairs,
 all of them: trailing whitespace, `\\r\\n`, blank lines (all dropped: the
 normalised body has none, as §4.7's conformant body has none), `*`/`+`
-bullets to `-`, heading case.
+bullets to `-`, heading case. One repair writes content, decided 2026-10-09:
+an attributed line's `(<names>)` is completed from the rendered sender when
+only one person can have said it (left out with a single cited sender, or a
+first name exactly one cited sender extends), because who wrote a message is
+code's fact, not the model's.
 
 What it does not check, stated rather than discovered:
 
@@ -97,6 +101,9 @@ _NAMED = re.compile(r"^(?P<content>.+) \((?P<names>[^()]*)\)$")
 _FROM_MEMORY = re.compile(r"^(?P<what>.+) \(as of (?P<date>[^()]+)\)$")
 _FOLDED = re.compile(r"^(?P<title>.+?): (?P<closing>.+) \(folded (?P<date>[^()]+)\)$")
 _OWED_SPLIT = " -> "
+#: A sender a `(<names>)` slot cannot hold: `_NAMED` splits on the comma and
+#: takes no parenthesis, so such a name is never filled in by code.
+_UNHOLDABLE_NAME = re.compile(r"[,()]")
 #: A date-shaped run anywhere in the body, loose on purpose so a malformed one
 #: (`2026-9-27`) is found and refused rather than skipped.
 _DATE_LIKE = re.compile(
@@ -605,25 +612,39 @@ def _line(
     m = _NAMED.match(rest)
     names = tuple(n.strip() for n in m.group("names").split(",")) if m else ()
     content = m.group("content") if m is not None else rest
-    # Who said it is a fact code already holds: the senders of the cited
-    # messages. A line that leaves `(<names>)` out, or writes a first name the
-    # rendered `from` extends, is completed from them rather than refused (6 of
-    # 14 live `note_create` calls, 2026-10-02..09, were refused for exactly this
-    # and rewritten on the next round). Only rendered ids can fill it: a line
-    # resting on carried ids alone still has to name its author.
+    # Who said it, when only one person can have: a line that leaves `(<names>)`
+    # out while every rendered message it cites is ONE sender's, or writes a
+    # first name exactly one cited sender extends, is completed from the
+    # rendered `from` (6 of 14 live `note_create` calls, 2026-10-02..09, were
+    # refused for exactly this and rewritten on the next round). Several cited
+    # senders stay a refusal that lists them: who said a line is the model's
+    # judgement, not every author it cites. A sender a `(<names>)` slot cannot
+    # hold (a comma or a parenthesis) is never filled in.
     cited = [rendered[i] for i in ids if i in rendered and not rendered[i].is_nora]
     senders = tuple(dict.fromkeys(s.sender for s in cited))
-    if (not names or not all(names)) and senders:
-        names = senders
-    elif senders:
-        names = tuple(_full_sender(n, senders) for n in names)
+    holdable = tuple(s for s in senders if not _UNHOLDABLE_NAME.search(s))
+    completed = False
+    if not names or not all(names):
+        if len(senders) == 1 and holdable == senders:
+            names, completed = senders, True
+        elif senders:
+            raise NoteBodyError(
+                "misattributed",
+                f"under ## {heading}, {item!r} names nobody; it ends `(<names>) [<ids>]`, "
+                f"naming who said it among: {', '.join(senders)}",
+            )
+    elif holdable:
+        expanded = tuple(dict.fromkeys(_full_sender(n, holdable) for n in names))
+        if expanded != names:
+            names, completed = expanded, True
     if not names or not all(names):
         raise NoteBodyError(
             "misattributed",
             f"under ## {heading}, {item!r} names nobody; it ends `(<names>) [<ids>]`",
         )
-    cite = _CITED.match(item)
-    item = f"{content} ({', '.join(names)}) [{cite.group('ids') if cite else ''}]"
+    if completed:
+        cite = _CITED.match(item)
+        item = f"{content} ({', '.join(names)}) [{cite.group('ids') if cite else ''}]"
     if heading == "Ruled out" and ": " not in content:
         raise NoteBodyError(
             "not_a_line",

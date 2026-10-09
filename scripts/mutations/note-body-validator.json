@@ -79,9 +79,9 @@
   {
     "name": "misattributed: an attributed line naming nobody is accepted",
     "file": "nora/domain/note_body.py",
-    "old": "    if not names or not all(names):",
-    "new": "    if False:",
-    "target": "tests/unit/test_note_body.py::test_a_name_that_wrote_none_of_the_cited_messages_is_refused"
+    "old": "    if not names or not all(names):\n        raise NoteBodyError(",
+    "new": "    if False:\n        raise NoteBodyError(",
+    "target": "tests/unit/test_note_body.py::test_a_missing_or_first_name_attribution_is_completed_only_when_one_person_can_have_said_it"
   },
   {
     "name": "unknown_owner: Nora accepted as an Owed owner",

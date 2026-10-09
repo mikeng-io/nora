@@ -4141,9 +4141,17 @@ async def build_dependencies(
                     (conv.platform, cid) for cid in conv.ids
                 )
             if cfg.cognition.upcoming_days > 0:
+                upcoming_rooms: dict[str, list[tuple[str, str, Collection[str]]]] = {}
+                for conv in allowlist.conversations:
+                    upcoming_rooms.setdefault(conv.unit, []).append(
+                        (conv.platform, conv.primary_id, conv.ids),
+                    )
                 cognition_upcoming = upcoming_reader(
-                    _open_events, lambda unit: cognition_unit_rooms.get(unit, set()),
+                    _open_events, lambda unit: upcoming_rooms.get(unit, []),
                     days=cfg.cognition.upcoming_days,
+                    room_proactive=lambda platform, cid: allowlist.proactive_allowed(
+                        platform=platform, conversation_id=cid,
+                    ),
                 )
             # The policy's label for each of those ids (m5): the prompt calls a
             # room by it and never by the conversation id.
