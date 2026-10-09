@@ -2873,7 +2873,7 @@ class XaiImageGenConfig(BaseModel):
 
     `keepalive` / `refresh_interval_hours`: the daemon refreshes this login
     on a schedule whenever `[image_gen] enabled` and the token is set,
-    whichever provider is selected (DEC-306, `nora.app.oauth_keepalive`).
+    whichever provider is selected (DEC-307, `nora.app.oauth_keepalive`).
     The interval is bounded to 1-72 h: shorter re-asks a refused login
     every few minutes, longer pushes the staleness alert (twice the
     interval) toward the 12 days a login sat dead in 2026-10.
@@ -2902,7 +2902,7 @@ class OpenAICodexImageGenConfig(BaseModel):
     `quality="standard"` / `"quality"`. `refresh_token_env` NAMES the env var
     holding the BOOTSTRAP refresh token `nora openai-codex-login` writes
     (DEC-8); the rotating token after it lives in the state file.
-    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-306).
+    `keepalive` / `refresh_interval_hours` as `[image_gen.xai]` (DEC-307).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

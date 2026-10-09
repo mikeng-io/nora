@@ -37,7 +37,7 @@ def build_image_generator(
     """Build the `ImageGenerator` the config selects.
 
     Pass an existing `oauth` (the process-lifetime lane the keepalive also
-    holds, DEC-306: one refresh lock) OR a fresh `refresh_token` +
+    holds, DEC-307: one refresh lock) OR a fresh `refresh_token` +
     `state_file` (for the CLI / one-shot paths).
     Returns None when the lane cannot be constructed (empty token, or an
     unknown provider — the honest wiring-gap state the tool answers

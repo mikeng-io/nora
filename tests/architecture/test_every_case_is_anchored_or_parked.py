@@ -285,9 +285,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     (2026-10-07, design/browser-runtime B2: a search box to operate and a page
     to click through; browse-on arm only), plus the 5 `lessons` cases
     (2026-10-09, design/self-growth/40 §8: 4 lessons counterfactuals and a
-    control, the `<lessons>` block's before/after); a change to it
+    control, the `<lessons>` block's before/after), plus 8 memo routing cases
+    (2026-10-09, DEC-306: 6 `tool_selection_cognition` for the memo verbs and
+    `memo_read`, 2 `tool_selection` for «記低» about the group and about the
+    speaker); a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 262
-    assert sum(c.active + c.parked for c in totals) == 262
+    assert sum(c.total for c in totals) == 270
+    assert sum(c.active + c.parked for c in totals) == 270

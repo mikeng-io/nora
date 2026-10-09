@@ -6,7 +6,7 @@ Nora's OWN ChatGPT login, the way the `codex` CLI does, never on a shared
 
 **Why the refresh token lives in the state file, not only in `.env`.**
 OpenAI's refresh grant ROTATES the refresh token on every use, and a used one
-is dead, and xAI's does the same (DEC-306), so both lanes keep the chain
+is dead, and xAI's does the same (DEC-307), so both lanes keep the chain
 through `oauth_lane.RotatingOAuthLane`:
 
 - `.env` (host, immutable, DEC-8) holds ONLY the bootstrap refresh token the

@@ -1,6 +1,6 @@
 # `promtool test rules deploy/prometheus/tests/oauth.test.yml`, from the repo
 # root's deploy/prometheus/tests (or the docker form in
-# tests/unit/test_oauth_alert_rules.py). The OAuth keepalive (DEC-306):
+# tests/unit/test_oauth_alert_rules.py). The OAuth keepalive (DEC-307):
 # OAuthRefreshStale and OAuthRefreshRefused. promtool's time() is the eval
 # time in seconds from 0, so a timestamp gauge is written in those units.
 # Each case states what a WRONG rule would do.

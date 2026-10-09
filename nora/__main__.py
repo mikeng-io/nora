@@ -331,7 +331,7 @@ class App:
             ))
         else:
             log.info("cognition loop disabled ([cognition] enabled = false)")
-        # The OAuth keepalive (DEC-306): HERE and not in composition, because
+        # The OAuth keepalive (DEC-307): HERE and not in composition, because
         # the eval subject composes the same graph and must not spend the
         # deployment's rotating refresh tokens. `None` with image generation
         # off or no lane token set.

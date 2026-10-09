@@ -260,7 +260,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # long work, any kind, not only search): «Getting to an answer» keeps the
     # no-filler rule for a quick check and adds one line marked as a heads-up
     # when the work will keep the room waiting (DEC-294's `heads_up`).
-    "conduct": (35, "b10526ea91c737082b13c7b4210578903fe6b5705f05747d16e8644a080647e0"),
+    # v36 (2026-10-09, DEC-306): a «記低» about the group is kept by her
+    # notebook and she says it WILL be kept; the kinds of record gain the memo.
+    # v37 (2026-10-09, review of #781): the keep promise names no time.
+    "conduct": (37, "f33b0d8d01bafc76dddd54fe9e7ce7c8b8bd5efa2b80c28157f0065840f8f6f2"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

@@ -4663,3 +4663,72 @@ SELF_TENSION = sa.Table(
 IDX_SELF_TENSION_UNIT = sa.Index(
     "idx_self_tension_unit", SELF_TENSION.c.unit, SELF_TENSION.c.written_at,
 )
+
+# `memo` / `memo_revision` (migration `0103_memos`, DEC-306): what a unit SETTLED
+# and keeps (Register · memo, design/cognition-loop/40-register.md §2). The lesson's
+# shape: both APPEND-ONLY, a `memo` row is an identity in a unit with the room it
+# was first kept in, and every change (a revision, a withdrawal) is one more
+# `memo_revision`, so the head is the highest `seq`. No foreign key between them,
+# for the reason `documents` gives. Written only by the Cognition session.
+MEMO = sa.Table(
+    "memo",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("unit", sa.Text, nullable=False),
+    sa.Column("platform", sa.Text, nullable=False),
+    sa.Column("conversation_id", sa.Text, nullable=False),
+    sa.Column("created_at", sa.BigInteger, nullable=False),
+    _recorded_at(),
+    sa.CheckConstraint("length(btrim(unit)) > 0", name="ck_memo_has_a_unit"),
+)
+IDX_MEMO_UNIT = sa.Index("idx_memo_unit", MEMO.c.unit)
+
+#: The database ceilings on a memo revision, above the writer's caps
+#: (`nora.domain.memo.MEMO_TITLE_MAX_CHARS`, `MEMO_BODY_MAX_CHARS`) the way
+#: `LESSON_BODY_CEILING_CHARS` is above its writer's: this number says "the row
+#: is corrupt".
+MEMO_TITLE_CEILING_CHARS = 200
+MEMO_BODY_CEILING_CHARS = 4_000
+
+MEMO_REVISION = sa.Table(
+    "memo_revision",
+    METADATA,
+    sa.Column("id", pg.UUID(as_uuid=False), primary_key=True,
+              server_default=sa.text("gen_random_uuid()")),
+    sa.Column("memo_id", pg.UUID(as_uuid=False), nullable=False),
+    sa.Column("seq", sa.Integer, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("body", sa.Text, nullable=False),
+    sa.Column("citations", pg.ARRAY(sa.Text), nullable=False),
+    sa.Column("mode", sa.Text, nullable=False),
+    sa.Column("state", sa.Text, nullable=False),
+    sa.Column("written_at", sa.BigInteger, nullable=False),
+    sa.Column("established_by", sa.Text, nullable=False),
+    sa.Column("model", sa.Text),
+    _recorded_at(),
+    sa.CheckConstraint("seq >= 1", name="ck_memo_revision_seq"),
+    sa.CheckConstraint("length(btrim(title)) > 0", name="ck_memo_revision_has_a_title"),
+    sa.CheckConstraint(
+        f"length(title) <= {MEMO_TITLE_CEILING_CHARS}", name="ck_memo_revision_title_ceiling",
+    ),
+    sa.CheckConstraint("length(btrim(body)) > 0", name="ck_memo_revision_has_a_body"),
+    sa.CheckConstraint(
+        f"length(body) <= {MEMO_BODY_CEILING_CHARS}", name="ck_memo_revision_body_ceiling",
+    ),
+    sa.CheckConstraint(
+        "cardinality(citations) >= 1", name="ck_memo_revision_cites_something",
+    ),
+    sa.CheckConstraint(
+        "mode IN ('told', 'deduced', 'abduced')", name="ck_memo_revision_mode",
+    ),
+    sa.CheckConstraint("state IN ('kept', 'withdrawn')", name="ck_memo_revision_state"),
+    sa.CheckConstraint(
+        "length(btrim(established_by)) > 0", name="ck_memo_revision_names_its_writer",
+    ),
+)
+# One revision per (memo, seq), decided by Postgres: two writers appending to one
+# memo at the same moment cannot both take the next `seq`.
+UQ_MEMO_REVISION_SEQ = sa.Index(
+    "uq_memo_revision_seq", MEMO_REVISION.c.memo_id, MEMO_REVISION.c.seq, unique=True,
+)

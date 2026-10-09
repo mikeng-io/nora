@@ -63,6 +63,25 @@ EXPECTED: dict[str, tuple[dict[str, tuple[str, Any]], set[str]]] = {
          "body": ("string", None), "room": ("string", None), "item": ("integer", None)},
         {"survivor_id", "duplicate_id", "body"},
     ),
+    "memo_write": (
+        {"title": ("string", None), "body": ("string", None),
+         "mode": ("string", ["told", "deduced", "abduced"]), "room": ("string", None),
+         "item": ("integer", None)},
+        {"title", "body"},
+    ),
+    "memo_revise": (
+        {"memo_id": ("string", None), "base_revision_id": ("string", None),
+         "body": ("string", None), "title": ("string", None),
+         "mode": ("string", ["told", "deduced", "abduced"]), "room": ("string", None),
+         "item": ("integer", None)},
+        {"memo_id", "base_revision_id", "body"},
+    ),
+    "memo_withdraw": (
+        {"memo_id": ("string", None), "base_revision_id": ("string", None),
+         "cited_ids": ("array", {"type": "string"}), "room": ("string", None),
+         "item": ("integer", None)},
+        {"memo_id", "base_revision_id", "cited_ids"},
+    ),
     "event_propose": (
         {"title": ("string", None),
          "reasoning": ("string", ["told", "deduced", "abduced"]),

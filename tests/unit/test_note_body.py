@@ -357,3 +357,37 @@ def test_resolve_positions_maps_each_position_to_the_row_it_showed():
             assert refused.rule == "unknown_id"
         else:
             raise AssertionError(bad)
+
+
+# ---- the memo body (DEC-306, 12-schemas §3): the same line grammar ----------
+
+
+def _memo_refused(text: str) -> str:
+    from nora.domain.memo import parse_memo_body
+
+    with pytest.raises(NoteBodyError) as err:
+        parse_memo_body(text, shown=SHOWN)
+    return err.value.rule
+
+
+def test_a_memo_body_parses_kept_and_conditions_and_may_cite_noras_own_message():
+    from nora.domain.memo import citations_of, parse_memo_body
+
+    text = (
+        "## Kept\n- the deposit is 500, split four ways [4812, 4819]\n"
+        "## Conditions\n- only until 2026-12-31 [4815]"
+    )
+    body = parse_memo_body(text, shown=SHOWN)
+    assert body.text == text
+    assert citations_of(body) == ("4812", "4819", "4815")
+
+
+def test_a_memo_body_breaking_the_schema_is_refused_by_rule():
+    assert _memo_refused("## Kept\n- kept [4812]\n## Superseded\n- old [4812]") == "code_written"
+    assert _memo_refused("## Conditions\n- weekdays [4812]") == "missing_section"
+    assert _memo_refused("## Kept") == "missing_section"
+    assert _memo_refused("## Conditions\n- weekdays [4812]\n## Kept\n- x [4812]") == "section_order"
+    assert _memo_refused("## Decided\n- x [4812]") == "unknown_section"
+    assert _memo_refused("## Kept\n- the code [9999]") == "unknown_id"
+    assert _memo_refused("## Kept\n- the code") == "uncited"
+    assert _memo_refused("## Kept\n- from 2026-02-30 on [4812]") == "bad_date"

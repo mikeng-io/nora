@@ -731,7 +731,7 @@ provider = "xai"
 # conversation's own media window) — never an arbitrary external URL.
 allow_reference_images = false
 
-# OAuth keepalive (DEC-306). With `enabled = true`, the daemon refreshes EVERY
+# OAuth keepalive (DEC-307). With `enabled = true`, the daemon refreshes EVERY
 # OAuth lane whose token env var is set, whichever `provider` is selected, so
 # switching provider (or a call after a quiet fortnight) never meets a dead
 # login: at the earlier of the access token's expiry (minus an hour) and

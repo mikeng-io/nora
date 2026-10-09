@@ -51,6 +51,7 @@ from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
+from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.record_query import SqlRecordQuery
@@ -182,6 +183,8 @@ class World:
         )
         self.memory.messages.append(("p1", "dinner is on friday"))
         self.notes = SqlNoteStore(engine)
+        self.memos = SqlMemoStore(engine)
+        self.memo_id = ""
         media_join = MediaJoin(
             store=SqlMediaObjectStore(engine), screen=lambda text: None, metrics=self.metrics,
         )
@@ -199,7 +202,7 @@ class World:
             # `standing_read` that folded would be a write this test must see.
             rollup=SqlRollupRead(engine), standing_head=SqlStandingStore(engine),
             lineage=LineagePolicy.from_policy(self.policy, circles=(circle,), mode="on"),
-            notes=self.notes,
+            notes=self.notes, memos=self.memos,
             note_unit=lambda platform, cid: "u1", unit_for=lambda platform, cid: "u1",
             events=events, mobility=SqlMobilityStore(engine), circles=(circle,),
             media_join=media_join,
@@ -247,6 +250,8 @@ async def _call(tool: Any, **arguments: Any) -> dict[str, Any]:
 CALLS: dict[str, list[dict[str, Any]]] = {
     "note_search": [{"query": "zzz-no-such-word"}, {"query": "Tokyo"}],
     "note_read": [{"title": "Trip"}, {"title": "Nothing Like This"}],
+    # `MEMO` is the seeded memo's id, filled in at call time (DEC-306).
+    "memo_read": [{"memo_id": "MEMO"}, {"memo_id": "00000000-0000-4000-8000-000000000000"}],
     "record_query": [{"start": "2026-09-01", "end": "2026-10-30"},
                      {"start": "2026-09-01", "end": "2026-10-30", "text": "dinner",
                       "scope": "all_rooms"}],
@@ -282,6 +287,12 @@ async def world(engine, tmp_path):
         body="## Open\n- flights to Tokyo [1]\n", established_by="tag:test", now_ms=NOW_MS,
         anchor_date=20261001,
     )
+    memo = await w.memos.create(
+        unit="u1", platform="signal", conversation_id="ROOM-A", title="wifi",
+        body="## Kept\n- the wifi password is hunter-two [1]", citations=("1",),
+        mode="told", established_by="cognition:u1", model=None, now_ms=NOW_MS,
+    )
+    w.memo_id = memo.id
     for i, (room, who, sender) in enumerate((
         (A, "p1", ADA), (A, "p2", BEN), (B, "p1", ADA),
     )):
@@ -306,7 +317,9 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     results: dict[str, list[str]] = {}
     for name, calls in CALLS.items():
         for arguments in calls:
-            answer = await _call(tools[name], **arguments)
+            answer = await _call(tools[name], **{
+                k: world.memo_id if v == "MEMO" else v for k, v in arguments.items()
+            })
             results.setdefault(name, []).append(str(answer.get("status")))
     after = await _counts(engine)
 
@@ -315,11 +328,12 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
     }
     # A tool that answered `unavailable` for a wiring gap was never really run.
     reached = {"note_search", "note_read", "record_query", "event_search",
-               "rollup_read", "standing_read"}
+               "rollup_read", "standing_read", "memo_read"}
     for name in reached:
         assert set(results[name]) <= {"ok", "nothing_found"}, (name, results[name])
     assert "nothing_found" in results["note_search"] and "ok" in results["note_search"]
     assert "ok" in results["record_query"] and "ok" in results["note_read"]
+    assert results["memo_read"] == ["ok", "nothing_found"]
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
     # No counter that feeds a decision moved, and Honcho was only ever read.

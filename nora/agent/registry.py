@@ -40,6 +40,7 @@ from ..domain.computer_exports import ComputerExportStore
 from ..domain.computer_leases import ComputerLeases
 from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
+from ..domain.memo import MemoStore
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
@@ -207,6 +208,8 @@ class ToolRegistry:
         events: EventsCollaborator | None = None,
         notes: NoteCollaborator | None = None,
         note_unit: Callable[[str, str], str | None] | None = None,
+        # `memo_read`'s memo store (DEC-306): `None` withholds it.
+        memos: MemoStore | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
         tool_call_log_store: ToolCallLogStore | None = None,
         # Nora's computer (design/sandbox-runtime, DEC-243): the runtime is
@@ -289,6 +292,7 @@ class ToolRegistry:
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
             | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if culture is not None else frozenset({"character_read"}))
+            | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
             | (frozenset() if browser is not None else frozenset({"computer_browse"}))
             | (frozenset() if documents is not None else DOCUMENT_TOOLS)
@@ -452,6 +456,7 @@ class ToolRegistry:
         # past the boundary spec §3 and DEC-105/R-49 both rest on. It takes
         # `(platform, conversation_id)` and may answer `None`.
         self._notes = notes
+        self._memos = memos
         self._note_unit = note_unit
         # ONE resolver for every unit-keyed tool. `note_unit` is its
         # older name and still works; `unit_for` is what a tier outside
@@ -1063,7 +1068,7 @@ class ToolRegistry:
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             reminders=self._reminders, reminder_caps=self._caps, clock=self._clock,
             events=self._events,
-            notes=self._notes, note_unit=self._note_unit,
+            notes=self._notes, note_unit=self._note_unit, memos=self._memos,
             unit_for=self._unit_for,
             supplied_unit=supplied_unit,
             links=links,

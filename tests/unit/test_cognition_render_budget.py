@@ -243,3 +243,74 @@ def test_an_escaped_cut_keeps_as_much_of_the_words_as_fits():
     assert len(line) + 1 <= 900 and len(line) + 1 > 900 - 12
     (row,) = rows(item)
     assert len(row.text or "") > 100
+
+
+# ---- the memos (DEC-306): unit-wide, titles and ids, on their own budget ----------------
+
+
+def _memo(i: int) -> object:
+    from nora.domain.memo import Memo, MemoRevision
+
+    head = MemoRevision(
+        id=f"r-{i}", memo_id=f"m-{i}", seq=1, title=f"Memo {i} " + "t" * 60,
+        body=f"## Kept\n- the code is secret-{i} [1]", citations=("1",), mode="told",
+        state="kept", written_at=NOW - 1000 * i, established_by="cognition:u",
+    )
+    return Memo(id=f"m-{i}", unit="u", platform="signal", conversation_id="room-0",
+                created_at=NOW, head=head)
+
+
+def test_the_memos_block_comes_last_newest_first_and_never_shows_what_a_memo_keeps():
+    agenda, stimuli, grounding = _world(per_room=1, words=5)
+    grounding = Grounding(
+        records=grounding.records, room_labels=LABELS,
+        notes=(NoteLine(id="n-1", title="T", description="d"),),
+        memos=tuple(_memo(i) for i in (3, 0, 4, 1, 2)),  # type: ignore[arg-type]
+    )
+    prompt = render_agenda(
+        agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+        budget=RenderBudget(memo_lines=3),
+    )
+    assert [b.tag for b in blocks(prompt)] == ["clock", "agenda", "note_index", "memos"]
+    (memos,) = named(prompt, "memos")
+    assert [m.attrib["id"] for m in memos] == ["m-0", "m-1", "m-2"]
+    assert memos.attrib["not_listed"] == "2"
+    assert "secret-" not in prompt
+
+
+def test_many_memos_never_push_an_agenda_rooms_events_out():
+    """Review of #781: memos drew on `register_chars` and could leave every
+    event unlisted. On their own budget, after the events, they cannot."""
+    agenda, stimuli, grounding = _world(per_room=1, words=5)
+    grounding = Grounding(
+        records=grounding.records, room_labels=LABELS,
+        events=tuple(
+            EventLine(id=f"e-{r}", room=room, title=f"Event {r}", when_ms=NOW,
+                      venue="", status="proposed")
+            for r, room in enumerate(ROOMS)
+        ),
+        memos=tuple(_memo(i) for i in range(200)),  # type: ignore[arg-type]
+    )
+    def shown(register_chars: int) -> tuple[str, list[int], int]:
+        prompt = render_agenda(
+            agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK,
+            budget=RenderBudget(register_chars=register_chars),
+        )
+        (memos,) = named(prompt, "memos")
+        return prompt, [len(list(g)) for g in events(prompt)], len(list(memos))
+
+    prompt, listed_events, listed_memos = shown(600)
+    assert listed_events == [1, 1, 1]
+    assert [b.tag for b in blocks(prompt)][-2:] == ["events", "memos"]
+    (memos,) = named(prompt, "memos")
+    assert 0 < listed_memos <= 20 and int(memos.attrib["not_listed"]) == 200 - listed_memos
+    assert sum(len(ln) + 1 for ln in prompt.splitlines() if ln.startswith("<memo ")) <= 1200
+    # Neither draws on the other: the memos list as many under a tight
+    # Register budget as under a generous one.
+    assert shown(100_000)[2] == listed_memos
+
+
+def test_no_memos_block_when_nothing_is_kept():
+    agenda, stimuli, grounding = _world(per_room=1, words=5)
+    prompt = render_agenda(agenda, stimuli=stimuli, grounding=grounding, now_ms=NOW, tz=HK)
+    assert "<memos" not in prompt

@@ -99,7 +99,7 @@ class _HistogramSpec(NamedTuple):
 # was invisible in the other three): nora_tags_total, nora_replies_total,
 # nora_silent_failures_total, nora_errors_total.
 _COUNTERS: tuple[_CounterSpec, ...] = (
-    # The OAuth keepalive (DEC-306, `nora.app.oauth_keepalive`). The alert reads
+    # The OAuth keepalive (DEC-307, `nora.app.oauth_keepalive`). The alert reads
     # the timestamp gauges below, never these: a rare counter reads empty after
     # the restarts this process sees every day.
     _CounterSpec(
@@ -2151,7 +2151,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (
-    # The OAuth keepalive (DEC-306). Published at registration from the state
+    # The OAuth keepalive (DEC-307). Published at registration from the state
     # file, so a restart does not blank them; absent while no lane is kept
     # (image generation off, or no token): not applicable, never 0.
     _GaugeSpec(

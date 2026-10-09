@@ -111,6 +111,7 @@ from nora.domain.framing import (
     RequestBody,
 )
 from nora.domain.media_join import MediaJoin
+from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
     ConversationTarget,
     NormalizedMessage,
@@ -584,6 +585,9 @@ class FirePath:
         # `<documents>` (design/artifact §29): the SAME reader the tag path's assembler
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
+        # `<memos>` (DEC-306): the SAME store the tag path's assembler reads,
+        # keyed on the unit like `notes`. `None` renders no block.
+        memos: MemoStore | None = None,
     ) -> None:
         # S5 (15-roadmap §6.3): `<standing>` renders on the fire path too.
         #
@@ -666,6 +670,7 @@ class FirePath:
         # into this one. `None` keeps the tier inert, the pre-wiring shape
         # every test construction site has.
         self._notes = notes
+        self._memos = memos
         self._policy = policy
         # Lineage (design/cognition-loop/10-tiers.md §3): the SAME value the
         # tag path's assembler holds (`nora.app.assembler.lineage_policy`), so
@@ -910,7 +915,7 @@ class FirePath:
         # lookup because the note tier was off would render no decisions block
         # for a reason unrelated to decisions.
         unit: str | None = None
-        if self._notes is not None or self._decisions is not None:
+        if self._notes is not None or self._decisions is not None or self._memos is not None:
             unit = self._unit_for(occasion)
 
         # Issue #210 — read AFTER the transcript, because both reads are
@@ -932,7 +937,7 @@ class FirePath:
             character,
             unit_culture,
             self_account,
-            lessons,
+            (lessons, memos),
         ) = await asyncio.gather(
             asyncio.gather(
                 self._read_standing(occasion),
@@ -946,7 +951,7 @@ class FirePath:
             self._read_character(occasion, ref, transcript),
             self._read_unit_culture(occasion),
             self._read_self_account(occasion),
-            self._read_lessons(occasion),
+            asyncio.gather(self._read_lessons(occasion), self._read_memos(occasion, unit)),
         )
         return TagContext(
             tag_id=uuid.uuid4().hex,
@@ -963,6 +968,7 @@ class FirePath:
             self_account=self_account,
             lessons=lessons,
             notes=notes,
+            memos=memos,
             decisions=decisions,
             presence=presence,
             computer=computer,
@@ -1329,6 +1335,21 @@ class FirePath:
             self._metrics.inc(
                 "nora_errors_total", stage="fire_notes",
                 platform=occasion.platform,
+            )
+            return ()
+
+    async def _read_memos(self, occasion: Event, unit: str | None) -> tuple[Memo, ...]:
+        """The unit's kept memos (DEC-306), `_read_notes` mirrored: no store or
+        no unit renders none; a failed read is counted (`stage="fire_memos"`)
+        and renders none, never «nothing is kept» said with confidence."""
+        if self._memos is None or unit is None:
+            return ()
+        try:
+            return tuple(await self._memos.kept(unit=unit))
+        except Exception:
+            log.exception("fire memo-index read failed; continuing without it")
+            self._metrics.inc(
+                "nora_errors_total", stage="fire_memos", platform=occasion.platform,
             )
             return ()
 

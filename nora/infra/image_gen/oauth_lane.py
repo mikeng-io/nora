@@ -1,4 +1,4 @@
-"""The refresh-token chain both image OAuth lanes share (DEC-304, DEC-306).
+"""The refresh-token chain both image OAuth lanes share (DEC-304, DEC-307).
 
 xAI (`xai_oauth.py`) and OpenAI Codex (`openai_codex_oauth.py`) both ROTATE
 the refresh token on use, and a spent one is dead. Everything that follows
@@ -15,7 +15,7 @@ its token exchange (`_exchange`) and the shape its adapter wants back.
   login and is ignored: a fresh login takes over without anyone deleting a
   file.
 - A state file written before the fingerprint existed (the xAI lane's, until
-  DEC-306) names no login. It may hold the LIVE chain (the old code rotated
+  DEC-307) names no login. It may hold the LIVE chain (the old code rotated
   the `.env` token into it, so the bootstrap is already spent) or a DEAD one
   (a new login since). So its token is tried first, and only if the issuer
   refuses it is the `.env` bootstrap spent; whichever succeeds is written
