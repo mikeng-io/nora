@@ -356,9 +356,9 @@ class XaiOAuth(RotatingOAuthLane):
         # Cloudflare challenge: 403 while the token is still valid —
         # RETRYABLE, not terminal auth (design §4.2).
         if status == 403:
-            return Refusal("cloudflare", detail)
+            return Refusal("cloudflare", detail, code)
         if status in (400, 401):
-            return Refusal("auth", detail)
+            return Refusal("auth", detail, code)
         if status == 429:
-            return Refusal("rate_limited", detail)
-        return Refusal("down", detail)
+            return Refusal("rate_limited", detail, code)
+        return Refusal("down", detail, code)

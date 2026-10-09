@@ -9,8 +9,8 @@
   {
     "name": "unsaved rotation: every call retries the failed write",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "                if self._unsaved:\n                    # Retry the write that failed. No flock needed: while our\n                    # rotation is unsaved no other process can hold a newer\n                    # chain (it would need the token only we have).\n                    self._save(cached)\n",
-    "new": "",
+    "old": "                if self._unsaved and self._save(cached):\n",
+    "new": "                if False:\n",
     "target": "tests/contract/test_openai_codex_image_generator.py::test_an_unsaved_rotation_beats_the_older_chain_in_the_file"
   },
   {

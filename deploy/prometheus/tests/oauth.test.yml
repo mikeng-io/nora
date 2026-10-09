@@ -68,6 +68,45 @@ tests:
       - eval_time: 299m
         alertname: OAuthRefreshRefused
         exp_alerts: []
+      - eval_time: 299m
+        alertname: OAuthAccessTokenExpired
+        exp_alerts: []
+
+  # --- OAuthAccessTokenExpired ----------------------------------------------
+
+  # An access token that expired at t=1h and was never refreshed: pending
+  # from 1h, firing after the 30m `for`. A lane whose expiry stays ahead of
+  # the clock never fires; one with an unknown expiry (0) never does either.
+  - interval: 1m
+    input_series:
+      - series: 'nora_oauth_access_expiry_timestamp_seconds{job="nora",lane="xai"}'
+        values: '3600x200'
+      - series: 'nora_oauth_access_expiry_timestamp_seconds{job="nora",lane="openai_codex"}'
+        values: '0x200'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: OAuthAccessTokenExpired
+        exp_alerts: []
+      - eval_time: 95m
+        alertname: OAuthAccessTokenExpired
+        exp_alerts:
+          - exp_labels: { severity: critical, job: nora, lane: xai }
+            exp_annotations:
+              summary: "the xai access token has expired and was not refreshed"
+              description: >-
+                Image generation on this lane fails until a refresh succeeds. The
+                nora log names the lane and the reason the keepalive is retrying
+                (`oauth keepalive` / `oauth_lane` lines). A transient reason heals on
+                its own; `auth` needs a new login (see OAuthRefreshRefused).
+
+  - interval: 1m
+    input_series:
+      - series: 'nora_oauth_access_expiry_timestamp_seconds{job="nora",lane="xai"}'
+        values: '7200+60x300'
+    alert_rule_test:
+      - eval_time: 299m
+        alertname: OAuthAccessTokenExpired
+        exp_alerts: []
 
   # --- OAuthRefreshRefused --------------------------------------------------
 

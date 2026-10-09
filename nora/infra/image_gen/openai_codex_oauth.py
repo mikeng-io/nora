@@ -55,7 +55,14 @@ from typing import Literal
 
 import aiohttp
 
-from .oauth_lane import Exchange, LaneEvent, LaneState, Refusal, RotatingOAuthLane
+from .oauth_lane import (
+    DEAD_TOKEN_CODES,
+    Exchange,
+    LaneEvent,
+    LaneState,
+    Refusal,
+    RotatingOAuthLane,
+)
 
 log = logging.getLogger("nora.image_gen.openai_codex_oauth")
 
@@ -197,15 +204,21 @@ class OpenAICodexOAuth(RotatingOAuthLane):
                 refresh_token=rotated if isinstance(rotated, str) and rotated else refresh_token,
                 expires_at=_expires_at(access),
             )
-        if status in (400, 401, 403):
-            code = ""
-            if isinstance(body, dict):
-                err = body.get("error")
-                code = str(err.get("code") if isinstance(err, dict) else err or "")
-            return Refusal("auth", f"HTTP {status} {code}".strip())
+        code = ""
+        if isinstance(body, dict):
+            err = body.get("error")
+            code = str(err.get("code") if isinstance(err, dict) else err or "")
+        detail = f"HTTP {status} {code}".strip()
+        # A 403 is terminal only when the issuer says the token is dead; any
+        # other 403 (an edge challenge) heals on retry, and calling it `auth`
+        # would page the operator to log in again for nothing.
+        if status in (400, 401) or (status == 403 and code in DEAD_TOKEN_CODES):
+            return Refusal("auth", detail, code)
+        if status == 403:
+            return Refusal("down", detail, code)
         if status == 429:
-            return Refusal("rate_limited", "HTTP 429")
-        return Refusal("down", f"HTTP {status}")
+            return Refusal("rate_limited", detail, code)
+        return Refusal("down", detail, code)
 
 
 # -- operator login ---------------------------------------------------------

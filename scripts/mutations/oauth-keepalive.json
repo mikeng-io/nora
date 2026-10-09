@@ -37,28 +37,28 @@
   {
     "name": "a refused pre-fingerprint chain falls back to the .env login",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "                if outcome == \"auth\" and legacy:\n",
-    "new": "                if False:\n",
+    "old": "                    \"spending the .env login instead\", self.lane, tried.detail,\n                )\n                return await self._spend(self._bootstrap)\n",
+    "new": "                    \"spending the .env login instead\", self.lane, tried.detail,\n                )\n                return tried.reason\n",
     "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login"
   },
   {
     "name": "the refused legacy try is not reported as a failure (no false ERROR)",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "                outcome = await self._spend(chain.refresh_token, last=not legacy)\n",
-    "new": "                outcome = await self._spend(chain.refresh_token)\n",
+    "old": "                tried = await self._try(chain.refresh_token)\n                if not isinstance(tried, Refusal):\n",
+    "new": "                tried = await self._try(chain.refresh_token)\n                if not isinstance(tried, Refusal) or self._failed(tried.reason, tried.detail) == \"\":\n",
     "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_login"
   },
   {
     "name": "a refused refresh is logged at ERROR with its lane and reason",
     "file": "nora/infra/image_gen/oauth_lane.py",
-    "old": "        if reason in TERMINAL_REASONS:\n            log.error(\n",
-    "new": "        if reason in TERMINAL_REASONS:\n            log.debug(\n",
+    "old": "        if reason in self.terminal_reasons:\n            log.error(\n",
+    "new": "        if reason in self.terminal_reasons:\n            log.debug(\n",
     "target": "tests/contract/test_oauth_lane_contract.py::test_a_refused_refresh_is_logged_with_its_lane_and_never_its_token"
   },
   {
     "name": "the keeper refreshes before the access token expires, not only on the interval",
     "file": "nora/app/oauth_keepalive.py",
-    "old": "            due = min(due, link.expires_at - lane.skew_seconds)\n",
+    "old": "            due = min(due, link.expires_at - min(lane.skew_seconds, life / 2))\n",
     "new": "            pass\n",
     "target": "tests/contract/test_oauth_lane_contract.py::test_the_keeper_refreshes_before_the_access_token_expires"
   },
@@ -116,6 +116,55 @@
     "file": "deploy/prometheus/rules/nora.yml",
     "old": "          > 2 * nora_oauth_refresh_interval_seconds\n",
     "new": "          > 1 * nora_oauth_refresh_interval_seconds\n",
+    "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_rules_pass_their_promtool_cases"
+  },
+  {
+    "name": "only a dead-token code retires a pre-fingerprint chain (no bootstrap replay on invalid_client)",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "                if tried.code not in DEAD_TOKEN_CODES:\n",
+    "new": "                if False:\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_pre_fingerprint_chain_refused_for_another_reason_keeps_the_login_unspent"
+  },
+  {
+    "name": "a Codex 403 without a dead-token code is transient, not a dead login",
+    "file": "nora/infra/image_gen/openai_codex_oauth.py",
+    "old": "        if status in (400, 401) or (status == 403 and code in DEAD_TOKEN_CODES):\n",
+    "new": "        if status in (400, 401, 403):\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_an_edge_403_is_retried_not_a_dead_login"
+  },
+  {
+    "name": "a transient refresh failure is logged with its lane and reason",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            log.warning(\"%s: refresh failed (%s): %s; will retry\", self.lane, reason, detail)\n",
+    "new": "            pass\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_transient_failure_of_a_live_call_is_logged"
+  },
+  {
+    "name": "a rotation held only in memory raises the refused gauge",
+    "file": "nora/infra/image_gen/oauth_lane.py",
+    "old": "            self._emit_failure(\"state_unwritable\")\n",
+    "new": "            pass\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_rotation_held_only_in_memory_raises_the_refused_gauge"
+  },
+  {
+    "name": "a token shorter-lived than the skew refreshes at half-life, not every minute",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "            due = min(due, link.expires_at - min(lane.skew_seconds, life / 2))\n",
+    "new": "            due = min(due, link.expires_at - lane.skew_seconds)\n",
+    "target": "tests/contract/test_oauth_lane_contract.py::test_a_token_shorter_lived_than_the_skew_does_not_spin_the_keeper"
+  },
+  {
+    "name": "the keeper never sleeps past one interval",
+    "file": "nora/app/oauth_keepalive.py",
+    "old": "        span = min(due - self._clock(), timing.interval_seconds)\n",
+    "new": "        span = due - self._clock()\n",
+    "target": "tests/unit/test_oauth_keepalive.py::test_a_link_from_the_future_never_parks_the_keeper_past_an_interval"
+  },
+  {
+    "name": "an unknown access-token expiry (0) is not an expired one",
+    "file": "deploy/prometheus/rules/nora.yml",
+    "old": "          nora_oauth_access_expiry_timestamp_seconds > 0\n",
+    "new": "          nora_oauth_access_expiry_timestamp_seconds >= 0\n",
     "target": "tests/unit/test_oauth_alert_rules.py::test_the_oauth_rules_pass_their_promtool_cases"
   }
 ]

@@ -148,7 +148,9 @@ class OAuthKeepalive:
         self._metrics.gauge(
             "nora_oauth_refresh_interval_seconds", timing.interval_seconds, lane=name,
         )
-        self._metrics.gauge("nora_oauth_refresh_refused", 0, lane=name)
+        # `nora_oauth_refresh_refused` is NOT reset here: it is published by
+        # the first outcome, so a restart neither clears a refusal a live call
+        # saw nor resolves-and-refires the alert on every boot.
         link = lane.snapshot()
         # 0 when the lane has never refreshed under this login: the alert
         # reads that as "too long ago", which is right if the first refresh
@@ -201,8 +203,14 @@ class OAuthKeepalive:
             return floor
         due = link.refreshed_at + timing.interval_seconds
         if link.expires_at > 0:
-            due = min(due, link.expires_at - lane.skew_seconds)
-        span = due - self._clock()
+            # At most half the token's life early: a token that lives no
+            # longer than the skew would otherwise be refreshed every
+            # `min_delay_seconds`, ~1,400 rotations a day.
+            life = link.expires_at - link.refreshed_at
+            due = min(due, link.expires_at - min(lane.skew_seconds, life / 2))
+        # Never further out than one interval: a refreshed_at in the future
+        # (a clock jump) must not park the keeper past it.
+        span = min(due - self._clock(), timing.interval_seconds)
         if span <= 0:
             return floor
         jitter = self._rand() * min(span * timing.jitter_fraction, timing.jitter_cap_seconds)

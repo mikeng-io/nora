@@ -57,6 +57,15 @@ log = logging.getLogger("nora.image_gen.oauth_lane")
 #: login does), or the state file cannot be written (only the operator can).
 TERMINAL_REASONS: Final = frozenset({"auth", "state_unwritable"})
 
+#: Issuer error codes that say THIS refresh token is dead (spent, expired,
+#: revoked), as opposed to a refusal of the client or the request. Only these
+#: retire a pre-fingerprint chain in favour of the `.env` login: spending the
+#: bootstrap on any other refusal would replay a token that may be spent.
+DEAD_TOKEN_CODES: Final = frozenset({
+    "invalid_grant", "refresh_token_reused", "refresh_token_expired",
+    "refresh_token_invalidated",
+})
+
 
 @dataclass(frozen=True)
 class LaneState:
@@ -86,6 +95,7 @@ class Refusal:
 
     reason: str
     detail: str = ""
+    code: str = ""  # the issuer's error code, when it sent one
 
 
 @dataclass(frozen=True)
@@ -289,11 +299,11 @@ class RotatingOAuthLane:
             cached = self._cached
             if self._usable(cached, rejected, since):
                 assert cached is not None  # noqa: S101 — narrowed by _usable
-                if self._unsaved:
-                    # Retry the write that failed. No flock needed: while our
-                    # rotation is unsaved no other process can hold a newer
-                    # chain (it would need the token only we have).
-                    self._save(cached)
+                # Retry a write that failed. No flock needed: while our
+                # rotation is unsaved no other process can hold a newer
+                # chain (it would need the token only we have).
+                if self._unsaved and self._save(cached):
+                    self._observe(cached)  # clears the refused gauge
                 return cached
             if not self._writable():
                 return self._failed(
@@ -336,29 +346,37 @@ class RotatingOAuthLane:
                     chain = cached  # the file vanished; ours is current
                 else:
                     return await self._spend(self._bootstrap)
-                legacy = not chain.bootstrap_sha256
-                outcome = await self._spend(chain.refresh_token, last=not legacy)
-                if outcome == "auth" and legacy:
-                    # A pre-fingerprint chain the issuer refused: it was an
-                    # older login's, so the `.env` login is the live one.
-                    log.warning(
-                        "%s: the unfingerprinted state file's token was refused; "
-                        "spending the .env login instead", self.lane,
-                    )
-                    return await self._spend(self._bootstrap)
-                return outcome
+                if chain.bootstrap_sha256 or chain.refresh_token == self._bootstrap:
+                    return await self._spend(chain.refresh_token)
+                # A pre-fingerprint chain: try it, and only if the issuer says
+                # THIS token is dead is it an older login's, with the `.env`
+                # login the live one.
+                tried = await self._try(chain.refresh_token)
+                if not isinstance(tried, Refusal):
+                    return tried
+                if tried.code not in DEAD_TOKEN_CODES:
+                    return self._failed(tried.reason, tried.detail or "no detail")
+                log.warning(
+                    "%s: the unfingerprinted state file's token was refused (%s); "
+                    "spending the .env login instead", self.lane, tried.detail,
+                )
+                return await self._spend(self._bootstrap)
             finally:
                 if not waiter_owns_fd:
                     _release(fd)
 
-    async def _spend(self, refresh_token: str, *, last: bool = True) -> LaneState | str:
-        """One refresh grant. `last=False` is a try with a fallback behind
-        it: a refusal there is the caller's to report, not a failure yet."""
+    async def _spend(self, refresh_token: str) -> LaneState | str:
+        """One refresh grant; a refusal is reported (logged, observed)."""
+        outcome = await self._try(refresh_token)
+        if isinstance(outcome, Refusal):
+            return self._failed(outcome.reason, outcome.detail or "no detail")
+        return outcome
+
+    async def _try(self, refresh_token: str) -> LaneState | Refusal:
+        """One refresh grant; a refusal is returned, not yet reported."""
         outcome = await self._exchange(refresh_token)
         if isinstance(outcome, Refusal):
-            if not last and outcome.reason == "auth":
-                return outcome.reason
-            return self._failed(outcome.reason, outcome.detail or "no detail")
+            return outcome
         state = LaneState(
             access_token=outcome.access_token,
             refresh_token=outcome.refresh_token or refresh_token,
@@ -367,8 +385,12 @@ class RotatingOAuthLane:
             refreshed_at=self._clock(),
         )
         self._cached = state
-        self._save(state)  # a failure sets `_unsaved`; the next call retries
+        saved = self._save(state)  # a failure sets `_unsaved`; the next call retries
         self._observe(state)
+        if not saved:
+            # Refreshed, but the rotation lives only in memory: a restart now
+            # loses the chain. The refused gauge says so before that happens.
+            self._emit_failure("state_unwritable")
         return state
 
     # -- loud failure -------------------------------------------------------
@@ -376,7 +398,7 @@ class RotatingOAuthLane:
     def _failed(self, reason: str, detail: str) -> str:
         """Log every failure with its lane and reason, never a token. A
         terminal one is an ERROR: it does not heal without the operator."""
-        if reason in TERMINAL_REASONS:
+        if reason in self.terminal_reasons:
             log.error(
                 "%s: refresh failed (%s): %s; image generation on this lane is "
                 "unavailable until the operator acts (a new login, or a writable "
@@ -385,10 +407,13 @@ class RotatingOAuthLane:
             )
         else:
             log.warning("%s: refresh failed (%s): %s; will retry", self.lane, reason, detail)
+        self._emit_failure(reason)
+        return reason
+
+    def _emit_failure(self, reason: str) -> None:
         if self._observer is not None:
             with contextlib.suppress(Exception):
                 self._observer(LaneEvent(self.lane, False, reason, 0.0, 0.0))
-        return reason
 
     def _observe(self, state: LaneState) -> None:
         if self._observer is not None:

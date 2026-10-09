@@ -30,7 +30,7 @@ def _rules() -> dict[str, dict]:
 def test_the_rules_read_series_the_keeper_declares_and_sets() -> None:
     keeper_source = Path(oauth_keepalive.__file__).read_text(encoding="utf-8")
     rules = _rules()
-    for alert in ("OAuthRefreshStale", "OAuthRefreshRefused"):
+    for alert in ("OAuthRefreshStale", "OAuthRefreshRefused", "OAuthAccessTokenExpired"):
         for series in re.findall(r"nora_[a-z_]+", rules[alert]["expr"]):
             assert series in DECLARED_NAMES, (alert, series)
             assert f'"{series}"' in keeper_source, (alert, series)
@@ -48,6 +48,7 @@ def test_the_alerts_reach_the_channel_through_the_existing_route() -> None:
     rules = _rules()
     assert rules["OAuthRefreshStale"]["labels"]["severity"] == "critical"
     assert rules["OAuthRefreshRefused"]["labels"]["severity"] == "critical"
+    assert rules["OAuthAccessTokenExpired"]["labels"]["severity"] == "critical"
     routes = yaml.safe_load((ROOT / "deploy" / "alertmanager" / "alertmanager.yml").read_text())
     assert routes["route"]["receiver"] == "discord"
 

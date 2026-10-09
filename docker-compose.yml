@@ -408,14 +408,13 @@ services:
       # Unset behaves exactly as the old `./data` did. It is a compose-only
       # variable: the process no longer reads it (S3b).
       - ${NORA_DATA_HOST_ROOT:-./data}:/app/data
-      # OAuth state (DEC-137): the xAI access-token state file
-      # (`./state/xai-oauth.json`) lives in the SAME repo-tree state dir
-      # signal-cli's identity keys already use — container-writable (the
-      # access token refreshes through it), while the long-lived refresh
-      # token stays in the host `.env` (immutable, DEC-8). The access token
-      # never rides the `.env` restart race. The OpenAI Codex lane's
-      # `./state/openai-codex-oauth.json` (DEC-304) is here too, and for it
-      # the file is the ONLY live copy of the refresh token (it rotates).
+      # OAuth state (DEC-137, DEC-304, DEC-306): `./state/xai-oauth.json` and
+      # `./state/openai-codex-oauth.json` live in the SAME repo-tree state dir
+      # signal-cli's identity keys already use, container-writable. Both
+      # issuers rotate the refresh token on use, so the host `.env`
+      # (immutable, DEC-8) holds only the bootstrap a login wrote and these
+      # files are the ONLY live copy of each chain: losing one means logging
+      # in again. The daemon refreshes both on a schedule (DEC-306).
       - ./state:/app/state
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro

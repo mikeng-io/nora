@@ -61,7 +61,8 @@ async def issuer():
         rt = str(data.get("refresh_token"))
         state["sent"].append(rt)
         if state["status"]:
-            return web.json_response({"error": "unavailable"}, status=state["status"])
+            error = state.get("error", "unavailable")
+            return web.json_response({"error": error}, status=state["status"])
         if rt not in state["live"]:
             return web.json_response(
                 {"error": "invalid_grant", "error_description": "Invalid or unknown refresh token"},
@@ -278,6 +279,85 @@ async def test_a_pre_fingerprint_state_file_holding_a_dead_chain_yields_to_the_l
     saved = json.loads(path.read_text())
     assert saved["bootstrap_sha256"] == hashlib.sha256(b"rt-boot").hexdigest()
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_pre_fingerprint_chain_refused_for_another_reason_keeps_the_login_unspent(
+    kind, tmp_path, issuer,
+):
+    """Only an issuer saying THIS token is dead retires the old file's chain.
+    A refusal of the client (`invalid_client`) says nothing about the token,
+    and replaying the possibly-spent .env token then could revoke the family."""
+    base, srv = issuer
+    _legacy_file(kind, tmp_path, "rt-legacy-live")
+    srv["status"], srv["error"] = 401, "invalid_client"
+    result = await _call(_lane(kind, tmp_path, base, srv["clock"]))()
+    assert (result.status, result.reason) == ("unavailable", "auth")  # type: ignore[attr-defined]
+    assert srv["sent"] == ["rt-legacy-live"]
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_an_edge_403_is_retried_not_a_dead_login(kind, tmp_path, issuer):
+    """A 403 without a dead-token code is a challenge in front of the issuer:
+    transient. Mapped to `auth`, it paged "log in again" and parked the keeper
+    for a day."""
+    base, srv = issuer
+    srv["status"], srv["error"] = 403, "challenge"
+    result = await _call(_lane(kind, tmp_path, base, srv["clock"]))()
+    assert result.status == "unavailable"  # type: ignore[attr-defined]
+    assert result.reason not in ("auth", "state_unwritable")  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_transient_failure_of_a_live_call_is_logged(kind, tmp_path, issuer, caplog):
+    base, srv = issuer
+    srv["status"] = 503
+    with caplog.at_level(logging.WARNING):
+        result = await _call(_lane(kind, tmp_path, base, srv["clock"]))()
+    assert (result.status, result.reason) == ("unavailable", "down")  # type: ignore[attr-defined]
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(kind in w and "down" in w and "503" in w for w in warnings), warnings
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_rotation_held_only_in_memory_raises_the_refused_gauge(
+    kind, tmp_path, issuer, monkeypatch,
+):
+    """Refreshed, but the write failed: a restart now loses the chain. The
+    alert's gauge must say so while there is still time, and clear once a
+    later call's retry lands the write."""
+    import os
+
+    base, srv = issuer
+    clock = srv["clock"]
+    metrics = Metrics()
+    lane = _lane(kind, tmp_path, base, clock)
+    OAuthKeepalive(metrics, clock=clock).register(lane, KeepaliveTiming(interval_seconds=DAY))
+    real_replace = os.replace
+
+    def failing_replace(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
+    assert metrics.get("nora_oauth_refresh_refused", lane=kind) == 1
+    monkeypatch.setattr(os, "replace", real_replace)
+    assert (await _call(lane)()).status == "ok"  # type: ignore[attr-defined]
+    assert metrics.get("nora_oauth_refresh_refused", lane=kind) == 0
+    assert srv["sent"] == ["rt-boot"]
+
+
+@pytest.mark.parametrize("kind", LANES)
+async def test_a_token_shorter_lived_than_the_skew_does_not_spin_the_keeper(
+    kind, tmp_path, issuer,
+):
+    """A 30-minute token with a 1-hour skew: refresh at half its life, not
+    every minute (the floor), which would be ~1,400 rotations a day."""
+    base, srv = issuer
+    srv["ttl"] = 1800.0
+    lane = _lane(kind, tmp_path, base, srv["clock"])
+    slept = await _run_keeper(lane, srv["clock"], stop_after=2)
+    assert slept == [0.0, 900.0, 900.0]
 
 
 @pytest.mark.parametrize("kind", LANES)

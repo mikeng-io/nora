@@ -312,6 +312,26 @@ groups:
             openai_codex), then `docker compose up -d --force-recreate nora`. The
             new login supersedes the old state file; nothing needs deleting.
 
+      # The access token has EXPIRED and nothing has refreshed it: image
+      # generation on the lane is failing now. The staleness rule above waits
+      # twice the interval (48h at the default), and xAI's access token lives
+      # ~6h, so a lane stuck on a transient failure (`down`, `cloudflare`)
+      # would be broken for most of two days before it paged. This pages
+      # within the half hour. `> 0`: an unknown expiry is not an expired one.
+      - alert: OAuthAccessTokenExpired
+        expr: >-
+          nora_oauth_access_expiry_timestamp_seconds > 0
+          and nora_oauth_access_expiry_timestamp_seconds < time()
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "the {{ $labels.lane }} access token has expired and was not refreshed"
+          description: >-
+            Image generation on this lane fails until a refresh succeeds. The
+            nora log names the lane and the reason the keepalive is retrying
+            (`oauth keepalive` / `oauth_lane` lines). A transient reason heals on
+            its own; `auth` needs a new login (see OAuthRefreshRefused).
+
       # The refresh token itself was refused (or the state dir is unwritable):
       # no retry fixes either, so this fires at once rather than waiting for
       # the staleness window above. A gauge, set by every failed refresh and

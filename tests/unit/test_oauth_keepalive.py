@@ -139,6 +139,16 @@ async def test_jitter_only_pulls_a_refresh_earlier() -> None:
     assert slept == [0.0, DAY - 900.0, DAY - 900.0]
 
 
+async def test_a_link_from_the_future_never_parks_the_keeper_past_an_interval() -> None:
+    """A clock jump wrote refreshed_at a week ahead: the keeper still wakes
+    within one interval."""
+    clock = Clock()
+    lane = ScriptedLane(clock, [])
+    lane.link = Link(clock.now + 7 * DAY, clock.now + 17 * DAY)
+    slept = await _run(lane, clock, sleeps=0)
+    assert slept == [DAY]
+
+
 # -- composition --------------------------------------------------------------
 
 
