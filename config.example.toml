@@ -751,6 +751,36 @@ quality_model = "grok-imagine-image-quality"
 refresh_token_env = "XAI_OAUTH_REFRESH_TOKEN"
 timeout_seconds = 90.0
 
+# Video generation (`video_create`, design/video-generation, operator 2026-10-02):
+# MiniMax CN, MiniMax-H3, 480P, 15 s. A clip renders for one to three minutes and
+# is delivered later as a LINK through the compute poller, so `enabled = true`
+# needs `[compute] enabled = true` (refused at load otherwise). Off by default:
+# a 15 s clip is estimated at about 11% of the CN plan's weekly quota, which her
+# speech and Hermes share. Enabled without the key below: the tool is withheld.
+[video_gen]
+enabled = false
+provider = "minimax_cn"
+resolution = "480P"                 # the only accepted value
+duration_seconds = 15
+# Explicit, never "adaptive": the live API refused `adaptive` for a reference
+# task (2026-10-02), so the config refuses it for every task.
+ratio = "3:4"
+# Privacy gate, as [image_gen]: a reference image leaves the box for a third-
+# party cloud. Only photos Nora holds (this conversation's, or her canonical
+# picture) can be references, sent as data: URIs, never an external URL.
+allow_reference_images = false
+# Hard cap per local day ([analytics] tz_name), checked in code before a create
+# and counted from compute_jobs, so a restart does not reset it. A clip the
+# provider failed costs nothing and does not count. 1 is a placeholder until a
+# 15 s clip is measured.
+max_clips_per_day = 1
+
+[video_gen.minimax_cn]
+model = "MiniMax-H3"                 # fallback inside the decision: "MiniMax-H3-Max"
+api_key_env = "MINIMAX_CN_API_KEY"   # resolved by NAME (DEC-8), the [speech.tts] key
+host = "https://api.minimaxi.com"
+timeout_seconds = 45.0
+
 # Google routing for the `route` tool (DEC-46). The WHOLE SECTION IS OPTIONAL
 # and every key defaults — a config.toml without it behaves as if routing is
 # off. `route` is the one grounding tool that costs money and reaches a third

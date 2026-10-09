@@ -1,8 +1,21 @@
+---
+type: design
+title: "Video generation: MiniMax-H3, 480P, 15 s, with a reference image"
+description: "Built 2026-10-09, ships off. `video_create` starts one clip on MiniMax CN as a deferred job in the compute outbox and returns; the poller delivers the finished clip into the room as a link (signed URL, 24 h) attached by code. Hard daily cap read from compute_jobs before every create; reference images only from custody, behind a privacy gate. §9 is what was built and what it changed in this proposal."
+tags: [nora, video, minimax, compute-jobs, outbox, tool, skill]
+timestamp: '2026-10-09'
+status: built
+governance: operator-directed
+edges:
+  - {dst: ../subagent/00-design.md, rel: relates_to, provenance: asserted}
+---
+
 # Video Generation — MiniMax-H3, 480P, 15 s, with a reference image
 
-**Status:** Proposed (nothing built)
-**Date:** 2026-10-02
-**DEC:** to be numbered from `origin/master` at merge time (`nora-decision`)
+**Status:** Built 2026-10-09, shipped `enabled = false` (§9). Sections 1 to 8 are the proposal as
+written on 2026-10-02; where the build settled one of its open points, §9 says how.
+**Date:** 2026-10-02 (proposal), 2026-10-09 (built)
+**DEC:** DEC-304 (numbered from `origin/master` at merge time, `nora-decision`)
 **Operator decision (2026-10-02):** one model, one resolution, one duration. MiniMax-H3, 480P, 15 s, with reference images supported. Hailuo, 768P and 2K are out of scope.
 
 ## 1. What this is
@@ -93,3 +106,23 @@ If the 15 s call is refused for H3, the fallback inside the same decision is `mo
 ## 8. Not decided here
 
 Video editing and reference video or audio inputs, resolutions other than 480P, durations other than 15 s, and any use of `delegate_task`.
+
+## 9. As built (2026-10-09)
+
+**The tool is `video_create`, not `generate_video`.** ADR 0015 §1 names a new tool `<domain>_<verb>` and `tests/architecture/test_tool_names.py` refuses any other shape; `generate_image` is exempt only because it predates the rule. `create` is the verb `subagent_create` uses for starting a thing that did not exist. Level 3, budget 1, a tag-turn tool only (`TAG_ONLY_TOOLS`), withheld from every surface unless `[video_gen]` is wired (`VIDEO_TOOLS`).
+
+**The three fit gaps of §1.**
+
+- *A single `compute_backend`.* Already resolved on master before this build: `composition.py` holds `compute_backends: dict[str, ComputeBackend]` keyed by `compute_jobs.kind`. The video backend registers under `VIDEO_KIND = "video"` beside the sub-agent's `subagent`.
+- *No slot for the ratio or reference images in `launch`.* Also already resolved: `ComputeBackend.launch(request: LaunchRequest)` carries a typed `payload`, and `ComputeJob.payload` persists one. The video payload is `nora.domain.video.VideoRequest` (the prompt and each reference as `sha256` plus bytes). Ratio, resolution, duration and model are the deployment's, applied by the adapter, never chosen by the model. The row keeps `VideoRequest.as_payload()` (the prompt and the reference shas, never the bytes) plus the settings the adapter actually sent. Nothing in the payload is needed to poll: the backend is stateless and its `backend_job_id` is `<task_id>@<launch epoch>`, the provider's handle (queryable 7 days) plus what `poll` needs to give up on a job that never finishes (30 min against a measured 52 to 178 s). So a restart loses nothing, and boot recovery leaves a video row pending (`recover(durable_kinds=...)`, `ComputeJobStore.sweep_pending(keep_kinds=...)`) where it still sweeps an in-memory sub-agent row as lost.
+- *A summary plus a URL.* Link delivery, §6 option 1. The finished clip's signed URL rides on the occasion (`Event.attached_urls`) and the fire path attaches it to her message by code (`LinkCarry.attach`): a signed URL is long and one wrong character breaks its signature, so she is told the link is attached and that it stops working 24 hours after the clip was made, and she says that rather than copying it.
+
+**The cap (§4)** is `VideoDesk`: `[video_gen] max_clips_per_day` per local day (`[analytics] tz_name`), counted from `compute_jobs` (`ComputeJobStore.kind_since`), so a restart does not reset it, and checked under one lock before any provider call. Only a task the provider failed is free (a failed task costs nothing, §3), read from the row's `failure_reason` because the poller marks a delivered failure `done`; a clip that timed out, expired or was lost mid-delivery counts, since it may have rendered. A create that broke after it was sent (a read timeout) may have started a billed clip with no task id, so it is written as a terminal `uncertain` row that counts and is never delivered, and the tool tells her not to try again that day. The refusal is the tool's `refused` status, whose note says the day's limit is used and that it resets tomorrow. A second call in one turn returns the first clip.
+
+**Create refusals are synchronous.** The desk calls the backend's `start`, not the port's `launch`, so a create the provider refuses (HTTP error, a `base_resp` refusal, a reference it cannot take) writes no row, spends no cap and answers `unavailable` at once rather than "I'm on it" followed by a failure. A refusal that only the poll reports (`task.error`) is delivered as a failure, and `task.error` is logged on every failed task.
+
+**Reference images (§5)** resolve through the same custody helper `generate_image` uses (`_held_image`: this conversation's media window first, then only the canonical self row), are sent as `data:image/<png|jpeg|webp>;base64,` URIs, and are refused unless `allow_reference_images`. An external URL is never a reference. The `video-generation` runtime skill carries the judgement (does she appear, attach the canonical picture only then, a photo of a person is that person).
+
+**Config (§2)** is as proposed, with two refusals at load: `ratio = "adaptive"` (and any value that is not `W:H`), and `[video_gen] enabled` without `[compute] enabled`. `resolution` accepts `480P` only. Enabled without the key builds nothing and withholds the tool.
+
+**Unverified, needs the operator.** No live call was made while building (a 15 s clip is about 11% of a weekly quota shared with production). Unmeasured: the 15 s clip itself (§7), the exact `content[]` item shape for a reference image (the adapter sends `{"type": "image_url", "image_url": {"url": ...}, "role": "reference_image"}`), the nesting of the query answer (read at the top level or under `task`), whether a signed OSS URL passes R-18 intact in production (a test URL of the documented shape does), and the `tool_selection` routing measurement (`nora-tool` §7).

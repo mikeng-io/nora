@@ -6,7 +6,7 @@ constructed, parametrized alongside the in-memory fake.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -350,3 +350,28 @@ async def test_mark_writes_the_final_checkpoint_after_the_row_is_no_longer_pendi
     # a mark without one leaves what is there
     await store.mark(job.id, ComputeJobState.DONE, error="x")
     assert (await store.get(job.id)).checkpoint == {"done": ["a"], "kept_files": []}
+
+
+async def test_sweep_pending_leaves_a_kept_kind_pending(store):
+    """A kind whose handle survives a restart (a video job's is the provider's task id) is
+    left pending by boot recovery; every other kind is swept as before."""
+    video = _job(kind="video", backend_job_id="T1@1")
+    worker = _job(id=uuid4(), kind="subagent")
+    await store.create(video)
+    await store.create(worker)
+    swept = await store.sweep_pending(now=datetime.now(UTC), keep_kinds=frozenset({"video"}))
+    assert [j.id for j in swept] == [worker.id]
+    assert (await store.get(video.id)).state is ComputeJobState.PENDING
+
+
+async def test_kind_since_reads_one_kind_from_a_time_any_room_any_state(store):
+    """`video_create`'s daily cap reads this, so the count survives a restart."""
+    now = datetime.now(UTC)
+    old = _job(kind="video", created_at=now - timedelta(days=2))
+    today = _job(id=uuid4(), kind="video", conversation_id="conv-2",
+                 state=ComputeJobState.FAILED)
+    other = _job(id=uuid4(), kind="subagent")
+    for job in (old, today, other):
+        await store.create(job)
+    rows = await store.kind_since(kind="video", since=now - timedelta(hours=1))
+    assert [j.id for j in rows] == [today.id]

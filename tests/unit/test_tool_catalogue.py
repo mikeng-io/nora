@@ -72,6 +72,13 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # pays nothing for them until the portal pages exist. 2,500 holds these and
 # roughly two more lines.
 #
+# RE-SET 2026-10-09, 2,500 -> 2,600, for ONE NEW TOOL, from the MEASURED block:
+# `video_create` (25 tokens, design/video-generation, DEC-304) on master's 2,485
+# over 77 Discord lines: total 2,510 over 78. The line was cut from 35 to 25
+# before this re-set; no existing line changed. It ships withheld
+# (`[video_gen] enabled = false`), so a live turn pays nothing for it until the
+# operator turns it on. 2,600 holds it and roughly three more lines.
+#
 # MEASURED 2026-10-01 against what a tag turn is actually shown (fix PR C, review
 # of 2026-09-30, minor 3): the ceiling is asserted over the LARGEST PER-PLATFORM
 # tag catalogue (`_tag_catalogue`: the registered tools `ToolScope` admits for
@@ -79,7 +86,7 @@ ENC = tiktoken.get_encoding("cl100k_base")
 # 72 lines; Signal, WhatsApp and Instagram are 2,150 over 66. 2,250 does NOT hold
 # Discord's (by 60), so it is not restored; 2,500 stays, which is the ceiling
 # from the row above and leaves 190 over the real block, about five lines.
-BLOCK_CEILING = 2_500
+BLOCK_CEILING = 2_600
 
 #: The platforms a tag turn runs on. The catalogue differs only by the tools
 #: scoped to one (`DISCORD_ONLY_TOOLS`) and by the Dreamer-only ones, which no

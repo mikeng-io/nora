@@ -123,6 +123,7 @@ from nora.domain.ports import (
     DEFAULT_MEMORY_READ_TIMEOUT_SECONDS,
     CultureReader,
     JobResult,
+    JobStatus,
     LinkPreviewSource,
     MemoryStore,
     PlatformAdapter,
@@ -377,6 +378,11 @@ def compute_occasion(
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
         document_urls=tuple(d.url for d in readback.found if d.url),
+        # A finished job's own result link (a video clip's signed URL) rides with the message,
+        # attached by code: the body tells her it is there and not to write it out.
+        attached_urls=(
+            (result.url,) if result.status is JobStatus.SUCCEEDED and result.url else ()
+        ),
     )
 
 
@@ -1849,6 +1855,8 @@ class FirePath:
             # mint is a no-op and delivery would strip the very links we are delivering.
             for url in occasion.document_urls:
                 handle.links.mint_document(url, published=False)
+            for url in occasion.attached_urls:
+                handle.links.attach(url)
             now = self._clock().astimezone()
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name,

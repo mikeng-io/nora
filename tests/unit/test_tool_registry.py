@@ -14,7 +14,13 @@ from nora.agent.mcp import McpToolGroup
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.surface import WORKER_ONLY_TOOLS
-from nora.agent.tools import COMPUTER_TOOLS, LOADER_TOOL, NATIVE_TOOL_BUDGETS, SUBAGENT_TOOLS
+from nora.agent.tools import (
+    COMPUTER_TOOLS,
+    LOADER_TOOL,
+    NATIVE_TOOL_BUDGETS,
+    SUBAGENT_TOOLS,
+    VIDEO_TOOLS,
+)
 from nora.doctrine.loader import Doctrine
 from nora.domain.models import ConversationTarget
 from nora.obs.metrics import Metrics
@@ -402,6 +408,9 @@ def test_budgets_match_todays_table():
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
         "generate_image": 2,
+        # design/video-generation: one clip a turn; a second call is a second clip nobody
+        # asked for, spent on a shared weekly quota.
+        "video_create": 1,
         # media_search is a local table read (like recall_lookups); media_send
         # delivers a stored attachment (like send_gif).
         "media_search": 2, "media_send": 2,
@@ -556,13 +565,14 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
     # wired — but that budget is not a built tool here.
     # And `load_tools` is declared but not handed over: `build()` never
     # defers, and the loader ships only when something is on the shelf.
-    # (this build is the Dreamer path, which the four tag-only `subagent_*` tools and the
+    # (this build is the Dreamer path, which the tag-only `subagent_*` and `video_create` and the
     # worker-only `checkpoint_update` never reach)
     assert set(agent.tool_names) == (
-        set(ToolRegistry().tool_names()) - {LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS}
+        set(ToolRegistry().tool_names())
+        - {LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS}
     )
     assert set(agent.tool_names) == set(NATIVE_TOOL_BUDGETS) - {
-        "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *WORKER_ONLY_TOOLS,
+        "skills", LOADER_TOOL, *SUBAGENT_TOOLS, *VIDEO_TOOLS, *WORKER_ONLY_TOOLS,
     }
     assert "skills" in NATIVE_TOOL_BUDGETS
 
@@ -842,6 +852,8 @@ ACT_VERBS = frozenset({
     # DEC-137: generation is an external side effect (provider call +
     # artifact hosting), never a read — the Dreamer may not generate.
     "generate_image",
+    # design/video-generation: starts a clip on a provider and writes a job row.
+    "video_create",
     # media_send delivers a stored attachment (an act, like send_gif);
     # media_search is a read.
     "media_send",

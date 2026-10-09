@@ -70,8 +70,9 @@ class ComputeJobPoller:
         self._store = store
         # kind -> the backend that owns rows of that kind. A row whose kind has no entry is
         # left alone while the process runs (logged once), never failed or delivered. Boot
-        # recovery (`recover`) still fails every pending row whatever its kind: every worker
-        # today is in-process, so no row outlives the process that launched it.
+        # recovery (`recover`) fails every pending row whose kind's handle lives in memory (the
+        # sub-agent worker); a kind named in its `durable_kinds` (video: the handle is the
+        # provider's task id) stays pending and is polled again after a restart.
         self._backends = dict(backends)
         self._documents = documents
         self._unowned: set[UUID] = set()
@@ -188,6 +189,7 @@ class ComputeJobPoller:
 
 async def recover(
     *, store: ComputeJobStore, metrics: Metrics, now: datetime,
+    durable_kinds: frozenset[str] = frozenset(),
 ) -> list[ComputeJob]:
     """Boot recovery. BOTH non-terminal states resolve to `FAILED`, and the
     second half is where this stops mirroring `nora.app.heartbeat.recover`.
@@ -224,6 +226,11 @@ async def recover(
     track of it, ask me again» — which is the one statement that is true. See
     `nora.app.fire.lost_job_occasion`.
 
+    `durable_kinds` are the exception to the `PENDING` half: a kind whose handle is NOT in
+    memory (a video job's is the provider's task id, queryable for days) loses nothing across
+    a restart, so its pending rows stay pending and the next tick polls them. `FIRING` is
+    swept whatever the kind: a crash mid-delivery is at-most-once for every kind.
+
     Returns the swept rows, both states together.
     """
     firing = await store.sweep_firing(now=now)
@@ -232,7 +239,7 @@ async def recover(
             "boot recovery: %d compute job(s) were left FIRING and are now FAILED",
             len(firing),
         )
-    pending = await store.sweep_pending(now=now)
+    pending = await store.sweep_pending(now=now, keep_kinds=durable_kinds)
     if pending:
         log.warning(
             "boot recovery: %d compute job(s) were still PENDING and their backend "

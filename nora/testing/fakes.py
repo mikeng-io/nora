@@ -1585,6 +1585,12 @@ class FakeComputeJobStore:
         rows.sort(key=lambda j: (j.created_at, str(j.id)), reverse=True)
         return rows[:limit]
 
+    async def kind_since(self, *, kind: str, since: Any) -> list[ComputeJob]:
+        floor = ensure_utc_job(since, field="since")
+        rows = [j for j in self._jobs.values() if j.kind == kind and j.created_at >= floor]
+        rows.sort(key=lambda j: (j.created_at, str(j.id)))
+        return rows
+
     async def set_checkpoint(self, backend_job_id: str, checkpoint: Any, at: Any) -> bool:
         stamp = ensure_utc_job(at, field="checkpoint_at")
         for job_id, job in self._jobs.items():
@@ -1652,14 +1658,18 @@ class FakeComputeJobStore:
             ComputeJobState.FIRING, now, "swept at boot: process crashed mid-delivery", "lost",
         )
 
-    async def sweep_pending(self, *, now: Any) -> list[ComputeJob]:
+    async def sweep_pending(
+        self, *, now: Any, keep_kinds: frozenset[str] = frozenset(),
+    ) -> list[ComputeJob]:
         return self._sweep(
             ComputeJobState.PENDING, now,
             "swept at boot: lost track of this job across a restart", "lost",
+            keep_kinds=keep_kinds,
         )
 
     def _sweep(
         self, state: ComputeJobState, now: Any, error: str, reason: str,
+        *, keep_kinds: frozenset[str] = frozenset(),
     ) -> list[ComputeJob]:
         """Returns the SWEPT ROWS, matching `SqlComputeJobStore._sweep`'s
         `RETURNING`. A count would have been the easier fake and the wrong one:
@@ -1669,7 +1679,7 @@ class FakeComputeJobStore:
         stamp = ensure_utc_job(now, field="now")
         swept: list[ComputeJob] = []
         for job_id, job in list(self._jobs.items()):
-            if job.state is state:
+            if job.state is state and job.kind not in keep_kinds:
                 updated = replace(
                     job, state=ComputeJobState.FAILED, completed_at=stamp, error=error,
                     failure_reason=reason,
