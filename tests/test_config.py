@@ -2065,9 +2065,19 @@ def test_video_gen_ships_off_with_the_operators_settings(toml_path):
     video = load(toml_path).video_gen
     assert video.enabled is False and video.allow_reference_images is False
     assert (video.resolution, video.duration_seconds, video.ratio) == ("480P", 15, "3:4")
-    assert video.max_clips_per_day == 1
+    assert video.max_clips_per_room_per_day == 1
     assert (video.minimax_cn.model, video.minimax_cn.api_key_env) == (
         "MiniMax-H3", "MINIMAX_CN_API_KEY")
+
+
+def test_video_gen_refuses_the_old_all_rooms_cap_key_naming_the_new_one(toml_path):
+    """2026-10-09: the cap became per room, so the key was renamed. A file that still sets
+    `max_clips_per_day = 2` must not boot as if it meant two clips for the whole house."""
+    head, sep, tail = toml_path.read_text().partition("\n[video_gen]\n")
+    assert sep, "the template has no [video_gen] section"
+    toml_path.write_text(head + sep + "max_clips_per_day = 2\n" + tail)
+    with pytest.raises(ConfigError, match="max_clips_per_room_per_day"):
+        load(toml_path)
 
 
 def test_video_gen_on_with_the_poller_loads(toml_path):

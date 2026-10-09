@@ -223,12 +223,16 @@ class _Starter:
 
 def _desk(store: FakeComputeJobStore, starter: _Starter, *, cap: int = 1,
           now: datetime = NOW) -> VideoDesk:
-    return VideoDesk(jobs=store, backend=starter, clock=lambda: now, tz=HKT, max_per_day=cap)
+    return VideoDesk(
+        jobs=store, backend=starter, clock=lambda: now, tz=HKT, max_per_room_per_day=cap)
 
 
-async def _make(desk: VideoDesk, tag: str = "t1") -> Any:
+OTHER_ROOM = "another-room"
+
+
+async def _make(desk: VideoDesk, tag: str = "t1", room: str = ROOM) -> Any:
     return await desk.create(
-        platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+        platform=PLATFORM, conversation_id=room, conversation_type="group",
         requester_person_id="miles", tag_id=tag, request=VideoRequest("a wave"))
 
 
@@ -247,6 +251,47 @@ async def test_the_cap_is_read_from_the_table_so_a_restart_does_not_reset_it():
     assert len(starter.calls) == 1                    # refused BEFORE the provider
 
 
+async def test_each_room_has_its_own_cap():
+    """Operator 2026-10-09: the cap is per room. A second room starts its own clip while the
+    first is at its limit, and a third clip in either is refused; the refusal is that room's."""
+    store = FakeComputeJobStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=2)
+    assert [(await _make(desk, tag=f"a{i}")).status for i in range(2)] == ["started"] * 2
+    refused = await _make(desk, tag="a3")
+    assert (refused.status, refused.used, refused.cap) == ("at_cap", 2, 2)
+    assert len(starter.calls) == 2                    # refused BEFORE the provider
+    assert [(await _make(desk, tag=f"b{i}", room=OTHER_ROOM)).status for i in range(2)] == [
+        "started"] * 2
+    assert (await _make(desk, tag="b3", room=OTHER_ROOM)).status == "at_cap"
+    assert len(starter.calls) == 4
+
+
+async def test_another_rooms_clips_do_not_use_this_rooms_cap():
+    store = FakeComputeJobStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    await _make(desk, tag="a1")
+    assert await desk.used_today(platform=PLATFORM, conversation_id=ROOM) == 1
+    assert await desk.used_today(platform=PLATFORM, conversation_id=OTHER_ROOM) == 0
+    assert await desk.used_today(platform="discord-elsewhere", conversation_id=ROOM) == 0
+    other = await _make(desk, tag="b1", room=OTHER_ROOM)
+    assert (other.status, other.used, other.cap) == ("started", 1, 1)
+
+
+async def test_a_clip_the_provider_failed_in_one_room_frees_that_room_only():
+    store = FakeComputeJobStore()
+    starter = _Starter()
+    desk = _desk(store, starter, cap=1)
+    await _make(desk, tag="a1")
+    await _make(desk, tag="b1", room=OTHER_ROOM)
+    await _deliver_through_the_poller(store, JobResult(
+        JobStatus.FAILED, error="could not make it", failure_reason="failed"),
+        only_room=ROOM)
+    assert (await _make(desk, tag="a2")).status == "started"
+    assert (await _make(desk, tag="b2", room=OTHER_ROOM)).status == "at_cap"
+
+
 async def test_the_cap_resets_at_local_midnight_not_utc():
     store = FakeComputeJobStore()
     starter = _Starter()
@@ -256,12 +301,20 @@ async def test_the_cap_resets_at_local_midnight_not_utc():
     assert (await _make(_desk(store, starter, now=next_day), tag="t2")).status == "started"
 
 
-async def _deliver_through_the_poller(store: FakeComputeJobStore, result: JobResult) -> None:
+async def _deliver_through_the_poller(
+    store: FakeComputeJobStore, result: JobResult, *, only_room: str | None = None,
+) -> None:
     """The real poller, with a fire path that says it SENT: the row ends `done` even when the
-    result it told the room about was a failure."""
+    result it told the room about was a failure. `only_room` leaves every other room's clip
+    still rendering."""
     backend = FakeComputeBackend()
     for row in await store.pending(limit=10):
-        backend.set_result(job_id=row.backend_job_id, result=result)
+        if only_room is None or row.conversation_id == only_room:
+            backend.set_result(job_id=row.backend_job_id, result=result)
+        else:
+            backend.set_result(
+                job_id=row.backend_job_id, result=JobResult(JobStatus.RUNNING),
+                polls_before_done=99)
 
     async def speak(event: Any) -> str:
         return SENT

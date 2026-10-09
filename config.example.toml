@@ -816,11 +816,12 @@ ratio = "3:4"
 # party cloud. Only photos Nora holds (this conversation's, or her canonical
 # picture) can be references, sent as data: URIs, never an external URL.
 allow_reference_images = false
-# Hard cap per local day ([analytics] tz_name), checked in code before a create
-# and counted from compute_jobs, so a restart does not reset it. A clip the
-# provider failed costs nothing and does not count. 1 is a placeholder until a
-# 15 s clip is measured.
-max_clips_per_day = 1
+# Hard cap PER ROOM (platform + conversation) per local day (the tz_name of
+# [analytics]), checked in code before a create and counted from compute_jobs,
+# so a restart does not reset it. A clip the provider failed costs nothing and
+# does not count. 1 is a placeholder until a 15 s clip is measured. Renamed from
+# max_clips_per_day (which counted all rooms together); the old key is refused.
+max_clips_per_room_per_day = 1
 
 [video_gen.minimax_cn]
 model = "MiniMax-H3"                 # fallback inside the decision: "MiniMax-H3-Max"

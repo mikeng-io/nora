@@ -3,11 +3,13 @@
 It is the one place a clip is started from a turn, so the two rules that guard the spend live
 once, in code, BEFORE any provider call:
 
-- **The daily cap.** `max_per_day` clips per local day (the deployment's timezone), counted from
-  `compute_jobs` itself (`ComputeJobStore.kind_since`), so a restart never resets it. A clip the
+- **The daily cap, per room.** `max_per_room_per_day` clips per room (platform plus
+  conversation id) per local day (the deployment's timezone), counted from `compute_jobs`
+  itself (`ComputeJobStore.kind_since`), so a restart never resets it. A clip the
   provider failed costs nothing (measured 2026-10-02) and does not count
-  (`nora.domain.video.clip_counts`). Checked and launched under one lock, so two calls racing
-  cannot both pass a cap of one. A create that broke after it was sent is recorded against
+  (`nora.domain.video.clip_counts`). Checked and launched under one lock (one lock for all
+  rooms: a per-room count under it is still race-free), so two calls racing cannot both pass
+  a cap of one. A create that broke after it was sent is recorded against
   the cap as `uncertain`, since it may have rendered and a retry would spend again.
 - **One clip per turn.** A model that calls again in the same turn gets the first clip back,
   never a second (the sub-agent desk measured 2 to 3 create calls per draw, 2026-10-05).
@@ -49,7 +51,8 @@ class VideoStarter(Protocol):
 
 @dataclass(frozen=True)
 class VideoOutcome:
-    """`started` with the row's id; `at_cap` when today's clips are used (`used` of `cap`);
+    """`started` with the row's id; `at_cap` when this room's clips today are used
+    (`used` of `cap`);
     `refused` when the provider turned the request away (`reason`); `unavailable` otherwise."""
 
     status: Literal["started", "at_cap", "refused", "unavailable"]
@@ -63,13 +66,13 @@ class VideoOutcome:
 class VideoDesk:
     def __init__(
         self, *, jobs: ComputeJobStore, backend: VideoStarter, clock: Callable[[], datetime],
-        tz: str, max_per_day: int,
+        tz: str, max_per_room_per_day: int,
     ) -> None:
         self._jobs = jobs
         self._backend = backend
         self._clock = clock
         self._tz = ZoneInfo(tz)
-        self._cap = max_per_day
+        self._cap = max_per_room_per_day
         self._lock = asyncio.Lock()
         self._turn_jobs: dict[tuple[str, str, str], str] = {}
 
@@ -77,11 +80,13 @@ class VideoDesk:
         local = self._clock().astimezone(self._tz)
         return datetime.combine(local.date(), time.min, tzinfo=self._tz)
 
-    async def used_today(self) -> int:
+    async def used_today(self, *, platform: str, conversation_id: str) -> int:
+        """This room's clips since local midnight; other rooms' rows are not counted."""
         rows = await self._jobs.kind_since(kind=VIDEO_KIND, since=self._day_start())
         return sum(
             1 for r in rows
-            if clip_counts(failure_reason=r.failure_reason, result_url=r.result_url)
+            if r.platform == platform and r.conversation_id == conversation_id
+            and clip_counts(failure_reason=r.failure_reason, result_url=r.result_url)
         )
 
     async def _record_uncertain(
@@ -114,13 +119,14 @@ class VideoDesk:
             if tag_id and key in self._turn_jobs:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
             try:
-                used = await self.used_today()
+                used = await self.used_today(platform=platform, conversation_id=conversation_id)
             except Exception:
                 # Fail closed: a cap that cannot be read is not a cap that passed.
                 log.exception("video_create: today's clip count could not be read")
                 return VideoOutcome("unavailable", reason="cap_unreadable")
             if used >= self._cap:
-                log.info("video_create refused: %d of %d clips used today", used, self._cap)
+                log.info(
+                    "video_create refused: %d of %d clips used today in this room", used, self._cap)
                 return VideoOutcome("at_cap", used=used, cap=self._cap)
             try:
                 started = await self._backend.start(request)

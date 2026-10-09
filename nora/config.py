@@ -2987,10 +2987,13 @@ class VideoGenConfig(BaseModel):
     One model, one resolution, one duration, by the operator's decision: `resolution` is
     `480P` only. `ratio` is explicit, never `adaptive`: the live API refused `adaptive` for a
     reference task (`aspect ratio "adaptive" is not supported for task ref2va`, 2026-10-02),
-    so it is refused here for every task. `max_clips_per_day` is the hard cap `video_create`
-    checks in code before a create, counted per local day from `compute_jobs`; the default of
-    one is a placeholder until the first 15 s clip is measured. `allow_reference_images` is
-    the privacy gate `[image_gen]` has: a reference leaves the box for a third-party cloud.
+    so it is refused here for every task. `max_clips_per_room_per_day` is the hard cap
+    `video_create` checks in code before a create: clips one room (platform plus conversation)
+    may start per local day, counted from `compute_jobs`; the default of one is a placeholder
+    until the first 15 s clip is measured. It was `max_clips_per_day`, counted over all rooms
+    together until 2026-10-09; the old key is refused at load, naming the new one.
+    `allow_reference_images` is the privacy gate `[image_gen]` has: a reference leaves the box
+    for a third-party cloud.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -3001,9 +3004,20 @@ class VideoGenConfig(BaseModel):
     duration_seconds: int = Field(default=15, ge=4, le=15)
     ratio: str = "3:4"
     allow_reference_images: bool = False
-    max_clips_per_day: int = Field(default=1, ge=0)
+    max_clips_per_room_per_day: int = Field(default=1, ge=0)
 
     minimax_cn: MiniMaxCnVideoGenConfig = MiniMaxCnVideoGenConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _old_cap_key_is_refused(cls, data: object) -> object:
+        if isinstance(data, dict) and "max_clips_per_day" in data:
+            raise ValueError(
+                "[video_gen] max_clips_per_day was renamed max_clips_per_room_per_day "
+                "(2026-10-09): the cap now counts each room's clips separately, not all "
+                "rooms together. Rename the key; it is not read under the old name"
+            )
+        return data
 
     @field_validator("ratio")
     @classmethod
