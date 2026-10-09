@@ -565,7 +565,9 @@ async def heard(
 
     Both are returned because they must never collapse: *she said nothing* and
     *the wire refused what she said* are different facts, and a suite that maps
-    the second onto the first grades a healthy Nora as silent.
+    the second onto the first grades a healthy Nora as silent. A well-formed
+    Signal send lands in the sandbox (`nora.subject.sandbox_signal`), so the
+    status reads `sent` as production's does.
     """
     _, conversation_id = room or subject.room
     rows = await subject.deps.audit.recent(

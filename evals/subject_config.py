@@ -53,7 +53,8 @@ SKIP_PREFIX: tuple[str, ...] = (
     # `StartupError: no platform adapter is enabled` in 22 integration tests.
     # `_baseline()` already neutralises the network by pointing
     # `platforms.signal.account` at a placeholder, which is the right shape —
-    # enabled like the deployment, dialling nothing.
+    # enabled like the deployment. That stops the startup lookup only; a SEND
+    # still dialled until `nora.subject.sandbox_signal` made sends land.
     "platforms.signal.account",
     "platforms.signal.base_url",
     "platforms.discord.token_env",
