@@ -44,6 +44,14 @@ log = logging.getLogger("nora.guards")
 _MORE: TypeAdapter[bool | None] = TypeAdapter(bool | None)
 
 
+def _more_of(tool_input: Mapping[str, Any]) -> bool:
+    """`more` read the way the tool reads it (pydantic's lax bool); unreadable is False."""
+    try:
+        return bool(_MORE.validate_python(tool_input.get("more")))
+    except ValueError:
+        return False
+
+
 class DeliveredObserver(Protocol):
     """Told once a reply has actually reached the group (DEC-83).
 
@@ -887,6 +895,11 @@ class ReplyGuard(HookProvider):
         # when one was merely attempted. See `_before_model`.
         self._spoke = False
         self._turn_is_over = False
+        # A heads-up that still owes its answer: the last LANDED `send_reply`
+        # carried `more=true`, and some other tool has run since it. Read by
+        # `reply_still_owed`.
+        self._last_send_continued = False
+        self._work_since_send = False
         # Did THIS guard cancel a model call? Public because
         # `nora.engagement.pipeline` and `nora.app.fire` read it to refuse
         # DEC-93's recovery — the text such a turn ends with is this class's
@@ -1289,6 +1302,28 @@ class ReplyGuard(HookProvider):
             self.counts.get(name, 0) >= self._budgets.get(name, 0) for name in self._terminal
         )
 
+    @property
+    def reply_still_owed(self) -> bool:
+        """She sent a heads-up (`more=true`), did work after it, and has not
+        sent since: the answer she announced has not reached the room.
+
+        `nora.engagement.pipeline` reads it to let DEC-93's recovery and the
+        cut-off fallback run although something WAS delivered. Without it a
+        heads-up, which is delivered, silently disabled both, and an answer she
+        then wrote as prose was dropped while the turn read as `replied`
+        (review of #754, 2026-10-09). Work since the last send is the line
+        between «the heads-up» and «the answer, sent with `more=true` by
+        mistake»: after the second, prose would be a duplicate."""
+        return self._last_send_continued and self._work_since_send
+
+    @staticmethod
+    def _landed(result: Any) -> bool:
+        try:
+            text = result["content"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            return False
+        return isinstance(text, str) and text.strip() in ("sent", "held_for_review")
+
     @staticmethod
     def _reply_closes_turn(name: str, tool_input: Any, result: Any) -> bool:
         """True when a `send_reply` that LANDED said it was the last (DEC-42, amended).
@@ -1316,17 +1351,14 @@ class ReplyGuard(HookProvider):
         # the tool. An `is True` here read them as False and ended a turn the
         # tool saw as continuing. An unreadable value means the call itself
         # failed validation, so it never carries a `sent` word below.
-        raw = tool_input.get("more") if isinstance(tool_input, dict) else None
+        if not isinstance(tool_input, dict):
+            return False
         try:
-            if _MORE.validate_python(raw):
+            if _MORE.validate_python(tool_input.get("more")):
                 return False
         except ValueError:
             return False
-        try:
-            text = result["content"][0]["text"]
-        except (KeyError, IndexError, TypeError):
-            return False
-        return isinstance(text, str) and text.strip() in ("sent", "held_for_review")
+        return ReplyGuard._landed(result)
 
     def _before_model(self, event: BeforeModelCallEvent) -> None:
         """Relax `tool_choice` once she has spoken; end the turn at the cap.
@@ -1573,6 +1605,12 @@ class ReplyGuard(HookProvider):
                 ).get("title") or ""
                 if title:
                     self._notes_read.add(note_handle(title))
+            if name not in self._terminal:
+                self._work_since_send = True
+            elif self._landed(getattr(event, "result", None)):
+                self._last_send_continued = name == "send_reply" and _more_of(
+                    tool_use.get("input") or {})
+                self._work_since_send = False
             if name in self._terminal:
                 # She has spoken: `_before_model` relaxes `tool_choice` from
                 # here on, and ends the turn once every terminal verb's budget

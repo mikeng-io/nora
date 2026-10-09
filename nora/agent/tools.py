@@ -12981,8 +12981,8 @@ Args:
         choice. If you call neither, nothing is sent. It always goes to the
         conversation you were tagged in; you do not choose where. A send ends
         your turn unless you pass `more=true`. Do the notes, lookups and
-        publishing you owe BEFORE you reply when you can; anything you still do
-        after it needs `more=true`.
+        publishing you owe BEFORE your answer when you can; anything you still
+        do after it needs `more=true`.
 
         Returns one of three words. Read the middle one carefully.
           - `sent`: it reached the room.
@@ -13007,9 +13007,10 @@ Args:
                 guess a number that is not on a message you can see.
             more: True if you will do anything after this message: another
                 message, or any tool such as a search, the computer, an image
-                or a note. A line telling the room what you are about to do
-                before longer work always carries it. Leave it false
-                otherwise; the turn then ends.
+                or a note. A short line saying what you are about to do,
+                sent before longer work, carries it, and your answer then
+                follows in its own send_reply. Leave it false otherwise; the
+                turn then ends.
         """
         clean = _strip_media_markers(text)
         short = len(clean) <= ALONE_MAX_CHARS

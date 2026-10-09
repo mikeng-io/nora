@@ -208,3 +208,40 @@ async def test_the_guard_reads_more_as_the_tool_does():
 async def test_a_null_more_is_false_and_the_send_still_goes():
     calls, sent, _ = await _drive([{"text": "a", "more": None}])
     assert (calls, sent) == (1, ["a"])
+
+
+# --- the heads-up's answer is owed until it is sent (review of #754, 2026-10-09)
+
+
+async def test_a_heads_up_then_work_then_prose_leaves_the_answer_owed():
+    """The pipeline's recovery reads this: without it a delivered heads-up
+    disabled DEC-93's recovery and the prose answer was dropped."""
+    _calls, sent, guard = await _drive([{"text": "let me check", "more": True},
+                                        {"__tool__": "now"}])
+    assert sent == ["let me check"] and guard.later == ["ran"]
+    assert guard.reply_still_owed is True
+
+
+async def test_an_answer_sent_after_the_work_settles_it():
+    _calls, sent, guard = await _drive([{"text": "let me check", "more": True},
+                                        {"__tool__": "now"}, {"text": "it is Thursday"}])
+    assert sent == ["let me check", "it is Thursday"]
+    assert guard.reply_still_owed is False
+
+
+async def test_an_answer_sent_with_more_by_mistake_is_not_owed_twice():
+    """Prose after it would be a duplicate of what the room already read."""
+    _calls, _sent, guard = await _drive([{"text": "let me check", "more": True},
+                                         {"__tool__": "now"},
+                                         {"text": "it is Thursday", "more": True}])
+    assert guard.reply_still_owed is False
+
+
+async def test_more_true_with_no_work_after_owes_nothing():
+    _calls, _sent, guard = await _drive([{"text": "a", "more": True}])
+    assert guard.reply_still_owed is False
+
+
+async def test_a_plain_reply_owes_nothing():
+    _calls, _sent, guard = await _drive([{"text": "a"}])
+    assert guard.reply_still_owed is False
