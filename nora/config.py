@@ -2994,7 +2994,14 @@ class VideoGenConfig(BaseModel):
     until the first 15 s clip is measured. It was `max_clips_per_day`, counted over all rooms
     together until 2026-10-09; the old key is refused at load, naming the new one.
     `allow_reference_images` is the privacy gate `[image_gen]` has: a reference leaves the box
-    for a third-party cloud.
+    for a third-party cloud. `allow_reference_video` and `allow_reference_audio` are the same
+    gate for a clip and for a voice note or other audio someone sent (amended 2026-10-10), each
+    off by default and separate, since a voice note sent as a reference lends that person's
+    voice to the clip. `reference_seconds` is how much clip, and separately how much audio, one
+    create may send, shared by the references of that kind; each is cut to its share. 6 to 15:
+    the provider refuses a reference under 2 s (so three references need 6) and caps each kind
+    at 15 s in total, and a clip's seconds are billed beside the output's (measured
+    2026-10-10; audio was not billed).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -3005,6 +3012,9 @@ class VideoGenConfig(BaseModel):
     duration_seconds: int = Field(default=15, ge=4, le=15)
     ratio: str = "3:4"
     allow_reference_images: bool = False
+    allow_reference_video: bool = False
+    allow_reference_audio: bool = False
+    reference_seconds: float = Field(default=6.0, ge=6.0, le=15.0)
     max_clips_per_room_per_day: int = Field(default=1, ge=0)
 
     minimax_cn: MiniMaxCnVideoGenConfig = MiniMaxCnVideoGenConfig()

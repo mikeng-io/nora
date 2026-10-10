@@ -224,7 +224,7 @@ from ..domain.self_presence import KnownRoom, UnitRooms, platform_name
 from ..domain.standing import StandingHead
 from ..domain.subagent import Decision, SubagentBrief
 from ..domain.tool_call_log import ToolCallLogStore
-from ..domain.video import VideoReference, VideoRequest
+from ..domain.video import ReferenceKind, VideoReference, VideoRequest
 from ..domain.x_links import is_handle as _is_x_handle
 from ..domain.x_links import parse_link as _parse_x_link
 from ..infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
@@ -1128,11 +1128,13 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # and writes a `compute_jobs` row. `confirmed`: `started` is the row's own write after
     # the provider accepted the task. `non_idempotent`/`never`: a retry is a second clip. Level 3: a
     # status contract and two MUSTs (load the skill; no identifier in the prompt).
-    # Two picture modes, never both in one call (the provider refuses the mix; the tool refuses
-    # it first, `unavailable`): up to three `reference` photos, or one `first_frame` photo that
-    # becomes the clip's opening frame (image-to-video, amended 2026-10-10). Both sit behind
-    # `allow_reference_images`, since either photo leaves the box. No `last_frame`: no request
-    # for it yet, and it would be a fourth picture argument on a Level 3 spec.
+    # Two modes, never both in one call (the provider refuses the mix; the tool refuses it
+    # first, `unavailable`): up to three references, or one `first_frame` photo that becomes
+    # the clip's opening frame (image-to-video, amended 2026-10-10). A reference is a photo,
+    # a clip or a voice note, told apart by the held blob's media type, not by an argument
+    # (amended 2026-10-10: the same three slots, so no new argument on a Level 3 spec). Each
+    # kind sits behind its own gate (`allow_reference_images` / `_video` / `_audio`), since
+    # each leaves the box. No `last_frame`: no request for it yet.
     # Withheld unless `[video_gen]` is wired (`VIDEO_TOOLS`), tag turns only (`ToolScope`).
     "video_create": NativeTool(2, read_only=False,
                                side_effect_state="confirmed", idempotency="non_idempotent",
@@ -4406,6 +4408,13 @@ SUBAGENT_TOOLS: frozenset[str] = frozenset({
 #: unless `[video_gen]` is wired, and `ToolScope` admits it to a tag turn only.
 VIDEO_TOOLS: frozenset[str] = frozenset({"video_create"})
 
+#: A held blob's top-level media type, as the reference kind `video_create` sends it as
+#: (design/video-generation §9, amended 2026-10-10). Anything else is not a reference.
+_VIDEO_REF_KINDS: dict[str, ReferenceKind] = {"image": "image", "video": "video", "audio": "audio"}
+_VIDEO_REF_WORDS: dict[str, str] = {
+    "image": "photos", "video": "clips", "audio": "voice notes or other sound",
+}
+
 #: `document_read` returns the spec inline up to this many characters of JSON
 #: (about 10k tokens); a larger one is named and left out, never cut in half.
 _DOCUMENT_READ_CHARS = 40_000
@@ -4643,11 +4652,11 @@ def build_tool_specs(
     # (`[subagent] enabled = false`, offline, eval) answers `unavailable`; the registry
     # withholds the four before that matters, and the scope admits them to a tag turn only.
     subagent: SubagentDesk | None = None,
-    # `video_create`'s desk (design/video-generation) and the `[video_gen]
-    # allow_reference_images` gate. `None` answers `unavailable`; the registry withholds the
-    # tool before that matters.
+    # `video_create`'s desk (design/video-generation) and the reference kinds the `[video_gen]
+    # gates allow (`allow_reference_images` / `_video` / `_audio`: `image`, `video`, `audio`).
+    # `None` answers `unavailable`; the registry withholds the tool before that matters.
     video: VideoDesk | None = None,
-    video_refs_allowed: bool = False,
+    video_ref_kinds: frozenset[str] = frozenset(),
 ) -> tuple[ToolSpec, ...]:
     """Every native tool, closed over one turn's collaborators.
 
@@ -9257,7 +9266,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         (DEC-193): the FULL sha256 of the row whose `provenance.role` is
         exactly `"self"`, her canonical picture, `(sha256, bytes, False)`.
         Ambiguity in the window is never settled by it. Anything else is None
-        (never a fetch)."""
+        (never a fetch). `_held_media` with the media type dropped."""
+        held = await _held_media(marker, tool)
+        return None if held is None else held[:3]
+
+    async def _held_media(marker: str, tool: str) -> tuple[str, bytes, bool, str] | None:
+        """`_held_image`'s custody check, with the blob's media type as the
+        transcript recorded it at ingest (grounded against the bytes there,
+        `ground_media_type`). Her canonical picture is a picture: `image/*`."""
         try:
             rows = await store.recent(
                 conversation_id=conversation_id, limit=_media_window,
@@ -9287,12 +9303,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return None
         from_room = bool(matches)
         if matches:
-            sha256 = next(iter(matches))
+            sha256, media_type = next(iter(matches.items()))
         else:
             canonical = await _canonical_self(hex_handle, tool)
             if canonical is None:
                 return None
-            sha256 = canonical
+            sha256, media_type = canonical, "image/*"
         if blob_store is None:
             return None
         try:
@@ -9302,7 +9318,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return None
         if data is None:
             return None
-        return sha256, data, from_room
+        return sha256, data, from_room, media_type
 
     # ---- generate_image (DEC-137, design/proposed/29) --------------------
     #
@@ -9674,10 +9690,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         judgement about when you appear and which photo is whom.
 
         `reference`, `reference_2` and `reference_3` each take the marker code of one
-        photo (`a3f2c1` from `[image a3f2c1]`), up to 3. Each must already be in this
-        conversation, except your own canonical picture, which works in any room.
-        `first_frame` takes one such code instead: that photo becomes the clip's opening
-        frame. Never pass it together with a reference.
+        photo, clip or voice note (`a3f2c1` from `[image a3f2c1]`), up to 3: a photo
+        keeps a subject or place, a clip its motion, a voice note its voice. Each must
+        already be in this conversation, except your own canonical picture, which works in
+        any room. `first_frame` takes one photo code instead: that photo becomes the clip's
+        opening frame. Never pass it together with a reference.
 
         MUST: the prompt goes to an outside service, so it never carries a name, phone
         number, address or other identifier.
@@ -9685,14 +9702,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         `status` is one of:
         - `started`: the clip is rendering and will be posted here later.
         - `refused`: this room's video limit for today is used; nothing was started.
-        - `nothing_found`: a code is not a photo held here.
+        - `nothing_found`: a code is not a photo, clip or voice note held here.
         - `unavailable`: nothing was started.
         Every result carries a `note` saying how to report it.
 
         Args:
             prompt: What the clip shows and how it moves, written for the video model.
                 With `first_frame`, only what moves and sounds after that frame.
-            reference: Optional marker code of a photo, or your canonical picture.
+            reference: Optional marker code of a photo, clip or voice note, or your
+                canonical picture.
             reference_2: Optional second marker code.
             reference_3: Optional third marker code.
             first_frame: Optional marker code of the photo the clip starts from.
@@ -9709,13 +9727,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "note": "A video is made for the person who asked, in a turn they "
                             "started. Nothing was started."}
         wanted = [r for r in (reference, reference_2, reference_3) if r is not None]
-        if (wanted or first_frame is not None) and not video_refs_allowed:
+        if (wanted or first_frame is not None) and not video_ref_kinds:
             # Checked before the mix below, so its words-only offer is never a third call.
             # A first frame leaves the box the same way a reference does: the same gate.
             _record(metrics, tool, "unavailable", reason="references_off")
             return {"status": "unavailable",
-                    "note": "I can't use photos for videos right now: that "
-                            "feature is switched off. Nothing was started; I can still "
+                    "note": "I can't use photos, clips or voice notes for videos right now: "
+                            "that feature is switched off. Nothing was started; I can still "
                             "make one from words alone."}
         if first_frame is not None and wanted:
             # The provider refuses a first frame beside any reference; refused here, before
@@ -9737,18 +9755,39 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                                 "already sent here, or my own picture. Nothing was started."}
             marker = _handle_hex(code)
             held = (
-                await _held_image(marker, tool) if len(marker) >= HANDLE_CHARS else None
+                await _held_media(marker, tool) if len(marker) >= HANDLE_CHARS else None
             )
             if held is None:
                 _record(metrics, tool, "nothing_found", reason="reference_not_held")
                 return {"status": "nothing_found",
-                        "note": "I can't find a photo with that code here. Say you can't "
-                                "use it rather than guessing. Nothing was started."}
-            picture = VideoReference(sha256=held[0], data=held[1])
+                        "note": "I can't find a photo, clip or voice note with that code "
+                                "here. Say you can't use it rather than guessing. Nothing "
+                                "was started."}
+            kind = _VIDEO_REF_KINDS.get(held[3].partition("/")[0].strip().lower())
+            if kind is None:
+                _record(metrics, tool, "nothing_found", reason="reference_not_media")
+                return {"status": "nothing_found",
+                        "note": "That code is a file, not a photo, clip or voice note, so "
+                                "it cannot go into a video. Nothing was started."}
+            if index >= len(wanted) and kind != "image":
+                _record(metrics, tool, "unavailable", reason="first_frame_not_photo")
+                return {"status": "unavailable",
+                        "note": "A first frame must be a photo, so nothing was started. A "
+                                "clip or voice note goes in as a reference instead."}
+            if kind not in video_ref_kinds:
+                _record(metrics, tool, "unavailable", reason=f"{kind}_references_off")
+                return {"status": "unavailable",
+                        "note": f"I can't use {_VIDEO_REF_WORDS[kind]} for videos right "
+                                "now: that is switched off. Nothing was started; I can "
+                                "still make one without it."}
+            # A clip keeps its sound only when sound may leave the box too: a clip of someone
+            # talking lends their voice as a voice note does (found in review).
+            held_ref = VideoReference(sha256=held[0], data=held[1], kind=kind,
+                                      sound=kind == "video" and "audio" in video_ref_kinds)
             if index < len(wanted):
-                references.append(picture)
+                references.append(held_ref)
             else:
-                frame = picture
+                frame = held_ref
         out = await video.create(
             platform=room.platform if room is not None else "",
             conversation_id=bound_conversation_id, conversation_type=conversation_type,
@@ -9767,6 +9806,13 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "note": "Something broke while starting the video, and it may or may "
                             "not be rendering; if it is, it will not be posted here. Say "
                             "so plainly, and do not try again today."}
+        if out.status == "refused" and out.reason:
+            # The provider, or the fit before it, turned the request away and said why
+            # (`a clip is shorter than 2 seconds`): nothing was spent.
+            _record(metrics, tool, "unavailable", reason="refused")
+            return {"status": "unavailable",
+                    "note": f"I couldn't start the video ({out.reason}), and nothing is "
+                            "rendering. Say so plainly; don't say you are on it."}
         if out.status != "started":
             _record(metrics, tool, "unavailable", reason=out.reason or out.status)
             return {"status": "unavailable",
@@ -15659,7 +15705,7 @@ def build_tools(
     culture: CultureReader | None = None,
     subagent: SubagentDesk | None = None,
     video: VideoDesk | None = None,
-    video_refs_allowed: bool = False,
+    video_ref_kinds: frozenset[str] = frozenset(),
 ) -> list:
     """The Strands-ready form of `build_tool_specs` — `adapt()` each spec so
     the docstrings above become the tool's model-facing description/schema
@@ -15722,6 +15768,6 @@ def build_tools(
         standing_head=standing_head,
         culture=culture,
         subagent=subagent,
-        video=video, video_refs_allowed=video_refs_allowed,
+        video=video, video_ref_kinds=video_ref_kinds,
     )
     return [adapt(spec) for spec in specs]

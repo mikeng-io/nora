@@ -9,8 +9,12 @@ Two calls, both on `api.minimaxi.com` with the CN plan key (`MINIMAX_CN_API_KEY`
 DEC-8, the convention `nora.infra.tts` and `[speech.tts]` already use):
 
 - **create**, `POST /v2/video_generation` with `model`, `content[]` (the prompt as a text item,
-  each reference as an image item with `role: "reference_image"` and a `data:` URI built from a
-  blob Nora holds), `resolution`, `duration` and an explicit `ratio`. A first-frame request
+  then each reference in the order given: a photo as `{"type": "image_url", "role":
+  "reference_image"}`, a clip as `{"type": "video_url", "role": "reference_video"}`, a voice
+  note or other audio as `{"type": "audio_url", "role": "reference_audio"}`, each a `data:` URI
+  built from a blob Nora holds; a clip or audio is first fitted to the provider's limits by
+  `nora.infra.video_refs`, inside `reference_seconds` per kind), `resolution`, `duration` and
+  an explicit `ratio`. A first-frame request
   sends its one photo as `role: "first_frame"` instead (never beside a reference, which the
   provider refuses) and `ratio: "adaptive"` (`FIRST_FRAME_RATIO`), since the frame decides the
   shape. `start` reads the answer:
@@ -42,12 +46,19 @@ Unverified until the first live call (no call was made building this, by the ope
 instruction: a 15 s clip costs about 11% of a weekly quota shared with production): the exact
 item shape of a reference image in `content[]` and the query response's nesting. `_task` reads
 the task object at the top level or under `task`, so either shape reads the same.
+
+Measured 2026-10-10 against the live API at 480P and 4 s, one call each: a reference clip as a
+`data:video/mp4` URI rendered (`usage.input_seconds` 2 for a 2 s clip, billed beside the output
+seconds); a reference audio alone, as a `data:audio/mp3` URI, rendered and was not billed
+(`input_seconds` 0, `input_audio_seconds` 3); `data:audio/mpeg` and a 12 fps clip were accepted
+at create and failed at the poll with an empty `usage`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import logging
 import time
 import uuid
@@ -57,7 +68,8 @@ from typing import Any, Protocol
 import httpx
 
 from nora.domain.ports import JobResult, JobStatus, LaunchRequest
-from nora.domain.video import VideoRequest, VideoStart
+from nora.domain.video import ReferenceKind, VideoReference, VideoRequest, VideoStart
+from nora.infra.video_refs import Fitted, Runner, fit_audio, fit_video
 
 log = logging.getLogger("nora.video_gen")
 
@@ -69,8 +81,9 @@ class Counter(Protocol):
 
 
 __all__ = [
-    "FIRST_FRAME_RATIO", "KEEP_DEADLINE_SECONDS", "LINK_SUMMARY", "MAX_CLIP_BYTES",
-    "MAX_REFERENCE_BYTES", "MAX_WAIT_SECONDS", "READY_SUMMARY", "MiniMaxVideoBackend",
+    "FIRST_FRAME_RATIO", "KEEP_DEADLINE_SECONDS", "LINK_SUMMARY", "MAX_BODY_BYTES",
+    "MAX_CLIP_BYTES", "MAX_REFERENCE_BYTES", "MAX_WAIT_SECONDS", "READY_SUMMARY",
+    "MiniMaxVideoBackend",
 ]
 
 #: A clip measured 52 to 178 s on 2026-10-02. A job still queued or running this long after its
@@ -80,6 +93,25 @@ MAX_WAIT_SECONDS = 1800.0
 #: The vendor's own per-image limit (design §5); refused here so nothing is sent that cannot pass.
 #: It holds for a first frame too.
 MAX_REFERENCE_BYTES = 30 * 1024 * 1024
+
+#: The provider's ceiling on a whole create body (v2 create reference, 2026-10-10). Base64 adds a
+#: third to every reference, so a request near it is refused here rather than sent.
+MAX_BODY_BYTES = 64 * 1024 * 1024
+
+#: What a reference that could not be fitted is called when the create is refused, by
+#: `Fitted.reason`. The tool puts it in her note.
+_UNFIT = {
+    "too_short": "is shorter than 2 seconds",
+    "no_stream": "has no picture or no sound to use",
+    "unreadable": "could not be read",
+    "too_large": "is too large to send",
+}
+_KIND_WORD: dict[ReferenceKind, str] = {"image": "a photo", "video": "a clip", "audio": "a sound"}
+_ROLE: dict[ReferenceKind, tuple[str, str]] = {
+    "image": ("image_url", "reference_image"),
+    "video": ("video_url", "reference_video"),
+    "audio": ("audio_url", "reference_audio"),
+}
 
 #: The `ratio` a first-frame (image-to-video) create sends: the frame decides the shape. The API
 #: reference: "the aspect ratio is determined by the input image and `ratio` is always
@@ -145,7 +177,8 @@ class MiniMaxVideoBackend:
         self, *, api_key: str, model: str, resolution: str, duration_seconds: int,
         ratio: str, metrics: Counter, host: str = "https://api.minimaxi.com",
         timeout_seconds: float = 45.0, transport: httpx.AsyncBaseTransport | None = None,
-        clock: Callable[[], float] = time.time,
+        clock: Callable[[], float] = time.time, reference_seconds: float = 6.0,
+        fit_runner: Runner | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
@@ -157,6 +190,10 @@ class MiniMaxVideoBackend:
         self._timeout = httpx.Timeout(timeout_seconds)
         self._transport = transport
         self._clock = clock
+        # Seconds of clip, and separately of audio, sent per create, shared by the references
+        # of that kind. A clip's seconds are billed beside the output's (measured 2026-10-10).
+        self._reference_seconds = reference_seconds
+        self._fit_runner = fit_runner
 
     @property
     def params(self) -> dict[str, Any]:
@@ -174,28 +211,75 @@ class MiniMaxVideoBackend:
 
     # ---- create ----------------------------------------------------------------------------
 
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        """Fit every clip and sound not fitted yet (`nora.infra.video_refs`), or the refusal
+        when one cannot be. Spends nothing, so the desk runs it BEFORE its lock: an encode
+        takes seconds and the lock serves every room. Never raises."""
+        per_kind = {kind: sum(1 for r in request.references if r.kind == kind)
+                    for kind in ("video", "audio")}
+        fitted_refs: list[VideoReference] = []
+        for ref in request.references:
+            if ref.kind == "image" or ref.mime:
+                fitted_refs.append(ref)
+                continue
+            # The kind's seconds are shared by its references; the provider caps each kind at
+            # 15 s in total, and the config caps `reference_seconds` there.
+            share = self._reference_seconds / max(1, per_kind[ref.kind])
+            fitted: Fitted = (
+                await fit_video(ref.data, seconds=share, sound=ref.sound, runner=self._fit_runner)
+                if ref.kind == "video"
+                else await fit_audio(ref.data, seconds=share, runner=self._fit_runner)
+            )
+            if fitted.data is None:
+                self._count("refused")
+                return VideoStart("refused", reason=(
+                    f"{_KIND_WORD[ref.kind]} {_UNFIT.get(fitted.reason, 'could not be used')}"
+                ))
+            fitted_refs.append(dataclasses.replace(
+                ref, data=fitted.data, mime=fitted.mime, seconds=fitted.seconds))
+        return dataclasses.replace(request, references=tuple(fitted_refs))
+
     async def start(self, request: VideoRequest) -> VideoStart:
         """Create one task. Never raises."""
         if not request.prompt.strip():
             self._count("refused")
             return VideoStart("refused", reason="the prompt was empty")
+        prepared = await self.prepare(request)
+        if isinstance(prepared, VideoStart):
+            return prepared
+        request = prepared
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt}]
         # `VideoRequest` cannot hold a first frame AND references (the provider refuses the mix).
-        images = (
+        items: list[tuple[VideoReference, str]] = (
             [(request.first_frame, "first_frame")] if request.first_frame is not None
-            else [(ref, "reference_image") for ref in request.references]
+            else [(ref, _ROLE[ref.kind][1]) for ref in request.references]
         )
-        for image, role in images:
-            fmt = _image_format(image.data)
-            if fmt is None:
-                self._count("refused")
-                return VideoStart("refused", reason="a picture is not a PNG, JPEG or WebP image")
-            if len(image.data) > MAX_REFERENCE_BYTES:
-                self._count("refused")
-                return VideoStart("refused", reason="a picture is larger than 30 MB")
-            uri = f"data:image/{fmt};base64,{base64.b64encode(image.data).decode('ascii')}"
-            content.append({"type": "image_url", "image_url": {"url": uri}, "role": role})
+        sent_seconds: list[float] = []
+        for ref, role in items:
+            if ref.kind == "image":
+                fmt = _image_format(ref.data)
+                if fmt is None:
+                    self._count("refused")
+                    return VideoStart("refused",
+                                      reason="a picture is not a PNG, JPEG or WebP image")
+                if len(ref.data) > MAX_REFERENCE_BYTES:
+                    self._count("refused")
+                    return VideoStart("refused", reason="a picture is larger than 30 MB")
+                mime, data = f"image/{fmt}", ref.data
+            else:
+                # Fitted by `prepare` above: sent as it is.
+                mime, data = ref.mime, ref.data
+                sent_seconds.append(round(ref.seconds, 2))
+            kind_type = _ROLE[ref.kind][0]
+            uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+            content.append({"type": kind_type, kind_type: {"url": uri}, "role": role})
+        if sum(len(str(item)) for item in content) > MAX_BODY_BYTES:
+            self._count("refused")
+            return VideoStart("refused", reason="the references together are too large to send")
         params = self.params
+        if sent_seconds:
+            # What the row records of the clips and sounds actually sent, in reference order.
+            params = {**params, "reference_seconds_sent": sent_seconds}
         if request.first_frame is not None:
             # Image-to-video takes its shape from the frame: the API reference says `ratio` is
             # always `adaptive` there and another value is ignored, and its own image-to-video
@@ -246,9 +330,11 @@ class MiniMaxVideoBackend:
             # Accepted with nothing to follow: a clip may be rendering, so a retry may pay twice.
             return VideoStart("unavailable", reason="the video service gave no task id",
                               uncertain=True)
+        kinds = [r.kind for r in request.references]
         log.info("video task %s created (%s)", task_id,
                  "first frame" if request.first_frame is not None
-                 else f"{len(request.references)} reference image(s)")
+                 else f"references: {kinds.count('image')} image, {kinds.count('video')} "
+                      f"video, {kinds.count('audio')} audio")
         self._count("started")
         return VideoStart("started", job_id=f"{task_id}@{int(launched)}", params=params)
 
