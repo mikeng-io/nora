@@ -3172,3 +3172,65 @@ async def test_a_fire_turn_reads_its_units_kept_memos_and_counts_a_failed_read(
     ctx = await fire.build_context(reminder_occasion([_reminder()]))
     assert ctx.memos == ()
     assert metrics.get("nora_errors_total", stage="fire_memos") == 1
+
+
+@pytest.mark.parametrize("location", [True, False])
+async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
+    persons: Persons, doctrine_store, metrics: Metrics, location: bool,
+) -> None:
+    """DEC-74 on the fire path: the room's `location` flag reaches the tool
+    surface, as it does on a tag. Left at the surface's `False` default,
+    `where_is` refused a proactive turn in a `location = true` room whose
+    roster holds sealed-sender accounts (Friends, 2026-09-27), where a tag in
+    the same room answered."""
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("location_trusted", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends", location=location,
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, runner=FakeAgentRunner(_send_turns("記得食藥")),
+    )
+
+    await path.run([_reminder()])
+
+    assert seen == [location]
+
+
+async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A held participation turn's text goes to the review channel, a room
+    other than the one `where_is` checks, so the room's trust is not lent to
+    it."""
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("location_trusted", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends", location=True,
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, adapter=_FireAdapter(),
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([ScriptedTurn(final_text="")]),
+        shadow_channel="review-1",
+    )
+
+    await path.speak(_participation())
+
+    assert seen == [False]
