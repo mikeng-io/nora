@@ -1,0 +1,185 @@
+"""`FakeDriveServer`: Google's OAuth token endpoint, Drive v3 and Sheets v4 as
+an `httpx.MockTransport` handler, for `GoogleDriveSource`'s tests
+(design/external-files/00-design.md §4).
+
+It behaves like the real servers on the paths the adapter takes, wrong calls
+included, so a test cannot pass on a request Google would refuse:
+
+- a request without the CURRENT access token is 401; a refresh with a revoked
+  refresh token is 400 `invalid_grant`;
+- a file nobody shared with the account, an unknown id, and a link-shared file
+  asked for without its resource key are all the same bare 404 `notFound`
+  (Drive does not say which);
+- a file in the bin answers its metadata with `trashed: true`;
+- `alt=media` on a Google-native file is 403 `fileNotDownloadable`,
+  `files.export` on a stored file 403 `fileNotExportable`, and an export over
+  Google's cap 403 `exportSizeLimitExceeded`;
+- the Sheets API answers `valueRanges` in the order the ranges were asked.
+
+Every request is kept in `requests`, so a test can count fetches.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from urllib.parse import parse_qs
+
+import httpx
+
+GDOC = "application/vnd.google-apps.document"
+GSHEET = "application/vnd.google-apps.spreadsheet"
+GSLIDES = "application/vnd.google-apps.presentation"
+
+
+@dataclass
+class DriveFile:
+    name: str
+    mime: str
+    data: bytes = b""
+    #: A native file's exports, by MIME type.
+    exports: dict[str, bytes] = field(default_factory=dict)
+    #: A Sheet's tabs, in order: title -> rows.
+    tabs: dict[str, list[list[object]]] = field(default_factory=dict)
+    shared: bool = True
+    trashed: bool = False
+    resource_key: str | None = None
+    owner: str = "Jordan"
+    modified: str = "2026-10-09T08:00:00.000Z"
+    download_disabled: bool = False
+    export_too_large: bool = False
+
+
+def _error(status: int, reason: str) -> httpx.Response:
+    return httpx.Response(status, json={
+        "error": {"code": status, "message": reason, "errors": [{"reason": reason}]},
+    })
+
+
+@dataclass
+class FakeDriveServer:
+    files: dict[str, DriveFile] = field(default_factory=dict)
+    refresh_token: str = "refresh-1"  # noqa: S105 - a test value
+    revoked: bool = False
+    down: bool = False
+    rate_limited: bool = False
+    requests: list[httpx.Request] = field(default_factory=list)
+    _issued: int = 0
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self.handle)
+
+    def expire_tokens(self) -> None:
+        """Every access token issued so far stops working (as at expiry)."""
+        self._issued += 1
+
+    def _current(self) -> str:
+        return f"access-{self._issued}"
+
+    def reads(self, file_id: str) -> int:
+        """How many API requests named `file_id` (token calls excluded)."""
+        return sum(1 for r in self.requests if f"/{file_id}" in r.url.path)
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.down:
+            raise httpx.ConnectError("unreachable", request=request)
+        if request.url.host == "oauth2.googleapis.com":
+            return self._token(request)
+        if request.headers.get("Authorization") != f"Bearer {self._current()}":
+            return _error(401, "authError")
+        if self.rate_limited:
+            return _error(429, "rateLimitExceeded")
+        path = request.url.path
+        if request.url.host == "www.googleapis.com" and path.startswith("/drive/v3/files/"):
+            return self._drive(request, path.removeprefix("/drive/v3/files/"))
+        if request.url.host == "sheets.googleapis.com" and path.startswith("/v4/spreadsheets/"):
+            return self._sheets(request, path.removeprefix("/v4/spreadsheets/"))
+        return _error(404, "notFound")
+
+    def _token(self, request: httpx.Request) -> httpx.Response:
+        form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+        if form.get("grant_type") != "refresh_token" or not form.get("client_secret"):
+            return httpx.Response(400, json={"error": "invalid_request"})
+        if self.revoked or form.get("refresh_token") != self.refresh_token:
+            return httpx.Response(400, json={
+                "error": "invalid_grant",
+                "error_description": "Token has been expired or revoked.",
+            })
+        return httpx.Response(200, json={
+            "access_token": self._current(), "expires_in": 3599,
+            "scope": "https://www.googleapis.com/auth/drive.readonly",
+            "token_type": "Bearer",
+        })
+
+    def _visible(self, request: httpx.Request, file_id: str) -> DriveFile | None:
+        held = self.files.get(file_id)
+        if held is None or not held.shared:
+            return None
+        if held.resource_key is not None:
+            keys = request.headers.get("X-Goog-Drive-Resource-Keys", "")
+            if f"{file_id}/{held.resource_key}" not in keys.split(","):
+                return None
+        return held
+
+    def _drive(self, request: httpx.Request, rest: str) -> httpx.Response:
+        file_id, _, verb = rest.partition("/")
+        held = self._visible(request, file_id)
+        if held is None:
+            return _error(404, "notFound")
+        params = request.url.params
+        native = held.mime.startswith("application/vnd.google-apps.")
+        if verb == "export":
+            if not native:
+                return _error(403, "fileNotExportable")
+            if held.export_too_large:
+                return _error(403, "exportSizeLimitExceeded")
+            if held.download_disabled:
+                return _error(403, "cannotExportFile")
+            body = held.exports.get(params.get("mimeType", ""))
+            if body is None:
+                return _error(400, "badRequest")
+            return httpx.Response(200, content=body)
+        if verb:
+            return _error(404, "notFound")
+        if params.get("alt") == "media":
+            if native:
+                return _error(403, "fileNotDownloadable")
+            if held.download_disabled:
+                return _error(403, "cannotDownloadFile")
+            return httpx.Response(200, content=held.data)
+        meta: dict[str, object] = {
+            "id": file_id, "name": held.name, "mimeType": held.mime,
+            "modifiedTime": held.modified, "trashed": held.trashed,
+            "owners": [{"displayName": held.owner}],
+        }
+        if not native:
+            meta["size"] = str(len(held.data))
+        return httpx.Response(200, json=meta)
+
+    def _sheets(self, request: httpx.Request, rest: str) -> httpx.Response:
+        file_id, _, verb = rest.partition("/")
+        held = self._visible(request, file_id)
+        if held is None or held.mime != GSHEET:
+            return httpx.Response(404, json={
+                "error": {"code": 404, "message": "not found", "status": "NOT_FOUND"},
+            })
+        if not verb:
+            return httpx.Response(200, json={"sheets": [
+                {"properties": {"title": title, "sheetType": "GRID"}} for title in held.tabs
+            ]})
+        if verb == "values:batchGet":
+            ranges = request.url.params.get_list("ranges")
+            out = []
+            for name in ranges:
+                title = name[1:-1].replace("''", "'") if name.startswith("'") else name
+                rows = held.tabs.get(title)
+                if rows is None:
+                    return httpx.Response(400, json={"error": {
+                        "code": 400, "message": f"Unable to parse range: {name}",
+                        "status": "INVALID_ARGUMENT",
+                    }})
+                out.append({"range": name, "majorDimension": "ROWS", "values": rows})
+            return httpx.Response(200, content=json.dumps({"valueRanges": out}).encode())
+        return _error(404, "notFound")

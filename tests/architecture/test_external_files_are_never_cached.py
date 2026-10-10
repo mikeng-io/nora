@@ -22,11 +22,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 #: The external-files modules: the domain module, the ingest stage, the fake,
-#: and every adapter under `nora/infra/external_files/` (S2 onwards).
+#: and every adapter under `nora/infra/external_files/` (S2 onwards; the
+#: directory is also scanned whole, so a new adapter is covered unnamed).
 _MODULES = (
     "nora/domain/external_files.py",
     "nora/ingest/stages/external_files.py",
     "nora/testing/external_files.py",
+    "nora/infra/external_files/google_drive.py",
+    "nora/infra/external_files/text.py",
 )
 _ADAPTER_DIR = ROOT / "nora" / "infra" / "external_files"
 

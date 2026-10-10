@@ -2157,6 +2157,17 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Checks of a one-time code, by outcome (" + " / ".join(OTP_CHECK_OUTCOMES) + ").",
         ("outcome",),
     ),
+    # External files (design/external-files §7): a refresh token the provider
+    # refused (`invalid_grant`: revoked, expired, or a Testing-mode consent
+    # screen's 7-day expiry). Counted on its own so a dead sign-in is one
+    # alert rather than a week of `unavailable` opens.
+    _CounterSpec(
+        "nora_external_files_invalid_grant_total",
+        "Token refreshes for a shared-file provider refused as invalid_grant "
+        "(the sign-in is revoked or expired: run scripts/external_files_auth.py "
+        "again), by provider.",
+        ("provider",),
+    ),
 )
 
 _GAUGES: tuple[_GaugeSpec, ...] = (

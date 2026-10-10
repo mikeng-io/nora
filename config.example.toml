@@ -2165,8 +2165,9 @@ public_url = ""
 # Opening a shared file link (design/external-files/00-design.md). A Google Doc,
 # Sheet, Slides or Drive link someone posts is ALWAYS recorded as a handle,
 # `[Google Doc link c41d09]`, whatever this says: recognising a link needs no account and
-# makes no network call. SHIPS OFF: `enabled` is the switch for opening one, a
-# later build step. `sources` is the providers, in order.
+# makes no network call. SHIPS OFF: `enabled` is the switch for opening one.
+# On, it also needs the three env vars below set (else opening answers
+# unavailable). `sources` is the providers, in order.
 [external_files]
 enabled = false
 sources = ["google_drive"]

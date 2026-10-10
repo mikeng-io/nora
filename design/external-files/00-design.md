@@ -1,7 +1,7 @@
 ---
 type: design
 title: "External files: a shared link becomes a handle, and Nora opens it only when asked"
-description: "Not built. A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
+description: "S1 merged, S2 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
 tags: [nora, tools, external-files, google-drive, adapter, handles, read-only]
 timestamp: '2026-10-10'
 status: proposed
@@ -9,9 +9,22 @@ status: proposed
 
 # External files
 
-Status (2026-10-10): **proposed, nothing built.** Revised the same day: the
-first version had a search over every file shared with her. The operator's
-model is a link handle opened on demand, and this text is that model.
+Status (2026-10-10): **S1 merged** (links recorded and rendered as handles,
+the port, the fake, the code lookup). **S2 built, off** (the Google Drive
+adapter `nora/infra/external_files/google_drive.py`, the text readers beside
+it, `scripts/external_files_auth.py`, the composition root's wiring); S3 to S5
+not built. Revised the same day: the first version had a search over every
+file shared with her. The operator's model is a link handle opened on demand,
+and this text is that model.
+
+S2 as built, where it differs from §4: Drive answers a file nobody shared
+with her and a file that does not exist with the same bare 404, so a 404 is
+`refused` (share it, then ask again) and `nothing_found` (deleted) is a file
+in the bin, read from a `trashed` field added to `files.get`. Slides are
+paged as one text, not numbered per slide: `text/plain` export marks no slide
+boundary, and numbering them needs the Slides API (a `.pptx` file IS numbered
+per slide). Office files are read with the standard library; PDFs with
+`pypdf`.
 
 ## Operator direction (2026-10-10)
 

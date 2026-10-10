@@ -47,6 +47,7 @@ from ..domain.ports import (
     BrowserRunner,
     CultureReader,
     DiscordPresenceSource,
+    ExternalFilesSource,
     GifSource,
     MediaDescriptionStore,
     MediaObjectStore,
@@ -271,8 +272,14 @@ class ToolRegistry:
         # gate. Without the desk the registry withholds the tool from every turn.
         video: VideoDesk | None = None,
         video_refs_allowed: bool = False,
+        # `[external_files]` (design/external-files §4, ships off): the one
+        # read-only source a shared file link is opened through, held for the
+        # life of the process like `route`. `None` answers the open
+        # `unavailable`.
+        external_files: ExternalFilesSource | None = None,
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
+        self._external_files = external_files
         self._record = record
         self._documents = documents
         self._lineage = lineage

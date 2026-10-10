@@ -124,6 +124,7 @@ from nora.domain.ports import (
     DiscordPresenceSource,
     DreamAdaptor,
     EngagePolicy,
+    ExternalFilesSource,
     ImageGenerator,
     MemoryStore,
     PlatformAdapter,
@@ -920,6 +921,38 @@ def _computer_token(cfg: Config) -> str:
             "refusing to start"
         )
     return token
+
+
+def external_files_source(cfg: Config, *, metrics: Any) -> ExternalFilesSource | None:
+    """The shared-file source the open tool reads through
+    (design/external-files/00-design.md §4), or None.
+
+    Built only under `[external_files] enabled` with every credential its
+    `[external_files.google_drive]` table names present in the environment
+    (DEC-8: the values live in `.env`, never in config). Off, or a value
+    missing, is None and the tool answers `unavailable`: a missing sign-in
+    costs the opens, never the boot. Recording a link as a handle needs none
+    of this and runs either way."""
+    if not cfg.external_files.enabled:
+        return None
+    drive = cfg.external_files.google_drive
+    names = (drive.client_id_env, drive.client_secret_env, drive.refresh_token_env)
+    values = [os.environ.get(name, "").strip() for name in names]
+    missing = [name for name, value in zip(names, values, strict=True) if not value]
+    if missing:
+        log.warning(
+            "[external_files] enabled but %s unset; opening a shared file answers "
+            "unavailable (run scripts/external_files_auth.py, put the values in .env)",
+            ", ".join(missing),
+        )
+        return None
+    from nora.infra.external_files.google_drive import GoogleDriveSource
+
+    client_id, client_secret, refresh_token = values
+    return GoogleDriveSource(
+        client_id=client_id, client_secret=client_secret,
+        refresh_token=refresh_token, metrics=metrics,
+    )
 
 
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
@@ -2970,6 +3003,9 @@ async def build_dependencies(
         documents=document_service if cfg.documents.enabled else None,
     ) if cfg.subagent.enabled else None
     tool_registry = ToolRegistry(
+        # `[external_files]` (ships off): the source a shared file link is
+        # opened through; None answers the open `unavailable`.
+        external_files=external_files_source(cfg, metrics=metrics),
         subagent=subagent_desk,
         video=video_desk,
         video_refs_allowed=cfg.video_gen.allow_reference_images,
