@@ -3931,6 +3931,22 @@ class ExternalFilesConfig(BaseModel):
     enabled: bool = False
     sources: list[str] = Field(default_factory=lambda: ["google_drive"])
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_per_source_credentials(cls, data: object) -> object:
+        """The pre-2026-10-11 `[external_files.google_drive]` table held the
+        OAuth env names; they moved to `[google]`. Refused by name rather than
+        by `extra="forbid"`'s generic message, so the fix is in the error."""
+        if isinstance(data, dict) and "google_drive" in data:
+            raise ValueError(
+                "[external_files.google_drive] is gone: Google's OAuth client and "
+                "refresh token are configured once, in the top-level [google] section "
+                "(client_id_env, client_secret_env, refresh_token_env), shared by every "
+                "Google service. Delete [external_files.google_drive] and set [google] "
+                "(see config.example.toml)"
+            )
+        return data
+
     @field_validator("sources")
     @classmethod
     def _known_sources(cls, value: list[str]) -> list[str]:

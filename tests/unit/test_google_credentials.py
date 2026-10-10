@@ -1,6 +1,7 @@
 """`GoogleCredentials`: Nora's ONE Google OAuth client and refresh token,
 shared by every Google service (operator, 2026-10-10; design/external-files
-§4). One refresh serves every consumer; a consumer whose scope the token was
+§4). One refresh token serves every consumer, each with its own downscoped
+access token; a consumer whose scope the token was
 not granted is unavailable on its own; the secrets reach no adapter and no
 log."""
 
@@ -13,6 +14,7 @@ import pytest
 
 from nora.domain.external_files import ExternalFileError, recognise
 from nora.infra.external_files.google_drive import DRIVE_SCOPE, GoogleDriveSource
+from nora.infra.google import scopes
 from nora.infra.google.auth import GoogleAuthError, GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
@@ -39,16 +41,56 @@ def _credentials(server: FakeDriveServer, metrics: Metrics | None = None) -> Goo
 
 
 async def test_two_consumers_share_one_refresh_and_one_token():
+    """One refresh token for every consumer; each scope set gets its OWN
+    access token, minted once and reused until it expires."""
     server = _server(f"{DRIVE_SCOPE} {CALENDAR}")
     creds = _credentials(server)
     drive = await creds.access_token(scope=DRIVE_SCOPE)
     calendar = await creds.access_token(scope=CALENDAR)
-    assert drive == calendar
-    assert server.token_calls() == 1
+    assert drive != calendar
+    assert server.token_scopes_asked() == [None, DRIVE_SCOPE, CALENDAR]
+    assert await creds.access_token(scope=DRIVE_SCOPE) == drive
     # And a Drive adapter on the same credentials refreshes nothing more.
     source = GoogleDriveSource(credentials=creds, transport=server.transport)
     assert (await source.read(ref=recognise(URL), part=1)).text == "hello"
-    assert server.token_calls() == 1
+    assert server.token_calls() == 3
+
+
+async def test_the_drive_token_carries_drive_readonly_alone(monkeypatch):
+    """Re-review of PR 801: read-only holds in the CREDENTIAL. Another
+    service's declared write scope in the same grant never rides on the Drive
+    adapter's token."""
+    events = "https://www.googleapis.com/auth/calendar.events"
+    monkeypatch.setitem(scopes.CONSUMER_SCOPES, "calendar.write", events)
+    server = _server(f"{DRIVE_SCOPE} {events}")
+    source = GoogleDriveSource(credentials=_credentials(server), transport=server.transport)
+    assert (await source.read(ref=recognise(URL), part=1)).text == "hello"
+    assert server.token_scopes_asked() == [None, DRIVE_SCOPE]
+    api = [r for r in server.requests if r.url.host != "oauth2.googleapis.com"]
+    tokens = {r.headers["Authorization"].removeprefix("Bearer ") for r in api}
+    assert [server._token_scopes[t] for t in tokens] == [frozenset({DRIVE_SCOPE})]
+
+
+async def test_a_grant_with_an_undeclared_write_scope_is_refused(caplog):
+    """A refresh token that could write (full `drive`, declared by no
+    service) is refused for every consumer: no token is minted for one."""
+    full = "https://www.googleapis.com/auth/drive"
+    server = _server(f"{DRIVE_SCOPE} {full}")
+    creds = _credentials(server)
+    with caplog.at_level(logging.ERROR, logger="nora.google"):
+        for _ in range(2):
+            with pytest.raises(GoogleAuthError) as raised:
+                await creds.access_token(scope=DRIVE_SCOPE)
+            assert raised.value.reason == "undeclared_write_scope"
+    assert server.token_scopes_asked() == [None]
+    assert full in caplog.text and caplog.text.count("can write") == 1
+
+
+def test_read_only_and_write_scopes_are_told_apart():
+    assert scopes.is_read_only(DRIVE_SCOPE) and scopes.is_read_only("openid")
+    assert not scopes.is_read_only("https://www.googleapis.com/auth/drive")
+    assert not scopes.is_read_only("https://www.googleapis.com/auth/drive.file")
+    assert scopes.undeclared_write_scopes(frozenset({DRIVE_SCOPE, CALENDAR})) == ()
 
 
 async def test_a_scope_not_granted_fails_that_consumer_closed_and_no_other(caplog):
@@ -63,6 +105,8 @@ async def test_a_scope_not_granted_fails_that_consumer_closed_and_no_other(caplo
             await creds.access_token(scope=DRIVE_SCOPE)
     assert DRIVE_SCOPE in caplog.text and "google_auth.py" in caplog.text
     assert caplog.text.count(DRIVE_SCOPE) == 1  # said once, not per call
+    # Refused from the grant already read: no Drive token is ever asked for.
+    assert server.token_scopes_asked() == [None, CALENDAR]
 
 
 async def test_the_drive_adapter_without_its_scope_is_unavailable_and_calls_nothing():

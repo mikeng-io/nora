@@ -310,11 +310,13 @@ async def test_one_token_refresh_serves_many_calls_and_a_401_refreshes_once():
     await source.read(ref=_ref(IDS["doc"]), part=1)
     await source.read(ref=_ref(IDS["slides"]), part=1)
     tokens = [r for r in server.requests if r.url.host == "oauth2.googleapis.com"]
-    assert len(tokens) == 1
-    assert b"client_secret=" + SECRET.encode() in tokens[0].content
+    # One read of the grant, one Drive token minted for drive.readonly alone.
+    assert len(tokens) == 2
+    assert server.token_scopes_asked() == [None, "https://www.googleapis.com/auth/drive.readonly"]
+    assert b"client_secret=" + SECRET.encode() in tokens[1].content
     server.expire_tokens()
     assert (await source.read(ref=_ref(IDS["doc"]), part=1)).text.startswith("# Plan")
-    assert len([r for r in server.requests if r.url.host == "oauth2.googleapis.com"]) == 2
+    assert len([r for r in server.requests if r.url.host == "oauth2.googleapis.com"]) == 3
 
 
 async def test_invalid_grant_is_unavailable_counted_and_logged_without_the_secret(caplog):

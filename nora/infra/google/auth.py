@@ -3,18 +3,30 @@ Google service of Nora's shares (operator, 2026-10-10;
 design/external-files/00-design.md §4).
 
 It owns the refresh-token grant against `oauth2.googleapis.com/token` and the
-access token it returns, held in memory until its own expiry and never
+access tokens it returns, held in memory until their own expiry and never
 written anywhere. A consumer (the Drive adapter today) is handed this object
 and calls `access_token(scope=...)` with the scope it declares
 (`nora.infra.google.scopes`); it never sees the client secret or the refresh
-token. One refresh serves every consumer.
+token.
 
-**Fail closed per service.** The token endpoint's `scope` field is the set the
-refresh token was granted. A consumer whose scope is not in it gets
-`GoogleAuthError("scope_not_granted")`, and the operator log names the
-missing scope and the fix (re-run `scripts/google_auth.py`); a consumer whose
-scope IS granted keeps working. An answer with no `scope` field grants
-nothing.
+**Read-only holds in the credential, not only in the code** (re-review of
+PR 801). Each consumer's access token is minted for ITS scope set alone: the
+refresh request carries an explicit `scope=` (a subset of the grant), so the
+Drive adapter's token carries `drive.readonly` and nothing else, whatever
+else the one refresh token was granted. Tokens are kept per scope set; two
+consumers with the same set share one.
+
+**Fail closed.**
+
+- *The grant.* Once per process the full grant is read (a refresh with no
+  `scope=`, whose access token is dropped unused). A grant holding a scope
+  that could WRITE and that no consumer declared
+  (`scopes.undeclared_write_scopes`) is refused for every consumer:
+  `GoogleAuthError("undeclared_write_scope")` and an error log naming it.
+- *The consumer.* A consumer whose scope is not in the grant gets
+  `GoogleAuthError("scope_not_granted")`, logged once naming the scope and
+  the fix (re-run `scripts/google_auth.py`); other consumers keep working. A
+  minted token whose `scope` is not exactly what was asked is refused too.
 
 `invalid_grant` (revoked, expired, or a Testing-mode consent screen's 7-day
 expiry) is `GoogleAuthError("invalid_grant")`, an error log naming the fix,
@@ -29,9 +41,11 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from typing import Protocol
+from typing import NoReturn, Protocol
 
 import httpx
+
+from .scopes import undeclared_write_scopes
 
 log = logging.getLogger("nora.google")
 
@@ -53,7 +67,7 @@ class Counter(Protocol):
 
 class GoogleAuthError(Exception):
     """No access token for this consumer. `reason` is `invalid_grant`,
-    `scope_not_granted` or `refresh_failed`; a consumer reports it as
+    `scope_not_granted`, `undeclared_write_scope` or `refresh_failed`; a consumer reports it as
     `unavailable` («I couldn't check»), never as «there is nothing»."""
 
     def __init__(self, reason: str) -> None:
@@ -77,43 +91,78 @@ class GoogleCredentials:
         self._timeout = httpx.Timeout(timeout_seconds)
         self._transport = transport
         self._clock = clock
-        self._access: str | None = None
-        self._granted: frozenset[str] = frozenset()
-        self._expires_at = 0.0
+        #: The full grant, read once; None until then.
+        self._granted: frozenset[str] | None = None
+        #: scope set -> (access token, expiry). Per consumer scope set.
+        self._tokens: dict[frozenset[str], tuple[str, float]] = {}
         self._warned: set[str] = set()
         self._lock = asyncio.Lock()
 
     def __repr__(self) -> str:
         return "GoogleCredentials(<secrets withheld>)"
 
-    def invalidate(self) -> None:
-        """Drop the access token (a consumer was answered 401 with it)."""
-        self._access = None
+    def invalidate(self, *, scope: str | None = None) -> None:
+        """Drop an access token (a consumer was answered 401 with it); with no
+        `scope`, every one."""
+        if scope is None:
+            self._tokens.clear()
+        else:
+            self._tokens.pop(frozenset({scope}), None)
 
     async def access_token(self, *, scope: str) -> str:
-        """A live access token for a consumer that needs `scope`, refreshed
-        when missing or about to expire. Raises `GoogleAuthError`."""
+        """A live access token carrying `scope` ALONE, minted when missing or
+        about to expire. Raises `GoogleAuthError`."""
+        want = frozenset({scope})
         async with self._lock:
-            if self._access is None or self._clock() >= self._expires_at:
-                await self._refresh()
-            if scope not in self._granted:
-                if scope not in self._warned:
-                    self._warned.add(scope)
+            if self._granted is None:
+                answer = await self._refresh(None)
+                self._granted = frozenset(str(answer.get("scope", "")).split())
+            extra = undeclared_write_scopes(self._granted)
+            if extra:
+                if "*write" not in self._warned:
+                    self._warned.add("*write")
                     log.error(
-                        "Google sign-in lacks the scope %s; this service stays "
-                        "unavailable. Re-run scripts/google_auth.py with the same client "
-                        "and replace the refresh token in .env (other Google services "
-                        "keep working)", scope,
+                        "Google sign-in grants scopes that can write and that no Nora "
+                        "service declared (%s); every Google service stays unavailable. "
+                        "Re-run scripts/google_auth.py and replace the refresh token in "
+                        ".env", " ".join(extra),
                     )
-                raise GoogleAuthError("scope_not_granted")
-            assert self._access is not None  # noqa: S101 - set by _refresh or raised
-            return self._access
+                raise GoogleAuthError("undeclared_write_scope")
+            if not want <= self._granted:
+                self._scope_missing(scope)
+            held = self._tokens.get(want)
+            if held is not None and self._clock() < held[1]:
+                return held[0]
+            answer = await self._refresh(want)
+            if frozenset(str(answer.get("scope", "")).split()) != want:
+                # Google minted more or less than asked: never use it.
+                self._scope_missing(scope)
+            token = str(answer["access_token"])
+            expires_in = answer.get("expires_in", 3600)
+            seconds = float(expires_in) if isinstance(expires_in, int | float) else 3600.0
+            self._tokens[want] = (token, self._clock() + max(0.0, seconds - _EXPIRY_MARGIN))
+            return token
 
-    async def _refresh(self) -> None:
+    def _scope_missing(self, scope: str) -> NoReturn:
+        if scope not in self._warned:
+            self._warned.add(scope)
+            log.error(
+                "Google sign-in lacks the scope %s; this service stays "
+                "unavailable. Re-run scripts/google_auth.py with the same client "
+                "and replace the refresh token in .env (other Google services "
+                "keep working)", scope,
+            )
+        raise GoogleAuthError("scope_not_granted")
+
+    async def _refresh(self, scopes: frozenset[str] | None) -> dict[str, object]:
+        """One refresh-token grant. `scopes`: the subset the access token is
+        minted for; None reads the full grant (its token is never kept)."""
         form = {
             "grant_type": "refresh_token", "refresh_token": self.__refresh_token,
             "client_id": self.__client_id, "client_secret": self.__client_secret,
         }
+        if scopes is not None:
+            form["scope"] = " ".join(sorted(scopes))
         try:
             async with (
                 httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client,
@@ -134,14 +183,7 @@ class GoogleCredentials:
         if not isinstance(payload, dict):
             payload = {}
         if status == 200 and payload.get("access_token"):
-            expires_in = payload.get("expires_in", 3600)
-            seconds = float(expires_in) if isinstance(expires_in, int | float) else 3600.0
-            self._access = str(payload["access_token"])
-            self._expires_at = self._clock() + max(0.0, seconds - _EXPIRY_MARGIN)
-            self._granted = frozenset(str(payload.get("scope", "")).split())
-            self._warned.clear()
-            return
-        self._access = None
+            return payload
         error = str(payload.get("error", ""))
         if error == "invalid_grant":
             self._metrics.inc("nora_google_invalid_grant_total")
@@ -152,5 +194,7 @@ class GoogleCredentials:
                 str(payload.get("error_description", ""))[:200],
             )
             raise GoogleAuthError("invalid_grant")
+        if error == "invalid_scope" and scopes is not None:
+            self._scope_missing(next(iter(sorted(scopes))))
         log.warning("Google token refresh answered %s %s", status, error[:80])
         raise GoogleAuthError("refresh_failed")

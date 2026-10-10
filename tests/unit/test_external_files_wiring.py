@@ -10,7 +10,7 @@ import logging
 import pytest
 
 from nora.app.composition import external_files_source, google_credentials
-from nora.config import ExternalFilesConfig
+from nora.config import Config, ExternalFilesConfig
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
@@ -64,5 +64,13 @@ def test_a_value_missing_builds_nothing_and_says_which(
 
 
 def test_a_stale_per_service_table_is_refused(example_config):
-    with pytest.raises(ValueError, match="google_drive"):
+    """It fails naming the section that replaced it, not with a generic
+    "extra inputs" error (re-review of PR 801)."""
+    with pytest.raises(ValueError, match=r"\[google\]") as raised:
         ExternalFilesConfig.model_validate({"enabled": True, "google_drive": {}})
+    assert "[external_files.google_drive]" in str(raised.value)
+    with pytest.raises(ValueError, match=r"\[google\]"):
+        Config.model_validate({
+            **example_config.model_dump(),
+            "external_files": {"enabled": False, "google_drive": {"client_id_env": "X"}},
+        })

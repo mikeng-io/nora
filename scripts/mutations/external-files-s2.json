@@ -51,8 +51,8 @@
   {
     "name": "bounds: a far-right cell's padding is allocated before it is charged",
     "file": "nora/infra/external_files/text.py",
-    "old": "self.chars.take(3 * max(gap, 0) + shared_cost + 3)",
-    "new": "self.chars.take(shared_cost + 3)",
+    "old": "self._take(3 * max(gap, 0) + shared_cost + 3)",
+    "new": "self._take(shared_cost + 3)",
     "target": "tests/unit/test_external_files_text_bounds.py::test_a_cell_at_the_last_column_costs_its_padding_before_it_exists"
   },
   {
@@ -65,15 +65,15 @@
   {
     "name": "one identity: a consumer whose scope was not granted still gets the token (fail-open)",
     "file": "nora/infra/google/auth.py",
-    "old": "            if scope not in self._granted:\n",
+    "old": "            if not want <= self._granted:\n",
     "new": "            if False:\n",
     "target": "tests/unit/test_google_credentials.py::test_a_scope_not_granted_fails_that_consumer_closed_and_no_other"
   },
   {
-    "name": "one identity: every consumer refreshes on every call instead of sharing one token",
+    "name": "one identity: a consumer's access token is minted afresh on every call instead of reused",
     "file": "nora/infra/google/auth.py",
-    "old": "            if self._access is None or self._clock() >= self._expires_at:\n",
-    "new": "            if True:\n",
+    "old": "            if held is not None and self._clock() < held[1]:\n",
+    "new": "            if False:\n",
     "target": "tests/unit/test_google_credentials.py::test_two_consumers_share_one_refresh_and_one_token"
   },
   {
@@ -117,5 +117,47 @@
     "old": "            if err.reason not in (NOT_SHARED,):\n",
     "new": "            if True:\n",
     "target": "tests/unit/test_google_drive_source.py::test_a_sheet_the_sheets_api_refuses_is_read_from_its_export"
+  },
+  {
+    "name": "re-review 801 #1: the Office readers call an out-of-memory 'not text'",
+    "file": "nora/infra/external_files/text.py",
+    "old": "        except (ExternalFileError, MemoryError):\n            # MemoryError is not",
+    "new": "        except ExternalFileError:\n            # MemoryError is not",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_out_of_memory_in_a_parser_is_not_called_not_text"
+  },
+  {
+    "name": "re-review 801 #1: the PDF reader calls an out-of-memory 'not text'",
+    "file": "nora/infra/external_files/text.py",
+    "old": "    except (ExternalFileError, MemoryError):\n        raise\n    except Exception as exc:\n        log.info(\"a PDF",
+    "new": "    except ExternalFileError:\n        raise\n    except Exception as exc:\n        log.info(\"a PDF",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_out_of_memory_in_a_parser_is_not_called_not_text"
+  },
+  {
+    "name": "re-review 801 #2: a sheet row's line is never charged (1.5M empty rows)",
+    "file": "nora/infra/external_files/text.py",
+    "old": "            self.chars.take(max(len(line) + 1 - self.paid, 0))\n",
+    "new": "",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_empty_rows_are_charged_for_the_lines_they_make"
+  },
+  {
+    "name": "re-review 801 #3: the Drive token is minted for the whole grant, not drive.readonly alone",
+    "file": "nora/infra/google/auth.py",
+    "old": "            form[\"scope\"] = \" \".join(sorted(scopes))\n",
+    "new": "            pass\n",
+    "target": "tests/unit/test_google_credentials.py::test_the_drive_token_carries_drive_readonly_alone"
+  },
+  {
+    "name": "re-review 801 #3: a grant holding an undeclared write scope is used",
+    "file": "nora/infra/google/auth.py",
+    "old": "            if extra:\n",
+    "new": "            if False:\n",
+    "target": "tests/unit/test_google_credentials.py::test_a_grant_with_an_undeclared_write_scope_is_refused"
+  },
+  {
+    "name": "re-review 801 #4: a stale [external_files.google_drive] fails without naming [google]",
+    "file": "nora/config.py",
+    "old": "        if isinstance(data, dict) and \"google_drive\" in data:\n",
+    "new": "        if False:\n",
+    "target": "tests/unit/test_external_files_wiring.py::test_a_stale_per_service_table_is_refused"
   }
 ]

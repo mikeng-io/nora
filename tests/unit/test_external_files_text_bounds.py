@@ -137,6 +137,66 @@ def test_a_cell_at_the_last_column_costs_its_padding_before_it_exists():
     rows = "".join(f'<row r="{i}"><c r="XFD{i}"><v>1</v></c></row>' for i in range(1, 200))
     data = _workbook({"Wide": rows})
     _refused(lambda: xlsx_text(data, 10_000_000, max_chars=100_000), TOO_LARGE)
+    # The row never closes: only a charge at the CELL (before the padding is
+    # allocated) can refuse it as too large; a charge at the row's end never
+    # comes, and the broken XML reads as not text.
+    open_row = _workbook({"Wide": '<row r="1"><c r="XFD1"><v>1</v></c>'})
+    _refused(lambda: xlsx_text(open_row, 10_000_000, max_chars=10_000), TOO_LARGE)
+
+
+def test_empty_rows_are_charged_for_the_lines_they_make():
+    """Re-review of PR 801: a row's `| ... |` was never charged, so 1.5M empty
+    rows (13.9 KB zipped) made 7.5M chars past a 2M cap."""
+    rows = '<row r="1"/>' * 1_500_000
+    data = _workbook({"Empty": rows})
+    assert len(data) < 100_000
+    _refused(lambda: xlsx_text(data, 100_000_000), TOO_LARGE)
+
+
+def test_a_full_row_is_charged_once_not_twice():
+    rows = "".join(
+        f'<row r="{i}"><c r="A{i}" t="inlineStr"><is><t>abcd</t></is></c></row>'
+        for i in range(1, 1001)
+    )
+    text = xlsx_text(_workbook({"T": rows}), 10_000_000, max_chars=12_000)
+    assert text.count("| abcd |") == 1000  # 9 chars a line + the header
+
+
+def test_out_of_memory_in_a_parser_is_not_called_not_text(monkeypatch):
+    """Re-review of PR 801: the parsers' catch-all turned a MemoryError into
+    `not_text` ("a picture, a video, an archive"). It propagates, and the
+    parse child answers it as too large."""
+    import pypdf
+
+    from nora.infra.external_files import text as text_mod
+
+    def oom(*_a, **_k):
+        raise MemoryError
+
+    monkeypatch.setattr(text_mod.zipfile, "ZipFile", oom)
+    with pytest.raises(MemoryError):
+        docx_text(b"PK", 1000)
+    monkeypatch.setattr(pypdf, "PdfReader", oom)
+    with pytest.raises(MemoryError):
+        pdf_text(b"%PDF-1.4", 1000)
+
+
+def test_the_parse_child_answers_out_of_memory_as_too_large(monkeypatch, capsys):
+    import json as _json
+    import sys as _sys
+
+    from nora.infra.external_files import parse
+
+    def oom(*_a, **_k):
+        raise MemoryError
+
+    header = _json.dumps({"kind": "pdf", "max_bytes": 10, "max_chars": 10, "titles": [],
+                          "memory_bytes": 1 << 30, "cpu_seconds": 30}).encode()
+    monkeypatch.setattr(_sys, "stdin", type("S", (), {"buffer": io.BytesIO(header + b"\n%PDF")})())
+    monkeypatch.setattr(parse, "_limit", lambda *_a: None)
+    monkeypatch.setattr(parse, "_parse", oom)
+    parse.main()
+    assert _json.loads(capsys.readouterr().out) == {"status": "refused", "reason": TOO_LARGE}
 
 
 def test_a_column_past_excel_is_refused():
