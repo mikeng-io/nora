@@ -28,13 +28,14 @@ situation takes inside it.
 ## 1. What each reader is given today
 
 Read from origin/master at `f052291fd` on 2026-10-10 (a read-only inventory,
-file and line references in each cell's source). Every source below sits behind
-a flag that ships off; the live `config.toml` on the deploy host was **not**
-read, so "pushed" means "pushed where that flag is on".
+file and line references in each cell's source). Apart from the clock and the
+transcript ages, every source below sits behind a flag that ships off; the live
+`config.toml` on the deploy host was **not** read, so "pushed" means "pushed
+where that flag is on".
 
 | Awareness | Conscious (tag, fire) | Subconscious (Cognition) |
 |---|---|---|
-| where someone is now: place, moving or driving, fix age | pull only: `where_is` (`nora/agent/whereis.py`), refused outside a `location = true` room | absent: `where_is` is not in Cognition's catalogue (`nora/app/cognition_wiring.py`) |
+| where someone is now: place, moving or driving, fix age | pull only: `where_is` (`nora/agent/whereis.py`), refused unless the room is `location = true` or its people are a subset of the circle (R-31) | no position: `where_is` is not in Cognition's catalogue (`nora/app/cognition_wiring.py`); the one "now" fact pushed is an open co-location, who is together with no place |
 | usual places, routine, anomalies | pull: `where_been`, `routine_read`, `rollup_read` | pushed: deviation and co-location rollups as stimuli (`nora/analytics/units.py`, `nora/app/cognition_grounding.py`) |
 | the clock, each message's age | pushed: the clock line, `age` on every transcript row | pushed: the clock and "since she last looked" |
 | time since a person last spoke | absent as a fact | absent |
@@ -79,20 +80,22 @@ room's lineage and disclosure.
 
 **Nora is an entity in it like everyone else.** `<presence>` and a members'
 situation differ only in whose rows they are: her transports' health and the
-platform she is on are her Record rows; a member's latest fix, whether they
+platform she is on are her Record rows (a new placement: 05 §1a does not
+place them, and today they are live adapter state read at turn start); a
+member's latest fix, whether they
 are moving, online or in voice, and their next reminder or event are theirs.
 `<presence>` stops being a block and becomes her row of the slice.
 
 The slice answers four questions, each with its own time scale and its own
-source layer. They are facets of the View, not tiers or kinds (DEC-249 §3
-reserves those words for the Notebook):
+sources. They are facets of the View: not Notebook tiers, and not a new kind of
+row at any layer.
 
-| Facet | Changes | Source layers | Scattered across today |
+| Facet | Changes | Sources | Scattered across today |
 |---|---|---|---|
-| **identity**: who someone is | slowly | Authored (identity, policy), Notebook (Character), Memory | room_members, peer_card, character, Honcho |
+| **identity**: who someone is | slowly | Authored (identity, policy), Notebook (Character), Memory (beside the flow) | room_members, peer_card, character, Honcho |
 | **state**: what is true now, and it ages | by the minute | Record (latest fix, adapter health, online, play), Rollup (current stay) | `<presence>`, the clock line, `where_is`, `online_now`, `music_status` |
-| **commitments**: what is open until it closes | until closed | Notebook (notes, events, Standing), machinery (reminders) | notes, events, reminders, Standing |
-| **episodes**: what happened and what was settled | appended | Record (transcript), Notebook (memos), decisions | transcript, memos, loop_decisions, culture |
+| **commitments**: what is open until it closes | until closed | Notebook (notes, events, Standing); reminders, which are machinery, not a layer | notes, events, reminders, Standing |
+| **episodes**: what happened and what was settled | appended | Record (transcript, her decisions), Notebook (memos, culture) | transcript, memos, loop_decisions, culture |
 
 Rules the slice inherits, not new ones: every row carries its age (a state row
 without an age is not rendered, because the judgement it serves turns on
