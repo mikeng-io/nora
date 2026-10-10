@@ -1,7 +1,7 @@
 ---
 type: design
 title: "External files: a shared link becomes a handle, and Nora opens it only when asked"
-description: "S1 merged, S2 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
+description: "S1 merged; S2 and S3 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
 tags: [nora, tools, external-files, google-drive, adapter, handles, read-only]
 timestamp: '2026-10-10'
 status: proposed
@@ -12,8 +12,11 @@ status: proposed
 Status (2026-10-10): **S1 merged** (links recorded and rendered as handles,
 the port, the fake, the code lookup). **S2 built, off** (the Google Drive
 adapter `nora/infra/external_files/google_drive.py`, the text readers beside
-it, `scripts/external_files_auth.py`, the composition root's wiring); S3 to S5
-not built. Revised the same day: the first version had a search over every
+it, `scripts/external_files_auth.py`, the composition root's wiring). **S3
+built**: one tool, `file_fetch(code | link, part)` (named with the existing
+`fetch` verb, ADR 0015 §1), the link-owner claim, `nora_tool_calls_total`
+for it; its `tool_selection` rows are written and NOT yet run. S4 and S5 not
+built. Revised the same day: the first version had a search over every
 file shared with her. The operator's model is a link handle opened on demand,
 and this text is that model.
 

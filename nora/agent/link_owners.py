@@ -75,6 +75,7 @@ import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..domain.external_files import recognise as _recognise_file
 from ..domain.instagram_links import parse_link as _parse_instagram_link
 from ..domain.linkedin_links import parse_link as _parse_linkedin_link
 from ..domain.x_links import parse_link as _parse_x_link
@@ -331,6 +332,17 @@ def _linkedin_claim(text: str) -> LinkClaim | None:
     )
 
 
+def _external_file_claim(text: str) -> LinkClaim | None:
+    """A shared file link (design/external-files §3): the domain's own pure
+    recogniser, so a link recorded as a handle at ingest and a link pasted
+    into a fetcher are claimed by the same rule. `network` is vendor-neutral
+    on purpose: the redirect note names `file_fetch`, never the provider."""
+    ref = _recognise_file(_with_scheme(text))
+    if ref is None:
+        return None
+    return LinkClaim(network="external_files", kind="file", readable=True)
+
+
 #: Instagram (PR 1), X and LinkedIn (PR 2, `design/social-per-network/
 #: 30-link-owner-registry.md` "Migration" step 2). Step 3 (PR 3, this commit):
 #: `instagram_read`, `x_read` and `linkedin_read` in `nora.agent.tools` now
@@ -350,6 +362,13 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
     LinkOwner(
         network="linkedin", tool="linkedin_read", param="link",
         label="a LinkedIn link", claim=_linkedin_claim,
+    ),
+    # design/external-files §3 (S3): a shared file link (a document,
+    # spreadsheet, slides or a stored file) is `file_fetch`'s, so `web_fetch`
+    # and `media_fetch` point at it instead of fetching a sign-in page.
+    LinkOwner(
+        network="external_files", tool="file_fetch", param="link",
+        label="a link to an external file", claim=_external_file_claim,
     ),
 )
 

@@ -389,6 +389,10 @@ _OWNER_CANONICAL_LINK = {
     "instagram_read": _INSTAGRAM_PAGE_URL,
     "x_read": _X_POST_URL,
     "linkedin_read": _LINKEDIN_PERSON_URL,
+    # design/external-files §3 (S3): a shared document link. `file_fetch`
+    # reaches its own link through the wrapper's self-skip, and every other
+    # owner's link through the wrapper's redirect (it declares `link_inputs`).
+    "file_fetch": "https://docs.google.com/document/d/1SynthDocLink000000000000/edit",
 }
 _TOOL_FOR_NETWORK = {owner.network: owner.tool for owner in LINK_OWNERS}
 assert set(_OWNER_CANONICAL_LINK) == set(_TOOL_FOR_NETWORK.values())
@@ -399,7 +403,7 @@ _CROSS_NETWORK_CASES = [
     for target_tool in _TOOL_FOR_NETWORK.values()
     if target_tool != asking_tool
 ]
-assert len(_CROSS_NETWORK_CASES) == 6, _CROSS_NETWORK_CASES
+assert len(_CROSS_NETWORK_CASES) == 12, _CROSS_NETWORK_CASES
 
 
 @pytest.mark.parametrize(

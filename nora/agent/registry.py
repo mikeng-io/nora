@@ -1111,6 +1111,7 @@ class ToolRegistry:
             documents=self._documents,
             subagent=self._subagent,
             video=self._video, video_ref_kinds=self._video_ref_kinds,
+            external_files=self._external_files,
             shelf=shelf,
             on_rows=on_rows,
         )

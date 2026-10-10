@@ -1,0 +1,30 @@
+[
+  {
+    "name": "no echo: the ok result carries the link as posted (the provider id and URL)",
+    "file": "nora/agent/tools.py",
+    "old": "            \"parts\": got.parts,\n            \"text\": wrap_outside_text(",
+    "new": "            \"parts\": got.parts,\n            \"link\": ref.url,\n            \"text\": wrap_outside_text(",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_code_from_this_room_opens_the_file_wrapped_and_without_its_id"
+  },
+  {
+    "name": "untrusted wrap: the file text is returned bare",
+    "file": "nora/agent/tools.py",
+    "old": "            \"text\": wrap_outside_text(\n                \"shared_file\", f\"a shared {described.kind}, part {got.part} of {got.parts}\",\n                got.text,\n            ),",
+    "new": "            \"text\": got.text,",
+    "target": "tests/unit/test_file_fetch_tool.py::test_the_file_text_cannot_close_its_block"
+  },
+  {
+    "name": "unwired answers nothing_found instead of unavailable",
+    "file": "nora/agent/tools.py",
+    "old": "            _record(metrics, \"file_fetch\", \"unavailable\", reason=\"unwired\")\n            return {\"status\": \"unavailable\", \"note\": off}",
+    "new": "            _record(metrics, \"file_fetch\", \"unavailable\", reason=\"unwired\")\n            return {\"status\": \"nothing_found\", \"note\": off}",
+    "target": "tests/unit/test_file_fetch_tool.py::test_unwired_is_unavailable_never_nothing_found"
+  },
+  {
+    "name": "the link-owner wrapper redirects a tool's own link back to itself",
+    "file": "nora/agent/tools.py",
+    "old": "            if found is None or found[0].tool == tool_name:",
+    "new": "            if found is None:",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_link_opens_and_is_never_echoed"
+  }
+]
