@@ -299,8 +299,15 @@ async def test_an_unreadable_record_is_unavailable_not_nothing_found():
     # A real file id is long: that link is the file, never a code.
     ("https://docs.google.com/document/d/1SynthDocLink000000000000/edit", None),
     ("https://example.com/file/d/491db6", None),            # not a provider host
-    ("https://drive.google.com/file/d/491db6/98b65b", None),  # two codes: no guess
+    ("https://drive.google.com/file/d/491db6?id=98b65b", None),  # two codes: no guess
+    ("https://drive.google.com/file/d/491db6/98b65b", "491db6"),  # only the id slot
     ("https://drive.google.com/file/d/49x1db", None),
+    # Review of PR 809: a six-hex value outside the id slot is the link's.
+    ("https://docs.google.com:443/spreadsheets/d/1SynthDocLink000000000000/edit?gid=123456", None),
+    ("https://drive.google.com/drive/folders/1SynthDocLink000000000000?sort=123456", None),
+    ("https://docs.google.com/forms/d/e/1SynthDocLink000000000000/viewform?entry.1=decade", None),
+    ("https://drive.google.com:99/file/d/491db6", None),
+    ("ftp://drive.google.com/file/d/491db6", None),
 ])
 def test_a_code_inside_a_link_built_around_it_is_the_code(text, want):
     from nora.domain.external_files import quoted_handle_code

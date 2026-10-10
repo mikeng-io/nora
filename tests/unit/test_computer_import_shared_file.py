@@ -433,3 +433,11 @@ async def test_a_link_built_around_a_handles_code_copies_that_file(made_up, slot
     assert out["status"] == "ok", out
     assert out["kind"] == "spreadsheet"
     assert computer.rows()[0].request == {"code": _code(SHEET)}
+
+
+async def test_a_made_up_link_beside_a_code_is_still_one_too_many():
+    # Review of PR 809: the rewrite must not swallow a second argument.
+    computer = _Computer()
+    out = await _import(_drive(_server()), computer)(
+        code="a3f2c1", link=f"https://drive.google.com/file/d/{_code(SHEET)}")
+    assert out["status"] != "ok" and computer.files() == {}

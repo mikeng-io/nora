@@ -2796,8 +2796,9 @@ def _file_handle_pointer(file_code: str) -> dict:
     return {
         "status": "nothing_found",
         "note": "That is a shared file, not a web page or media, and its code "
-                "is not part of any link. Read it with file_fetch, or put it on "
-                f"your computer with computer_import, using code {file_code}.",
+                "is not part of any link. Read it with file_fetch using code "
+                f"{file_code} (or, if your computer is on, copy it there with "
+                "computer_import and that code).",
     }
 
 
@@ -15036,7 +15037,9 @@ Args:
         # A handle's code, bare-labelled or inside a link she built around
         # it (`drive.google.com/file/d/491db6`, live 2026-10-11), is the code
         # in whichever slot it arrives.
-        if (made_up := quoted_handle_code(link or code)) is not None:
+        if bool(code) != bool(link) and (
+            made_up := quoted_handle_code(link or code)
+        ) is not None:
             code, link = made_up, ""
         if not link and code and (
             _recognise_file_link(code) is not None or "://" in code.lower()

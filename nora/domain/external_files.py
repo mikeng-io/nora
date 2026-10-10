@@ -331,13 +331,22 @@ def _code_in_made_up_link(text: str) -> str | None:
     try:
         parts = urlsplit(text if "://" in text else f"https://{text}")
         host = (parts.hostname or "").lower()
+        port = parts.port
     except ValueError:
         return None
-    if host not in _GOOGLE_HOSTS or recognise(text) is not None:
+    if (
+        parts.scheme.lower() not in ("http", "https") or port is not None
+        or parts.username is not None or host not in _GOOGLE_HOSTS
+        or recognise(text) is not None
+    ):
         return None
-    pieces = [unquote(x) for x in parts.path.split("/") if x]
-    pieces += [v for _, v in parse_qsl(parts.query)]
-    codes = {x.lower() for x in pieces if _CODE_SEGMENT.fullmatch(x)}
+    # Only where a file id goes: after `d` or `folders` in the path, or the
+    # `id` parameter. Any other six-hex value (`gid=123456`, a word like
+    # `decade`) belongs to the link, not to a handle (review of PR 809).
+    segments = [unquote(x) for x in parts.path.split("/") if x]
+    slots = [b for a, b in itertools.pairwise(segments) if a in ("d", "folders")]
+    slots += [v for k, v in parse_qsl(parts.query) if k == "id"]
+    codes = {x.lower() for x in slots if _CODE_SEGMENT.fullmatch(x)}
     return codes.pop() if len(codes) == 1 else None
 
 
