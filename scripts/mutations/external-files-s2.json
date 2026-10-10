@@ -1,0 +1,37 @@
+[
+  {
+    "name": "never cached (static): an adapter importing a memoizer is seen",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "import asyncio\nimport json\n",
+    "new": "import asyncio\nimport functools\nimport json\n",
+    "target": "tests/architecture/test_external_files_are_never_cached.py::test_no_external_files_module_can_keep_what_it_read"
+  },
+  {
+    "name": "never cached (behaviour): read keeps the text per file, so the second open fetches nothing",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "        meta = await self._meta(ref)\n        text = await self._text(ref, meta)\n        parts = pages(text, self._part_chars)",
+    "new": "        memo = self.__dict__.setdefault(\"_memo\", {})\n        if ref.file_id not in memo:\n            memo[ref.file_id] = await self._text(ref, await self._meta(ref))\n        text = memo[ref.file_id]\n        parts = pages(text, self._part_chars)",
+    "target": "tests/unit/test_google_drive_source.py::test_nothing_is_cached_two_opens_are_two_fetches"
+  },
+  {
+    "name": "a file in the bin is read as if it were there",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "        if meta.get(\"trashed\") is True:\n            raise ExternalFileError(\"nothing_found\", DELETED)\n",
+    "new": "",
+    "target": "tests/unit/test_google_drive_source.py::test_each_refusal_is_its_status_and_reason"
+  },
+  {
+    "name": "the resource key is not sent",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "            if ref.resource_key:\n                headers[\"X-Goog-Drive-Resource-Keys\"]",
+    "new": "            if False:\n                headers[\"X-Goog-Drive-Resource-Keys\"]",
+    "target": "tests/unit/test_google_drive_source.py::test_the_resource_key_rides_in_its_header"
+  },
+  {
+    "name": "invalid_grant is not counted",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "                self._metrics.inc(\"nora_external_files_invalid_grant_total\", provider=self.name)\n",
+    "new": "",
+    "target": "tests/unit/test_google_drive_source.py::test_invalid_grant_is_unavailable_counted_and_logged_without_the_secret"
+  }
+]
