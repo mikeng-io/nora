@@ -290,10 +290,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     `memo_read`, 2 `tool_selection` for «記低» about the group and about the
     speaker), plus 3 `tool_selection` cases for `file_fetch` (2026-10-10,
     design/external-files §3: a shared doc and a shared sheet link opened by
-    their handle, and a plain web page that stays `web_fetch`'s; NOT yet run);
+    their handle, and a plain web page that stays `web_fetch`'s; NOT yet run),
+    plus 1 `tool_selection` case for `computer_import` with a shared file's
+    link (2026-10-11, design/external-files §5: a shared sheet put on her
+    computer to compute on, against `file_fetch`; NOT yet run);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 273
-    assert sum(c.active + c.parked for c in totals) == 273
+    assert sum(c.total for c in totals) == 274
+    assert sum(c.active + c.parked for c in totals) == 274

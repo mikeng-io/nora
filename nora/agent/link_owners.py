@@ -424,6 +424,11 @@ class LinkInput:
     not_clause: str = ""
     then: str = ""
     verb: str = ""
+    #: Owner TOOLS whose links this parameter takes as its own rather than
+    #: redirecting: `computer_import` copies a shared file `file_fetch` owns
+    #: (design/external-files §5), so a file link reaches its body. A tool
+    #: name, never a network.
+    accepts: tuple[str, ...] = ()
 
 
 #: PR 3 ("the owners use the registry"): the slot set `instagram_read`,

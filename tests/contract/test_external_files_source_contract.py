@@ -46,7 +46,7 @@ class World:
 
 def _fake() -> World:
     source = FakeExternalFilesSource(files={
-        ID: FakeFile(name="Plan", parts=("one", "two"), data=b"%PDF"),
+        ID: FakeFile(name="Plan", parts=("one", "two"), data=b"%PDF", media_type=DOCX),
         UNSHARED: FakeFile(name="Secret", shared=False),
     })
 
@@ -107,7 +107,9 @@ async def test_a_known_file_describes_reads_by_part_and_fetches(world):
     assert (described.name, described.kind, described.ref) == ("Plan", "document", ref)
     first = await world.source.read(ref=ref, part=1)
     assert (first.text, first.part, first.parts) == ("one", 1, 2)
-    assert await world.source.fetch_bytes(ref=ref) == b"%PDF"
+    got = await world.source.fetch_bytes(ref=ref)
+    # A native document is fetched as the office format it exports to.
+    assert (got.data, got.media_type) == (b"%PDF", DOCX)
 
 
 async def test_every_open_reaches_the_source_nothing_is_kept(world):

@@ -197,6 +197,7 @@ from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
 from nora.domain.external_files import ExternalFile as ExternalFile
 from nora.domain.external_files import ExternalFileRef as ExternalFileRef
+from nora.domain.external_files import FileBytes as FileBytes
 from nora.domain.external_files import FilePart as FilePart
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
@@ -2241,8 +2242,9 @@ class ExternalFilesSource(Protocol):
     tool's answer. Nothing here writes, comments or shares: the source file
     is never changed.
 
-    `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5);
-    the credential never leaves the adapter.
+    `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5):
+    the bytes and their media type, a native file exported to its office
+    format. Only bytes leave the adapter; the credential never does.
     """
 
     name: str
@@ -2253,7 +2255,7 @@ class ExternalFilesSource(Protocol):
 
     async def read(self, *, ref: ExternalFileRef, part: int) -> FilePart: ...
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> bytes: ...
+    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes: ...
 
 
 @runtime_checkable

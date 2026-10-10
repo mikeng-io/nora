@@ -16,6 +16,7 @@ from nora.domain.external_files import (
     ExternalFile,
     ExternalFileError,
     ExternalFileRef,
+    FileBytes,
     FilePart,
     recognise,
 )
@@ -34,6 +35,9 @@ class FakeFile:
     shared: bool = True
     owner: str = ""
     modified_ms: int | None = None
+    #: The type of `data` as `fetch_bytes` answers it (a native file's is
+    #: the office format it is exported as).
+    media_type: str = "application/octet-stream"
 
 
 @dataclass
@@ -72,5 +76,6 @@ class FakeExternalFilesSource:
             raise ExternalFileError("nothing_found", NO_PART)
         return FilePart(text=held.parts[part - 1], part=part, parts=len(held.parts))
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> bytes:
-        return self._file(ref, "fetch_bytes").data
+    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes:
+        held = self._file(ref, "fetch_bytes")
+        return FileBytes(data=held.data, media_type=held.media_type)

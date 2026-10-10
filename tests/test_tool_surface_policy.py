@@ -1251,6 +1251,90 @@ def _classify_value(
     return [("bad", f"unrecognised return shape: {ast.unparse(value)[:80]}")]
 
 
+#: The write path into her computer's `inbox/` (design/external-files §5):
+#: `computer_import`, for a sent file and a shared file alike, ends in
+#: `return await _computer_copy_in(tool, request, take, copied)`, a closure
+#: of `build_tool_specs`. Shape (g): such a return is read as the returns it
+#: stands for, never trusted: every own return of `_computer_copy_in` except
+#: the two that hand back the caller's answers (`<x>.answer`, `copied(...)`);
+#: every return of the caller's `take` closure (and of any closure of the
+#: tool it hands off to with `return await NAME(...)`), each of which must be
+#: `_Stopped(outcome, row, ANSWER)` (ANSWER classified like any return) or
+#: `_Inbound(...)` (bytes, no answer); and every return of its `copied`
+#: closure. Anything else there is `bad`, fail-closed like the rest.
+_COPY_IN = "_computer_copy_in"
+
+
+def _named_def(root: ast.AST, name: str) -> ast.AST | None:
+    return next(
+        (n for n in ast.walk(root)
+         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name),
+        None,
+    )
+
+
+def _copy_in_call(ret: ast.Return) -> ast.Call | None:
+    value = ret.value
+    if (isinstance(value, ast.Await) and isinstance(value.value, ast.Call)
+            and isinstance(value.value.func, ast.Name) and value.value.func.id == _COPY_IN):
+        return value.value
+    return None
+
+
+def _expand_copy_in(
+    fn: ast.AST, call: ast.Call, tree: ast.Module,
+) -> tuple[list[tuple[ast.Return, ast.expr, ast.AST]], list[str]]:
+    """Shape (g): the `(return, value, owning function)` triples a
+    `_computer_copy_in` return stands for, and the problems found reading
+    them."""
+    problems: list[str] = []
+    out: list[tuple[ast.Return, ast.expr, ast.AST]] = []
+    shared = _named_def(tree, _COPY_IN)
+    if shared is None or len(call.args) != 4 or not all(
+            isinstance(a, ast.Name) for a in call.args[2:]):
+        return [], [f"{_COPY_IN}(...) not readable: {ast.unparse(call)[:80]}"]
+    params = [a.arg for a in shared.args.args]  # type: ignore[attr-defined]
+    copied_param = params[3] if len(params) == 4 else ""
+    for r in _own_returns(shared):
+        v = r.value
+        if isinstance(v, ast.Attribute) and v.attr == "answer":
+            continue  # the caller's `_Stopped` answer, read below
+        if (isinstance(v, ast.Call) and isinstance(v.func, ast.Name)
+                and v.func.id == copied_param):
+            continue  # the caller's `copied`, read below
+        if v is not None:
+            out.append((r, v, shared))
+    take_name, copied_name = call.args[2].id, call.args[3].id  # type: ignore[attr-defined]
+    take, copied = _named_def(fn, take_name), _named_def(fn, copied_name)
+    if take is None or copied is None:
+        return [], [f"{_COPY_IN}'s take/copied are not closures of the tool"]
+    # `take` may hand off to another closure of the tool (`return await
+    # take_shared(ref)`): followed, and held to the same two shapes.
+    pending, seen = [take], set()
+    while pending:
+        step = pending.pop()
+        if id(step) in seen:
+            continue
+        seen.add(id(step))
+        for r in _own_returns(step):
+            v = r.value
+            if (isinstance(v, ast.Await) and isinstance(v.value, ast.Call)
+                    and isinstance(v.value.func, ast.Name)):
+                inner = _named_def(fn, v.value.func.id)
+                if inner is not None:
+                    pending.append(inner)
+                    continue
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Name):
+                if v.func.id == "_Inbound":
+                    continue
+                if v.func.id == "_Stopped" and len(v.args) == 3:
+                    out.append((r, v.args[2], step))
+                    continue
+            problems.append(f"{take_name}: a return that is neither _Stopped nor _Inbound")
+    out += [(r, r.value, copied) for r in _own_returns(copied) if r.value is not None]
+    return out, problems
+
+
 def _check_tool(tool: str, doc: str) -> list[str]:
     """Every problem found for `tool` (empty = every return whose status is
     one this tool's docstring lists carries a note). See the module comment
@@ -1260,10 +1344,6 @@ def _check_tool(tool: str, doc: str) -> list[str]:
     fn = _tool_function_node(tool)
     functions = _module_functions(tree)
     constants = _all_dict_constants(tree, functions)
-    assigns = _local_assigns(fn)
-    all_assigns = _all_assigns(fn)
-    blocks = _enclosing_blocks(fn)
-    local_funcs = _local_closures(fn)
     required = _required_statuses(doc)
     backend = _backend_notes().get(tool, set())
     reachable = _DELEGATE_REACHABLE_STATUSES.get(tool, frozenset())
@@ -1271,12 +1351,26 @@ def _check_tool(tool: str, doc: str) -> list[str]:
     problems: list[str] = []
     delegate_mapping_keys: list[frozenset[str]] = []
 
-    for i, ret in enumerate(_own_returns(fn)):
+    triples: list[tuple[ast.Return, ast.expr, ast.AST]] = []
+    for ret in _own_returns(fn):
         if ret.value is None:
-            problems.append(f"return #{i}: bare `return` with no value")
+            problems.append("a bare `return` with no value")
             continue
+        call = _copy_in_call(ret)
+        if call is None:
+            triples.append((ret, ret.value, fn))
+            continue
+        expanded, found = _expand_copy_in(fn, call, tree)
+        triples += expanded
+        problems += found
+
+    for i, (ret, value, owner) in enumerate(triples):
+        # Each value is read in its OWN function's scope: a `take` closure's
+        # `answer` resolves among `take`'s assignments, not the tool's.
+        assigns, all_assigns = _local_assigns(owner), _all_assigns(owner)
+        blocks, local_funcs = _enclosing_blocks(owner), _local_closures(owner)
         for item in _classify_value(
-            ret.value, constants=constants, functions=functions,
+            value, constants=constants, functions=functions,
             assigns=assigns, all_assigns=all_assigns, ret=ret, blocks=blocks,
             local_funcs=local_funcs,
         ):

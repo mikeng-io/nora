@@ -50,7 +50,8 @@ when you are next asked, or later in the turn.
 ## Bring files in and send files out through the tools
 
 A file somebody sent comes in with `computer_import` and its code; it lands in
-`inbox/`. Copy it into the project before you change it. Never retype a file's
+`inbox/`. A file somebody shared a link to comes in the same way, with its
+link code or the link, as a copy of how it is now. Copy it into the project before you change it. Never retype a file's
 contents into `computer_write`. A result goes out with `computer_export` as a
 file of any kind (a picture, a PDF, data, audio, video) but never a web page,
 and many files go out as one zip. Use

@@ -122,6 +122,17 @@ class FilePart:
     parts: int
 
 
+@dataclass(frozen=True)
+class FileBytes:
+    """A file's bytes, fetched afresh for a copy to her computer (§5), and
+    `media_type`, the IANA type of THOSE bytes: a native document,
+    spreadsheet or presentation is exported to its office format (docx, xlsx,
+    pptx), so its type is the export's, never the provider's own."""
+
+    data: bytes
+    media_type: str
+
+
 class ExternalFileError(Exception):
     """The one exception an `ExternalFilesSource` raises. `status` is the
     house vocabulary the open tool (S3) answers with: `refused` (not shared

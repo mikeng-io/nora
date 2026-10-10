@@ -23,8 +23,8 @@
   {
     "name": "the link-owner wrapper redirects a tool's own link back to itself",
     "file": "nora/agent/tools.py",
-    "old": "            if found is None or found[0].tool == tool_name:",
-    "new": "            if found is None:",
+    "old": "            if (found is None or found[0].tool == tool_name\n                    or found[0].tool in link_input.accepts):",
+    "new": "            if (found is None\n                    or found[0].tool in link_input.accepts):",
     "target": "tests/unit/test_file_fetch_tool.py::test_a_link_opens_and_is_never_echoed"
   },
   {
