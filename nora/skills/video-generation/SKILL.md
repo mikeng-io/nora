@@ -43,13 +43,46 @@ of this turn, never «today» or «tomorrow». When the clip depends on what a p
 `media_fetch` on it first and write the prompt from its description; never guess what is in a photo
 you cannot see.
 
-## Writing the clip
+## Name every reference by its number
 
-A clip is short, so ask for one scene and one clear action, and say how the camera moves. Each
-extra subject or event is one more thing the model can get wrong or drop. Describe motion that
-could physically happen. The style comes from the request, or from the room when the request names
-none. The model adds lettering nobody asked for, so say there is no text unless the clip needs
-words.
+Fill `reference` first, then `reference_2`, then `reference_3`: the pictures are numbered in the
+order they reach the video model, so the first one you pass is `<Picture 1>`. MiniMax's own
+guides name every picture in the prompt and say what it supplies, so do the same where its subject
+first appears: «the subject from `<Picture 1>`», «the room in `<Picture 2>`».
+
+## Describe a sent photo's subject as the photo shows it
+
+A subject written from scratch competes with the one in the photo. For a photo someone sent, call
+`media_fetch` first, then describe its subject in the photo's own terms (build, colours, markings,
+clothing, accessories) and say its identity stays the same as in its picture. Never give it a
+feature the photo does not show. When someone wants their photo to move, also describe the
+photo's setting and pose, so the clip stays where the photo was; a new place or action only when
+the request asks for one. Your own picture follows the section on whether you are in the clip.
+
+## One scene, one action, in order
+
+A clip is a few seconds, so ask for one scene and one clear action, written in the order it
+happens, and only motion that could physically happen. Each extra subject or event is one more
+thing the model can get wrong or drop. Use concrete detail (light, texture, distance) rather than
+words like «cinematic» or «beautiful». Write the prompt in English. The style comes from the
+request, or from the room when the request names none.
+
+## Say how the camera moves
+
+Write the move as a plain sentence with its size and speed: «the camera pushes in slowly toward the
+subject», «a slow pan left across the room», «a static shot». Prefer that to bracketed labels.
+
+## Words heard or seen are written out exactly
+
+The model makes the sound with the picture. A line that is spoken or sung goes into the prompt word
+for word, in its own language, marked with that language and the subject who says it, never a
+person's name: `the subject from <Picture 1> sings: <d>[Cantonese] ...</d>`. Cantonese is not among
+the languages the model is documented to render well, so when the words matter, say when you hand
+the clip over that it may not come out as Cantonese. Describe the background sound in a sentence,
+and say there is no music when there should be none.
+
+Text that must appear on screen goes in double quotes, exactly as it should read. Otherwise say
+there is no text: the model adds lettering nobody asked for.
 
 ## One clip per request
 
