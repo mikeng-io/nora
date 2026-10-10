@@ -400,7 +400,11 @@ async def test_a_file_link_handle_points_at_file_fetch_not_at_the_url():
     # gave up. Brackets or not, the note names file_fetch and the code.
     fake = _FakeSearchProvider()
     tools = _tools(search=fake)
-    for given in ("[Google Doc link c41d09]", "Google Sheet link C41D09", " [google slides link c41d09] "):
+    for given in (
+        "[Google Doc link c41d09]",
+        "Google Sheet link C41D09",
+        " [google slides link c41d09] ",
+    ):
         out = await tools["web_fetch"](url=given)
         assert out["status"] == "nothing_found"
         assert "file_fetch" in out["note"] and "c41d09" in out["note"]
