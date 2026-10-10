@@ -298,9 +298,11 @@ cases:
   # file_fetch (design/external-files §3, S3): a shared document, sheet or
   # deck link reaches her as a link handle (`[Google Doc link …]`), so the
   # call is `file_fetch(code=…)`, never `web_fetch` on a sign-in page. The
-  # control below keeps a plain web page with `web_fetch`. In the sandbox
-  # `[external_files]` is off and the tool answers `unavailable`: that is
-  # still a correctly routed call. The file ids are synthetic.
+  # control below keeps a plain web page with `web_fetch`. The file ids are
+  # synthetic: the eval subject carries the live `[external_files]` and
+  # `[google]` through, so a call reaches Drive and is refused or not found,
+  # and a draw may then try a sibling tool. A grade here reads which tool
+  # was reached for, not whether the file opened (S4 eval, 2026-10-11).
   - name: route_file_fetch_shared_doc
     entry: tag
     expect: reply
@@ -320,8 +322,8 @@ cases:
   # Putting a shared sheet on her computer to compute on is `computer_import`
   # with the link (S4, design/external-files §5): the copy is the import
   # tool's, never `file_fetch` (a read into the reply) and never `web_fetch`.
-  # In the sandbox `[external_files]` is off and the call answers
-  # `unavailable`: still a correctly routed call.
+  # Same synthetic-id caveat as above: a refused copy can be followed by a
+  # `file_fetch`, which this case grades as a FAIL.
   - name: route_computer_import_shared_sheet
     entry: tag
     expect: reply
