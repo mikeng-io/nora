@@ -213,12 +213,21 @@ async def test_a_short_picture_under_longer_sound_is_too_short(tmp_path):
 
 
 @needs_ffmpeg
-async def test_a_playlist_posing_as_a_clip_is_never_followed(tmp_path):
-    """A held blob that is really an HLS playlist would make ffmpeg open what it names, a local
-    file or a link, and send it on. Only local files in a media container are read."""
-    secret = tmp_path / "secret.mp4"
-    _make(tmp_path, "secret.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
-          "-t", "4", "-c:v", "libx264")
-    playlist = (f"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nfile://{secret}\n"
-                "#EXT-X-ENDLIST\n").encode()
-    assert (await fit_video(playlist, seconds=6.0)).reason == "unreadable"
+async def test_a_playlist_posing_as_a_clip_is_never_followed():
+    """A held blob that is really a playlist would make ffmpeg open what it names and send it
+    on. An `ffconcat` list is detected from its bytes alone on ffmpeg 7.1 (the image's) and 9,
+    and a relative name passes concat's own safe mode; today that can reach only the scratch
+    directory, and HLS is refused for its extension, so ffmpeg's own checks already hold. The
+    allowlist is the guard that does not depend on them: this pins that every run carries it
+    and that the list is refused at the probe."""
+    calls: list[list[str]] = []
+
+    async def recording(args: list[str], wall: float) -> tuple[int | None, bytes, bytes]:
+        from nora.infra.video_refs import _run
+        calls.append(args)
+        return await _run(args, wall)
+
+    playlist = b"ffconcat version 1.0\nfile in\n"
+    assert (await fit_video(playlist, seconds=6.0, runner=recording)).reason == "unreadable"
+    assert calls and all("-format_whitelist" in a for a in calls)
+    assert len(calls) == 1          # refused at the probe: nothing was ever encoded

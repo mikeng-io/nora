@@ -943,13 +943,32 @@ async def test_a_refused_fit_starts_nothing_and_the_desk_never_takes_its_lock():
     store = FakeComputeJobStore()
     backend = _Preparing()
     desk = _desk(store, backend)
+    clip = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
     await desk._lock.acquire()          # another room's create holds the lock
     try:
-        out = await asyncio.wait_for(_make(desk), timeout=1.0)
+        out = await asyncio.wait_for(desk.create(
+            platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+            requester_person_id="miles", tag_id="t1", request=clip), timeout=1.0)
     finally:
         desk._lock.release()
     assert (out.status, out.reason) == ("refused", "a clip is shorter than 2 seconds")
     assert backend.calls == [] and backend.prepared == 1
+
+
+async def test_a_room_at_its_cap_is_answered_before_any_fit():
+    """The cap bounds the encoding work as well as the spend: a room that has used its clips
+    today gets `at_cap` without ffmpeg running for it (security review)."""
+    store = FakeComputeJobStore()
+    backend = _Preparing()
+    desk = _desk(store, _Starter(), cap=1)
+    assert (await _make(desk, tag="first")).status == "started"
+    desk._backend = backend
+    out = await desk.create(
+        platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+        requester_person_id="miles", tag_id="second",
+        request=VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),)))
+    assert out.status == "at_cap"
+    assert backend.prepared == 0
 
 
 async def test_a_repeat_in_the_turn_is_not_prepared_again():
@@ -963,8 +982,15 @@ async def test_a_repeat_in_the_turn_is_not_prepared_again():
             return request
 
     desk = _desk(store, _Ready())
-    assert (await _make(desk, tag="same")).status == "started"
-    assert (await _make(desk, tag="same")).repeated is True
+    clip = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
+
+    async def make() -> Any:
+        return await desk.create(
+            platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+            requester_person_id="miles", tag_id="same", request=clip)
+
+    assert (await make()).status == "started"
+    assert (await make()).repeated is True
     assert _Ready.prepared == 1
 
 
