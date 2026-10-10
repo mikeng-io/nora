@@ -143,6 +143,12 @@ async def test_an_unreachable_provider_at_create_is_unavailable():
     assert out.status == "unavailable"
 
 
+async def test_an_accepted_create_with_no_task_id_is_uncertain():
+    provider = _Provider(create=httpx.Response(200, json={"base_resp": {"status_code": 0}}))
+    out = await _backend(provider).start(VideoRequest("x"))
+    assert (out.status, out.uncertain) == ("unavailable", True)
+
+
 async def test_a_reference_that_is_not_an_image_is_refused_before_any_call():
     provider = _Provider()
     out = await _backend(provider).start(
@@ -406,6 +412,19 @@ async def test_a_create_that_may_have_reached_the_provider_is_not_resent_in_the_
     await _make(desk)
     again = await _make(desk)
     assert (again.status, again.reason) == ("unavailable", "uncertain")
+    assert len(starter.calls) == 1
+
+
+async def test_a_clip_whose_row_was_not_written_is_not_started_again_in_the_turn():
+    class _Broken(FakeComputeJobStore):
+        async def create(self, job: ComputeJob) -> None:
+            raise RuntimeError("db down")
+
+    starter = _Starter()
+    desk = _desk(_Broken(), starter, cap=5)
+    await _make(desk)
+    again = await _make(desk)
+    assert (again.status, again.reason) == ("unavailable", "row_not_written")
     assert len(starter.calls) == 1
 
 

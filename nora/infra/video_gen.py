@@ -189,7 +189,9 @@ class MiniMaxVideoBackend:
         if not task_id or "@" in task_id:
             log.warning("video create answered 200 with no usable task id")
             self._count("unavailable")
-            return VideoStart("unavailable", reason="the video service gave no task id")
+            # Accepted with nothing to follow: a clip may be rendering, so a retry may pay twice.
+            return VideoStart("unavailable", reason="the video service gave no task id",
+                              uncertain=True)
         log.info("video task %s created (%d reference image(s))", task_id, len(request.references))
         self._count("started")
         return VideoStart("started", job_id=f"{task_id}@{int(launched)}", params=self.params)
