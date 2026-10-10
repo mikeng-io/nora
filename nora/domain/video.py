@@ -8,7 +8,8 @@ answers when it is asked to start one (`VideoStart`), and the kind its rows carr
 
 The reference images travel as BYTES in memory only: they are needed once, by the create call.
 What `compute_jobs.payload` keeps is `VideoRequest.as_payload()`, the prompt and the sha256 of
-each reference (the custody handle it was resolved from), never the image itself.
+each reference and of the first frame (the custody handle each was resolved from), never the
+image itself.
 """
 
 from __future__ import annotations
@@ -48,16 +49,28 @@ class VideoReference:
 @dataclass(frozen=True)
 class VideoRequest:
     """What `video_create` asks for. Resolution, duration, ratio and model are the
-    deployment's (`[video_gen]`), never the model's: the backend applies them."""
+    deployment's (`[video_gen]`), never the model's: the backend applies them.
+
+    Two modes, never both in one request (the provider refuses a mix): `references` keep a
+    subject recognisable in a scene the prompt writes; `first_frame` is a photo that becomes
+    the clip's opening frame, and the prompt writes only what moves after it (image-to-video,
+    design/video-generation §9, amended 2026-10-10)."""
 
     prompt: str
     references: tuple[VideoReference, ...] = ()
+    first_frame: VideoReference | None = None
+
+    def __post_init__(self) -> None:
+        if self.first_frame is not None and self.references:
+            raise ValueError("a video request has a first frame or references, never both")
 
     def as_payload(self) -> dict[str, Any]:
-        """JSON-shaped, for `compute_jobs.payload`: the prompt and each reference's sha256."""
+        """JSON-shaped, for `compute_jobs.payload`: the prompt, each reference's sha256 and the
+        first frame's sha256 (None in reference or words-only mode)."""
         return {
             "prompt": self.prompt,
             "reference_sha256": [r.sha256 for r in self.references],
+            "first_frame_sha256": self.first_frame.sha256 if self.first_frame else None,
         }
 
 

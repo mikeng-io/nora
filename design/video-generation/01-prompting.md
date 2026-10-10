@@ -36,7 +36,7 @@ new subject and scene from scratch. The adapter's `content[]` shape matches the 
    prompt that contradicts a reference is not documented.
 3. **First and last frame** is a separate mode, mutually exclusive with any `reference_*` role ([C]).
    Its prompt describes the motion from the frame, not the frame again ([PB], [C]); ratio is
-   always adaptive ([C]). `video_create` does not offer this mode yet.
+   always adaptive ([C]). `video_create` offers it as `first_frame` since 2026-10-10 (00-design §9).
 4. **Camera**: natural-language moves (push in, pull out, pan, truck, tilt, pedestal, arc, tracking,
    static, shake, POV, roll) with amplitude and speed, not stacked labels ([PB]). [G] still mentions
    bracket labels, a Hailuo-era convention ([OLD]); conflict noted.
@@ -53,7 +53,7 @@ new subject and scene from scratch. The adapter's `content[]` shape matches the 
 
 ## Not done, and why
 
-- First-frame mode in `video_create`: a tool change, after the clip-storage change lands (same files).
+- First-frame mode in `video_create`: built 2026-10-10 (00-design §9); `last_frame` is not offered.
 - Calling [IR] before every clip: an extra provider call per clip, unmeasured; worth an A/B once
   first-frame mode exists.
 - Cantonese lines: unmeasured; the skill tells her to warn when the words matter.
