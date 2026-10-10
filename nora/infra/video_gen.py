@@ -10,7 +10,10 @@ DEC-8, the convention `nora.infra.tts` and `[speech.tts]` already use):
 
 - **create**, `POST /v2/video_generation` with `model`, `content[]` (the prompt as a text item,
   each reference as an image item with `role: "reference_image"` and a `data:` URI built from a
-  blob Nora holds), `resolution`, `duration` and an explicit `ratio`. `start` reads the answer:
+  blob Nora holds), `resolution`, `duration` and an explicit `ratio`. A first-frame request
+  sends its one photo as `role: "first_frame"` instead (never beside a reference, which the
+  provider refuses) and `ratio: "adaptive"` (`FIRST_FRAME_RATIO`), since the frame decides the
+  shape. `start` reads the answer:
   a `task_id` is `started`; an HTTP or vendor (`base_resp`) refusal is `refused`, and nothing
   was spent; a transport failure is `unavailable`.
 - **poll**, `GET /v2/query/video_generation/{task_id}`: `queued` / `running` are RUNNING,
@@ -66,8 +69,8 @@ class Counter(Protocol):
 
 
 __all__ = [
-    "KEEP_DEADLINE_SECONDS", "LINK_SUMMARY", "MAX_CLIP_BYTES", "MAX_REFERENCE_BYTES",
-    "MAX_WAIT_SECONDS", "READY_SUMMARY", "MiniMaxVideoBackend",
+    "FIRST_FRAME_RATIO", "KEEP_DEADLINE_SECONDS", "LINK_SUMMARY", "MAX_CLIP_BYTES",
+    "MAX_REFERENCE_BYTES", "MAX_WAIT_SECONDS", "READY_SUMMARY", "MiniMaxVideoBackend",
 ]
 
 #: A clip measured 52 to 178 s on 2026-10-02. A job still queued or running this long after its
@@ -75,7 +78,13 @@ __all__ = [
 MAX_WAIT_SECONDS = 1800.0
 
 #: The vendor's own per-image limit (design §5); refused here so nothing is sent that cannot pass.
+#: It holds for a first frame too.
 MAX_REFERENCE_BYTES = 30 * 1024 * 1024
+
+#: The `ratio` a first-frame (image-to-video) create sends: the frame decides the shape. The API
+#: reference: "the aspect ratio is determined by the input image and `ratio` is always
+#: `adaptive`; passing another valid value does not error but is ignored" (fetched 2026-10-10).
+FIRST_FRAME_RATIO = "adaptive"
 
 #: How long after launch a clip whose bytes could not be fetched (the link answered an error or
 #: could not be reached) is fetched again on later ticks before its link is delivered instead.
@@ -171,20 +180,29 @@ class MiniMaxVideoBackend:
             self._count("refused")
             return VideoStart("refused", reason="the prompt was empty")
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt}]
-        for ref in request.references:
-            fmt = _image_format(ref.data)
+        # `VideoRequest` cannot hold a first frame AND references (the provider refuses the mix).
+        images = (
+            [(request.first_frame, "first_frame")] if request.first_frame is not None
+            else [(ref, "reference_image") for ref in request.references]
+        )
+        for image, role in images:
+            fmt = _image_format(image.data)
             if fmt is None:
                 self._count("refused")
-                return VideoStart("refused", reason="a reference is not a PNG, JPEG or WebP image")
-            if len(ref.data) > MAX_REFERENCE_BYTES:
+                return VideoStart("refused", reason="a picture is not a PNG, JPEG or WebP image")
+            if len(image.data) > MAX_REFERENCE_BYTES:
                 self._count("refused")
-                return VideoStart("refused", reason="a reference image is larger than 30 MB")
-            uri = f"data:image/{fmt};base64,{base64.b64encode(ref.data).decode('ascii')}"
-            content.append({
-                "type": "image_url", "image_url": {"url": uri}, "role": "reference_image",
-            })
-        body = {"model": self._model, "content": content, "resolution": self._resolution,
-                "duration": self._duration, "ratio": self._ratio}
+                return VideoStart("refused", reason="a picture is larger than 30 MB")
+            uri = f"data:image/{fmt};base64,{base64.b64encode(image.data).decode('ascii')}"
+            content.append({"type": "image_url", "image_url": {"url": uri}, "role": role})
+        params = self.params
+        if request.first_frame is not None:
+            # Image-to-video takes its shape from the frame: the API reference says `ratio` is
+            # always `adaptive` there and another value is ignored, and its own image-to-video
+            # example sends `adaptive`. The configured ratio stays for text and reference tasks,
+            # where `adaptive` was refused live (2026-10-02).
+            params = {**params, "ratio": FIRST_FRAME_RATIO}
+        body = {"content": content, **params}
         launched = self._clock()
         try:
             async with httpx.AsyncClient(
@@ -228,9 +246,11 @@ class MiniMaxVideoBackend:
             # Accepted with nothing to follow: a clip may be rendering, so a retry may pay twice.
             return VideoStart("unavailable", reason="the video service gave no task id",
                               uncertain=True)
-        log.info("video task %s created (%d reference image(s))", task_id, len(request.references))
+        log.info("video task %s created (%s)", task_id,
+                 "first frame" if request.first_frame is not None
+                 else f"{len(request.references)} reference image(s)")
         self._count("started")
-        return VideoStart("started", job_id=f"{task_id}@{int(launched)}", params=self.params)
+        return VideoStart("started", job_id=f"{task_id}@{int(launched)}", params=params)
 
     async def launch(self, *, request: LaunchRequest) -> str:
         """The port's verb. `video_create` calls `start` (it needs to know at once whether
