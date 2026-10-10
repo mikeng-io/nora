@@ -200,6 +200,8 @@ def test_the_registry_exposes_every_declared_tool():
         # online / playing / in voice right now) — the #248 cross-check.
         "online_now",
         "media_fetch",
+        # design/external-files §3: a shared file link, read as text.
+        "file_fetch",
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",
@@ -408,6 +410,8 @@ def test_budgets_match_todays_table():
         # calls inside the loop budget (DEC-56). 8 since 2026-10-02: a document with
         # pictures looks at one per section, and 4 ended a turn before it published.
         "media_fetch": 8,
+        # A file, its next part or two, or a second file (design/external-files §3).
+        "file_fetch": 4,
         # One message can ask for one image, maybe a second take after a bad
         # first; each call is a slow provider round trip on a quota-bounded
         # subscription, so 2 is the honest turn ceiling (DEC-137).
@@ -910,6 +914,8 @@ READ_ONLY = frozenset({
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    # design/external-files §3: reads a shared file; the account cannot write.
+    "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version", "search_gifs",

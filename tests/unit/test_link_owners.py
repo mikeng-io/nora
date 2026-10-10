@@ -48,6 +48,7 @@ from nora.agent.room import Room
 from nora.agent.tools import NATIVE_TOOLS
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore
+from nora.testing.external_files import FakeExternalFilesSource, FakeFile
 from tests.fakes import SinkSender
 
 
@@ -63,9 +64,14 @@ class _NoPersons:
         return None
 
 
-def _built_specs():
+def _built_specs(*, files_wired: bool = True):
+    """Production's specs. `files_wired`: an external-files source is wired,
+    so `file_fetch` claims shared file links (unwired, it claims none)."""
     room = Room(platform="signal", conversation_id="g1", roster_source=None, persons=_NoPersons())
-    return ToolRegistry().specs(
+    source = FakeExternalFilesSource(files={
+        "1SynthDocLink000000000000": FakeFile("Plan", parts=("Day one",)),
+    }) if files_wired else None
+    return ToolRegistry(external_files=source).specs(
         store=_NoStore(), conversation_id="g1", conversation_type="group",
         persons=_NoPersons(), honcho=FakeMemoryStore(), deliverer=SinkSender(),
         metrics=Metrics(), room=room,
@@ -389,6 +395,10 @@ _OWNER_CANONICAL_LINK = {
     "instagram_read": _INSTAGRAM_PAGE_URL,
     "x_read": _X_POST_URL,
     "linkedin_read": _LINKEDIN_PERSON_URL,
+    # design/external-files §3 (S3): a shared document link. `file_fetch`
+    # reaches its own link through the wrapper's self-skip, and every other
+    # owner's link through the wrapper's redirect (it declares `link_inputs`).
+    "file_fetch": "https://docs.google.com/document/d/1SynthDocLink000000000000/edit",
 }
 _TOOL_FOR_NETWORK = {owner.network: owner.tool for owner in LINK_OWNERS}
 assert set(_OWNER_CANONICAL_LINK) == set(_TOOL_FOR_NETWORK.values())
@@ -399,7 +409,7 @@ _CROSS_NETWORK_CASES = [
     for target_tool in _TOOL_FOR_NETWORK.values()
     if target_tool != asking_tool
 ]
-assert len(_CROSS_NETWORK_CASES) == 6, _CROSS_NETWORK_CASES
+assert len(_CROSS_NETWORK_CASES) == 12, _CROSS_NETWORK_CASES
 
 
 @pytest.mark.parametrize(
@@ -463,3 +473,41 @@ async def test_a_hostile_mobile_link_to_its_own_network_is_not_a_self_redirect()
     out = await calls["linkedin_read"](link="https://m.linkedin.com/in/synth-person-03")
 
     assert out["status"] != "nothing_found", out
+
+
+# ---- review of PR 802: an owner with nothing wired claims nothing ----------
+
+_FILE_LINK = "https://docs.google.com/document/d/1SynthDocLink000000000000/edit"
+
+
+def test_an_unwired_owner_claims_nothing():
+    assert owner_of(_FILE_LINK) is not None
+    assert owner_of(_FILE_LINK, unwired=frozenset({"file_fetch"})) is None
+
+
+@pytest.mark.parametrize("tool", ["x_read", "linkedin_read", "instagram_read"])
+async def test_with_no_files_source_a_file_link_is_not_redirected_to_file_fetch(tool):
+    """While `[external_files]` is off or unwired, no tool points the model at
+    `file_fetch` (it could only answer «unavailable»)."""
+    calls = {s.name: s.call for s in _built_specs(files_wired=False)}
+    out = await calls[tool](link=_FILE_LINK)
+    assert "file_fetch" not in str(out)
+
+
+async def test_with_no_files_source_a_fetcher_runs_on_a_file_link():
+    from nora.agent.tools import _link_owner_wrapped
+
+    ran: list[str] = []
+
+    async def fetch(url: str = "") -> dict:
+        ran.append(url)
+        return {"status": "ok"}
+
+    link_inputs = NATIVE_TOOLS["web_fetch"].link_inputs
+    unwired = _link_owner_wrapped("web_fetch", fetch, link_inputs, Metrics(),
+                                  frozenset({"file_fetch"}))
+    assert await unwired(url=_FILE_LINK) == {"status": "ok"}
+    assert ran == [_FILE_LINK]
+    wired = _link_owner_wrapped("web_fetch", fetch, link_inputs, Metrics())
+    redirected = await wired(url=_FILE_LINK)
+    assert redirected["status"] == "nothing_found" and "file_fetch" in redirected["note"]

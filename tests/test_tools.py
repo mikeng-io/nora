@@ -165,6 +165,8 @@ def test_every_declared_tool_is_built(wiring):
         # voice) — exercised in tests/unit/test_online_now.py.
         "online_now",
         "media_fetch",
+        # design/external-files §3: a shared file link, read as text.
+        "file_fetch",
         "generate_image",
         "media_search", "media_send",
         "web_search", "web_fetch",

@@ -295,6 +295,36 @@ cases:
     metadata: {tools: [web_fetch], not_tools: [computer_run, computer_browse]}
     snapshot: *room_a
 
+  # file_fetch (design/external-files §3, S3): a shared document, sheet or
+  # deck link reaches her as a link handle (`[Google Doc link …]`), so the
+  # call is `file_fetch(code=…)`, never `web_fetch` on a sign-in page. The
+  # control below keeps a plain web page with `web_fetch`. In the sandbox
+  # `[external_files]` is off and the tool answers `unavailable`: that is
+  # still a correctly routed call. The file ids are synthetic.
+  - name: route_file_fetch_shared_doc
+    entry: tag
+    expect: reply
+    mention: true
+    input: 幫我睇下呢份doc講咩，三句講晒 https://docs.google.com/document/d/1SynthDocRoute00000000000/edit?usp=sharing
+    metadata: {tools: [file_fetch], not_tools: [web_fetch, document_read, computer_read]}
+    snapshot: *room_a
+
+  - name: route_file_fetch_shared_sheet
+    entry: tag
+    expect: reply
+    mention: true
+    input: https://docs.google.com/spreadsheets/d/1SynthSheetRoute000000000/edit 張表總共預咗幾多錢？
+    metadata: {tools: [file_fetch], not_tools: [web_fetch, computer_import, web_search]}
+    snapshot: *room_a
+
+  - name: route_web_fetch_not_a_shared_file
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢篇講咩？ https://en.wikipedia.org/wiki/Lantau_Island
+    metadata: {tools: [web_fetch], not_tools: [file_fetch]}
+    snapshot: *room_a
+
   # computer_browse (design/browser-runtime 00 §5, ADR 0022, B2): a task that
   # needs a page operated, not read. Offered only under `[computer.browse]`
   # enabled, so these measure only an arm whose deployment config has it on;
