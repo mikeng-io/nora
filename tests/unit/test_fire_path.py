@@ -3203,3 +3203,34 @@ async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
     await path.run([_reminder()])
 
     assert seen == [location]
+
+
+async def test_a_shadow_held_participation_turn_stays_strict_in_a_location_room(
+    persons: Persons, doctrine_store, metrics: Metrics,
+) -> None:
+    """A held participation turn's text goes to the review channel, a room
+    other than the one `where_is` checks, so the room's trust is not lent to
+    it."""
+    seen: list[bool] = []
+
+    class _Spy(ToolRegistry):
+        def surface(self, **kw):  # type: ignore[override]
+            seen.append(kw.get("location_trusted", False))
+            return super().surface(**kw)
+
+    room = Conversation(
+        platform="signal", ids=frozenset({"conv-1"}), persons=None,
+        label="Friends", primary_id="conv-1", unit="friends", location=True,
+    )
+    policy = Policy(conversations=(room,), _by_id={("signal", "conv-1"): room})
+    path = _fire_path(
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics,
+        registry=_Spy(), policy=policy, adapter=_FireAdapter(),
+        runner=FakeAgentRunner([]),
+        participation_runner=FakeAgentRunner([ScriptedTurn(final_text="")]),
+        shadow_channel="review-1",
+    )
+
+    await path.speak(_participation())
+
+    assert seen == [False]

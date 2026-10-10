@@ -1798,14 +1798,9 @@ class FirePath:
                 # of them (DEC-102).
                 nora_sender_id=identity.primary,
                 conversation_id=occasion.conversation_id,
-                # `allowed_mcp` left at its default (empty): `FirePath` has no
-                # `Policy`/allowlist collaborator wired in (unlike
-                # `EngagementPipeline`, which threads `self._policy` — see
-                # final-review Finding 1), so there is no per-conversation MCP
-                # scope available here to pass. Empty is the safe default —
-                # this mirrors the `.build()` call below, which likewise never
-                # passes `allowed_mcp` and so never appends an MCP tool to a
-                # fire turn.
+                # `allowed_mcp` left at its default (empty) on purpose: a fire
+                # turn is an occasion nobody asked for, so it gets no MCP tool,
+                # and the `surface()` call below likewise never passes one.
                 budgets=self._registry.budgets(),
                 terminal=self._registry.terminal_tools(), metrics=self._metrics,
                 param_names=self._registry.tool_param_names(),
@@ -1866,13 +1861,19 @@ class FirePath:
             # DEC-74, sourced as the tag path sources it
             # (`EngagementPipeline`): the room's own `location` flag. Left at
             # the surface's `False` default, `where_is` held every fire turn to
-            # the strict circle-subset gate, so a proactive turn in a
-            # `location = true` room was refused where a tag in the same room
-            # answered (Friends, 2026-09-27). No policy, or an unlisted room,
-            # stays strict.
+            # the strict gate (the subset AND the unnamed-account refusals
+            # DEC-79 waives), so a proactive turn in a `location = true` room
+            # was refused where a tag in the same room answered (Friends,
+            # 2026-09-27). The flag also relaxes `route`, `saved_places` and
+            # parking, as on a tag. No policy, an unlisted room, or a
+            # shadow-held participation turn stays strict: a held turn's text
+            # is posted to the review channel, another room than the one the
+            # check reads.
             fire_convo = (
                 self._policy.conversation(occasion.platform, occasion.conversation_id)
-                if self._policy is not None else None
+                if self._policy is not None
+                and not (occasion.kind == "participation" and self._shadow_channel is not None)
+                else None
             )
             surface = self._registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.

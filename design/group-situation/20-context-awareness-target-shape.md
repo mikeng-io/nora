@@ -156,12 +156,14 @@ implied, not asked, shows harm at a rate this sample could not.
 
 **What the read found instead: fire turns did not carry the room's trust.**
 `FirePath` built its tool surface without `location_trusted`, so every fire turn
-held `where_is` to the strict circle-subset gate, and in a `location = true` room
-with sealed-sender accounts it refused: a proactive turn in Friends on
+held `where_is` to the strict gate (the subset and unnamed-account refusals
+DEC-79 waives), and in a `location = true` room with sealed-sender accounts it
+refused: a proactive turn in Friends on
 2026-09-27, while tags in the same room answered. A gathering fire turn that
 evening asked whether two members had arrived and never called `where_is`;
 had it called, the tool would have refused. Fixed with this node's update: the
-fire path reads the room's `location` flag as the tag path does
+fire path reads the room's `location` flag as the tag path does, except a
+shadow-held participation turn, whose text goes to the review channel
 (`tests/unit/test_fire_path.py::test_a_fire_turn_carries_its_rooms_location_trust_into_where_is`).
 
 **What stays open is the subconscious.** This sample is tagged turns.
