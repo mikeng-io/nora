@@ -195,6 +195,9 @@ from nora.domain.computer import RunResult as RunResult
 from nora.domain.computer import StateResult as StateResult
 from nora.domain.culture import CultureRevision as CultureRevision
 from nora.domain.decision_log import DecisionRow as DecisionRow
+from nora.domain.external_files import ExternalFile as ExternalFile
+from nora.domain.external_files import ExternalFileRef as ExternalFileRef
+from nora.domain.external_files import FilePart as FilePart
 from nora.domain.identity import PlatformIdentity as PlatformIdentity
 from nora.domain.media import GifCandidate as GifCandidate
 from nora.domain.media import MediaBlob as MediaBlob
@@ -778,6 +781,18 @@ class RecordStore(Protocol):
         to `unavailable`); a non-positive `limit` answers `[]` without a
         query. Hidden (withdrawn) rows are excluded, as in every transcript
         read."""
+        ...
+
+    async def external_file_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """`media_rows` for shared file links: the rows of ONE conversation
+        whose `external_files_json` is set, sent by somebody other than her,
+        with `ts >= since_ts`, NEWEST first, at most `limit`
+        (design/external-files/00-design.md §1). Raises when the database
+        cannot be read; a non-positive `limit` answers `[]` without a query.
+        Hidden rows are excluded. The one caller is
+        `nora.domain.external_files.resolve_file_code`."""
         ...
 
     async def recent_before(
@@ -2213,6 +2228,32 @@ class LinkPreviewSource(Protocol):
     """
 
     async def preview_for(self, *, url: str) -> LinkPreview | None: ...
+
+
+@runtime_checkable
+class ExternalFilesSource(Protocol):
+    """One file provider, read-only (design/external-files/00-design.md §4).
+
+    `recognise` is PURE: no network, never raises, and it is what ingest
+    records handles with, so recording needs no account. The other three are
+    called only when somebody asks her to open a file (§2) and raise only
+    `nora.domain.external_files.ExternalFileError`, whose `status` is the
+    tool's answer. Nothing here writes, comments or shares: the source file
+    is never changed.
+
+    `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5);
+    the credential never leaves the adapter.
+    """
+
+    name: str
+
+    def recognise(self, *, url: str) -> ExternalFileRef | None: ...
+
+    async def describe(self, *, ref: ExternalFileRef) -> ExternalFile: ...
+
+    async def read(self, *, ref: ExternalFileRef, part: int) -> FilePart: ...
+
+    async def fetch_bytes(self, *, ref: ExternalFileRef) -> bytes: ...
 
 
 @runtime_checkable

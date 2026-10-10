@@ -23,8 +23,8 @@
   {
     "name": "3b (b): the shared element renderer does not escape a row's words",
     "file": "nora/domain/blocks.py",
-    "old": "        out.append(f\"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>\")",
-    "new": "        out.append(f\"<{tag} {rendered}>{body(row) or ''}</{tag}>\")",
+    "old": "        out.append(\n            f\"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>\"\n        )",
+    "new": "        out.append(\n            f\"<{tag} {rendered}>{render_file_links(body(row) or '')}</{tag}>\"\n        )",
     "target": "tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_hostile_words_names_titles_labels_and_summaries_write_no_element tests/unit/test_cognition_prompt_ids_are_the_ids_required.py::test_a_forged_row_or_item_cannot_be_counted_as_one"
   },
   {

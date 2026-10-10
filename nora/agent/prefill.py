@@ -23,6 +23,7 @@ from ..domain.blocks import (
 from ..domain.decision_log import (
     render_decisions,
 )
+from ..domain.external_files import render_file_links
 from ..domain.framing import CLOSING_LINE, TAG_HEADER, ClockLine, ContextHeader
 from ..domain.models import TagContext, TranscriptRow
 from ..domain.prompt import escape
@@ -1143,7 +1144,7 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> str:
     # a PROMPT CHANGE: see `build_tag_message`.
     return ContextBlock(
         name="replying_to", attrs=(("author", _label(parent, display_name)),),
-        body=escape(parent.body or ""),
+        body=escape(render_file_links(parent.body or "")),
     ).render() + "\n"
 
 
@@ -1183,5 +1184,5 @@ def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -
         # work", which carries the meaning and matches neither spelling the
         # framing gate accepts — so the block would have shipped with a marker
         # and a clause the gate could not see, which is the shape #187 collects.
-        body=f"{quoted}{escape(ctx.message.body)}",
+        body=f"{quoted}{escape(render_file_links(ctx.message.body))}",
     ).render()

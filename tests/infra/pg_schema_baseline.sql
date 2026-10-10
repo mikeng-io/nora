@@ -1414,6 +1414,7 @@ expired_at timestamp with time zone,
 expired_reason text,
 expires_at bigint
 expires_at timestamp with time zone NOT NULL,
+external_files_json text,
 extractor_confidence double precision NOT NULL,
 extractor_confidence double precision NOT NULL,
 fact_id uuid NOT NULL,

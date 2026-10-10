@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "A Google Doc, Sheet, Slides or Drive link someone posts in a room is now recorded as a link handle, and Nora reads it as one, such as [Google Doc link c41d09], instead of the raw URL.",
+  "details": [
+    "Works on every platform. Recording a link makes no network call and needs no Google account; the message is still stored exactly as it was sent.",
+    "Everything Nora reads that carries a member's words shows the handle in the link's place: the conversation she answers, her tool results, and what is fed to memory. Links posted before this change are recorded the same way.",
+    "The same file posted twice gets the same handle. Folder links stay ordinary links."
+  ],
+  "limitations": [
+    "Nora cannot open a linked file yet; opening one comes in a later step and will need her own Google account.",
+    "A link added to a message by editing it shows as a handle but is not recorded with the message."
+  ]
+}

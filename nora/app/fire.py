@@ -101,6 +101,7 @@ from nora.domain.decision_log import (
 )
 from nora.domain.documents_context import DocumentsView
 from nora.domain.events import Event, EventFactory
+from nora.domain.external_files import render_file_links
 from nora.domain.framing import (
     ComputeBody,
     ComputeHeader,
@@ -1873,7 +1874,8 @@ class FirePath:
                 store=self._records, conversation_id=occasion.conversation_id,
                 conversation_type=occasion.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer, room=room,
-                question=ctx.message.body, context_window=self._context_window,
+                question=render_file_links(ctx.message.body),
+                context_window=self._context_window,
                 metrics=self._metrics,
                 # DEC-146: the same window `build_prefill` renders below. A fire
                 # turn reads a real room's real transcript, so `who_said` works
@@ -2706,7 +2708,7 @@ def _window_query(transcript: Sequence[TranscriptRow]) -> str:
     # then yielded a two-row retrieval key, which is not «the window's newest
     # rows» — it is however many of them she did not write.
     bodies = [
-        row.body.strip() for row in transcript
+        render_file_links(row.body).strip() for row in transcript
         if not row.is_nora and row.body and row.body.strip()
     ]
     return "\n".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]
