@@ -45,11 +45,23 @@ of this turn, never «today» or «tomorrow». When the clip depends on what a p
 
 ## Name every reference by its number
 
-Fill `reference` first, then `reference_2`, then `reference_3`: the pictures are numbered in the
-order they reach the video model, so the first one you pass is `<Picture 1>`. MiniMax's own
-guides name every picture in the prompt and say what it supplies, so do the same where its subject
-first appears: «the subject from `<Picture 1>`», «the room in `<Picture 2>`». A first frame is
-not numbered: the clip starts on it.
+Fill `reference` first, then `reference_2`, then `reference_3`. Each kind is numbered on its own,
+in the order you pass it: the first photo is `<Picture 1>`, the first clip `<Video 1>`, the first
+voice note `<Audio 1>`, whatever slot it sits in. MiniMax's own guides name every reference in the
+prompt and say what it supplies, so do the same where it first matters: «the subject from
+`<Picture 1>`», «the room in `<Picture 2>`», «the motion from `<Video 1>`». A first frame is not
+numbered: the clip starts on it.
+
+## A clip or a voice note as a reference
+
+A reference can be a clip or a voice note sent here, not only a photo. A clip supplies motion and
+camera. Say in the prompt what to take from it («the subject from `<Picture 1>` moves as in
+`<Video 1>`»), since a clip also carries a look the model may copy. A voice note supplies a voice: «the subject speaks in the voice from `<Audio 1>`», with the
+words written out as the section on words says. Only the first few seconds of each are used.
+
+A voice is a person's, like a face. A voice note is the voice of whoever speaks in it. Put it in a
+clip only when that person asks, and never give someone's voice to you or to anyone else unless
+they asked for exactly that.
 
 ## A photo that should move is the first frame
 

@@ -6,10 +6,10 @@ finished clip reaches the room later through the deferred-job outbox (`compute_j
 sides share: what the tool asks for (`VideoRequest`, `LaunchRequest.payload`), what a backend
 answers when it is asked to start one (`VideoStart`), and the kind its rows carry.
 
-The reference images travel as BYTES in memory only: they are needed once, by the create call.
-What `compute_jobs.payload` keeps is `VideoRequest.as_payload()`, the prompt and the sha256 of
-each reference and of the first frame (the custody handle each was resolved from), never the
-image itself.
+The references (photos, clips and voice notes) travel as BYTES in memory only: they are needed
+once, by the create call. What `compute_jobs.payload` keeps is `VideoRequest.as_payload()`, the
+prompt, the sha256 and kind of each reference and the sha256 of the first frame (the custody
+handle each was resolved from), never the media itself.
 """
 
 from __future__ import annotations
@@ -37,13 +37,20 @@ CLIP_KEEP_OUTCOMES: tuple[str, ...] = (
 )
 
 
+#: What a reference is: a photo keeps a subject or a place, a clip its motion or camera, a voice
+#: note or other audio its voice or sound (design/video-generation §9, amended 2026-10-10).
+ReferenceKind = Literal["image", "video", "audio"]
+
+
 @dataclass(frozen=True)
 class VideoReference:
-    """One reference image Nora already holds: a photo sent in this conversation, or her
-    canonical picture (`ImageReference`'s custody rule). `data` is the blob's bytes."""
+    """One reference Nora already holds: a photo, clip or voice note sent in this conversation,
+    or her canonical picture (`ImageReference`'s custody rule). `data` is the blob's bytes, as
+    held; the backend fits a clip or a voice note to the provider's limits before sending."""
 
     sha256: str
     data: bytes = field(repr=False)
+    kind: ReferenceKind = "image"
 
 
 @dataclass(frozen=True)
@@ -51,10 +58,11 @@ class VideoRequest:
     """What `video_create` asks for. Resolution, duration, ratio and model are the
     deployment's (`[video_gen]`), never the model's: the backend applies them.
 
-    Two modes, never both in one request (the provider refuses a mix): `references` keep a
-    subject recognisable in a scene the prompt writes; `first_frame` is a photo that becomes
-    the clip's opening frame, and the prompt writes only what moves after it (image-to-video,
-    design/video-generation §9, amended 2026-10-10)."""
+    Two modes, never both in one request (the provider refuses a mix): `references` (photos,
+    clips and voice notes, in the order given) keep a subject, a motion or a voice in a scene
+    the prompt writes; `first_frame` is a photo that becomes the clip's opening frame, and the
+    prompt writes only what moves after it (image-to-video, design/video-generation §9,
+    amended 2026-10-10)."""
 
     prompt: str
     references: tuple[VideoReference, ...] = ()
@@ -63,13 +71,17 @@ class VideoRequest:
     def __post_init__(self) -> None:
         if self.first_frame is not None and self.references:
             raise ValueError("a video request has a first frame or references, never both")
+        if self.first_frame is not None and self.first_frame.kind != "image":
+            raise ValueError("a first frame is a photo")
 
     def as_payload(self) -> dict[str, Any]:
-        """JSON-shaped, for `compute_jobs.payload`: the prompt, each reference's sha256 and the
-        first frame's sha256 (None in reference or words-only mode)."""
+        """JSON-shaped, for `compute_jobs.payload`: the prompt, each reference's sha256 and kind
+        (in the same order), and the first frame's sha256 (None in reference or words-only
+        mode)."""
         return {
             "prompt": self.prompt,
             "reference_sha256": [r.sha256 for r in self.references],
+            "reference_kinds": [r.kind for r in self.references],
             "first_frame_sha256": self.first_frame.sha256 if self.first_frame else None,
         }
 

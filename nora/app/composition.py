@@ -2793,6 +2793,7 @@ async def build_dependencies(
                 duration_seconds=cfg.video_gen.duration_seconds, ratio=cfg.video_gen.ratio,
                 metrics=metrics, host=video_cfg.host,
                 timeout_seconds=video_cfg.timeout_seconds,
+                reference_seconds=cfg.video_gen.reference_seconds,
             )
             compute_backends[VIDEO_KIND] = video_backend
             video_desk = VideoDesk(
@@ -2972,7 +2973,13 @@ async def build_dependencies(
     tool_registry = ToolRegistry(
         subagent=subagent_desk,
         video=video_desk,
-        video_refs_allowed=cfg.video_gen.allow_reference_images,
+        video_ref_kinds=frozenset(
+            kind for kind, allowed in (
+                ("image", cfg.video_gen.allow_reference_images),
+                ("video", cfg.video_gen.allow_reference_video),
+                ("audio", cfg.video_gen.allow_reference_audio),
+            ) if allowed
+        ),
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
