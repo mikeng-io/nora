@@ -186,12 +186,39 @@ async def _probe(run: Runner, path: Path) -> _Probe | None:
         # the displayed one, turned a quarter.
         width, height = height, width
     fps = _rate(video.get("avg_frame_rate")) or _rate(video.get("r_frame_rate"))
-    try:
-        picture = float(video.get("duration") or 0.0)
-    except (TypeError, ValueError):
-        picture = 0.0
+    picture = _stream_seconds(video, fps)
     return _Probe(seconds=min(seconds, picture) if picture > 0 else seconds, width=width,
                   height=height, fps=fps, has_video=True, has_audio=audio)
+
+
+def _clock_seconds(text: object) -> float:
+    """Matroska's `HH:MM:SS.fffffffff` stream tag as seconds; 0 when absent or unreadable."""
+    hours, _, rest = str(text or "").rpartition(":")
+    hh, _, mm = hours.rpartition(":")
+    try:
+        return float(hh or 0) * 3600 + float(mm or 0) * 60 + float(rest)
+    except ValueError:
+        return 0.0
+
+
+def _stream_seconds(stream: dict[str, Any], fps: float) -> float:
+    """A stream's own length: its `duration`, else Matroska's `DURATION` tag (WebM and MKV put
+    no duration on a stream, found in re-review), else frames over rate; 0 when none."""
+    try:
+        own = float(stream.get("duration") or 0.0)
+    except (TypeError, ValueError):
+        own = 0.0
+    if own > 0:
+        return own
+    tags = stream.get("tags") or {}
+    tagged = _clock_seconds(tags.get("DURATION") or tags.get("duration"))
+    if tagged > 0:
+        return tagged
+    try:
+        frames = int(stream.get("nb_frames") or 0)
+    except (TypeError, ValueError):
+        frames = 0
+    return frames / fps if frames and fps > 0 else 0.0
 
 
 def _even(value: float) -> int:
@@ -265,8 +292,11 @@ async def _fit(
             picture = [
                 "-map", "0:v:0",
                 "-vf", f"crop={cw}:{ch},scale={w}:{h},fps={fps:g},format=yuv420p",
-                # Whole frames only, never past `keep`: `-t` alone rounds up to the next frame.
-                "-frames:v", str(max(1, math.floor(keep * fps))),
+                # Whole frames only, never past `keep` (`-t` alone rounds up to the next frame),
+                # and never under the 2 s floor, which rounding down would cross at a 2 s share
+                # and 29.97 fps (59 frames, 1.97 s, found in re-review). A clip that passed the
+                # floor has those frames to give.
+                "-frames:v", str(max(math.floor(keep * fps), math.ceil(MIN_SECONDS * fps))),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                 "-movflags", "+faststart",
             ]

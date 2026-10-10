@@ -231,3 +231,24 @@ async def test_a_playlist_posing_as_a_clip_is_never_followed():
     assert (await fit_video(playlist, seconds=6.0, runner=recording)).reason == "unreadable"
     assert calls and all("-format_whitelist" in a for a in calls)
     assert len(calls) == 1          # refused at the probe: nothing was ever encoded
+
+
+@needs_ffmpeg
+async def test_a_two_second_share_at_29_97_fps_stays_at_the_floor(tmp_path):
+    """Three clips under the default 6 s each get 2 s; rounding the frame count down gave 59
+    frames, 1.97 s, under the provider's floor (re-review)."""
+    clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30000/1001",
+                 "-t", "8", "-c:v", "libx264")
+    fitted = await fit_video(clip, seconds=2.0)
+    assert fitted.data is not None
+    (stream,) = _probe(tmp_path, fitted.data, "out.mp4")["streams"]
+    assert float(stream["duration"]) >= 2.0
+
+
+@needs_ffmpeg
+async def test_a_short_webm_picture_under_longer_sound_is_too_short(tmp_path):
+    """WebM puts no duration on a stream, so the floor fell back to the container's (re-review)."""
+    clip = _make(tmp_path, "in.webm", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:d=1.5",
+                 "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libvpx-vp9", "-deadline", "realtime",
+                 "-c:a", "libopus")
+    assert (await fit_video(clip, seconds=6.0, sound=True)).reason == "too_short"
