@@ -1,0 +1,1 @@
+{"type": "fix", "summary": "When a video request with a reference photo is refused, Nora can now still make the clip from words alone in the same turn, instead of being blocked and reporting a quota.", "details": [], "limitations": []}
