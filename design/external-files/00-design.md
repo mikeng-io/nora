@@ -27,6 +27,17 @@ boundary, and numbering them needs the Slides API (a `.pptx` file IS numbered
 per slide). Office files are read with the standard library; PDFs with
 `pypdf`.
 
+S2 after review (2026-10-11): every parse of fetched bytes runs in a child
+process with no secrets in its environment, a 20 s wall-clock deadline (past
+it the child is killed and the open is `refused`, `too_slow`) and a 1 GiB
+address-space cap; nothing is parsed on the event loop. Office parts are
+read in one streaming pass, at most 64 elements deep, and a ZIP member that
+is not stored or deflated is refused before it is opened. A Sheet the Sheets
+API will not answer (a 403/404 after Drive answered for it: its link's
+resource key reaches Drive only) is read from Drive's xlsx export instead,
+and an API not enabled in the Cloud project is `unavailable` with an operator
+log, never "not shared". A Sheet's tabs share one text budget.
+
 ## Operator direction (2026-10-10)
 
 - Like a Google Drive MCP server, but as Nora's own tool, not an MCP.

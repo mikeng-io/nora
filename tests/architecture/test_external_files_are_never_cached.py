@@ -30,6 +30,7 @@ _MODULES = (
     "nora/testing/external_files.py",
     "nora/infra/external_files/google_drive.py",
     "nora/infra/external_files/text.py",
+    "nora/infra/external_files/parse.py",
 )
 _ADAPTER_DIR = ROOT / "nora" / "infra" / "external_files"
 

@@ -79,6 +79,9 @@ class FakeDriveServer:
     #: Send file bodies gzip-compressed even when asked for `identity` (a
     #: server is allowed to): the adapter must inflate them bounded.
     gzip_bodies: bool = False
+    #: The Sheets API not enabled in the OAuth client's Cloud project: it
+    #: answers a 403 `PERMISSION_DENIED` whose detail says `SERVICE_DISABLED`.
+    sheets_disabled: bool = False
     _issued: int = 0
 
     def _body(self, data: bytes) -> httpx.Response:
@@ -183,8 +186,20 @@ class FakeDriveServer:
 
     def _sheets(self, request: httpx.Request, rest: str) -> httpx.Response:
         file_id, _, verb = rest.partition("/")
+        if self.sheets_disabled:
+            return _reply(403, {"error": {
+                "code": 403, "status": "PERMISSION_DENIED",
+                "message": "Google Sheets API has not been used in project 1 or it is disabled.",
+                "details": [{
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "SERVICE_DISABLED", "domain": "googleapis.com",
+                }],
+            }})
         held = self._visible(request, file_id)
-        if held is None or held.mime != GSHEET:
+        # The Sheets API does not read `X-Goog-Drive-Resource-Keys`: a sheet
+        # reachable only with its link's resource key is a 404 here although
+        # Drive answers for it (review of PR 801).
+        if held is None or held.mime != GSHEET or held.resource_key is not None:
             return _reply(404, {
                 "error": {"code": 404, "message": "not found", "status": "NOT_FOUND"},
             })
