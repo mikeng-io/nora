@@ -25,6 +25,7 @@ import pytest
 from nora.domain.external_files import ExternalFileError, recognise
 from nora.domain.ports import ExternalFilesSource
 from nora.infra.external_files.google_drive import GoogleDriveSource
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.external_files import FakeExternalFilesSource, FakeFile
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
@@ -63,9 +64,11 @@ def _google() -> World:
         "1InTheBin00000000000000000": DriveFile("Old", GDOC, trashed=True),
     })
     source = GoogleDriveSource(
-        client_id="cid", client_secret="cs",  # noqa: S106 - a test value
-        refresh_token=server.refresh_token,
-        metrics=Metrics(), transport=server.transport, part_chars=3,
+        credentials=GoogleCredentials(
+            client_id="cid", client_secret="cs",  # noqa: S106 - a test value
+            refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
+        ),
+        transport=server.transport, part_chars=3,
     )
 
     def down() -> None:

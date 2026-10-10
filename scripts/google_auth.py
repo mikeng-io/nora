@@ -1,19 +1,22 @@
-"""Sign Nora's own Google account in, once, and print its refresh token
+"""Sign Nora's own Google account in, once, and print its ONE refresh token
 (design/external-files/00-design.md §4, "Sign-in (operator, once)").
 
-    python3 scripts/external_files_auth.py
+    python3 scripts/google_auth.py
 
 The installed-app loopback flow, standard library only: it starts a one-shot
 listener on 127.0.0.1, prints the consent URL (and tries to open it), and when
 Google redirects back it exchanges the code for tokens and prints the REFRESH
-token for norty's `.env` (`GOOGLE_DRIVE_REFRESH_TOKEN`, or whatever
-`[external_files.google_drive] refresh_token_env` names).
+token for norty's `.env` (`GOOGLE_OAUTH_REFRESH_TOKEN`, or whatever
+`[google] refresh_token_env` names).
 
-- **One scope, `drive.readonly`**, with `access_type=offline` and
-  `prompt=consent` so Google issues a refresh token every time. Nothing this
-  token can do writes, comments or shares.
-- The client id and secret are read from `GOOGLE_DRIVE_CLIENT_ID` /
-  `GOOGLE_DRIVE_CLIENT_SECRET`, or asked for (the secret without echo).
+- **One identity for every Google service** (operator, 2026-10-10): it asks
+  for the UNION of the scopes every service declares
+  (`nora.infra.google.scopes.all_scopes`, `drive.readonly` alone today), with
+  `access_type=offline`, `prompt=consent` (a refresh token every time) and
+  `include_granted_scopes=true`. Adding a service is a row in that table and
+  one re-run of this script with the same client.
+- The client id and secret are read from `GOOGLE_OAUTH_CLIENT_ID` /
+  `GOOGLE_OAUTH_CLIENT_SECRET`, or asked for (the secret without echo).
 - **Nothing is written to disk.** The token is printed once; put it in `.env`
   yourself. A browser on the machine running this is required (run it on the
   Mac, not on norty).
@@ -34,19 +37,25 @@ import sys
 import urllib.parse
 import urllib.request
 import webbrowser
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from nora.infra.google.scopes import all_scopes
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105 - an endpoint
-SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+SCOPES = all_scopes()
 
 
 def consent_url(*, client_id: str, redirect_uri: str, state: str, challenge: str) -> str:
-    """The consent URL: one read-only scope, offline access, always a consent
-    screen (so a refresh token is always issued), PKCE S256."""
+    """The consent URL: every service's scope at once, offline access,
+    always a consent screen (so a refresh token is always issued), the
+    scopes granted before kept, PKCE S256."""
     return AUTH_URL + "?" + urllib.parse.urlencode({
         "client_id": client_id, "redirect_uri": redirect_uri,
-        "response_type": "code", "scope": SCOPE,
+        "response_type": "code", "scope": " ".join(SCOPES),
         "access_type": "offline", "prompt": "consent",
+        "include_granted_scopes": "true",
         "state": state, "code_challenge": challenge,
         "code_challenge_method": "S256",
     })
@@ -84,9 +93,9 @@ def _wait_for_code(server: http.server.HTTPServer, state: str) -> str:
 
 
 def main() -> int:
-    client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "").strip() or input("Client id: ").strip()
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip() or input("Client id: ").strip()
     client_secret = (
-        os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "").strip()
+        os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
         or getpass.getpass("Client secret: ").strip()
     )
     if not client_id or not client_secret:
@@ -99,7 +108,7 @@ def main() -> int:
     url = consent_url(
         client_id=client_id, redirect_uri=redirect_uri, state=state, challenge=challenge,
     )
-    print("Sign in as nora@67.zone and approve read-only Drive access:\n\n" + url + "\n")
+    print("Sign in as nora@67.zone and approve:\n  " + "\n  ".join(SCOPES) + "\n\n" + url + "\n")
     webbrowser.open(url)
     try:
         code = _wait_for_code(server, state)
@@ -116,9 +125,11 @@ def main() -> int:
     if not refresh:
         print("Google returned no refresh token; nothing to print", file=sys.stderr)
         return 1
-    if SCOPE not in str(tokens.get("scope", "")).split():
-        print(f"warning: the granted scope is {tokens.get('scope')!r}", file=sys.stderr)
-    print("Refresh token (put it in .env as GOOGLE_DRIVE_REFRESH_TOKEN; it is not saved):\n")
+    missing = sorted(set(SCOPES) - set(str(tokens.get("scope", "")).split()))
+    if missing:
+        print(f"warning: not granted, those services stay unavailable: {missing}",
+              file=sys.stderr)
+    print("Refresh token (put it in .env as GOOGLE_OAUTH_REFRESH_TOKEN; it is not saved):\n")
     print(refresh)
     return 0
 

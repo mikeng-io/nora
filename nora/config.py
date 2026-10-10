@@ -3897,18 +3897,22 @@ class DocumentsConfig(BaseModel):
         return f"{parts.scheme}://{parts.netloc}"
 
 
-class GoogleDriveExternalFilesConfig(BaseModel):
-    """The Google Drive adapter's credentials, by NAME (DEC-8): each field
-    names the environment variable that holds the value, never the value.
-    Nora's own account (`nora@67.zone`), signed in read-only
-    (`drive.readonly`) through a Desktop-app OAuth client
+class GoogleConfig(BaseModel):
+    """Nora's ONE Google identity (operator, 2026-10-10): one Desktop-app
+    OAuth client and one refresh token for her own account (`nora@67.zone`),
+    shared by every Google service she uses (shared files today), never a
+    client or variable per service. Each field NAMES the environment variable
+    that holds the value (DEC-8), never the value. The scopes are declared by
+    each service in code (`nora.infra.google.scopes`) and granted together
+    by `scripts/google_auth.py`. An API KEY (the Maps key under `[route]`) is
+    a different mechanism and stays with its feature
     (design/external-files/00-design.md §4)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    client_id_env: str = "GOOGLE_DRIVE_CLIENT_ID"
-    client_secret_env: str = "GOOGLE_DRIVE_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
-    refresh_token_env: str = "GOOGLE_DRIVE_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+    client_id_env: str = "GOOGLE_OAUTH_CLIENT_ID"
+    client_secret_env: str = "GOOGLE_OAUTH_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
+    refresh_token_env: str = "GOOGLE_OAUTH_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
 
 
 class ExternalFilesConfig(BaseModel):
@@ -3919,15 +3923,13 @@ class ExternalFilesConfig(BaseModel):
     so it happens whatever this says. `sources` names the providers whose
     adapters are built, in order; each must be one the codebase recognises
     (`nora.domain.external_files.PROVIDERS`). A second provider is a new
-    adapter, a new entry here and its own sub-table."""
+    adapter and a new entry here. Google's credentials are `[google]`'s,
+    shared with every other Google service."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
     sources: list[str] = Field(default_factory=lambda: ["google_drive"])
-    google_drive: GoogleDriveExternalFilesConfig = Field(
-        default_factory=GoogleDriveExternalFilesConfig,
-    )
 
     @field_validator("sources")
     @classmethod
@@ -4288,6 +4290,8 @@ class Config(BaseModel):
     documents: DocumentsConfig = DocumentsConfig()
     # Optional and defaulted — see `ExternalFilesConfig`. Ships OFF.
     external_files: ExternalFilesConfig = ExternalFilesConfig()
+    # Nora's one Google identity, by env-var NAME — see `GoogleConfig`.
+    google: GoogleConfig = GoogleConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

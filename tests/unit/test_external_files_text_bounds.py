@@ -14,6 +14,7 @@ import pytest
 from nora.domain.external_files import NOT_TEXT, TOO_LARGE, ExternalFileError, recognise
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.external_files.text import docx_text, pdf_text, plain_text, xlsx_text
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
 
@@ -152,9 +153,11 @@ def _drive(data: bytes) -> tuple[FakeDriveServer, GoogleDriveSource]:
         files={ID: DriveFile("Plan", GDOC, exports={"text/markdown": data})}, gzip_bodies=True,
     )
     source = GoogleDriveSource(
-        client_id="cid", client_secret="cs",  # noqa: S106 - a test value
-        refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
-        max_bytes=1_000_000,
+        credentials=GoogleCredentials(
+            client_id="cid", client_secret="cs",  # noqa: S106 - a test value
+            refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
+        ),
+        transport=server.transport, max_bytes=1_000_000,
     )
     return server, source
 

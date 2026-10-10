@@ -70,6 +70,8 @@ def _error(status: int, reason: str) -> httpx.Response:
 class FakeDriveServer:
     files: dict[str, DriveFile] = field(default_factory=dict)
     refresh_token: str = "refresh-1"  # noqa: S105 - a test value
+    #: The token answer's `scope`: what the refresh token was granted.
+    granted_scopes: str = "https://www.googleapis.com/auth/drive.readonly"
     revoked: bool = False
     down: bool = False
     rate_limited: bool = False
@@ -87,6 +89,9 @@ class FakeDriveServer:
     @property
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
+
+    def token_calls(self) -> int:
+        return sum(1 for r in self.requests if r.url.host == "oauth2.googleapis.com")
 
     def expire_tokens(self) -> None:
         """Every access token issued so far stops working (as at expiry)."""
@@ -127,7 +132,7 @@ class FakeDriveServer:
             })
         return _reply(200, {
             "access_token": self._current(), "expires_in": 3599,
-            "scope": "https://www.googleapis.com/auth/drive.readonly",
+            "scope": self.granted_scopes,
             "token_type": "Bearer",
         })
 

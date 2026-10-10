@@ -2157,16 +2157,16 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Checks of a one-time code, by outcome (" + " / ".join(OTP_CHECK_OUTCOMES) + ").",
         ("outcome",),
     ),
-    # External files (design/external-files §7): a refresh token the provider
-    # refused (`invalid_grant`: revoked, expired, or a Testing-mode consent
-    # screen's 7-day expiry). Counted on its own so a dead sign-in is one
-    # alert rather than a week of `unavailable` opens.
+    # Nora's one Google identity (`nora.infra.google.auth`, design/external-
+    # files §4, §7): the shared refresh token refused as `invalid_grant`
+    # (revoked, expired, or a Testing-mode consent screen's 7-day expiry).
+    # Counted on its own so a dead sign-in is one alert rather than a week of
+    # `unavailable` from every Google service at once.
     _CounterSpec(
-        "nora_external_files_invalid_grant_total",
-        "Token refreshes for a shared-file provider refused as invalid_grant "
-        "(the sign-in is revoked or expired: run scripts/external_files_auth.py "
-        "again), by provider.",
-        ("provider",),
+        "nora_google_invalid_grant_total",
+        "Refreshes of Nora's one Google refresh token refused as invalid_grant "
+        "(the sign-in is revoked or expired: run scripts/google_auth.py again).",
+        (),
     ),
 )
 

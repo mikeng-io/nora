@@ -1,9 +1,11 @@
 """`GoogleDriveSource`: the first `ExternalFilesSource`, Google Drive read-only
 (design/external-files/00-design.md §4, build step S2).
 
-Nora's own account (`nora@67.zone`), signed in once with
-`scripts/external_files_auth.py` under ONE scope, `drive.readonly`: nothing
-here can write, comment or share, and the Sheets reads accept that scope. The
+Nora's own account (`nora@67.zone`), through her ONE Google identity
+(`nora.infra.google.auth.GoogleCredentials`, shared by every Google service
+she uses). This adapter declares ONE scope, `drive.readonly`
+(`nora.infra.google.scopes`): nothing here can write, comment or share, and
+the Sheets reads accept that scope. The
 vendor's vocabulary (MIME types, `files.export`, the Sheets ranges) lives in
 this module and nowhere above it; the port speaks `ExternalFile`/`FilePart`.
 
@@ -26,11 +28,10 @@ resolves; the Sheets API has no such parameter. A ref's resource key goes in
 
 **Never cached (operator, 2026-10-10).** Every `describe`, `read` and
 `fetch_bytes` fetches afresh: `read` does its own `files.get` for the kind
-rather than trusting an earlier `describe`. The ONLY thing held between calls
-is the OAuth ACCESS token, in memory until its own expiry: a credential, not
-anything fetched through a link. The refresh token and client secret come in
-already resolved from the environment (DEC-8) and are never logged; neither is
-a file id (a log line names the six-hex handle).
+rather than trusting an earlier `describe`. The access token is the shared
+credentials' (in memory until its own expiry, a credential, not anything
+fetched through a link); this adapter never holds the client secret or the
+refresh token, and never logs a file id (a log line names the six-hex handle).
 
 **How a failure reads** (`ExternalFileError.status`, reason code):
 
@@ -42,9 +43,9 @@ a file id (a log line names the six-hex handle).
   10 MB export cap) or more than `max_bytes` downloaded: `refused`,
   `TOO_LARGE`; a rate limit, an API not enabled: `unavailable`.
 - `trashed`: `nothing_found`, `DELETED`.
-- A refresh refused as `invalid_grant` (revoked, expired, or a Testing-mode
-  consent screen's 7-day expiry): `unavailable`, logged as an error naming the
-  fix and counted on `nora_external_files_invalid_grant_total`.
+- No access token (`invalid_grant`, `drive.readonly` not granted to the
+  shared refresh token, the token endpoint down): `unavailable`, with the
+  credentials' reason; the credentials log and count it.
 - 429, 5xx, a transport error, a body that is not JSON: `unavailable`.
 
 Never raises anything but `ExternalFileError`.
@@ -52,14 +53,12 @@ Never raises anything but `ExternalFileError`.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import time
 import zlib
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -79,6 +78,8 @@ from nora.domain.external_files import (
     recognise,
 )
 
+from ..google.auth import GoogleAuthError, GoogleCredentials
+from ..google.scopes import DRIVE_READONLY
 from .text import docx_text, pages, pdf_text, plain_text, pptx_text, table_text, xlsx_text
 
 log = logging.getLogger("nora.external_files")
@@ -86,16 +87,8 @@ log = logging.getLogger("nora.external_files")
 __all__ = ["DRIVE_SCOPE", "MAX_BYTES", "PART_CHARS", "GoogleDriveSource"]
 
 
-class Counter(Protocol):
-    """`nora.obs.metrics.Metrics` as this module uses it; injected, since
-    `nora.infra` sits below `nora.obs` in the layers contract."""
-
-    def inc(self, name: str, value: float = 1.0, **labels: object) -> None: ...
-
-
-#: The one scope the sign-in asks for (`scripts/external_files_auth.py`).
-DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
-TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105 - an endpoint, not a secret
+#: The one scope this consumer declares (`nora.infra.google.scopes`).
+DRIVE_SCOPE = DRIVE_READONLY
 DRIVE_URL = "https://www.googleapis.com/drive/v3/files"
 SHEETS_URL = "https://sheets.googleapis.com/v4/spreadsheets"
 
@@ -107,8 +100,6 @@ PART_CHARS = 12_000
 #: about 10 MB itself (`exportSizeLimitExceeded`); the same bound on a
 #: download keeps one open from buffering a 2 GB video.
 MAX_BYTES = 10 * 1024 * 1024
-#: Seconds before an access token's stated expiry that it is refreshed.
-_EXPIRY_MARGIN = 60.0
 
 _FIELDS = "id,name,mimeType,modifiedTime,size,trashed,owners(displayName)"
 _GDOC = "application/vnd.google-apps.document"
@@ -225,26 +216,19 @@ class GoogleDriveSource:
     name = "google_drive"
 
     def __init__(
-        self, *, client_id: str, client_secret: str, refresh_token: str,
-        metrics: Counter, part_chars: int = PART_CHARS, max_bytes: int = MAX_BYTES,
-        timeout_seconds: float = 20.0, transport: httpx.AsyncBaseTransport | None = None,
-        clock: Callable[[], float] = time.monotonic,
+        self, *, credentials: GoogleCredentials, part_chars: int = PART_CHARS,
+        max_bytes: int = MAX_BYTES, timeout_seconds: float = 20.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._client_id = client_id
-        self._client_secret = client_secret
-        self._refresh_token = refresh_token
-        self._metrics = metrics
+        # Nora's one Google identity (`nora.infra.google.auth`): this adapter
+        # asks it for an access token for `DRIVE_SCOPE` and never holds the
+        # client secret or the refresh token.
+        self._credentials = credentials
         self._part_chars = part_chars
         self._max_bytes = max_bytes
         self._timeout = httpx.Timeout(timeout_seconds)
         # The seam a test drives (`httpx.MockTransport`); None is real HTTPS.
         self._transport = transport
-        self._clock = clock
-        # The access token and when to stop using it: a credential held in
-        # memory, never anything read through a link (module docstring).
-        self._access: str | None = None
-        self._expires_at = 0.0
-        self._lock = asyncio.Lock()
 
     # ---- the port ---------------------------------------------------------
 
@@ -401,7 +385,7 @@ class GoogleDriveSource:
             if status == 200:
                 return body
             if status == 401 and attempt == 1:
-                self._access = None
+                self._credentials.invalidate()
                 continue
             failure = _failure(status, body)
             log.info("external file %s: http %s -> %s %s", ref.handle, status,
@@ -410,42 +394,10 @@ class GoogleDriveSource:
         raise ExternalFileError("unavailable", "the provider refused the sign-in")
 
     async def _token(self) -> str:
-        """The access token, refreshed from the refresh token when it is
-        missing or about to expire. In memory only."""
-        async with self._lock:
-            if self._access is not None and self._clock() < self._expires_at:
-                return self._access
-            form = {
-                "grant_type": "refresh_token", "refresh_token": self._refresh_token,
-                "client_id": self._client_id, "client_secret": self._client_secret,
-            }
-            try:
-                async with self._client() as client:
-                    resp = await client.post(TOKEN_URL, data=form)
-                payload = resp.json()
-            except Exception as exc:
-                log.warning("external files: token refresh failed: %s", type(exc).__name__)
-                raise ExternalFileError(
-                    "unavailable", "the sign-in could not be refreshed",
-                ) from exc
-            if not isinstance(payload, dict):
-                payload = {}
-            if resp.status_code == 200 and payload.get("access_token"):
-                self._access = str(payload["access_token"])
-                expires_in = payload.get("expires_in", 3600)
-                seconds = float(expires_in) if isinstance(expires_in, int | float) else 3600.0
-                self._expires_at = self._clock() + max(0.0, seconds - _EXPIRY_MARGIN)
-                return self._access
-            error = str(payload.get("error", ""))
-            if error == "invalid_grant":
-                self._metrics.inc("nora_external_files_invalid_grant_total", provider=self.name)
-                log.error(
-                    "external files: Google refused the refresh token (invalid_grant: %s). "
-                    "The sign-in is revoked or expired; run scripts/external_files_auth.py "
-                    "and replace the refresh token in .env",
-                    str(payload.get("error_description", ""))[:200],
-                )
-                raise ExternalFileError("unavailable", "invalid_grant")
-            log.warning("external files: token refresh answered %s %s",
-                        resp.status_code, error[:80])
-            raise ExternalFileError("unavailable", "the sign-in could not be refreshed")
+        """An access token for `DRIVE_SCOPE` from the shared credentials. No
+        token (revoked sign-in, the scope not granted, the endpoint down) is
+        `unavailable`: «I couldn't check», never «not shared»."""
+        try:
+            return await self._credentials.access_token(scope=DRIVE_SCOPE)
+        except GoogleAuthError as err:
+            raise ExternalFileError("unavailable", err.reason) from None

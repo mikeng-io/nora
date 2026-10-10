@@ -23,6 +23,7 @@ from nora.domain.external_files import (
 )
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.external_files.text import pages
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.google_drive import GDOC, GSHEET, GSLIDES, DriveFile, FakeDriveServer
 
@@ -41,10 +42,16 @@ def _ref(file_id: str, key: str | None = None) -> ExternalFileRef:
     return ref
 
 
+def _credentials(server: FakeDriveServer, metrics: Metrics | None = None) -> GoogleCredentials:
+    return GoogleCredentials(
+        client_id="cid", client_secret=SECRET, refresh_token=server.refresh_token,
+        metrics=metrics or Metrics(), transport=server.transport,
+    )
+
+
 def _source(server: FakeDriveServer, metrics: Metrics | None = None, **kw) -> GoogleDriveSource:
     return GoogleDriveSource(
-        client_id="cid", client_secret=SECRET, refresh_token=server.refresh_token,
-        metrics=metrics or Metrics(), transport=server.transport, **kw,
+        credentials=_credentials(server, metrics), transport=server.transport, **kw,
     )
 
 
@@ -311,12 +318,11 @@ async def test_invalid_grant_is_unavailable_counted_and_logged_without_the_secre
     server = _server()
     server.revoked = True
     metrics = Metrics()
-    with caplog.at_level(logging.INFO, logger="nora.external_files"), \
-            pytest.raises(ExternalFileError) as raised:
+    with caplog.at_level(logging.INFO), pytest.raises(ExternalFileError) as raised:
         await _source(server, metrics).describe(ref=_ref(IDS["doc"]))
     assert (raised.value.status, raised.value.reason) == ("unavailable", "invalid_grant")
-    assert metrics.get("nora_external_files_invalid_grant_total", provider="google_drive") == 1
-    assert "external_files_auth.py" in caplog.text
+    assert metrics.get("nora_google_invalid_grant_total") == 1
+    assert "google_auth.py" in caplog.text
     assert SECRET not in caplog.text and server.refresh_token not in caplog.text
     assert IDS["doc"] not in caplog.text
 
