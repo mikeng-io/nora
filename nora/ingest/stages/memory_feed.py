@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from nora.domain.external_files import render_file_links
 from nora.domain.models import EditedMessage, NormalizedMessage, PersonRef
 from nora.domain.ports import MemoryStore
 
@@ -49,10 +50,13 @@ async def run(
     `ts` (design/message-edits/02 §2)."""
     if person is None:
         return
-    text = message.body
+    # Honcho's deriver is a model and recall hands its text back to her, so a
+    # shared file link is fed as its handle, never the URL
+    # (design/external-files §1, R-18).
+    text = render_file_links(message.body)
     metadata: dict[str, object] = {"ts": message.timestamp}
     if edited is not None:
-        text = edit_text(body=message.body, first_body=edited.first_body)
+        text = edit_text(body=text, first_body=render_file_links(edited.first_body or ""))
         metadata["edit_of_ts"] = edited.ts
     spawn(_feed(
         memory=memory, peer_id=person.honcho_peer_id, text=text,

@@ -27,6 +27,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.bounds import cut, over_fetch
+from nora.domain.external_files import external_files_json
 from nora.domain.media import media_json
 from nora.domain.models import (
     DeliveryStatus,
@@ -95,6 +96,7 @@ def transcript_select(*, edits_before: int | None = None) -> Any:
         MESSAGES.c.ts, MESSAGES.c.body, MESSAGES.c.is_nora,
         MESSAGES.c.delivery_status, MESSAGES.c.raw_json,
         MESSAGES.c.quoted_ts, MESSAGES.c.media_json, MESSAGES.c.person_id,
+        MESSAGES.c.external_files_json,
         latest.c.ts.label("edit_ts"), latest.c.body.label("edit_body"),
         latest.c.raw_json.label("edit_raw_json"),
     ).select_from(MESSAGES.outerjoin(latest, sa.true())).where(
@@ -129,6 +131,7 @@ def transcript_row(r: Any) -> TranscriptRow:
         raw_json=r.raw_json,
         quoted_ts=r.quoted_ts,
         media_json=r.media_json,
+        external_files_json=r.external_files_json,
         person_id=r.person_id,
         edit=(
             RowEdit(ts=r.edit_ts, was=r.body, raw_json=r.edit_raw_json)
@@ -194,6 +197,9 @@ class SqlRecordStore:
             # in which the record says `[image a3f2c1]` while nothing can
             # produce `a3f2c1`.
             media_json=media_json(message.media_blobs),
+            # Same INSERT, same argument: the file links ingest recognised
+            # (design/external-files/00-design.md §1).
+            external_files_json=external_files_json(message.external_files),
             # Same INSERT, both (design/message-edits/01 §2): the handle an
             # edit names its target by, and the mentions the gate compares an
             # edit against. "" is the parsers' «no handle» and stores as NULL.
@@ -236,6 +242,28 @@ class SqlRecordStore:
                 MESSAGES.c.ts >= since_ts,
                 MESSAGES.c.is_nora == 0,
                 MESSAGES.c.media_json.is_not(None),
+            )
+            .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._row(r) for r in rows]
+
+    async def external_file_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """See `nora.domain.ports.RecordStore.external_file_rows`. The
+        `media_rows` query with the other column; raises on a database error."""
+        if limit <= 0:
+            return []
+        stmt = (
+            transcript_select()
+            .where(
+                MESSAGES.c.conversation_id == conversation_id,
+                MESSAGES.c.ts >= since_ts,
+                MESSAGES.c.is_nora == 0,
+                MESSAGES.c.external_files_json.is_not(None),
             )
             .order_by(MESSAGES.c.ts.desc(), MESSAGES.c.id.desc())
             .limit(limit)

@@ -24,6 +24,7 @@ from pydantic import (
     model_validator,
 )
 
+from nora.domain.external_files import PROVIDERS as EXTERNAL_FILE_PROVIDERS
 from nora.domain.ports import (
     DEFAULT_DREAM_STORE_TIMEOUT_SECONDS,
     DREAM_MAX_STORE_CALLS_PER_TICK,
@@ -3886,6 +3887,52 @@ class DocumentsConfig(BaseModel):
         return f"{parts.scheme}://{parts.netloc}"
 
 
+class GoogleDriveExternalFilesConfig(BaseModel):
+    """The Google Drive adapter's credentials, by NAME (DEC-8): each field
+    names the environment variable that holds the value, never the value.
+    Nora's own account (`nora@67.zone`), signed in read-only
+    (`drive.readonly`) through a Desktop-app OAuth client
+    (design/external-files/00-design.md §4)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    client_id_env: str = "GOOGLE_DRIVE_CLIENT_ID"
+    client_secret_env: str = "GOOGLE_DRIVE_CLIENT_SECRET"  # noqa: S105 — names an env var, not a secret
+    refresh_token_env: str = "GOOGLE_DRIVE_REFRESH_TOKEN"  # noqa: S105 — names an env var, not a secret
+
+
+class ExternalFilesConfig(BaseModel):
+    """Opening a shared file link (design/external-files/00-design.md §4).
+
+    **Ships OFF.** `enabled` is the OPEN tool's switch (S3), and nothing else:
+    recording a link as a `[Google Doc link c41d09]` handle at ingest needs no account,
+    so it happens whatever this says. `sources` names the providers whose
+    adapters are built, in order; each must be one the codebase recognises
+    (`nora.domain.external_files.PROVIDERS`). A second provider is a new
+    adapter, a new entry here and its own sub-table."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    sources: list[str] = Field(default_factory=lambda: ["google_drive"])
+    google_drive: GoogleDriveExternalFilesConfig = Field(
+        default_factory=GoogleDriveExternalFilesConfig,
+    )
+
+    @field_validator("sources")
+    @classmethod
+    def _known_sources(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(EXTERNAL_FILE_PROVIDERS))
+        if unknown:
+            raise ValueError(
+                f"[external_files] sources names {unknown}; the known providers "
+                f"are {list(EXTERNAL_FILE_PROVIDERS)}"
+            )
+        if len(set(value)) != len(value):
+            raise ValueError("[external_files] sources names a provider twice")
+        return value
+
+
 class LoggingConfig(BaseModel):
     """Where the log goes is no longer a setting: it goes to stdout.
 
@@ -4229,6 +4276,8 @@ class Config(BaseModel):
     record_query: RecordQueryConfig = RecordQueryConfig()
     # Optional and defaulted — see `DocumentsConfig`. Ships OFF.
     documents: DocumentsConfig = DocumentsConfig()
+    # Optional and defaulted — see `ExternalFilesConfig`. Ships OFF.
+    external_files: ExternalFilesConfig = ExternalFilesConfig()
     identity_file: Path
     policy_file: Path
     obs: ObsConfig

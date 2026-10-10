@@ -93,6 +93,7 @@ from nora.agent.tools import turn_occasion
 from nora.domain import audience as audience_names
 from nora.domain.culture import CultureRevision
 from nora.domain.decision_log import DecisionLogRecorder
+from nora.domain.external_files import render_file_links
 from nora.domain.ports import (
     EngagementRequest,
     LinkPreviewSource,
@@ -736,7 +737,7 @@ class EngagementPipeline:
                 store=self._audit, conversation_id=msg.conversation_id,
                 conversation_type=msg.conversation_type, persons=self._persons,
                 honcho=self._memory, deliverer=handle.deliverer,
-                room=room, question=msg.body,
+                room=room, question=render_file_links(msg.body),
                 context_window=self._context_window, metrics=self._metrics,
                 # DEC-146: the SAME tuple `build_prefill` below renders
                 # `<group_transcript>` from. `who_said` answers out of the window

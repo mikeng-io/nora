@@ -28,6 +28,7 @@ from nora.agent.lineage import LineagePolicy
 from nora.domain.computer_context import ComputerView
 from nora.domain.culture import CultureRevision, nora_character_key, unit_culture_key
 from nora.domain.documents_context import DocumentsView
+from nora.domain.external_files import render_file_links
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
@@ -634,7 +635,7 @@ class TranscriptInjection:
                 "memory", "representation", self._memory.representation(
                     peer_id=self._ai_peer,
                     target=ref.honcho_peer_id,
-                    search_query=msg.body or "",
+                    search_query=render_file_links(msg.body or ""),
                     max_conclusions=self._tagger_card_conclusions,
                     conversation_id=msg.conversation_id,
                 ),

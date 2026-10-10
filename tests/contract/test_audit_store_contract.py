@@ -104,6 +104,41 @@ async def test_media_rows_reach_past_the_recent_window_newest_first(store):
     assert await store.media_rows(conversation_id="nope", since_ts=0, limit=5) == []
 
 
+_FILE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+
+
+def _with_link(conv="g1", ts=1, file_id=_FILE_ID) -> NormalizedMessage:
+    from nora.domain.external_files import file_refs_in
+
+    body = f"see https://docs.google.com/document/d/{file_id}/edit"
+    return dataclasses.replace(
+        _msg(conv=conv, ts=ts, body=body), external_files=file_refs_in(body),
+    )
+
+
+async def test_file_links_are_stored_beside_the_row_and_read_back(store):
+    """design/external-files §1: both stores write the same
+    `external_files_json` text (one domain function), every transcript read
+    carries it, and `external_file_rows` is `media_rows`' shape over it."""
+    from nora.domain.external_files import external_files_json
+
+    expected = external_files_json(_with_link().external_files)
+    await store.append(message=_with_link(ts=10))
+    await store.append(message=_msg(ts=20))
+    await store.append(message=_with_link(ts=30, file_id="1Second00000000000000xyz"))
+    await store.append(message=_with_link(conv="g2", ts=25))
+    await store.append(message=_with_link(ts=35), is_nora=True)
+
+    recent = await store.recent(conversation_id="g1", limit=10)
+    assert [r.external_files_json for r in recent][:2] == [expected, None]
+    rows = await store.external_file_rows(conversation_id="g1", since_ts=0, limit=10)
+    assert [r.ts for r in rows] == [30, 10]
+    assert rows[1].external_files_json == expected
+    assert [r.ts for r in await store.external_file_rows(
+        conversation_id="g1", since_ts=20, limit=10)] == [30]
+    assert await store.external_file_rows(conversation_id="g1", since_ts=0, limit=0) == []
+
+
 async def test_recent_is_scoped_to_the_conversation(store):
     await store.append(message=_msg(conv="g1", body="a"))
     await store.append(message=_msg(conv="g2", body="b"))

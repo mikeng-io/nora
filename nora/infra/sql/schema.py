@@ -194,6 +194,14 @@ MESSAGES = sa.Table(
     # queries it by hash, and an index here would disturb the one index that
     # matters.
     sa.Column("media_json", sa.Text),
+    # The shared file links recognised in `body` at ingest
+    # (design/external-files/00-design.md §1): a JSON array of
+    # `{provider, file_id, url[, resource_key]}`, or NULL when there were none.
+    # `media_json`'s shape and its reasons (a list per message, no child table
+    # for `prune_all` to cascade into, unindexed). Written in the same INSERT,
+    # by `nora.domain.external_files.external_files_json`; migration
+    # `0104_external_files` backfilled the rows stored before it.
+    sa.Column("external_files_json", sa.Text),
     # The PLATFORM'S OWN HANDLE for this message (`NormalizedMessage.message_id`)
     # — a Discord snowflake, a WhatsApp stanza id, an Instagram mid — or NULL
     # where the platform has none (Signal addresses a message by author and

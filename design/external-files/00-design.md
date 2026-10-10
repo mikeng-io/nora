@@ -36,7 +36,13 @@ file except that someone sent this link.
 
 The record keeps the message body verbatim, URL included (Postgres is the
 record). What the MODEL sees is rendered: the URL is replaced, in place, by a
-kind word and a short code, `[file c41d09]`. So the model never sees a
+LINK handle, words naming what the URL says it points to and a short code:
+`[Google Doc link c41d09]`, `[Google Sheet link c41d09]`, `[Google Slides
+link c41d09]`, and `[Google Drive link c41d09]` for a
+`drive.google.com/file|open|uc` link. It says «link», never «file»: Nora
+holds no file, only the link (operator, 2026-10-10). The words come from the
+URL alone, with no network call, from one table the provider's adapter owns,
+so a second provider brings its own words. So the model never sees a
 provider file id (a Drive id is a key-shaped string, which R-18 keeps out of
 replies), and the link cannot be echoed. This differs from an attachment,
 whose placeholder is appended after the text: here the handle stands where
@@ -50,6 +56,12 @@ same code.
 
 A folder link is not a file and is not recognised in the first build: it
 stays an ordinary link.
+
+A file link carried INSIDE another URL (Google's own `/url?q=` redirect,
+Outlook SafeLinks, Facebook's `l.php?u=`, a `?next=`) is found by looking in
+the wrapper's query and tail, percent-decoded and to a bounded depth, and the
+WHOLE wrapper is rendered as the handle: a wrapper left standing would carry
+the file id to the model. Two links glued together are two links.
 
 Because the handle lives in the message, it is recorded, recalled and scoped
 exactly like the message around it. This design adds no scoping rule and no
@@ -72,6 +84,17 @@ What an open can do, all of it read-only on the source:
 The text she reads is part of that turn only. It enters memory the way
 anything else in a turn does: through what she says in reply. There is no
 cache of file text and no index of it.
+
+**Never cached (operator, 2026-10-10).** Nothing fetched through a link is
+kept: not content, not text, not bytes, and not metadata either (name, kind,
+owner and modified time can all change). A linked file is LIVE and changes
+over time, unlike an attachment sent to the room, whose bytes are fixed the
+moment they arrive. So ingest stores the parsed URL ref and nothing else;
+every open fetches fresh from the provider; there is no blob-store copy, no
+media-table row, no memoization and no in-process cache of reads. The handle's
+code hashes `provider:file_id` only, never content, so it stays the same while
+the file changes. `tests/architecture/test_external_files_are_never_cached.py`
+holds the code to it.
 
 **Kinds.** Every adapter maps its files onto one vocabulary, so the model
 never sees a vendor's MIME types:
@@ -173,7 +196,10 @@ log.
 The token never enters the computer VM (`design/sandbox-runtime/00-design.md`
 §1: no master credential in the VM). A copy fetches the bytes in Nora's
 container and writes them into `inbox/` under the same size limit
-(`import_max_bytes`) and lease `computer_import` uses. That logic is inline in
+(`import_max_bytes`) and lease `computer_import` uses. That copy is a
+point-in-time SNAPSHOT, not a cache: the result labels it with the file's
+modified time as the provider reported it at that open, so she can say how
+old her copy is, and a later open fetches afresh. That logic is inline in
 `computer_import` today, so S4 first moves it into a shared function both
 tools call. Her computer reaching the public web
 (DEC-289) does not change this: a shared file needs Nora's account, and the
@@ -197,7 +223,7 @@ number.
 
 | step | ships |
 |---|---|
-| S1 | the port and fake; `recognise` for Google URLs; a new ingest stage that records each recognised link beside its message (new storage: no link extraction exists today, and `media_json` is keyed by content hash); the render that replaces the URL with `[file c41d09]` (`file` added to the placeholder labels); the code lookup; config off by default |
+| S1 | the port and fake; `recognise` for Google URLs; a new ingest stage that records each recognised link beside its message (new storage: no link extraction exists today, and `media_json` is keyed by content hash); the render that replaces the URL with a link handle such as `[Google Doc link c41d09]` (the labels in the provider's own table, read back by `link_handles_in`); the code lookup; config off by default |
 | S2 | the Google Drive adapter: describe, read for every kind, paging, the 10 MB refusal, token refresh; the auth script |
 | S3 | the open tool (count settled by the routing measurement), the link-owner claim, counters |
 | S4 | the copy to her computer (§5) |

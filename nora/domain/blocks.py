@@ -42,6 +42,7 @@ from datetime import datetime, tzinfo
 from typing import Literal, Protocol, TypeVar, overload
 
 from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.external_files import render_file_links
 from nora.domain.prompt import age, escape, escape_attr, one_line
 
 #: The record being rendered. A TypeVar rather than a Protocol bound because
@@ -698,7 +699,14 @@ def render_rows(
                 who += f" {tail}"
         if style.bracket_speaker:
             who = f"[{who}]"
-        line = f"{head}{when}{who}: {_mark(one_line(body(row) or ''))}"
+        # A shared file link renders as its handle, `[Google Doc link c41d09]`,
+        # never as the URL (design/external-files §1, R-18): the provider's
+        # file id is a key-shaped string no model should read or echo. NOT on
+        # `markup=False`: that destination is the operator's review channel,
+        # not a prompt, and a link there must stay clickable (this function's
+        # own reason for the switch).
+        text = render_file_links(body(row) or "") if markup else (body(row) or "")
+        line = f"{head}{when}{who}: {_mark(one_line(text))}"
         if trailing is not None:
             # ESCAPED LIKE EVERY OTHER ACCESSOR. It was not, for one commit, and
             # the asymmetry was invisible because its only caller passes a
@@ -801,7 +809,9 @@ def render_bullets(items: Iterable[object], *, mark: str = "- ") -> str:
     """
     return "\n".join(
         f"{mark}{escape(text)}"
-        for text in (one_line(item) for item in items)
+        # Honcho conclusions and cards ride here, and memory fed before
+        # external-files S1 holds raw file links: render the handle.
+        for text in (one_line(render_file_links(str(item))) for item in items)
         if text
     )
 
@@ -929,10 +939,14 @@ def render_elements(
     """
     out = []
     for i, row in enumerate(rows, 1):
+        # A shared file link renders as its handle, `[Google Doc link c41d09]`, in the
+        # content AND in every attribute (an edited message's `was` is one):
+        # design/external-files §1, R-18. Every transcript reaches a model
+        # through here, so no builder can forget it.
         rendered = " ".join(
             f'{key}="{escape_attr(collapsed)}"'
             for key, collapsed in (
-                (key, one_line(value)) for key, value in attrs(row, i)
+                (key, one_line(render_file_links(value))) for key, value in attrs(row, i)
                 if value is not None
             )
             # DROPPED WHEN THE COLLAPSE EMPTIES IT, not only when the accessor
@@ -944,7 +958,9 @@ def render_elements(
             # symbol this renderer's own rule forbids.
             if collapsed
         )
-        out.append(f"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>")
+        out.append(
+            f"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>"
+        )
     return "\n".join(out)
 
 

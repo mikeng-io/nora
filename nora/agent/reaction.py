@@ -54,6 +54,7 @@ from nora.domain.blocks import (
     row_speaker,
     speaker_label,
 )
+from nora.domain.external_files import render_file_links
 from nora.domain.media import GifCandidate
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import GifSource, OutboundAttachment
@@ -151,7 +152,8 @@ def render_recent(rows: Sequence[TranscriptRow], *, display_name: str = "Nora") 
     every other name is byte for byte what it was."""
     lines = []
     for row in rows[-RECENT_LINES:]:
-        body = one_line((row.body or "")[:300]).strip()
+        # The handle before the clip, so a cut never leaves half a link.
+        body = one_line(render_file_links(row.body or "")[:300]).strip()
         if not body:
             continue
         who = display_name if row.is_nora else row_speaker(row)

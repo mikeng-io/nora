@@ -65,8 +65,8 @@
   {
     "name": "#210 — the retrieval key filters her own rows BEFORE it slices",
     "file": "nora/app/fire.py",
-    "old": "    bodies = [\n        row.body.strip() for row in transcript\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]",
-    "new": "    bodies = [\n        row.body.strip() for row in tuple(transcript)[-_QUERY_ROWS:]\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies)[:_QUERY_CHARS]",
+    "old": "    bodies = [\n        render_file_links(row.body).strip() for row in transcript\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies[-_QUERY_ROWS:])[:_QUERY_CHARS]",
+    "new": "    bodies = [\n        render_file_links(row.body).strip() for row in tuple(transcript)[-_QUERY_ROWS:]\n        if not row.is_nora and row.body and row.body.strip()\n    ]\n    return \"\\n\".join(bodies)[:_QUERY_CHARS]",
     "target": "tests/unit/test_people_in_window.py -k query_takes_the_newest_human_rows"
   }
 ]

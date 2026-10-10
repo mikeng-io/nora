@@ -750,7 +750,8 @@ async def test_the_ingest_trace_is_opened_and_populated_before_it_is_dropped(
     exported = unfiltered_spans.get_finished_spans()
     assert {s.name for s in exported} == {
         "ingest", "ingest.scope", "ingest.identity", "ingest.media",
-        "ingest.quote_target", "ingest.audit", "ingest.memory_feed", "ingest.gate",
+        "ingest.external_files", "ingest.quote_target", "ingest.audit",
+        "ingest.memory_feed", "ingest.gate",
     }
     assert len({s.context.trace_id for s in exported}) == 1
     root = _only_root(unfiltered_spans)
@@ -1018,3 +1019,76 @@ async def test_an_ingest_that_crashes_still_ends_on_its_own_root(unfiltered_span
     assert root.status.status_code.name == "ERROR"
     assert monkeypatch_free_metrics.get("nora_ingest_outcomes_total") == 0, \
         "a crash is not one of the five outcomes and must not be counted as one"
+
+
+# --- shared file links (design/external-files/00-design.md §1, S1) ----------
+
+_DRIVE_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+_DOC_URL = f"https://docs.google.com/document/d/{_DRIVE_ID}/edit?usp=sharing"
+
+
+@pytest.fixture
+def _no_network(monkeypatch):
+    """Any socket opened while this is active fails the test: recording a
+    link must make no network call (§1)."""
+    import socket
+
+    def refuse(*_a, **_k):
+        raise AssertionError("ingest opened a network connection")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+
+async def test_a_shared_file_link_is_recorded_beside_its_message_and_fed_as_a_handle(_no_network):
+    """The stage's whole job, end to end through the pipeline: the row keeps
+    the body VERBATIM and gains the ref, and the Honcho feed carries the
+    handle, never the URL (R-18)."""
+    import json
+
+    class _TextMemory(FakeMemory):
+        async def feed(self, *, peer_id, text, conversation_id="", metadata=None):
+            self.calls.append(("feed", text))
+            return True
+
+    audit = FakeRecordStore()
+    memory = _TextMemory()
+    fed: list = []
+    pipeline = _pipeline(
+        audit=audit, memory=memory, persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=fed.append,
+        allowlist=_policy_of(),
+    )
+    await pipeline.run(message=_msg(body=f"plan here {_DOC_URL} ok"))
+    for coro in fed:
+        await coro
+
+    row = audit.rows[-1]
+    assert row["body"] == f"plan here {_DOC_URL} ok"
+    stored = json.loads(row["external_files_json"])
+    assert stored == [{"provider": "google_drive", "file_id": _DRIVE_ID,
+                       "url": _DOC_URL, "label": "Google Doc link"}]
+    texts = [c[1] for c in memory.calls if c[0] == "feed"]
+    assert texts and all(_DRIVE_ID not in t and "[Google Doc link " in t for t in texts)
+
+
+async def test_a_message_without_a_file_link_stores_no_refs():
+    audit = FakeRecordStore()
+    pipeline = _pipeline(
+        audit=audit, memory=FakeMemory(), persons=_known_persons(),
+        policy=TriggerTextPolicy("nora.000"), spawn=lambda c: c.close(),
+        allowlist=_policy_of(),
+    )
+    await pipeline.run(message=_msg(body="https://drive.google.com/drive/folders/x and hi"))
+    assert audit.rows[-1]["external_files_json"] is None
+
+
+@pytest.mark.parametrize("platform", ["signal", "discord", "whatsapp", "instagram"])
+async def test_the_stage_records_links_on_every_platform(platform, _no_network):
+    from nora.ingest.stages import external_files as stage
+
+    msg = dataclasses.replace(_msg(body=f"see {_DOC_URL}"), platform=platform)
+    out = await stage.run(message=msg)
+    assert [r.file_id for r in out.external_files] == [_DRIVE_ID]
+    assert out.body == msg.body

@@ -107,6 +107,7 @@ from ..domain.computer_sessions import (
     shown_status,
 )
 from ..domain.documents import is_handle as _is_document_handle
+from ..domain.external_files import render_file_links
 from ..domain.gatherings import (
     RSVP,
     AmbiguousOpenGatheringsError,
@@ -2949,6 +2950,11 @@ def _busiest_sentence(listed: Sequence[Mapping[str, object]]) -> str:
     return sentence
 
 
+def _file_handles(text: str | None) -> str | None:
+    """`render_file_links` over a body a tool hands back, None kept."""
+    return render_file_links(text) if text else text
+
+
 def _transcript_messages(
     rows: Sequence[TranscriptRow], *, now: datetime, with_ids: bool = False,
 ) -> tuple[list[dict], int]:
@@ -2981,7 +2987,10 @@ def _transcript_messages(
     threaded = 0
     for r in rows:
         item: dict[str, Any] = {
-            "sender": _speaker(r), "body": r.body, "when": stamp(r.ts, now),
+            # A shared file link as its handle, never the URL
+            # (design/external-files §1, R-18): this is a tool result.
+            "sender": _speaker(r), "body": _file_handles(r.body),
+            "when": stamp(r.ts, now),
         }
         if with_ids:
             # A Dreamer pass's citation handle (design 43 §3): the same number
@@ -2989,7 +2998,7 @@ def _transcript_messages(
             item = {"n": r.id, **item}
         if r.edit is not None:
             item["edited"] = stamp(r.edit.ts, now)
-            item["was"] = r.edit.was
+            item["was"] = _file_handles(r.edit.was)
         parent = by_ts.get(r.quoted_ts) if r.quoted_ts is not None else None
         if parent is not None and parent.id != r.id:
             item["reply_to"] = _speaker(parent)
@@ -3476,7 +3485,9 @@ def _memory_hits_result(
         if scan_reply(content) is not None:
             withheld += 1
             continue
-        kept.append({"who": name, "said": content})
+        # Honcho holds what it was fed, and rows fed before external-files S1
+        # carry the raw URL: the handle here, never the link (R-18).
+        kept.append({"who": name, "said": render_file_links(content)})
     if not kept:
         # Third state, and it is NOT `nothing_found`. A result set emptied by
         # the egress filter means the words exist and she may not repeat
@@ -4873,8 +4884,8 @@ def build_tool_specs(
             # (design/message-edits/02 §1) — otherwise a corrected message
             # makes its sender look like nobody said it.
             hits = [
-                {"who": _speaker(row), "line": row.body}
-                | ({"was": row.edit.was} if row.edit is not None else {})
+                {"who": _speaker(row), "line": _file_handles(row.body)}
+                | ({"was": _file_handles(row.edit.was)} if row.edit is not None else {})
                 for row in lookup_rows
                 if needle and (
                     needle in _said(row.body)
@@ -5931,7 +5942,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # fact and a dated episode carry equal weight.
         result: dict = {
             "status": "ok", "person": ref.name,
-            "identity": list(kept_card), "profile": list(kept),
+            # Honcho text: a link fed before S1 is still a raw URL in it.
+            "identity": [render_file_links(c) for c in kept_card],
+            "profile": [render_file_links(c) for c in kept],
             "withheld": withheld,
             "partial_view": view.degraded,
         }
@@ -6035,7 +6048,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         metrics.inc("nora_recall_total", status="ok")
         _record_room(metrics, "ask_memory", "ok", depth=level)
         return _memory_result({
-            "status": "ok", "person": ref.name, "answer": answer,
+            "status": "ok", "person": ref.name, "answer": render_file_links(answer),
             "partial_view": view.degraded,
         })
 

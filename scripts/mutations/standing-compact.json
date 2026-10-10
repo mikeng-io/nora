@@ -177,8 +177,8 @@
  {
   "name": "standing-compact §5: the one escape left is render_elements', and it stops a forged step",
   "file": "nora/domain/blocks.py",
-  "old": "        out.append(f\"<{tag} {rendered}>{escape(body(row) or '')}</{tag}>\")",
-  "new": "        out.append(f\"<{tag} {rendered}>{body(row) or ''}</{tag}>\")",
+  "old": "        out.append(\n            f\"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>\"\n        )",
+  "new": "        out.append(\n            f\"<{tag} {rendered}>{render_file_links(body(row) or '')}</{tag}>\"\n        )",
   "target": "tests/unit/test_debrief_render.py -k test_a_tool_result_still_cannot_forge_a_step_after_the_single_escape"
  },
  {

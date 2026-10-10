@@ -90,6 +90,7 @@ from nora.domain.cognition_ground import (
     record_ref,
 )
 from nora.domain.cognition_session import AgendaItem, Room
+from nora.domain.external_files import render_file_links
 from nora.domain.prompt import ago, clip, escape, legal, one_line
 from nora.domain.stimuli import Stimulus
 from nora.language.culture_render import render_self
@@ -239,8 +240,15 @@ def returning(strike: int) -> str:
 
 def _words(text: str, limit: int) -> str:
     """A message's words as one line cut to `limit`; none at all for a limit of
-    nothing (the measure of what a row costs without them)."""
-    return clip(text, limit) if limit > 0 else ""
+    nothing (the measure of what a row costs without them).
+
+    A shared file link becomes its handle BEFORE the cut (design/external-
+    files §1): cut first, a link split by the cut no longer parses, so half a
+    URL and a prefix of the file id would reach the model, and a stub long
+    enough to parse would carry a different id and a wrong code. Swapping
+    first also keeps `_shrunk`'s search monotonic: the text being cut no
+    longer depends on where it is cut."""
+    return clip(render_file_links(text), limit) if limit > 0 else ""
 
 
 @dataclass(frozen=True, slots=True)

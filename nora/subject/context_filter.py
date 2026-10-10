@@ -23,6 +23,7 @@ import httpx
 from nora.agent import prefill
 from nora.agent.room import Room
 from nora.domain.blocks import ContextBlock, assemble
+from nora.domain.external_files import render_file_links
 from nora.domain.models import TagContext
 from nora.domain.prompt import escape
 from nora.obs.tracing import annotate
@@ -121,7 +122,7 @@ def router_input(
         if name == "tag_message":
             b = ContextBlock(
                 name=name,
-                body=escape(ctx.message.body),
+                body=escape(render_file_links(ctx.message.body)),
                 attrs=(
                     (
                         "from",

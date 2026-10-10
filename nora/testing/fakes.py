@@ -62,6 +62,7 @@ from nora.domain.documents import (
     is_handle,
     normalize_query,
 )
+from nora.domain.external_files import external_files_json
 from nora.domain.media import (
     MediaBlob,
     MediaBytes,
@@ -229,6 +230,9 @@ class FakeRecordStore:
             # have; `tests/contract/test_audit_store_contract.py` is what pins
             # the two together.
             "media_json": media_json(message.media_blobs),
+            # Mirrors `SqlRecordStore.append`, through the same domain
+            # function, so the two stores cannot write different text.
+            "external_files_json": external_files_json(message.external_files),
             # Both mirror `SqlRecordStore.append` (design/message-edits/01 §2).
             "platform_message_id": message.message_id or None,
             "mentions_json": mentions_json(message.mentions),
@@ -374,6 +378,24 @@ class FakeRecordStore:
         matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
         return [self._transcript_row(r) for r in matching[:limit]]
 
+    async def external_file_rows(
+        self, *, conversation_id: str, since_ts: int, limit: int,
+    ) -> list[TranscriptRow]:
+        """Mirrors `SqlRecordStore.external_file_rows`, hidden rows excluded;
+        raises when `fail_on_recent` is set."""
+        if self.fail_on_recent:
+            raise RuntimeError("db down")
+        if limit <= 0:
+            return []
+        matching = [
+            r for r in self.rows
+            if r["conversation_id"] == conversation_id and r["ts"] >= since_ts
+            and not r["is_nora"] and r.get("external_files_json") is not None
+            and r["id"] not in self.hidden_ids
+        ]
+        matching.sort(key=lambda r: (r["ts"], r["id"]), reverse=True)
+        return [self._transcript_row(r) for r in matching[:limit]]
+
     async def recent_before(
         self, *, conversation_id: str, before_ts: int, limit: int,
     ) -> list[TranscriptRow]:
@@ -442,6 +464,7 @@ class FakeRecordStore:
             is_nora=r["is_nora"],
             delivery_status=r["delivery_status"], raw_json=r["raw_json"],
             quoted_ts=r["quoted_ts"], media_json=r["media_json"],
+            external_files_json=r.get("external_files_json"),
             person_id=r["person_id"],
             edit=(
                 RowEdit(ts=latest["ts"], was=r["body"], raw_json=latest["raw_json"])
