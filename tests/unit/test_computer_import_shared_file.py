@@ -437,7 +437,9 @@ async def test_a_link_built_around_a_handles_code_copies_that_file(made_up, slot
 
 async def test_a_made_up_link_beside_a_code_is_still_one_too_many():
     # Review of PR 809: the rewrite must not swallow a second argument.
+    # The sheet IS in this room, so swallowing `code` would copy it.
     computer = _Computer()
-    out = await _import(_drive(_server()), computer)(
+    store = await _store((GROUP, f"here {SHEET_URL}"))
+    out = await _import(_drive(_server()), computer, store)(
         code="a3f2c1", link=f"https://drive.google.com/file/d/{_code(SHEET)}")
     assert out["status"] != "ok" and computer.files() == {}
