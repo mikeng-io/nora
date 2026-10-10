@@ -164,11 +164,18 @@ class FakeDriveServer:
         self._minted += 1
         token = f"access-{self._issued}-{self._minted}"
         self._token_scopes[token] = asked
-        return _reply(200, {
+        answer = {
             "access_token": token, "expires_in": 3599,
             "scope": " ".join(sorted(asked)),
             "token_type": "Bearer",
-        })
+        }
+        # Google compresses a token answer whenever the client accepts gzip
+        # (httpx does by default), and also when `gzip_bodies` forces it.
+        accepts = request.headers.get("Accept-Encoding", "")
+        if self.gzip_bodies or "gzip" in accepts:
+            return _reply(200, gzip.compress(json.dumps(answer).encode()),
+                          **{"Content-Encoding": "gzip"})
+        return _reply(200, answer)
 
     def _visible(self, request: httpx.Request, file_id: str) -> DriveFile | None:
         held = self.files.get(file_id)
