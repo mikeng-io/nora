@@ -381,3 +381,22 @@ async def test_a_sheet_the_sheets_api_refuses_is_read_from_its_export():
     assert "## Budget" in got.text and "Hotel" in got.text
     exports = [r for r in server.requests if r.url.path.endswith("/export")]
     assert exports and exports[0].url.params["mimeType"] == XLSX
+
+
+async def test_a_compressed_body_cut_off_mid_stream_is_not_read_as_the_file():
+    """Review of #805: a gzip body that ends before its stream does must not be
+    returned as if it were the whole file."""
+    import gzip
+
+    import httpx
+
+    from nora.infra.external_files.google_drive import _bounded_body
+
+    whole = gzip.compress(b"x" * 50_000)
+    resp = httpx.Response(200, headers={"Content-Encoding": "gzip"},
+                          stream=httpx.ByteStream(whole[: len(whole) // 2]))
+    with pytest.raises(ExternalFileError):
+        await _bounded_body(resp, 1_000_000)
+    complete = httpx.Response(200, headers={"Content-Encoding": "gzip"},
+                              stream=httpx.ByteStream(whole))
+    assert await _bounded_body(complete, 1_000_000) == b"x" * 50_000

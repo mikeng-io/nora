@@ -88,6 +88,8 @@ async def _capped_body(resp: httpx.Response, max_bytes: int) -> bytes:
             body += chunk
             if inflate is not None and not chunk:
                 break
+    if inflate is not None and not inflate.eof:
+        raise GoogleAuthError("refresh_failed")  # a cut-off stream is not an answer
     return bytes(body)
 
 
