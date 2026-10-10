@@ -146,6 +146,7 @@ NOT_TEXT = "not_text"          # refused: a kind that is not read as text
 NO_DOWNLOAD = "no_download"    # refused: the owner turned off download and copy
 DELETED = "deleted"            # nothing_found: the file is in the bin, or no such file
 NO_PART = "no_part"            # nothing_found: the file has fewer parts than asked
+TOO_SLOW = "too_slow"          # refused: reading it as text took past the deadline
 
 
 def file_digest(provider: str, file_id: str) -> str:

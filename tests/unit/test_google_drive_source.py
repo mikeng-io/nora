@@ -23,6 +23,7 @@ from nora.domain.external_files import (
 )
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.external_files.text import pages
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.google_drive import GDOC, GSHEET, GSLIDES, DriveFile, FakeDriveServer
 
@@ -41,10 +42,16 @@ def _ref(file_id: str, key: str | None = None) -> ExternalFileRef:
     return ref
 
 
+def _credentials(server: FakeDriveServer, metrics: Metrics | None = None) -> GoogleCredentials:
+    return GoogleCredentials(
+        client_id="cid", client_secret=SECRET, refresh_token=server.refresh_token,
+        metrics=metrics or Metrics(), transport=server.transport,
+    )
+
+
 def _source(server: FakeDriveServer, metrics: Metrics | None = None, **kw) -> GoogleDriveSource:
     return GoogleDriveSource(
-        client_id="cid", client_secret=SECRET, refresh_token=server.refresh_token,
-        metrics=metrics or Metrics(), transport=server.transport, **kw,
+        credentials=_credentials(server, metrics), transport=server.transport, **kw,
     )
 
 
@@ -128,7 +135,7 @@ def _pdf(text: str) -> bytes:
 
 IDS = {k: f"1{k.capitalize():0<24}" for k in (
     "doc", "sheet", "slides", "pdf", "docx", "xlsx", "pptx", "image", "unshared",
-    "trashed", "nodownload", "huge", "keyed",
+    "trashed", "nodownload", "huge", "keyed", "keyedsheet",
 )}
 
 
@@ -153,6 +160,9 @@ def _server() -> FakeDriveServer:
         IDS["huge"]: DriveFile("Huge", GDOC, export_too_large=True),
         IDS["keyed"]: DriveFile("Old link", GDOC, resource_key="0-abc",
                                 exports={"text/markdown": b"keyed text"}),
+        IDS["keyedsheet"]: DriveFile("Old sheet", GSHEET, resource_key="0-def",
+                                     tabs={"Costs": [["Hotel", "1,200"]]},
+                                     exports={XLSX: _xlsx()}),
     })
 
 
@@ -311,12 +321,11 @@ async def test_invalid_grant_is_unavailable_counted_and_logged_without_the_secre
     server = _server()
     server.revoked = True
     metrics = Metrics()
-    with caplog.at_level(logging.INFO, logger="nora.external_files"), \
-            pytest.raises(ExternalFileError) as raised:
+    with caplog.at_level(logging.INFO), pytest.raises(ExternalFileError) as raised:
         await _source(server, metrics).describe(ref=_ref(IDS["doc"]))
     assert (raised.value.status, raised.value.reason) == ("unavailable", "invalid_grant")
-    assert metrics.get("nora_external_files_invalid_grant_total", provider="google_drive") == 1
-    assert "external_files_auth.py" in caplog.text
+    assert metrics.get("nora_google_invalid_grant_total") == 1
+    assert "google_auth.py" in caplog.text
     assert SECRET not in caplog.text and server.refresh_token not in caplog.text
     assert IDS["doc"] not in caplog.text
 
@@ -337,3 +346,36 @@ def test_a_package_declaring_a_dtd_is_refused():
     with pytest.raises(ExternalFileError) as raised:
         docx_text(bomb, 10_000)
     assert raised.value.reason == NOT_TEXT
+
+
+# ---- review of PR 801: the Sheets API -----------------------------------------
+
+async def test_a_disabled_sheets_api_is_unavailable_and_logged_never_not_shared(caplog):
+    """A 403 PERMISSION_DENIED whose detail says SERVICE_DISABLED is the
+    operator's to fix: «I couldn't check», not «not shared with me»."""
+    server = _server()
+    server.sheets_disabled = True
+    with caplog.at_level(logging.ERROR, logger="nora.external_files"), \
+            pytest.raises(ExternalFileError) as raised:
+        await _source(server).read(ref=_ref(IDS["sheet"]), part=1)
+    assert (raised.value.status, raised.value.reason) == ("unavailable", "api_disabled")
+    assert any("not enabled" in r.getMessage() for r in caplog.records)
+
+
+async def test_a_drive_api_not_configured_is_unavailable_too():
+    from nora.infra.external_files.google_drive import _failure
+
+    body = b'{"error": {"code": 403, "errors": [{"reason": "accessNotConfigured"}]}}'
+    assert _failure(403, body).status == "unavailable"
+
+
+async def test_a_sheet_the_sheets_api_refuses_is_read_from_its_export():
+    """Its link's resource key reaches Drive only: Drive answers for the file,
+    the Sheets API does not, and the same workbook is read as an xlsx export."""
+    server = _server()
+    ref = recognise(f"https://docs.google.com/spreadsheets/d/{IDS['keyedsheet']}/edit?resourcekey=0-def")
+    assert ref is not None
+    got = await _source(server).read(ref=ref, part=1)
+    assert "## Budget" in got.text and "Hotel" in got.text
+    exports = [r for r in server.requests if r.url.path.endswith("/export")]
+    assert exports and exports[0].url.params["mimeType"] == XLSX

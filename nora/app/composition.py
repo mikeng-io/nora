@@ -156,6 +156,7 @@ from nora.engagement.subagents_context import SubagentsContextReader
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.infra.blobs.cipher import BlobCipher
 from nora.infra.computer.probe import ComputerdProbe
+from nora.infra.google.auth import GoogleCredentials
 from nora.infra.honcho import HonchoClient
 from nora.infra.music import YtDlpSource
 from nora.infra.sql import SqlRecordStore, create_sql_engine, run_migrations
@@ -923,36 +924,45 @@ def _computer_token(cfg: Config) -> str:
     return token
 
 
-def external_files_source(cfg: Config, *, metrics: Any) -> ExternalFilesSource | None:
-    """The shared-file source the open tool reads through
-    (design/external-files/00-design.md §4), or None.
-
-    Built only under `[external_files] enabled` with every credential its
-    `[external_files.google_drive]` table names present in the environment
-    (DEC-8: the values live in `.env`, never in config). Off, or a value
-    missing, is None and the tool answers `unavailable`: a missing sign-in
-    costs the opens, never the boot. Recording a link as a handle needs none
-    of this and runs either way."""
+def google_credentials(cfg: Config, *, metrics: Any) -> GoogleCredentials | None:
+    """Nora's ONE Google identity (`[google]`, design/external-files §4), or
+    None. Built when a Google service is switched on (shared files today) and
+    all three values `[google]` names are in the environment (DEC-8). A value
+    missing is None and a warning naming the variable, never its value: the
+    Google services then answer `unavailable`, never the boot. Every service
+    gets THIS object and asks it for a token for its own scope; none sees the
+    secrets."""
     if not cfg.external_files.enabled:
         return None
-    drive = cfg.external_files.google_drive
-    names = (drive.client_id_env, drive.client_secret_env, drive.refresh_token_env)
+    names = (cfg.google.client_id_env, cfg.google.client_secret_env,
+             cfg.google.refresh_token_env)
     values = [os.environ.get(name, "").strip() for name in names]
     missing = [name for name, value in zip(names, values, strict=True) if not value]
     if missing:
         log.warning(
-            "[external_files] enabled but %s unset; opening a shared file answers "
-            "unavailable (run scripts/external_files_auth.py, put the values in .env)",
-            ", ".join(missing),
+            "[google] %s unset; every Google service answers unavailable (run "
+            "scripts/google_auth.py, put the values in .env)", ", ".join(missing),
         )
         return None
-    from nora.infra.external_files.google_drive import GoogleDriveSource
-
     client_id, client_secret, refresh_token = values
-    return GoogleDriveSource(
+    return GoogleCredentials(
         client_id=client_id, client_secret=client_secret,
         refresh_token=refresh_token, metrics=metrics,
     )
+
+
+def external_files_source(
+    cfg: Config, *, google: GoogleCredentials | None,
+) -> ExternalFilesSource | None:
+    """The shared-file source the open tool reads through
+    (design/external-files/00-design.md §4), or None: `[external_files]` off,
+    or no Google identity (`google_credentials`). None answers the open
+    `unavailable`; recording a link as a handle needs none of this."""
+    if not cfg.external_files.enabled or google is None:
+        return None
+    from nora.infra.external_files.google_drive import GoogleDriveSource
+
+    return GoogleDriveSource(credentials=google)
 
 
 #: Every Character adaptor that is not the room fold, by name (budgets, grants).
@@ -3006,7 +3016,9 @@ async def build_dependencies(
     tool_registry = ToolRegistry(
         # `[external_files]` (ships off): the source a shared file link is
         # opened through; None answers the open `unavailable`.
-        external_files=external_files_source(cfg, metrics=metrics),
+        external_files=external_files_source(
+            cfg, google=google_credentials(cfg, metrics=metrics),
+        ),
         subagent=subagent_desk,
         video=video_desk,
         video_ref_kinds=frozenset(

@@ -28,7 +28,7 @@ def test_config_example_exists_and_parses():
         "notes", "culture", "lessons", "standing", "music", "image_gen", "video_gen",
         "version", "engagement", "participation", "relevance_gate", "reaction",
         "doctrine", "dreamer", "cognition", "subagent", "assess", "lineage", "record_query",
-        "documents", "external_files",
+        "documents", "external_files", "google",
         "identity_file", "policy_file",
         "obs", "evals", "tools",
     }

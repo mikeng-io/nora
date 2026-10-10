@@ -31,6 +31,14 @@ review of PR S2, 2026-10-10). The file is somebody else's and may be crafted:
   parser meets it (so the guard and the parser cannot disagree about
   encodings or spellings, as a byte pre-scan could). OOXML never declares
   one; the five predefined entities still read.
+- *Shape* (review of PR 801, 2026-10-11). Each part is walked ONCE, as
+  expat's events stream past (no tree, no `iter()` inside `iter()`, which
+  was quadratic in nesting); an element deeper than `_MAX_DEPTH` refuses the
+  file. A ZIP member compressed with anything but stored or deflate (bzip2,
+  LZMA: inflated whole by `zipfile`, past the chunked budget) is refused
+  before it is opened. A spreadsheet's tabs share ONE text budget.
+- *Time.* Not bounded here: these functions run only inside the killable
+  child of `parse`, under its wall-clock deadline and memory cap.
 
 A breach of either budget is `ExternalFileError("refused", TOO_LARGE)`; any
 other failure to parse is `("refused", NOT_TEXT)`: a file that cannot be read
@@ -44,7 +52,6 @@ import logging
 import re
 import zipfile
 from collections.abc import Callable
-from xml.etree.ElementTree import Element, TreeBuilder
 from xml.parsers import expat
 
 from nora.domain.external_files import NOT_TEXT, TOO_LARGE, ExternalFileError
@@ -53,7 +60,7 @@ log = logging.getLogger("nora.external_files")
 
 __all__ = [
     "MAX_PDF_PAGES", "MAX_TEXT_CHARS", "docx_text", "pages", "pdf_text",
-    "plain_text", "pptx_text", "table_text", "xlsx_text",
+    "plain_text", "pptx_text", "sheets_text", "xlsx_text",
 ]
 
 #: The most text one read keeps, in characters, whatever the format. A part
@@ -109,23 +116,29 @@ def _cell(value: object) -> str:
     return " ".join(str(value).split()).replace("|", "\\|")
 
 
-def table_text(
-    title: str, rows: list[list[object]], max_chars: int = MAX_TEXT_CHARS,
+def sheets_text(
+    tabs: list[tuple[str, list[object]]], max_chars: int = MAX_TEXT_CHARS,
 ) -> str:
-    """One tab of a spreadsheet as its name and a pipe table, one line per
-    row. Empty trailing rows are dropped; an empty tab says so."""
+    """Every tab of a spreadsheet, in order, each as its name and a pipe table,
+    one line per row. ONE budget for the whole read (review of PR 801: a
+    budget per tab let N tabs return N times the cap). Empty trailing rows are
+    dropped; an empty tab says so."""
     budget = _Budget(max_chars)
-    lines = [f"## {title}"]
-    budget.take(len(lines[0]))
-    body: list[str] = []
-    for row in rows:
-        line = "| " + " | ".join(_cell(v) for v in row) + " |"
-        budget.take(len(line) + 1)
-        body.append(line)
-    while body and not body[-1].replace("|", "").strip():
-        body.pop()
-    lines += body or ["(empty)"]
-    return "\n".join(lines)
+    out = []
+    for title, rows in tabs:
+        lines = [f"## {title}"]
+        budget.take(len(lines[0]) + 2)
+        body: list[str] = []
+        for row in rows:
+            cells = row if isinstance(row, list) else []
+            line = "| " + " | ".join(_cell(v) for v in cells) + " |"
+            budget.take(len(line) + 1)
+            body.append(line)
+        while body and not body[-1].replace("|", "").strip():
+            body.pop()
+        lines += body or ["(empty)"]
+        out.append("\n".join(lines))
+    return "\n\n".join(out)
 
 
 def pdf_text(data: bytes, max_chars: int = MAX_TEXT_CHARS) -> str:
@@ -156,13 +169,25 @@ def pdf_text(data: bytes, max_chars: int = MAX_TEXT_CHARS) -> str:
 
 
 # --- Office Open XML ---------------------------------------------------------
+#
+# ONE streaming pass per part, no tree (review of PR 801: walking a tree with
+# `iter()` inside `iter()` was quadratic in the nesting, 3.5 KB of nested
+# tables took 16 s). Each reader is a small state machine fed expat's events;
+# text is charged to the char budget as it arrives, and an element nested
+# deeper than `_MAX_DEPTH` refuses the file.
 
-_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-_S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
-_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
-_R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
-_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_S = "http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_A = "http://schemas.openxmlformats.org/drawingml/2006/main}"
+_P = "http://schemas.openxmlformats.org/presentationml/2006/main}"
+_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_REL = "http://schemas.openxmlformats.org/package/2006/relationships}"
+#: Real Office files nest a few dozen deep at most.
+_MAX_DEPTH = 64
+#: The only ZIP methods read. bzip2 and LZMA members are decompressed by
+#: `zipfile` whole on each read, past any chunked budget (review of PR 801: a
+#: 697-byte bzip2 docx peaked at 1.12 GB), and Office never writes them.
+_ZIP_METHODS = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 
 
 class _DtdError(Exception):
@@ -173,9 +198,14 @@ def _refuse(*_args: object) -> None:
     raise _DtdError
 
 
-def _name(raw: str) -> str:
-    """`uri}local` (expat's namespace form) as ElementTree's `{uri}local`."""
-    return "{" + raw if "}" in raw else raw
+class _Reader:
+    """What a streaming reader implements. Tags arrive as `uri}local`."""
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None: ...
+
+    def end(self, tag: str) -> None: ...
+
+    def data(self, text: str) -> None: ...
 
 
 class _Package:
@@ -188,12 +218,28 @@ class _Package:
         self._bytes = _Budget(max_bytes)
         self.chars = _Budget(max_chars)
 
-    def xml(self, name: str) -> Element | None:
+    def stream(self, name: str, reader: _Reader) -> bool:
+        """Feed member `name` to `reader`; False when there is no such member."""
         try:
-            member = self._zip.open(name.lstrip("/"))
+            info = self._zip.getinfo(name.lstrip("/"))
         except KeyError:
-            return None
-        builder = TreeBuilder()
+            return False
+        if info.compress_type not in _ZIP_METHODS:
+            raise ExternalFileError("refused", NOT_TEXT)
+        depth = 0
+
+        def start(tag: str, attrs: dict[str, str]) -> None:
+            nonlocal depth
+            depth += 1
+            if depth > _MAX_DEPTH:
+                raise ExternalFileError("refused", NOT_TEXT)
+            reader.start(tag, attrs)
+
+        def end(tag: str) -> None:
+            nonlocal depth
+            depth -= 1
+            reader.end(tag)
+
         parser = expat.ParserCreate(namespace_separator="}")
         parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
         parser.StartDoctypeDeclHandler = _refuse
@@ -201,30 +247,56 @@ class _Package:
         parser.UnparsedEntityDeclHandler = _refuse
         parser.ExternalEntityRefHandler = _refuse  # type: ignore[assignment]
         parser.SkippedEntityHandler = _refuse
-        parser.StartElementHandler = lambda tag, attrs: builder.start(
-            _name(tag), {_name(k): v for k, v in attrs.items()},
-        )
-        parser.EndElementHandler = lambda tag: builder.end(_name(tag))
-        parser.CharacterDataHandler = builder.data
+        parser.StartElementHandler = start
+        parser.EndElementHandler = end
+        parser.CharacterDataHandler = reader.data
         try:
-            with member:
+            with self._zip.open(info) as member:
                 while chunk := member.read(_CHUNK):
                     self._bytes.take(len(chunk))
                     parser.Parse(chunk, False)
                 parser.Parse(b"", True)
         except _DtdError:
             raise ExternalFileError("refused", NOT_TEXT) from None
-        return builder.close()
+        return True
 
     def targets(self, rels: str, base: str) -> dict[str, str]:
         """Relationship id -> member name, from a `.rels` part."""
-        root = self.xml(rels)
-        out: dict[str, str] = {}
-        for rel in root.iter(f"{_REL}Relationship") if root is not None else ():
-            target = rel.get("Target", "")
-            out[rel.get("Id", "")] = (
-                target.lstrip("/") if target.startswith("/") else f"{base}/{target}"
+        reader = _Rels(base)
+        self.stream(rels, reader)
+        return reader.out
+
+
+class _Rels(_Reader):
+    def __init__(self, base: str) -> None:
+        self.base = base
+        self.out: dict[str, str] = {}
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == f"{_REL}Relationship":
+            target = attrs.get("Target", "")
+            self.out[attrs.get("Id", "")] = (
+                target.lstrip("/") if target.startswith("/") else f"{self.base}/{target}"
             )
+
+
+class _Text(_Reader):
+    """Collects the character data inside `text_tag` elements, charged."""
+
+    def __init__(self, chars: _Budget, text_tag: str) -> None:
+        self.chars = chars
+        self.text_tag = text_tag
+        self.inside = 0
+        self.buf: list[str] = []
+
+    def data(self, text: str) -> None:
+        if self.inside:
+            self.chars.take(len(text))
+            self.buf.append(text)
+
+    def take(self) -> str:
+        out = "".join(self.buf)
+        self.buf = []
         return out
 
 
@@ -240,41 +312,59 @@ def _office(read: Callable[[_Package], str]) -> Callable[..., str]:
     return run
 
 
-def _w_text(p: Element) -> str:
-    out = []
-    for node in p.iter():
-        if node.tag == f"{_W}t" and node.text:
-            out.append(node.text)
-        elif node.tag == f"{_W}tab":
-            out.append("\t")
-        elif node.tag in (f"{_W}br", f"{_W}cr"):
-            out.append("\n")
-    return "".join(out)
+class _Docx(_Text):
+    """Paragraphs as lines; a table row as `| a | b |`. A nested table's
+    paragraphs join the cell they sit in, flattened."""
+
+    def __init__(self, chars: _Budget) -> None:
+        super().__init__(chars, f"{_W}t")
+        self.lines: list[str] = []
+        self.cells: list[list[str]] = []   # one row per open table row
+        self.cell: list[list[str]] = []    # paragraphs of the open cell, per row
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == self.text_tag:
+            self.inside += 1
+        elif tag in (f"{_W}tab",):
+            self.data_always("\t")
+        elif tag in (f"{_W}br", f"{_W}cr"):
+            self.data_always("\n")
+        elif tag == f"{_W}tr":
+            self.cells.append([])
+        elif tag == f"{_W}tc":
+            self.cell.append([])
+
+    def data_always(self, text: str) -> None:
+        self.chars.take(len(text))
+        self.buf.append(text)
+
+    def end(self, tag: str) -> None:
+        if tag == self.text_tag:
+            self.inside = max(0, self.inside - 1)
+        elif tag == f"{_W}p":
+            text = self.take()
+            if self.cell:
+                self.cell[-1].append(text)
+            else:
+                self.lines.append(text)
+        elif tag == f"{_W}tc" and self.cell:
+            done = _cell(" ".join(self.cell.pop()))
+            if self.cells:
+                self.cells[-1].append(done)
+        elif tag == f"{_W}tr" and self.cells:
+            line = "| " + " | ".join(self.cells.pop()) + " |"
+            self.chars.take(len(line) + 1)
+            if self.cell:
+                self.cell[-1].append(line)
+            else:
+                self.lines.append(line)
 
 
 def _docx(pkg: _Package) -> str:
-    root = pkg.xml("word/document.xml")
-    body = root.find(f"{_W}body") if root is not None else None
-    if body is None:
+    reader = _Docx(pkg.chars)
+    if not pkg.stream("word/document.xml", reader):
         raise ExternalFileError("refused", NOT_TEXT)
-    lines = []
-    for el in body:
-        if el.tag == f"{_W}p":
-            line = _w_text(el)
-        elif el.tag == f"{_W}tbl":
-            rows = []
-            for tr in el.iter(f"{_W}tr"):
-                cells = [
-                    _cell(" ".join(_w_text(p) for p in tc.iter(f"{_W}p")))
-                    for tc in tr.findall(f"{_W}tc")
-                ]
-                rows.append("| " + " | ".join(cells) + " |")
-            line = "\n".join(rows)
-        else:
-            continue
-        pkg.chars.take(len(line) + 1)
-        lines.append(line)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(reader.lines))
 
 
 _COLUMN = re.compile(r"[A-Z]{1,3}")
@@ -291,67 +381,147 @@ def _column(ref: str) -> int:
     return max(n - 1, 0)
 
 
+class _Shared(_Text):
+    def __init__(self, chars: _Budget) -> None:
+        super().__init__(chars, f"{_S}t")
+        self.strings: list[str] = []
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == self.text_tag:
+            self.inside += 1
+
+    def end(self, tag: str) -> None:
+        if tag == self.text_tag:
+            self.inside = max(0, self.inside - 1)
+        elif tag == f"{_S}si":
+            self.strings.append(self.take())
+
+
+class _Book(_Reader):
+    def __init__(self) -> None:
+        self.sheets: list[tuple[str, str]] = []
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == f"{_S}sheet":
+            self.sheets.append((attrs.get("name", "Sheet"), attrs.get(f"{_R}id", "")))
+
+
+class _Sheet(_Reader):
+    """One worksheet: each `<c>` becomes a cell at its column, its padding
+    charged before it is allocated."""
+
+    def __init__(self, chars: _Budget, shared: list[str]) -> None:
+        self.chars = chars
+        self.shared = shared
+        self.lines: list[str] = []
+        self.row: list[str] = []
+        self.kind = ""
+        self.col = 0
+        self.inside = False
+        self.buf: list[str] = []
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == f"{_S}row":
+            self.row = []
+        elif tag == f"{_S}c":
+            self.kind = attrs.get("t", "")
+            self.col = _column(attrs.get("r", ""))
+            self.buf = []
+        elif tag in (f"{_S}v", f"{_S}t"):
+            self.inside = True
+
+    def data(self, text: str) -> None:
+        if self.inside:
+            self.chars.take(len(text))
+            self.buf.append(text)
+
+    def end(self, tag: str) -> None:
+        if tag in (f"{_S}v", f"{_S}t"):
+            self.inside = False
+        elif tag == f"{_S}c":
+            v = "".join(self.buf)
+            if self.kind == "s":
+                value = self.shared[int(v)] if v.isdigit() and int(v) < len(self.shared) else ""
+            elif self.kind == "b":
+                value = "TRUE" if v == "1" else "FALSE"
+            else:
+                value = v
+            gap = self.col - len(self.row)
+            # Charged BEFORE the padding exists: each empty cell is " | ".
+            # Inline text was charged as it streamed; a shared string is
+            # charged at every use, since each use repeats it in the output.
+            shared_cost = len(value) if self.kind in ("s", "b") else 0
+            self.chars.take(3 * max(gap, 0) + shared_cost + 3)
+            if gap > 0:
+                self.row += [""] * gap
+            self.row.append(_cell(value))
+        elif tag == f"{_S}row":
+            self.lines.append("| " + " | ".join(self.row) + " |")
+            self.row = []
+
+
 def _xlsx(pkg: _Package) -> str:
-    book = pkg.xml("xl/workbook.xml")
-    if book is None:
+    book = _Book()
+    if not pkg.stream("xl/workbook.xml", book):
         raise ExternalFileError("refused", NOT_TEXT)
     targets = pkg.targets("xl/_rels/workbook.xml.rels", "xl")
-    shared_root = pkg.xml("xl/sharedStrings.xml")
-    shared = [
-        "".join(t.text or "" for t in si.iter(f"{_S}t"))
-        for si in (shared_root.findall(f"{_S}si") if shared_root is not None else ())
-    ]
+    shared = _Shared(pkg.chars)
+    pkg.stream("xl/sharedStrings.xml", shared)
     tabs = []
-    for sheet in book.iter(f"{_S}sheet"):
-        member = targets.get(sheet.get(f"{_R}id", ""))
-        root = pkg.xml(member) if member else None
-        lines = [f"## {sheet.get('name', 'Sheet')}"]
-        pkg.chars.take(len(lines[0]) + 2)
-        for row in root.iter(f"{_S}row") if root is not None else ():
-            cells: list[str] = []
-            for c in row.findall(f"{_S}c"):
-                kind = c.get("t", "")
-                v = c.findtext(f"{_S}v") or ""
-                if kind == "s" and v.isdigit() and int(v) < len(shared):
-                    value = shared[int(v)]
-                elif kind == "inlineStr":
-                    value = "".join(t.text or "" for t in c.iter(f"{_S}t"))
-                elif kind == "b":
-                    value = "TRUE" if v == "1" else "FALSE"
-                else:
-                    value = v
-                gap = _column(c.get("r", "")) - len(cells)
-                # Charged BEFORE the padding exists: each empty cell is " | ".
-                pkg.chars.take(3 * max(gap, 0) + len(value) + 3)
-                if gap > 0:
-                    cells += [""] * gap
-                cells.append(_cell(value))
-            lines.append("| " + " | ".join(cells) + " |")
-        while len(lines) > 1 and not lines[-1].replace("|", "").strip():
+    for name, rel in book.sheets:
+        sheet = _Sheet(pkg.chars, shared.strings)
+        member = targets.get(rel)
+        if member:
+            pkg.stream(member, sheet)
+        lines = sheet.lines
+        while lines and not lines[-1].replace("|", "").strip():
             lines.pop()
-        if len(lines) == 1:
-            lines.append("(empty)")
-        tabs.append("\n".join(lines))
+        pkg.chars.take(len(name) + 4)
+        tabs.append("\n".join([f"## {name}", *(lines or ["(empty)"])]))
     return "\n\n".join(tabs)
 
 
+class _Deck(_Reader):
+    def __init__(self) -> None:
+        self.slides: list[str] = []
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == f"{_P}sldId":
+            self.slides.append(attrs.get(f"{_R}id", ""))
+
+
+class _Slide(_Text):
+    def __init__(self, chars: _Budget) -> None:
+        super().__init__(chars, f"{_A}t")
+        self.lines: list[str] = []
+
+    def start(self, tag: str, attrs: dict[str, str]) -> None:
+        if tag == self.text_tag:
+            self.inside += 1
+
+    def end(self, tag: str) -> None:
+        if tag == self.text_tag:
+            self.inside = max(0, self.inside - 1)
+        elif tag == f"{_A}p":
+            line = self.take()
+            if line.strip():
+                self.lines.append(line)
+
+
 def _pptx(pkg: _Package) -> str:
-    deck = pkg.xml("ppt/presentation.xml")
-    if deck is None:
+    deck = _Deck()
+    if not pkg.stream("ppt/presentation.xml", deck):
         raise ExternalFileError("refused", NOT_TEXT)
     targets = pkg.targets("ppt/_rels/presentation.xml.rels", "ppt")
     slides = []
-    for n, sld in enumerate(deck.iter(f"{_P}sldId"), start=1):
-        member = targets.get(sld.get(f"{_R}id", ""))
-        root = pkg.xml(member) if member else None
-        lines = [
-            "".join(t.text or "" for t in p.iter(f"{_A}t"))
-            for p in (root.iter(f"{_A}p") if root is not None else ())
-        ]
-        text = "\n".join(line for line in lines if line.strip())
-        slide = f"## Slide {n}\n{text or '(no text on this slide)'}"
-        pkg.chars.take(len(slide) + 2)
-        slides.append(slide)
+    for n, rel in enumerate(deck.slides, start=1):
+        slide = _Slide(pkg.chars)
+        member = targets.get(rel)
+        if member:
+            pkg.stream(member, slide)
+        text = "\n".join(slide.lines)
+        pkg.chars.take(16)
+        slides.append(f"## Slide {n}\n{text or '(no text on this slide)'}")
     return "\n\n".join(slides)
 
 

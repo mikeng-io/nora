@@ -2,8 +2,8 @@
   {
     "name": "never cached (static): an adapter importing a memoizer is seen",
     "file": "nora/infra/external_files/google_drive.py",
-    "old": "import asyncio\nimport json\n",
-    "new": "import asyncio\nimport functools\nimport json\n",
+    "old": "import json\nimport logging\n",
+    "new": "import functools\nimport json\nimport logging\n",
     "target": "tests/architecture/test_external_files_are_never_cached.py::test_no_external_files_module_can_keep_what_it_read"
   },
   {
@@ -29,8 +29,8 @@
   },
   {
     "name": "invalid_grant is not counted",
-    "file": "nora/infra/external_files/google_drive.py",
-    "old": "                self._metrics.inc(\"nora_external_files_invalid_grant_total\", provider=self.name)\n",
+    "file": "nora/infra/google/auth.py",
+    "old": "            self._metrics.inc(\"nora_google_invalid_grant_total\")\n",
     "new": "",
     "target": "tests/unit/test_google_drive_source.py::test_invalid_grant_is_unavailable_counted_and_logged_without_the_secret"
   },
@@ -51,8 +51,8 @@
   {
     "name": "bounds: a far-right cell's padding is allocated before it is charged",
     "file": "nora/infra/external_files/text.py",
-    "old": "pkg.chars.take(3 * max(gap, 0) + len(value) + 3)",
-    "new": "pkg.chars.take(len(value) + 3)",
+    "old": "self.chars.take(3 * max(gap, 0) + shared_cost + 3)",
+    "new": "self.chars.take(shared_cost + 3)",
     "target": "tests/unit/test_external_files_text_bounds.py::test_a_cell_at_the_last_column_costs_its_padding_before_it_exists"
   },
   {
@@ -61,5 +61,61 @@
     "old": "                \"Accept-Encoding\": \"identity\",\n",
     "new": "",
     "target": "tests/unit/test_external_files_text_bounds.py::test_every_request_asks_for_an_uncompressed_body"
+  },
+  {
+    "name": "one identity: a consumer whose scope was not granted still gets the token (fail-open)",
+    "file": "nora/infra/google/auth.py",
+    "old": "            if scope not in self._granted:\n",
+    "new": "            if False:\n",
+    "target": "tests/unit/test_google_credentials.py::test_a_scope_not_granted_fails_that_consumer_closed_and_no_other"
+  },
+  {
+    "name": "one identity: every consumer refreshes on every call instead of sharing one token",
+    "file": "nora/infra/google/auth.py",
+    "old": "            if self._access is None or self._clock() >= self._expires_at:\n",
+    "new": "            if True:\n",
+    "target": "tests/unit/test_google_credentials.py::test_two_consumers_share_one_refresh_and_one_token"
+  },
+  {
+    "name": "review 801 #1: the parse deadline is not enforced, a crafted PDF holds the open",
+    "file": "nora/infra/external_files/parse.py",
+    "old": "            proc.communicate(header + b\"\\n\" + data), deadline_seconds,\n",
+    "new": "            proc.communicate(header + b\"\\n\" + data), None,\n",
+    "target": "tests/unit/test_external_files_parse_worker.py::test_a_parse_past_its_deadline_is_killed_and_refused_too_slow"
+  },
+  {
+    "name": "review 801 #2: no nesting cap, tables nested 20,000 deep are walked",
+    "file": "nora/infra/external_files/text.py",
+    "old": "            if depth > _MAX_DEPTH:\n",
+    "new": "            if False:\n",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_nesting_past_the_depth_cap_is_refused"
+  },
+  {
+    "name": "review 801 #3: a bzip2 or LZMA member is opened and inflated whole",
+    "file": "nora/infra/external_files/text.py",
+    "old": "        if info.compress_type not in _ZIP_METHODS:\n",
+    "new": "        if False:\n",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_a_bzip2_or_lzma_member_is_refused_before_it_is_opened"
+  },
+  {
+    "name": "review 801 #4: a disabled Sheets API reads as not shared",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "    if status == 403 and _disabled(body):\n",
+    "new": "    if False:\n",
+    "target": "tests/unit/test_google_drive_source.py::test_a_disabled_sheets_api_is_unavailable_and_logged_never_not_shared"
+  },
+  {
+    "name": "review 801 #5: each tab gets its own budget again",
+    "file": "nora/infra/external_files/text.py",
+    "old": "    for title, rows in tabs:\n        lines = [f\"## {title}\"]\n",
+    "new": "    for title, rows in tabs:\n        budget = _Budget(max_chars)\n        lines = [f\"## {title}\"]\n",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_the_sheets_budget_is_one_for_every_tab_together"
+  },
+  {
+    "name": "review 801 #8: a sheet the Sheets API refuses is not read from its export",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "            if err.reason not in (NOT_SHARED,):\n",
+    "new": "            if True:\n",
+    "target": "tests/unit/test_google_drive_source.py::test_a_sheet_the_sheets_api_refuses_is_read_from_its_export"
   }
 ]

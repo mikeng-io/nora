@@ -1,9 +1,11 @@
 """`GoogleDriveSource`: the first `ExternalFilesSource`, Google Drive read-only
 (design/external-files/00-design.md §4, build step S2).
 
-Nora's own account (`nora@67.zone`), signed in once with
-`scripts/external_files_auth.py` under ONE scope, `drive.readonly`: nothing
-here can write, comment or share, and the Sheets reads accept that scope. The
+Nora's own account (`nora@67.zone`), through her ONE Google identity
+(`nora.infra.google.auth.GoogleCredentials`, shared by every Google service
+she uses). This adapter declares ONE scope, `drive.readonly`
+(`nora.infra.google.scopes`): nothing here can write, comment or share, and
+the Sheets reads accept that scope. The
 vendor's vocabulary (MIME types, `files.export`, the Sheets ranges) lives in
 this module and nowhere above it; the port speaks `ExternalFile`/`FilePart`.
 
@@ -14,8 +16,12 @@ this module and nowhere above it; the port speaks `ExternalFile`/`FilePart`.
 | describe | `files.get`, fields `id,name,mimeType,modifiedTime,size,trashed,owners(displayName)` |
 | Google Doc | `files.export` as `text/markdown` |
 | Google Sheet | `spreadsheets.get` (tab names), then `values:batchGet` for every tab |
+| Google Sheet the Sheets API refuses | `files.export` as xlsx |
 | Google Slides | `files.export` as `text/plain` |
-| PDF, docx, xlsx, pptx, plain text | `files.get?alt=media`, parsed by `text` |
+| PDF, docx, xlsx, pptx, plain text | `files.get?alt=media` |
+
+Every body is turned into text by `parse.parse_isolated`: a killable child
+under a deadline, never on the event loop.
 
 `trashed` is the one field beyond the design's list: Drive answers a file in
 the bin with its metadata, and that is the only "deleted" this account can
@@ -26,11 +32,10 @@ resolves; the Sheets API has no such parameter. A ref's resource key goes in
 
 **Never cached (operator, 2026-10-10).** Every `describe`, `read` and
 `fetch_bytes` fetches afresh: `read` does its own `files.get` for the kind
-rather than trusting an earlier `describe`. The ONLY thing held between calls
-is the OAuth ACCESS token, in memory until its own expiry: a credential, not
-anything fetched through a link. The refresh token and client secret come in
-already resolved from the environment (DEC-8) and are never logged; neither is
-a file id (a log line names the six-hex handle).
+rather than trusting an earlier `describe`. The access token is the shared
+credentials' (in memory until its own expiry, a credential, not anything
+fetched through a link); this adapter never holds the client secret or the
+refresh token, and never logs a file id (a log line names the six-hex handle).
 
 **How a failure reads** (`ExternalFileError.status`, reason code):
 
@@ -40,11 +45,14 @@ a file id (a log line names the six-hex handle).
 - 403 for a permission reason: `refused`, `NOT_SHARED`; `cannotDownloadFile`
   and its kin: `refused`, `NO_DOWNLOAD`; `exportSizeLimitExceeded` (Google's
   10 MB export cap) or more than `max_bytes` downloaded: `refused`,
-  `TOO_LARGE`; a rate limit, an API not enabled: `unavailable`.
+  `TOO_LARGE`; a rate limit: `unavailable`.
+- 403 naming an API not enabled (`SERVICE_DISABLED`, `accessNotConfigured`):
+  `unavailable`, `api_disabled`, logged at error for the operator.
+- A parse past its deadline: `refused`, `TOO_SLOW`.
 - `trashed`: `nothing_found`, `DELETED`.
-- A refresh refused as `invalid_grant` (revoked, expired, or a Testing-mode
-  consent screen's 7-day expiry): `unavailable`, logged as an error naming the
-  fix and counted on `nora_external_files_invalid_grant_total`.
+- No access token (`invalid_grant`, `drive.readonly` not granted to the
+  shared refresh token, the token endpoint down): `unavailable`, with the
+  credentials' reason; the credentials log and count it.
 - 429, 5xx, a transport error, a body that is not JSON: `unavailable`.
 
 Never raises anything but `ExternalFileError`.
@@ -55,11 +63,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import zlib
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -79,23 +85,18 @@ from nora.domain.external_files import (
     recognise,
 )
 
-from .text import docx_text, pages, pdf_text, plain_text, pptx_text, table_text, xlsx_text
+from ..google.auth import GoogleAuthError, GoogleCredentials
+from ..google.scopes import DRIVE_READONLY
+from .parse import parse_isolated
+from .text import MAX_TEXT_CHARS, pages
 
 log = logging.getLogger("nora.external_files")
 
 __all__ = ["DRIVE_SCOPE", "MAX_BYTES", "PART_CHARS", "GoogleDriveSource"]
 
 
-class Counter(Protocol):
-    """`nora.obs.metrics.Metrics` as this module uses it; injected, since
-    `nora.infra` sits below `nora.obs` in the layers contract."""
-
-    def inc(self, name: str, value: float = 1.0, **labels: object) -> None: ...
-
-
-#: The one scope the sign-in asks for (`scripts/external_files_auth.py`).
-DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
-TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105 - an endpoint, not a secret
+#: The one scope this consumer declares (`nora.infra.google.scopes`).
+DRIVE_SCOPE = DRIVE_READONLY
 DRIVE_URL = "https://www.googleapis.com/drive/v3/files"
 SHEETS_URL = "https://sheets.googleapis.com/v4/spreadsheets"
 
@@ -107,8 +108,6 @@ PART_CHARS = 12_000
 #: about 10 MB itself (`exportSizeLimitExceeded`); the same bound on a
 #: download keeps one open from buffering a 2 GB video.
 MAX_BYTES = 10 * 1024 * 1024
-#: Seconds before an access token's stated expiry that it is refreshed.
-_EXPIRY_MARGIN = 60.0
 
 _FIELDS = "id,name,mimeType,modifiedTime,size,trashed,owners(displayName)"
 _GDOC = "application/vnd.google-apps.document"
@@ -125,15 +124,16 @@ _NATIVE: dict[str, tuple[FileKind, str | None, str]] = {
     _GSHEET: ("spreadsheet", None, _XLSX),
     _GSLIDES: ("presentation", "text/plain", _PPTX),
 }
-#: A stored file: its kind and how its downloaded bytes are read as text.
-_BLOBS: dict[str, tuple[FileKind, Callable[[bytes, int], str]]] = {
-    "application/pdf": ("pdf", lambda data, _cap: pdf_text(data)),
-    _DOCX: ("document", docx_text),
-    _XLSX: ("spreadsheet", xlsx_text),
-    _PPTX: ("presentation", pptx_text),
-    "text/plain": ("document", lambda data, _cap: plain_text(data)),
-    "text/markdown": ("document", lambda data, _cap: plain_text(data)),
-    "text/csv": ("spreadsheet", lambda data, _cap: plain_text(data)),
+#: A stored file: its kind and the parser (`parse.KINDS`) its downloaded
+#: bytes are read with, always in the killable child (`parse`).
+_BLOBS: dict[str, tuple[FileKind, str]] = {
+    "application/pdf": ("pdf", "pdf"),
+    _DOCX: ("document", "docx"),
+    _XLSX: ("spreadsheet", "xlsx"),
+    _PPTX: ("presentation", "pptx"),
+    "text/plain": ("document", "plain"),
+    "text/markdown": ("document", "plain"),
+    "text/csv": ("spreadsheet", "plain"),
 }
 
 _PERMISSION_REASONS = frozenset({
@@ -142,6 +142,11 @@ _PERMISSION_REASONS = frozenset({
 })
 _NO_DOWNLOAD_REASONS = frozenset({"cannotDownloadFile", "cannotExportFile", "cannotCopyFile"})
 _TOO_LARGE_REASONS = frozenset({"exportSizeLimitExceeded"})
+#: An API this project has not enabled. The Sheets API answers it as a 403
+#: `PERMISSION_DENIED` whose detail says `SERVICE_DISABLED`; Drive says
+#: `accessNotConfigured`. Either is the operator's to fix, never "not shared"
+#: (review of PR 801).
+_DISABLED_REASONS = frozenset({"SERVICE_DISABLED", "accessNotConfigured"})
 
 
 def kind_of(mime: str) -> FileKind:
@@ -162,22 +167,44 @@ def _modified_ms(value: object) -> int | None:
         return None
 
 
-def _reason(body: bytes) -> str:
-    """Drive's `errors[0].reason`, or the Sheets API's `status`, or ''."""
+def _error(body: bytes) -> dict[str, Any]:
     try:
         error = json.loads(body).get("error", {})
     except (ValueError, AttributeError):
-        return ""
-    if not isinstance(error, dict):
-        return ""
+        return {}
+    return error if isinstance(error, dict) else {}
+
+
+def _reason(body: bytes) -> str:
+    """Drive's `errors[0].reason`, or the Sheets API's `status`, or ''."""
+    error = _error(body)
     errors = error.get("errors")
     if isinstance(errors, list) and errors and isinstance(errors[0], dict):
         return str(errors[0].get("reason", ""))
     return str(error.get("status", ""))
 
 
+def _disabled(body: bytes) -> bool:
+    """The API is not enabled for this project: Drive's `errors[].reason`, or
+    a Google RPC `details[].reason` (`ErrorInfo`), names it."""
+    error = _error(body)
+    reasons: list[object] = []
+    for key in ("errors", "details"):
+        items = error.get(key)
+        if isinstance(items, list):
+            reasons += [i.get("reason") for i in items if isinstance(i, dict)]
+    return any(r in _DISABLED_REASONS for r in reasons)
+
+
 def _failure(status: int, body: bytes) -> ExternalFileError:
     reason = _reason(body)
+    if status == 403 and _disabled(body):
+        log.error(
+            "external files: a Google API this project needs is not enabled "
+            "(Drive API and Google Sheets API, in the Cloud project of the OAuth "
+            "client); every open answers unavailable until it is",
+        )
+        return ExternalFileError("unavailable", "api_disabled")
     if status == 404:
         return ExternalFileError("refused", NOT_SHARED)
     if status == 403 and reason in _TOO_LARGE_REASONS:
@@ -225,26 +252,22 @@ class GoogleDriveSource:
     name = "google_drive"
 
     def __init__(
-        self, *, client_id: str, client_secret: str, refresh_token: str,
-        metrics: Counter, part_chars: int = PART_CHARS, max_bytes: int = MAX_BYTES,
-        timeout_seconds: float = 20.0, transport: httpx.AsyncBaseTransport | None = None,
-        clock: Callable[[], float] = time.monotonic,
+        self, *, credentials: GoogleCredentials, part_chars: int = PART_CHARS,
+        max_bytes: int = MAX_BYTES, timeout_seconds: float = 20.0,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._client_id = client_id
-        self._client_secret = client_secret
-        self._refresh_token = refresh_token
-        self._metrics = metrics
+        # Nora's one Google identity (`nora.infra.google.auth`): this adapter
+        # asks it for an access token for `DRIVE_SCOPE` and never holds the
+        # client secret or the refresh token.
+        self._credentials = credentials
         self._part_chars = part_chars
         self._max_bytes = max_bytes
         self._timeout = httpx.Timeout(timeout_seconds)
         # The seam a test drives (`httpx.MockTransport`); None is real HTTPS.
         self._transport = transport
-        self._clock = clock
-        # The access token and when to stop using it: a credential held in
-        # memory, never anything read through a link (module docstring).
-        self._access: str | None = None
-        self._expires_at = 0.0
-        self._lock = asyncio.Lock()
+        # At most two parse children at once: each is capped in memory and
+        # time, and this caps how many of those caps are spent together.
+        self._parsing = asyncio.Semaphore(2)
 
     # ---- the port ---------------------------------------------------------
 
@@ -302,11 +325,20 @@ class GoogleDriveSource:
         if mime in _NATIVE:
             export = _NATIVE[mime][1]
             assert export is not None  # noqa: S101 - only a Sheet has none, handled above
-            return plain_text(await self._export(ref, export))
+            return await self._parse("plain", await self._export(ref, export))
         if mime not in _BLOBS:
             raise ExternalFileError("refused", NOT_TEXT)
         self._refuse_large(meta)
-        return _BLOBS[mime][1](await self._download(ref), self._max_bytes)
+        return await self._parse(_BLOBS[mime][1], await self._download(ref))
+
+    async def _parse(self, kind: str, data: bytes, titles: list[str] | None = None) -> str:
+        """Fetched bytes as text, parsed in a killable child under a deadline
+        (`parse`), never on the event loop."""
+        async with self._parsing:
+            return await parse_isolated(
+                kind, data, max_bytes=self._max_bytes, max_chars=MAX_TEXT_CHARS,
+                titles=titles,
+            )
 
     def _refuse_large(self, meta: dict[str, Any]) -> None:
         size = meta.get("size")
@@ -329,9 +361,19 @@ class GoogleDriveSource:
         """Every tab, in order, each as its name and a table. A CSV export
         would return the first tab only (§4)."""
         base = f"{SHEETS_URL}/{quote(ref.file_id, safe='')}"
-        book = self._json(await self._get(
-            ref, base, {"fields": "sheets.properties(title,sheetType)"},
-        ))
+        try:
+            book = self._json(await self._get(
+                ref, base, {"fields": "sheets.properties(title,sheetType)"},
+            ))
+        except ExternalFileError as err:
+            if err.reason not in (NOT_SHARED,):
+                raise
+            # `files.get` (Drive) just answered for this file, so a 403/404
+            # here is the Sheets API not honouring what Drive did: a link's
+            # resource key reaches Drive only. Read the Drive export instead,
+            # the same workbook as xlsx (review of PR 801).
+            log.info("external file %s: the Sheets API refused; reading the export", ref.handle)
+            return await self._parse("xlsx", await self._export(ref, _XLSX))
         titles = [
             str(s["properties"].get("title", ""))
             for s in book.get("sheets", [])
@@ -341,19 +383,14 @@ class GoogleDriveSource:
         if not titles:
             return ""
         ranges = [("ranges", "'" + t.replace("'", "''") + "'") for t in titles]
-        values = self._json(await self._get(
+        values = await self._get(
             ref, f"{base}/values:batchGet",
             httpx.QueryParams(
                 [*ranges, ("majorDimension", "ROWS"), ("valueRenderOption", "FORMATTED_VALUE")],
             ),
-        ))
-        got = values.get("valueRanges", [])
-        tabs = []
-        for i, title in enumerate(titles):
-            vr = got[i] if i < len(got) and isinstance(got[i], dict) else {}
-            rows = vr.get("values", [])
-            tabs.append(table_text(title, rows if isinstance(rows, list) else []))
-        return "\n\n".join(tabs)
+        )
+        # One budget for every tab together, formatted in the child.
+        return await self._parse("sheets", values, titles)
 
     # ---- HTTP ---------------------------------------------------------------
 
@@ -401,7 +438,7 @@ class GoogleDriveSource:
             if status == 200:
                 return body
             if status == 401 and attempt == 1:
-                self._access = None
+                self._credentials.invalidate()
                 continue
             failure = _failure(status, body)
             log.info("external file %s: http %s -> %s %s", ref.handle, status,
@@ -410,42 +447,10 @@ class GoogleDriveSource:
         raise ExternalFileError("unavailable", "the provider refused the sign-in")
 
     async def _token(self) -> str:
-        """The access token, refreshed from the refresh token when it is
-        missing or about to expire. In memory only."""
-        async with self._lock:
-            if self._access is not None and self._clock() < self._expires_at:
-                return self._access
-            form = {
-                "grant_type": "refresh_token", "refresh_token": self._refresh_token,
-                "client_id": self._client_id, "client_secret": self._client_secret,
-            }
-            try:
-                async with self._client() as client:
-                    resp = await client.post(TOKEN_URL, data=form)
-                payload = resp.json()
-            except Exception as exc:
-                log.warning("external files: token refresh failed: %s", type(exc).__name__)
-                raise ExternalFileError(
-                    "unavailable", "the sign-in could not be refreshed",
-                ) from exc
-            if not isinstance(payload, dict):
-                payload = {}
-            if resp.status_code == 200 and payload.get("access_token"):
-                self._access = str(payload["access_token"])
-                expires_in = payload.get("expires_in", 3600)
-                seconds = float(expires_in) if isinstance(expires_in, int | float) else 3600.0
-                self._expires_at = self._clock() + max(0.0, seconds - _EXPIRY_MARGIN)
-                return self._access
-            error = str(payload.get("error", ""))
-            if error == "invalid_grant":
-                self._metrics.inc("nora_external_files_invalid_grant_total", provider=self.name)
-                log.error(
-                    "external files: Google refused the refresh token (invalid_grant: %s). "
-                    "The sign-in is revoked or expired; run scripts/external_files_auth.py "
-                    "and replace the refresh token in .env",
-                    str(payload.get("error_description", ""))[:200],
-                )
-                raise ExternalFileError("unavailable", "invalid_grant")
-            log.warning("external files: token refresh answered %s %s",
-                        resp.status_code, error[:80])
-            raise ExternalFileError("unavailable", "the sign-in could not be refreshed")
+        """An access token for `DRIVE_SCOPE` from the shared credentials. No
+        token (revoked sign-in, the scope not granted, the endpoint down) is
+        `unavailable`: «I couldn't check», never «not shared»."""
+        try:
+            return await self._credentials.access_token(scope=DRIVE_SCOPE)
+        except GoogleAuthError as err:
+            raise ExternalFileError("unavailable", err.reason) from None

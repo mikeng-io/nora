@@ -12,11 +12,13 @@ status: proposed
 Status (2026-10-10): **S1 merged** (links recorded and rendered as handles,
 the port, the fake, the code lookup). **S2 built, off** (the Google Drive
 adapter `nora/infra/external_files/google_drive.py`, the text readers beside
-it, `scripts/external_files_auth.py`, the composition root's wiring). **S3
+it, Nora's one Google identity `nora/infra/google/` with
+`scripts/google_auth.py`, the composition root's wiring). **S3
 built**: one tool, `file_fetch(code | link, part)` (named with the existing
-`fetch` verb, ADR 0015 §1), the link-owner claim, `nora_tool_calls_total`
-for it; its `tool_selection` rows are written and NOT yet run. S4 and S5 not
-built. Revised the same day: the first version had a search over every
+`fetch` verb, ADR 0015 §1), the link-owner claim (made only while a source
+is wired), `nora_tool_calls_total` for it; its `tool_selection` rows are
+written and NOT yet run. S4 and S5 not built. Revised the same day: the
+first version had a search over every
 file shared with her. The operator's model is a link handle opened on demand,
 and this text is that model.
 
@@ -28,6 +30,17 @@ paged as one text, not numbered per slide: `text/plain` export marks no slide
 boundary, and numbering them needs the Slides API (a `.pptx` file IS numbered
 per slide). Office files are read with the standard library; PDFs with
 `pypdf`.
+
+S2 after review (2026-10-11): every parse of fetched bytes runs in a child
+process with no secrets in its environment, a 20 s wall-clock deadline (past
+it the child is killed and the open is `refused`, `too_slow`) and a 1 GiB
+address-space cap; nothing is parsed on the event loop. Office parts are
+read in one streaming pass, at most 64 elements deep, and a ZIP member that
+is not stored or deflated is refused before it is opened. A Sheet the Sheets
+API will not answer (a 403/404 after Drive answered for it: its link's
+resource key reaches Drive only) is read from Drive's xlsx export instead,
+and an API not enabled in the Cloud project is `unavailable` with an operator
+log, never "not shared". A Sheet's tabs share one text budget.
 
 ## Operator direction (2026-10-10)
 
@@ -166,23 +179,46 @@ nora/infra/external_files/
   fake.py          for tests
 ```
 
-Config: `[external_files]` is OFF by default, `sources = ["google_drive"]`,
-and `[external_files.google_drive]` names the environment variables that hold
-the client id, client secret and refresh token (DEC-8: the values never sit
-in config). With it off, links are still recorded as handles (recognising a
-URL needs no account), and the tool answers `unavailable`. A second provider
-is a new adapter and a new entry in `sources`.
+Config: `[external_files]` is OFF by default, `sources = ["google_drive"]`.
+With it off, links are still recorded as handles (recognising a URL needs no
+account), and the tool answers `unavailable`. A second provider is a new
+adapter and a new entry in `sources`.
 
-**Sign-in (operator, once).**
+**One Google identity (operator, 2026-10-10).** Nora has ONE Google OAuth
+client and ONE refresh token for her account, shared by every Google service
+she will use (Drive now; Calendar, Gmail and the rest later), never a client
+or an environment variable per service. The top-level `[google]` section
+names the three environment variables (DEC-8: `GOOGLE_OAUTH_CLIENT_ID`,
+`GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`; the values never
+sit in config). One component, `nora/infra/google/auth.py`
+(`GoogleCredentials`), owns the refresh-token grant and the in-memory access
+token; each service's adapter is handed it and asks for a token for its own
+scope, and never sees the client secret or the refresh token.
+`invalid_grant` is counted there once for all of them
+(`nora_google_invalid_grant_total`).
+
+Each service DECLARES its scope in one table, `nora/infra/google/scopes.py`
+(Drive: `drive.readonly`). The token endpoint's `scope` field is what the
+refresh token was granted: a service whose scope is missing is `unavailable`
+with an operator log naming the scope and the fix, and the others keep
+working (fail closed per service). Adding a service is a row in that table
+and one re-run of the sign-in script, same client.
+
+`[google]` is the OAuth identity only. An API KEY (the Maps key,
+`[route] api_key_env`) is a different mechanism and stays with its feature.
+
+**Sign-in (operator, once, and again when a service is added).**
 1. Create the Google account `nora@67.zone`.
 2. In Google Cloud, enable the Drive API and the Sheets API, and create an
    OAuth client of type Desktop app.
 3. Set the OAuth consent screen to **In production**. In Testing, a refresh
    token expires after 7 days and the tool goes `unavailable` a week after
    setup. The unverified-app warning is expected for one account.
-4. Run the one-time auth script the first build step adds, sign in as
-   `nora@67.zone`, approve, and put the printed refresh token in norty's
-   `.env`.
+4. Run `uv run python scripts/google_auth.py` on a machine with a browser,
+   sign in as `nora@67.zone` and approve. It asks for the union of every
+   service's scope (`access_type=offline`, `prompt=consent`,
+   `include_granted_scopes=true`) and prints one refresh token for
+   `GOOGLE_OAUTH_REFRESH_TOKEN` in norty's `.env`; it writes nothing.
 
 **Scope:** `drive.readonly`, nothing else (the Sheets reads accept it). It
 cannot write, comment or share; neither can the Viewer role people grant.

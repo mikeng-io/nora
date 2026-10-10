@@ -548,6 +548,27 @@ token, the log reads `access token rejected — replace LIFE360_AUTH_TOKEN` and
 backs off rather than falling back to the password, so repeat steps 1–4. Unset
 the variable to go back to password mode.
 
+## 4c-2. "She can't open shared files" — Nora's Google sign-in
+
+Nora has ONE Google identity (`[google]` in `config.toml`, three variables in
+`.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+`GOOGLE_OAUTH_REFRESH_TOKEN`), shared by every Google service she uses
+(shared files today, design/external-files §4). API keys such as the Maps key
+are separate and live with their feature.
+
+- **Every Google service answers `unavailable`** and
+  `nora_google_invalid_grant_total` is rising (or the log says `invalid_grant`):
+  the refresh token is revoked or expired. A consent screen left in Testing
+  expires it after 7 days; set it to In production.
+- **One service answers `unavailable` and the others work**: the log says the
+  sign-in "lacks the scope …". The refresh token was granted without that
+  service's scope (usually a service added since the last sign-in).
+- **The fix for both:** on a machine with a browser, run
+  `uv run python scripts/google_auth.py` with the same client, sign in as
+  `nora@67.zone`, approve every scope it lists, and put the printed token in
+  norty's `.env` as `GOOGLE_OAUTH_REFRESH_TOKEN`. Then recreate the container
+  (nora-deploy): `.env` is read at start.
+
 ## 4d. "The cognition loop is not healthy"
 
 There is no health command and no cognition alert (removed 2026-10-03). Read the rows: `cognition_wake_outcome` (outcome,

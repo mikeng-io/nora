@@ -7,13 +7,22 @@ from __future__ import annotations
 import gzip
 import io
 import struct
+import time
 import zipfile
 
 import pytest
 
 from nora.domain.external_files import NOT_TEXT, TOO_LARGE, ExternalFileError, recognise
 from nora.infra.external_files.google_drive import GoogleDriveSource
-from nora.infra.external_files.text import docx_text, pdf_text, plain_text, xlsx_text
+from nora.infra.external_files.text import (
+    docx_text,
+    pdf_text,
+    plain_text,
+    pptx_text,
+    sheets_text,
+    xlsx_text,
+)
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
 
@@ -142,6 +151,63 @@ def test_plain_text_and_pdf_text_are_bounded_too():
     _refused(lambda: pdf_text(_pdf("Lunch set 88"), max_chars=10), TOO_LARGE)
 
 
+# ---- review of PR 801: ZIP methods, nesting, one Sheets budget ----
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_a_bzip2_or_lzma_member_is_refused_before_it_is_opened(method):
+    """`zipfile` inflates these whole on a read, past any chunked budget (a
+    697-byte bzip2 docx peaked at 1.12 GB). Office never writes them."""
+    xml = (
+        f"<w:document {W}><w:body><w:p><w:r><w:t>" + "A" * 5_000_000
+        + "</w:t></w:r></w:p></w:body></w:document>"
+    )
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", method) as z:
+        z.writestr("word/document.xml", xml)
+    _refused(lambda: docx_text(out.getvalue(), 10_000_000), NOT_TEXT)
+
+
+def _nested_docx(n: int) -> bytes:
+    body = (
+        "<w:tbl><w:tr><w:tc>" * n + "<w:p><w:r><w:t>deep</w:t></w:r></w:p>"
+        + "</w:tc></w:tr></w:tbl>" * n
+    )
+    return _zip({"word/document.xml": f"<w:document {W}><w:body>{body}</w:body></w:document>"})
+
+
+def test_nesting_past_the_depth_cap_is_refused():
+    """Tables in tables 20,000 deep: refused at the start tag that passes the
+    cap, before any of it is walked (it took 5.5 s, quadratic, before)."""
+    started = time.monotonic()
+    _refused(lambda: docx_text(_nested_docx(20_000), 10_000_000), NOT_TEXT)
+    assert time.monotonic() - started < 1
+
+
+def test_nesting_inside_the_cap_still_reads():
+    assert "deep" in docx_text(_nested_docx(15), 10_000_000)
+
+
+def test_slides_nested_past_the_cap_are_refused():
+    p = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
+    a = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    data = _zip({
+        "ppt/presentation.xml": f'<p:presentation {p} {R}><p:sldIdLst><p:sldId r:id="rId1"/>'
+                                "</p:sldIdLst></p:presentation>",
+        "ppt/_rels/presentation.xml.rels": f'{RELS}<Relationship Id="rId1" Target="slides/s1.xml"/>'
+                                           "</Relationships>",
+        "ppt/slides/s1.xml": f"<p:sld {p} {a}>" + "<a:p>" * 16_000 + "</a:p>" * 16_000 + "</p:sld>",
+    })
+    _refused(lambda: pptx_text(data, 10_000_000), NOT_TEXT)
+
+
+def test_the_sheets_budget_is_one_for_every_tab_together():
+    """Each tab is far under the cap; together they are over it. A budget per
+    tab returned N times the cap."""
+    tab = [["x" * 50_000]]
+    _refused(lambda: sheets_text([(f"T{i}", tab) for i in range(20)], 500_000), TOO_LARGE)
+    assert sheets_text([(f"T{i}", tab) for i in range(20)], 5_000_000).count("## T") == 20
+
+
 # ---- the HTTP body: counted raw, inflated bounded ----
 
 ID = "1GzipBomb0000000000000000"
@@ -152,9 +218,11 @@ def _drive(data: bytes) -> tuple[FakeDriveServer, GoogleDriveSource]:
         files={ID: DriveFile("Plan", GDOC, exports={"text/markdown": data})}, gzip_bodies=True,
     )
     source = GoogleDriveSource(
-        client_id="cid", client_secret="cs",  # noqa: S106 - a test value
-        refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
-        max_bytes=1_000_000,
+        credentials=GoogleCredentials(
+            client_id="cid", client_secret="cs",  # noqa: S106 - a test value
+            refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
+        ),
+        transport=server.transport, max_bytes=1_000_000,
     )
     return server, source
 
