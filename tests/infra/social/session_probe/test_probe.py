@@ -724,3 +724,11 @@ def test_a_second_run_under_the_lock_does_nothing_and_is_error(world, bridge_dir
     assert record["error"] == "probe_already_running"
     assert world.calls == []  # no docker, no opencli, no state line: nothing was touched
     assert not cfg.state_file.exists()
+
+
+def test_config_reads_the_opencli_profile_and_refuses_a_blank_one():
+    from nora.infra.social.session_probe.__main__ import config_from_env
+    assert config_from_env({}).opencli_profile == "nora"
+    assert config_from_env({"OPENCLI_PROFILE": "nora-alt"}).opencli_profile == "nora-alt"
+    with pytest.raises(ValueError):
+        config_from_env({"OPENCLI_PROFILE": "  "})
