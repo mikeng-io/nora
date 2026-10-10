@@ -93,6 +93,7 @@ already has it) and reads `Cookies` while Chrome is running.
 Overrides (environment, all optional): `NORA_PROBE_CHROME_DB`,
 `NORA_PROBE_BRIDGE_DIR` (default `/home/norty/workspace/nora/state/instagram`),
 `NORA_PROBE_BRIDGE_CONTAINER`, `NORA_PROBE_STATE_FILE`, `OPENCLI_BIN`,
+`OPENCLI_PROFILE` (default `nora`; blank refuses to start),
 `NORA_PROBE_LIVE_INTERVAL_S`.
 
 ## Reading the state file

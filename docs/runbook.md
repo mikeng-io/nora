@@ -1229,7 +1229,10 @@ Nora container, and Nora runs fine with all of them down (the tool answers
 
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
-  (`-interface 100.91.183.127`, port 5902, TLSVnc). Enabled with user
+  (`-interface 100.91.183.127 -localhost=0`, port 5902, `-SecurityTypes VncAuth`:
+  macOS Screen Sharing cannot speak TLSVnc, and Tailscale already encrypts the
+  link; `-localhost=0` must come AFTER `-interface`, which otherwise resets it
+  and binds loopback only). Enabled with user
   lingering, so it starts at boot with no login. This display is NORA'S
   ONLY: nothing of the operator's runs on it.
 - `nora-social-chrome.service` — headed Chrome on `DISPLAY=:2`
@@ -1242,8 +1245,15 @@ Nora container, and Nora runs fine with all of them down (the tool answers
   process, encryption key and "last used profile" (split 2026-10-10). The unit has `Requires=`/`After=` on the desktop
   service, so systemd already orders Chrome after `:2` exists.
 - OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
-  daemon on `localhost:19825`, Browser Bridge extension connected to that
-  Chrome.
+  daemon on `localhost:19825`. ONE daemon serves TWO Chromes, each with the
+  Browser Bridge extension: profile alias `nora` (Nora's Chrome on `:2`) and
+  `miles` (the operator's on `:4`, which another agent of his reads through).
+  `opencli profile use miles` makes the operator's the DEFAULT, so Nora's code
+  never relies on it: the bridge and the session probe pass
+  `--profile nora` on every call (`OPENCLI_PROFILE`, default `nora`), and an
+  unknown or disconnected profile fails with exit 69 rather than falling back.
+  After reinstalling the extension a profile gets a new id: re-alias it with
+  `opencli profile list` and `opencli profile rename <id> nora`.
 - `nora-social-bridge.service` — `python -m nora.infra.social` (unit in
   `deploy/social-bridge/`), the read-only HTTP seam the container calls on
   `http://host.docker.internal:19826` (the docker0 gateway — Nora's container

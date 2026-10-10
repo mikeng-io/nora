@@ -12,8 +12,9 @@ resolves to inside the container) to be reachable at
 
 This process reads NO `nora.config` — it is not a composition root. Env vars
 only: `NORA_SOCIAL_BRIDGE_PORT` (default 19826), `NORA_SOCIAL_BRIDGE_HOST`
-(comma-separated bind addresses, default `127.0.0.1`) and `OPENCLI_BIN`
-(default `opencli`, resolved on PATH).
+(comma-separated bind addresses, default `127.0.0.1`), `OPENCLI_BIN`
+(default `opencli`, resolved on PATH) and `OPENCLI_PROFILE` (Nora's Browser
+Bridge profile alias, default `nora`; see `SocialBridge.__init__`).
 """
 
 from __future__ import annotations
@@ -36,7 +37,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     port = int(os.environ.get("NORA_SOCIAL_BRIDGE_PORT", "19826"))
     hosts = parse_bind_hosts(os.environ.get("NORA_SOCIAL_BRIDGE_HOST", "127.0.0.1"))
-    bridge = SocialBridge(opencli_bin=os.environ.get("OPENCLI_BIN", "opencli"))
+    bridge = SocialBridge(
+        opencli_bin=os.environ.get("OPENCLI_BIN", "opencli"),
+        opencli_profile=os.environ.get("OPENCLI_PROFILE", "nora"),
+    )
     web.run_app(bridge.app(), host=hosts, port=port, print=None)
 
 
