@@ -8,11 +8,15 @@ the POLL reports (`task.error`, measured 2026-10-02). No test reaches the networ
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import io
 import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -25,12 +29,20 @@ from nora.app.compute_poller import ComputeJobPoller, recover
 from nora.app.fire import SENT, compute_occasion
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.models import PersonRef
-from nora.domain.ports import JobResult, JobStatus
+from nora.domain.ports import JobResult, JobStatus, OutboundAttachment
 from nora.domain.subagent import SUBAGENT_KIND
 from nora.domain.video import VIDEO_KIND, VideoReference, VideoRequest, VideoStart
 from nora.engagement.slots import ConversationSlots
-from nora.infra.video_gen import MAX_WAIT_SECONDS, MiniMaxVideoBackend
-from nora.obs.logging import bind_tag_id
+from nora.infra import video_gen
+from nora.infra.video_gen import (
+    KEEP_DEADLINE_SECONDS,
+    LINK_SUMMARY,
+    MAX_CLIP_BYTES,
+    MAX_WAIT_SECONDS,
+    READY_SUMMARY,
+    MiniMaxVideoBackend,
+)
+from nora.obs.logging import bind_tag_id, setup_logging
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing import (
@@ -38,6 +50,8 @@ from nora.testing import (
     FakeBlobStore,
     FakeComputeBackend,
     FakeComputeJobStore,
+    FakeMediaObjectStore,
+    FakeRecordStore,
     ScriptedTurn,
 )
 from tests.unit.test_fire_path import _fire_path, _FireAdapter
@@ -47,6 +61,7 @@ from tests.unit.test_subagent_worker import MILES, PLATFORM, ROOM, _Persons
 HKT = "Asia/Hong_Kong"
 NOW = datetime(2026, 10, 9, 4, 0, tzinfo=UTC)        # 12:00 HKT
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+MP4 = b"\x00\x00\x00\x18ftypisom" + b"\x00" * 64
 CLIP = (
     "https://algeng-video-infer.oss-cn-shanghai.aliyuncs.com/output/clip_8f2a.mp4"
     "?Expires=1791000000&OSSAccessKeyId=LTAI5tExampleKey&Signature=abc%2Fdef%3D"
@@ -61,17 +76,24 @@ class _Provider:
     answers to GET, the last one repeating."""
 
     def __init__(self, *, create: httpx.Response | Exception | None = None,
-                 polls: list[httpx.Response | Exception] | None = None) -> None:
+                 polls: list[httpx.Response | Exception] | None = None,
+                 clips: list[httpx.Response | Exception] | None = None) -> None:
         self.create = create if create is not None else httpx.Response(
             200, json={"task_id": "T123", "base_resp": {"status_code": 0, "status_msg": "ok"}})
         self.polls = polls or [_task("queued")]
+        # The answers to a GET on the clip's signed OSS link, the last one repeating.
+        self.clips = clips or [httpx.Response(200, content=MP4)]
         self.requests: list[httpx.Request] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        if request.method == "POST":
+        if request.url.host.endswith(".aliyuncs.com"):
+            assert str(request.url) == CLIP
+            assert "Authorization" not in request.headers   # the API key never goes to OSS
+            answer: Any = self.clips.pop(0) if len(self.clips) > 1 else self.clips[0]
+        elif request.method == "POST":
             assert request.url.path == "/v2/video_generation"
-            answer: Any = self.create
+            answer = self.create
         else:
             assert request.url.path == "/v2/query/video_generation/T123"
             answer = self.polls.pop(0) if len(self.polls) > 1 else self.polls[0]
@@ -168,7 +190,9 @@ async def test_poll_reads_queued_then_running_then_the_succeeded_clip():
     done = await backend.poll(job_id="T123@1790000000")
     assert done.status is JobStatus.SUCCEEDED
     assert done.url == CLIP
-    assert "24 hours" in (done.summary or "")
+    # Status only: the clip is fetched by `fetch_result`, once the poller holds the room.
+    assert done.media is None and done.summary == LINK_SUMMARY
+    assert not [r for r in provider.requests if r.url.host.endswith("aliyuncs.com")]
 
 
 async def test_a_failure_only_the_poll_reports_is_read_from_task_error_and_logged(caplog):
@@ -211,6 +235,184 @@ async def test_succeeded_without_a_link_is_a_failure_not_a_blank_delivery():
     out = await _backend(_Provider(polls=[_task("succeeded", content={})])).poll(
         job_id="T123@1790000000")
     assert (out.status, out.failure_reason) == (JobStatus.FAILED, "no_url")
+
+
+# ---- fetching the finished clip (operator, 2026-10-10: keep it, send it) --------------------
+
+
+def _done(clips: list[httpx.Response | Exception], clock: _Clock | None = None,
+          metrics: Metrics | None = None) -> tuple[MiniMaxVideoBackend, _Provider]:
+    provider = _Provider(polls=[_task("succeeded", content={"url": CLIP})], clips=clips)
+    return _backend(provider, clock=clock, metrics=metrics), provider
+
+
+async def _ready(backend: MiniMaxVideoBackend) -> JobResult:
+    """What the poller does with a row whose room it holds: poll, then fetch the result."""
+    polled = await backend.poll(job_id="T123@1790000000")
+    return await backend.fetch_result(job_id="T123@1790000000", result=polled)
+
+
+async def test_a_succeeded_clip_is_fetched_and_its_bytes_ride_on_the_result():
+    metrics = Metrics()
+    backend, provider = _done([httpx.Response(200, content=MP4)], metrics=metrics)
+    out = await _ready(backend)
+    assert (out.status, out.media, out.media_type) == (JobStatus.SUCCEEDED, MP4, "video/mp4")
+    assert out.summary == READY_SUMMARY and out.report == READY_SUMMARY
+    assert [str(r.url) for r in provider.requests if r.url.host.endswith("aliyuncs.com")] == [
+        CLIP]
+    assert metrics.get("nora_video_clip_keep_total", outcome="downloaded") == 1
+    assert metrics.get("nora_video_jobs_total", outcome="succeeded") == 1
+
+
+def _unsized(data: bytes) -> httpx.Response:
+    """An answer with no Content-Length: only the streamed byte count can stop it."""
+    async def body():
+        yield data
+    return httpx.Response(200, content=body())
+
+
+@pytest.mark.parametrize(("answer", "outcome"), [
+    (httpx.Response(200, content=b"<?xml version='1.0'?><Error>AccessDenied</Error>"), "not_mp4"),
+    (httpx.Response(200, content=b""), "not_mp4"),
+    (httpx.Response(200, headers={"content-length": str(MAX_CLIP_BYTES + 1)}, content=MP4),
+     "too_large"),
+    (_unsized(MP4 + b"\x00" * MAX_CLIP_BYTES), "too_large"),
+])
+async def test_bytes_that_can_never_be_the_clip_deliver_its_link_at_once(answer, outcome):
+    """A body that is not an MP4 (an error page answered 200) or is past the cap is never
+    attached: the link goes instead, and she is told it is a link that expires."""
+    metrics = Metrics()
+    backend, _ = _done([answer], metrics=metrics)
+    out = await _ready(backend)
+    assert (out.status, out.url, out.media) == (JobStatus.SUCCEEDED, CLIP, None)
+    assert out.summary == LINK_SUMMARY and "24 hours" in out.summary
+    assert metrics.get("nora_video_clip_keep_total", outcome=outcome) == 1
+
+
+@pytest.mark.parametrize("failure", [httpx.ConnectError("blip"), httpx.Response(403),
+                                     httpx.ReadTimeout("slow")])
+async def test_a_failed_fetch_waits_for_the_next_tick_then_delivers_the_link(failure):
+    """Transient: the row stays pending (RUNNING) and the next tick fetches again; past the
+    deadline the link is delivered rather than the clip lost."""
+    metrics = Metrics()
+    clock = _Clock()
+    backend, _ = _done([failure], clock=clock, metrics=metrics)
+    first = await _ready(backend)
+    assert first.status is JobStatus.RUNNING
+    assert metrics.get("nora_video_clip_keep_total", outcome="retry") == 1
+    assert metrics.get("nora_video_jobs_total", outcome="succeeded") == 0
+    clock.t += KEEP_DEADLINE_SECONDS + 1
+    last = await _ready(backend)
+    assert (last.status, last.url, last.media) == (JobStatus.SUCCEEDED, CLIP, None)
+    assert last.summary == LINK_SUMMARY
+    assert metrics.get("nora_video_clip_keep_total", outcome="gave_up") == 1
+
+
+async def test_a_fetch_that_fails_once_then_succeeds_delivers_the_clip():
+    backend, _ = _done([httpx.ConnectError("blip"), httpx.Response(200, content=MP4)])
+    assert (await _ready(backend)).status is JobStatus.RUNNING
+    out = await _ready(backend)
+    assert (out.status, out.media) == (JobStatus.SUCCEEDED, MP4)
+
+
+async def test_a_fetch_that_never_finishes_is_cut_at_its_wall(monkeypatch):
+    """`FETCH_SECONDS` bounds the whole fetch, whatever each read allows."""
+    monkeypatch.setattr(video_gen, "FETCH_SECONDS", 0.05)
+
+    async def drip():
+        yield MP4[:8]
+        await asyncio.sleep(5)
+        yield MP4[8:]
+    backend, _ = _done([httpx.Response(200, content=drip())])
+    assert (await _ready(backend)).status is JobStatus.RUNNING
+
+
+async def test_a_held_room_costs_no_download_and_the_clip_is_fetched_once_it_is_free():
+    """Review 2026-10-10: the fetch waits for the room's slot. Held on tick 1: no fetch, the
+    row stays pending. Free on tick 2: one fetch, delivered with the clip."""
+    store = FakeComputeJobStore()
+    job = _row(VIDEO_KIND)
+    await store.create(job)
+    provider = _Provider(polls=[_task("succeeded", content={"url": CLIP})])
+    metrics = Metrics()
+    slots = ConversationSlots(maxlen=16, spawn=lambda c: None)
+    spoken: list[Any] = []
+
+    async def speak(event: Any) -> str:
+        spoken.append(event)
+        return SENT
+
+    poller = ComputeJobPoller(
+        store=store, backends={VIDEO_KIND: _backend(provider, metrics=metrics)}, speak=speak,
+        slots=slots, metrics=metrics, tick_seconds=1.0, clock=lambda: NOW,
+    )
+
+    def fetches() -> int:
+        return sum(1 for r in provider.requests if r.url.host.endswith("aliyuncs.com"))
+
+    assert slots.try_acquire((job.platform, job.conversation_id))      # a tag holds the room
+    await poller.tick()
+    assert fetches() == 0 and spoken == []
+    assert (await store.get(job.id)).state is ComputeJobState.PENDING
+    assert metrics.get("nora_video_clip_keep_total", outcome="downloaded") == 0
+    slots.release_and_dispatch((job.platform, job.conversation_id))
+    await poller.tick()
+    assert fetches() == 1
+    (event,) = spoken
+    assert event.attachments[0].content == MP4 and event.attached_urls == ()
+    assert (await store.get(job.id)).state is ComputeJobState.DONE
+    assert metrics.get("nora_video_clip_keep_total", outcome="downloaded") == 1
+
+
+async def test_a_fetch_that_must_wait_leaves_the_row_unclaimed_for_the_next_tick():
+    """A transient fetch failure is not a delivery: nothing is claimed or said, and the next
+    tick fetches again."""
+    store = FakeComputeJobStore()
+    job = _row(VIDEO_KIND)
+    await store.create(job)
+    provider = _Provider(polls=[_task("succeeded", content={"url": CLIP})],
+                         clips=[httpx.Response(403), httpx.Response(200, content=MP4)])
+    spoken: list[Any] = []
+
+    async def speak(event: Any) -> str:
+        spoken.append(event)
+        return SENT
+
+    poller = ComputeJobPoller(
+        store=store, backends={VIDEO_KIND: _backend(provider)}, speak=speak,
+        slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
+        tick_seconds=1.0, clock=lambda: NOW,
+    )
+    await poller.tick()
+    assert spoken == [] and (await store.get(job.id)).state is ComputeJobState.PENDING
+    await poller.tick()
+    (event,) = spoken
+    assert event.attachments[0].content == MP4
+    assert (await store.get(job.id)).state is ComputeJobState.DONE
+
+
+def test_the_signed_link_never_reaches_the_log(tmp_path):
+    """Review 2026-10-10: httpx logs `HTTP Request: GET <url>` at INFO on every request, and
+    the clip's URL is a signed link. Through the real `setup_logging`: the line is still
+    written (host and path), on the retry and the success, with no query string."""
+    buffer = io.StringIO()
+    with patch("sys.stdout", buffer):
+        setup_logging(level="INFO", format="json", secrets=[])
+
+    async def run() -> None:
+        backend, _ = _done([httpx.Response(403), httpx.Response(200, content=MP4)])
+        assert (await _ready(backend)).status is JobStatus.RUNNING     # the retry path
+        assert (await _ready(backend)).media == MP4
+
+    asyncio.run(run())
+    logging.shutdown()
+    text = buffer.getvalue()
+    lines = [json.loads(line)["message"] for line in text.splitlines() if line.strip()]
+    fetched = [m for m in lines if m.startswith("HTTP Request: GET https://algeng-video-infer")]
+    assert len(fetched) == 2, lines
+    assert all("/output/clip_8f2a.mp4 " in m for m in fetched)
+    assert "Signature=" not in text and "Expires=" not in text and "OSSAccessKeyId" not in text
+    assert not any("?" in m.split(" ")[3] for m in fetched)
 
 
 # ---- the desk: the daily cap ---------------------------------------------------------------
@@ -571,34 +773,129 @@ def test_an_attached_link_is_added_once_and_not_repeated_after_it_is_sent():
     assert links.apply("anything else?") == ("anything else?", 0)
 
 
-async def test_a_finished_clip_reaches_the_room_with_its_link(doctrine_store):
-    """Through the real poller, `FirePath.speak` and the deliverer: she writes no link, and
-    the sent message carries the clip's signed URL intact (R-18 lets it through)."""
+class _AttachingAdapter(_FireAdapter):
+    """`_FireAdapter`, also keeping what each send attached."""
+
+    def __init__(self, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.attached: list[tuple] = []
+
+    async def send(self, *, attachments: tuple = (), **kw: Any) -> Any:
+        self.attached.append(tuple(attachments))
+        return await super().send(attachments=attachments, **kw)
+
+
+async def _deliver_a_finished_clip(
+    doctrine_store, clips: list[httpx.Response | Exception], *,
+    blobs: FakeBlobStore | None = None, media: FakeMediaObjectStore | None = None,
+    reply: str = "Your clip is ready!",
+) -> dict[str, Any]:
+    """Through the real backend, poller, `FirePath.speak` and deliverer, with the provider
+    answering `clips` to the fetch. `reply` is what she sends; she never writes a link."""
     persons = Persons(by_person={"miles": PersonRef(person_id="miles", name="Miles",
                                                     honcho_peer_id="miles")},
                       index={("signal", "+85212345678"): "miles"})
-    reply = "Your clip is ready! The link stops working in a day, so grab it today."
-    adapter = _FireAdapter()
+    adapter = _AttachingAdapter()
+    prompts: list[str] = []
+    records = FakeRecordStore()
+    metrics = Metrics()
     path = _fire_path(
-        doctrine_store=doctrine_store, persons=persons, metrics=Metrics(), adapter=adapter,
-        registry=ToolRegistry(),
+        doctrine_store=doctrine_store, persons=persons, metrics=metrics, adapter=adapter,
+        registry=ToolRegistry(), records=records,
         runner=FakeAgentRunner([
             ScriptedTurn(tool_calls=[("send_reply", {"text": reply})], final_text=reply),
-        ]),
+        ], on_call=lambda kw: prompts.append(str(kw))),
     )
     store = FakeComputeJobStore()
     job = _row(VIDEO_KIND)
     job = ComputeJob(**{**{f: getattr(job, f) for f in job.__dataclass_fields__},
-                        "conversation_id": "conv-1", "platform": "signal"})
+                        "conversation_id": "conv-1", "platform": "signal",
+                        "payload": {"prompt": "a mascot waves", "model": "MiniMax-H3",
+                                    "resolution": "480P", "duration": 15, "ratio": "3:4"}})
     await store.create(job)
-    backend = _backend(_Provider(polls=[_task("succeeded", content={"url": CLIP})]))
+    backend = _backend(_Provider(polls=[_task("succeeded", content={"url": CLIP})],
+                                 clips=clips), metrics=metrics)
     poller = ComputeJobPoller(
         store=store, backends={VIDEO_KIND: backend}, speak=path.speak,
-        slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=Metrics(),
-        tick_seconds=1.0, clock=lambda: NOW,
+        slots=ConversationSlots(maxlen=16, spawn=lambda c: None), metrics=metrics,
+        tick_seconds=1.0, clock=lambda: NOW, blobs=blobs, media=media,
     )
     await poller.tick()
-    row = await store.get(job.id)
-    assert row.state is ComputeJobState.DONE and row.result_url == CLIP
-    assert adapter.texts and CLIP in adapter.texts[0]
+    return {"row": await store.get(job.id), "adapter": adapter, "prompts": prompts,
+            "records": records, "metrics": metrics, "job": job}
+
+
+async def test_a_finished_clip_is_kept_and_reaches_the_room_as_an_attachment(doctrine_store):
+    """Operator, 2026-10-10: the clip is in Nora's own storage, the room receives the video
+    itself, and the provider's link appears neither in the room nor in what she read."""
+    blobs, media = FakeBlobStore(), FakeMediaObjectStore()
+    out = await _deliver_a_finished_clip(
+        doctrine_store, [httpx.Response(200, content=MP4)], blobs=blobs, media=media)
+    sha = hashlib.sha256(MP4).hexdigest()
+    # Kept: the bytes in the blob store, a `generated` row the library can find.
+    assert blobs.blobs[sha] == MP4
+    (obj,) = media.saved
+    assert (obj.sha256, obj.media_type, obj.size, obj.source) == (
+        sha, "video/mp4", len(MP4), "generated")
+    assert obj.description == "a mascot waves" and obj.title == "a mascot waves"
+    assert obj.provenance["job_id"] == str(out["job"].id)
+    assert obj.provenance["prompt"] == "a mascot waves"
+    assert obj.provenance["backend_job_id"] == "T123@1790000000"
+    assert (await media.lookup_search(query="mascot", sources=("generated",))).objects
+    # Sent: the clip itself, on her message, and no link anywhere.
+    adapter = out["adapter"]
+    assert adapter.texts == ["Your clip is ready!"]
+    ((attachment,),) = adapter.attached
+    assert (attachment.content, attachment.media_type) == (MP4, "video/mp4")
+    assert attachment.filename.endswith(".mp4")
+    assert not any("aliyuncs" in t for t in adapter.texts)
+    assert out["prompts"] and not any("aliyuncs" in p for p in out["prompts"])
+    assert any("attached to your message" in p for p in out["prompts"])
+    # The audit row records the clip as Nora-held, so the transcript shows her own video.
+    (row,) = [r for r in out["records"].rows if r["is_nora"]]
+    assert sha in str(row.get("media_json"))
+    # The job row keeps the provider link (provenance; the cap counts the clip regardless).
+    assert out["row"].state is ComputeJobState.DONE and out["row"].result_url == CLIP
+    metrics = out["metrics"]
+    assert metrics.get("nora_video_clip_keep_total", outcome="stored") == 1
+    assert metrics.get("nora_reply_links_carried_total", outcome="media_attached") == 1
+
+
+async def test_a_clip_the_store_refused_is_still_attached_and_counted(doctrine_store):
+    """A failed store costs the library entry, never the delivery (`generate_image`'s rule)."""
+    media = FakeMediaObjectStore()
+    out = await _deliver_a_finished_clip(
+        doctrine_store, [httpx.Response(200, content=MP4)],
+        blobs=FakeBlobStore(fail_on_put=True), media=media)
+    assert media.saved == []
+    ((attachment,),) = out["adapter"].attached
+    assert attachment.content == MP4
+    assert out["metrics"].get("nora_video_clip_keep_total", outcome="unstored") == 1
+    assert out["metrics"].get("nora_video_clip_keep_total", outcome="stored") == 0
+
+
+async def test_a_finished_clip_reaches_the_room_with_its_link(doctrine_store):
+    """The fallback, when the clip could not be fetched (DEC-305's original delivery): bytes
+    that are not an MP4 are never attached; the signed link goes, once, carried by code (R-18
+    lets it through), and she is told it is a link that expires."""
+    media = FakeMediaObjectStore()
+    out = await _deliver_a_finished_clip(
+        doctrine_store, [httpx.Response(200, content=b"<Error/>")],
+        blobs=FakeBlobStore(), media=media,
+        reply="Your clip is ready! The link stops working in a day, so grab it today.")
+    adapter = out["adapter"]
+    assert adapter.attached == [()]
     assert adapter.texts[0].count(CLIP) == 1
+    assert any("24 hours" in p for p in out["prompts"])
+    assert media.saved == []
+    assert out["row"].state is ComputeJobState.DONE and out["row"].result_url == CLIP
+
+
+def test_an_attached_clip_is_carried_until_a_message_holding_it_is_sent():
+    links = LinkCarry()
+    clip = OutboundAttachment(content=MP4, media_type="video/mp4", filename="nora-x.mp4")
+    links.carry_media(clip)
+    links.carry_media(clip)
+    assert links.pending_media == ((clip,), ())
+    links.media_sent()
+    assert links.pending_media == ((), ())

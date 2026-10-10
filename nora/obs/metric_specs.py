@@ -44,7 +44,7 @@ from nora.domain.summons import (
     SUMMONS_MODES,
     SUMMONS_OUTCOMES,
 )
-from nora.domain.video import VIDEO_OUTCOMES
+from nora.domain.video import CLIP_KEEP_OUTCOMES, VIDEO_OUTCOMES
 
 _DEFAULT_BUCKETS: tuple[float, ...] = (0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30)
 
@@ -1001,6 +1001,14 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         ("outcome",),
     ),
     _CounterSpec(
+        "nora_video_clip_keep_total",
+        "Finished video clips fetched from the provider's expiring link and kept in Nora's "
+        "own storage, by outcome: " + " / ".join(CLIP_KEEP_OUTCOMES) + ". retry leaves the "
+        "row pending for the next tick; too_large, not_mp4 and gave_up deliver the link "
+        "instead of the clip; unstored still attaches the clip but it is not in the library.",
+        ("outcome",),
+    ),
+    _CounterSpec(
         "nora_subagent_checkpoint_unwritten_total",
         "Sub-agent checkpoint updates that found no pending job row to write to (design/subagent "
         "§4d): the row is written after launch, so an early one is expected; the terminal "
@@ -1117,7 +1125,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "appended (a place the reply named had a minted maps link the text did "
         "not carry), document_added (a document was published this turn and its "
         "link was added), stripped (the reply carried a link to one of our "
-        "documents that no tool had handed her).",
+        "documents that no tool had handed her), media_attached (a message reached "
+        "the room carrying media code attached for the turn: a finished video clip).",
         ("outcome",),
     ),
     # DEC-105. `ok` is a message that reached another room; every other value is

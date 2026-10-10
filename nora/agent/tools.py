@@ -9648,7 +9648,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         reference_2: str | None = None,
         reference_3: str | None = None,
     ) -> dict:
-        """Make a short video clip, posted here later as a link. Call this when
+        """Make a short video clip, posted here later. Call this when
         somebody asks for a video.
 
         MUST: load the video-generation skill before calling this tool. It holds the
@@ -9739,7 +9739,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         _record(metrics, tool, "started", used=out.used, cap=out.cap)
         return {"status": "started",
                 "note": "It is rendering. Tell them you are on it and that the clip will "
-                        "come here as a link in a few minutes. Do not wait for it, and do "
+                        "be posted here in a few minutes. Do not wait for it, and do "
                         "not describe a clip you have not seen."}
 
     # ---- media_search / media_send (DEC-138 — unified media library) -----
@@ -10009,7 +10009,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "plainly.",
             }
         media_type = meta.media_type or "image/png"
-        filename = f"nora-media-{meta.handle}.png"
+        # The extension follows the bytes: a stored clip sent as `.png` is shown by Discord as a
+        # broken picture rather than a video.
+        filename = f"nora-media-{meta.handle}{mimetypes.guess_extension(media_type) or '.bin'}"
         # The transcript label follows the modality of the bytes (DEC-138:
         # media is ONE index — a fetched video must record `[video ...]`, not
         # `[image ...]`). Derived the same way `_BY_TOP_LEVEL` derives

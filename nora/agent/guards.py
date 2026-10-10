@@ -435,6 +435,14 @@ class Deliverer:
                 self._last_outcome = "empty_reply"
                 return False
 
+        # Media code carries for this turn (a finished video clip) rides on the message, AFTER
+        # R-4 for the reason the links do: it never makes an empty reply sendable. Merged with
+        # the message's own attachments, so whichever message is sent first carries it.
+        carried_media, carried_blobs = self._links.pending_media
+        if carried_media:
+            attachments = (*attachments, *carried_media)
+            media_blobs = (*media_blobs, *carried_blobs)
+
         # DEC-82: ONE interpretation of this reply, and `styled` is the only
         # model of it from here on. `render_markdown` both removes the emphasis
         # delimiters and produces the offsets into what is left, so the text and
@@ -633,6 +641,9 @@ class Deliverer:
         if result.ok:
             # R-100: a document link that went out in this message is not added to the next one.
             self._links.mark_sent(text)
+            if carried_media:
+                self._links.media_sent()
+                self._metrics.inc("nora_reply_links_carried_total", outcome="media_attached")
         self._last_outcome = "sent" if result.ok else "send_failed"
         return result.ok
 

@@ -19,6 +19,14 @@ DEC-8, the convention `nora.infra.tts` and `[speech.tts]` already use):
   create that returned a task id (measured 2026-10-02, the `adaptive` ratio), so `task.error`
   is logged on EVERY failed task: the one 768P failure of that day was never read because
   nothing logged it.
+- **fetch**, `GET` on the succeeded task's `content.url` (a signed Aliyun OSS link that expires
+  about a day later): the clip's bytes, bounded by `MAX_CLIP_BYTES` and `FETCH_SECONDS` and
+  sniffed for MP4, ride on the SUCCEEDED `JobResult` that `fetch_result` returns (the poller
+  calls it only once it holds the room's slot, so a held room costs no download); the poller
+  keeps them in Nora's own storage and the room receives the clip itself (operator,
+  2026-10-10). A fetch that failed is
+  tried again on later ticks until `KEEP_DEADLINE_SECONDS` after launch; then, or at once for
+  bytes that can never be a clip, the link is delivered instead (`LINK_SUMMARY`).
 
 The backend is STATELESS. `backend_job_id` is `<task_id>@<launch epoch seconds>`: the task id
 is the provider's (queryable for 7 days), and the launch time is what lets `poll` stop a job
@@ -57,7 +65,10 @@ class Counter(Protocol):
     def inc(self, name: str, value: float = 1.0, **labels: object) -> None: ...
 
 
-__all__ = ["MAX_REFERENCE_BYTES", "MAX_WAIT_SECONDS", "MiniMaxVideoBackend"]
+__all__ = [
+    "KEEP_DEADLINE_SECONDS", "LINK_SUMMARY", "MAX_CLIP_BYTES", "MAX_REFERENCE_BYTES",
+    "MAX_WAIT_SECONDS", "READY_SUMMARY", "MiniMaxVideoBackend",
+]
 
 #: A clip measured 52 to 178 s on 2026-10-02. A job still queued or running this long after its
 #: launch is failed as a timeout rather than polled forever.
@@ -66,12 +77,37 @@ MAX_WAIT_SECONDS = 1800.0
 #: The vendor's own per-image limit (design §5); refused here so nothing is sent that cannot pass.
 MAX_REFERENCE_BYTES = 30 * 1024 * 1024
 
-#: What she is told a finished clip is. The link is MiniMax's signed storage URL, valid 24 hours;
-#: code attaches it to the delivery (`LinkCarry.attach`), so she says it rather than copies it.
+#: How long after launch a clip whose bytes could not be fetched (the link answered an error or
+#: could not be reached) is fetched again on later ticks before its link is delivered instead.
+#: A clip renders in 52 to 178 s (2026-10-02), so this leaves minutes of retries for a blip,
+#: and a route that stays dead (design §6 measured norty unable to reach mainland Aliyun OSS on
+#: 2026-10-02) costs the room a quarter of an hour, not the clip: the link's `Expires` was
+#: measured about 25.7 h after completion (2026-10-10).
+KEEP_DEADLINE_SECONDS = 15 * 60.0
+
+#: The most a finished clip may weigh when fetched. A 15 s 480P clip is a few MB; anything this
+#: large is not a clip this deployment asked for, and is delivered as a link, never buffered.
+MAX_CLIP_BYTES = 50 * 1024 * 1024
+
+#: The wall for one fetch of a clip, whatever the per-read timeouts allow, and the connect
+#: timeout within it. Short on connect because the poller polls its rows one after another:
+#: an unreachable host must not hold every other row's tick for the API's 45 s.
+FETCH_SECONDS = 120.0
+FETCH_CONNECT_SECONDS = 10.0
+
+#: What she is told a finished clip is when its bytes were fetched: the clip itself rides with
+#: her message as an attachment (`LinkCarry.carry_media`), so there is no link to mention.
 READY_SUMMARY = (
-    "The video clip is ready. Its link is attached to your message for you, so do not write "
-    "the link out yourself. Tell them the link stops working 24 hours after the clip was made, "
-    "so they should open or save it today."
+    "The video clip is ready. The clip itself is attached to your message for you, so it "
+    "arrives with what you write. Do not write any link."
+)
+
+#: The fallback when the clip's bytes could not be fetched in time, or are not a clip: the
+#: provider's signed link is attached instead (`LinkCarry.attach`), and it expires.
+LINK_SUMMARY = (
+    "The video clip is ready, but I could not save the clip itself, so its link is attached "
+    "to your message for you instead. Do not write the link out yourself. Tell them the link "
+    "stops working 24 hours after the clip was made, so they should open or save it today."
 )
 
 def _image_format(data: bytes) -> str | None:
@@ -256,9 +292,11 @@ class MiniMaxVideoBackend:
                 log.warning("video task %s succeeded with no url: %s", task_id, task.get("usage"))
                 return self._failed("no_url", "the clip finished but no link came back")
             log.info("video task %s succeeded (usage %s)", task_id, task.get("usage"))
-            self._count("succeeded")
-            return JobResult(status=JobStatus.SUCCEEDED, url=url, summary=READY_SUMMARY,
-                             report=READY_SUMMARY)
+            # Status only: the clip's bytes are fetched by `fetch_result`, which the poller
+            # calls once it holds the room's slot, so a held room never costs a download.
+            # Until then the honest account is the link.
+            return JobResult(status=JobStatus.SUCCEEDED, url=url, summary=LINK_SUMMARY,
+                             report=LINK_SUMMARY)
         if status == "cancelled":
             log.warning("video task %s was cancelled by the provider", task_id)
             return self._failed("cancelled", "the video service cancelled it")
@@ -272,6 +310,84 @@ class MiniMaxVideoBackend:
             "failed", f"the video service could not make it: {message}" if message
             else "the video service could not make it",
         )
+
+    async def fetch_result(self, *, job_id: str, result: JobResult) -> JobResult:
+        """A succeeded clip `poll` reported, with its bytes when they could be fetched; the
+        poller calls this only while it holds the room's slot, just before it delivers. A
+        transient failure is RUNNING, so the row stays pending and a later tick fetches again,
+        until `KEEP_DEADLINE_SECONDS` after launch; then, or at once for bytes that can never be
+        a clip, the link is delivered instead. Never raises, never a silent loss: every path is
+        counted."""
+        url = result.url or ""
+        if result.status is not JobStatus.SUCCEEDED or not url:
+            return result
+        task_id, _, stamp = job_id.rpartition("@")
+        try:
+            launched = float(stamp)
+        except ValueError:
+            launched = 0.0
+        outcome, data = await self._fetch_clip(task_id, url)
+        if outcome == "downloaded":
+            self._keep("downloaded")
+            self._count("succeeded")
+            return JobResult(status=JobStatus.SUCCEEDED, url=url, summary=READY_SUMMARY,
+                             report=READY_SUMMARY, media=data, media_type="video/mp4")
+        if outcome == "retry":
+            if self._clock() - launched <= KEEP_DEADLINE_SECONDS:
+                self._keep("retry")
+                return JobResult(status=JobStatus.RUNNING)
+            log.warning("video task %s: the clip could not be fetched for %.0f s; "
+                        "delivering its link instead", task_id, KEEP_DEADLINE_SECONDS)
+            outcome = "gave_up"
+        self._keep(outcome)
+        self._count("succeeded")
+        return JobResult(status=JobStatus.SUCCEEDED, url=url, summary=LINK_SUMMARY,
+                         report=LINK_SUMMARY)
+
+    async def _fetch_clip(self, task_id: str, url: str) -> tuple[str, bytes]:
+        """`("downloaded", bytes)`, `("retry", b"")` for a failure the next tick may not see,
+        or `("too_large" | "not_mp4", b"")` for one it always will. Streamed, so an oversized
+        answer is never buffered past `MAX_CLIP_BYTES`."""
+        chunks: list[bytes] = []
+        size = 0
+        try:
+            async with asyncio.timeout(FETCH_SECONDS), httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout.read, connect=FETCH_CONNECT_SECONDS),
+                transport=self._transport,
+            ) as client, client.stream("GET", url) as response:
+                if response.status_code != 200:
+                    log.warning("video task %s: fetching the clip answered http %s",
+                                task_id, response.status_code)
+                    return "retry", b""
+                declared = response.headers.get("content-length", "")
+                if declared.isdigit() and int(declared) > MAX_CLIP_BYTES:
+                    log.warning("video task %s: the clip declares %s bytes, over the %d cap",
+                                task_id, declared, MAX_CLIP_BYTES)
+                    return "too_large", b""
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > MAX_CLIP_BYTES:
+                        log.warning("video task %s: the clip ran past the %d byte cap",
+                                    task_id, MAX_CLIP_BYTES)
+                        return "too_large", b""
+                    chunks.append(chunk)
+        except asyncio.CancelledError:
+            raise
+        except (httpx.HTTPError, TimeoutError) as exc:
+            log.warning("video task %s: the clip could not be fetched (%s)",
+                        task_id, type(exc).__name__)
+            return "retry", b""
+        data = b"".join(chunks)
+        # ISO base media (MP4): the `ftyp` box at offset 4. An error page or an empty body
+        # answered 200 is not a clip, and attaching it would claim one.
+        if data[4:8] != b"ftyp":
+            log.warning("video task %s: the fetched clip is not an MP4 (%d bytes)",
+                        task_id, len(data))
+            return "not_mp4", b""
+        return "downloaded", data
+
+    def _keep(self, outcome: str) -> None:
+        self._metrics.inc("nora_video_clip_keep_total", outcome=outcome)
 
     def _still_running(self, task_id: str, overdue: bool) -> JobResult:
         if not overdue:
