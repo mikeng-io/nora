@@ -256,3 +256,15 @@ async def test_a_parse_past_its_deadline_says_it_took_too_long():
     source = _Slow(files={ID: FakeFile("Plan")})
     out = await _tool(source)(link=DOC_URL)
     assert out["status"] == "refused" and "too long" in out["note"]
+
+
+@pytest.mark.parametrize("made_up", [
+    "https://docs.google.com/spreadsheets/d/{c}", "drive.google.com/file/d/{c}/view",
+])
+async def test_a_link_built_around_a_handles_code_reads_that_file(made_up):
+    # Live 2026-10-11: shown `[Google Sheet link 98b65b]`, she passed
+    # `link="https://docs.google.com/spreadsheets/d/98b65b"`, which read as
+    # "not a file link". It is the code.
+    store = await _store(("g1", f"budget {SHEET_URL}"))
+    out = await _tool(_drive(_server()), store)(link=made_up.format(c=_code(SHEET)))
+    assert out["status"] == "ok" and out["name"] == "Budget"

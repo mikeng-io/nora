@@ -289,3 +289,19 @@ async def test_an_unreadable_record_is_unavailable_not_nothing_found():
     store.fail_on_recent = True
     found = await resolve_file_code(store, code=HANDLE, conversation_id="g1", now_ms=NOW)
     assert found.status == "unavailable"
+
+
+@pytest.mark.parametrize(("text", "want"), [
+    ("https://drive.google.com/file/d/491db6", "491db6"),
+    ("drive.google.com/drive/folders/491DB6", "491db6"),
+    ("https://docs.google.com/spreadsheets/d/98b65b/edit", "98b65b"),
+    ("https://drive.google.com/open?id=491db6", "491db6"),
+    # A real file id is long: that link is the file, never a code.
+    ("https://docs.google.com/document/d/1SynthDocLink000000000000/edit", None),
+    ("https://example.com/file/d/491db6", None),            # not a provider host
+    ("https://drive.google.com/file/d/491db6/98b65b", None),  # two codes: no guess
+    ("https://drive.google.com/file/d/49x1db", None),
+])
+def test_a_code_inside_a_link_built_around_it_is_the_code(text, want):
+    from nora.domain.external_files import quoted_handle_code
+    assert quoted_handle_code(text) == want

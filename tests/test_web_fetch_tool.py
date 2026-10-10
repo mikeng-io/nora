@@ -415,3 +415,17 @@ async def test_a_file_link_handle_points_at_file_fetch_not_at_the_url():
 async def test_a_bare_word_is_still_asked_for_its_url():
     out = await _tools(search=_FakeSearchProvider())["web_fetch"](url="c41d09")
     assert "actual URL" in out["note"]
+
+
+async def test_a_link_built_around_a_handles_code_points_at_its_code():
+    # Live 2026-10-11: shown `[Google Drive link 491db6]`, she sent
+    # `https://drive.google.com/file/d/491db6` and a folder URL to web_fetch;
+    # both reached the provider and came back "couldn't read that page".
+    fake = _FakeSearchProvider()
+    tools = _tools(search=fake)
+    for given in ("https://drive.google.com/file/d/491db6",
+                  "https://drive.google.com/drive/folders/491DB6"):
+        out = await tools["web_fetch"](url=given)
+        assert out["status"] == "nothing_found"
+        assert "491db6" in out["note"] and "computer_import" in out["note"]
+    assert fake.fetch_calls == []

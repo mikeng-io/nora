@@ -312,7 +312,33 @@ def quoted_handle_code(text: str) -> str | None:
     was never shown (tool_selection `route_file_fetch_shared_doc`,
     2026-10-11: one draw in five took that path and gave up)."""
     m = _QUOTED_HANDLE_RE.fullmatch(text.strip())
-    return m.group(1).lower() if m else None
+    if m:
+        return m.group(1).lower()
+    return _code_in_made_up_link(text.strip())
+
+
+_CODE_SEGMENT = re.compile(r"[0-9a-fA-F]{" + str(HANDLE_CHARS) + r"}")
+
+
+def _code_in_made_up_link(text: str) -> str | None:
+    """The code in a provider link the MODEL built around a handle's code
+    (`https://drive.google.com/file/d/491db6`), or `None`. Seen live
+    2026-10-11: shown `[Google Drive link 491db6]`, she read the code as the
+    file id, built the URL and sent it to `web_fetch`, twice; a Sheet's code
+    went to `file_fetch(link=...)` the same way. A real file id is at least
+    `_MIN_ID_CHARS` long, so a link `recognise` accepts is never read here,
+    and exactly one six-hex segment is required."""
+    try:
+        parts = urlsplit(text if "://" in text else f"https://{text}")
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return None
+    if host not in _GOOGLE_HOSTS or recognise(text) is not None:
+        return None
+    pieces = [unquote(x) for x in parts.path.split("/") if x]
+    pieces += [v for _, v in parse_qsl(parts.query)]
+    codes = {x.lower() for x in pieces if _CODE_SEGMENT.fullmatch(x)}
+    return codes.pop() if len(codes) == 1 else None
 
 
 #: How deep a link may sit inside wrappers (a redirect inside a redirect
