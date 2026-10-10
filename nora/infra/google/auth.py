@@ -40,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import zlib
 from collections.abc import Callable
 from typing import NoReturn, Protocol
 
@@ -63,6 +64,33 @@ class Counter(Protocol):
     `nora.infra` sits below `nora.obs` in the layers contract."""
 
     def inc(self, name: str, value: float = 1.0, **labels: object) -> None: ...
+
+
+async def _capped_body(resp: httpx.Response, max_bytes: int) -> bytes:
+    """`resp`'s body, read raw and capped at `max_bytes` of DECODED bytes. A
+    body the server compressed anyway (gzip or deflate) is inflated here with
+    each step's output capped; any other encoding is refused."""
+    encoding = resp.headers.get("Content-Encoding", "identity").strip().lower()
+    if encoding not in ("identity", "", "gzip", "deflate"):
+        raise GoogleAuthError("refresh_failed")
+    inflate = zlib.decompressobj(47) if encoding in ("gzip", "deflate") else None
+    body = bytearray()
+    async for raw in resp.aiter_raw():
+        pending = raw
+        while pending:
+            if inflate is None:
+                chunk, pending = pending, b""
+            else:
+                chunk = inflate.decompress(pending, max_bytes - len(body) + 1)
+                pending = inflate.unconsumed_tail
+            if len(body) + len(chunk) > max_bytes:
+                raise GoogleAuthError("refresh_failed")
+            body += chunk
+            if inflate is not None and not chunk:
+                break
+    if inflate is not None and not inflate.eof:
+        raise GoogleAuthError("refresh_failed")  # a cut-off stream is not an answer
+    return bytes(body)
 
 
 class GoogleAuthError(Exception):
@@ -166,13 +194,13 @@ class GoogleCredentials:
         try:
             async with (
                 httpx.AsyncClient(transport=self._transport, timeout=self._timeout) as client,
-                client.stream("POST", TOKEN_URL, data=form) as resp,
+                # `identity`: httpx otherwise advertises gzip, Google then
+                # compresses the answer, and the raw bytes below are not JSON
+                # (2026-10-11: every live refresh failed with UnicodeDecodeError).
+                client.stream("POST", TOKEN_URL, data=form,
+                              headers={"Accept-Encoding": "identity"}) as resp,
             ):
-                body = bytearray()
-                async for chunk in resp.aiter_raw():
-                    if len(body) + len(chunk) > _MAX_TOKEN_BODY:
-                        raise GoogleAuthError("refresh_failed")
-                    body += chunk
+                body = await _capped_body(resp, _MAX_TOKEN_BODY)
                 status = resp.status_code
             payload = httpx.Response(status, content=bytes(body)).json()
         except GoogleAuthError:

@@ -242,6 +242,9 @@ async def _bounded_body(resp: httpx.Response, max_bytes: int) -> bytes:
             body += chunk
             if inflate is not None and not chunk:
                 break
+    if inflate is not None and not inflate.eof:
+        # A compressed body cut off mid-stream is a partial file, never the file.
+        raise ExternalFileError("unavailable", "truncated body")
     return bytes(body)
 
 

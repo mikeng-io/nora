@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 import logging
 
+import httpx
 import pytest
 
 from nora.domain.external_files import ExternalFileError, recognise
@@ -153,3 +154,29 @@ async def test_no_secret_or_token_reaches_a_log(caplog, trouble):
         assert secret not in caplog.text
     if trouble == "revoked":
         assert metrics.get("nora_google_invalid_grant_total") == 1
+
+
+async def test_a_gzipped_token_answer_is_read():
+    """2026-10-11, live: Google gzips a token answer whenever the client
+    accepts gzip, and every refresh failed with UnicodeDecodeError because the
+    raw bytes were parsed as JSON. A compressed answer must still yield a token."""
+    server = _server(DRIVE_SCOPE)
+    server.gzip_bodies = True
+    assert await _credentials(server).access_token(scope=DRIVE_SCOPE)
+
+
+async def test_the_token_request_asks_for_an_uncompressed_answer():
+    seen: list[str] = []
+    server = _server(DRIVE_SCOPE)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth2.googleapis.com":
+            seen.append(request.headers.get("Accept-Encoding", ""))
+        return server.handle(request)
+
+    creds = GoogleCredentials(
+        client_id="cid", client_secret=SECRET, refresh_token=server.refresh_token,
+        metrics=Metrics(), transport=httpx.MockTransport(handler),
+    )
+    assert await creds.access_token(scope=DRIVE_SCOPE)
+    assert seen and all(h == "identity" for h in seen)
