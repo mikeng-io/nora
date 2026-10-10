@@ -1863,6 +1863,17 @@ class FirePath:
                 # the honest state (R-21), not a degraded one.
                 tagger=tagger, self_ids=self_ids,
             )
+            # DEC-74, sourced as the tag path sources it
+            # (`EngagementPipeline`): the room's own `location` flag. Left at
+            # the surface's `False` default, `where_is` held every fire turn to
+            # the strict circle-subset gate, so a proactive turn in a
+            # `location = true` room was refused where a tag in the same room
+            # answered (Friends, 2026-09-27). No policy, or an unlisted room,
+            # stays strict.
+            fire_convo = (
+                self._policy.conversation(occasion.platform, occasion.conversation_id)
+                if self._policy is not None else None
+            )
             surface = self._registry.surface(
                 # design/tool-catalogue phase C: `[llm] defer_tools`.
                 defer=self._defer_tools,
@@ -1887,6 +1898,7 @@ class FirePath:
                 # is an unbounded loop, and the conversation it would fire into
                 # is this one.
                 fire_turn=True,
+                location_trusted=fire_convo.location if fire_convo is not None else False,
                 # DEC-89: the same carrier `handle`'s `Deliverer` holds. A fire
                 # turn can absolutely recommend a place («你話要我提你訂枱») and
                 # is a message into a real group, so it gets the link behaviour
