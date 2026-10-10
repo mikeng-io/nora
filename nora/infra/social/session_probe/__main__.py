@@ -22,6 +22,13 @@ from .runner import subprocess_runner
 EXIT = {"PASS": 0, "FAIL": 1, "ERROR": 2}
 
 
+def _profile(raw: str) -> str:
+    """Nora's Browser Bridge profile; blank refuses, never OpenCLI's default."""
+    if not raw.strip():
+        raise ValueError("OPENCLI_PROFILE must name Nora's Browser Bridge profile")
+    return raw.strip()
+
+
 def config_from_env(env: dict[str, str] | None = None) -> ProbeConfig:
     e = os.environ if env is None else env
     base = ProbeConfig()
@@ -31,6 +38,7 @@ def config_from_env(env: dict[str, str] | None = None) -> ProbeConfig:
         container=e.get("NORA_PROBE_BRIDGE_CONTAINER", base.container),
         state_file=Path(e.get("NORA_PROBE_STATE_FILE", str(base.state_file))),
         opencli_bin=e.get("OPENCLI_BIN", base.opencli_bin),
+        opencli_profile=_profile(e.get("OPENCLI_PROFILE", base.opencli_profile)),
         live_interval=timedelta(seconds=float(e.get("NORA_PROBE_LIVE_INTERVAL_S", "3600"))),
     )
 

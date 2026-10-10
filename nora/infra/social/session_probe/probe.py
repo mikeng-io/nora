@@ -80,6 +80,8 @@ class ProbeConfig:
         default_factory=lambda: Path.home() / ".local/state/nora/session-probe.jsonl"
     )
     opencli_bin: str = "opencli"
+    #: Nora's Browser Bridge profile alias; see `SocialBridge.__init__`.
+    opencli_profile: str = "nora"
     live_interval: timedelta = timedelta(hours=1)
     live_jitter_max: float = 20.0
     alert_repeat: timedelta = timedelta(hours=12)
@@ -171,7 +173,8 @@ class Probe:
         return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
 
     def _live_check(self, net: Network) -> LiveCheck:
-        argv = [self._cfg.opencli_bin, OPENCLI_SITE[net], "whoami", "-f", "json"]
+        argv = [self._cfg.opencli_bin, "--profile", self._cfg.opencli_profile,
+                OPENCLI_SITE[net], "whoami", "-f", "json"]
         res = self._run(argv, 60.0, None)
         text = f"{res.stdout}\n{res.stderr}"
         if res.rc == 0:

@@ -66,8 +66,8 @@ class FakeWorld:
             if self.start_rc == 0:
                 self.running = True
             return RunResult(self.start_rc)
-        if len(argv) >= 3 and argv[2] == "whoami":
-            return self.whoami.get(argv[1], RunResult(0, "{}"))
+        if argv[1:3] == ["--profile", "nora"] and len(argv) >= 5 and argv[4] == "whoami":
+            return self.whoami.get(argv[3], RunResult(0, "{}"))
         raise AssertionError(f"unexpected process: {argv}")
 
     def send(self, message: AlertMessage) -> bool:
@@ -81,7 +81,8 @@ class FakeWorld:
         return sum(1 for c in self.calls if c[:2] == ["docker", "start"])
 
     def whoami_sites(self) -> list[str]:
-        return [c[1] for c in self.calls if len(c) > 2 and c[2] == "whoami"]
+        return [c[3] for c in self.calls
+                if c[1:3] == ["--profile", "nora"] and len(c) > 4 and c[4] == "whoami"]
 
 
 def jar(*, ig: str | None = CHROME_SID, x: bool = True, li: bool = True) -> list[ChromeCookie]:
@@ -723,3 +724,11 @@ def test_a_second_run_under_the_lock_does_nothing_and_is_error(world, bridge_dir
     assert record["error"] == "probe_already_running"
     assert world.calls == []  # no docker, no opencli, no state line: nothing was touched
     assert not cfg.state_file.exists()
+
+
+def test_config_reads_the_opencli_profile_and_refuses_a_blank_one():
+    from nora.infra.social.session_probe.__main__ import config_from_env
+    assert config_from_env({}).opencli_profile == "nora"
+    assert config_from_env({"OPENCLI_PROFILE": "nora-alt"}).opencli_profile == "nora-alt"
+    with pytest.raises(ValueError):
+        config_from_env({"OPENCLI_PROFILE": "  "})
