@@ -1236,8 +1236,8 @@ Nora container, and Nora runs fine with all of them down (the tool answers
   (`--ozone-platform=x11`) with its OWN data folder,
   `--user-data-dir=/home/norty/.local/share/nora-browser
   --profile-directory="Profile 1"`: one profile, signed into Chrome as Nora's
-  account `nora@67.zone`, holding the Instagram, X and LinkedIn sessions and
-  only the OpenCLI extension. Never point it back at `~/.config/google-chrome`:
+  own Google account, holding the Instagram, X and LinkedIn sessions and the
+  OpenCLI extension. None of the operator's extensions or sites are in it. Never point it back at `~/.config/google-chrome`:
   that folder is the operator's browser, and a shared folder means a shared
   process, encryption key and "last used profile" (split 2026-10-10). The unit has `Requires=`/`After=` on the desktop
   service, so systemd already orders Chrome after `:2` exists.
