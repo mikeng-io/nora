@@ -1265,6 +1265,25 @@ async def test_media_send_sends_stored_bytes(wiring):
     assert wiring["deliverer"].delivered is True
 
 
+async def test_media_send_resends_a_kept_clip_as_a_video_file(wiring):
+    """A generated clip (kept by the compute poller) goes back out named `.mp4`: as `.png`
+    Discord shows the bytes as a broken picture."""
+    clip = MediaObject(
+        sha256="aabbccddeeff00112233445566778899" * 2, media_type="video/mp4", size=12,
+        source="generated", description="a mascot waves",
+        provenance={"prompt": "a mascot waves"}, created_at_ms=1_700_000_000_000,
+    )
+    blobs = FakeBlobStore()
+    blobs.blobs[clip.sha256] = b"\x00\x00\x00\x18ftypisom"
+    tools = _with_image_tools(wiring, generator=_ImageGenerator(),
+                              media_store=FakeMediaObjectStore([clip]), blob_store=blobs)
+    result = await _call(tools["media_send"], handle="aabbcc")
+    assert result["status"] == "ok"
+    ((attachment,),) = [a for a in wiring["sink"].sent_attachments if a]
+    assert attachment.media_type == "video/mp4"
+    assert attachment.filename == "nora-media-aabbcc.mp4"
+
+
 async def test_media_send_unknown_handle_is_nothing_found(wiring):
     store = FakeMediaObjectStore([])
     blobs = FakeBlobStore()

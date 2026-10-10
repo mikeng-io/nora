@@ -67,9 +67,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -110,6 +112,7 @@ from nora.domain.framing import (
     ReminderHeader,
     RequestBody,
 )
+from nora.domain.media import MediaBlob
 from nora.domain.media_join import MediaJoin
 from nora.domain.memo import Memo, MemoStore
 from nora.domain.models import (
@@ -127,6 +130,7 @@ from nora.domain.ports import (
     JobStatus,
     LinkPreviewSource,
     MemoryStore,
+    OutboundAttachment,
     PlatformAdapter,
     RecordStore,
     RosterSource,
@@ -344,7 +348,7 @@ def proactive_occasion(rows: Sequence[Reminder]) -> Event:
 
 def compute_occasion(
     job: ComputeJob, result: JobResult, readback: DocumentReadBack | None = None,
-    *, checkpoint: str = "", kept_files: tuple[str, ...] = (),
+    *, checkpoint: str = "", kept_files: tuple[str, ...] = (), kept: MediaBlob | None = None,
 ) -> Event:
     """A finished compute job, as the occasion it is (Nora Compute spec §2)
     — the THIRD `Event`, reusing `FirePath.speak` exactly as
@@ -365,9 +369,23 @@ def compute_occasion(
     `checkpoint` is where a job that stopped had got to, already rendered to plain markdown by
     the one checkpoint renderer (design/subagent §4d); `kept_files` are the files code saw the
     worker keep. Neither is the worker's report, and neither is read from it.
+
+    A result that carries its artifact's bytes (`result.media`, a video clip) is delivered as an
+    ATTACHMENT on her message, and its provider link is neither attached nor put in the body:
+    the room receives the clip, never a link that expires. `kept` is its custody handle when the
+    poller stored it in the library, so the audit row records the clip as Nora-held.
     """
     if readback is None:
         readback = DocumentReadBack(missing=tuple(result.document_ids))
+    attachments: tuple[OutboundAttachment, ...] = ()
+    if result.status is JobStatus.SUCCEEDED and result.media:
+        media_type = result.media_type or "video/mp4"
+        name = kept.sha256[:12] if kept is not None else str(job.id)[:12]
+        ext = mimetypes.guess_extension(media_type) or ".bin"
+        attachments = (OutboundAttachment(
+            content=result.media, media_type=media_type, filename=f"nora-{name}{ext}",
+        ),)
+        result = replace(result, url=None)
     return Event(
         platform=job.platform,
         conversation_id=job.conversation_id,
@@ -379,11 +397,14 @@ def compute_occasion(
         header=lambda tagger, now: ComputeHeader(tagger).render(),
         kind="compute",
         document_urls=tuple(d.url for d in readback.found if d.url),
-        # A finished job's own result link (a video clip's signed URL) rides with the message,
-        # attached by code: the body tells her it is there and not to write it out.
+        # A finished job's own result link rides with the message, attached by code, only when
+        # its bytes are not attached instead (a video clip that could not be fetched): the body
+        # tells her it is there and not to write it out.
         attached_urls=(
             (result.url,) if result.status is JobStatus.SUCCEEDED and result.url else ()
         ),
+        attachments=attachments,
+        media_blobs=(kept,) if attachments and kept is not None else (),
     )
 
 
@@ -1878,6 +1899,8 @@ class FirePath:
                 handle.links.mint_document(url, published=False)
             for url in occasion.attached_urls:
                 handle.links.attach(url)
+            for attachment in occasion.attachments:
+                handle.links.carry_media(attachment, occasion.media_blobs)
             now = self._clock().astimezone()
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name,

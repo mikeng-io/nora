@@ -72,6 +72,9 @@ import logging
 import re
 from urllib.parse import unquote_plus
 
+from nora.domain.media import MediaBlob
+from nora.domain.ports import OutboundAttachment
+
 log = logging.getLogger("nora.links")
 
 # Below this an anchor is not evidence that she named the place. Two characters
@@ -131,6 +134,11 @@ class LinkCarry:
         # Links code hands the room with this turn's message (a finished job's result URL):
         # appended when missing, until a sent message carries them.
         self._attached: list[str] = []
+        # Media code hands the room with this turn's message (a finished video clip's bytes),
+        # with the custody handles its audit row records: carried until a message holding them
+        # is sent.
+        self._media: list[OutboundAttachment] = []
+        self._media_blobs: list[MediaBlob] = []
 
     def claim_documents(self, public_url: str) -> None:
         """Arm the document rule for this turn with the origin documents are linked under.
@@ -171,6 +179,29 @@ class LinkCarry:
         url = (url or "").strip()
         if url and url not in self._attached:
             self._attached.append(url)
+
+    def carry_media(
+        self, attachment: OutboundAttachment, blobs: tuple[MediaBlob, ...] = (),
+    ) -> None:
+        """Media the room must receive with this turn's message, carried by code: a finished
+        video clip, which the model is told is attached and cannot attach itself. The
+        `Deliverer` appends it to the attachments of every message that passes R-4 (a non-empty
+        reply, or one with attachments of its own) until one is sent: a message a later guard
+        refuses, or the platform rejects, leaves it carried for the next. Nothing here falls
+        back when a platform rejects the attachment itself; that message simply fails."""
+        if attachment not in self._media:
+            self._media.append(attachment)
+            self._media_blobs.extend(b for b in blobs if b not in self._media_blobs)
+
+    @property
+    def pending_media(self) -> tuple[tuple[OutboundAttachment, ...], tuple[MediaBlob, ...]]:
+        """The carried attachments and their custody handles, not yet in a sent message."""
+        return tuple(self._media), tuple(self._media_blobs)
+
+    def media_sent(self) -> None:
+        """A message carrying the pending media reached the room."""
+        self._media.clear()
+        self._media_blobs.clear()
 
     @property
     def documents_added(self) -> int:

@@ -3542,6 +3542,9 @@ async def build_dependencies(
         compute_poller = ComputeJobPoller(
             store=compute_jobs, backends=compute_backends,
             documents=document_service if cfg.documents.enabled else None,
+            # A finished clip's bytes are kept where a generated image's are (DEC-138): the
+            # same blob store and media index, so `media_search` / `media_send` reach it.
+            blobs=blobs, media=media_objects,
             # `speak`, NOT `run`: the same reason `VersionAnnouncer` above
             # takes `fire_path.speak` rather than the reminder-shaped `run`.
             speak=fire_path.speak,

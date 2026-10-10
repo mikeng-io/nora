@@ -1714,6 +1714,11 @@ class JobResult:
     # the files code saw it keep), so a delivery can say where a job that stopped had got to.
     checkpoint: Mapping[str, Any] | None = None
     checkpoint_at: datetime | None = None
+    # The finished artifact's own bytes, when the backend fetched them (a video clip, from the
+    # provider's expiring link): the poller keeps them in the blob store and the media index
+    # and the delivery carries them as an attachment, so `url` never reaches the room.
+    media: bytes | None = field(default=None, repr=False)
+    media_type: str | None = None
 
 
 @dataclass(frozen=True)

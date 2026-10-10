@@ -27,6 +27,14 @@ VIDEO_OUTCOMES: tuple[str, ...] = (
     "expired", "no_url",
 )
 
+#: What `nora_video_clip_keep_total{outcome}` counts: fetching a finished clip's bytes from the
+#: provider's link (`downloaded`, a transient `retry`, the permanent `too_large` / `not_mp4`,
+#: and `gave_up` when retries ran past their deadline), then keeping them in Nora's own storage
+#: (`stored`, or `unstored` when the blob store or the media index refused or is not wired).
+CLIP_KEEP_OUTCOMES: tuple[str, ...] = (
+    "downloaded", "retry", "too_large", "not_mp4", "gave_up", "stored", "unstored",
+)
+
 
 @dataclass(frozen=True)
 class VideoReference:

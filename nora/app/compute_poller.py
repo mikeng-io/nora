@@ -11,7 +11,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
 from nora.app.fire import SENT, compute_occasion
@@ -24,7 +24,14 @@ from nora.domain.compute import (
     ReadBackDocument,
 )
 from nora.domain.events import Event
-from nora.domain.ports import ComputeBackend, JobStatus
+from nora.domain.media import MediaBlob, MediaObject
+from nora.domain.ports import (
+    BlobStore,
+    ComputeBackend,
+    JobResult,
+    JobStatus,
+    MediaObjectStore,
+)
 from nora.domain.subagent import job_title
 from nora.engagement.slots import ConversationSlots, Key
 from nora.language.checkpoint_render import render_checkpoint
@@ -54,6 +61,15 @@ class DocumentReader(Protocol):
     ) -> Any: ...
 
 
+@runtime_checkable
+class ResultFetcher(Protocol):
+    """A backend whose finished result needs one more fetch before delivery (the video
+    backend: the clip's bytes). Called only while the room's slot is held, so a deferred
+    delivery never fetches; RUNNING means "not yet, ask again next tick"."""
+
+    async def fetch_result(self, *, job_id: str, result: JobResult) -> JobResult: ...
+
+
 class ComputeJobPoller:
     def __init__(
         self,
@@ -66,8 +82,14 @@ class ComputeJobPoller:
         tick_seconds: float,
         clock: Callable[[], datetime],
         documents: DocumentReader | None = None,
+        blobs: BlobStore | None = None,
+        media: MediaObjectStore | None = None,
     ) -> None:
         self._store = store
+        # Nora's own storage for a result that carries its artifact's bytes (a video clip):
+        # the blob store holds the bytes, the media index the row `media_search` finds.
+        self._blobs = blobs
+        self._media = media
         # kind -> the backend that owns rows of that kind. A row whose kind has no entry is
         # left alone while the process runs (logged once), never failed or delivered. Boot
         # recovery (`recover`) fails every pending row whose kind's handle lives in memory (the
@@ -116,18 +138,68 @@ class ComputeJobPoller:
                 missing.append(raw)
         return DocumentReadBack(tuple(found), tuple(missing))
 
-    def _occasion(self, job: ComputeJob, result: Any, readback: Any) -> Event:
+    async def _keep(self, job: ComputeJob, result: JobResult) -> MediaBlob | None:
+        """Keep a finished artifact's bytes in Nora's own storage, the generated-image library
+        shape (DEC-138): the bytes in the blob store, a `generated` row in the media index whose
+        description is the prompt, so `media_search` / `media_send` find and resend it after the
+        provider's link has expired. A failure costs the library entry, never the delivery: the
+        clip is still attached (as `generate_image` does), and it is counted and logged."""
+        data = result.media
+        if result.status is not JobStatus.SUCCEEDED or not data:
+            return None
+        media_type = result.media_type or "video/mp4"
+        payload = job.payload or {}
+        prompt = str(payload.get("prompt") or job.task)
+        title = prompt[:80] or "generated video"
+        sha256 = ""
+        saved = False
+        try:
+            if self._blobs is not None and self._media is not None:
+                sha256 = await self._blobs.put(data=data)
+                saved = await self._media.save(obj=MediaObject(
+                    sha256=sha256, media_type=media_type, size=len(data), source="generated",
+                    description=prompt, title=title,
+                    provenance={
+                        "prompt": prompt, "title": title, "description": prompt,
+                        "model": str(payload.get("model") or ""),
+                        "kind": job.kind, "job_id": str(job.id),
+                        "backend_job_id": job.backend_job_id,
+                        "resolution": payload.get("resolution"),
+                        "duration": payload.get("duration"), "ratio": payload.get("ratio"),
+                        "platform": job.platform, "conversation_id": job.conversation_id,
+                    },
+                    created_at_ms=int(self._clock().timestamp() * 1000),
+                ))
+        except Exception:
+            log.exception("compute job %s: its result could not be kept", job.id)
+            saved = False
+        if not saved:
+            log.warning(
+                "compute job %s: the result is attached but NOT kept in the library "
+                "(blob store or media index %s)", job.id,
+                "not wired" if self._blobs is None or self._media is None else "refused",
+            )
+            self._metrics.inc("nora_video_clip_keep_total", outcome="unstored")
+            return None
+        self._metrics.inc("nora_video_clip_keep_total", outcome="stored")
+        return MediaBlob(sha256=sha256, media_type=media_type, size=len(data))
+
+    def _occasion(
+        self, job: ComputeJob, result: Any, readback: Any, kept: MediaBlob | None = None,
+    ) -> Event:
         """The delivery's occasion. A job that STOPPED also carries where it had got to, from
         the one checkpoint renderer; a job that finished does not (its report has the same
         sections). The files it kept are code's, from the result, whatever the outcome."""
-        stored, kept = read_row(result.checkpoint, None)
+        stored, kept_files = read_row(result.checkpoint, None)
         text = ""
         if result.status is not JobStatus.SUCCEEDED and stored is not None:
             text = render_checkpoint(
                 stored, None, title=job_title(job.payload, job.task), now=self._clock(),
                 mode="delivery",
             )
-        return compute_occasion(job, result, readback, checkpoint=text, kept_files=kept)
+        return compute_occasion(
+            job, result, readback, checkpoint=text, kept_files=kept_files, kept=kept,
+        )
 
     async def _maybe_deliver(self, job: ComputeJob) -> None:
         backend = self._backends.get(job.kind)
@@ -149,6 +221,11 @@ class ComputeJobPoller:
             self._metrics.inc("nora_compute_jobs_delivered_total", outcome=DEFERRED)
             return
         try:
+            if result.status is JobStatus.SUCCEEDED and isinstance(backend, ResultFetcher):
+                result = await backend.fetch_result(job_id=job.backend_job_id, result=result)
+                if result.status is JobStatus.RUNNING:
+                    # Not fetched yet: nothing claimed, nothing said; the next tick asks again.
+                    return
             if not await self._store.claim(job.id):
                 # Already claimed by an earlier tick's overlapping poll.
                 return
@@ -156,7 +233,10 @@ class ComputeJobPoller:
                 await self._read_back(job, result.document_ids)
                 if self._documents is not None else None
             )
-            outcome = await self._speak(self._occasion(job, result, readback))
+            # ponytail: the media index's metric is video's, the one kind that carries bytes
+            # today; a second such kind names its own.
+            kept = await self._keep(job, result)
+            outcome = await self._speak(self._occasion(job, result, readback, kept))
             # `SENT`, never the literal `"sent"`: the string decides the ROW's
             # terminal state, so a typo would record a delivery that never
             # happened — the reason `nora.app.fire` owns these four names
