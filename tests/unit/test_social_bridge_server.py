@@ -146,31 +146,32 @@ async def test_a_non_json_body_is_refused_without_spawning(bridge):
 # below can DERIVE the covered pairs from it rather than hand-copying them.
 _ARGV_CASES = [
     ("x", "post", "https://x.com/nasa/status/1234567890?s=20",
-     [BIN, "twitter", "thread", "1234567890", "-f", "json"]),
+     [BIN, "--profile", "nora", "twitter", "thread", "1234567890", "-f", "json"]),
     ("x", "post", "1234567890",
-     [BIN, "twitter", "thread", "1234567890", "-f", "json"]),
+     [BIN, "--profile", "nora", "twitter", "thread", "1234567890", "-f", "json"]),
     ("x", "profile", "nasa",
-     [BIN, "twitter", "profile", "nasa", "-f", "json"]),
+     [BIN, "--profile", "nora", "twitter", "profile", "nasa", "-f", "json"]),
     ("x", "posts", "nasa",
-     [BIN, "twitter", "tweets", "nasa", "--limit", "5", "-f", "json"]),
+     [BIN, "--profile", "nora", "twitter", "tweets", "nasa", "--limit", "5", "-f", "json"]),
     ("x", "search", "hk weather",
-     [BIN, "twitter", "search", "hk weather", "--limit", "5", "-f", "json"]),
+     [BIN, "--profile", "nora", "twitter", "search", "hk weather", "--limit", "5", "-f", "json"]),
     # LinkedIn (DEC-201): the three profile commands carry the person as
     # `--profile-url`, ALWAYS (without it OpenCLI reads the logged-in account).
     ("linkedin", "profile", "williamhgates",
-     [BIN, "linkedin", "profile-read", "--profile-url",
+     [BIN, "--profile", "nora", "linkedin", "profile-read", "--profile-url",
       "https://www.linkedin.com/in/williamhgates/", "-f", "json"]),
     ("linkedin", "experience", "williamhgates",
-     [BIN, "linkedin", "profile-experience", "--profile-url",
+     [BIN, "--profile", "nora", "linkedin", "profile-experience", "--profile-url",
       "https://www.linkedin.com/in/williamhgates/", "-f", "json"]),
     ("linkedin", "posts", "williamhgates",
-     [BIN, "linkedin", "posts", "--profile-url",
+     [BIN, "--profile", "nora", "linkedin", "posts", "--profile-url",
       "https://www.linkedin.com/in/williamhgates/", "--limit", "5", "-f", "json"]),
     ("linkedin", "company", "nvidia",
-     [BIN, "linkedin", "company", "nvidia", "-f", "json"]),
+     [BIN, "--profile", "nora", "linkedin", "company", "nvidia", "-f", "json"]),
     # `people-search`, never OpenCLI's `linkedin search` (jobs).
     ("linkedin", "search", "satya nadella",
-     [BIN, "linkedin", "people-search", "satya nadella", "--limit", "5", "-f", "json"]),
+     [BIN, "--profile", "nora", "linkedin", "people-search", "satya nadella",
+      "--limit", "5", "-f", "json"]),
 ]
 
 
@@ -357,3 +358,28 @@ async def test_stderr_is_never_echoed_into_the_response(bridge):
     )
     assert "SECRETVALUE" not in str(body)
     assert "cookie" not in str(body)
+
+
+async def test_a_configured_profile_is_the_one_every_read_names():
+    """OpenCLI's DEFAULT profile is whoever ran `profile use` last (on norty,
+    the operator's own Chrome, which another agent reads through). Every read
+    names the configured profile right after the binary, so none can fall
+    through to the default."""
+    runner = _FakeRunner()
+    server = TestServer(
+        SocialBridge(opencli_bin=BIN, opencli_profile="nora-alt", runner=runner).app())
+    await server.start_server()
+    session = ClientSession()
+    try:
+        base = str(server.make_url("")).rstrip("/")
+        status, _ = await _read(
+            session, base, {"platform": "x", "what": "profile", "target": "nasa", "limit": 5})
+        assert status == 200
+        assert runner.calls[0][:3] == [BIN, "--profile", "nora-alt"]
+    finally:
+        await session.close()
+        await server.close()
+
+def test_a_bridge_without_a_profile_refuses_to_start():
+    with pytest.raises(ValueError):
+        SocialBridge(opencli_bin=BIN, opencli_profile="  ")

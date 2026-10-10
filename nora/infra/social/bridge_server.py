@@ -285,10 +285,20 @@ class SocialBridge:
         self,
         *,
         opencli_bin: str = "opencli",
+        opencli_profile: str = "nora",
         timeout_seconds: float = 75.0,
         runner: Runner | None = None,
     ) -> None:
+        # Every read names Nora's Browser Bridge profile. OpenCLI's DEFAULT
+        # profile belongs to whoever ran `opencli profile use` last (on norty,
+        # the operator's own Chrome, which another agent reads through), so a
+        # read without `--profile` would run in the wrong browser. An unknown
+        # or disconnected profile fails closed in OpenCLI (exit 69); it never
+        # falls back to the default.
+        if not opencli_profile.strip():
+            raise ValueError("opencli_profile must name Nora's Browser Bridge profile")
         self._opencli_bin = opencli_bin
+        self._opencli_profile = opencli_profile.strip()
         self._timeout_seconds = timeout_seconds
         self._runner: Runner = runner if runner is not None else _spawn_opencli
 
@@ -334,7 +344,8 @@ class SocialBridge:
             self._clamp_limit(body.get("limit", 5)),
             _LIMIT_CEILINGS.get((site, command), _LIMIT_MAX),
         )
-        argv = [self._opencli_bin, site, command, *_target_args(site, command, target_arg)]
+        argv = [self._opencli_bin, "--profile", self._opencli_profile,
+                site, command, *_target_args(site, command, target_arg)]
         if (site, command) in _LIMIT_COMMANDS:
             argv += ["--limit", str(limit)]
         argv += ["-f", "json"]
