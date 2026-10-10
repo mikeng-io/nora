@@ -1230,10 +1230,16 @@ Nora container, and Nora runs fine with all of them down (the tool answers
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
   (`-interface 100.91.183.127`, port 5902, TLSVnc). Enabled with user
-  lingering, so it starts at boot with no login.
+  lingering, so it starts at boot with no login. This display is NORA'S
+  ONLY: nothing of the operator's runs on it.
 - `nora-social-chrome.service` — headed Chrome on `DISPLAY=:2`
-  (`--ozone-platform=x11`) with the authenticated profile holding the
-  Instagram and X sessions. The unit has `Requires=`/`After=` on the desktop
+  (`--ozone-platform=x11`) with its OWN data folder,
+  `--user-data-dir=/home/norty/.local/share/nora-browser
+  --profile-directory="Profile 1"`: one profile, signed into Chrome as Nora's
+  own Google account, holding the Instagram, X and LinkedIn sessions and the
+  OpenCLI extension. None of the operator's extensions or sites are in it. Never point it back at `~/.config/google-chrome`:
+  that folder is the operator's browser, and a shared folder means a shared
+  process, encryption key and "last used profile" (split 2026-10-10). The unit has `Requires=`/`After=` on the desktop
   service, so systemd already orders Chrome after `:2` exists.
 - OpenCLI 1.8.7 — installed under `~/.hermes/node`, on PATH as `opencli`;
   daemon on `localhost:19825`, Browser Bridge extension connected to that
@@ -1279,6 +1285,12 @@ a read-only probe reports `logged_in=false` for Instagram or X — log in once b
 hand in that Chrome and the session persists in the profile. The VNC password
 lives only in the service's private configuration — never paste it into the
 repo, an issue, or a chat log.
+
+**The operator's desktop is separate.** `miles-desktop.service` (VNC `:4`,
+port 5904, same Tailscale interface, its own password file and xstartup) and
+`miles-chrome.service` (`~/.config/google-chrome`, `Default`) are the
+operator's, not Nora's: host-only units outside this repo. Nothing of Nora's
+reads them, and nothing of the operator's runs on `:2`.
 
 **Are the logins still alive?** `nora-session-probe.timer` (unit in
 `deploy/session-probe/`) checks Chrome's Instagram, X and LinkedIn session

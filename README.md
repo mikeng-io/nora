@@ -339,8 +339,9 @@ it down: with it down, `x_read` and `x_search` simply answer `unavailable`.
   monitors while no client is connected, so window creation failed there. RDP
   is now optional administration only — it is not the browser runtime, and the
   old RDP-based workaround is retired.
-- **Headed Chrome on `DISPLAY=:2`** (`--ozone-platform=x11`, the existing
-  authenticated profile, which holds the Instagram and X sessions) as
+- **Headed Chrome on `DISPLAY=:2`** (`--ozone-platform=x11`, its own data folder
+  `~/.local/share/nora-browser`, one profile signed in as Nora's own Google
+  account, holding the Instagram, X and LinkedIn sessions) as
   `~/.config/systemd/user/nora-social-chrome.service`.
 - **OpenCLI 1.8.7** (installed under `~/.hermes/node`, daemon on
   `localhost:19825`) with the Browser Bridge extension connected to that
