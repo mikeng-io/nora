@@ -817,10 +817,6 @@ def test_every_read_only_tool_is_classified_unit_safe_or_room_scoped():
         # none of, so room-scoped is the fail-closed side. Not in
         # `UNIT_SAFE_TOOLS`, and an act (`document_publish`) is never granted.
         "document_read",
-        # `file_fetch` (design/external-files §3): a `code` resolves among the
-        # BOUND room's own message rows, which a unit-keyed tick has none of,
-        # so room-scoped is the fail-closed side.
-        "file_fetch",
         # `reverse_geocode` (DEC-156) is a pure coordinate -> address lookup
         # with no room state in its ARGUMENTS, which is exactly why it must be
         # here rather than beside `weather`. Since 13c530aa it is the ONLY tool

@@ -46,6 +46,8 @@ log = logging.getLogger("nora.agent.subagent_tools")
 ACTS: frozenset[str] = frozenset({
     "computer_run", "computer_write", "computer_edit", "computer_import",
     "computer_export", "document_publish",
+    # a shared file read as text, or copied into the job's workspace (§5): an act since S4
+    "file_fetch",
     # the worker's own place-keeper (design/subagent §4d): not a lookup, not an effect outside
     "checkpoint_update",
 })

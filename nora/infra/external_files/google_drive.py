@@ -80,6 +80,7 @@ from nora.domain.external_files import (
     ExternalFile,
     ExternalFileError,
     ExternalFileRef,
+    FileBytes,
     FileKind,
     FilePart,
     recognise,
@@ -298,16 +299,18 @@ class GoogleDriveSource:
             raise ExternalFileError("nothing_found", NO_PART)
         return FilePart(text=parts[part - 1], part=part, parts=len(parts))
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> bytes:
+    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes:
         meta = await self._meta(ref)
         mime = str(meta.get("mimeType") or "")
         if mime in _NATIVE:
-            return await self._export(ref, _NATIVE[mime][2])
+            office = _NATIVE[mime][2]
+            return FileBytes(data=await self._export(ref, office), media_type=office)
         if mime.startswith("application/vnd.google-apps."):
             # A form, a drawing, a site: nothing to download or export.
             raise ExternalFileError("refused", NOT_TEXT)
         self._refuse_large(meta)
-        return await self._download(ref)
+        return FileBytes(data=await self._download(ref),
+                         media_type=mime or "application/octet-stream")
 
     # ---- reads --------------------------------------------------------------
 

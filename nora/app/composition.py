@@ -60,7 +60,7 @@ from nora.agent.telemetry import (
     start_raw_model_span,
 )
 from nora.agent.telemetry import timed as telemetry_timed
-from nora.agent.tools import COMPUTER_TOOLS, LOAD_TRANSCRIPT_MAX
+from nora.agent.tools import COMPUTER_AUDIT_TOOLS, LOAD_TRANSCRIPT_MAX
 from nora.agent.video_desk import VideoDesk
 from nora.agent.whereis import Circle, check_disclosure_invariant, circles_from_persons
 from nora.app.cognition_grounding import (
@@ -1517,7 +1517,7 @@ async def build_dependencies(
         # all (not applicable, which is not down) and no zero-valued calls
         # series either. `prime()` creates them at zero, so a rare `unavailable`
         # after a restart is not a series whose first sample is already 1.
-        computer_metrics = ComputerMetrics(metrics, audit_tools=COMPUTER_TOOLS)
+        computer_metrics = ComputerMetrics(metrics, audit_tools=COMPUTER_AUDIT_TOOLS)
         computer_metrics.prime()
         computer = ComputerdRuntime(
             base_url=cfg.computer.base_url, token=computer_token,

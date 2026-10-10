@@ -1,9 +1,9 @@
 ---
 type: design
 title: "External files: a shared link becomes a handle, and Nora opens it only when asked"
-description: "S1 merged; S2 and S3 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
+description: "S1 merged; S2, S3 and S4 built (off). A file link sent to Nora (Google Drive first, Dropbox maybe later) is recorded as a handle, the link and nothing else, the way an attachment becomes [image a3f2c1]. Its content is not fetched, read or remembered until somebody asks her to open it. Opening goes through a vendor-neutral tool over one adapter per provider, signed in read-only as Nora's own account nora@67.zone: the text comes back into the turn, or the file is copied to her computer. Read-only means the source file is never changed; what she makes from it goes out through her own tools."
 tags: [nora, tools, external-files, google-drive, adapter, handles, read-only]
-timestamp: '2026-10-10'
+timestamp: '2026-10-11'
 status: proposed
 ---
 
@@ -17,7 +17,9 @@ it, Nora's one Google identity `nora/infra/google/` with
 built**: one tool, `file_fetch(code | link, part)` (named with the existing
 `fetch` verb, ADR 0015 §1), the link-owner claim (made only while a source
 is wired), `nora_tool_calls_total` for it; its `tool_selection` rows are
-written and NOT yet run. S4 and S5 not built. Revised the same day: the
+written and NOT yet run. **S4 built** (2026-10-11): `file_fetch(...,
+to="computer")` copies the file into her computer's `inbox/` (§5 as built).
+S5 not built. Revised the same day: the
 first version had a search over every
 file shared with her. The operator's model is a link handle opened on demand,
 and this text is that model.
@@ -174,7 +176,7 @@ nora/infra/external_files/
                      recognise(url) -> ref | None     pure, no network (ingest, §1)
                      describe(ref)  -> ExternalFile   name, kind, owner, modified
                      read(ref, part) -> text part
-                     fetch_bytes(ref) -> bytes        for the computer copy
+                     fetch_bytes(ref) -> FileBytes    bytes + media type, for the computer copy
   google_drive.py  the first adapter
   fake.py          for tests
 ```
@@ -260,11 +262,28 @@ container and writes them into `inbox/` under the same size limit
 (`import_max_bytes`) and lease `computer_import` uses. That copy is a
 point-in-time SNAPSHOT, not a cache: the result labels it with the file's
 modified time as the provider reported it at that open, so she can say how
-old her copy is, and a later open fetches afresh. That logic is inline in
-`computer_import` today, so S4 first moves it into a shared function both
-tools call. Her computer reaching the public web
-(DEC-289) does not change this: a shared file needs Nora's account, and the
-account stays outside.
+old her copy is, and a later open fetches afresh. Her computer reaching the
+public web (DEC-289) does not change this: a shared file needs Nora's
+account, and the account stays outside.
+
+**As built (S4, 2026-10-11).** One tool still: `file_fetch` gained `to`,
+`"reply"` (the default, the S3 read) or `"computer"`. The code or link
+resolves exactly as a read does; then the copy runs through
+`_computer_copy_in` in `nora/agent/tools.py`, the write path moved out of
+`computer_import` and now called by both: the computer off or busy answers
+as `computer_import` does, the `started` and `finished` audit rows (under
+the tool's own name, the request naming the six-hex handle, never the file
+id or URL), the lease, `import_max_bytes`, and the path
+`inbox/<12 hex of the bytes' sha256><suffix>`, built by Nora's code. The
+bytes come from `ExternalFilesSource.fetch_bytes`, which now answers
+`FileBytes(data, media_type)`: a Doc, Sheet or Slides deck exported as docx,
+xlsx or pptx, a stored file as stored, every byte under the adapter's 10 MB
+cap. The result is `status`, `note` (it says the copy is a snapshot),
+`name`, `kind`, `path`, `size` and `modified`. Nothing keeps the bytes past
+the call: two copies are two fetches, and an edited file lands under a new
+name. The copy writes into her workspace, so `file_fetch` is no longer
+declared `read_only` (an act like `computer_import`): no Dreamer adaptor can
+be granted it, and the sub-agent holds it among its acts.
 
 ## 6. Trust
 
@@ -287,7 +306,7 @@ number.
 | S1 | the port and fake; `recognise` for Google URLs; a new ingest stage that records each recognised link beside its message (new storage: no link extraction exists today, and `media_json` is keyed by content hash); the render that replaces the URL with a link handle such as `[Google Doc link c41d09]` (the labels in the provider's own table, read back by `link_handles_in`); the code lookup; config off by default |
 | S2 | the Google Drive adapter: describe, read for every kind, paging, the 10 MB refusal, token refresh; the auth script |
 | S3 | the open tool (count settled by the routing measurement), the link-owner claim, counters |
-| S4 | the copy to her computer (§5) |
+| S4 | the copy to her computer (§5): `file_fetch(to="computer")` over the write path shared with `computer_import`; built 2026-10-11, its `tool_selection` row not yet run |
 | S5 | live: sign-in, `.env`, config on, image rebuild; read back a link recorded as a handle with no API call, then one open per kind |
 
 S1 is useful alone: links become handles in the record before any account

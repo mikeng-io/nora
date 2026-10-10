@@ -1,0 +1,51 @@
+[
+  {
+    "name": "(a) size cap skipped: a copy over import_max_bytes is written",
+    "file": "nora/agent/tools.py",
+    "old": "                if len(data) > computer_bounds.import_max_bytes:",
+    "new": "                if False:",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_copy_over_the_computers_import_cap_is_refused_and_writes_nothing"
+  },
+  {
+    "name": "(a') the shared cap guards computer_import too",
+    "file": "nora/agent/tools.py",
+    "old": "                if len(data) > computer_bounds.import_max_bytes:",
+    "new": "                if False:",
+    "target": "tests/unit/test_computer_export_tools.py::test_import_over_the_cap_is_refused"
+  },
+  {
+    "name": "(b) the copy's answer echoes the link as posted (provider id and URL)",
+    "file": "nora/agent/tools.py",
+    "old": "                    \"path\": path,\n                    \"size\": len(got.data),\n                    \"modified\": _file_modified(described.modified_ms),",
+    "new": "                    \"path\": path,\n                    \"size\": len(got.data),\n                    \"link\": ref.url,\n                    \"modified\": _file_modified(described.modified_ms),",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_copy_never_echoes_the_file_id_or_the_link"
+  },
+  {
+    "name": "(b') the copy's audit row records the URL instead of the handle",
+    "file": "nora/agent/tools.py",
+    "old": "            request = {\"code\": ref.handle}\n",
+    "new": "            request = {\"code\": ref.url}\n",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_copy_never_echoes_the_file_id_or_the_link"
+  },
+  {
+    "name": "(c) a memo of fetched bytes: the second copy reuses the first's",
+    "file": "nora/agent/tools.py",
+    "old": "                    fetched = await external_files.fetch_bytes(ref=ref)\n",
+    "new": "                    fetched = file_fetch.__dict__.get(ref.file_id) or file_fetch.__dict__.setdefault(ref.file_id, await external_files.fetch_bytes(ref=ref))\n",
+    "target": "tests/unit/test_file_fetch_tool.py::test_two_copies_are_two_fetches_and_the_second_is_the_file_as_it_is_now"
+  },
+  {
+    "name": "the copy is written although the computer is off",
+    "file": "nora/agent/tools.py",
+    "old": "        if not computer_ready or computer is None:\n            await _computer_off(tool, operation_id, started=started, request=request)\n            return dict(_COMPUTER_OFF)\n        session_id = await _computer_session(tool)\n        runtime = computer\n\n        # A write into the workspace: under the lease, like `computer_write`.",
+    "new": "        if False:\n            return dict(_COMPUTER_OFF)\n        session_id = await _computer_session(tool)\n        runtime = computer\n\n        # A write into the workspace: under the lease, like `computer_write`.",
+    "target": "tests/unit/test_file_fetch_tool.py::test_with_the_computer_off_a_copy_is_the_computers_off_answer_and_fetches_nothing"
+  },
+  {
+    "name": "a native file is copied as its export's text, not its office format",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "            office = _NATIVE[mime][2]\n",
+    "new": "            office = _NATIVE[mime][1] or _XLSX\n",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_copy_writes_the_office_export_into_the_inbox"
+  }
+]

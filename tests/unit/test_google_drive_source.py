@@ -300,8 +300,10 @@ async def test_nothing_is_cached_two_opens_are_two_fetches():
 
 async def test_fetch_bytes_exports_a_native_file_and_downloads_a_stored_one():
     source = _source(_server())
-    assert await source.fetch_bytes(ref=_ref(IDS["doc"])) == b"PK"
-    assert (await source.fetch_bytes(ref=_ref(IDS["pdf"]))).startswith(b"%PDF")
+    doc = await source.fetch_bytes(ref=_ref(IDS["doc"]))
+    assert (doc.data, doc.media_type) == (b"PK", DOCX)
+    pdf = await source.fetch_bytes(ref=_ref(IDS["pdf"]))
+    assert pdf.data.startswith(b"%PDF") and pdf.media_type == "application/pdf"
 
 
 async def test_one_token_refresh_serves_many_calls_and_a_401_refreshes_once():
