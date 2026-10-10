@@ -98,13 +98,14 @@ describe("status/memory/doctrine/skills/tools", () => {
     expect(data.map((s) => s.name)).toEqual(["identity", "voice", "silence", "conduct", "capability", "constraints"]);
   });
 
-  it("GET /skills matches SkillsSchema and includes the four real repo skills", () => {
+  it("GET /skills matches SkillsSchema and includes the five real repo skills", () => {
     const data = expectOk("/app/v1/skills", {}, SkillsSchema);
     expect(data.map((s) => s.name).sort()).toEqual([
       "computer-use",
       "document-creation",
       "image-generation",
       "navigation",
+      "video-generation",
     ]);
     for (const skill of data) expect(skill.instructions?.length ?? 0).toBeGreaterThan(0);
   });

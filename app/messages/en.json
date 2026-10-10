@@ -879,5 +879,44 @@
     "noWorldView": "The server saves its world, but the portal doesn't know how to read this game's save yet.",
     "sparkNobody": "Nobody on in the last 24 hours",
     "statusUnavailable": "Couldn't check this one just now."
+  },
+  "legal": {
+    "metaPrivacy": "Privacy policy",
+    "metaTerms": "Terms",
+    "back": "Back to Nora",
+    "privacyLink": "Privacy policy",
+    "termsLink": "Terms",
+    "effective": "Effective {date}",
+    "contact": "Contact: {email}",
+    "privacy": {
+      "title": "Privacy policy",
+      "whoTitle": "Who this is",
+      "whoBody": "Nora is a private assistant run by her operator for a small group of friends. You can reach the operator at {email}.",
+      "googleTitle": "Google user data",
+      "googleBody": "Nora signs in to her own Google account ({email}) with read-only Google Drive access. She can open only files that someone has shared with that address, or that are open to anyone with the link, and only when a person in a chat asks her to open one. When a link is posted in a chat, only the link is recorded, not the file.",
+      "readonlyTitle": "What she never does",
+      "readonlyBody": "She never creates, edits, deletes, comments on or shares files. She keeps no copy of a file: each time she opens one, she reads it fresh from Google Drive.",
+      "modelTitle": "Where the text goes",
+      "modelBody": "To answer, the file text she reads is sent to the AI language model service that generates her reply. What she says in her reply is kept in that chat's history like any other message. Her operator's own diagnostic traces, on the operator's server, record each conversation, including what she read, for troubleshooting.",
+      "neverTitle": "Selling, ads and training",
+      "neverBody": "Google data is never sold, never used for advertising, and never used to train AI models.",
+      "limitedTitle": "Limited Use",
+      "limitedBody": "Nora's use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.",
+      "limitedLink": "Google API Services User Data Policy",
+      "revokeTitle": "Taking access away",
+      "revokeBody": "To stop Nora reading a file, unshare it, or email {email}. The operator can revoke Nora's access to the Google account at any time.",
+      "revokeLink": "Google account permissions"
+    },
+    "terms": {
+      "title": "Terms",
+      "whatTitle": "What Nora is",
+      "whatBody": "Nora is a private, non-commercial assistant. She is provided as is, without warranty of any kind.",
+      "useTitle": "Who can use her",
+      "useBody": "Use is at the discretion of the operator, who may change or stop it at any time.",
+      "readTitle": "What she reads",
+      "readBody": "She only reads what is shared with her. See the privacy policy for how that is handled.",
+      "contactTitle": "Questions",
+      "contactBody": "Write to {email}."
+    }
   }
 }
