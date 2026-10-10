@@ -63,7 +63,7 @@ nora/infra/shared_files/
 
 `ref` is opaque to everything above the adapter (source plus the provider's
 file id). The model sees only a short code derived from it, never a provider
-id (DEC-24). `shared_by` and `owners` are email addresses; the tool layer
+id: a Drive id is a key-shaped string, which R-18 keeps out of replies. `shared_by` and `owners` are email addresses; the tool layer
 resolves them to persons (§4) and the model sees names.
 
 Config: `[shared_files]` is OFF by default, `sources = ["google_drive"]`, and
@@ -77,35 +77,69 @@ A second source (OneDrive, Dropbox) is a new adapter and a new entry in
 
 ## 3. Unit scope
 
-The turn's unit comes from the existing resolver (`_unit()` and
-`_unit_rooms()` in `nora/agent/tools.py`); its members are the persons its
-rooms list (`_units_from_policy` in `nora/analytics/composition.py`). A room
-open to everyone lists nobody and so adds no member: membership is never
-guessed.
+The turn's unit name comes from `_unit()` in `nora/agent/tools.py` (it honours
+a Dreamer run's supplied unit; `_unit_rooms()` does not). Its members are the
+persons its rooms list, the rule `_units_from_policy` in
+`nora/analytics/composition.py` already applies: a room open to everyone lists
+nobody and so adds no member, and membership is never guessed. **That
+function is not reusable as is**: it runs only in the analytics process, and
+the agent's `UnitRooms` (`nora/domain/self_presence.py`) carries no members. A
+per-unit member set built once from policy at startup, beside the room
+directory, is new wiring in S3.
+
+This scoping assumes `policy.toml` declares `[units]` (it does on norty).
+Without it every room falls in the default unit and the boundary is the whole
+deployment, so the tools refuse to start when `[units]` is absent.
 
 **Discovery.** `shared_files_search` lists a file in unit U only when the
 person who shared it with Nora resolves to a member of U. When the source
-does not say who shared it (a file in a shared drive, or shared through a
-group), the owners stand in: some owner must be a member of U. A file whose
+does not name a sharer, an owner who is a member of U stands in. A file whose
 sharer and owners all resolve to nobody is invisible in every unit. It is
 not an error, and the search result never hints that hidden files exist.
 
-**A pasted link.** A Drive link pasted in a room of U is readable there and
-in U's other rooms, whoever shared the file with Nora: the person who posted
-it brought it into the unit. The link is read through Nora's account, so it
-still needs to be shared with her or open to anyone with the link; otherwise
-it is `refused` with a note to share it with her.
+**A person in several units** is the live case, not an edge: on norty one
+person is listed in the rooms of three units. Under this rule, a file that
+person shares is discoverable in all three. Whether that is wanted is an open
+operator ruling (§12); the rest of the design does not depend on the answer.
 
-**Knowledge.** Nothing new is built for this half. What a read returns goes
-into her reply, the reply is recorded in that room, and recall over the
-record and Honcho is already unit-scoped (DEC-214). So what she learned in the
-unit's Signal room is recalled in its WhatsApp and Discord rooms and in no
-other unit. This design adds **no cache of file text**: every read goes to
-the source, so there is no second store whose scope could drift from the
-unit's. If a cache is added later it is keyed by unit.
+**A code is not a pass.** Codes are deterministic, so a person can repeat one
+in another unit. `shared_file_read` given a code applies the discovery rule
+again for the turn's unit and answers `nothing_found` when it fails, exactly
+as if the code did not exist.
 
-**Fail closed.** No resolvable unit (a turn whose room the policy places in
-no unit) gives `refused`, never a workspace-wide answer. The same goes for an
+**A pasted link.** A Drive link that a PERSON posted in a room of U is
+readable in U's rooms, whoever shared the file with Nora: the person who
+posted it brought it into the unit. The tool does not take the model's word
+for that. It looks the link up in the record of U's rooms (messages from
+persons, not Nora's own replies, not tool results, not fetched pages), and a
+link it cannot find there falls back to the discovery rule. Without that
+check, a link guessed or planted in untrusted text would read a file from
+another unit. The read goes through Nora's account, so the file must still be
+shared with her or open to anyone with the link; otherwise it is `refused`
+with a note to share it with her.
+
+**Knowledge.** What carries a file across the unit is discovery, not memory:
+in any of U's rooms she can find and re-read what U may see. Her memory does
+not do it alone, and the design does not pretend it does:
+
+- **Room-scoped today:** the recent transcript in her prompt,
+  `load_transcript`, `search_memory` (one room's Honcho session) and Standing.
+  What she read in the Signal room is not in the WhatsApp room's transcript.
+- **Unit-scoped today:** unit-keyed notes, Honcho `chat` and representation
+  reads (`scope=<unit>`), and an explicit `room_read` of a sibling room.
+- **Wider than the unit:** `about` reads Honcho's peer card, which takes no
+  scope and spans the Honcho workspace (DEC-214 says so). A conclusion about
+  a PERSON drawn from a file can surface in another unit of the same
+  workspace. This is the existing rule for every conclusion about a person,
+  not new with files, and this design does not change it.
+
+This design adds **no cache of file text**: every read goes to the source, so
+there is no second store whose scope could drift from the unit's. If a cache
+is added later it is keyed by unit.
+
+**Fail closed.** No resolvable unit (a room missing from policy; a room in
+policy without an explicit unit lands in the default unit `nora`) gives
+`refused`, never a workspace-wide answer. The same goes for an
 unreadable member list, or for a sharer whose email maps to two persons (an
 identity error, refused at startup if it can be).
 
@@ -119,14 +153,17 @@ account kind:
 email = "miles@example.com"
 ```
 
-Matched case-insensitively on the full address. A person may list several
-(personal and work), like any other account kind.
+Matched case-insensitively on the full address, casefolded BEFORE the
+duplicate check in `nora/persons.py` (otherwise `A@x` and `a@x` pass as two
+accounts). A person may list several (personal and work), like any other
+account kind.
 
 `google` is an ACCOUNT kind, not a chat platform: nothing may treat it as a
 room platform, open an adapter for it, or count it as a platform in a unit
-(the one-room-per-platform rule of DEC-214 is about chat rooms). How
-`nora/domain/identity.py`'s `_ID_KINDS` admits a non-chat kind without a room
-consumer noticing is the first build question, and S1's tests pin it.
+(the one-room-per-platform rule of DEC-214 is about chat rooms).
+`nora/domain/identity.py`'s `_ID_KINDS` already admits non-chat kinds
+(`life360`, `pulse`); `google` follows them, and S1's tests pin that no room
+consumer sees it.
 
 ## 5. The Google Drive adapter
 
@@ -140,19 +177,29 @@ consumer noticing is the first build question, and S1's tests pin it.
 4. Run the one-time auth script S1 adds, sign in as `nora@67.zone`,
    approve, and put the printed refresh token in norty's `.env`.
 
-**Scopes:** `drive.readonly` and `spreadsheets.readonly`, nothing else. Read-
-only therefore holds twice: in the scope, and in the Viewer role people grant.
+**Scope:** `drive.readonly`, nothing else (the Sheets reads below accept it).
+Read-only therefore holds twice: in the scope, and in the Viewer role people
+grant.
 
 **Calls.**
 
 | need | call |
 |---|---|
 | visible files | `files.list`, `q = sharedWithMe and trashed = false`, fields `id, name, mimeType, modifiedTime, owners(emailAddress), sharingUser(emailAddress)` |
-| full-text search | the same with `fullText contains '<query>'` |
+| full-text search | the same with `fullText contains '<query>'`, `'` and `\` escaped |
 | Google Doc | `files.export` as `text/markdown` |
 | Google Sheet | `spreadsheets.get` for the tab names, then `spreadsheets.values.batchGet` (a CSV export returns the first tab only) |
 | Google Slides | `files.export` as `text/plain` |
 | PDF, docx, xlsx, pptx | `files.get?alt=media`, parsed on norty |
+
+`sharedWithMe` matches files shared directly. Two cases it does not cover,
+both failing closed (invisible, never wrongly visible), and left for later:
+files inside a shared FOLDER (they inherit access and are not listed; S2
+measures whether listing the folder's children is worth adding), and files in
+a SHARED DRIVE (listed only with `supportsAllDrives` and
+`includeItemsFromAllDrives`, and their `owners` field is empty, so only
+`sharingUser` could place them). `sharingUser` names one person: a file shared
+with Nora by two people reports one of them.
 
 `files.export` is capped at about 10 MB of output. A larger file is `refused`
 for `to="reply"` and still copies with `to="computer"`.
@@ -171,10 +218,18 @@ Nora's container and hands them to the computer through the same path
 Her computer reaching the public web (DEC-289) changes nothing here: a Drive
 file needs Nora's account, and that account stays outside.
 
+**The computer is room-scoped, and that is an exception to the unit rule.**
+Its workspace key is one room (`computer_scope` in `nora/domain/computer.py`),
+so a file copied in the Signal room is not in the WhatsApp room's workspace.
+This design keeps that: the file itself stays discoverable unit-wide, so the
+other room copies it again in one call. Making the computer unit-scoped is a
+change to the computer, not to this design.
+
 ## 7. Trust
 
-File text is content written by other people: it comes back wrapped
-`untrusted="true"` and is never instructions. Nothing in this design writes,
+File text is content written by other people: the result carries
+`"untrusted": True` like every other tool result of outside text, and it is
+never instructions. Nothing in this design writes,
 comments, shares onward or changes permissions; the scopes could not if it
 tried.
 
@@ -182,7 +237,8 @@ tried.
 
 A pasted Drive, Docs, Sheets or Slides link is claimed in `LINK_OWNERS`
 (`nora/agent/link_owners.py`), so `web_fetch` and `media_fetch` point Nora at
-`shared_file_read` instead of fetching Google's sign-in page.
+`shared_file_read` instead of fetching Google's sign-in page. The redirect
+note shows the owner's `label`, so the label says "shared files", not Google.
 
 ## 9. Observability
 
@@ -196,7 +252,7 @@ that hides everything is visible as a rate, not as "nothing was shared".
 |---|---|
 | S1 | the port, the fake, the `google` account kind with its tests, the auth script, `[shared_files]` config off by default |
 | S2 | the Google adapter: list, search, read for every kind, paging, the 10 MB refusal, token refresh |
-| S3 | the two tools with unit scope (§3), the link-owner claim (§8), counters (§9), `tool_selection` rows before and after |
+| S3 | the per-unit member set, the two tools with unit scope (§3: discovery, the code re-check, the pasted-link record lookup), the link-owner claim (§8), counters (§9), `tool_selection` rows before and after |
 | S4 | `to="computer"` (§6) |
 | S5 | live: sign-in, `.env`, config on, image rebuild, and a read-back of one search and one read per kind in two rooms of one unit and one room of another |
 
@@ -209,3 +265,9 @@ Writing or commenting; Gmail and Calendar as Nora; push notifications of new
 shares (the Drive changes feed); images inside documents and slide visuals
 (a later step could render slides as images for the vision path); a second
 vendor.
+
+## 12. Open for the operator
+
+1. **A person in several units.** A file that person shares is
+   discoverable in every unit they belong to (§3). Keep that, or narrow
+   discovery for multi-unit sharers?
