@@ -101,14 +101,61 @@ def _memory_backfill() -> str:
     return repr(_items(_row()))
 
 
+def _memory_hits() -> str:
+    """search_memory / search_memory_workspace: Honcho's stored words, which
+    hold raw links for everything fed before external-files S1."""
+    from nora.agent.tools import _memory_hits_result
+
+    return repr(_memory_hits_result(
+        hits=[("p1", f"budget {URL} pls")], roster={"p1": "A"},
+        record=lambda *_a, **_k: None, partial_view=None,
+    ))
+
+
+def _bullets() -> str:
+    """Honcho conclusions and cards (`<peer_card>`, `<people_in_window>`)."""
+    from nora.domain.blocks import render_bullets
+
+    return render_bullets([f"shared the budget {URL}"])
+
+
+def _record_item(text: str):
+    from nora.domain.cognition_ground import RecordItem, Room
+
+    return RecordItem(
+        ref="messages:1", kind="message", message_id=1, room=Room("signal", "g1"),
+        author="A", at_ms=1_000, text=text,
+    )
+
+
+def _cognition_message() -> str:
+    from nora.language.cognition_render import _message_row
+
+    return _message_row(
+        _record_item(f"budget {URL}"), (), now_ms=2_000, tz=UTC, message_chars=400,
+    ).show(None)
+
+
+def _cognition_own() -> str:
+    from nora.language.cognition_render import _own_row
+
+    return _own_row(
+        _record_item(f"budget {URL}"), now_ms=2_000, tz=UTC, message_chars=400,
+    ).show(None)
+
+
 RENDERERS = {
     "blocks.render_elements": _render_elements,
     "blocks.render_messages": _render_messages,
     "blocks.render_row_window": _render_row_window,
     "blocks.render_rows": _render_rows,
+    "blocks.render_bullets": _bullets,
     "reaction.render_recent": _reaction,
     "tools._transcript_messages": _tool_result,
+    "tools._memory_hits_result": _memory_hits,
     "memory_backfill._items": _memory_backfill,
+    "cognition_render._message_row": _cognition_message,
+    "cognition_render._own_row": _cognition_own,
 }
 
 
@@ -119,9 +166,43 @@ def test_each_renderer_shows_the_handle_and_never_the_file_id(name):
     assert "Google Sheet link " in out, f"{name} lost the link entirely: {out}"
 
 
+def _leaks(out: str) -> bool:
+    return "google.com" in out.lower() or "https" in out or ID[:4] in out
+
+
+@pytest.mark.parametrize("own", [False, True])
+def test_a_cut_never_splits_a_link_into_a_raw_stub(own):
+    """Review of PR 795: the Cognition agenda cut a message to its allowance
+    BEFORE the link was swapped, so half a URL and a prefix of the file id
+    reached the model, and a stub long enough to parse carried a wrong code.
+    Swap first, then cut, at every length and through `_shrunk`'s search."""
+    from nora.language.cognition_render import _message_row, _own_row, _shrunk
+
+    rec = _record_item("y" * 60 + " budget " + URL + " ok")
+    for chars in range(1, 160):
+        row = (
+            _own_row(rec, now_ms=2_000, tz=UTC, message_chars=chars) if own
+            else _message_row(rec, (), now_ms=2_000, tz=UTC, message_chars=chars)
+        )
+        out = row.show(None)
+        assert not _leaks(out), (chars, out)
+        for room in (60, 120, 180, 240):
+            assert not _leaks(_shrunk(row, room)), (chars, room)
+
+
+def test_the_operator_review_channel_keeps_the_link_clickable():
+    """`markup=False` is the operator's Discord review channel, not a prompt:
+    the link stays as posted there, and only there."""
+    out = render_rows(
+        [_row()], style=RowStyle(), speaker=lambda r: "A", body=lambda r: r.body,
+        markup=False,
+    )
+    assert URL in out
+
+
 #: Hand-built prompt text and tool results, by (module, function): each must
-#: call `render_file_links` (or the tools' `_file_handles` wrapper) itself,
-#: because it builds text without `render_elements`.
+#: call `render_file_links` (or the tools' `_file_handles` wrapper) INSIDE
+#: that function, because it builds text without `render_elements`.
 HAND_BUILT = {
     ("nora/agent/prefill.py", "build_tag_message"): "<tag_message>, the message she answers",
     ("nora/agent/prefill.py", "_replying_to_block"): "<replying_to>, the quoted parent",
@@ -130,12 +211,20 @@ HAND_BUILT = {
     ("nora/agent/tools.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
     ("nora/agent/tools.py", "who_said"): "who_said hits",
+    ("nora/agent/tools.py", "_memory_hits_result"): "search_memory(_workspace) hits",
+    ("nora/agent/tools.py", "about"): "about's Honcho conclusions and card",
+    ("nora/agent/tools.py", "ask_memory"): "ask_memory's Honcho answer",
     ("nora/ingest/stages/memory_feed.py", "run"): "the live Honcho feed",
     ("nora/app/adoption.py", "backfill"): "adoption's Honcho back-feed",
     ("nora/app/memory_backfill.py", "_items"): "`nora memory backfill`",
     ("nora/app/fire.py", "_window_query"): "the fire path's recall search key",
+    ("nora/engagement/context.py", "_recall_tagger"): "the tagger recall search key",
+    ("nora/language/cognition_render.py", "_words"):
+        "the Cognition agenda's message and own-send words (record hits, own_sends)",
     ("nora/domain/blocks.py", "render_rows"): "every line renderer",
     ("nora/domain/blocks.py", "render_elements"): "every element renderer",
+    ("nora/domain/blocks.py", "render_bullets"): "every Honcho conclusion and card",
+    ("evals/rebuilt/fold_evidence.py", "render_evidence"): "the fold judge's evidence",
 }
 _RENDER_CALLS = {"render_file_links", "_file_handles"}
 
@@ -170,13 +259,13 @@ def test_each_hand_built_sink_renders_the_handle(rel, fn):
 
 #: Every transcript builder the media-join gate discovers, classified: either
 #: it renders through `nora/domain/blocks.py` (which carries the render), or
-#: it calls `render_file_links` itself (checked).
-BUILDERS = {
-    "nora/agent/tools.py": "direct",
-    "nora/app/adoption.py": "direct",
-    "nora/app/memory_backfill.py": "direct",
-    "nora/app/fire.py": "direct",
-    "nora/engagement/context.py": "direct",
+#: the named functions in it render (checked in `HAND_BUILT`).
+BUILDERS: dict[str, str | tuple[str, ...]] = {
+    "nora/agent/tools.py": ("_transcript_messages", "who_said"),
+    "nora/app/adoption.py": ("backfill",),
+    "nora/app/memory_backfill.py": ("_items",),
+    "nora/app/fire.py": ("_window_query",),
+    "nora/engagement/context.py": ("_recall_tagger",),
     "nora/app/runtime.py": "blocks: the Dreamer's rows reach its adaptors' render_row_window",
     "nora/engagement/stages/debrief.py": "blocks: debrief_render.render_elements",
     "nora/ingest/relevance_gate.py": "blocks: render_messages",
@@ -192,28 +281,35 @@ def test_every_transcript_builder_is_classified():
     unclassified = discovered - set(BUILDERS)
     assert not unclassified, (
         f"{sorted(unclassified)} read transcript rows and are not classified here: "
-        "say whether they render through blocks.py or call render_file_links"
+        "say whether they render through blocks.py or which functions render"
     )
     assert not set(BUILDERS) - discovered, "BUILDERS lists a module that reads no rows"
+    for rel, how in BUILDERS.items():
+        if isinstance(how, tuple):
+            missing = [fn for fn in how if (rel, fn) not in HAND_BUILT]
+            assert not missing, f"{rel}: {missing} are not checked in HAND_BUILT"
 
 
-@pytest.mark.parametrize("rel", sorted(r for r, how in BUILDERS.items() if how == "direct"))
-def test_a_direct_builder_calls_the_render(rel):
-    tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-    assert _calls_render(tree), f"{rel} is classified direct but never renders a file link"
-
-
-#: Callers of `MemoryStore.feed` that feed something other than a member's
-#: message text, each with the reason.
+#: Callers of `MemoryStore.feed` with the function that must render, or the
+#: reason the text is not a member's message.
+FEEDERS: dict[str, str] = {
+    "nora/ingest/stages/memory_feed.py": "run",
+    "nora/app/adoption.py": "backfill",
+    "nora/app/memory_backfill.py": "_items",
+}
 _FEED_EXEMPT = {
     "nora/engagement/stages/feedback.py": "feeds Nora's OWN sent replies, never a member's text",
     "nora/ingest/comprehension.py": "feeds a media comprehension, not message text",
 }
 
 
+def _sources() -> list[Path]:
+    return sorted((ROOT / "nora").rglob("*.py")) + sorted((ROOT / "evals").rglob("*.py"))
+
+
 def _feeders() -> set[str]:
     out = set()
-    for path in sorted((ROOT / "nora").rglob("*.py")):
+    for path in _sources():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         if any(
             isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -224,34 +320,104 @@ def _feeders() -> set[str]:
     return out
 
 
-def test_every_honcho_feed_renders_the_handle_or_says_why_not():
+def test_every_honcho_feed_is_classified_and_its_function_renders():
     """Honcho's deriver is a model and recall hands its text back to her, so a
     fed URL is a URL she reads later."""
     feeders = _feeders()
     assert "nora/ingest/stages/memory_feed.py" in feeders, "the discovery finds nothing"
-    for rel in sorted(feeders - set(_FEED_EXEMPT)):
-        tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
-        assert _calls_render(tree), f"{rel} feeds Honcho message text without the render"
-    assert not set(_FEED_EXEMPT) - feeders, "a _FEED_EXEMPT module no longer feeds"
+    assert feeders == set(FEEDERS) | set(_FEED_EXEMPT), (
+        f"unclassified feeders: {sorted(feeders - set(FEEDERS) - set(_FEED_EXEMPT))}; "
+        f"stale: {sorted((set(FEEDERS) | set(_FEED_EXEMPT)) - feeders)}"
+    )
+    for rel, fn in FEEDERS.items():
+        assert (rel, fn) in HAND_BUILT, f"{rel}::{fn} feeds Honcho and is not checked"
 
 
-def test_no_body_is_passed_raw_as_a_model_question_or_query():
-    """`question=` reaches Honcho's dialectic and the computer objective;
-    `search_query=` is recall's key. A `.body` passed to either must go through
-    the render."""
-    offenders = []
-    for path in sorted((ROOT / "nora").rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
+#: Attributes that carry a member's message text.
+_MESSAGE_TEXT = {"body", "was", "first_body"}
+#: Keyword arguments that hand text to a model or to a model-backed store.
+_MODEL_INPUTS = {
+    "question", "search_query", "query", "objective", "prompt", "message", "text",
+    "content", "input",
+}
+
+
+def _mentions_message_text(node: ast.AST) -> bool:
+    return any(isinstance(a, ast.Attribute) and a.attr in _MESSAGE_TEXT for a in ast.walk(node))
+
+
+#: (module, function, keyword) sites that pass a message's text into a DATA
+#: carrier, not a model, each with where the text is rendered later.
+_INPUT_EXEMPT = {
+    ("nora/app/cognition_grounding.py", "_own_sends", "text"):
+        "a RecordItem; cognition_render._words renders it",
+    ("nora/infra/sql/character.py", "episodes", "text"):
+        "an Episode; character and lessons render it through render_row_window",
+    ("nora/ingest/stages/edit_gate.py", "run", "message"):
+        "a NormalizedMessage for the trigger gate, which reads no model",
+    ("nora/subject/knowledge.py", "know", "message"):
+        "a NormalizedMessage the eval seeds into the record",
+}
+
+
+def _enclosed_calls(tree: ast.AST):
+    for fn in ast.walk(tree):
+        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Call):
+                    yield fn.name, node
+
+
+def test_no_message_text_is_passed_raw_as_a_model_input():
+    """A member's text passed as `question=` (Honcho's dialectic, the computer
+    objective), `search_query=`/`query=` (recall's key) or any other model
+    input must go through the render. `nora/` and `evals/`."""
+    offenders = set()
+    for path in _sources():
+        rel = path.relative_to(ROOT).as_posix()
+        for fn, node in _enclosed_calls(ast.parse(path.read_text(encoding="utf-8"))):
             for kw in node.keywords:
-                if kw.arg not in ("question", "search_query"):
-                    continue
-                mentions_body = any(
-                    isinstance(a, ast.Attribute) and a.attr == "body"
-                    for a in ast.walk(kw.value)
-                )
-                if mentions_body and not _calls_render(kw.value):
-                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno} {kw.arg}=")
+                if (
+                    kw.arg in _MODEL_INPUTS and _mentions_message_text(kw.value)
+                    and not _calls_render(kw.value)
+                    and (rel, fn, kw.arg) not in _INPUT_EXEMPT
+                ):
+                    offenders.add(f"{rel}:{node.lineno} {fn}() {kw.arg}=")
+    assert not offenders, sorted(offenders)
+
+
+#: Functions that interpolate a `.body` into an f-string and are NOT handing a
+#: member's message to a model, each with the reason.
+_FSTRING_EXEMPT = {
+    ("nora/app/lessons_cli.py", "render_chain"): "a lesson revision, on the operator CLI",
+    ("nora/app/lessons_cli.py", "_line"): "a lesson, on the operator CLI",
+    ("nora/domain/blocks.py", "render"): "ContextBlock's own body, already rendered",
+    ("nora/domain/notes.py", "__post_init__"): "a length in an error message",
+    ("nora/domain/standing.py", "__post_init__"): "a length in an error message",
+    ("nora/testing/standing_store.py", "write"): "a length in an error message",
+    ("evals/rebuilt/fold_evidence.py", "render_evidence"):
+        "ONE f-string here is her prior Standing (`prior.body`, model-written); "
+        "the room's rows are rendered in their own f-string, checked by HAND_BUILT",
+}
+
+
+def test_every_message_text_in_an_fstring_is_rendered_or_exempt():
+    """The hand-built shape the review found in `evals/`: a transcript line
+    built as `f"{who}: {row.body}"`. Every function doing that, in `nora/`
+    and `evals/`, renders the handle in that f-string or says why not."""
+    offenders = []
+    for path in _sources():
+        rel = path.relative_to(ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if (rel, fn.name) in _FSTRING_EXEMPT:
+                continue
+            for js in ast.walk(fn):
+                if (
+                    isinstance(js, ast.JoinedStr) and _mentions_message_text(js)
+                    and not _calls_render(js)
+                ):
+                    offenders.append(f"{rel}:{js.lineno} in {fn.name}()")
     assert not offenders, offenders

@@ -147,7 +147,12 @@ def render_handle(ref: ExternalFileRef) -> str:
 
 # --- Google -----------------------------------------------------------------
 
-_GOOGLE_HOSTS = frozenset({"docs.google.com", "drive.google.com"})
+_GOOGLE_HOSTS = frozenset({
+    "docs.google.com", "drive.google.com", "drive.usercontent.google.com",
+})
+#: Google's own redirect wrapper (`https://www.google.com/url?q=<url>`), which
+#: a link copied out of Gmail, Calendar or a search result arrives inside.
+_GOOGLE_REDIRECT_HOSTS = frozenset({"www.google.com", "google.com"})
 #: The Google adapter's words, keyed by what the URL names: the docs.google.com
 #: kind segment, or `drive` for drive.google.com/file|open|uc. The ONE place
 #: they are written; a second provider adds its own table to `LINK_LABELS`.
@@ -159,43 +164,71 @@ _GOOGLE_LABELS = {
 }
 _DOCS_KINDS = frozenset(k for k in _GOOGLE_LABELS if k != "drive")
 _MIN_ID_CHARS = 16
-_ID_RE = re.compile(rf"[A-Za-z0-9_-]{{{_MIN_ID_CHARS},}}")
+#: A file id is the LEADING run of Google's id alphabet in its segment or
+#: parameter, at least `_MIN_ID_CHARS` long: whatever chat glued after it
+#: (`'s`, `/`, `%2Fedit`) is not part of the id.
+_ID_RUN = re.compile(rf"[A-Za-z0-9_-]{{{_MIN_ID_CHARS},}}")
 _KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
 _ACCOUNT_RE = re.compile(r"[0-9]{1,2}")
 
 
-def _strip_account(segments: list[str], at: int) -> list[str]:
-    """Drop a multi-account `u/<n>` pair at `at` (`/document/u/1/d/<id>`)."""
-    if (
-        len(segments) > at + 1 and segments[at] == "u"
-        and _ACCOUNT_RE.fullmatch(segments[at + 1])
+def _id_in(raw: str) -> str | None:
+    found = _ID_RUN.match(raw)
+    return found.group(0) if found else None
+
+
+def _strip_prefixes(segments: list[str], at: int) -> list[str]:
+    """Drop a multi-account `u/<n>` pair, or a legacy Workspace `a/<domain>`
+    pair, at `at` (`/document/u/1/d/<id>`, `/a/example.com/document/d/<id>`)."""
+    if len(segments) > at + 1 and (
+        (segments[at] == "u" and _ACCOUNT_RE.fullmatch(segments[at + 1]))
+        or segments[at] == "a"
     ):
         return segments[:at] + segments[at + 2:]
     return segments
 
 
+def _query_id(query: dict[str, list[str]]) -> str | None:
+    ids = query.get("id", [])
+    return _id_in(ids[0]) if len(ids) == 1 else None
+
+
 def _google_file_id(
     host: str, path: str, query: dict[str, list[str]],
 ) -> tuple[str, str] | None:
-    """`(label key, file id)`, or None."""
-    segments = [s for s in path.split("/") if s]
+    """`(label key, file id)`, or None. Path words compare case-blind; the id
+    keeps its case."""
+    raw = [s for s in path.split("/") if s]
+    low = [s.lower() for s in raw]
+    if host == "drive.usercontent.google.com":
+        found = _query_id(query) if low == ["download"] else None
+        return ("drive", found) if found else None
+    # A legacy Workspace prefix comes first: /a/<domain>/...
+    if low[:1] == ["a"] and len(low) > 1:
+        raw, low = raw[2:], low[2:]
     if host == "docs.google.com":
+        if low in (["uc"],):
+            found = _query_id(query)
+            return ("drive", found) if found else None
         # /document|spreadsheets|presentation/[u/<n>/]d/<id>/...
-        segments = _strip_account(segments, 1)
-        if len(segments) >= 3 and segments[0] in _DOCS_KINDS and segments[1] == "d":
-            return segments[0], segments[2]
+        low, raw = _strip_prefixes(low, 1), _strip_prefixes(raw, 1)
+        if len(low) >= 3 and low[0] in _DOCS_KINDS and low[1] == "d":
+            found = _id_in(raw[2])
+            return (low[0], found) if found else None
         return None
     # drive.google.com: /[u/<n>/]file/[u/<n>/]d/<id>/..., /[u/<n>/]open|uc?id=
-    segments = _strip_account(_strip_account(segments, 0), 1)
-    if len(segments) >= 3 and segments[0] == "file" and segments[1] == "d":
-        return "drive", segments[2]
-    if segments in (["open"], ["uc"]):
-        ids = query.get("id", [])
-        return ("drive", ids[0]) if len(ids) == 1 else None
+    low = _strip_prefixes(_strip_prefixes(low, 0), 1)
+    raw = _strip_prefixes(_strip_prefixes(raw, 0), 1)
+    if len(low) >= 3 and low[0] == "file" and low[1] == "d":
+        found = _id_in(raw[2])
+        return ("drive", found) if found else None
+    if low in (["open"], ["uc"]):
+        found = _query_id(query)
+        return ("drive", found) if found else None
     return None
 
 
-def _google(url: str) -> ExternalFileRef | None:
+def _google(url: str, *, posted: str | None = None, depth: int = 0) -> ExternalFileRef | None:
     text = url if "://" in url else f"https://{url}"
     try:
         parts = urlsplit(text)
@@ -207,17 +240,23 @@ def _google(url: str) -> ExternalFileRef | None:
     if parts.username is not None or parts.password is not None or port is not None:
         return None
     host = (parts.hostname or "").lower()
+    query = parse_qs(parts.query, keep_blank_values=False)
+    if host in _GOOGLE_REDIRECT_HOSTS and parts.path.lower() == "/url" and depth == 0:
+        # `parse_qs` has already percent-decoded the target.
+        targets = query.get("q", []) or query.get("url", [])
+        if len(targets) != 1:
+            return None
+        return _google(targets[0].strip(), posted=posted or url, depth=1)
     if host not in _GOOGLE_HOSTS:
         return None
-    query = parse_qs(parts.query, keep_blank_values=False)
     found = _google_file_id(host, parts.path, query)
-    if found is None or not _ID_RE.fullmatch(found[1]):
+    if found is None:
         return None
     kind, file_id = found
     keys = query.get("resourcekey", [])
     key = keys[0] if len(keys) == 1 and _KEY_RE.fullmatch(keys[0]) else None
     return ExternalFileRef(
-        provider="google_drive", file_id=file_id, url=url, resource_key=key,
+        provider="google_drive", file_id=file_id, url=posted or url, resource_key=key,
         label=_GOOGLE_LABELS[kind],
     )
 
@@ -254,19 +293,29 @@ def recognise(url: str) -> ExternalFileRef | None:
 
 # --- Finding links in text --------------------------------------------------
 
-# An ASCII URL run, with or without a scheme. The look-behind is ASCII on
-# purpose: `\w` would match a CJK character, and in a Cantonese room a link
-# is often written straight after one («睇下https://…»). The run stops at
-# whitespace, at anything outside the URL alphabet (so a CJK character right
-# after the link ends it) and at `<>()[]"`, so Discord's `<url>` and a
-# Markdown `(url)` keep their brackets.
+# An ASCII URL run. Two alternatives, because they need different starts:
+#
+# * WITH a scheme it may start anywhere, glued to whatever came before
+#   («link:https://…», «see...https://…», «@https://…», «2https://…»): the
+#   scheme is where it starts, and only an `http` can begin one, so the scan
+#   stays linear.
+# * WITHOUT one it may not start inside a host-like run (`[A-Za-z0-9.-]`), or
+#   `evil-docs.google.com` would match from `docs`. ASCII on purpose: `\w`
+#   would match a CJK character, and in a Cantonese room a link is often
+#   written straight after one («睇下docs.google.com/…»).
+#
+# The run stops at whitespace, at anything outside the URL alphabet (so a CJK
+# character right after the link ends it), and at `<>()[]"'*~` and backtick,
+# so Discord's `<url>`, Markdown's `(url)`, `**url**`, `~~url~~` and «url's»
+# keep their punctuation outside the link.
 _URL_RUN = re.compile(
-    r"(?<![A-Za-z0-9.\-/@:%_])"
-    r"(?:https?://)?(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::[0-9]+)?/"
-    r"[A-Za-z0-9\-._~:/?#@!$&'*+,;=%]*",
+    r"(?:https?://|(?<![A-Za-z0-9.\-]))"
+    r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::[0-9]+)?/"
+    r"[A-Za-z0-9\-._:/?#@!$&+,;=%]*",
     re.IGNORECASE,
 )
-_TRAILING = ".,;:!?'"
+#: Trailing characters that end a sentence or a chat format, not a link.
+_TRAILING = ".,;:!?_+="
 
 
 def _links(text: str) -> Iterable[tuple[int, int, ExternalFileRef]]:

@@ -47,6 +47,38 @@ def test_each_google_url_form_is_recognised_with_its_label(url, label):
     assert ref.handle == HANDLE
 
 
+DOC = f"https://docs.google.com/document/d/{ID}/edit"
+DRIVE = f"https://drive.google.com/open?id={ID}"
+
+
+@pytest.mark.parametrize("text", [
+    # Glued to what came before it.
+    f"link:{DOC}", f"see...{DOC}", f"doc-{DOC}", f"2{DOC}", f"x{DOC}", f"@{DOC}",
+    f"_{DOC}_", f"%{DOC}", f"文件：{DOC}", f"睇下{DOC}呀",
+    # Chat formatting around it, or glued after it.
+    f"*{DOC}*", f"**{DOC}**", f"~{DOC}~", f"~~{DOC}~~", f"`{DOC}`", f"{DOC}'s",
+    f"{DOC}=", f"{DOC}+", f"{DOC}...", f"({DOC})", f"<{DOC}>", f"[x]({DOC})",
+    f"**{DRIVE}**", f"{DRIVE}/", f"{DRIVE}'s", f"{DRIVE}=", f"_{DRIVE}_",
+    # Google's own redirect wrapper, plain and percent-encoded.
+    f"https://www.google.com/url?q={DOC}&sa=D",
+    "https://www.google.com/url?q=https%3A%2F%2Fdocs.google.com%2Fdocument%2Fd%2F"
+    f"{ID}%2Fedit&sa=D",
+    # Legacy Workspace prefix, upper case, a percent-encoded tail, other id forms.
+    f"https://docs.google.com/a/example.com/document/d/{ID}/edit",
+    f"https://drive.google.com/a/example.com/file/d/{ID}/view",
+    f"HTTPS://DOCS.GOOGLE.COM/DOCUMENT/D/{ID}/EDIT",
+    f"https://docs.google.com/document/d/{ID}%2Fedit",
+    f"https://docs.google.com/uc?id={ID}",
+    f"https://drive.usercontent.google.com/download?id={ID}&export=download",
+])
+def test_the_link_never_leaks_however_it_is_written(text):
+    """Review of PR 795: each of these reached a model as the raw URL. The
+    file id must not survive the render, and the ref must be recorded."""
+    rendered = render_file_links(text)
+    assert ID not in rendered and "google.com" not in rendered.lower(), rendered
+    assert [r.file_id for r in file_refs_in(text)] == [ID]
+
+
 def test_the_resource_key_is_kept():
     ref = recognise(f"https://drive.google.com/file/d/{ID}/view?resourcekey=0-AbC_dE")
     assert ref is not None and ref.resource_key == "0-AbC_dE"
@@ -74,6 +106,9 @@ def test_the_resource_key_is_kept():
     f"https://docs.google.com/forms/d/{ID}/viewform",
     "https://drive.google.com/open?id=a%20b",
     f"https://drive.google.com/open?id={ID}&id={OTHER}",
+    # Not real Google URL shapes.
+    f"https://www.drive.google.com/file/d/{ID}",
+    f"https://www.google.com/url?q=https://example.com/d/{ID}",
     "https://example.com/somewhere",
     "not a url",
 ])

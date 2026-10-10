@@ -24,6 +24,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
+from nora.domain.external_files import render_file_links
+
 #: How much of one tool result the JUDGE reads. Well above the fold's own
 #: bound (4000 on this branch, 600 on master): the judge has to know what a
 #: result held to say whether the position carried any of it. Measured on 1000
@@ -125,7 +127,9 @@ def render_evidence(turn: Any, *, display_name: str, tz: tzinfo) -> str:
     rows = []
     for row in turn.seen or trace.transcript:
         who = display_name if row.is_nora else (row.person_name or row.sender_name or "?")
-        rows.append(f"[{_local(row.ts, tz)}] {who}: {(row.body or '').strip()}")
+        # The handle, never the raw file link: the judge is a model too, and
+        # grades against what the fold was shown (design/external-files §1).
+        rows.append(f"[{_local(row.ts, tz)}] {who}: {render_file_links(row.body or '').strip()}")
     return (
         f"{prior_block}\n"
         f"## The turn\nAt {_local(trace.created_at, tz)}. Outcome: {trace.outcome}.\n\n"

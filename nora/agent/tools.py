@@ -3480,7 +3480,9 @@ def _memory_hits_result(
         if scan_reply(content) is not None:
             withheld += 1
             continue
-        kept.append({"who": name, "said": content})
+        # Honcho holds what it was fed, and rows fed before external-files S1
+        # carry the raw URL: the handle here, never the link (R-18).
+        kept.append({"who": name, "said": render_file_links(content)})
     if not kept:
         # Third state, and it is NOT `nothing_found`. A result set emptied by
         # the egress filter means the words exist and she may not repeat
@@ -5935,7 +5937,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # fact and a dated episode carry equal weight.
         result: dict = {
             "status": "ok", "person": ref.name,
-            "identity": list(kept_card), "profile": list(kept),
+            # Honcho text: a link fed before S1 is still a raw URL in it.
+            "identity": [render_file_links(c) for c in kept_card],
+            "profile": [render_file_links(c) for c in kept],
             "withheld": withheld,
             "partial_view": view.degraded,
         }
@@ -6039,7 +6043,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         metrics.inc("nora_recall_total", status="ok")
         _record_room(metrics, "ask_memory", "ok", depth=level)
         return _memory_result({
-            "status": "ok", "person": ref.name, "answer": answer,
+            "status": "ok", "person": ref.name, "answer": render_file_links(answer),
             "partial_view": view.degraded,
         })
 
