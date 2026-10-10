@@ -7,6 +7,8 @@ export type LegalSection = {
   id: string;
   title: string;
   body: string;
+  // A list under the body, for the sections that name categories.
+  items?: string[];
   // A link under the body, for the sections that point at Google.
   link?: { href: string; label: string };
 };
@@ -56,6 +58,13 @@ export function LegalPage({
                 {s.title}
               </h2>
               <p className="text-body text-ink-soft">{s.body}</p>
+              {s.items ? (
+                <ul className="grid list-disc gap-1 pl-5 text-body text-ink-soft">
+                  {s.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
               {s.link ? (
                 <p>
                   <a
