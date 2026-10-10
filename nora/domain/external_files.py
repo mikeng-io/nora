@@ -286,6 +286,24 @@ def link_handles_in(text: str) -> tuple[tuple[str, str], ...]:
     return tuple((m.group(1), m.group(2)) for m in _LINK_HANDLE_RE.finditer(text))
 
 
+_QUOTED_HANDLE_RE = re.compile(
+    r"\[?\s*(?:" + "|".join(re.escape(x) for x in sorted(LINK_LABELS, key=len, reverse=True))
+    + r")\s+([0-9a-f]{" + str(HANDLE_CHARS) + r"})\s*\]?",
+    re.IGNORECASE,
+)
+
+
+def quoted_handle_code(text: str) -> str | None:
+    """The code of a link handle a model passed back as a tool argument, with
+    or without its brackets (`[Google Doc link c41d09]`, `Google Doc link
+    c41d09`), or `None`. A handle is never a URL, so a fetcher that gets one
+    points at `file_fetch` instead of asking for "the actual URL" the model
+    was never shown (tool_selection `route_file_fetch_shared_doc`,
+    2026-10-11: one draw in five took that path and gave up)."""
+    m = _QUOTED_HANDLE_RE.fullmatch(text.strip())
+    return m.group(1).lower() if m else None
+
+
 #: How deep a link may sit inside wrappers (a redirect inside a redirect
 #: inside SafeLinks) and still be found. Bounds the work per URL.
 _NEST_DEPTH = 4

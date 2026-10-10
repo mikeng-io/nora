@@ -119,6 +119,7 @@ from ..domain.external_files import (
     ExternalFile,
     ExternalFileError,
     FilePart,
+    quoted_handle_code,
     render_file_links,
     resolve_file_code,
 )
@@ -10351,6 +10352,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # (design/social-per-network/30-link-owner-registry.md, PR 1) — still
         # before any scheme check, since the wrapper runs before the whole
         # closure. Nothing leaves: not to Tavily, not to Instagram.
+        # A LINK HANDLE passed back as the url: the model is shown
+        # `[Google Doc link c41d09]`, never the link, so "ask for the actual
+        # URL" would send it asking for something it was already given.
+        file_code = quoted_handle_code(url)
+        if file_code is not None:
+            _record(metrics, "web_fetch", "nothing_found", reason="file_handle")
+            return {
+                "status": "nothing_found",
+                "note": "That is a shared file, not a web page. Open it with "
+                        f"file_fetch using code {file_code}.",
+            }
         if not url.startswith(("http://", "https://")):
             _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
             return {
