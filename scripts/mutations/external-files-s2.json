@@ -33,5 +33,33 @@
     "old": "                self._metrics.inc(\"nora_external_files_invalid_grant_total\", provider=self.name)\n",
     "new": "",
     "target": "tests/unit/test_google_drive_source.py::test_invalid_grant_is_unavailable_counted_and_logged_without_the_secret"
+  },
+  {
+    "name": "bounds: the byte budget is per chunk, not cumulative across members (zip bomb, many parts)",
+    "file": "nora/infra/external_files/text.py",
+    "old": "                    self._bytes.take(len(chunk))",
+    "new": "                    _Budget(self._bytes.left).take(len(chunk))",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_many_small_parts_summing_past_the_cap_are_refused"
+  },
+  {
+    "name": "bounds: the parser no longer refuses a DTD (billion laughs, UTF-16)",
+    "file": "nora/infra/external_files/text.py",
+    "old": "        parser.StartDoctypeDeclHandler = _refuse\n        parser.EntityDeclHandler = _refuse\n",
+    "new": "",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_any_dtd_in_a_part_is_refused_by_the_parser"
+  },
+  {
+    "name": "bounds: a far-right cell's padding is allocated before it is charged",
+    "file": "nora/infra/external_files/text.py",
+    "old": "pkg.chars.take(3 * max(gap, 0) + len(value) + 3)",
+    "new": "pkg.chars.take(len(value) + 3)",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_a_cell_at_the_last_column_costs_its_padding_before_it_exists"
+  },
+  {
+    "name": "bounds: the HTTP body is decoded by httpx before it is counted",
+    "file": "nora/infra/external_files/google_drive.py",
+    "old": "                \"Accept-Encoding\": \"identity\",\n",
+    "new": "",
+    "target": "tests/unit/test_external_files_text_bounds.py::test_every_request_asks_for_an_uncompressed_body"
   }
 ]

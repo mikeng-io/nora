@@ -56,6 +56,7 @@ import asyncio
 import json
 import logging
 import time
+import zlib
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Protocol
@@ -188,6 +189,33 @@ def _failure(status: int, body: bytes) -> ExternalFileError:
     # A rate limit, an API not enabled, a 5xx, anything unforeseen: she could
     # not ask, which is never "not shared".
     return ExternalFileError("unavailable", f"http {status} {reason}".strip())
+
+
+async def _bounded_body(resp: httpx.Response, max_bytes: int) -> bytes:
+    """`resp`'s body, refused (`TOO_LARGE`) the moment it would pass
+    `max_bytes`. Read RAW, so the count is of bytes actually received and
+    nothing is decoded unbounded first; a body the server compressed anyway
+    (gzip or deflate) is inflated here with each step's output capped at what
+    is left of the budget. Any other encoding is not read at all."""
+    encoding = resp.headers.get("Content-Encoding", "identity").strip().lower()
+    if encoding not in ("identity", "", "gzip", "deflate"):
+        raise ExternalFileError("unavailable", f"unexpected content encoding {encoding[:20]}")
+    inflate = zlib.decompressobj(47) if encoding in ("gzip", "deflate") else None
+    body = bytearray()
+    async for raw in resp.aiter_raw():
+        pending = raw
+        while pending:
+            if inflate is None:
+                chunk, pending = pending, b""
+            else:
+                chunk = inflate.decompress(pending, max_bytes - len(body) + 1)
+                pending = inflate.unconsumed_tail
+            if len(body) + len(chunk) > max_bytes:
+                raise ExternalFileError("refused", TOO_LARGE)
+            body += chunk
+            if inflate is not None and not chunk:
+                break
+    return bytes(body)
 
 
 class GoogleDriveSource:
@@ -349,7 +377,12 @@ class GoogleDriveSource:
         """One authorised GET, its body read at most `max_bytes`. A 401 drops
         the access token and tries once more with a fresh one."""
         for attempt in (1, 2):
-            headers = {"Authorization": f"Bearer {await self._token()}"}
+            # `identity`: the body is counted as it arrives on the wire, so a
+            # compressed body cannot expand past the cap inside a decoder.
+            headers = {
+                "Authorization": f"Bearer {await self._token()}",
+                "Accept-Encoding": "identity",
+            }
             if ref.resource_key:
                 headers["X-Goog-Drive-Resource-Keys"] = f"{ref.file_id}/{ref.resource_key}"
             try:
@@ -357,11 +390,7 @@ class GoogleDriveSource:
                     self._client() as client,
                     client.stream("GET", url, params=params, headers=headers) as resp,
                 ):
-                    body = bytearray()
-                    async for chunk in resp.aiter_bytes():
-                        body += chunk
-                        if len(body) > self._max_bytes:
-                            raise ExternalFileError("refused", TOO_LARGE)
+                    body = await _bounded_body(resp, self._max_bytes)
                     status = resp.status_code
             except ExternalFileError:
                 raise
@@ -370,11 +399,11 @@ class GoogleDriveSource:
                             type(exc).__name__)
                 raise ExternalFileError("unavailable", "the provider could not be reached") from exc
             if status == 200:
-                return bytes(body)
+                return body
             if status == 401 and attempt == 1:
                 self._access = None
                 continue
-            failure = _failure(status, bytes(body))
+            failure = _failure(status, body)
             log.info("external file %s: http %s -> %s %s", ref.handle, status,
                      failure.status, failure.reason)
             raise failure

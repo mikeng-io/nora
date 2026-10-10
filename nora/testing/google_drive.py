@@ -21,6 +21,7 @@ Every request is kept in `requests`, so a test can count fetches.
 
 from __future__ import annotations
 
+import gzip
 import json
 from dataclasses import dataclass, field
 from urllib.parse import parse_qs
@@ -50,8 +51,17 @@ class DriveFile:
     export_too_large: bool = False
 
 
+def _reply(status: int, body: bytes | dict, **headers: str) -> httpx.Response:
+    """A response whose body is still a STREAM, as a real one is (a
+    `content=` response arrives already read, and a raw read of it fails)."""
+    data = json.dumps(body).encode() if isinstance(body, dict) else body
+    if isinstance(body, dict):
+        headers.setdefault("Content-Type", "application/json")
+    return httpx.Response(status, headers=headers, stream=httpx.ByteStream(data))
+
+
 def _error(status: int, reason: str) -> httpx.Response:
-    return httpx.Response(status, json={
+    return _reply(status, {
         "error": {"code": status, "message": reason, "errors": [{"reason": reason}]},
     })
 
@@ -64,7 +74,15 @@ class FakeDriveServer:
     down: bool = False
     rate_limited: bool = False
     requests: list[httpx.Request] = field(default_factory=list)
+    #: Send file bodies gzip-compressed even when asked for `identity` (a
+    #: server is allowed to): the adapter must inflate them bounded.
+    gzip_bodies: bool = False
     _issued: int = 0
+
+    def _body(self, data: bytes) -> httpx.Response:
+        if self.gzip_bodies:
+            return _reply(200, gzip.compress(data), **{"Content-Encoding": "gzip"})
+        return _reply(200, data)
 
     @property
     def transport(self) -> httpx.MockTransport:
@@ -101,13 +119,13 @@ class FakeDriveServer:
     def _token(self, request: httpx.Request) -> httpx.Response:
         form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
         if form.get("grant_type") != "refresh_token" or not form.get("client_secret"):
-            return httpx.Response(400, json={"error": "invalid_request"})
+            return _reply(400, {"error": "invalid_request"})
         if self.revoked or form.get("refresh_token") != self.refresh_token:
-            return httpx.Response(400, json={
+            return _reply(400, {
                 "error": "invalid_grant",
                 "error_description": "Token has been expired or revoked.",
             })
-        return httpx.Response(200, json={
+        return _reply(200, {
             "access_token": self._current(), "expires_in": 3599,
             "scope": "https://www.googleapis.com/auth/drive.readonly",
             "token_type": "Bearer",
@@ -140,7 +158,7 @@ class FakeDriveServer:
             body = held.exports.get(params.get("mimeType", ""))
             if body is None:
                 return _error(400, "badRequest")
-            return httpx.Response(200, content=body)
+            return self._body(body)
         if verb:
             return _error(404, "notFound")
         if params.get("alt") == "media":
@@ -148,7 +166,7 @@ class FakeDriveServer:
                 return _error(403, "fileNotDownloadable")
             if held.download_disabled:
                 return _error(403, "cannotDownloadFile")
-            return httpx.Response(200, content=held.data)
+            return self._body(held.data)
         meta: dict[str, object] = {
             "id": file_id, "name": held.name, "mimeType": held.mime,
             "modifiedTime": held.modified, "trashed": held.trashed,
@@ -156,17 +174,17 @@ class FakeDriveServer:
         }
         if not native:
             meta["size"] = str(len(held.data))
-        return httpx.Response(200, json=meta)
+        return _reply(200, meta)
 
     def _sheets(self, request: httpx.Request, rest: str) -> httpx.Response:
         file_id, _, verb = rest.partition("/")
         held = self._visible(request, file_id)
         if held is None or held.mime != GSHEET:
-            return httpx.Response(404, json={
+            return _reply(404, {
                 "error": {"code": 404, "message": "not found", "status": "NOT_FOUND"},
             })
         if not verb:
-            return httpx.Response(200, json={"sheets": [
+            return _reply(200, {"sheets": [
                 {"properties": {"title": title, "sheetType": "GRID"}} for title in held.tabs
             ]})
         if verb == "values:batchGet":
@@ -176,10 +194,10 @@ class FakeDriveServer:
                 title = name[1:-1].replace("''", "'") if name.startswith("'") else name
                 rows = held.tabs.get(title)
                 if rows is None:
-                    return httpx.Response(400, json={"error": {
+                    return _reply(400, {"error": {
                         "code": 400, "message": f"Unable to parse range: {name}",
                         "status": "INVALID_ARGUMENT",
                     }})
                 out.append({"range": name, "majorDimension": "ROWS", "values": rows})
-            return httpx.Response(200, content=json.dumps({"valueRanges": out}).encode())
+            return self._body(json.dumps({"valueRanges": out}).encode())
         return _error(404, "notFound")
