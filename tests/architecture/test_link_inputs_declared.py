@@ -102,7 +102,15 @@ def test_every_link_parameter_tool_is_a_registered_owner():
         if "link" in inspect.signature(spec.call).parameters
     }
     assert link_tools, "no built tool has a link parameter — untested widening"
-    assert link_tools <= _OWNER_TOOLS, (
-        f"tool(s) with a link parameter that are not registered owners: "
-        f"{sorted(link_tools - _OWNER_TOOLS)}"
+    # A non-owner may take a `link` only by declaring it a link input, so
+    # the registry still routes another owner's link away from it
+    # (`computer_import`, design/external-files §5, which copies a shared
+    # file and `accepts` only `file_fetch`'s links).
+    declared = {
+        name for name, spec in NATIVE_TOOLS.items()
+        if any(li.param == "link" for li in spec.link_inputs)
+    }
+    assert link_tools <= _OWNER_TOOLS | declared, (
+        f"tool(s) with a link parameter that are neither registered owners nor "
+        f"declare it a link input: {sorted(link_tools - _OWNER_TOOLS - declared)}"
     )

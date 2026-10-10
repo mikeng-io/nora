@@ -63,6 +63,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import zlib
 from datetime import datetime
 from typing import Any
@@ -148,6 +149,39 @@ _TOO_LARGE_REASONS = frozenset({"exportSizeLimitExceeded"})
 #: `accessNotConfigured`. Either is the operator's to fix, never "not shared"
 #: (review of PR 801).
 _DISABLED_REASONS = frozenset({"SERVICE_DISABLED", "accessNotConfigured"})
+
+
+#: A Drive or Sheets API path carrying a file id: the id is a key-shaped
+#: string (R-18) that names somebody's file, and `httpx` logs every request's
+#: URL at INFO. The query is already dropped for every client
+#: (`nora.obs.logging.drop_http_client_url_queries`); the PATH is this
+#: adapter's to redact, since only it knows where the id sits.
+_FILE_ID_PATH = re.compile(r"(/drive/v3/files/|/v4/spreadsheets/)[^/?\s\"']+")
+
+
+class _RedactFileIds(logging.Filter):
+    """Replaces the file id in every Drive or Sheets URL `httpx` logs with
+    `<file>`: method, host, verb and status stay, the id never reaches the
+    log (design/external-files §5, review of PR 807). On the LOGGER, so every
+    handler and pytest's capture see the redacted record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _FILE_ID_PATH.sub(r"\1<file>", str(a)) if _FILE_ID_PATH.search(str(a)) else a
+                for a in record.args
+            )
+        elif isinstance(record.msg, str):
+            record.msg = _FILE_ID_PATH.sub(r"\1<file>", record.msg)
+        return True
+
+
+def _redact_file_ids_in_http_logs() -> None:
+    """Install `_RedactFileIds` on the `httpx` logger, once however often it
+    is called."""
+    target = logging.getLogger("httpx")
+    if not any(isinstance(f, _RedactFileIds) for f in target.filters):
+        target.addFilter(_RedactFileIds())
 
 
 def kind_of(mime: str) -> FileKind:
@@ -272,6 +306,7 @@ class GoogleDriveSource:
         # At most two parse children at once: each is capped in memory and
         # time, and this caps how many of those caps are spent together.
         self._parsing = asyncio.Semaphore(2)
+        _redact_file_ids_in_http_logs()
 
     # ---- the port ---------------------------------------------------------
 

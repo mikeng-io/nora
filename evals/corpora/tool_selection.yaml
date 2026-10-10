@@ -309,33 +309,25 @@ cases:
     metadata: {tools: [file_fetch], not_tools: [web_fetch, document_read, computer_read]}
     snapshot: *room_a
 
-  # Reading a total off a sheet is a read into the reply: `to` stays its
-  # default, never "computer" (S4, design/external-files §5).
   - name: route_file_fetch_shared_sheet
     entry: tag
     expect: reply
     mention: true
     input: https://docs.google.com/spreadsheets/d/1SynthSheetRoute000000000/edit 張表總共預咗幾多錢？
-    metadata:
-      tools: [file_fetch]
-      not_tools: [web_fetch, computer_import, web_search]
-      args_exclude: {file_fetch: ["computer"]}
+    metadata: {tools: [file_fetch], not_tools: [web_fetch, computer_import, web_search]}
     snapshot: *room_a
 
-  # Putting a shared sheet on her computer to compute on is the same tool with
-  # `to="computer"` (S4, §5): never `computer_import`, which takes a file SENT
-  # here, and never `web_fetch`. `args_include` reads the `to` argument off the
-  # executed call. In the sandbox `[external_files]` is off and the call
-  # answers `unavailable`: still a correctly routed call.
-  - name: route_file_fetch_sheet_to_the_computer
+  # Putting a shared sheet on her computer to compute on is `computer_import`
+  # with the link (S4, design/external-files §5): the copy is the import
+  # tool's, never `file_fetch` (a read into the reply) and never `web_fetch`.
+  # In the sandbox `[external_files]` is off and the call answers
+  # `unavailable`: still a correctly routed call.
+  - name: route_computer_import_shared_sheet
     entry: tag
     expect: reply
     mention: true
     input: 將呢張表放上你部電腦，計下每個月平均使咗幾多 https://docs.google.com/spreadsheets/d/1SynthSheetCopyIn00000000/edit
-    metadata:
-      tools: [file_fetch]
-      not_tools: [computer_import, web_fetch]
-      args_include: {file_fetch: ["computer"]}
+    metadata: {tools: [computer_import], not_tools: [file_fetch, web_fetch]}
     snapshot: *room_a
 
   - name: route_web_fetch_not_a_shared_file

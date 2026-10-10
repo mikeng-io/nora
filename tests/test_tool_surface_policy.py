@@ -1251,13 +1251,14 @@ def _classify_value(
     return [("bad", f"unrecognised return shape: {ast.unparse(value)[:80]}")]
 
 
-#: The one write path into her computer's `inbox/` (design/external-files
-#: §5): `computer_import` and `file_fetch(to="computer")` both end in
+#: The write path into her computer's `inbox/` (design/external-files §5):
+#: `computer_import`, for a sent file and a shared file alike, ends in
 #: `return await _computer_copy_in(tool, request, take, copied)`, a closure
 #: of `build_tool_specs`. Shape (g): such a return is read as the returns it
 #: stands for, never trusted: every own return of `_computer_copy_in` except
 #: the two that hand back the caller's answers (`<x>.answer`, `copied(...)`);
-#: every return of the caller's `take` closure, each of which must be
+#: every return of the caller's `take` closure (and of any closure of the
+#: tool it hands off to with `return await NAME(...)`), each of which must be
 #: `_Stopped(outcome, row, ANSWER)` (ANSWER classified like any return) or
 #: `_Inbound(...)` (bytes, no answer); and every return of its `copied`
 #: closure. Anything else there is `bad`, fail-closed like the rest.
@@ -1307,15 +1308,29 @@ def _expand_copy_in(
     take, copied = _named_def(fn, take_name), _named_def(fn, copied_name)
     if take is None or copied is None:
         return [], [f"{_COPY_IN}'s take/copied are not closures of the tool"]
-    for r in _own_returns(take):
-        v = r.value
-        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name):
-            if v.func.id == "_Inbound":
-                continue
-            if v.func.id == "_Stopped" and len(v.args) == 3:
-                out.append((r, v.args[2], take))
-                continue
-        problems.append(f"{take_name}: a return that is neither _Stopped nor _Inbound")
+    # `take` may hand off to another closure of the tool (`return await
+    # take_shared(ref)`): followed, and held to the same two shapes.
+    pending, seen = [take], set()
+    while pending:
+        step = pending.pop()
+        if id(step) in seen:
+            continue
+        seen.add(id(step))
+        for r in _own_returns(step):
+            v = r.value
+            if (isinstance(v, ast.Await) and isinstance(v.value, ast.Call)
+                    and isinstance(v.value.func, ast.Name)):
+                inner = _named_def(fn, v.value.func.id)
+                if inner is not None:
+                    pending.append(inner)
+                    continue
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Name):
+                if v.func.id == "_Inbound":
+                    continue
+                if v.func.id == "_Stopped" and len(v.args) == 3:
+                    out.append((r, v.args[2], step))
+                    continue
+            problems.append(f"{take_name}: a return that is neither _Stopped nor _Inbound")
     out += [(r, r.value, copied) for r in _own_returns(copied) if r.value is not None]
     return out, problems
 

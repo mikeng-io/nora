@@ -847,10 +847,6 @@ ACT_VERBS = frozenset({
     "computer_run", "computer_write", "computer_edit",
     # design/browser-runtime B2: the sub-agent clicks and types in a page.
     "computer_browse",
-    # design/external-files §5 (S4): `to="computer"` copies a shared file into
-    # the room's `inbox/`, the write `computer_import` makes, so the tool is
-    # an act although its default reads. The source file is never changed.
-    "file_fetch",
     # S3a: an export publishes (a Drop link, an attachment) or stores, and an
     # import writes into the workspace.
     "computer_export", "computer_import",
@@ -918,6 +914,8 @@ READ_ONLY = frozenset({
     "record_query",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
     "about", "ask_memory", "search_memory", "recall_lookups", "media_fetch",
+    # design/external-files §3: reads a shared file; the account cannot write.
+    "file_fetch",
     "media_search",
     "web_search", "web_fetch", "weather", "list_reminders", "event_search",
     "suggest_venue", "version", "search_gifs",

@@ -17,8 +17,9 @@ it, Nora's one Google identity `nora/infra/google/` with
 built**: one tool, `file_fetch(code | link, part)` (named with the existing
 `fetch` verb, ADR 0015 §1), the link-owner claim (made only while a source
 is wired), `nora_tool_calls_total` for it; its `tool_selection` rows are
-written and NOT yet run. **S4 built** (2026-10-11): `file_fetch(...,
-to="computer")` copies the file into her computer's `inbox/` (§5 as built).
+written and NOT yet run. **S4 built** (2026-10-11): the copy is
+`computer_import`'s, which now also takes a link handle's code or a file
+link; `file_fetch` stays the read (§3, §5 as built).
 S5 not built. Revised the same day: the
 first version had a search over every
 file shared with her. The operator's model is a link handle opened on demand,
@@ -109,7 +110,7 @@ What an open can do, all of it read-only on the source:
 | asked for | the tool does |
 |---|---|
 | read it here | returns one part of the file as text into the turn |
-| work on it | copies the file to her computer's `inbox/` (§5) |
+| work on it | `computer_import` copies the file to her computer's `inbox/` (§5) |
 | make something from it | nothing new: she reads it, then makes the result with the tools she has (`document_publish` for a document, the computer for data) |
 
 The text she reads is part of that turn only. It enters memory the way
@@ -145,10 +146,11 @@ knew: the file's name, kind, owner and last-modified time.
 ## 3. The tool
 
 The starting proposal is **one tool**, opening a handle or a link, with a
-`part` and a destination (`reply` or `computer`). Whether it stays one or
-splits (for example, read and copy apart) is decided by the `tool_selection`
-routing measurement before and after, built with the `nora-tool` skill (ADR
-0015), not here. Whatever the count, the tools are read-only and say so, use
+`part` and a destination (`reply` or `computer`). **Split at S4 (2026-10-11, review of PR 807):** `file_fetch` is the read
+only, with no destination, and stays declared read-only (the Dreamer ceiling,
+R-7's wording, R-97's lookup set, the gate's capability digest all key on
+that). The copy is `computer_import`'s, the declared write that already puts
+a sent file into `inbox/` (§5). Whatever the count, the reading tools are read-only and say so, use
 the house statuses (`ok`, `nothing_found`, `ambiguous`, `refused`,
 `unavailable`, each with a `note`), and name no vendor.
 
@@ -266,24 +268,27 @@ old her copy is, and a later open fetches afresh. Her computer reaching the
 public web (DEC-289) does not change this: a shared file needs Nora's
 account, and the account stays outside.
 
-**As built (S4, 2026-10-11).** One tool still: `file_fetch` gained `to`,
-`"reply"` (the default, the S3 read) or `"computer"`. The code or link
-resolves exactly as a read does; then the copy runs through
-`_computer_copy_in` in `nora/agent/tools.py`, the write path moved out of
-`computer_import` and now called by both: the computer off or busy answers
-as `computer_import` does, the `started` and `finished` audit rows (under
-the tool's own name, the request naming the six-hex handle, never the file
-id or URL), the lease, `import_max_bytes`, and the path
+**As built (S4, 2026-10-11).** The copy is `computer_import`'s:
+`computer_import(code | link)` takes, besides a media code, a link handle's
+code (`[Google Sheet link c41d09]`, resolved among this room's own rows like
+`file_fetch`'s) or a file link (a link pasted into `code` counts as one).
+A code that names both a sent file and a link handle, or two link handles,
+is `ambiguous` with a note asking which: never a guess. The bytes come from
+`ExternalFilesSource.fetch_bytes`, which answers `FileBytes(data,
+media_type)`: a Doc, Sheet or Slides deck exported as docx, xlsx or pptx, a
+stored file as stored, every byte under the adapter's 10 MB cap. The fetch
+runs after the computer-off check and BEFORE the room's lease, so a slow
+provider never holds her computer busy; then the write path every import
+shares (`_computer_copy_in` in `nora/agent/tools.py`): the lease, the
+`started` and `finished` audit rows, `import_max_bytes`, and the path
 `inbox/<12 hex of the bytes' sha256><suffix>`, built by Nora's code. The
-bytes come from `ExternalFilesSource.fetch_bytes`, which now answers
-`FileBytes(data, media_type)`: a Doc, Sheet or Slides deck exported as docx,
-xlsx or pptx, a stored file as stored, every byte under the adapter's 10 MB
-cap. The result is `status`, `note` (it says the copy is a snapshot),
-`name`, `kind`, `path`, `size` and `modified`. Nothing keeps the bytes past
-the call: two copies are two fetches, and an edited file lands under a new
-name. The copy writes into her workspace, so `file_fetch` is no longer
-declared `read_only` (an act like `computer_import`): no Dreamer adaptor can
-be granted it, and the sub-agent holds it among its acts.
+suffix is the media type's; the owner's file name is read only for
+`application/octet-stream`, so a PDF named `invoice.sh` lands as `.pdf`. The
+answer is `status`, `note` (the copy is a snapshot), `name`, `kind`, `path`,
+`size` and `modified`. The answer, the audit rows and the log name the
+handle, never the file id or the URL: the adapter strips the id from the
+Drive and Sheets URLs `httpx` logs. Nothing keeps the bytes past the call:
+two copies are two fetches, and an edited file lands under a new name.
 
 ## 6. Trust
 
@@ -306,7 +311,7 @@ number.
 | S1 | the port and fake; `recognise` for Google URLs; a new ingest stage that records each recognised link beside its message (new storage: no link extraction exists today, and `media_json` is keyed by content hash); the render that replaces the URL with a link handle such as `[Google Doc link c41d09]` (the labels in the provider's own table, read back by `link_handles_in`); the code lookup; config off by default |
 | S2 | the Google Drive adapter: describe, read for every kind, paging, the 10 MB refusal, token refresh; the auth script |
 | S3 | the open tool (count settled by the routing measurement), the link-owner claim, counters |
-| S4 | the copy to her computer (§5): `file_fetch(to="computer")` over the write path shared with `computer_import`; built 2026-10-11, its `tool_selection` row not yet run |
+| S4 | the copy to her computer (§5): `computer_import` takes a link handle's code or a file link; built 2026-10-11, its `tool_selection` row not yet run |
 | S5 | live: sign-in, `.env`, config on, image rebuild; read back a link recorded as a handle with no API call, then one open per kind |
 
 S1 is useful alone: links become handles in the record before any account

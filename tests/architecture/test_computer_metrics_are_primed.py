@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from nora.agent.tools import COMPUTER_AUDIT_TOOLS
+from nora.agent.tools import COMPUTER_TOOLS
 from nora.app.computer_metrics import SWEEPER_AUDIT_TOOL
 from nora.domain.computer import COMPUTER_AUDIT_STAGES
 
@@ -65,21 +65,6 @@ def test_every_stage_that_is_primed_is_one_a_call_site_can_pass() -> None:
 
 
 def test_every_tool_a_call_site_names_is_primed() -> None:
-    primed = set(COMPUTER_AUDIT_TOOLS) | {SWEEPER_AUDIT_TOOL}
+    primed = set(COMPUTER_TOOLS) | {SWEEPER_AUDIT_TOOL}
     tools = {lit["tool"] for _, _, lit in _sites() if "tool" in lit}
     assert tools <= primed, tools - primed
-
-
-def test_every_tool_that_copies_into_the_inbox_is_primed() -> None:
-    """`_computer_copy_in(tool, ...)` writes audit rows under the CALLER's name
-    (`computer_import`, and `file_fetch` since design/external-files §5), so
-    that name's failures must be primed too."""
-    tree = ast.parse((ROOT / "agent" / "tools.py").read_text(encoding="utf-8"))
-    callers = {
-        node.args[0].value for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        and node.func.id == "_computer_copy_in" and node.args
-        and isinstance(node.args[0], ast.Constant)
-    }
-    assert callers >= {"computer_import", "file_fetch"}, callers
-    assert callers <= COMPUTER_AUDIT_TOOLS, callers - COMPUTER_AUDIT_TOOLS
