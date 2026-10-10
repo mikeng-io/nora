@@ -365,7 +365,9 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
     ),
     # design/external-files §3 (S3): a shared file link (a document,
     # spreadsheet, slides or a stored file) is `file_fetch`'s, so `web_fetch`
-    # and `media_fetch` point at it instead of fetching a sign-in page.
+    # points at it instead of fetching a sign-in page. `media_fetch` and
+    # `computer_import` accept it (`LinkInput.accepts`): they take the
+    # file's bytes through the same source, to look at or to copy.
     LinkOwner(
         network="external_files", tool="file_fetch", param="link",
         label="a link to an external file", claim=_external_file_claim,
@@ -426,8 +428,9 @@ class LinkInput:
     verb: str = ""
     #: Owner TOOLS whose links this parameter takes as its own rather than
     #: redirecting: `computer_import` copies a shared file `file_fetch` owns
-    #: (design/external-files §5), so a file link reaches its body. A tool
-    #: name, never a network.
+    #: (design/external-files §5) and `media_fetch` looks at one that is a
+    #: picture or a video, so a file link reaches their bodies. A tool name,
+    #: never a network.
     accepts: tuple[str, ...] = ()
 
 

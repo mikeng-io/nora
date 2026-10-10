@@ -408,6 +408,8 @@ async def test_a_file_link_handle_points_at_file_fetch_not_at_the_url():
         out = await tools["web_fetch"](url=given)
         assert out["status"] == "nothing_found"
         assert "file_fetch" in out["note"] and "c41d09" in out["note"]
+        # A shared picture or video is looked at, not read as text.
+        assert "media_fetch" in out["note"]
         assert "actual URL" not in out["note"]
     assert fake.fetch_calls == []
 

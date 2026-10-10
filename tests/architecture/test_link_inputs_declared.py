@@ -127,5 +127,5 @@ def test_accepts_is_an_explicit_allowlist_of_registered_owners():
         for name, spec in NATIVE_TOOLS.items()
         if any(li.accepts for li in spec.link_inputs)
     }
-    assert accepts == {"computer_import": {"file_fetch"}}
+    assert accepts == {"computer_import": {"file_fetch"}, "media_fetch": {"file_fetch"}}
     assert set().union(*accepts.values()) <= _OWNER_TOOLS

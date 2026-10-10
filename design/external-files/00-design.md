@@ -111,6 +111,7 @@ What an open can do, all of it read-only on the source:
 |---|---|
 | read it here | returns one part of the file as text into the turn |
 | work on it | `computer_import` copies the file to her computer's `inbox/` (§5) |
+| see a picture or a video | `media_fetch` looks at the file's bytes, never kept (below) |
 | make something from it | nothing new: she reads it, then makes the result with the tools she has (`document_publish` for a document, the computer for data) |
 
 The text she reads is part of that turn only. It enters memory the way
@@ -127,6 +128,21 @@ media-table row, no memoization and no in-process cache of reads. The handle's
 code hashes `provider:file_id` only, never content, so it stays the same while
 the file changes. `tests/architecture/test_external_files_are_never_cached.py`
 holds the code to it.
+
+**`media_fetch` is a byte consumer too (2026-10-11).** It asks one neutral
+question, «the bytes for this code or link», answered in order: a chat
+attachment's code (stored media); a shared file's link handle code in this
+room, a pasted file link, or a link she built around a code
+(`ExternalFilesSource.fetch_bytes`, whatever provider is wired); any other
+public link (the download). A picture or a video goes to the vision path; any
+other file is `not_an_image` with a note naming `file_fetch` and the code. A
+code that a sent picture and a link handle share is `ambiguous`. The tool
+names no provider, host or URL rule: the source and the domain's recogniser
+decide what a file link is. Its bytes and its reading are never kept: no
+stored reading, no vision cache, no video reading cache, no custody row, so
+two looks are two fetches (`tests/unit/test_media_fetch_shared_file.py`; the
+static check above cannot see inside `media_fetch`, which holds the stores for
+attachments). The answer names the handle only.
 
 **Kinds.** Every adapter maps its files onto one vocabulary, so the model
 never sees a vendor's MIME types:
@@ -164,8 +180,11 @@ Statuses specific to a file:
   was deleted.
 
 A pasted provider link is claimed in `LINK_OWNERS` (`nora/agent/link_owners.py`),
-so `web_fetch` and `media_fetch` point her at this tool instead of fetching a
-sign-in page. The owner's `label` says "external files", not Google.
+so `web_fetch` points her at this tool instead of fetching a sign-in page;
+`computer_import` and `media_fetch` accept the link (`LinkInput.accepts`) and
+take the file's bytes through the same source. A picture or a video handed to
+this tool is refused as text, and the note names `media_fetch`. The owner's
+`label` says "external files", not Google.
 
 The tool also accepts a link, for one that reached her some other way (a
 fetched page, a document); the result never echoes it.

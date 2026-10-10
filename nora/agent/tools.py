@@ -119,6 +119,7 @@ from ..domain.external_files import (
     ExternalFile,
     ExternalFileError,
     ExternalFileRef,
+    FileBytes,
     FilePart,
     quoted_handle_code,
     render_file_links,
@@ -1100,6 +1101,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # link_owners' module docstring): `media_fetch` came here to look at
     # media, so its note says so (`not_clause`) and points at what to do with
     # the redirect's result (`then`), and it "read"s a picture (`verb`).
+    # `accepts=("file_fetch",)`: a shared file's link is NOT redirected; the
+    # body asks the one `ExternalFilesSource` for its bytes and looks at a
+    # picture or a video (design/external-files §2), so a Drive photo is seen.
     # Budget 8 (2026-10-02, was 4): a document with pictures looks at one per section. On
     # 2026-10-01 she got four codes, then made fourteen more calls the ceiling refused, and
     # ended the turn without ever publishing. Each look is a vision call, so the number is
@@ -1113,7 +1117,7 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                       "url", unless="code",
                                       not_clause=", not a picture or video file",
                                       then=", then look at the media it returns",
-                                      verb="read",
+                                      verb="read", accepts=("file_fetch",),
                                   ),
                               )),
     # file_fetch (design/external-files §3, S3): reads one part of a file
@@ -2790,14 +2794,16 @@ def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
 
 
 def _file_handle_pointer(file_code: str) -> dict:
-    """The answer a fetcher gives a shared-file link handle passed to it: the
-    model is shown the handle, never the link, so the only way in is
-    `file_fetch` (always registered; unwired, it says so itself)."""
+    """The answer `web_fetch` gives a shared-file link handle passed to it: the
+    model is shown the handle, never the link, so the ways in are the tools
+    that take the code (`file_fetch` always registered; unwired, it says so
+    itself)."""
     return {
         "status": "nothing_found",
-        "note": "That is a shared file, not a web page or media, and its code "
-                "is not part of any link. Read it with file_fetch using code "
-                f"{file_code} (or, if your computer is on, copy it there with "
+        "note": "That is a shared file, not a web page, and its code is not part "
+                f"of any link. Read it with file_fetch using code {file_code}; if "
+                "it is a picture or a video, look at it with media_fetch and that "
+                "code (or, if your computer is on, copy it there with "
                 "computer_import and that code).",
     }
 
@@ -4631,7 +4637,8 @@ _FILE_NOTES: Mapping[str, str] = {
     TOO_SLOW: "That file took too long to read as text, so I stopped. Say so.",
     NOT_TEXT: (
         "That kind of file can't be read as text (a picture, a video, an archive). "
-        "Say so; don't guess what is in it."
+        "If it is a picture or a video, look at it with media_fetch and the same code "
+        "or link; otherwise say so, and don't guess what is in it."
     ),
     NO_DOWNLOAD: (
         "The owner has turned off downloading for that file, so I can't read it. Say so."
@@ -4648,6 +4655,20 @@ _FILE_COPY_NOTES: Mapping[str, str] = {
         "The owner has turned off downloading for that file, so I can't copy it. Say so."
     ),
     "refused": "I can't copy that file. Say so; don't claim it is on your computer.",
+}
+#: `media_fetch`'s notes for a shared file, where a look differs from a read
+#: (a picture or a video is looked at, never read as text); then `_FILE_NOTES`
+#: (the share-with-her note among them), then `_FILE_STATUS_NOTES`.
+_FILE_LOOK_NOTES: Mapping[str, str] = {
+    TOO_LARGE: "That file is too large for me to look at. Say so.",
+    NOT_TEXT: "That file has nothing I can look at. Say so; don't guess what it shows.",
+    NO_DOWNLOAD: (
+        "The owner has turned off downloading for that file, so I can't look at it. Say so."
+    ),
+    "refused": "I can't look at that file. Say so; don't guess what it shows.",
+    "unavailable": (
+        "I can't open shared files right now. Say so; don't guess what the file shows."
+    ),
 }
 _FILE_STATUS_NOTES: Mapping[str, str] = {
     "refused": "I can't read that file. Say so; don't guess what it says.",
@@ -8714,24 +8735,51 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return None
         return key[:HANDLE_CHARS]
 
+    async def _shared_file_bytes(ref: ExternalFileRef) -> FileBytes | dict:
+        """A shared file's bytes for `media_fetch` to look at, fetched afresh
+        through the one `ExternalFilesSource` (its own byte cap applies), or
+        the answer that stops the look. Nothing keeps the bytes: the caller
+        reads them once and drops them. The answer names `ref.handle`, never
+        the file id or the link (R-18). Never raises."""
+        if external_files is None:
+            _record_media(metrics, "unavailable", reason="files_unwired")
+            return {"status": "unavailable", "code": ref.handle,
+                    "note": _FILE_LOOK_NOTES["unavailable"]}
+        try:
+            return await external_files.fetch_bytes(ref=ref)
+        except ExternalFileError as err:
+            _record_media(metrics, err.status, reason=f"file_{err.reason[:40]}")
+            return {
+                "status": err.status, "code": ref.handle,
+                "note": _FILE_LOOK_NOTES.get(err.reason) or _FILE_NOTES.get(err.reason)
+                or _FILE_LOOK_NOTES.get(err.status) or _FILE_STATUS_NOTES[err.status],
+            }
+        except Exception:
+            # The port raises only ExternalFileError; the belt for an adapter
+            # that broke that promise. Never into the turn.
+            log.exception("media_fetch: a shared file could not be fetched")
+            _record_media(metrics, "unavailable", reason="files_error")
+            return {"status": "unavailable", "code": ref.handle,
+                    "note": _FILE_LOOK_NOTES["unavailable"]}
+
     async def media_fetch(code: str = "", url: str = "", question: str = "") -> dict:
         """Look at an image or video and say what it shows. Call this when
         answering means knowing what is IN a picture or a video.
 
         Pass exactly one: `code`, from an `[image ...]` or `[video ...]` marker
-        in this chat, or `url`, an http(s) link to a picture or video found
-        elsewhere. It cannot open a file; a voice note gives back what was said.
+        or a shared file's link handle in this chat, or `url`, a link to a
+        picture, video or shared file. A voice note gives back what was said.
 
         Leave `question` empty for the stored reading (what it shows, all its
         text), free and instant. Ask one only when that reading cannot answer
         it; each costs a fresh look.
 
-        Returns `status`: ok, nothing_found, ambiguous, not_an_image or
-        unavailable, with a `note` on how to report it.
+        Returns `status`: ok, nothing_found, ambiguous, refused, not_an_image
+        or unavailable, with a `note` on how to report it.
 
         Args:
-            code: The short code from the media marker in the transcript.
-            url: An http(s) link to a picture or video.
+            code: The short code from a media marker or a link handle.
+            url: An http(s) link to a picture, video or shared file.
             question: What you want to know about it, when the stored
                 reading does not answer it. Leave empty otherwise.
         """
@@ -8808,14 +8856,31 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "conversation or the link to a picture or a video.",
             }
 
-        # A SHARED-FILE LINK HANDLE in either slot (`[Google Doc link
-        # c41d09]`): a file, not media. Without this a `code` reduces to its
-        # six hex through `_handle_hex`, dropping the label, and could
-        # resolve to a picture that happens to share the code.
-        file_code = quoted_handle_code(code or url)
-        if file_code is not None:
-            _record_media(metrics, "nothing_found", reason="file_handle")
-            return _file_handle_pointer(file_code)
+        # ONE NEUTRAL QUESTION, «the bytes for this code or link», answered
+        # in order: a code a chat attachment has (stored media); a code a
+        # shared file's link handle has, or a pasted file link (the one
+        # `ExternalFilesSource`, whatever provider it is); any other link (a
+        # public download). No provider is named here: the port and the
+        # domain's own recogniser decide what a file link is.
+        #
+        # A handle's code in either slot, labelled or inside a link she built
+        # around it, IS the code: looked up below like any code, so a code a
+        # sent picture shares is `ambiguous`, never a guess.
+        shared: ExternalFileRef | None = None
+        made_up = quoted_handle_code(code or url)
+        if made_up is not None:
+            code, url = made_up, ""
+        else:
+            # A pasted file link, in either slot. Unwired, the domain's
+            # recogniser still knows one, so the answer is «I can't open
+            # shared files», never a download of its sign-in page.
+            pasted = url or code
+            shared = (
+                external_files.recognise(url=pasted) if external_files is not None
+                else _recognise_file_link(pasted)
+            )
+            if shared is not None:
+                code = url = ""
 
         if url:
             # ---- URL path (generic cross-tool media) ---------------------
@@ -8876,7 +8941,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             # A URL is not a sighting in this conversation, so it cannot be
             # a shared item's cover here.
             is_cover = False
-        else:
+        elif shared is None:
             # ---- code path: resolve within this conversation (§1) -------
             hex_handle = _handle_hex(code)
             if len(hex_handle) < HANDLE_CHARS:
@@ -8942,64 +9007,119 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         for sha, obj in kept.objects.items()
                         if obj.source == "fetched"
                     }
-            covers = {sha: sg.cover for sha, sg in matches.items()}
-            cover_links = {
-                sha: link for sha, sg in matches.items()
-                if sg.cover and sg.cover_body
-                and (link := _shared_page_link(sg.cover_body))
-            }
-
-            if not matches and reach.truncated:
-                # The scan stopped at its row cap: an older photo may exist
-                # that it never read, so this is «could not check», not «none».
-                _record_media(metrics, "unavailable", reason="truncated")
+            # The same six hex may name a shared file's LINK handle in this
+            # room (design/external-files §1), looked up among the room's own
+            # rows. Both kinds, or two links, is `ambiguous`: never a guess.
+            # An unreadable link lookup does not cost a picture that DID
+            # match; with none matched it is «I couldn't check».
+            links = await resolve_file_code(
+                store, code=hex_handle, conversation_id=bound_conversation_id,
+                now_ms=_now_ms(),
+            )
+            if links.status == "unavailable" and not matches:
+                _record_media(metrics, "unavailable", reason="store")
                 return {
                     "status": "unavailable", "code": hex_handle,
-                    "note": _TRUNCATED_CODE_NOTE,
+                    "note": "I can't look at media right now. Say so, but do "
+                            "not say there is no media and do not guess what "
+                            "it showed.",
                 }
-            if not matches:
-                _record_media(metrics, "nothing_found", candidates=0)
-                return {
-                    "status": "nothing_found", "code": hex_handle,
-                    "note": "I don't see media sent in this chat in the last 90 "
-                            "days with that code. Say you can't find it rather "
-                            "than guessing what it was.",
-                }
-            if len(matches) > 1:
-                # NEVER pick the first — two in-scope blobs sharing the
-                # prefix is a question, not a default (§1). List the full
-                # 6-hex handles so she can ask which.
-                _record_media(metrics, "ambiguous", candidates=len(matches))
+            if links.refs and (matches or len(links.refs) > 1):
+                _record_media(metrics, "ambiguous",
+                              candidates=len(matches) + len(links.refs))
                 return {
                     "status": "ambiguous", "code": hex_handle,
-                    "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
-                    "note": "More than one item here has that code. Ask which "
-                            "one they mean.",
+                    "note": "More than one thing here has that code (a picture "
+                            "or video sent here and a shared file's link, or two "
+                            "links). Ask which one they mean, or for the link.",
+                }
+            if links.refs:
+                shared = links.refs[0]
+            else:
+                covers = {sha: sg.cover for sha, sg in matches.items()}
+                cover_links = {
+                    sha: link for sha, sg in matches.items()
+                    if sg.cover and sg.cover_body
+                    and (link := _shared_page_link(sg.cover_body))
                 }
 
-            sha256 = next(iter(matches))
-            media_type = matches[sha256].media_type
-            serve_code = sha256[:HANDLE_CHARS]
-            is_cover = covers.get(sha256, False)
+                if not matches and (reach.truncated or links.truncated):
+                    # The scan stopped at its row cap: an older photo may exist
+                    # that it never read, so this is «could not check», not «none».
+                    _record_media(metrics, "unavailable", reason="truncated")
+                    return {
+                        "status": "unavailable", "code": hex_handle,
+                        "note": _TRUNCATED_CODE_NOTE,
+                    }
+                if not matches:
+                    _record_media(metrics, "nothing_found", candidates=0)
+                    return {
+                        "status": "nothing_found", "code": hex_handle,
+                        "note": "I don't see media sent in this chat in the last 90 "
+                                "days with that code. Say you can't find it rather "
+                                "than guessing what it was.",
+                    }
+                if len(matches) > 1:
+                    # NEVER pick the first — two in-scope blobs sharing the
+                    # prefix is a question, not a default (§1). List the full
+                    # 6-hex handles so she can ask which.
+                    _record_media(metrics, "ambiguous", candidates=len(matches))
+                    return {
+                        "status": "ambiguous", "code": hex_handle,
+                        "could_be": sorted(sha[:HANDLE_CHARS] for sha in matches),
+                        "note": "More than one item here has that code. Ask which "
+                                "one they mean.",
+                    }
 
-            # A STALE COVER: the cover of a post or reel whose line also
-            # carries the item's link. Only rows stored before the parser
-            # stopped keeping that thumbnail have this shape. Serving the
-            # cover is the live failure itself (one frame answered as the
-            # reel), so it is refused before any reading, stored or fresh,
-            # and the note names the link. A story's cover, and any cover
-            # whose line has no link, keep the ordinary path and its note.
-            stale_link = cover_links.get(sha256, "") if is_cover else ""
-            if stale_link:
-                _record_media(metrics, "nothing_found", reason="stale_cover")
+                sha256 = next(iter(matches))
+                media_type = matches[sha256].media_type
+                serve_code = sha256[:HANDLE_CHARS]
+                is_cover = covers.get(sha256, False)
+
+                # A STALE COVER: the cover of a post or reel whose line also
+                # carries the item's link. Only rows stored before the parser
+                # stopped keeping that thumbnail have this shape. Serving the
+                # cover is the live failure itself (one frame answered as the
+                # reel), so it is refused before any reading, stored or fresh,
+                # and the note names the link. A story's cover, and any cover
+                # whose line has no link, keep the ordinary path and its note.
+                stale_link = cover_links.get(sha256, "") if is_cover else ""
+                if stale_link:
+                    _record_media(metrics, "nothing_found", reason="stale_cover")
+                    return {
+                        "status": "nothing_found", "code": serve_code,
+                        "note": f"That code is only the cover picture of the item "
+                                f"at {stale_link}. If that is the item being asked "
+                                f"about, open it with instagram_read.",
+                    }
+
+        if shared is not None:
+            # ---- a shared file: bytes from the one source, never kept --
+            # A linked file is LIVE (design/external-files §2, operator
+            # 2026-10-10): its bytes are fetched afresh on every call, and
+            # nothing below keeps them or their reading. No stored reading,
+            # no vision cache, no video reading cache, no custody row. The
+            # answer names the handle only, never the file id or the link.
+            got = await _shared_file_bytes(shared)
+            if isinstance(got, dict):
+                return got
+            data, media_type = got.data, got.media_type
+            if _modality_of(media_type) not in ("image", "video"):
+                _record_media(metrics, "not_an_image", reason="shared_file")
                 return {
-                    "status": "nothing_found", "code": serve_code,
-                    "note": f"That code is only the cover picture of the item "
-                            f"at {stale_link}. If that is the item being asked "
-                            f"about, open it with instagram_read.",
+                    "status": "not_an_image", "code": shared.handle,
+                    "note": "That shared file is not a picture or a video. To "
+                            "read what it says, use file_fetch with code "
+                            f"{shared.handle}.",
                 }
+            sha256 = hashlib.sha256(data).hexdigest()
+            serve_code = shared.handle
+            is_cover = False
 
         kept_image = bool(url and serve_code)
+        # The code a non-ok answer names: a shared file's handle, else the
+        # blob's own.
+        answer_code = shared.handle if shared is not None else sha256[:HANDLE_CHARS]
 
         # ---- LAYER 1: the stored comprehension (issue #116) --------------
         #
@@ -9019,7 +9139,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # Skipped entirely when a `question` was asked: that is layer 2's
         # business and the stored reading is by construction not an answer to
         # it.
-        if not url and not question and media_store is not None:
+        if not url and shared is None and not question and media_store is not None:
             try:
                 stored = await media_store.get(sha256=sha256)
             except Exception:
@@ -9044,7 +9164,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if modality is None:
             _record_media(metrics, "not_an_image")
             return {
-                "status": "not_an_image", "code": sha256[:HANDLE_CHARS],
+                "status": "not_an_image", "code": answer_code,
                 "note": "That's a file, not something you can look at. Say "
                         "you can't look at it.",
             }
@@ -9057,7 +9177,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         if not describe_model:
             _record_media(metrics, "unavailable", reason=f"no_{modality}_describer")
             return {
-                "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                "status": "unavailable", "code": answer_code,
                 "note": f"I can't take in {modality}. Say you couldn't check "
                         f"it. Do not say it was empty and do not guess what "
                         f"was in it.",
@@ -9103,7 +9223,9 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # has its own below (DEC-198), keyed on everything its reading depends
         # on — geometry included — with the caveat stored in the reading, so
         # the two cannot come apart there either.
-        cacheable_modality = modality != "video"
+        # A shared file's reading is never cached either (it is live, §2 of
+        # design/external-files): no read, no write, at either tier.
+        cacheable_modality = modality != "video" and shared is None
         cached_description = (
             await vision_cache.aget(sha256)
             if vision_cache is not None and not question and cacheable_modality
@@ -9127,7 +9249,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # which until now paid a full video read (60-120 s a window) on every
         # ask. A `question` read bypasses it for layer 2's reason.
         video_key: VideoReadingKey | None = None
-        if modality == "video" and not question and video_readings is not None:
+        if (modality == "video" and not question and video_readings is not None
+                and shared is None):
             # Everything the model's VIEW depends on besides the key's own
             # columns: the question (a question-less read resolves
             # `DESCRIBE_PROMPTS["video"]` in the client), the declared media
@@ -9153,7 +9276,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     cover=is_cover,
                 )
 
-        if url:
+        if url or shared is not None:
             # URL path: the bytes are already in hand from the download; no
             # blob decrypt step exists for them (custody is untouched — a
             # fetched URL's bytes are never written into the conversation's
@@ -9173,7 +9296,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             if not data:
                 _record_media(metrics, "unavailable", reason="blob")
                 return {
-                    "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                    "status": "unavailable", "code": answer_code,
                     "note": "I can't open that media right now. Say so, but do "
                             "not say there is no media and do not guess what "
                             "it showed.",
@@ -9255,7 +9378,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         metrics, "unavailable",
                         reason=getattr(one, "reason", "") or cut.reason or "ffmpeg")
                     return {
-                        "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                        "status": "unavailable", "code": answer_code,
                         "note": "I couldn't get a look at that clip just now. "
                                 "Say so, and do not describe it anyway.",
                     }
@@ -9276,7 +9399,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 if not read_windows:
                     _record_media(metrics, "unavailable", reason="vision")
                     return {
-                        "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                        "status": "unavailable", "code": answer_code,
                         "note": "I couldn't get a look at that clip just now. "
                                 "Say so, and do not describe it anyway.",
                     }
@@ -9306,7 +9429,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     metrics, "unavailable",
                     reason=getattr(result, "reason", "") or "vision")
                 return {
-                    "status": "unavailable", "code": sha256[:HANDLE_CHARS],
+                    "status": "unavailable", "code": answer_code,
                     "note": "I couldn't get a look at that media just now. Say so, but do "
                             "not say there is no media and do not describe it anyway.",
                 }

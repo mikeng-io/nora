@@ -1,0 +1,86 @@
+[
+  {
+    "name": "(a) media_fetch stops accepting file_fetch's links: a pasted file link is redirected away",
+    "file": "nora/agent/tools.py",
+    "old": "verb=\"read\", accepts=(\"file_fetch\",),\n",
+    "new": "verb=\"read\",\n",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_shared_picture_is_looked_at_through_the_source"
+  },
+  {
+    "name": "(b) a shared file's reading uses the content-hash vision cache",
+    "file": "nora/agent/tools.py",
+    "old": "cacheable_modality = modality != \"video\" and shared is None\n",
+    "new": "cacheable_modality = modality != \"video\"\n",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_two_looks_are_two_fetches_and_nothing_is_kept"
+  },
+  {
+    "name": "(c) a shared file is served the stored reading of the same bytes",
+    "file": "nora/agent/tools.py",
+    "old": "if not url and shared is None and not question and media_store is not None:",
+    "new": "if not url and not question and media_store is not None:",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_two_looks_are_two_fetches_and_nothing_is_kept"
+  },
+  {
+    "name": "(d) a shared clip uses the video reading cache",
+    "file": "nora/agent/tools.py",
+    "old": "        if (modality == \"video\" and not question and video_readings is not None\n                and shared is None):",
+    "new": "        if (modality == \"video\" and not question and video_readings is not None):",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_shared_clip_skips_the_video_reading_cache"
+  },
+  {
+    "name": "(e) a code a sent picture and a link handle share is guessed, not ambiguous",
+    "file": "nora/agent/tools.py",
+    "old": "if links.refs and (matches or len(links.refs) > 1):",
+    "new": "if links.refs and len(links.refs) > 1:",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_code_a_sent_picture_and_a_link_handle_share_is_ambiguous"
+  },
+  {
+    "name": "(f) a shared file that is not a picture or video is sent to vision",
+    "file": "nora/agent/tools.py",
+    "old": "if _modality_of(media_type) not in (\"image\", \"video\"):",
+    "new": "if False:",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_shared_file_that_is_not_a_picture_points_at_file_fetch"
+  },
+  {
+    "name": "(g) unwired, a file link is not recognised and goes to the public download",
+    "file": "nora/agent/tools.py",
+    "old": "                else _recognise_file_link(pasted)\n            )\n            if shared is not None:\n                code = url = \"\"",
+    "new": "                else None\n            )\n            if shared is not None:\n                code = url = \"\"",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_unwired_a_file_link_is_unavailable_and_never_downloaded"
+  },
+  {
+    "name": "(h) an unshared file loses the share-with-her note",
+    "file": "nora/agent/tools.py",
+    "old": "\"note\": _FILE_LOOK_NOTES.get(err.reason) or _FILE_NOTES.get(err.reason)\n",
+    "new": "\"note\": _FILE_LOOK_NOTES.get(err.reason)\n",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_an_unshared_file_is_refused_with_the_share_note"
+  },
+  {
+    "name": "(i) the shared-file answer names the content hash, not the handle",
+    "file": "nora/agent/tools.py",
+    "old": "            serve_code = shared.handle\n",
+    "new": "            serve_code = sha256[:HANDLE_CHARS]\n",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_shared_picture_is_looked_at_through_the_source"
+  },
+  {
+    "name": "(j) a link handle's code is not looked up as a shared file",
+    "file": "nora/agent/tools.py",
+    "old": "            if links.refs:\n                shared = links.refs[0]\n",
+    "new": "            if False:\n                shared = links.refs[0]\n",
+    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_shared_picture_is_looked_at_through_the_source"
+  },
+  {
+    "name": "(k) file_fetch's not-text note stops pointing at media_fetch",
+    "file": "nora/agent/tools.py",
+    "old": "\"If it is a picture or a video, look at it with media_fetch and the same code \"\n        \"or link; otherwise say so, and don't guess what is in it.\"",
+    "new": "\"Say so; don't guess what is in it.\"",
+    "target": "tests/unit/test_file_fetch_tool.py::test_a_picture_is_not_text_and_the_note_points_at_media_fetch"
+  },
+  {
+    "name": "(l) web_fetch's handle pointer stops naming media_fetch",
+    "file": "nora/agent/tools.py",
+    "old": "f\"of any link. Read it with file_fetch using code {file_code}; if \"\n                \"it is a picture or a video, look at it with media_fetch and that \"\n                \"code (or,",
+    "new": "f\"of any link. Read it with file_fetch using code {file_code} \"\n                \"(or,",
+    "target": "tests/test_web_fetch_tool.py::test_a_file_link_handle_points_at_file_fetch_not_at_the_url"
+  }
+]
