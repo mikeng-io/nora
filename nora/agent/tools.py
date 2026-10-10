@@ -1128,6 +1128,11 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
     # and writes a `compute_jobs` row. `confirmed`: `started` is the row's own write after
     # the provider accepted the task. `non_idempotent`/`never`: a retry is a second clip. Level 3: a
     # status contract and two MUSTs (load the skill; no identifier in the prompt).
+    # Two picture modes, never both in one call (the provider refuses the mix; the tool refuses
+    # it first, `unavailable`): up to three `reference` photos, or one `first_frame` photo that
+    # becomes the clip's opening frame (image-to-video, amended 2026-10-10). Both sit behind
+    # `allow_reference_images`, since either photo leaves the box. No `last_frame`: no request
+    # for it yet, and it would be a fourth picture argument on a Level 3 spec.
     # Withheld unless `[video_gen]` is wired (`VIDEO_TOOLS`), tag turns only (`ToolScope`).
     "video_create": NativeTool(2, read_only=False,
                                side_effect_state="confirmed", idempotency="non_idempotent",
@@ -9660,6 +9665,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         reference: str | None = None,
         reference_2: str | None = None,
         reference_3: str | None = None,
+        first_frame: str | None = None,
     ) -> dict:
         """Make a short video clip, posted here later. Call this when
         somebody asks for a video.
@@ -9670,6 +9676,8 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         `reference`, `reference_2` and `reference_3` each take the marker code of one
         photo (`a3f2c1` from `[image a3f2c1]`), up to 3. Each must already be in this
         conversation, except your own canonical picture, which works in any room.
+        `first_frame` takes one such code instead: that photo becomes the clip's opening
+        frame. Never pass it together with a reference.
 
         MUST: the prompt goes to an outside service, so it never carries a name, phone
         number, address or other identifier.
@@ -9677,15 +9685,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         `status` is one of:
         - `started`: the clip is rendering and will be posted here later.
         - `refused`: this room's video limit for today is used; nothing was started.
-        - `nothing_found`: a reference is not a photo held here.
+        - `nothing_found`: a code is not a photo held here.
         - `unavailable`: nothing was started.
         Every result carries a `note` saying how to report it.
 
         Args:
             prompt: What the clip shows and how it moves, written for the video model.
+                With `first_frame`, only what moves and sounds after that frame.
             reference: Optional marker code of a photo, or your canonical picture.
             reference_2: Optional second marker code.
             reference_3: Optional third marker code.
+            first_frame: Optional marker code of the photo the clip starts from.
         """
         tool = "video_create"
         if video is None:
@@ -9699,14 +9709,27 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                     "note": "A video is made for the person who asked, in a turn they "
                             "started. Nothing was started."}
         wanted = [r for r in (reference, reference_2, reference_3) if r is not None]
-        if wanted and not video_refs_allowed:
+        if (wanted or first_frame is not None) and not video_refs_allowed:
+            # Checked before the mix below, so its words-only offer is never a third call.
+            # A first frame leaves the box the same way a reference does: the same gate.
             _record(metrics, tool, "unavailable", reason="references_off")
             return {"status": "unavailable",
-                    "note": "I can't use reference photos for videos right now: that "
+                    "note": "I can't use photos for videos right now: that "
                             "feature is switched off. Nothing was started; I can still "
                             "make one from words alone."}
+        if first_frame is not None and wanted:
+            # The provider refuses a first frame beside any reference; refused here, before
+            # anything is resolved or spent.
+            _record(metrics, tool, "unavailable", reason="first_frame_with_reference")
+            return {"status": "unavailable",
+                    "note": "A first frame and reference photos cannot go into one clip, so "
+                            "nothing was started. Call again with one of them: `first_frame` "
+                            "to make that photo itself move, a reference to put its subject "
+                            "in a new scene."}
         references: list[VideoReference] = []
-        for code in wanted:
+        frame: VideoReference | None = None
+        codes = [*wanted, *([first_frame] if first_frame is not None else [])]
+        for index, code in enumerate(codes):
             if _is_external_reference(code):
                 _record(metrics, tool, "nothing_found", reason="external_reference")
                 return {"status": "nothing_found",
@@ -9721,12 +9744,17 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return {"status": "nothing_found",
                         "note": "I can't find a photo with that code here. Say you can't "
                                 "use it rather than guessing. Nothing was started."}
-            references.append(VideoReference(sha256=held[0], data=held[1]))
+            picture = VideoReference(sha256=held[0], data=held[1])
+            if index < len(wanted):
+                references.append(picture)
+            else:
+                frame = picture
         out = await video.create(
             platform=room.platform if room is not None else "",
             conversation_id=bound_conversation_id, conversation_type=conversation_type,
             requester_person_id=tagger.person_id, tag_id=current_tag_id() or None,
-            request=VideoRequest(prompt=str(prompt or ""), references=tuple(references)),
+            request=VideoRequest(prompt=str(prompt or ""), references=tuple(references),
+                                 first_frame=frame),
         )
         if out.status == "at_cap":
             _record(metrics, tool, "refused", reason="daily_cap", used=out.used, cap=out.cap)

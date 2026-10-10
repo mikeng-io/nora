@@ -148,6 +148,34 @@ async def test_create_sends_the_fixed_settings_and_each_reference_as_a_data_uri(
     assert provider.requests[0].headers["Authorization"] == "Bearer k"
 
 
+async def test_a_first_frame_opens_the_clip_with_an_adaptive_ratio():
+    """Image-to-video (amended 2026-10-10): the photo goes as `role: "first_frame"`, never as a
+    reference, and `ratio` is `adaptive` (the API reference: the frame decides the shape), while
+    the configured `3:4` stays for every other task. The row records the ratio actually sent."""
+    provider = _Provider()
+    out = await _backend(provider).start(VideoRequest(
+        prompt="the cat stretches and yawns", first_frame=VideoReference("c" * 64, PNG)))
+    assert out.status == "started"
+    assert out.params["ratio"] == "adaptive"
+    body = provider.body()
+    assert body["ratio"] == "adaptive"
+    assert (body["model"], body["resolution"], body["duration"]) == ("MiniMax-H3", "480P", 15)
+    text, image = body["content"]
+    assert text == {"type": "text", "text": "the cat stretches and yawns"}
+    assert image["role"] == "first_frame"
+    assert image["image_url"]["url"].startswith("data:image/png;base64,")
+
+    words_only = _Provider()
+    await _backend(words_only).start(VideoRequest("a wave"))
+    assert words_only.body()["ratio"] == "3:4"
+
+
+def test_a_request_never_holds_a_first_frame_and_references():
+    with pytest.raises(ValueError):
+        VideoRequest("x", references=(VideoReference("a" * 64, PNG),),
+                     first_frame=VideoReference("b" * 64, PNG))
+
+
 @pytest.mark.parametrize("answer", [
     httpx.Response(500, text="upstream down"),
     httpx.Response(200, json={"base_resp": {"status_code": 2013, "status_msg": "invalid params"}}),
@@ -452,7 +480,8 @@ async def test_the_cap_is_read_from_the_table_so_a_restart_does_not_reset_it():
     assert first.status == "started"
     row = await store.get(uuid.UUID(first.id))
     assert row is not None and row.kind == VIDEO_KIND
-    assert dict(row.payload) == {"prompt": "a wave", "reference_sha256": [], "ratio": "3:4"}
+    assert dict(row.payload) == {"prompt": "a wave", "reference_sha256": [],
+                                 "first_frame_sha256": None, "ratio": "3:4"}
 
     restarted = _desk(store, starter)                 # a new process: nothing in memory
     second = await _make(restarted, tag="t2")
@@ -706,6 +735,56 @@ async def test_a_held_photo_travels_as_its_bytes_and_the_row_keeps_only_its_sha(
     (row,) = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
     assert row.payload["reference_sha256"] == [sha]
     assert row.requester_person_id == MILES.person_id and row.tag_id == "tag-v"
+
+
+async def test_a_held_photo_as_the_first_frame_travels_alone_and_the_row_keeps_its_sha():
+    (call, sha), starter, store = await _tool_rig(refs=True)
+    bind_tag_id("tag-f")
+    out = await call(prompt="it blinks and turns its head", first_frame=sha[:6])
+    assert out["status"] == "started", out
+    (sent,) = starter.calls
+    assert sent.first_frame == VideoReference(sha, PNG)
+    assert sent.references == ()
+    (row,) = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert row.payload["first_frame_sha256"] == sha
+    assert row.payload["reference_sha256"] == []
+
+
+async def test_a_first_frame_with_a_reference_is_refused_before_any_provider_call():
+    (call, sha), starter, store = await _tool_rig(refs=True)
+    bind_tag_id("tag-m")
+    out = await call(prompt="x", reference=sha[:6], first_frame=sha[:6])
+    assert out["status"] == "unavailable"
+    assert "first_frame" in out["note"] and "nothing was started" in out["note"]
+    assert starter.calls == []
+    assert await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1)) == []
+
+
+async def test_a_first_frame_is_refused_when_reference_photos_are_off():
+    """The photo leaves the box either way, so the first frame sits behind the same gate."""
+    (call, sha), starter, _ = await _tool_rig(refs=False)
+    bind_tag_id("tag-o")
+    out = await call(prompt="it blinks", first_frame=sha[:6])
+    assert out["status"] == "unavailable" and "switched off" in out["note"]
+    assert starter.calls == []
+
+
+async def test_with_photos_off_both_modes_are_told_photos_are_off_first():
+    """Telling her to retry with one mode would spend the second call on a refusal, and the
+    words-only clip it offers would then be over the turn's limit."""
+    (call, sha), starter, _ = await _tool_rig(refs=False)
+    bind_tag_id("tag-m")
+    out = await call(prompt="it blinks", reference=sha[:6], first_frame=sha[:6])
+    assert out["status"] == "unavailable" and "switched off" in out["note"]
+    assert starter.calls == []
+
+
+async def test_a_first_frame_code_not_held_here_is_nothing_found():
+    (call, _), starter, _ = await _tool_rig(refs=True)
+    bind_tag_id("tag-n")
+    out = await call(prompt="it blinks", first_frame="ffffff")
+    assert out["status"] == "nothing_found"
+    assert starter.calls == []
 
 
 async def test_an_external_link_is_never_a_reference():
