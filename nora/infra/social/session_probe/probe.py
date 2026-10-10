@@ -72,7 +72,7 @@ START_FAILED_REASON = "bridge_stopped_by_probe_start_failed"
 
 @dataclass(frozen=True)
 class ProbeConfig:
-    chrome_db: Path = Path("/home/norty/.config/google-chrome/Default/Cookies")
+    chrome_db: Path = Path("/home/norty/.local/share/nora-browser/Profile 1/Cookies")
     bridge_dir: Path = Path("/home/norty/workspace/nora/state/instagram")
     container: str = "instagram-bridge"
     bridge_port: int = 18082

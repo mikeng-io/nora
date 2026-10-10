@@ -1,7 +1,8 @@
 # deploy/session-probe — is the login still alive? (#628)
 
-The OpenCLI Chrome (`nora-social-chrome.service`, profile
-`/home/norty/.config/google-chrome/Default`) is the **single owner** of the
+The OpenCLI Chrome (`nora-social-chrome.service`, profile `Profile 1` in its
+own data folder `/home/norty/.local/share/nora-browser`, signed in as
+`nora@67.zone`) is the **single owner** of the
 Instagram, X and LinkedIn sessions. The `instagram-bridge` container is a
 **follower**: it holds a copy of Chrome's Instagram cookies in
 `state/instagram/cookies.json`. This probe runs on the host every ~10 minutes
