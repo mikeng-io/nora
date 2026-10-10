@@ -129,7 +129,12 @@ def _fmt(value: object) -> str:
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
-    return '"' + str(value).replace('"', '\\"') + '"'
+    if isinstance(value, (list, tuple)):
+        # An array stays an array. Quoting its repr turned
+        # `sources = ["google_drive"]` into the STRING "['google_drive']", and
+        # the drift check refused the run (2026-10-11).
+        return "[" + ", ".join(_fmt(item) for item in value) + "]"
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def adopted(deployment_toml: str) -> dict[str, object]:
