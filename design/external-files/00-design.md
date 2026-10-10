@@ -34,12 +34,22 @@ provider, the provider's file id and the URL as posted. **No network call is
 made at ingest.** No name, no size, no content: nothing is known about the
 file except that someone sent this link.
 
-The transcript renders it the way an attachment renders, a kind word and a
-short code: `[file c41d09]`. The code is a handle, not an identity, exactly as
-`HANDLE_CHARS` in `nora/domain/media.py` describes for media: six hex
-characters of a hash of the provider and file id, legible and quotable back
-to her, with the full reference in the row. The same file posted twice is the
+The record keeps the message body verbatim, URL included (Postgres is the
+record). What the MODEL sees is rendered: the URL is replaced, in place, by a
+kind word and a short code, `[file c41d09]`. So the model never sees a
+provider file id (a Drive id is a key-shaped string, which R-18 keeps out of
+replies), and the link cannot be echoed. This differs from an attachment,
+whose placeholder is appended after the text: here the handle stands where
+the link was.
+
+The code follows the media handle's shape (`HANDLE_CHARS` in
+`nora/domain/media.py`): six hex characters, here of a hash of the provider
+and file id rather than of content, legible and quotable back to her, with the
+full reference stored beside the message. The same file posted twice is the
 same code.
+
+A folder link is not a file and is not recognised in the first build: it
+stays an ordinary link.
 
 Because the handle lives in the message, it is recorded, recalled and scoped
 exactly like the message around it. This design adds no scoping rule and no
@@ -101,8 +111,8 @@ A pasted provider link is claimed in `LINK_OWNERS` (`nora/agent/link_owners.py`)
 so `web_fetch` and `media_fetch` point her at this tool instead of fetching a
 sign-in page. The owner's `label` says "external files", not Google.
 
-The model never sees a provider file id: a Drive id is a key-shaped string,
-which R-18 keeps out of replies. It sees the code.
+The tool also accepts a link, for one that reached her some other way (a
+fetched page, a document); the result never echoes it.
 
 ## 4. The port and the Google Drive adapter
 
@@ -142,15 +152,17 @@ cannot write, comment or share; neither can the Viewer role people grant.
 
 | need | call |
 |---|---|
-| describe | `files.get`, fields `id, name, mimeType, modifiedTime, size, owners(displayName)` |
+| describe | `files.get`, fields `id, name, mimeType, modifiedTime, size, owners(displayName)`; `size` is absent for native Google files |
 | Google Doc | `files.export` as `text/markdown` |
 | Google Sheet | `spreadsheets.get` for the tab names, then `spreadsheets.values.batchGet` (a CSV export returns the first tab only) |
 | Google Slides | `files.export` as `text/plain` |
 | PDF, docx, xlsx, pptx | `files.get?alt=media`, parsed on norty |
 
 A file in a shared folder or a shared drive opens by its link like any other
-(the folder's or drive's share grants access; shared-drive files need
-`supportsAllDrives`). `files.export` is capped at about 10 MB of output.
+(the folder's or drive's share grants access); every call sets
+`supportsAllDrives` so shared-drive files resolve. An older "anyone with the
+link" file may need its resource key: `recognise` keeps the `resourcekey`
+from the URL and the adapter sends it in `X-Goog-Drive-Resource-Keys`. `files.export` is capped at about 10 MB of output.
 
 Access tokens come from the refresh token and live in memory only.
 `invalid_grant` (revoked or expired) is `unavailable` with a reason in the
@@ -160,15 +172,19 @@ log.
 
 The token never enters the computer VM (`design/sandbox-runtime/00-design.md`
 §1: no master credential in the VM). A copy fetches the bytes in Nora's
-container and hands them over the path `computer_import` uses, into `inbox/`,
-under its size limit and lease. Her computer reaching the public web
+container and writes them into `inbox/` under the same size limit
+(`import_max_bytes`) and lease `computer_import` uses. That logic is inline in
+`computer_import` today, so S4 first moves it into a shared function both
+tools call. Her computer reaching the public web
 (DEC-289) does not change this: a shared file needs Nora's account, and the
 account stays outside.
 
 ## 6. Trust
 
-File text is written by other people: the result carries `"untrusted": True`
-like every other tool result of outside text, and it is never instructions.
+File text is written by other people: it goes into one labelled untrusted
+block, escaped and clamped (R-13, the `wrap_outside_text` shape the social
+reads use in `nora/infra/social/render.py`), and it is never instructions.
+Name, kind and modified time travel as typed fields outside the block.
 
 ## 7. Observability
 
@@ -181,7 +197,7 @@ number.
 
 | step | ships |
 |---|---|
-| S1 | the port and fake; `recognise` for Google URLs; the handle recorded at ingest and rendered `[file c41d09]` on every platform; config off by default |
+| S1 | the port and fake; `recognise` for Google URLs; a new ingest stage that records each recognised link beside its message (new storage: no link extraction exists today, and `media_json` is keyed by content hash); the render that replaces the URL with `[file c41d09]` (`file` added to the placeholder labels); the code lookup; config off by default |
 | S2 | the Google Drive adapter: describe, read for every kind, paging, the 10 MB refusal, token refresh; the auth script |
 | S3 | the open tool (count settled by the routing measurement), the link-owner claim, counters |
 | S4 | the copy to her computer (§5) |
