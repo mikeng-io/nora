@@ -57,6 +57,12 @@ same code.
 A folder link is not a file and is not recognised in the first build: it
 stays an ordinary link.
 
+A file link carried INSIDE another URL (Google's own `/url?q=` redirect,
+Outlook SafeLinks, Facebook's `l.php?u=`, a `?next=`) is found by looking in
+the wrapper's query and tail, percent-decoded and to a bounded depth, and the
+WHOLE wrapper is rendered as the handle: a wrapper left standing would carry
+the file id to the model. Two links glued together are two links.
+
 Because the handle lives in the message, it is recorded, recalled and scoped
 exactly like the message around it. This design adds no scoping rule and no
 memory of its own: she remembers that a file was sent, and what anyone said

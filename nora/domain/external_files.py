@@ -52,12 +52,13 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import itertools
 import json
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, unquote, urlsplit
 
 from nora.domain.media import HANDLE_CHARS, ROOM_MEDIA_DAYS, ROOM_MEDIA_ROWS, handle_hex
 
@@ -150,9 +151,6 @@ def render_handle(ref: ExternalFileRef) -> str:
 _GOOGLE_HOSTS = frozenset({
     "docs.google.com", "drive.google.com", "drive.usercontent.google.com",
 })
-#: Google's own redirect wrapper (`https://www.google.com/url?q=<url>`), which
-#: a link copied out of Gmail, Calendar or a search result arrives inside.
-_GOOGLE_REDIRECT_HOSTS = frozenset({"www.google.com", "google.com"})
 #: The Google adapter's words, keyed by what the URL names: the docs.google.com
 #: kind segment, or `drive` for drive.google.com/file|open|uc. The ONE place
 #: they are written; a second provider adds its own table to `LINK_LABELS`.
@@ -228,7 +226,7 @@ def _google_file_id(
     return None
 
 
-def _google(url: str, *, posted: str | None = None, depth: int = 0) -> ExternalFileRef | None:
+def _google(url: str) -> ExternalFileRef | None:
     text = url if "://" in url else f"https://{url}"
     try:
         parts = urlsplit(text)
@@ -241,12 +239,6 @@ def _google(url: str, *, posted: str | None = None, depth: int = 0) -> ExternalF
         return None
     host = (parts.hostname or "").lower()
     query = parse_qs(parts.query, keep_blank_values=False)
-    if host in _GOOGLE_REDIRECT_HOSTS and parts.path.lower() == "/url" and depth == 0:
-        # `parse_qs` has already percent-decoded the target.
-        targets = query.get("q", []) or query.get("url", [])
-        if len(targets) != 1:
-            return None
-        return _google(targets[0].strip(), posted=posted or url, depth=1)
     if host not in _GOOGLE_HOSTS:
         return None
     found = _google_file_id(host, parts.path, query)
@@ -256,7 +248,7 @@ def _google(url: str, *, posted: str | None = None, depth: int = 0) -> ExternalF
     keys = query.get("resourcekey", [])
     key = keys[0] if len(keys) == 1 and _KEY_RE.fullmatch(keys[0]) else None
     return ExternalFileRef(
-        provider="google_drive", file_id=file_id, url=posted or url, resource_key=key,
+        provider="google_drive", file_id=file_id, url=url, resource_key=key,
         label=_GOOGLE_LABELS[kind],
     )
 
@@ -282,13 +274,64 @@ def link_handles_in(text: str) -> tuple[tuple[str, str], ...]:
     return tuple((m.group(1), m.group(2)) for m in _LINK_HANDLE_RE.finditer(text))
 
 
-def recognise(url: str) -> ExternalFileRef | None:
-    """The ref one URL names, or None. Pure: no network, never raises."""
+#: How deep a link may sit inside wrappers (a redirect inside a redirect
+#: inside SafeLinks) and still be found. Bounds the work per URL.
+_NEST_DEPTH = 4
+_NEST_FANOUT = 4
+_EMBEDDED_SCHEME = re.compile(r"https?(?::|%3A)(?://|%2F%2F)", re.IGNORECASE)
+
+
+def _inner_urls(url: str) -> list[str]:
+    """The URLs a wrapper carries: every query value (percent-decoded by
+    `parse_qs`) and every tail that starts at an embedded scheme, raw or
+    percent-encoded. Google's `/url?q=`, Outlook SafeLinks' `?url=`,
+    Facebook's `l.php?u=`, a `?next=` and a path-embedded link all reduce to
+    one of these, so no wrapper is named."""
+    # Bounded: at most `_NEST_FANOUT` candidates per level, taken lazily, so a
+    # crafted URL with thousands of embedded schemes costs a fixed number of
+    # parses. # ponytail: a link hidden behind more than that many decoys is
+    # not unwrapped; the poster chose to hide it.
+    out: list[str] = []
+    text = url if "://" in url else f"https://{url}"
+    try:
+        query = urlsplit(text).query
+    except ValueError:
+        query = ""
+    for _key, value in parse_qsl(query, keep_blank_values=False, max_num_fields=None):
+        if "/" in value:
+            out.append(value.strip())
+            if len(out) >= _NEST_FANOUT:
+                return out
+    for match in itertools.islice(_EMBEDDED_SCHEME.finditer(url, 1), _NEST_FANOUT - len(out)):
+        tail = url[match.start():]
+        out.append(unquote(tail) if "%" in tail else tail)
+    return out
+
+
+def _recognise(url: str, depth: int) -> ExternalFileRef | None:
     for recogniser in _RECOGNISERS:
-        ref = recogniser(url.strip())
+        ref = recogniser(url)
         if ref is not None:
             return ref
+    if depth >= _NEST_DEPTH:
+        return None
+    for inner in _inner_urls(url):
+        ref = _recognise(inner, depth + 1)
+        if ref is not None:
+            # The ref names the file inside; its URL is the one posted.
+            return dataclasses.replace(ref, url=url)
     return None
+
+
+def recognise(url: str) -> ExternalFileRef | None:
+    """The ref one URL names, or None. Pure: no network, never raises.
+
+    A URL that is not itself a file link is looked INSIDE: a file link carried
+    in its query or its tail (a redirect, a SafeLinks wrapper, `?next=`) is
+    the ref, and the WHOLE outer URL is what the render replaces, since the
+    record keeps the body verbatim and a wrapper left standing would carry the
+    file id through to the model."""
+    return _recognise(url.strip(), 0)
 
 
 # --- Finding links in text --------------------------------------------------
@@ -314,18 +357,39 @@ _URL_RUN = re.compile(
     r"[A-Za-z0-9\-._:/?#@!$&+,;=%]*",
     re.IGNORECASE,
 )
-#: Trailing characters that end a sentence or a chat format, not a link.
-_TRAILING = ".,;:!?_+="
+#: Trailing characters that end a sentence or a chat format, not a link. `_`
+#: is NOT here: a Drive id is base64url and may end in one, so a trailing `_`
+#: is stripped only when the link also opened with one (`_url_` emphasis).
+_TRAILING = ".,;:!?+="
+#: Where a SECOND link glued straight onto the first starts: an embedded
+#: scheme NOT preceded by a character that makes it a parameter or a path of
+#: the first (`?next=https://…`, `/https://…`, `%2Fhttps…`).
+_GLUED = re.compile(r"(?<![=/?&#%:(])https?://", re.IGNORECASE)
+
+
+def _trim(text: str, start: int, end: int) -> int:
+    """`end` with sentence and chat punctuation dropped from the link's tail."""
+    while end > start:
+        last = text[end - 1]
+        if last in _TRAILING or (last == "_" and start > 0 and text[start - 1] == "_"):
+            end -= 1
+        else:
+            break
+    return end
 
 
 def _links(text: str) -> Iterable[tuple[int, int, ExternalFileRef]]:
     for match in _URL_RUN.finditer(text):
         start, end = match.span()
-        while end > start and text[end - 1] in _TRAILING:
-            end -= 1
-        ref = recognise(text[start:end])
-        if ref is not None:
-            yield start, end, ref
+        # Two links glued together (`<url>https://<url>`) are two links.
+        cuts = [start] + [
+            start + g.start() for g in _GLUED.finditer(text[start:end], 1)
+        ] + [end]
+        for a, b in itertools.pairwise(cuts):
+            b = _trim(text, a, b)
+            ref = recognise(text[a:b])
+            if ref is not None:
+                yield a, b, ref
 
 
 def file_refs_in(text: str | None) -> tuple[ExternalFileRef, ...]:

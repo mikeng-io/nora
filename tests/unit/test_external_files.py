@@ -70,6 +70,17 @@ DRIVE = f"https://drive.google.com/open?id={ID}"
     f"https://docs.google.com/document/d/{ID}%2Fedit",
     f"https://docs.google.com/uc?id={ID}",
     f"https://drive.usercontent.google.com/download?id={ID}&export=download",
+    # A file link INSIDE another URL (re-review of PR 795): the whole wrapper
+    # becomes the handle.
+    f"https://example.com/?next={DOC}",
+    f"https://example.com/{DOC}",
+    f"example.com/?next={DOC}",
+    "https://example.com/?u=https%3A%2F%2Fdocs.google.com%2Fdocument%2Fd%2F" + ID,
+    "https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fdocs.google.com"
+    f"%2Fdocument%2Fd%2F{ID}%2Fedit&data=05%7C02&reserved=0",
+    f"https://l.facebook.com/l.php?u=https%3A%2F%2Fdrive.google.com%2Fopen%3Fid%3D{ID}&h=AT0",
+    f"https://www.google.com/url?q=https://www.google.com/url?q={DOC}",
+    f"[x](https://www.google.com/url?q={DOC})",
 ])
 def test_the_link_never_leaks_however_it_is_written(text):
     """Review of PR 795: each of these reached a model as the raw URL. The
@@ -77,6 +88,43 @@ def test_the_link_never_leaks_however_it_is_written(text):
     rendered = render_file_links(text)
     assert ID not in rendered and "google.com" not in rendered.lower(), rendered
     assert [r.file_id for r in file_refs_in(text)] == [ID]
+
+
+ID_UNDERSCORE = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123_"
+
+
+@pytest.mark.parametrize("text", [
+    f"https://docs.google.com/document/d/{ID_UNDERSCORE}",
+    f"https://drive.google.com/open?id={ID_UNDERSCORE}",
+    f"see https://docs.google.com/document/d/{ID_UNDERSCORE}.",
+    f"https://docs.google.com/document/d/{ID_UNDERSCORE}/edit",
+])
+def test_an_id_ending_in_an_underscore_keeps_it(text):
+    """Drive ids are base64url: a trailing `_` is part of the id unless the
+    link also OPENED with one (`_url_` emphasis, tested above)."""
+    want = hashlib.sha256(f"google_drive:{ID_UNDERSCORE}".encode()).hexdigest()[:6]
+    assert [r.file_id for r in file_refs_in(text)] == [ID_UNDERSCORE]
+    rendered = render_file_links(text)
+    assert want in rendered and not rendered.split("]")[-1].startswith("_")
+
+
+def test_emphasis_underscores_are_not_part_of_the_id():
+    assert [r.file_id for r in file_refs_in(f"_{DRIVE}_")] == [ID]
+    assert render_file_links(f"_{DRIVE}_") == f"_[Google Drive link {HANDLE}]_"
+
+
+def test_two_links_glued_together_are_two_links():
+    text = f"{DOC}https://drive.google.com/file/d/{OTHER}/view"
+    assert [r.file_id for r in file_refs_in(text)] == [ID, OTHER]
+    rendered = render_file_links(text)
+    assert ID not in rendered and OTHER not in rendered
+    assert rendered.count("[Google ") == 2
+
+
+def test_a_wrapper_keeps_its_posted_url_and_names_the_inner_file():
+    wrapped = f"https://example.com/?next={DOC}"
+    (ref,) = file_refs_in(f"see {wrapped} ok")
+    assert (ref.file_id, ref.url, ref.label) == (ID, wrapped, "Google Doc link")
 
 
 def test_the_resource_key_is_kept():
