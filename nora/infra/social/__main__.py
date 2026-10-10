@@ -36,7 +36,10 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     port = int(os.environ.get("NORA_SOCIAL_BRIDGE_PORT", "19826"))
     hosts = parse_bind_hosts(os.environ.get("NORA_SOCIAL_BRIDGE_HOST", "127.0.0.1"))
-    bridge = SocialBridge(opencli_bin=os.environ.get("OPENCLI_BIN", "opencli"))
+    bridge = SocialBridge(
+        opencli_bin=os.environ.get("OPENCLI_BIN", "opencli"),
+        opencli_profile=os.environ.get("OPENCLI_PROFILE", "nora"),
+    )
     web.run_app(bridge.app(), host=hosts, port=port, print=None)
 
 

@@ -31,6 +31,7 @@ def config_from_env(env: dict[str, str] | None = None) -> ProbeConfig:
         container=e.get("NORA_PROBE_BRIDGE_CONTAINER", base.container),
         state_file=Path(e.get("NORA_PROBE_STATE_FILE", str(base.state_file))),
         opencli_bin=e.get("OPENCLI_BIN", base.opencli_bin),
+        opencli_profile=e.get("OPENCLI_PROFILE", base.opencli_profile),
         live_interval=timedelta(seconds=float(e.get("NORA_PROBE_LIVE_INTERVAL_S", "3600"))),
     )
 

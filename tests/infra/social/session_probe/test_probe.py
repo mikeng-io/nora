@@ -66,8 +66,8 @@ class FakeWorld:
             if self.start_rc == 0:
                 self.running = True
             return RunResult(self.start_rc)
-        if len(argv) >= 3 and argv[2] == "whoami":
-            return self.whoami.get(argv[1], RunResult(0, "{}"))
+        if argv[1:3] == ["--profile", "nora"] and len(argv) >= 5 and argv[4] == "whoami":
+            return self.whoami.get(argv[3], RunResult(0, "{}"))
         raise AssertionError(f"unexpected process: {argv}")
 
     def send(self, message: AlertMessage) -> bool:
@@ -81,7 +81,8 @@ class FakeWorld:
         return sum(1 for c in self.calls if c[:2] == ["docker", "start"])
 
     def whoami_sites(self) -> list[str]:
-        return [c[1] for c in self.calls if len(c) > 2 and c[2] == "whoami"]
+        return [c[3] for c in self.calls
+                if c[1:3] == ["--profile", "nora"] and len(c) > 4 and c[4] == "whoami"]
 
 
 def jar(*, ig: str | None = CHROME_SID, x: bool = True, li: bool = True) -> list[ChromeCookie]:
