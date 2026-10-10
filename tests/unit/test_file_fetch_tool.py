@@ -20,6 +20,7 @@ from nora.agent.room import Room
 from nora.domain.external_files import file_refs_in
 from nora.domain.models import NormalizedMessage
 from nora.infra.external_files.google_drive import GoogleDriveSource
+from nora.infra.google.auth import GoogleCredentials
 from nora.obs.metrics import Metrics
 from nora.testing import FakeMemoryStore
 from nora.testing.external_files import FakeExternalFilesSource, FakeFile
@@ -58,8 +59,11 @@ def _server() -> FakeDriveServer:
 
 def _drive(server: FakeDriveServer) -> GoogleDriveSource:
     return GoogleDriveSource(
-        client_id="cid", client_secret="cs",  # noqa: S106 - a test value
-        refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
+        credentials=GoogleCredentials(
+            client_id="cid", client_secret="cs",  # noqa: S106 - a test value
+            refresh_token=server.refresh_token, metrics=Metrics(), transport=server.transport,
+        ),
+        transport=server.transport,
     )
 
 
@@ -196,3 +200,59 @@ async def test_every_call_fetches_afresh():
     server.files[ID].exports["text/markdown"] = b"changed"
     out = await tool(link=DOC_URL)
     assert server.reads(ID) == 2 * once and "changed" in out["text"]
+
+
+# ---- review of PR 802 -------------------------------------------------------
+
+OTHER = "1SynthOtherDoc00000000000"
+
+
+def _no_id_or_url_in(out: dict, *file_ids: str) -> None:
+    """R-18 for a link INSIDE the file: rendered as its handle (whose label is
+    S1's, `[Google Doc link c41d09]`), never as its id or URL."""
+    text = json.dumps(out)
+    assert "http" not in text.lower(), text
+    for file_id in file_ids:
+        assert file_id not in text
+
+
+async def test_a_link_inside_the_file_reaches_the_model_as_a_handle():
+    """R-18 holds for the file's own words: a file link in the text is
+    rendered as its handle before the part is wrapped."""
+    server = _server()
+    server.files[ID].exports["text/markdown"] = (
+        f"See https://docs.google.com/document/d/{OTHER}/edit for more".encode()
+    )
+    out = await _tool(_drive(server))(link=DOC_URL)
+    assert out["status"] == "ok"
+    assert f"link {_code(OTHER)}]" in out["text"]
+    _no_id_or_url_in(out, ID, OTHER)
+
+
+async def test_a_long_name_is_clamped_and_the_note_says_name_and_text_are_untrusted():
+    server = _server()
+    server.files[ID].name = "Plan " + "x" * 5_000 + f" https://docs.google.com/document/d/{OTHER}/edit"
+    out = await _tool(_drive(server))(link=DOC_URL)
+    assert len(out["name"]) <= 200 and out["name"].startswith("Plan x")
+    assert "untrusted" in out["note"] and "name" in out["note"]
+    _no_id_or_url_in(out, ID, OTHER)
+
+
+async def test_a_link_in_a_name_is_a_handle_too():
+    server = _server()
+    server.files[ID].name = f"Notes for https://docs.google.com/document/d/{OTHER}/edit"
+    out = await _tool(_drive(server))(link=DOC_URL)
+    assert out["name"].startswith("Notes for [") and _code(OTHER) in out["name"]
+    _no_id_or_url_in(out, ID, OTHER)
+
+
+async def test_a_parse_past_its_deadline_says_it_took_too_long():
+    from nora.domain.external_files import TOO_SLOW, ExternalFileError
+
+    class _Slow(FakeExternalFilesSource):
+        async def read(self, *, ref, part):
+            raise ExternalFileError("refused", TOO_SLOW)
+
+    source = _Slow(files={ID: FakeFile("Plan")})
+    out = await _tool(source)(link=DOC_URL)
+    assert out["status"] == "refused" and "too long" in out["note"]

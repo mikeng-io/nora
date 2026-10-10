@@ -373,12 +373,18 @@ LINK_OWNERS: tuple[LinkOwner, ...] = (
 )
 
 
-def owner_of(text: str) -> tuple[LinkOwner, LinkClaim] | None:
+def owner_of(
+    text: str, *, unwired: frozenset[str] = frozenset(),
+) -> tuple[LinkOwner, LinkClaim] | None:
     """The first owner in `LINK_OWNERS` that claims `text`, or `None`. `text`
     is read exactly as a fetcher's argument arrives — untrimmed, with or
     without a scheme — because each recogniser applies its own
-    `_with_scheme` before its parser sees it."""
+    `_with_scheme` before its parser sees it. An owner whose tool is in
+    `unwired` (it cannot read anything this turn: `file_fetch` with no
+    source) claims nothing."""
     for owner in LINK_OWNERS:
+        if owner.tool in unwired:
+            continue
         claim = owner.claim(text)
         if claim is not None:
             return owner, claim

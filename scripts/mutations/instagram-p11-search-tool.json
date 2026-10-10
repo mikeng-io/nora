@@ -86,7 +86,7 @@
   {
     "name": "x_read stops naming instagram_read for an Instagram link (DEC-201: was social_fetch's redirect; re-pointed at the link-owner registry lookup design 30 PR 3 replaced this branch with)",
     "file": "nora/agent/tools.py",
-    "old": "                found = _other_link_owner(text, \"x_read\")",
+    "old": "                found = _other_link_owner(text, \"x_read\", unwired_owners)",
     "new": "                found = None",
     "target": "tests/unit/test_x_tools.py::test_an_instagram_link_names_the_tool_that_reads_it"
   },
