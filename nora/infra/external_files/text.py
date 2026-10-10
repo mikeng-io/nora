@@ -160,7 +160,7 @@ def pdf_text(data: bytes, max_chars: int = MAX_TEXT_CHARS) -> str:
             words = (page.extract_text() or "").strip() or "(no text on this page)"
             budget.take(len(words) + 16)
             out.append(f"## Page {n}\n{words}")
-    except ExternalFileError:
+    except (ExternalFileError, MemoryError):
         raise
     except Exception as exc:
         log.info("a PDF could not be read as text: %s", type(exc).__name__)
@@ -304,7 +304,9 @@ def _office(read: Callable[[_Package], str]) -> Callable[..., str]:
     def run(data: bytes, max_bytes: int, max_chars: int = MAX_TEXT_CHARS) -> str:
         try:
             return read(_Package(data, max_bytes, max_chars))
-        except ExternalFileError:
+        except (ExternalFileError, MemoryError):
+            # MemoryError is not "not text": it reaches the parse child,
+            # which answers it as too large (re-review of PR 801).
             raise
         except Exception as exc:
             log.info("an Office file could not be read as text: %s", type(exc).__name__)
@@ -408,7 +410,9 @@ class _Book(_Reader):
 
 class _Sheet(_Reader):
     """One worksheet: each `<c>` becomes a cell at its column, its padding
-    charged before it is allocated."""
+    charged before it is allocated; each row's line is charged in full when it
+    is made, less what its cells already paid (re-review of PR 801: a row's
+    `| ... |` was never charged, and 1.5M empty rows made 7.5M chars)."""
 
     def __init__(self, chars: _Budget, shared: list[str]) -> None:
         self.chars = chars
@@ -419,10 +423,16 @@ class _Sheet(_Reader):
         self.col = 0
         self.inside = False
         self.buf: list[str] = []
+        self.paid = 0  # chars this row's cells have already charged
+
+    def _take(self, n: int) -> None:
+        self.chars.take(n)
+        self.paid += n
 
     def start(self, tag: str, attrs: dict[str, str]) -> None:
         if tag == f"{_S}row":
             self.row = []
+            self.paid = 0
         elif tag == f"{_S}c":
             self.kind = attrs.get("t", "")
             self.col = _column(attrs.get("r", ""))
@@ -432,7 +442,7 @@ class _Sheet(_Reader):
 
     def data(self, text: str) -> None:
         if self.inside:
-            self.chars.take(len(text))
+            self._take(len(text))
             self.buf.append(text)
 
     def end(self, tag: str) -> None:
@@ -451,13 +461,16 @@ class _Sheet(_Reader):
             # Inline text was charged as it streamed; a shared string is
             # charged at every use, since each use repeats it in the output.
             shared_cost = len(value) if self.kind in ("s", "b") else 0
-            self.chars.take(3 * max(gap, 0) + shared_cost + 3)
+            self._take(3 * max(gap, 0) + shared_cost + 3)
             if gap > 0:
                 self.row += [""] * gap
             self.row.append(_cell(value))
         elif tag == f"{_S}row":
-            self.lines.append("| " + " | ".join(self.row) + " |")
+            line = "| " + " | ".join(self.row) + " |"
+            self.chars.take(max(len(line) + 1 - self.paid, 0))
+            self.lines.append(line)
             self.row = []
+            self.paid = 0
 
 
 def _xlsx(pkg: _Package) -> str:

@@ -28,6 +28,8 @@ from urllib.parse import parse_qs
 
 import httpx
 
+#: Spelled here, not imported: `nora.testing` sits below `nora.infra`.
+DRIVE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
 GDOC = "application/vnd.google-apps.document"
 GSHEET = "application/vnd.google-apps.spreadsheet"
 GSLIDES = "application/vnd.google-apps.presentation"
@@ -83,6 +85,8 @@ class FakeDriveServer:
     #: answers a 403 `PERMISSION_DENIED` whose detail says `SERVICE_DISABLED`.
     sheets_disabled: bool = False
     _issued: int = 0
+    _minted: int = 0
+    _token_scopes: dict[str, frozenset[str]] = field(default_factory=dict)
 
     def _body(self, data: bytes) -> httpx.Response:
         if self.gzip_bodies:
@@ -100,8 +104,22 @@ class FakeDriveServer:
         """Every access token issued so far stops working (as at expiry)."""
         self._issued += 1
 
-    def _current(self) -> str:
-        return f"access-{self._issued}"
+    def _live(self, request: httpx.Request) -> frozenset[str] | None:
+        """The scopes of the request's bearer token, or None when it is not a
+        token of the current generation."""
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        if not token.startswith(f"access-{self._issued}-"):
+            return None
+        return self._token_scopes.get(token)
+
+    def token_scopes_asked(self) -> list[str | None]:
+        """Each token request's `scope=` form value (None: none sent)."""
+        out = []
+        for r in self.requests:
+            if r.url.host == "oauth2.googleapis.com":
+                form = {k: v[0] for k, v in parse_qs(r.content.decode()).items()}
+                out.append(form.get("scope"))
+        return out
 
     def reads(self, file_id: str) -> int:
         """How many API requests named `file_id` (token calls excluded)."""
@@ -113,8 +131,11 @@ class FakeDriveServer:
             raise httpx.ConnectError("unreachable", request=request)
         if request.url.host == "oauth2.googleapis.com":
             return self._token(request)
-        if request.headers.get("Authorization") != f"Bearer {self._current()}":
+        scopes = self._live(request)
+        if scopes is None:
             return _error(401, "authError")
+        if DRIVE_READONLY not in scopes:
+            return _error(403, "insufficientPermissions")
         if self.rate_limited:
             return _error(429, "rateLimitExceeded")
         path = request.url.path
@@ -133,9 +154,19 @@ class FakeDriveServer:
                 "error": "invalid_grant",
                 "error_description": "Token has been expired or revoked.",
             })
+        granted = frozenset(self.granted_scopes.split())
+        # An explicit `scope` mints a token for that subset alone, as Google
+        # does; asking beyond the grant is `invalid_scope`. No `scope`: the
+        # whole grant.
+        asked = frozenset(form["scope"].split()) if "scope" in form else granted
+        if not asked <= granted:
+            return _reply(400, {"error": "invalid_scope"})
+        self._minted += 1
+        token = f"access-{self._issued}-{self._minted}"
+        self._token_scopes[token] = asked
         return _reply(200, {
-            "access_token": self._current(), "expires_in": 3599,
-            "scope": self.granted_scopes,
+            "access_token": token, "expires_in": 3599,
+            "scope": " ".join(sorted(asked)),
             "token_type": "Bearer",
         })
 

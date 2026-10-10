@@ -12,9 +12,15 @@ token for norty's `.env` (`GOOGLE_OAUTH_REFRESH_TOKEN`, or whatever
 - **One identity for every Google service** (operator, 2026-10-10): it asks
   for the UNION of the scopes every service declares
   (`nora.infra.google.scopes.all_scopes`, `drive.readonly` alone today), with
-  `access_type=offline`, `prompt=consent` (a refresh token every time) and
-  `include_granted_scopes=true`. Adding a service is a row in that table and
-  one re-run of this script with the same client.
+  `access_type=offline` and `prompt=consent` (a refresh token every time).
+  NOT `include_granted_scopes`: scopes granted to this client before are not
+  folded in, so the token holds what Nora's services declare and nothing
+  else. Adding a service is a row in that table and one re-run of this script
+  with the same client.
+- **A grant that could write, undeclared, is refused** (re-review of PR 801):
+  if Google grants a scope that can write and that no service declared
+  (`scopes.undeclared_write_scopes`), the refresh token is NOT printed and the
+  script exits 1. Nora refuses such a token at runtime too.
 - The client id and secret are read from `GOOGLE_OAUTH_CLIENT_ID` /
   `GOOGLE_OAUTH_CLIENT_SECRET`, or asked for (the secret without echo).
 - **Nothing is written to disk.** The token is printed once; put it in `.env`
@@ -40,7 +46,7 @@ import webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from nora.infra.google.scopes import all_scopes
+from nora.infra.google.scopes import all_scopes, undeclared_write_scopes
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"  # noqa: S105 - an endpoint
@@ -49,16 +55,27 @@ SCOPES = all_scopes()
 
 def consent_url(*, client_id: str, redirect_uri: str, state: str, challenge: str) -> str:
     """The consent URL: every service's scope at once, offline access,
-    always a consent screen (so a refresh token is always issued), the
-    scopes granted before kept, PKCE S256."""
+    always a consent screen (so a refresh token is always issued), no earlier
+    grants folded in, PKCE S256."""
     return AUTH_URL + "?" + urllib.parse.urlencode({
         "client_id": client_id, "redirect_uri": redirect_uri,
         "response_type": "code", "scope": " ".join(SCOPES),
         "access_type": "offline", "prompt": "consent",
-        "include_granted_scopes": "true",
         "state": state, "code_challenge": challenge,
         "code_challenge_method": "S256",
     })
+
+
+def granted_is_safe(granted: frozenset[str]) -> bool:
+    """False, with the reason on stderr, when the grant holds a scope that
+    could write and that no service declared."""
+    extra = undeclared_write_scopes(granted)
+    if extra:
+        print(f"refused: Google granted scopes that can write and that no Nora service "
+              f"declared: {list(extra)}. The refresh token is not printed. Revoke "
+              "this app's access in the account, then run this again.", file=sys.stderr)
+        return False
+    return True
 
 
 def _pkce() -> tuple[str, str]:
@@ -125,7 +142,10 @@ def main() -> int:
     if not refresh:
         print("Google returned no refresh token; nothing to print", file=sys.stderr)
         return 1
-    missing = sorted(set(SCOPES) - set(str(tokens.get("scope", "")).split()))
+    granted = frozenset(str(tokens.get("scope", "")).split())
+    if not granted_is_safe(granted):
+        return 1
+    missing = sorted(set(SCOPES) - granted)
     if missing:
         print(f"warning: not granted, those services stay unavailable: {missing}",
               file=sys.stderr)

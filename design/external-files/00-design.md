@@ -216,9 +216,18 @@ and one re-run of the sign-in script, same client.
    setup. The unverified-app warning is expected for one account.
 4. Run `uv run python scripts/google_auth.py` on a machine with a browser,
    sign in as `nora@67.zone` and approve. It asks for the union of every
-   service's scope (`access_type=offline`, `prompt=consent`,
-   `include_granted_scopes=true`) and prints one refresh token for
-   `GOOGLE_OAUTH_REFRESH_TOKEN` in norty's `.env`; it writes nothing.
+   service's scope (`access_type=offline`, `prompt=consent`; no
+   `include_granted_scopes`, so nothing granted to the client earlier is
+   folded in) and prints one refresh token for `GOOGLE_OAUTH_REFRESH_TOKEN`
+   in norty's `.env`; it writes nothing. A grant holding a scope that could
+   write and that no service declared is refused: no token is printed.
+
+**Read-only in the credential** (re-review, 2026-10-11). The refresh token
+is shared, the access tokens are not: each service's token is minted with an
+explicit `scope=` for the scopes it declared, so the Drive adapter's token
+carries `drive.readonly` alone whatever else the grant holds. At runtime a
+grant holding an undeclared write scope makes every Google service
+`unavailable`, with an error log naming the scope.
 
 **Scope:** `drive.readonly`, nothing else (the Sheets reads accept it). It
 cannot write, comment or share; neither can the Viewer role people grant.

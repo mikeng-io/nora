@@ -23,3 +23,25 @@ CONSUMER_SCOPES: dict[str, str] = {
 def all_scopes() -> tuple[str, ...]:
     """The union the one refresh token must be granted, sorted."""
     return tuple(sorted(set(CONSUMER_SCOPES.values())))
+
+
+#: Scopes that only identify the account; they read nothing of the user's.
+_IDENTITY_SCOPES = frozenset({
+    "openid", "email", "profile",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+})
+
+
+def is_read_only(scope: str) -> bool:
+    """A scope that cannot change anything: a `.readonly` scope or an identity
+    one. Everything else is treated as able to write, fail-closed."""
+    return scope.endswith(".readonly") or scope in _IDENTITY_SCOPES
+
+
+def undeclared_write_scopes(granted: frozenset[str] | set[str]) -> tuple[str, ...]:
+    """Scopes in `granted` that could write and that no consumer declared,
+    sorted. A grant with any is refused whole (re-review of PR 801: read-only
+    must hold in the credential, not only in the code that uses it)."""
+    declared = set(CONSUMER_SCOPES.values())
+    return tuple(sorted(s for s in granted if s not in declared and not is_read_only(s)))

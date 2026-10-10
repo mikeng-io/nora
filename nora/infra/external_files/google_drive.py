@@ -438,7 +438,7 @@ class GoogleDriveSource:
             if status == 200:
                 return body
             if status == 401 and attempt == 1:
-                self._credentials.invalidate()
+                self._credentials.invalidate(scope=DRIVE_SCOPE)
                 continue
             failure = _failure(status, body)
             log.info("external file %s: http %s -> %s %s", ref.handle, status,
