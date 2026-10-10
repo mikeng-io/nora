@@ -15023,8 +15023,13 @@ Args:
         code = code.strip() if isinstance(code, str) else ""
         link = link.strip() if isinstance(link, str) else ""
         # A link pasted into `code` is a link: it must never reach the audit
-        # row as a code, nor be looked up as one.
-        if not link and code.startswith(("http://", "https://")):
+        # row as a code, nor be looked up as one. The domain's recogniser
+        # knows a file link with no scheme or an upper-case one
+        # (`docs.google.com/...`, `HTTPS://...`); any other URL is caught by
+        # its scheme, case-insensitively (review of PR 807).
+        if not link and code and (
+            _recognise_file_link(code) is not None or "://" in code.lower()
+        ):
             code, link = "", code
         # Recognising a link is pure (no network), so the audit request can
         # name the file by its handle before anything runs. Never the URL.
@@ -15034,9 +15039,12 @@ Args:
             (external_files.recognise(url=link) if external_files else _recognise_file_link(link))
             if link else None
         )
-        request: dict[str, object] = {"code": code}
+        # The audit request carries what is looked up, the code's hex, never
+        # the raw argument: a model can put anything in `code`.
+        request: dict[str, object] = {"code": _handle_hex(code)}
         if link:
-            request = {"code": code, "link": linked.handle if linked else "not a file link"}
+            request = {"code": _handle_hex(code),
+                       "link": linked.handle if linked else "not a file link"}
         # The shared file this copy is of, once described: its name, kind
         # and modified time shape the `ok` answer.
         described: ExternalFile | None = None
@@ -15120,7 +15128,10 @@ Args:
             # The same six hex may name a shared file's LINK handle too
             # (design/external-files §1): looked up among this room's own
             # rows, like a media code. A code both kinds answer is never
-            # guessed between: `ambiguous`.
+            # guessed between: `ambiguous`. A link lookup that could not be
+            # read does not cost a sent file that DID match: the import goes
+            # on as before S4 (review of PR 807); with no sent file matched,
+            # it is `unavailable`, never «nothing here».
             shared: tuple[ExternalFileRef, ...] = ()
             shared_cut = False
             if len(hex_handle) >= HANDLE_CHARS and store is not None:
@@ -15128,7 +15139,7 @@ Args:
                     store, code=hex_handle, conversation_id=bound_conversation_id,
                     now_ms=_now_ms(),
                 )
-                if found.status == "unavailable":
+                if found.status == "unavailable" and not matches:
                     return _Stopped("unavailable", {"code": hex_handle,
                                                     "reason": "link lookup unreadable"},
                                     {"status": "unavailable",

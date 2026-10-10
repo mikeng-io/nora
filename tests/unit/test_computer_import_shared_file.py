@@ -132,13 +132,13 @@ async def _store(*posts: tuple[str, str], blobs: tuple[MediaBlob, ...] = ()) -> 
     return store
 
 
-def _tools(source, computer: _Computer, store=None) -> dict:
+def _tools(source, computer: _Computer, store=None, blobs=None) -> dict:
     room = Room(platform="signal", conversation_id=GROUP, roster_source=None,
                 persons=_NoPersons())
     specs = build_tool_specs(
         store=store or FakeRecordStore(), conversation_id=GROUP, conversation_type="group",
         persons=_NoPersons(), honcho=None, deliverer=None, metrics=Metrics(),
-        room=room, transit_source=None, blob_store=FakeBlobStore(),
+        room=room, transit_source=None, blob_store=blobs or FakeBlobStore(),
         computer=computer.runtime, computer_events=computer.events,
         computer_settings=computer.settings, computer_leases=computer.leases,
         external_files=source,
@@ -180,13 +180,22 @@ async def test_a_link_handles_code_copies_the_office_export(file_id, url, kind, 
     assert out["modified"] == "2026-10-09T16:00+08:00" and "snapshot" in out["note"]
     started, finished = computer.rows()
     assert (started.phase, finished.phase, finished.status) == ("started", "finished", "ok")
-    assert started.request == {"code": marker}
+    assert started.request == {"code": _code(file_id)}
 
 
-@pytest.mark.parametrize("args", [{"link": DOC_URL}, {"code": DOC_URL}])
+#: A link as a model may paste it into `code`: with its scheme, with none,
+#: with an upper-case one (review of PR 807: the last two once reached the
+#: audit row raw, the Drive file id with them).
+SCHEMELESS = DOC_URL.removeprefix("https://")
+UPPER = "HTTPS://" + SCHEMELESS
+
+
+@pytest.mark.parametrize("args", [
+    {"link": DOC_URL}, {"code": DOC_URL}, {"code": SCHEMELESS}, {"code": UPPER},
+])
 async def test_a_pasted_link_copies_the_file_and_the_record_names_only_its_handle(args):
-    """A link in `link`, or pasted into `code`, is a link: the audit row and
-    the answer name the handle, never the URL or the id (R-18)."""
+    """A link in `link`, or pasted into `code` in any spelling, is a link: the
+    audit row and the answer name the handle, never the URL or the id (R-18)."""
     computer = _Computer()
     out = await _import(_drive(_server()), computer)(**args)
     assert out["status"] == "ok" and out["kind"] == "document"
@@ -203,13 +212,17 @@ async def test_neither_the_answer_the_rows_nor_the_log_carry_the_id_or_url(caplo
     tool = _import(_drive(_server()), computer, store)
     answers = [
         await tool(code=_code(DOC)), await tool(link=DOC_URL),
+        await tool(code=SCHEMELESS), await tool(code=UPPER),
         await tool(code=_code(UNSHARED)), await tool(link=UNSHARED_URL),
+        # A bare id is no link and no code: whatever the model put in `code`
+        # never reaches the row raw, only its hex.
+        await tool(code=DOC),
     ]
-    assert [a["status"] for a in answers] == ["ok", "ok", "refused", "refused"]
+    assert [a["status"] for a in answers] == ["ok"] * 4 + ["refused"] * 2 + ["nothing_found"]
     logged = "\n".join(r.getMessage() for r in caplog.records)
     # The positive control: the provider's requests WERE logged, redacted.
     assert "/drive/v3/files/<file>" in logged, logged
-    for secret in (DOC, UNSHARED, DOC_URL, UNSHARED_URL):
+    for secret in (DOC, UNSHARED, DOC_URL, UNSHARED_URL, SCHEMELESS):
         assert secret not in logged, logged
     _no_id_or_url(json.dumps(answers), DOC, UNSHARED)
     for row in computer.rows():
@@ -351,6 +364,42 @@ async def test_another_networks_link_is_redirected_to_its_owner():
     out = await _import(FakeExternalFilesSource(), _Computer())(
         link="https://x.com/synth_user01/status/9000000000000000001")
     assert out["status"] == "nothing_found" and "x_read" in out["note"]
+
+
+class _LinkLookupFails(FakeRecordStore):
+    """A record whose link rows cannot be read while its media rows can."""
+
+    async def external_file_rows(self, **kwargs):
+        raise RuntimeError("link rows unreadable")
+
+
+async def _sent(store: FakeRecordStore, blobs: FakeBlobStore, data: bytes) -> str:
+    key = await blobs.put(data=data)
+    await store.append(message=NormalizedMessage(
+        "signal", GROUP, "group", "+85200000000", "A", _NOW - 1_000,
+        f"[file {key[:6]}]", {},
+        media_blobs=(MediaBlob(sha256=key, media_type="text/csv", size=len(data),
+                               filename="n.csv"),),
+    ))
+    return key
+
+
+async def test_a_sent_file_still_imports_when_only_the_link_lookup_fails():
+    """Master's behaviour for a sent file is kept: the link lookup failing
+    does not turn a matched attachment `unavailable` (review of PR 807)."""
+    store, blobs, computer = _LinkLookupFails(), FakeBlobStore(), _Computer()
+    key = await _sent(store, blobs, b"a,b\n1,2\n")
+    out = await _tools(FakeExternalFilesSource(), computer, store, blobs)["computer_import"](
+        code=key[:6])
+    assert out["status"] == "ok", out
+    assert computer.files() == {f"inbox/{key[:12]}.csv": b"a,b\n1,2\n"}
+
+
+async def test_with_no_sent_file_matched_an_unreadable_link_lookup_is_unavailable():
+    computer = _Computer()
+    out = await _tools(FakeExternalFilesSource(), computer, _LinkLookupFails())[
+        "computer_import"](code="abcdef")
+    assert out["status"] == "unavailable" and computer.files() == {}
 
 
 # ---- the split: file_fetch stays a read -------------------------------------

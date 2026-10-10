@@ -114,3 +114,18 @@ def test_every_link_parameter_tool_is_a_registered_owner():
         f"tool(s) with a link parameter that are neither registered owners nor "
         f"declare it a link input: {sorted(link_tools - _OWNER_TOOLS - declared)}"
     )
+
+
+def test_accepts_is_an_explicit_allowlist_of_registered_owners():
+    """`LinkInput.accepts` lets another owner's link reach a tool's body
+    instead of being redirected. Pinned whole, so an over-broad `accepts` (a
+    tool taking Instagram or X links it cannot handle) fails here by name;
+    and each accepted name must be a registered owner, never a stray
+    string that would silently accept nothing (review of PR 807)."""
+    accepts = {
+        name: {tool for li in spec.link_inputs for tool in li.accepts}
+        for name, spec in NATIVE_TOOLS.items()
+        if any(li.accepts for li in spec.link_inputs)
+    }
+    assert accepts == {"computer_import": {"file_fetch"}}
+    assert set().union(*accepts.values()) <= _OWNER_TOOLS

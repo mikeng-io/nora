@@ -23,8 +23,8 @@
   {
     "name": "(b') the audit row records the URL instead of the handle",
     "file": "nora/agent/tools.py",
-    "old": "            request = {\"code\": code, \"link\": linked.handle if linked else \"not a file link\"}",
-    "new": "            request = {\"code\": code, \"link\": link}",
+    "old": "            request = {\"code\": _handle_hex(code),\n                       \"link\": linked.handle if linked else \"not a file link\"}",
+    "new": "            request = {\"code\": _handle_hex(code), \"link\": link}",
     "target": "tests/unit/test_computer_import_shared_file.py::test_a_pasted_link_copies_the_file_and_the_record_names_only_its_handle"
   },
   {
@@ -82,5 +82,33 @@
     "old": "    \"file_fetch\": NativeTool(4,\n                             read_only=True,",
     "new": "    \"file_fetch\": NativeTool(4,\n                             read_only=False,",
     "target": "tests/unit/test_computer_import_shared_file.py::test_file_fetch_stays_a_read_and_a_lookup"
+  },
+  {
+    "name": "(j) the audit request records the raw code (a scheme-less link's file id rides in)",
+    "file": "nora/agent/tools.py",
+    "old": "        request: dict[str, object] = {\"code\": _handle_hex(code)}\n",
+    "new": "        request: dict[str, object] = {\"code\": code}\n",
+    "target": "tests/unit/test_computer_import_shared_file.py::test_neither_the_answer_the_rows_nor_the_log_carry_the_id_or_url"
+  },
+  {
+    "name": "(k) a link pasted into code is detected by a case-sensitive scheme only",
+    "file": "nora/agent/tools.py",
+    "old": "        if not link and code and (\n            _recognise_file_link(code) is not None or \"://\" in code.lower()\n        ):",
+    "new": "        if not link and code.startswith((\"http://\", \"https://\")):",
+    "target": "tests/unit/test_computer_import_shared_file.py::test_a_pasted_link_copies_the_file_and_the_record_names_only_its_handle"
+  },
+  {
+    "name": "(l) an unreadable link lookup turns a matched sent file unavailable",
+    "file": "nora/agent/tools.py",
+    "old": "                if found.status == \"unavailable\" and not matches:",
+    "new": "                if found.status == \"unavailable\":",
+    "target": "tests/unit/test_computer_import_shared_file.py::test_a_sent_file_still_imports_when_only_the_link_lookup_fails"
+  },
+  {
+    "name": "(m) an over-broad accepts: computer_import takes Instagram links too",
+    "file": "nora/agent/tools.py",
+    "old": "accepts=(\"file_fetch\",)),)),",
+    "new": "accepts=(\"file_fetch\", \"instagram_read\")),)),",
+    "target": "tests/architecture/test_link_inputs_declared.py::test_accepts_is_an_explicit_allowlist_of_registered_owners"
   }
 ]
