@@ -414,7 +414,7 @@ def test_budgets_match_todays_table():
         "generate_image": 2,
         # design/video-generation: one clip a turn; a second call is a second clip nobody
         # asked for, spent on a shared weekly quota.
-        "video_create": 1,
+        "video_create": 2,
         # media_search is a local table read (like recall_lookups); media_send
         # delivers a stored attachment (like send_gif).
         "media_search": 2, "media_send": 2,

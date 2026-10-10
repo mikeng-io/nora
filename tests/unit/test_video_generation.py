@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
+from nora.agent.guards import ReplyGuard
 from nora.agent.links import LinkCarry
 from nora.agent.registry import ToolRegistry
 from nora.agent.video_desk import VideoDesk
@@ -140,6 +141,12 @@ async def test_an_unreachable_provider_at_create_is_unavailable():
     provider = _Provider(create=httpx.ConnectError("refused"))
     out = await _backend(provider).start(VideoRequest("x"))
     assert out.status == "unavailable"
+
+
+async def test_an_accepted_create_with_no_task_id_is_uncertain():
+    provider = _Provider(create=httpx.Response(200, json={"base_resp": {"status_code": 0}}))
+    out = await _backend(provider).start(VideoRequest("x"))
+    assert (out.status, out.uncertain) == ("unavailable", True)
 
 
 async def test_a_reference_that_is_not_an_image_is_refused_before_any_call():
@@ -390,6 +397,37 @@ async def test_a_second_call_in_one_turn_returns_the_first_clip():
     assert len(starter.calls) == 1
 
 
+async def test_a_create_that_may_have_reached_the_provider_is_not_resent_in_the_turn():
+    """The tool's budget allows a second call; an uncertain first create must not be re-sent
+    by it, or one turn could pay for two clips."""
+    store = FakeComputeJobStore()
+
+    class _Uncertain(_Starter):
+        async def start(self, request: VideoRequest) -> VideoStart:
+            self.calls.append(request)
+            return VideoStart("unavailable", reason="timed out", uncertain=True)
+
+    starter = _Uncertain()
+    desk = _desk(store, starter, cap=5)
+    await _make(desk)
+    again = await _make(desk)
+    assert (again.status, again.reason) == ("unavailable", "uncertain")
+    assert len(starter.calls) == 1
+
+
+async def test_a_clip_whose_row_was_not_written_is_not_started_again_in_the_turn():
+    class _Broken(FakeComputeJobStore):
+        async def create(self, job: ComputeJob) -> None:
+            raise RuntimeError("db down")
+
+    starter = _Starter()
+    desk = _desk(_Broken(), starter, cap=5)
+    await _make(desk)
+    again = await _make(desk)
+    assert (again.status, again.reason) == ("unavailable", "row_not_written")
+    assert len(starter.calls) == 1
+
+
 async def test_a_refused_start_writes_no_row_and_spends_no_cap():
     store = FakeComputeJobStore()
     out = await _make(_desk(store, _Starter("refused")))
@@ -439,6 +477,21 @@ async def test_a_reference_is_refused_when_references_are_off():
     out = await call(prompt="her waving", reference=sha[:6])
     assert out["status"] == "unavailable" and "switched off" in out["note"]
     assert starter.calls == []
+
+
+async def test_after_a_refused_reference_the_words_only_call_still_runs():
+    """2026-10-10, live: the refusal offered a clip from words alone, and the per-turn
+    budget vetoed that call because the refused one had spent it."""
+    (call, sha), starter, _ = await _tool_rig(refs=False)
+    guard = ReplyGuard(conversation_id=ROOM, budgets=ToolRegistry().budgets(),
+                       terminal=ToolRegistry().terminal_tools(), metrics=Metrics())
+    bind_tag_id("tag-w")
+    assert guard.evaluate("video_create", {"prompt": "x", "reference": sha[:6]}) is None
+    assert (await call(prompt="a cat sings", reference=sha[:6]))["status"] == "unavailable"
+    guard.record("video_create")
+    assert guard.evaluate("video_create", {"prompt": "a cat sings"}) is None
+    assert (await call(prompt="a cat sings"))["status"] == "started"
+    assert len(starter.calls) == 1
 
 
 async def test_a_held_photo_travels_as_its_bytes_and_the_row_keeps_only_its_sha():

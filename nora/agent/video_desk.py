@@ -75,6 +75,9 @@ class VideoDesk:
         self._cap = max_per_room_per_day
         self._lock = asyncio.Lock()
         self._turn_jobs: dict[tuple[str, str, str], str] = {}
+        # A create this turn that may have reached the provider without a delivery (`uncertain`,
+        # `row_not_written`): repeated, never re-sent, so the tool's second call cannot pay twice.
+        self._turn_spent: dict[tuple[str, str, str], str] = {}
 
     def _day_start(self) -> datetime:
         local = self._clock().astimezone(self._tz)
@@ -118,6 +121,8 @@ class VideoDesk:
             key = (tag_id or "", platform, conversation_id)
             if tag_id and key in self._turn_jobs:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
+            if tag_id and key in self._turn_spent:
+                return VideoOutcome("unavailable", reason=self._turn_spent[key])
             try:
                 used = await self.used_today(platform=platform, conversation_id=conversation_id)
             except Exception:
@@ -141,6 +146,7 @@ class VideoDesk:
                         requester_person_id=requester_person_id, tag_id=tag_id,
                         request=request, reason=started.reason,
                     )
+                    self._remember(self._turn_spent, key, "uncertain", tag_id)
                     return VideoOutcome("unavailable", reason="uncertain")
                 return VideoOutcome(started.status, reason=started.reason)
             row = _row(
@@ -159,12 +165,22 @@ class VideoDesk:
                     "video_create: the job row was not written; task %s renders undelivered",
                     started.job_id,
                 )
+                self._remember(self._turn_spent, key, "row_not_written", tag_id)
                 return VideoOutcome("unavailable", reason="row_not_written")
-            if tag_id:
-                if len(self._turn_jobs) >= 256:
-                    self._turn_jobs.pop(next(iter(self._turn_jobs)))
-                self._turn_jobs[key] = str(row.id)
+            self._remember(self._turn_jobs, key, str(row.id), tag_id)
             return VideoOutcome("started", id=str(row.id), used=used + 1, cap=self._cap)
+
+    @staticmethod
+    def _remember(
+        turns: dict[tuple[str, str, str], str], key: tuple[str, str, str], value: str,
+        tag_id: str | None,
+    ) -> None:
+        """Keep `value` for this turn, the oldest of 256 turns dropped first."""
+        if not tag_id:
+            return
+        if len(turns) >= 256:
+            turns.pop(next(iter(turns)))
+        turns[key] = value
 
 
 def _row(
