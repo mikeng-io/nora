@@ -1119,13 +1119,16 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                  output_contract="three_state", level=3),
     # video_create (design/video-generation): starts ONE clip on an external provider, a
     # job that renders for one to three minutes and is delivered later by the compute
-    # poller. Budget 1: a second call in a turn is a second clip nobody asked for (the
-    # desk returns the first one anyway). Not `read_only`: it spends quota and writes a
-    # `compute_jobs` row. `confirmed`: `started` is the row's own write after the provider
-    # accepted the task. `non_idempotent`/`never`: a retry is a second clip. Level 3: a
+    # poller. Budget 2: one start, and one more call after a call that started nothing.
+    # 2026-10-10, live: a reference refused with references off spent budget 1, so the
+    # words-only call its own note offers was vetoed and nothing ran. A second clip
+    # cannot start from the second call: the desk returns the turn's first clip, and
+    # repeats a create that may have reached the provider. Not `read_only`: it spends quota
+    # and writes a `compute_jobs` row. `confirmed`: `started` is the row's own write after
+    # the provider accepted the task. `non_idempotent`/`never`: a retry is a second clip. Level 3: a
     # status contract and two MUSTs (load the skill; no identifier in the prompt).
     # Withheld unless `[video_gen]` is wired (`VIDEO_TOOLS`), tag turns only (`ToolScope`).
-    "video_create": NativeTool(1, read_only=False,
+    "video_create": NativeTool(2, read_only=False,
                                side_effect_state="confirmed", idempotency="non_idempotent",
                                retry="never",
                                output_contract="three_state", level=3),
