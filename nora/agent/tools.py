@@ -2781,6 +2781,17 @@ def _owner_name(persons, person_id: str, *, ai_peer: str = "") -> str:
     return name or _UNKNOWN_OWNER
 
 
+def _file_handle_pointer(file_code: str) -> dict:
+    """The answer a fetcher gives a shared-file link handle passed to it: the
+    model is shown the handle, never the link, so the only way in is
+    `file_fetch` (always registered; unwired, it says so itself)."""
+    return {
+        "status": "nothing_found",
+        "note": "That is a shared file, not a web page or media. Open it with "
+                f"file_fetch using code {file_code}.",
+    }
+
+
 def _handle_hex(raw: str) -> str:
     """`nora.domain.media.handle_hex`: one parse for every tool that takes a
     media code, and for `resolve_room_media`."""
@@ -8726,6 +8737,15 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "conversation or the link to a picture or a video.",
             }
 
+        # A SHARED-FILE LINK HANDLE in either slot (`[Google Doc link
+        # c41d09]`): a file, not media. Without this a `code` reduces to its
+        # six hex through `_handle_hex`, dropping the label, and could
+        # resolve to a picture that happens to share the code.
+        file_code = quoted_handle_code(code or url)
+        if file_code is not None:
+            _record_media(metrics, "nothing_found", reason="file_handle")
+            return _file_handle_pointer(file_code)
+
         if url:
             # ---- URL path (generic cross-tool media) ---------------------
             # The SAME egress screen web_fetch runs, decoded first so a
@@ -10358,11 +10378,7 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         file_code = quoted_handle_code(url)
         if file_code is not None:
             _record(metrics, "web_fetch", "nothing_found", reason="file_handle")
-            return {
-                "status": "nothing_found",
-                "note": "That is a shared file, not a web page. Open it with "
-                        f"file_fetch using code {file_code}.",
-            }
+            return _file_handle_pointer(file_code)
         if not url.startswith(("http://", "https://")):
             _record(metrics, "web_fetch", "nothing_found", reason="not_a_url")
             return {
