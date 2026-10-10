@@ -2452,9 +2452,9 @@ async def test_a_room_clips_stored_comprehension_is_served_before_the_cache(
 async def test_a_file_link_handle_is_pointed_at_file_fetch_not_resolved_as_media(
     wiring, monkeypatch,
 ):
-    # A shared-file handle whose six hex happen to equal a picture's code in
-    # this room: `_handle_hex` alone drops the label, so the picture would be
-    # described as the file. Either slot, it points at file_fetch instead.
+    # A shared-file handle: `_handle_hex` alone drops the label and searches
+    # the room's media for the six hex (a clash would describe a picture as
+    # the file). Either slot, it points at file_fetch and never looks.
     calls = []
 
     async def fake_download(url: str) -> tuple[bytes, str]:
