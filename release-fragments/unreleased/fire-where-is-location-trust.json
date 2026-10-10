@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "When Nora speaks up on her own, for a reminder, a gathering or a proactive message, she can now say where a member is in rooms where location sharing is turned on, just as she does when someone tags her.",
+  "details": [
+    "Before, those turns treated every room as if location sharing were off, so in a room holding anyone she could not match to the location-sharing circle she refused to say where anyone was."
+  ],
+  "limitations": [
+    "She still only looks when the message calls for it; nothing yet wakes her when someone arrives or leaves."
+  ]
+}

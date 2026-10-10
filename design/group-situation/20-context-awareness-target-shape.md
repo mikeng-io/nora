@@ -1,10 +1,10 @@
 ---
 type: design
 title: "Target shape: context awareness is one View of what is true now, not a block per producer"
-description: "The operator expects both the conscious and the subconscious to be aware of the people's world now: where they are, what they are doing, what is coming, not only Nora's own state. An inventory read from origin/master on 2026-10-10 finds that, beyond the clock and the room's own memory, every such dimension is a tool she must think to call, and that Cognition is the only reader any of it is pushed to. This node records the inventory, names the cause, and sets the target shape inside DEC-249's data model: the situation is a View slice over the Record, the Rollup and open Notebook entries, Nora is one entity in it, and `<presence>` becomes her row of it rather than a block of its own. Nothing is built or ruled here."
+description: "The operator expects both the conscious and the subconscious to be aware of the people's world now: where they are, what they are doing, what is coming, not only Nora's own state. An inventory read from origin/master on 2026-10-10 finds that, beyond the clock and the room's own memory, every such dimension is a tool she must think to call, and that Cognition is the only reader any of it is pushed to. This node records the inventory, names the cause, and sets the target shape inside DEC-249's data model: the situation is a View slice over the Record, the Rollup and open Notebook entries, Nora is one entity in it, and `<presence>` becomes her row of it rather than a block of its own. Measured the same day (§4.1): asked directly, she called the tool 17 of 17 times, and only 2 of 404 tagged replies were worse for a missing situation, so `<now>` is not built; the read found fire turns ignoring the room's location trust instead, fixed alongside. The subconscious wakes stay open."
 tags: [nora, context, awareness, presence, location, views, data-model, measurement]
 timestamp: 2026-10-10
-status: proposed
+status: measured
 edges:
   - {dst: 00-intent.md, rel: follows, provenance: asserted}
   - {dst: ../cognition-loop/05-data-model.md, rel: depends_on, provenance: asserted}
@@ -128,6 +128,47 @@ harness. The usual-places block measured null on 2026-09-25 (00 §4.1), so a
 positive effect is not assumed. First, read which sources are on in the live
 `config.toml`, since a slice over sources that are off renders nothing.
 
+### 4.1 Measured 2026-10-10: the input is not the bottleneck; `<now>` not built
+
+**Sources.** The live `config.toml` has `[presence]`, `[analytics]`,
+`[online]`, `[weather]`, `[music]`, `[notes]`, `[standing]` and `[culture]` all
+on, and seven rooms in `policy.toml` carry `location = true`. The data is live;
+it reaches a turn only through a tool.
+
+**Turns.** 404 tag turns over the 30 days to 2026-10-10 in the location rooms,
+read from `tag_trace` and Langfuse, one reader judging. 30 depended on someone's
+current situation:
+
+| | count |
+|---|---|
+| asked directly (where is X, who is online, where will I be): tool called | 17 of 17 |
+| need only implied: tool not called | 12 |
+| of those 12, reply worse for it | 2, both online or voice, not location |
+| tool called, reply hurt by the tool or by resolving the person | 3 |
+| location cases with a fresh enough fix | 12 of 14 |
+
+So rendering the state facet would have changed at most two of 404 replies. The
+failures that cost more were downstream of the call: a `where_is` read before
+the Instagram roster existed (fixed by the roster, 2026-09-22), `route` refusing
+a saved home, and a nickname resolved to the wrong member. **`<now>` is not built
+as measured.** It reopens if a corpus of turns where the need is
+implied, not asked, shows harm at a rate this sample could not.
+
+**What the read found instead: fire turns did not carry the room's trust.**
+`FirePath` built its tool surface without `location_trusted`, so every fire turn
+held `where_is` to the strict circle-subset gate, and in a `location = true` room
+with sealed-sender accounts it refused: a proactive turn in Friends on
+2026-09-27, while tags in the same room answered. A gathering fire turn that
+evening asked whether two members had arrived and never called `where_is`;
+had it called, the tool would have refused. Fixed with this node's update: the
+fire path reads the room's `location` flag as the tag path does
+(`tests/unit/test_fire_path.py::test_a_fire_turn_carries_its_rooms_location_trust_into_where_is`).
+
+**What stays open is the subconscious.** This sample is tagged turns.
+Speaking unasked, an arrival, a co-location, someone nearing a gathering's place,
+is a wake Cognition does not have (§3; issue #9), not a block the conscious
+lacks.
+
 ## 5. Open
 
 - Whether `<now>` ships before the memory system or waits for it.
@@ -139,3 +180,6 @@ positive effect is not assumed. First, read which sources are on in the live
 
 2026-10-10: proposed. Inventory read from origin/master `f052291fd`; the live
 config not read. Nothing built, nothing ruled.
+
+2026-10-10, later: measured (§4.1). `<now>` not built; the fire path's missing
+location trust fixed; the subconscious wakes remain, under issue #9.
