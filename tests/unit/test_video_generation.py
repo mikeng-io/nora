@@ -207,6 +207,93 @@ async def test_a_reference_that_is_not_an_image_is_refused_before_any_call():
     assert provider.requests == []
 
 
+# ---- clips and voice notes as references (amended 2026-10-10) ------------------------------
+
+_HAS_FFMPEG = __import__("shutil").which("ffmpeg") is not None
+needs_ffmpeg = pytest.mark.skipif(not _HAS_FFMPEG, reason="real ffmpeg not installed here")
+
+
+def _ffmpeg(tmp_path: Any, name: str, *args: str) -> bytes:
+    import subprocess
+    out = tmp_path / name
+    subprocess.run(  # noqa: S603 - fixed ffmpeg argv, tmp paths
+        ["ffmpeg", "-loglevel", "error", "-y", *args, str(out)], check=True)
+    return out.read_bytes()
+
+
+def _frame_rate(path: Any) -> float:
+    import subprocess
+    rate = subprocess.run(  # noqa: S603 - fixed ffprobe argv, a tmp path
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=avg_frame_rate", "-of", "csv=p=0", str(path)],
+        check=True, capture_output=True, text=True).stdout.strip()
+    num, den = rate.split("/")
+    return int(num) / int(den)
+
+
+def _uri_bytes(uri: str) -> bytes:
+    import base64
+    return base64.b64decode(uri.split(",", 1)[1])
+
+
+@needs_ffmpeg
+async def test_each_kind_goes_in_its_own_item_in_the_order_given(tmp_path):
+    """MiniMax numbers references per type in connection order (`<Video 1>`, `<Audio 1>`), so
+    the order she passed them is the order sent. A clip and a voice note are fitted first:
+    the 12 fps clip would otherwise fail at the poll, the Opus note at the format check
+    (both measured 2026-10-10)."""
+    clip = _ffmpeg(tmp_path, "c.mp4", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=12",
+                   "-t", "8", "-c:v", "libx264")
+    note = _ffmpeg(tmp_path, "n.ogg", "-f", "lavfi", "-i", "sine=d=8", "-c:a", "libopus")
+    provider = _Provider()
+    out = await _backend(provider).start(VideoRequest("the cat moves as in the clip", references=(
+        VideoReference("a" * 64, clip, kind="video"),
+        VideoReference("b" * 64, PNG),
+        VideoReference("c" * 64, note, kind="audio"),
+    )))
+    assert out.status == "started", out
+    _, first, second, third = provider.body()["content"]
+    assert (first["type"], first["role"]) == ("video_url", "reference_video")
+    assert first["video_url"]["url"].startswith("data:video/mp4;base64,")
+    assert (second["type"], second["role"]) == ("image_url", "reference_image")
+    assert (third["type"], third["role"]) == ("audio_url", "reference_audio")
+    # `audio/mpeg` was refused live; the subtype the provider takes is `mp3`.
+    assert third["audio_url"]["url"].startswith("data:audio/mp3;base64,")
+    sent = tmp_path / "sent.mp4"
+    sent.write_bytes(_uri_bytes(first["video_url"]["url"]))
+    assert _frame_rate(sent) >= 23.976
+    assert out.params["reference_seconds_sent"] == [6.0, 6.0]
+
+
+@needs_ffmpeg
+async def test_the_seconds_are_shared_by_the_references_of_a_kind(tmp_path):
+    """A clip's seconds are billed beside the output's, so two clips share the one budget."""
+    clip = _ffmpeg(tmp_path, "c.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
+                   "-t", "10")
+    provider = _Provider()
+    out = await _backend(provider).start(VideoRequest("x", references=(
+        VideoReference("a" * 64, clip, kind="video"),
+        VideoReference("b" * 64, clip, kind="video"),
+    )))
+    assert out.params["reference_seconds_sent"] == [3.0, 3.0]
+
+
+@needs_ffmpeg
+async def test_a_clip_too_short_to_use_is_refused_before_any_call_and_says_why(tmp_path):
+    clip = _ffmpeg(tmp_path, "c.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
+                   "-t", "1")
+    provider = _Provider()
+    out = await _backend(provider).start(
+        VideoRequest("x", references=(VideoReference("a" * 64, clip, kind="video"),)))
+    assert (out.status, out.reason) == ("refused", "a clip is shorter than 2 seconds")
+    assert provider.requests == []
+
+
+def test_a_first_frame_is_always_a_photo():
+    with pytest.raises(ValueError):
+        VideoRequest("x", first_frame=VideoReference("a" * 64, b"clip", kind="video"))
+
+
 async def test_poll_reads_queued_then_running_then_the_succeeded_clip():
     provider = _Provider(polls=[
         _task("queued"), _task("running"),
@@ -481,7 +568,8 @@ async def test_the_cap_is_read_from_the_table_so_a_restart_does_not_reset_it():
     row = await store.get(uuid.UUID(first.id))
     assert row is not None and row.kind == VIDEO_KIND
     assert dict(row.payload) == {"prompt": "a wave", "reference_sha256": [],
-                                 "first_frame_sha256": None, "ratio": "3:4"}
+                                 "reference_kinds": [], "first_frame_sha256": None,
+                                 "ratio": "3:4"}
 
     restarted = _desk(store, starter)                 # a new process: nothing in memory
     second = await _make(restarted, tag="t2")
@@ -670,26 +758,45 @@ async def test_a_refused_start_writes_no_row_and_spends_no_cap():
 
 
 class _Media:
-    """The transcript rows `_held_image` reads: one photo in this room."""
+    """The transcript rows `_held_media` reads: blobs held in this room, with the media type
+    ingest recorded for each."""
 
-    def __init__(self, sha: str) -> None:
-        self._sha = sha
+    def __init__(self, *held: tuple[str, str]) -> None:
+        self._held = held
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[Any]:
         row = type("Row", (), {})()
-        row.media_json = json.dumps([{"sha256": self._sha, "media_type": "image/png"}])
+        row.media_json = json.dumps(
+            [{"sha256": sha, "media_type": media_type} for sha, media_type in self._held])
         return [row]
 
 
-async def _tool_rig(*, refs: bool, cap: int = 1) -> tuple[Any, _Starter, FakeComputeJobStore]:
+#: Stand-ins for a clip, a voice note and a document someone sent; the desk's starter never
+#: decodes them, so only their media types (as ingest recorded them) matter here.
+CLIP_BYTES = b"\x00\x00\x00\x18ftypisom-clip"
+VOICE_BYTES = b"OggS-voice-note"
+PDF_BYTES = b"%PDF-1.7"
+CLIP_SHA, VOICE_SHA, PDF_SHA = (
+    hashlib.sha256(b).hexdigest() for b in (CLIP_BYTES, VOICE_BYTES, PDF_BYTES))
+
+
+async def _tool_rig(
+    *, refs: bool, cap: int = 1, kinds: frozenset[str] | None = None,
+) -> tuple[Any, _Starter, FakeComputeJobStore]:
+    """`refs` allows photos only (the gate as it stood); `kinds` names the allowed kinds."""
     blobs = FakeBlobStore()
     sha = await blobs.put(data=PNG)
+    held = [(sha, "image/png")]
+    for data, media_type in ((CLIP_BYTES, "video/mp4"), (VOICE_BYTES, "audio/ogg"),
+                             (PDF_BYTES, "application/pdf")):
+        held.append((await blobs.put(data=data), media_type))
     store = FakeComputeJobStore()
     starter = _Starter()
-    registry = ToolRegistry(video=_desk(store, starter, cap=cap), video_refs_allowed=refs,
+    allowed = kinds if kinds is not None else (frozenset({"image"}) if refs else frozenset())
+    registry = ToolRegistry(video=_desk(store, starter, cap=cap), video_ref_kinds=allowed,
                             blobs=blobs)
     specs = registry.specs(
-        store=_Media(sha), conversation_id=ROOM, conversation_type="group",
+        store=_Media(*held), conversation_id=ROOM, conversation_type="group",
         persons=_Persons(), honcho=None, deliverer=None, metrics=Metrics(), room=_room(),
     )
     tools = {s.name: s.call for s in specs}
@@ -792,6 +899,150 @@ async def test_an_external_link_is_never_a_reference():
     out = await call(prompt="x", reference="https://example.com/a.png")
     assert out["status"] == "nothing_found"
     assert starter.calls == []
+
+
+async def test_a_held_clip_and_voice_note_travel_as_their_kinds_in_order():
+    (call, sha), starter, store = await _tool_rig(
+        refs=True, kinds=frozenset({"image", "video", "audio"}))
+    bind_tag_id("tag-k")
+    out = await call(prompt="the cat moves as in the clip", reference=CLIP_SHA[:6],
+                     reference_2=sha[:6], reference_3=VOICE_SHA[:6])
+    assert out["status"] == "started", out
+    (sent,) = starter.calls
+    assert [(r.sha256, r.kind) for r in sent.references] == [
+        (CLIP_SHA, "video"), (sha, "image"), (VOICE_SHA, "audio")]
+    assert sent.references[0].data == CLIP_BYTES
+    (row,) = await store.kind_since(kind=VIDEO_KIND, since=NOW - timedelta(days=1))
+    assert row.payload["reference_kinds"] == ["video", "image", "audio"]
+
+
+@pytest.mark.parametrize(("kinds", "sound"), [
+    (frozenset({"video"}), False), (frozenset({"video", "audio"}), True)])
+async def test_a_clip_keeps_its_sound_only_when_audio_may_leave(kinds, sound):
+    (call, _), starter, _ = await _tool_rig(refs=True, kinds=kinds)
+    bind_tag_id("tag-s")
+    assert (await call(prompt="x", reference=CLIP_SHA[:6]))["status"] == "started"
+    (sent,) = starter.calls
+    assert sent.references[0].sound is sound
+
+
+class _Preparing(_Starter):
+    """A backend whose fit refuses, counting each preparation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prepared = 0
+
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        self.prepared += 1
+        return VideoStart("refused", reason="a clip is shorter than 2 seconds")
+
+
+async def test_a_refused_fit_starts_nothing_and_the_desk_never_takes_its_lock():
+    """Fitting runs before the lock every room waits on (review); its refusal spends nothing."""
+    store = FakeComputeJobStore()
+    backend = _Preparing()
+    desk = _desk(store, backend)
+    clip = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
+    await desk._lock.acquire()          # another room's create holds the lock
+    try:
+        out = await asyncio.wait_for(desk.create(
+            platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+            requester_person_id="miles", tag_id="t1", request=clip), timeout=1.0)
+    finally:
+        desk._lock.release()
+    assert (out.status, out.reason) == ("refused", "a clip is shorter than 2 seconds")
+    assert backend.calls == [] and backend.prepared == 1
+
+
+async def test_a_room_at_its_cap_is_answered_before_any_fit():
+    """The cap bounds the encoding work as well as the spend: a room that has used its clips
+    today gets `at_cap` without ffmpeg running for it (security review)."""
+    store = FakeComputeJobStore()
+    backend = _Preparing()
+    desk = _desk(store, _Starter(), cap=1)
+    assert (await _make(desk, tag="first")).status == "started"
+    desk._backend = backend
+    out = await desk.create(
+        platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+        requester_person_id="miles", tag_id="second",
+        request=VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),)))
+    assert out.status == "at_cap"
+    assert backend.prepared == 0
+
+
+async def test_a_repeat_in_the_turn_is_not_prepared_again():
+    store = FakeComputeJobStore()
+
+    class _Ready(_Starter):
+        prepared = 0
+
+        async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+            _Ready.prepared += 1
+            return request
+
+    desk = _desk(store, _Ready())
+    clip = VideoRequest("x", references=(VideoReference("a" * 64, b"clip", kind="video"),))
+
+    async def make() -> Any:
+        return await desk.create(
+            platform=PLATFORM, conversation_id=ROOM, conversation_type="group",
+            requester_person_id="miles", tag_id="same", request=clip)
+
+    assert (await make()).status == "started"
+    assert (await make()).repeated is True
+    assert _Ready.prepared == 1
+
+
+@pytest.mark.parametrize(("code", "word"), [(CLIP_SHA, "clips"), (VOICE_SHA, "voice notes")])
+async def test_each_kind_has_its_own_gate(code, word):
+    """Photos on does not let a clip or a voice note leave the box: a voice note lends its
+    sender's voice to the clip, so each kind is switched on by itself."""
+    (call, _), starter, _ = await _tool_rig(refs=True)
+    bind_tag_id("tag-g")
+    out = await call(prompt="x", reference=code[:6])
+    assert out["status"] == "unavailable"
+    assert word in out["note"] and "switched off" in out["note"]
+    assert starter.calls == []
+
+
+async def test_a_clip_or_voice_note_is_never_a_first_frame():
+    (call, _), starter, _ = await _tool_rig(
+        refs=True, kinds=frozenset({"image", "video", "audio"}))
+    bind_tag_id("tag-ff")
+    out = await call(prompt="x", first_frame=VOICE_SHA[:6])
+    assert out["status"] == "unavailable" and "must be a photo" in out["note"]
+    assert starter.calls == []
+
+
+async def test_a_document_is_not_a_reference():
+    (call, _), starter, _ = await _tool_rig(
+        refs=True, kinds=frozenset({"image", "video", "audio"}))
+    bind_tag_id("tag-d")
+    out = await call(prompt="x", reference=PDF_SHA[:6])
+    assert out["status"] == "nothing_found" and "file" in out["note"]
+    assert starter.calls == []
+
+
+async def test_a_refusal_that_says_why_reaches_her_note():
+    """A clip too short to use is refused before anything is spent; she can say why instead of
+    a bare «couldn't start»."""
+    class _Refusing(_Starter):
+        async def start(self, request: VideoRequest) -> VideoStart:
+            self.calls.append(request)
+            return VideoStart("refused", reason="a clip is shorter than 2 seconds")
+
+    store = FakeComputeJobStore()
+    registry = ToolRegistry(video=_desk(store, _Refusing()), video_ref_kinds=frozenset())
+    specs = registry.specs(
+        store=_Media(), conversation_id=ROOM, conversation_type="group", persons=_Persons(),
+        honcho=None, deliverer=None, metrics=Metrics(), room=_room(),
+    )
+    call = {s.name: s.call for s in specs}["video_create"]
+    bind_tag_id("tag-r")
+    out = await call(prompt="x")
+    assert out["status"] == "unavailable"
+    assert "shorter than 2 seconds" in out["note"]
 
 
 async def test_the_cap_refusal_says_why():

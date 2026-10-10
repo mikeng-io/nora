@@ -117,8 +117,34 @@ class VideoDesk:
         requester_person_id: str, tag_id: str | None, request: VideoRequest,
     ) -> VideoOutcome:
         """Check the cap, start the clip, write the row. Never raises; returns at once."""
+        key = (tag_id or "", platform, conversation_id)
+        prepare = getattr(self._backend, "prepare", None)
+        repeat = bool(tag_id) and (key in self._turn_jobs or key in self._turn_spent)
+        to_fit = any(r.kind != "image" for r in request.references)
+        if prepare is not None and not repeat and to_fit:
+            # Fitting a clip or a sound spends no quota but takes seconds of encoding, so it runs
+            # before the lock that every room's create waits on (found in review). A repeat in
+            # this turn skips it: the lock below answers it from memory. A room already at its
+            # cap is answered before any encode, so the cap bounds the work as well as the spend
+            # (security review); the count is read again under the lock, which stays the rule.
+            try:
+                used = await self.used_today(platform=platform, conversation_id=conversation_id)
+            except Exception:
+                log.exception("video_create: today's clip count could not be read")
+                return VideoOutcome("unavailable", reason="cap_unreadable")
+            if used >= self._cap:
+                return VideoOutcome("at_cap", used=used, cap=self._cap)
+            try:
+                prepared = await prepare(request)
+            except Exception:
+                log.exception("video_create: preparing the references raised")
+                return VideoOutcome("unavailable", reason="backend_raised")
+            if isinstance(prepared, VideoStart):
+                return VideoOutcome(
+                    "refused" if prepared.status == "refused" else "unavailable",
+                    reason=prepared.reason)
+            request = prepared
         async with self._lock:
-            key = (tag_id or "", platform, conversation_id)
             if tag_id and key in self._turn_jobs:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
             if tag_id and key in self._turn_spent:

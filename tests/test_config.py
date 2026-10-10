@@ -2068,6 +2068,21 @@ def test_video_gen_ships_off_with_the_operators_settings(toml_path):
     assert video.max_clips_per_room_per_day == 1
     assert (video.minimax_cn.model, video.minimax_cn.api_key_env) == (
         "MiniMax-H3", "MINIMAX_CN_API_KEY")
+    # A clip or a voice note leaves the box like a photo, and a voice note lends a voice:
+    # each kind is off until switched on by itself (amended 2026-10-10).
+    assert video.allow_reference_video is False and video.allow_reference_audio is False
+    assert video.reference_seconds == 6.0
+
+
+@pytest.mark.parametrize("seconds", ["5.0", "15.5"])
+def test_video_gen_reference_seconds_stays_inside_what_the_provider_takes(toml_path, seconds):
+    """Under 6, three references of one kind would each fall below the provider's 2 s floor;
+    over 15, a kind would pass the provider's 15 s total."""
+    text = toml_path.read_text().replace(
+        "reference_seconds = 6.0", f"reference_seconds = {seconds}")
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="reference_seconds"):
+        load(toml_path)
 
 
 def test_video_gen_refuses_the_old_all_rooms_cap_key_naming_the_new_one(toml_path):

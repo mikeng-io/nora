@@ -816,6 +816,16 @@ ratio = "3:4"
 # party cloud. Only photos Nora holds (this conversation's, or her canonical
 # picture) can be references, sent as data: URIs, never an external URL.
 allow_reference_images = false
+# The same gate for a clip and for a voice note or other audio someone sent,
+# each separate and off: a voice note sent as a reference lends that person's
+# voice to the clip. Each is fitted with ffmpeg before it is sent (cut, frame
+# rate 24 to 30, size, MP4 or MP3), never refused for its format.
+allow_reference_video = false
+allow_reference_audio = false
+# Seconds of clip, and separately of audio, one create sends, shared by the
+# references of that kind (6 to 15). A clip's seconds are billed beside the
+# output's; audio was not billed (measured 2026-10-10).
+reference_seconds = 6.0
 # Hard cap PER ROOM (platform + conversation) per local day (the tz_name of
 # [analytics]), checked in code before a create and counted from compute_jobs,
 # so a restart does not reset it. A clip the provider failed costs nothing and

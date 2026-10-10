@@ -268,9 +268,10 @@ class ToolRegistry:
         # it the registry withholds them from every turn.
         subagent: SubagentDesk | None = None,
         # `[video_gen]` wired (ships off): the desk `video_create` calls, and the reference
-        # gate. Without the desk the registry withholds the tool from every turn.
+        # kinds its gates allow (`image`, `video`, `audio`). Without the desk the registry
+        # withholds the tool from every turn.
         video: VideoDesk | None = None,
-        video_refs_allowed: bool = False,
+        video_ref_kinds: frozenset[str] = frozenset(),
     ) -> None:
         self._budget_overrides = dict(budget_overrides or {})
         self._record = record
@@ -301,7 +302,7 @@ class ToolRegistry:
         )
         self._subagent = subagent
         self._video = video
-        self._video_refs_allowed = video_refs_allowed
+        self._video_ref_kinds = video_ref_kinds
         self._transit = transit if transit is not None else TransitClient()
         # `parking` is keyless like `transit` — the TD open-data feed needs no
         # key, so the same default-construct argument applies: a required
@@ -1102,7 +1103,7 @@ class ToolRegistry:
             media_store=self._media_store,
             documents=self._documents,
             subagent=self._subagent,
-            video=self._video, video_refs_allowed=self._video_refs_allowed,
+            video=self._video, video_ref_kinds=self._video_ref_kinds,
             shelf=shelf,
             on_rows=on_rows,
         )
