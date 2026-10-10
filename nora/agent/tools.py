@@ -9162,14 +9162,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             got = await _shared_file_bytes(shared)
             if isinstance(got, dict):
                 return got
+            # `accept` keeps anything but a picture or a video at the source;
+            # one that slipped through is refused by the tail's own modality
+            # check below, like any file.
             data, media_type = got.data, got.media_type
-            if _modality_of(media_type) not in ("image", "video"):
-                # The belt for a source that ignored `accept`.
-                _record_media(metrics, "not_an_image", reason="shared_file")
-                return {
-                    "status": "not_an_image", "code": shared.handle,
-                    "note": _not_lookable_note(shared.handle, None),
-                }
             sha256 = hashlib.sha256(data).hexdigest()
             serve_code = shared.handle
             is_cover = False

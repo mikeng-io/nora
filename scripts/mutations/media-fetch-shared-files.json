@@ -35,13 +35,6 @@
     "target": "tests/unit/test_media_fetch_shared_file.py::test_a_code_a_sent_picture_and_a_link_handle_share_is_ambiguous"
   },
   {
-    "name": "(f) the belt: a non-picture from a source that ignored accept is sent to vision",
-    "file": "nora/agent/tools.py",
-    "old": "if _modality_of(media_type) not in (\"image\", \"video\"):",
-    "new": "if False:",
-    "target": "tests/unit/test_media_fetch_shared_file.py::test_a_source_ignoring_accept_still_never_sends_a_doc_to_vision"
-  },
-  {
     "name": "(g) a pasted file link is not recognised by the domain and goes to the public download",
     "file": "nora/agent/tools.py",
     "old": "        elif _recognise_file_link(pasted := url or code) is not None:",

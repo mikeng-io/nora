@@ -293,6 +293,7 @@ class _IgnoresAccept(FakeExternalFilesSource):
 
 
 async def test_a_source_ignoring_accept_still_never_sends_a_doc_to_vision():
+    """The tail's modality check refuses it like any file: no second check."""
     source = _IgnoresAccept(files={DOC: FakeFile(name="Trip plan", data=b"PK-docx",
                                                  media_type=DOCX)})
     world = _World(source)
