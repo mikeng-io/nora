@@ -38,9 +38,19 @@ def test_the_geometry_always_lands_inside_the_providers_ranges(width, height):
     cw, ch, w, h = video_geometry(width, height)
     assert cw <= width and ch <= height                 # the crop never asks for a pixel
     assert cw % 2 == ch % 2 == w % 2 == h % 2 == 0      # yuv420p
-    assert ASPECT_RANGE[0] <= w / h <= ASPECT_RANGE[1] + 0.01
+    assert ASPECT_RANGE[0] <= w / h <= ASPECT_RANGE[1]
     assert max(w, h) <= max(VIDEO_MAX_EDGE, VIDEO_MIN_EDGE * ASPECT_RANGE[1] + 2)
     assert min(w, h) >= VIDEO_MIN_EDGE - 1
+
+
+def test_rounding_to_even_never_tips_the_aspect_out_of_range():
+    """501x1300 came out 500x1252 (0.3994) before the long side was trimmed back (review);
+    a sweep over sizes, not one example, since the miss lives on a rounding boundary."""
+    for width in range(2, 2400, 13):
+        for height in (*range(2, 2400, 17), 1300, 1252, 1253):
+            _, _, w, h = video_geometry(width, height)
+            assert ASPECT_RANGE[0] <= w / h <= ASPECT_RANGE[1], (width, height, w, h)
+    assert video_geometry(501, 1300)[2:] == (500, 1250)
 
 
 def test_a_frame_already_inside_the_ranges_is_not_cropped():
@@ -78,7 +88,7 @@ async def test_a_slow_wide_long_clip_comes_out_inside_every_range(tmp_path):
     clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=1920x600:rate=12",
                  "-f", "lavfi", "-i", "sine=d=20", "-t", "20", "-c:v", "libx264",
                  "-c:a", "aac", "-shortest")
-    fitted = await fit_video(clip, seconds=6.0)
+    fitted = await fit_video(clip, seconds=6.0, sound=True)
     assert fitted.data is not None and fitted.mime == "video/mp4", fitted
     assert fitted.seconds == pytest.approx(6.0)
     info = _probe(tmp_path, fitted.data, "out.mp4")
@@ -154,7 +164,7 @@ async def test_a_sound_track_that_will_not_encode_falls_back_to_the_picture_alon
         Path(args[-1]).write_bytes(b"\x00\x00\x00\x18ftypisom")  # noqa: ASYNC240 - a fake
         return 0, b"", b""
 
-    fitted = await fit_video(b"clip", seconds=6.0, runner=runner)
+    fitted = await fit_video(b"clip", seconds=6.0, sound=True, runner=runner)
     assert fitted.data is not None
     assert ["-an" in a for a in calls[1:]] == [False, True]
 
@@ -164,3 +174,51 @@ async def test_a_runner_that_cannot_spawn_is_unreadable_not_a_crash():
         return None, b"", b""
 
     assert (await fit_audio(b"x", seconds=6.0, runner=runner)).reason == "unreadable"
+
+
+@needs_ffmpeg
+async def test_a_clip_is_silent_unless_its_sound_may_leave(tmp_path):
+    """A clip of someone talking lends their voice as a voice note does, so its sound goes only
+    when audio references are on (review: it went with the audio gate off)."""
+    clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
+                 "-f", "lavfi", "-i", "sine=d=4", "-t", "4", "-c:v", "libx264", "-c:a", "aac")
+    silent = await fit_video(clip, seconds=6.0)
+    assert silent.data is not None
+    assert [s["codec_type"] for s in _probe(tmp_path, silent.data, "s.mp4")["streams"]] == [
+        "video"]
+    voiced = await fit_video(clip, seconds=6.0, sound=True)
+    assert voiced.data is not None
+    assert sorted(s["codec_type"] for s in _probe(tmp_path, voiced.data, "v.mp4")["streams"]) == [
+        "audio", "video"]
+
+
+@needs_ffmpeg
+async def test_whole_frames_never_run_a_clip_past_its_seconds(tmp_path):
+    """`-t 15` at 29.97 fps gave 450 frames, 15.015 s, over the provider's 15 s (review)."""
+    clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30000/1001",
+                 "-t", "20", "-c:v", "libx264")
+    fitted = await fit_video(clip, seconds=15.0)
+    assert fitted.data is not None
+    (stream,) = _probe(tmp_path, fitted.data, "out.mp4")["streams"]
+    assert float(stream["duration"]) <= 15.0
+
+
+@needs_ffmpeg
+async def test_a_short_picture_under_longer_sound_is_too_short(tmp_path):
+    """The container's length is its longest stream: 1.5 s of picture under 3 s of sound read
+    as 3 s and passed the floor (review)."""
+    clip = _make(tmp_path, "in.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30:d=1.5",
+                 "-f", "lavfi", "-i", "sine=d=3", "-c:v", "libx264", "-c:a", "aac")
+    assert (await fit_video(clip, seconds=6.0, sound=True)).reason == "too_short"
+
+
+@needs_ffmpeg
+async def test_a_playlist_posing_as_a_clip_is_never_followed(tmp_path):
+    """A held blob that is really an HLS playlist would make ffmpeg open what it names, a local
+    file or a link, and send it on. Only local files in a media container are read."""
+    secret = tmp_path / "secret.mp4"
+    _make(tmp_path, "secret.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=30",
+          "-t", "4", "-c:v", "libx264")
+    playlist = (f"#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.0,\nfile://{secret}\n"
+                "#EXT-X-ENDLIST\n").encode()
+    assert (await fit_video(playlist, seconds=6.0)).reason == "unreadable"

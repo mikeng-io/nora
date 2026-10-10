@@ -9780,7 +9780,10 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                         "note": f"I can't use {_VIDEO_REF_WORDS[kind]} for videos right "
                                 "now: that is switched off. Nothing was started; I can "
                                 "still make one without it."}
-            held_ref = VideoReference(sha256=held[0], data=held[1], kind=kind)
+            # A clip keeps its sound only when sound may leave the box too: a clip of someone
+            # talking lends their voice as a voice note does (found in review).
+            held_ref = VideoReference(sha256=held[0], data=held[1], kind=kind,
+                                      sound=kind == "video" and "audio" in video_ref_kinds)
             if index < len(wanted):
                 references.append(held_ref)
             else:

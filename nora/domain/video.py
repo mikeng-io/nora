@@ -46,11 +46,19 @@ ReferenceKind = Literal["image", "video", "audio"]
 class VideoReference:
     """One reference Nora already holds: a photo, clip or voice note sent in this conversation,
     or her canonical picture (`ImageReference`'s custody rule). `data` is the blob's bytes, as
-    held; the backend fits a clip or a voice note to the provider's limits before sending."""
+    held; the backend fits a clip or a voice note to the provider's limits before sending.
+
+    `sound` is whether a clip may keep its sound track: the tool sets it only when audio
+    references are allowed, since a clip of someone talking lends their voice as a voice note
+    does. `mime` and `seconds` are empty until the backend has fitted the bytes (`prepare`):
+    set, `data` is what is sent, as it is."""
 
     sha256: str
     data: bytes = field(repr=False)
     kind: ReferenceKind = "image"
+    sound: bool = False
+    mime: str = ""
+    seconds: float = 0.0
 
 
 @dataclass(frozen=True)

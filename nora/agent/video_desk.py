@@ -117,8 +117,24 @@ class VideoDesk:
         requester_person_id: str, tag_id: str | None, request: VideoRequest,
     ) -> VideoOutcome:
         """Check the cap, start the clip, write the row. Never raises; returns at once."""
+        key = (tag_id or "", platform, conversation_id)
+        prepare = getattr(self._backend, "prepare", None)
+        repeat = bool(tag_id) and (key in self._turn_jobs or key in self._turn_spent)
+        if prepare is not None and not repeat:
+            # Fitting a clip or a sound spends nothing and takes seconds, so it runs before the
+            # lock that every room's create waits on (found in review). A repeat in this turn
+            # skips it: the lock below answers it from memory.
+            try:
+                prepared = await prepare(request)
+            except Exception:
+                log.exception("video_create: preparing the references raised")
+                return VideoOutcome("unavailable", reason="backend_raised")
+            if isinstance(prepared, VideoStart):
+                return VideoOutcome(
+                    "refused" if prepared.status == "refused" else "unavailable",
+                    reason=prepared.reason)
+            request = prepared
         async with self._lock:
-            key = (tag_id or "", platform, conversation_id)
             if tag_id and key in self._turn_jobs:
                 return VideoOutcome("started", id=self._turn_jobs[key], repeated=True)
             if tag_id and key in self._turn_spent:

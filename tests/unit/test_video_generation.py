@@ -916,6 +916,58 @@ async def test_a_held_clip_and_voice_note_travel_as_their_kinds_in_order():
     assert row.payload["reference_kinds"] == ["video", "image", "audio"]
 
 
+@pytest.mark.parametrize(("kinds", "sound"), [
+    (frozenset({"video"}), False), (frozenset({"video", "audio"}), True)])
+async def test_a_clip_keeps_its_sound_only_when_audio_may_leave(kinds, sound):
+    (call, _), starter, _ = await _tool_rig(refs=True, kinds=kinds)
+    bind_tag_id("tag-s")
+    assert (await call(prompt="x", reference=CLIP_SHA[:6]))["status"] == "started"
+    (sent,) = starter.calls
+    assert sent.references[0].sound is sound
+
+
+class _Preparing(_Starter):
+    """A backend whose fit refuses, counting each preparation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prepared = 0
+
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        self.prepared += 1
+        return VideoStart("refused", reason="a clip is shorter than 2 seconds")
+
+
+async def test_a_refused_fit_starts_nothing_and_the_desk_never_takes_its_lock():
+    """Fitting runs before the lock every room waits on (review); its refusal spends nothing."""
+    store = FakeComputeJobStore()
+    backend = _Preparing()
+    desk = _desk(store, backend)
+    await desk._lock.acquire()          # another room's create holds the lock
+    try:
+        out = await asyncio.wait_for(_make(desk), timeout=1.0)
+    finally:
+        desk._lock.release()
+    assert (out.status, out.reason) == ("refused", "a clip is shorter than 2 seconds")
+    assert backend.calls == [] and backend.prepared == 1
+
+
+async def test_a_repeat_in_the_turn_is_not_prepared_again():
+    store = FakeComputeJobStore()
+
+    class _Ready(_Starter):
+        prepared = 0
+
+        async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+            _Ready.prepared += 1
+            return request
+
+    desk = _desk(store, _Ready())
+    assert (await _make(desk, tag="same")).status == "started"
+    assert (await _make(desk, tag="same")).repeated is True
+    assert _Ready.prepared == 1
+
+
 @pytest.mark.parametrize(("code", "word"), [(CLIP_SHA, "clips"), (VOICE_SHA, "voice notes")])
 async def test_each_kind_has_its_own_gate(code, word):
     """Photos on does not let a clip or a voice note leave the box: a voice note lends its

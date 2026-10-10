@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import logging
 import time
 import uuid
@@ -210,19 +211,49 @@ class MiniMaxVideoBackend:
 
     # ---- create ----------------------------------------------------------------------------
 
+    async def prepare(self, request: VideoRequest) -> VideoRequest | VideoStart:
+        """Fit every clip and sound not fitted yet (`nora.infra.video_refs`), or the refusal
+        when one cannot be. Spends nothing, so the desk runs it BEFORE its lock: an encode
+        takes seconds and the lock serves every room. Never raises."""
+        per_kind = {kind: sum(1 for r in request.references if r.kind == kind)
+                    for kind in ("video", "audio")}
+        fitted_refs: list[VideoReference] = []
+        for ref in request.references:
+            if ref.kind == "image" or ref.mime:
+                fitted_refs.append(ref)
+                continue
+            # The kind's seconds are shared by its references; the provider caps each kind at
+            # 15 s in total, and the config caps `reference_seconds` there.
+            share = self._reference_seconds / max(1, per_kind[ref.kind])
+            fitted: Fitted = (
+                await fit_video(ref.data, seconds=share, sound=ref.sound, runner=self._fit_runner)
+                if ref.kind == "video"
+                else await fit_audio(ref.data, seconds=share, runner=self._fit_runner)
+            )
+            if fitted.data is None:
+                self._count("refused")
+                return VideoStart("refused", reason=(
+                    f"{_KIND_WORD[ref.kind]} {_UNFIT.get(fitted.reason, 'could not be used')}"
+                ))
+            fitted_refs.append(dataclasses.replace(
+                ref, data=fitted.data, mime=fitted.mime, seconds=fitted.seconds))
+        return dataclasses.replace(request, references=tuple(fitted_refs))
+
     async def start(self, request: VideoRequest) -> VideoStart:
         """Create one task. Never raises."""
         if not request.prompt.strip():
             self._count("refused")
             return VideoStart("refused", reason="the prompt was empty")
+        prepared = await self.prepare(request)
+        if isinstance(prepared, VideoStart):
+            return prepared
+        request = prepared
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt}]
         # `VideoRequest` cannot hold a first frame AND references (the provider refuses the mix).
         items: list[tuple[VideoReference, str]] = (
             [(request.first_frame, "first_frame")] if request.first_frame is not None
             else [(ref, _ROLE[ref.kind][1]) for ref in request.references]
         )
-        per_kind = {kind: sum(1 for r in request.references if r.kind == kind)
-                    for kind in ("video", "audio")}
         sent_seconds: list[float] = []
         for ref, role in items:
             if ref.kind == "image":
@@ -236,18 +267,9 @@ class MiniMaxVideoBackend:
                     return VideoStart("refused", reason="a picture is larger than 30 MB")
                 mime, data = f"image/{fmt}", ref.data
             else:
-                # The kind's seconds are shared by its references; the provider caps each kind
-                # at 15 s in total, and the config caps `reference_seconds` there.
-                share = self._reference_seconds / max(1, per_kind[ref.kind])
-                fit = fit_video if ref.kind == "video" else fit_audio
-                fitted: Fitted = await fit(ref.data, seconds=share, runner=self._fit_runner)
-                if fitted.data is None:
-                    self._count("refused")
-                    return VideoStart("refused", reason=(
-                        f"{_KIND_WORD[ref.kind]} {_UNFIT.get(fitted.reason, 'could not be used')}"
-                    ))
-                mime, data = fitted.mime, fitted.data
-                sent_seconds.append(round(fitted.seconds, 2))
+                # Fitted by `prepare` above: sent as it is.
+                mime, data = ref.mime, ref.data
+                sent_seconds.append(round(ref.seconds, 2))
             kind_type = _ROLE[ref.kind][0]
             uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
             content.append({"type": kind_type, kind_type: {"url": uri}, "role": role})

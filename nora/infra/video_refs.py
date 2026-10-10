@@ -16,8 +16,16 @@ not allowed`). So every reference is re-encoded here, before the create, into on
   carries its location, the reason `strip_exif` exists for photos, DEC-47), `+faststart`.
 - **audio**: the first `seconds`, mono MP3 at 128 kb/s, metadata stripped.
 
-A clip or audio shorter than `MIN_SECONDS` is never padded: it is refused (`too_short`), since a
-loop or silence would be a reference nobody sent.
+A clip's sound is kept only when the caller says so (`sound`): `video_create` passes it only with
+`allow_reference_audio` on, since a clip of someone talking lends their voice exactly as a voice
+note does. A clip or audio shorter than `MIN_SECONDS` (for a clip, its picture's own length, not
+the container's) is never padded: it is refused (`too_short`), since a loop or silence would be
+a reference nobody sent. A clip is cut by frame count as well as by time, so whole frames at a
+rate like 29.97 never run it past its seconds (15.015 s for 15, found in review).
+
+Both ffprobe and ffmpeg read the held bytes as a local file in a known media container only
+(`_INPUT_GUARD`): a blob that is really a playlist (HLS, concat) would otherwise make ffmpeg
+open the files or links it names and send what it found to the provider.
 
 The stored blob is never touched; this makes a transient copy for one create call. Never raises:
 every failure is a `Fitted` with `data=None` and a `reason`.
@@ -73,6 +81,15 @@ AUDIO_MAX_BYTES = 15 * 1024 * 1024
 #: few seconds; the desk holds its lock across the create, so a stuck encode must end.
 RUN_SECONDS = 60.0
 
+#: The demuxers a held clip or sound may be read with (ffmpeg matches any name in a demuxer's
+#: list, so `mov` admits MP4, M4A and MOV, `matroska` admits WebM), and local files as the only
+#: protocol. Prepended before every `-i` and on every ffprobe.
+_INPUT_GUARD = [
+    "-protocol_whitelist", "file",
+    "-format_whitelist",
+    "mov,matroska,ogg,mp3,wav,aac,flac,avi,mpegts,flv,amr,caf,aiff,asf",
+]
+
 Reason = Literal["", "too_short", "no_stream", "unreadable", "too_large"]
 
 
@@ -111,6 +128,9 @@ async def _run(args: list[str], timeout_seconds: float) -> tuple[int | None, byt
 
 @dataclass(frozen=True)
 class _Probe:
+    """`seconds` is the length that matters for the kind: the picture's own for a clip (the
+    container's is its longest stream, so a 1.5 s picture under 3 s of sound read as 3 s)."""
+
     seconds: float
     width: int = 0
     height: int = 0
@@ -143,8 +163,8 @@ def _rotation(stream: dict[str, Any]) -> int:
 
 async def _probe(run: Runner, path: Path) -> _Probe | None:
     code, out, _ = await run(
-        ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams",
-         str(path)],
+        ["ffprobe", "-v", "error", *_INPUT_GUARD, "-print_format", "json", "-show_format",
+         "-show_streams", str(path)],
         RUN_SECONDS,
     )
     if code != 0:
@@ -166,8 +186,12 @@ async def _probe(run: Runner, path: Path) -> _Probe | None:
         # the displayed one, turned a quarter.
         width, height = height, width
     fps = _rate(video.get("avg_frame_rate")) or _rate(video.get("r_frame_rate"))
-    return _Probe(seconds=seconds, width=width, height=height, fps=fps, has_video=True,
-                  has_audio=audio)
+    try:
+        picture = float(video.get("duration") or 0.0)
+    except (TypeError, ValueError):
+        picture = 0.0
+    return _Probe(seconds=min(seconds, picture) if picture > 0 else seconds, width=width,
+                  height=height, fps=fps, has_video=True, has_audio=audio)
 
 
 def _even(value: float) -> int:
@@ -191,8 +215,16 @@ def video_geometry(width: int, height: int) -> tuple[int, int, int, int]:
     scale = min(1.0, VIDEO_MAX_EDGE / max(cw, ch))
     if min(cw, ch) * scale < VIDEO_MIN_EDGE:
         scale = VIDEO_MIN_EDGE / min(cw, ch)
+    w, h = _even(cw * scale), _even(ch * scale)
+    # Rounding each side to even can tip a ratio at the limit just outside it (501x1300 gave
+    # 500x1252, 0.3994, found in review): shorten the LONG side two pixels at a time until it
+    # is back in. The long side is never near the short-side floor, so this cannot break it.
+    while w / h > high:
+        w -= 2
+    while w / h < low:
+        h -= 2
     # The crop rounds DOWN to even, so it never asks for a pixel the frame does not have.
-    return _floor_even(cw), _floor_even(ch), _even(cw * scale), _even(ch * scale)
+    return _floor_even(cw), _floor_even(ch), w, h
 
 
 def video_fps(source: float) -> float:
@@ -204,11 +236,13 @@ def video_fps(source: float) -> float:
 
 async def _fit(
     data: bytes, *, seconds: float, kind: Literal["video", "audio"], runner: Runner | None,
+    sound: bool = False,
 ) -> Fitted:
     run = runner or _run
     with tempfile.TemporaryDirectory(prefix="nora-ref-") as scratch:
         source = Path(scratch) / "in"
-        source.write_bytes(data)
+        # A held clip can be tens of MB; the write and the read below stay off the event loop.
+        await asyncio.to_thread(source.write_bytes, data)
         probe = await _probe(run, source)
         if probe is None:
             log.warning("a %s reference could not be read by ffprobe", kind)
@@ -218,8 +252,8 @@ async def _fit(
         if probe.seconds < MIN_SECONDS:
             return Fitted(reason="too_short", seconds=probe.seconds)
         keep = min(probe.seconds, max(seconds, MIN_SECONDS))
-        head = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
-                "-t", f"{keep:.3f}", "-map_metadata", "-1"]
+        head = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *_INPUT_GUARD,
+                "-i", str(source), "-t", f"{keep:.3f}", "-map_metadata", "-1"]
         if kind == "audio":
             target, mime, ceiling = Path(scratch) / "out.mp3", "audio/mp3", AUDIO_MAX_BYTES
             attempts = [[*head, "-vn", "-ac", "1", "-ar", "44100", "-c:a", "libmp3lame",
@@ -227,21 +261,26 @@ async def _fit(
         else:
             target, mime, ceiling = Path(scratch) / "out.mp4", "video/mp4", VIDEO_MAX_BYTES
             cw, ch, w, h = video_geometry(probe.width, probe.height)
+            fps = video_fps(probe.fps)
             picture = [
                 "-map", "0:v:0",
-                "-vf", f"crop={cw}:{ch},scale={w}:{h},fps={video_fps(probe.fps):g},format=yuv420p",
+                "-vf", f"crop={cw}:{ch},scale={w}:{h},fps={fps:g},format=yuv420p",
+                # Whole frames only, never past `keep`: `-t` alone rounds up to the next frame.
+                "-frames:v", str(max(1, math.floor(keep * fps))),
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                 "-movflags", "+faststart",
             ]
-            sound = ["-map", "0:a:0", "-c:a", "aac", "-b:a", "128k"]
-            attempts = [[*head, *picture, *sound, str(target)]] if probe.has_audio else []
+            track = ["-map", "0:a:0", "-c:a", "aac", "-b:a", "128k"]
+            attempts = (
+                [[*head, *picture, *track, str(target)]] if probe.has_audio and sound else []
+            )
             # A sound track ffmpeg cannot decode fails the whole encode; the picture is still
             # the reference, so the silent encode is the fallback, as in `preprocess`.
             attempts.append([*head, *picture, "-an", str(target)])
         for args in attempts:
             code, _, err = await run(args, RUN_SECONDS)
             if code == 0 and target.exists() and target.stat().st_size > 0:
-                out = target.read_bytes()
+                out = await asyncio.to_thread(target.read_bytes)
                 if len(out) > ceiling:
                     return Fitted(reason="too_large", seconds=keep)
                 return Fitted(data=out, mime=mime, seconds=keep)
@@ -250,10 +289,13 @@ async def _fit(
         return Fitted(reason="unreadable")
 
 
-async def fit_video(data: bytes, *, seconds: float, runner: Runner | None = None) -> Fitted:
-    """A held clip as an MP4 the provider takes, at most `seconds` long. Never raises."""
+async def fit_video(
+    data: bytes, *, seconds: float, sound: bool = False, runner: Runner | None = None,
+) -> Fitted:
+    """A held clip as an MP4 the provider takes, at most `seconds` long, silent unless `sound`.
+    Never raises."""
     try:
-        return await _fit(data, seconds=seconds, kind="video", runner=runner)
+        return await _fit(data, seconds=seconds, kind="video", runner=runner, sound=sound)
     except asyncio.CancelledError:
         raise
     except Exception:
