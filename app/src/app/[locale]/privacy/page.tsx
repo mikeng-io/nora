@@ -21,22 +21,42 @@ export default async function PrivacyPage({ params }: Props) {
   const email = { email: LEGAL_CONTACT };
   const sections: LegalSection[] = [
     { id: "who", title: p("whoTitle"), body: p("whoBody", email) },
-    { id: "google", title: p("googleTitle"), body: p("googleBody", email) },
-    { id: "readonly", title: p("readonlyTitle"), body: p("readonlyBody") },
-    { id: "model", title: p("modelTitle"), body: p("modelBody") },
+    {
+      id: "info",
+      title: p("infoTitle"),
+      body: p("infoBody"),
+      items: [p("infoMessages"), p("infoShared"), p("infoConnected"), p("infoLocation"), p("infoLogs")],
+    },
+    { id: "use", title: p("useTitle"), body: p("useBody") },
+    {
+      id: "processors",
+      title: p("processorsTitle"),
+      body: p("processorsBody"),
+      items: [
+        p("processorsModels"),
+        p("processorsPlatforms"),
+        p("processorsHosting"),
+        p("processorsConnected"),
+        p("processorsTools"),
+      ],
+    },
+    { id: "retention", title: p("retentionTitle"), body: p("retentionBody") },
+    {
+      id: "choices",
+      title: p("choicesTitle"),
+      body: p("choicesBody", email),
+      link: { href: GOOGLE_PERMISSIONS, label: p("choicesLink") },
+    },
+    { id: "security", title: p("securityTitle"), body: p("securityBody") },
     { id: "never", title: p("neverTitle"), body: p("neverBody") },
     {
-      id: "limited",
-      title: p("limitedTitle"),
-      body: p("limitedBody"),
-      link: { href: GOOGLE_USER_DATA_POLICY, label: p("limitedLink") },
+      id: "google",
+      title: p("googleTitle"),
+      body: p("googleBody"),
+      link: { href: GOOGLE_USER_DATA_POLICY, label: p("googleLink") },
     },
-    {
-      id: "revoke",
-      title: p("revokeTitle"),
-      body: p("revokeBody", email),
-      link: { href: GOOGLE_PERMISSIONS, label: p("revokeLink") },
-    },
+    { id: "children", title: p("childrenTitle"), body: p("childrenBody") },
+    { id: "changes", title: p("changesTitle"), body: p("changesBody") },
   ];
   return (
     <LegalPage

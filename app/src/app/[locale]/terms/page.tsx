@@ -18,9 +18,12 @@ export default async function TermsPage({ params }: Props) {
   const p = await getTranslations({ locale, namespace: "legal.terms" });
   const email = { email: LEGAL_CONTACT };
   const sections: LegalSection[] = [
-    { id: "what", title: p("whatTitle"), body: p("whatBody") },
+    { id: "accept", title: p("acceptTitle"), body: p("acceptBody") },
+    { id: "service", title: p("serviceTitle"), body: p("serviceBody") },
     { id: "use", title: p("useTitle"), body: p("useBody") },
-    { id: "read", title: p("readTitle"), body: p("readBody") },
+    { id: "content", title: p("contentTitle"), body: p("contentBody") },
+    { id: "availability", title: p("availabilityTitle"), body: p("availabilityBody") },
+    { id: "liability", title: p("liabilityTitle"), body: p("liabilityBody") },
     { id: "contact", title: p("contactTitle"), body: p("contactBody", email) },
   ];
   return (
