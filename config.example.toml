@@ -2175,18 +2175,25 @@ public_url = ""
 # Opening a shared file link (design/external-files/00-design.md). A Google Doc,
 # Sheet, Slides or Drive link someone posts is ALWAYS recorded as a handle,
 # `[Google Doc link c41d09]`, whatever this says: recognising a link needs no account and
-# makes no network call. SHIPS OFF: `enabled` is the switch for opening one, a
-# later build step. `sources` is the providers, in order.
+# makes no network call. SHIPS OFF: `enabled` is the switch for opening one.
+# On, it also needs the three [google] env vars below set (else opening
+# answers unavailable). `sources` is the providers, in order.
 [external_files]
 enabled = false
 sources = ["google_drive"]
 
-# Nora's own Google account (nora@67.zone), read-only (`drive.readonly`). Each
-# key NAMES the env var in `.env` that holds the value (DEC-8), never the value.
-[external_files.google_drive]
-client_id_env = "GOOGLE_DRIVE_CLIENT_ID"
-client_secret_env = "GOOGLE_DRIVE_CLIENT_SECRET"
-refresh_token_env = "GOOGLE_DRIVE_REFRESH_TOKEN"
+# Nora's ONE Google identity: one Desktop-app OAuth client and one refresh
+# token for her own account (nora@67.zone), shared by every Google service she
+# uses (shared files today); never a client per service. Each key NAMES the env
+# var in `.env` that holds the value (DEC-8). Each service declares its own
+# scope in code; `uv run python scripts/google_auth.py` asks for all of them at
+# once and prints the refresh token. A service whose scope the token lacks is
+# unavailable on its own. API keys (the Maps key under [route]) are a different
+# mechanism and stay with their feature.
+[google]
+client_id_env = "GOOGLE_OAUTH_CLIENT_ID"
+client_secret_env = "GOOGLE_OAUTH_CLIENT_SECRET"
+refresh_token_env = "GOOGLE_OAUTH_REFRESH_TOKEN"
 
 
 [subagent]

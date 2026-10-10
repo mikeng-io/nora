@@ -137,6 +137,18 @@ class ExternalFileError(Exception):
         self.reason = reason
 
 
+#: The stable codes an adapter puts in `ExternalFileError.reason` when it has
+#: one, so the open tool picks its note by code and never parses an adapter's
+#: wording. Any other reason is free text for the log.
+NOT_SHARED = "not_shared"      # refused: not shared with her (or no longer there)
+TOO_LARGE = "too_large"        # refused: too large to read as text
+NOT_TEXT = "not_text"          # refused: a kind that is not read as text
+NO_DOWNLOAD = "no_download"    # refused: the owner turned off download and copy
+DELETED = "deleted"            # nothing_found: the file is in the bin, or no such file
+NO_PART = "no_part"            # nothing_found: the file has fewer parts than asked
+TOO_SLOW = "too_slow"          # refused: reading it as text took past the deadline
+
+
 def file_digest(provider: str, file_id: str) -> str:
     """The full hex digest a file's handle is the head of."""
     return hashlib.sha256(f"{provider}:{file_id}".encode()).hexdigest()

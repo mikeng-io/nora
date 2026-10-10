@@ -10,6 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from nora.domain.external_files import (
+    DELETED,
+    NO_PART,
+    NOT_SHARED,
     ExternalFile,
     ExternalFileError,
     ExternalFileRef,
@@ -51,9 +54,9 @@ class FakeExternalFilesSource:
             raise ExternalFileError("unavailable", "the provider could not be reached")
         held = self.files.get(ref.file_id)
         if held is None or ref.provider != self.name:
-            raise ExternalFileError("nothing_found", "no such file")
+            raise ExternalFileError("nothing_found", DELETED)
         if not held.shared:
-            raise ExternalFileError("refused", "not shared with her")
+            raise ExternalFileError("refused", NOT_SHARED)
         return held
 
     async def describe(self, *, ref: ExternalFileRef) -> ExternalFile:
@@ -66,7 +69,7 @@ class FakeExternalFilesSource:
     async def read(self, *, ref: ExternalFileRef, part: int) -> FilePart:
         held = self._file(ref, "read")
         if not 1 <= part <= len(held.parts):
-            raise ExternalFileError("nothing_found", f"no part {part} of {len(held.parts)}")
+            raise ExternalFileError("nothing_found", NO_PART)
         return FilePart(text=held.parts[part - 1], part=part, parts=len(held.parts))
 
     async def fetch_bytes(self, *, ref: ExternalFileRef) -> bytes:

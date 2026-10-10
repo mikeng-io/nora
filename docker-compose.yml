@@ -314,13 +314,13 @@ services:
       #   runs here, not in the collector). Found unpassed on 2026-09-30 by the
       #   same check; empty keeps today's behaviour.
       - HKGOV_MAPS_TOKEN=${HKGOV_MAPS_TOKEN:-}
-      #   GOOGLE_DRIVE_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN —
-      #   [external_files.google_drive], Nora's own read-only Google account
-      #   (design/external-files). Read only when opening a shared file;
-      #   recording a link as a handle needs none of them.
-      - GOOGLE_DRIVE_CLIENT_ID=${GOOGLE_DRIVE_CLIENT_ID:-}
-      - GOOGLE_DRIVE_CLIENT_SECRET=${GOOGLE_DRIVE_CLIENT_SECRET:-}
-      - GOOGLE_DRIVE_REFRESH_TOKEN=${GOOGLE_DRIVE_REFRESH_TOKEN:-}
+      #   GOOGLE_OAUTH_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN —
+      #   [google], Nora's ONE Google identity shared by every Google service
+      #   she uses (design/external-files §4). Read only when one is switched
+      #   on; recording a link as a handle needs none of them.
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      - GOOGLE_OAUTH_REFRESH_TOKEN=${GOOGLE_OAUTH_REFRESH_TOKEN:-}
       #   TAVILY_API_KEY / EXA_API_KEY — the `web_search`/`web_fetch` tools.
       #   BOTH are passed and only the one named by `[search.<provider>]
       #   api_key_env` is ever read (DEC-157), so flipping `[search] provider`
