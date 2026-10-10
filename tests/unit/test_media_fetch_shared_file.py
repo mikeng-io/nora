@@ -34,7 +34,14 @@ from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.google.auth import GoogleCredentials
 from nora.infra.vision import VisionResult
 from nora.obs.metrics import Metrics
-from nora.testing import FakeBlobStore, FakeMediaObjectStore, FakeVideoReadingStore
+from nora.testing import (
+    FakeBlobStore,
+    FakeComputerEventStore,
+    FakeMediaObjectStore,
+    FakeSandboxRuntime,
+    FakeVideoReadingStore,
+)
+from nora.testing.external_files import FakeExternalFilesSource
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
 
@@ -43,6 +50,11 @@ PHOTO = "1SynthPhotoLink00000000000"
 CLIP = "1SynthClipLink000000000000"
 DOC = "1SynthDocLink000000000000"
 UNSHARED = "1SynthNotShared0000000000"
+ARCHIVE = "1SynthArchiveLink000000000"
+#: Two file ids whose handles share one code (found by search: 24 bits).
+TWIN_A, TWIN_B, TWIN_CODE = (
+    "1SynthTwin000000000000458", "1SynthTwin000000000000677", "87b845",
+)
 PNG = b"\x89PNG\r\n\x1a\nsynthetic-photo"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _NOW = int(time.time() * 1000)
@@ -99,6 +111,9 @@ def _server() -> FakeDriveServer:
         CLIP: DriveFile("clip.mp4", "video/mp4", data=b"\x00\x00\x00\x18ftypmp42"),
         DOC: DriveFile("Trip plan", GDOC, exports={DOCX: b"PK-docx-trip"}),
         UNSHARED: DriveFile("Secret", "image/png", data=PNG, shared=False),
+        ARCHIVE: DriveFile("photos.zip", "application/zip", data=b"PK-zip"),
+        TWIN_A: DriveFile("a.png", "image/png", data=PNG),
+        TWIN_B: DriveFile("b.png", "image/png", data=PNG),
     })
 
 
@@ -126,7 +141,7 @@ async def _store(*bodies: str, blobs: tuple[MediaBlob, ...] = (),
 
 class _World:
     def __init__(self, source, store=None, *, video: bool = False,
-                 blobs: FakeBlobStore | None = None) -> None:
+                 blobs: FakeBlobStore | None = None, computer: bool = False) -> None:
         self.vision = _Vision()
         self.cache = _AlwaysHitCache()
         self.readings = FakeVideoReadingStore()
@@ -144,6 +159,8 @@ class _World:
             transit_source=None, vision_source=self.vision, blob_store=self.blobs,
             vision_cache=self.cache, video_readings=self.readings,
             describe_models=models, media_store=self.index, external_files=source,
+            **({"computer": FakeSandboxRuntime(), "computer_events": FakeComputerEventStore()}
+               if computer else {}),
         )
         self.tools = {s.name: s.call for s in specs}
 
@@ -159,6 +176,17 @@ class _World:
 def _downloads(server: FakeDriveServer, file_id: str) -> int:
     return sum(1 for r in server.requests
                if r.url.path.endswith(f"/{file_id}") and r.url.params.get("alt") == "media")
+
+
+def _exports(server: FakeDriveServer, file_id: str) -> int:
+    return sum(1 for r in server.requests if r.url.path.endswith(f"/{file_id}/export"))
+
+
+class _LinkLookupFails(FakeRecordStore):
+    """A record whose link rows cannot be read while its media rows can."""
+
+    async def external_file_rows(self, **kwargs):
+        raise RuntimeError("link rows unreadable")
 
 
 def _no_id_or_url(text: str, *file_ids: str) -> None:
@@ -231,6 +259,75 @@ async def test_a_shared_file_that_is_not_a_picture_points_at_file_fetch():
     assert "file_fetch" in out["note"] and _code(DOC) in out["note"]
     assert world.vision.seen == []
     _no_id_or_url(json.dumps(out), DOC)
+
+
+async def test_asking_about_a_doc_exports_and_downloads_nothing():
+    """The source refuses a file that is not a picture or a video from its
+    one metadata call: a Doc is never exported just to say so."""
+    server = _server()
+    world = _World(_drive(server), await _store(f"https://docs.google.com/document/d/{DOC}/edit"))
+    out = await world.look(code=_code(DOC))
+    assert out["status"] == "not_an_image"
+    assert _exports(server, DOC) == 0 and _downloads(server, DOC) == 0
+    assert server.reads(DOC) == 1  # the metadata call alone
+
+
+@pytest.mark.parametrize("computer", [False, True])
+async def test_a_shared_file_that_is_not_text_is_not_sent_to_file_fetch(computer):
+    server = _server()
+    world = _World(_drive(server), await _store(_url(ARCHIVE)), computer=computer)
+    out = await world.look(code=_code(ARCHIVE))
+    assert out["status"] == "not_an_image"
+    assert "file_fetch" not in out["note"]
+    assert "look at or read here" in out["note"]
+    assert ("computer_import" in out["note"]) is computer
+    assert _downloads(server, ARCHIVE) == 0
+
+
+async def test_with_no_picture_matched_an_unreadable_link_lookup_is_unavailable():
+    """«I couldn't check», never «there is nothing»: the link rows could not
+    be read and no sent picture has the code (R-27)."""
+    world = _World(_drive(_server()), _LinkLookupFails())
+    for code in (_code(PHOTO), f"[Google Drive link {_code(PHOTO)}]"):
+        out = await world.look(code=code)
+        assert out["status"] == "unavailable", out
+
+
+@pytest.mark.parametrize("code", [TWIN_CODE, f"[Google Drive link {TWIN_CODE}]"])
+async def test_two_link_handles_with_one_code_are_ambiguous_and_fetch_nothing(code):
+    assert _code(TWIN_A) == _code(TWIN_B) == TWIN_CODE
+    server = _server()
+    world = _World(_drive(server), await _store(f"{_url(TWIN_A)} and {_url(TWIN_B)}"))
+    out = await world.look(code=code)
+    assert out["status"] == "ambiguous", out
+    assert server.reads(TWIN_A) == 0 and server.reads(TWIN_B) == 0
+    _no_id_or_url(json.dumps(out), TWIN_A, TWIN_B)
+
+
+async def test_a_link_the_domain_knows_and_the_source_does_not_is_unavailable(monkeypatch):
+    """A provider this deployment's source cannot open: `unavailable`, and
+    never the public download of its sign-in page."""
+    async def no_download(url: str) -> tuple[bytes, str]:
+        raise AssertionError("a file link must never reach the public download")
+    monkeypatch.setattr("nora.agent.tools._download_media", no_download)
+    world = _World(FakeExternalFilesSource(name="another_provider"))
+    for args in ({"url": _url(PHOTO)}, {"code": _url(PHOTO)}):
+        out = await world.look(**args)
+        assert out["status"] == "unavailable", out
+        _no_id_or_url(json.dumps(out), PHOTO)
+
+
+async def test_a_labelled_handle_names_the_file_not_a_picture_sharing_its_code():
+    """`[Google Drive link 87b845]` already says it is a file's link: a sent
+    picture whose hash starts with the same hex does not make it ambiguous.
+    The bare code still is (below)."""
+    server = _server()
+    collide = MediaBlob(sha256=_code(PHOTO) + "0" * 58, media_type="image/png", size=3)
+    store = await _store(f"[image {_code(PHOTO)}] and {_url(PHOTO)}", blobs=(collide,))
+    world = _World(_drive(server), store)
+    out = await world.look(code=f"[Google Drive link {_code(PHOTO)}]")
+    assert out["status"] == "ok", out
+    assert world.vision.seen == [PNG]
 
 
 async def test_a_code_a_sent_picture_and_a_link_handle_share_is_ambiguous():

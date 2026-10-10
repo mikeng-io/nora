@@ -12,12 +12,14 @@ from dataclasses import dataclass, field
 from nora.domain.external_files import (
     DELETED,
     NO_PART,
+    NOT_ACCEPTED,
     NOT_SHARED,
     ExternalFile,
     ExternalFileError,
     ExternalFileRef,
     FileBytes,
     FilePart,
+    accepts_media_type,
     recognise,
 )
 
@@ -76,6 +78,10 @@ class FakeExternalFilesSource:
             raise ExternalFileError("nothing_found", NO_PART)
         return FilePart(text=held.parts[part - 1], part=part, parts=len(held.parts))
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes:
+    async def fetch_bytes(
+        self, *, ref: ExternalFileRef, accept: tuple[str, ...] = (),
+    ) -> FileBytes:
         held = self._file(ref, "fetch_bytes")
+        if not accepts_media_type(held.media_type, accept):
+            raise ExternalFileError("refused", NOT_ACCEPTED, kind=held.kind)  # type: ignore[arg-type]
         return FileBytes(data=held.data, media_type=held.media_type)

@@ -112,6 +112,7 @@ from ..domain.external_files import (
     DELETED,
     NO_DOWNLOAD,
     NO_PART,
+    NOT_ACCEPTED,
     NOT_SHARED,
     NOT_TEXT,
     TOO_LARGE,
@@ -4637,8 +4638,8 @@ _FILE_NOTES: Mapping[str, str] = {
     TOO_SLOW: "That file took too long to read as text, so I stopped. Say so.",
     NOT_TEXT: (
         "That kind of file can't be read as text (a picture, a video, an archive). "
-        "If it is a picture or a video, look at it with media_fetch and the same code "
-        "or link; otherwise say so, and don't guess what is in it."
+        "If it is a picture or a video, look at it with media_fetch and the same "
+        "code; otherwise say so, and don't guess what is in it."
     ),
     NO_DOWNLOAD: (
         "The owner has turned off downloading for that file, so I can't read it. Say so."
@@ -4656,6 +4657,10 @@ _FILE_COPY_NOTES: Mapping[str, str] = {
     ),
     "refused": "I can't copy that file. Say so; don't claim it is on your computer.",
 }
+#: What `media_fetch` asks a shared file's source for: a picture or a video.
+_LOOKABLE: tuple[str, ...] = ("image/", "video/")
+#: The file kinds `file_fetch` reads as text.
+_TEXT_KINDS = frozenset({"document", "spreadsheet", "presentation", "pdf"})
 #: `media_fetch`'s notes for a shared file, where a look differs from a read
 #: (a picture or a video is looked at, never read as text); then `_FILE_NOTES`
 #: (the share-with-her note among them), then `_FILE_STATUS_NOTES`.
@@ -8746,8 +8751,14 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "unavailable", "code": ref.handle,
                     "note": _FILE_LOOK_NOTES["unavailable"]}
         try:
-            return await external_files.fetch_bytes(ref=ref)
+            # Only a picture or a video is fetched: anything else is refused
+            # from the source's metadata, before any export or download.
+            return await external_files.fetch_bytes(ref=ref, accept=_LOOKABLE)
         except ExternalFileError as err:
+            if err.reason == NOT_ACCEPTED:
+                _record_media(metrics, "not_an_image", reason="shared_file")
+                return {"status": "not_an_image", "code": ref.handle,
+                        "note": _not_lookable_note(ref.handle, err.kind)}
             _record_media(metrics, err.status, reason=f"file_{err.reason[:40]}")
             return {
                 "status": err.status, "code": ref.handle,
@@ -8762,24 +8773,65 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
             return {"status": "unavailable", "code": ref.handle,
                     "note": _FILE_LOOK_NOTES["unavailable"]}
 
+    def _not_lookable_note(handle: str, kind: str | None) -> str:
+        """What `media_fetch` says of a shared file that is not a picture or
+        a video: `file_fetch` reads only the text kinds; anything else is
+        neither looked at nor read here (and can be copied when her computer
+        is on)."""
+        if kind in _TEXT_KINDS:
+            return ("That shared file is not a picture or a video. To read what "
+                    f"it says, use file_fetch with code {handle}.")
+        note = ("That shared file is not a picture or a video, and it is not "
+                "something I can look at or read here. Say so; don't guess what "
+                "is in it.")
+        if computer_ready and computer is not None:
+            note += f" You can copy it onto your computer with computer_import and code {handle}."
+        return note
+
+    async def _shared_file_by_code(hex_code: str) -> ExternalFileRef | dict:
+        """The one shared file a handle's code names among this room's own
+        file links, or the answer that stops the look: `unavailable` when the
+        record cannot be read (or the read was cut short with nothing found),
+        `ambiguous` for two links, `nothing_found` for none. Never a guess."""
+        found = await resolve_file_code(
+            store, code=hex_code, conversation_id=bound_conversation_id, now_ms=_now_ms(),
+        )
+        if found.status == "unavailable" or (found.status == "nothing_found" and found.truncated):
+            _record_media(metrics, "unavailable", reason="files_lookup")
+            return {"status": "unavailable", "code": hex_code,
+                    "note": "I couldn't look up that file just now. Say so; don't "
+                            "guess what it shows."}
+        if found.status == "ambiguous":
+            _record_media(metrics, "ambiguous", candidates=len(found.refs))
+            return {"status": "ambiguous", "code": hex_code,
+                    "note": "That code matches more than one shared file's link "
+                            "here. Ask which one they mean, or for the link."}
+        if found.status == "nothing_found":
+            _record_media(metrics, "nothing_found", reason="files_code")
+            return {"status": "nothing_found", "code": hex_code,
+                    "note": "No shared file link with that code was sent in this "
+                            "chat recently. Say you can't find it; don't guess."}
+        return found.refs[0]
+
     async def media_fetch(code: str = "", url: str = "", question: str = "") -> dict:
         """Look at an image or video and say what it shows. Call this when
         answering means knowing what is IN a picture or a video.
 
         Pass exactly one: `code`, from an `[image ...]` or `[video ...]` marker
-        or a shared file's link handle in this chat, or `url`, a link to a
-        picture, video or shared file. A voice note gives back what was said.
+        or a shared picture's or video's link handle in this chat, or `url`, a
+        link to one. A voice note gives back its words.
 
-        Leave `question` empty for the stored reading (what it shows, all its
-        text), free and instant. Ask one only when that reading cannot answer
-        it; each costs a fresh look.
+        For chat media, leave `question` empty for the stored reading, free and
+        instant; a shared file is looked at afresh every call. Ask one only
+        when that cannot answer it; each costs a look.
 
         Returns `status`: ok, nothing_found, ambiguous, refused, not_an_image
         or unavailable, with a `note` on how to report it.
 
         Args:
-            code: The short code from a media marker or a link handle.
-            url: An http(s) link to a picture, video or shared file.
+            code: The short code from a media marker, or from a shared
+                picture's or video's link handle.
+            url: An http(s) link to a picture or video.
             question: What you want to know about it, when the stored
                 reading does not answer it. Leave empty otherwise.
         """
@@ -8863,24 +8915,31 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # public download). No provider is named here: the port and the
         # domain's own recogniser decide what a file link is.
         #
-        # A handle's code in either slot, labelled or inside a link she built
-        # around it, IS the code: looked up below like any code, so a code a
-        # sent picture shares is `ambiguous`, never a guess.
+        # A LABELLED handle (`[Google Doc link c41d09]`) or a link she built
+        # around a handle's code already names a file: it is looked up among
+        # this room's file links only, never against the pictures a bare code
+        # could also mean. A bare code is looked up as both, below.
         shared: ExternalFileRef | None = None
         made_up = quoted_handle_code(code or url)
         if made_up is not None:
-            code, url = made_up, ""
-        else:
-            # A pasted file link, in either slot. Unwired, the domain's
-            # recogniser still knows one, so the answer is «I can't open
-            # shared files», never a download of its sign-in page.
-            pasted = url or code
+            named = await _shared_file_by_code(made_up)
+            if isinstance(named, dict):
+                return named
+            shared, code, url = named, "", ""
+        elif _recognise_file_link(pasted := url or code) is not None:
+            # A pasted file link, in either slot, known by the domain's own
+            # recogniser whatever is wired: never a public download of its
+            # sign-in page. Unwired, the domain's ref stands in and the fetch
+            # answers «I can't open shared files». Wired, the source must
+            # know it too, or it is a provider this deployment cannot open.
             shared = (
                 external_files.recognise(url=pasted) if external_files is not None
                 else _recognise_file_link(pasted)
             )
-            if shared is not None:
-                code = url = ""
+            if shared is None:
+                _record_media(metrics, "unavailable", reason="files_unrecognised")
+                return {"status": "unavailable", "note": _FILE_LOOK_NOTES["unavailable"]}
+            code = url = ""
 
         if url:
             # ---- URL path (generic cross-tool media) ---------------------
@@ -9105,12 +9164,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 return got
             data, media_type = got.data, got.media_type
             if _modality_of(media_type) not in ("image", "video"):
+                # The belt for a source that ignored `accept`.
                 _record_media(metrics, "not_an_image", reason="shared_file")
                 return {
                     "status": "not_an_image", "code": shared.handle,
-                    "note": "That shared file is not a picture or a video. To "
-                            "read what it says, use file_fetch with code "
-                            f"{shared.handle}.",
+                    "note": _not_lookable_note(shared.handle, None),
                 }
             sha256 = hashlib.sha256(data).hexdigest()
             serve_code = shared.handle

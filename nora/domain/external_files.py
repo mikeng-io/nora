@@ -138,14 +138,17 @@ class ExternalFileError(Exception):
     house vocabulary the open tool (S3) answers with: `refused` (not shared
     with her, or too large to read as text), `nothing_found` (deleted, or no
     such file) or `unavailable` (the provider could not be asked: no
-    account, a revoked token, a transport failure). Never `ok`."""
+    account, a revoked token, a transport failure). Never `ok`. `kind` is the
+    file's kind when the refusal knows it (`NOT_ACCEPTED`), else None."""
 
     def __init__(
         self, status: Literal["refused", "nothing_found", "unavailable"], reason: str,
+        *, kind: FileKind | None = None,
     ) -> None:
         super().__init__(f"{status}: {reason}")
         self.status = status
         self.reason = reason
+        self.kind = kind
 
 
 #: The stable codes an adapter puts in `ExternalFileError.reason` when it has
@@ -158,6 +161,14 @@ NO_DOWNLOAD = "no_download"    # refused: the owner turned off download and copy
 DELETED = "deleted"            # nothing_found: the file is in the bin, or no such file
 NO_PART = "no_part"            # nothing_found: the file has fewer parts than asked
 TOO_SLOW = "too_slow"          # refused: reading it as text took past the deadline
+NOT_ACCEPTED = "not_accepted"  # refused: its bytes are not a type the caller accepts
+
+
+def accepts_media_type(media_type: str, accept: tuple[str, ...]) -> bool:
+    """Whether `media_type` starts with one of `accept`'s prefixes (`image/`,
+    `video/`); an empty `accept` takes every type. Case-insensitive."""
+    mime = media_type.split(";", 1)[0].strip().lower()
+    return not accept or mime.startswith(tuple(a.lower() for a in accept))
 
 
 def file_digest(provider: str, file_id: str) -> str:

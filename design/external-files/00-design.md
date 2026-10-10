@@ -134,15 +134,23 @@ question, «the bytes for this code or link», answered in order: a chat
 attachment's code (stored media); a shared file's link handle code in this
 room, a pasted file link, or a link she built around a code
 (`ExternalFilesSource.fetch_bytes`, whatever provider is wired); any other
-public link (the download). A picture or a video goes to the vision path; any
-other file is `not_an_image` with a note naming `file_fetch` and the code. A
-code that a sent picture and a link handle share is `ambiguous`. The tool
-names no provider, host or URL rule: the source and the domain's recogniser
-decide what a file link is. Its bytes and its reading are never kept: no
-stored reading, no vision cache, no video reading cache, no custody row, so
-two looks are two fetches (`tests/unit/test_media_fetch_shared_file.py`; the
-static check above cannot see inside `media_fetch`, which holds the stores for
-attachments). The answer names the handle only.
+public link (the download). A bare code a sent picture and a link handle
+share, or two link handles share, is `ambiguous`; a labelled handle
+(`[Google Drive link c41d09]`) or a link built around a code already names a
+file and is looked up among file links only. A pasted link the domain's
+recogniser knows never reaches the public download: unwired, or a provider
+the wired source cannot open, is `unavailable`. `media_fetch` asks
+`fetch_bytes` with `accept=("image/", "video/")`, so the adapter refuses any
+other file (`refused`, `NOT_ACCEPTED`, with its kind) from its one metadata
+call, before any export or download; the answer is `not_an_image`, naming
+`file_fetch` for a document, spreadsheet, presentation or PDF, and otherwise
+saying it cannot be looked at or read here (and `computer_import`, when her
+computer is on). The tool names no provider, host or URL rule. Its bytes and
+its reading are never kept: no stored reading, no vision cache, no video
+reading cache, no custody row, so two looks are two fetches
+(`tests/unit/test_media_fetch_shared_file.py`; the static check above cannot
+see inside `media_fetch`, which holds the stores for attachments). The answer
+names the handle only.
 
 **Kinds.** Every adapter maps its files onto one vocabulary, so the model
 never sees a vendor's MIME types:

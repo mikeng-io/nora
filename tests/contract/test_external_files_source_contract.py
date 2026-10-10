@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from nora.domain.external_files import ExternalFileError, recognise
+from nora.domain.external_files import NOT_ACCEPTED, ExternalFileError, recognise
 from nora.domain.ports import ExternalFilesSource
 from nora.infra.external_files.google_drive import GoogleDriveSource
 from nora.infra.google.auth import GoogleCredentials
@@ -110,6 +110,20 @@ async def test_a_known_file_describes_reads_by_part_and_fetches(world):
     got = await world.source.fetch_bytes(ref=ref)
     # A native document is fetched as the office format it exports to.
     assert (got.data, got.media_type) == (b"%PDF", DOCX)
+
+
+async def test_fetch_bytes_refuses_a_type_it_was_not_asked_for_before_fetching(world):
+    """`accept` refuses from metadata alone, with the file's kind; an empty
+    `accept` (every caller but `media_fetch`) takes every type. That the
+    Drive adapter exports nothing first is pinned against `FakeDriveServer`
+    (`tests/unit/test_media_fetch_shared_file.py`)."""
+    ref = recognise(URL)
+    with pytest.raises(ExternalFileError) as raised:
+        await world.source.fetch_bytes(ref=ref, accept=("image/", "video/"))
+    assert (raised.value.status, raised.value.reason, raised.value.kind) == (
+        "refused", NOT_ACCEPTED, "document")
+    got = await world.source.fetch_bytes(ref=ref, accept=("application/",))
+    assert got.media_type == DOCX
 
 
 async def test_every_open_reaches_the_source_nothing_is_kept(world):
