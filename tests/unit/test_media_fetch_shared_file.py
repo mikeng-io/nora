@@ -41,7 +41,7 @@ from nora.testing import (
     FakeSandboxRuntime,
     FakeVideoReadingStore,
 )
-from nora.testing.external_files import FakeExternalFilesSource
+from nora.testing.external_files import FakeExternalFilesSource, FakeFile
 from nora.testing.fakes import FakeRecordStore
 from nora.testing.google_drive import GDOC, DriveFile, FakeDriveServer
 
@@ -282,6 +282,23 @@ async def test_a_shared_file_that_is_not_text_is_not_sent_to_file_fetch(computer
     assert "look at or read here" in out["note"]
     assert ("computer_import" in out["note"]) is computer
     assert _downloads(server, ARCHIVE) == 0
+
+
+class _IgnoresAccept(FakeExternalFilesSource):
+    """A source that broke the port's promise and returns a Doc's bytes to a
+    caller that asked for a picture."""
+
+    async def fetch_bytes(self, *, ref, accept=()):
+        return await super().fetch_bytes(ref=ref)
+
+
+async def test_a_source_ignoring_accept_still_never_sends_a_doc_to_vision():
+    source = _IgnoresAccept(files={DOC: FakeFile(name="Trip plan", data=b"PK-docx",
+                                                 media_type=DOCX)})
+    world = _World(source)
+    out = await world.look(url=f"https://docs.google.com/document/d/{DOC}/edit")
+    assert out["status"] == "not_an_image", out
+    assert world.vision.seen == []
 
 
 async def test_with_no_picture_matched_an_unreadable_link_lookup_is_unavailable():
