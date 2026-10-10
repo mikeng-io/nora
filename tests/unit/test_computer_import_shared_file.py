@@ -416,3 +416,30 @@ def test_file_fetch_stays_a_read_and_a_lookup():
     assert NATIVE_TOOLS["file_fetch"].side_effect_state == "none"
     built = _tools(FakeExternalFilesSource(), _Computer())["file_fetch"]
     assert set(inspect.signature(built).parameters) == {"code", "link", "part"}
+
+
+@pytest.mark.parametrize("made_up", [
+    "https://drive.google.com/file/d/{c}", "drive.google.com/drive/folders/{c}",
+    "https://docs.google.com/spreadsheets/d/{c}/edit",
+])
+@pytest.mark.parametrize("slot", ["link", "code"])
+async def test_a_link_built_around_a_handles_code_copies_that_file(made_up, slot):
+    # Live 2026-10-11: shown `[Google Drive link 491db6]`, she built
+    # `drive.google.com/file/d/491db6` around the code. It is the code.
+    computer = _Computer()
+    store = await _store((GROUP, f"here {SHEET_URL}"))
+    out = await _import(_drive(_server()), computer, store)(
+        **{slot: made_up.format(c=_code(SHEET))})
+    assert out["status"] == "ok", out
+    assert out["kind"] == "spreadsheet"
+    assert computer.rows()[0].request == {"code": _code(SHEET)}
+
+
+async def test_a_made_up_link_beside_a_code_is_still_one_too_many():
+    # Review of PR 809: the rewrite must not swallow a second argument.
+    # The sheet IS in this room, so swallowing `code` would copy it.
+    computer = _Computer()
+    store = await _store((GROUP, f"here {SHEET_URL}"))
+    out = await _import(_drive(_server()), computer, store)(
+        code="a3f2c1", link=f"https://drive.google.com/file/d/{_code(SHEET)}")
+    assert out["status"] != "ok" and computer.files() == {}

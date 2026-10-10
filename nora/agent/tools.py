@@ -2795,8 +2795,10 @@ def _file_handle_pointer(file_code: str) -> dict:
     `file_fetch` (always registered; unwired, it says so itself)."""
     return {
         "status": "nothing_found",
-        "note": "That is a shared file, not a web page or media. Open it with "
-                f"file_fetch using code {file_code}.",
+        "note": "That is a shared file, not a web page or media, and its code "
+                "is not part of any link. Read it with file_fetch using code "
+                f"{file_code} (or, if your computer is on, copy it there with "
+                "computer_import and that code).",
     }
 
 
@@ -10542,6 +10544,11 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
                 "status": "unavailable",
                 "note": "Give exactly one of code or link, then ask again.",
             }
+        # A handle's code passed as a link, bare or inside a link she built
+        # around it (`docs.google.com/spreadsheets/d/98b65b`, live
+        # 2026-10-11): it is the code, so it is looked up as one.
+        if link and not code and (made_up := quoted_handle_code(link)):
+            code, link = made_up, ""
         if external_files is None:
             _record(metrics, "file_fetch", "unavailable", reason="unwired")
             return {"status": "unavailable", "note": off}
@@ -15027,6 +15034,13 @@ Args:
         # knows a file link with no scheme or an upper-case one
         # (`docs.google.com/...`, `HTTPS://...`); any other URL is caught by
         # its scheme, case-insensitively (review of PR 807).
+        # A handle's code, bare-labelled or inside a link she built around
+        # it (`drive.google.com/file/d/491db6`, live 2026-10-11), is the code
+        # in whichever slot it arrives.
+        if bool(code) != bool(link) and (
+            made_up := quoted_handle_code(link or code)
+        ) is not None:
+            code, link = made_up, ""
         if not link and code and (
             _recognise_file_link(code) is not None or "://" in code.lower()
         ):
