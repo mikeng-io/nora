@@ -332,6 +332,20 @@ cases:
     metadata: {tools: [computer_import], not_tools: [file_fetch, web_fetch]}
     snapshot: *room_a
 
+  # A shared PHOTO is looked at, not read: `media_fetch` asks the same
+  # external-files source for the file's bytes (design/external-files §2,
+  # 2026-10-11), so the call is `media_fetch`, never `file_fetch` (text) or
+  # `web_fetch` (a sign-in page). The file id is synthetic, but the eval
+  # subject IS wired to Drive: the call is refused or not found, and a draw
+  # may then fall back to a sibling. A grade reads routing only.
+  - name: route_media_fetch_shared_photo
+    entry: tag
+    expect: reply
+    mention: true
+    input: 呢張相影咗咩？ https://drive.google.com/file/d/1SynthPhotoRoute000000000/view
+    metadata: {tools: [media_fetch], not_tools: [web_fetch, file_fetch]}
+    snapshot: *room_a
+
   - name: route_web_fetch_not_a_shared_file
     entry: tag
     expect: reply

@@ -2244,7 +2244,11 @@ class ExternalFilesSource(Protocol):
 
     `part` counts from 1. `fetch_bytes` is for the copy to her computer (§5):
     the bytes and their media type, a native file exported to its office
-    format. Only bytes leave the adapter; the credential never does.
+    format. Only bytes leave the adapter; the credential never does. `accept`
+    (media-type prefixes such as `image/`) refuses, as `refused`
+    `NOT_ACCEPTED` with the file's `kind`, any file whose bytes would be of
+    another type, from its metadata alone: nothing is exported or downloaded.
+    Empty takes every type.
     """
 
     name: str
@@ -2255,7 +2259,9 @@ class ExternalFilesSource(Protocol):
 
     async def read(self, *, ref: ExternalFileRef, part: int) -> FilePart: ...
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes: ...
+    async def fetch_bytes(
+        self, *, ref: ExternalFileRef, accept: tuple[str, ...] = (),
+    ) -> FileBytes: ...
 
 
 @runtime_checkable

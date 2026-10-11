@@ -75,6 +75,7 @@ from nora.domain.external_files import (
     DELETED,
     NO_DOWNLOAD,
     NO_PART,
+    NOT_ACCEPTED,
     NOT_SHARED,
     NOT_TEXT,
     TOO_LARGE,
@@ -84,6 +85,7 @@ from nora.domain.external_files import (
     FileBytes,
     FileKind,
     FilePart,
+    accepts_media_type,
     recognise,
 )
 
@@ -334,9 +336,17 @@ class GoogleDriveSource:
             raise ExternalFileError("nothing_found", NO_PART)
         return FilePart(text=parts[part - 1], part=part, parts=len(parts))
 
-    async def fetch_bytes(self, *, ref: ExternalFileRef) -> FileBytes:
+    async def fetch_bytes(
+        self, *, ref: ExternalFileRef, accept: tuple[str, ...] = (),
+    ) -> FileBytes:
         meta = await self._meta(ref)
         mime = str(meta.get("mimeType") or "")
+        # The type the bytes WOULD have (a native file's export), judged
+        # from the one metadata call, before anything is exported or
+        # downloaded.
+        would_be = _NATIVE[mime][2] if mime in _NATIVE else mime
+        if not accepts_media_type(would_be, accept):
+            raise ExternalFileError("refused", NOT_ACCEPTED, kind=kind_of(mime))
         if mime in _NATIVE:
             office = _NATIVE[mime][2]
             return FileBytes(data=await self._export(ref, office), media_type=office)

@@ -9,7 +9,7 @@
   {
     "name": "media_fetch's link_inputs declaration is dropped: an Instagram page (or a mobile one) downloads",
     "file": "nora/agent/tools.py",
-    "old": "                              link_inputs=(\n                                  LinkInput(\n                                      \"url\", unless=\"code\",\n                                      not_clause=\", not a picture or video file\",\n                                      then=\", then look at the media it returns\",\n                                      verb=\"read\",\n                                  ),\n                              )),\n",
+    "old": "                              link_inputs=(\n                                  LinkInput(\n                                      \"url\", unless=\"code\",\n                                      not_clause=\", not a picture or video file\",\n                                      then=\", then look at the media it returns\",\n                                      verb=\"read\", accepts=(\"file_fetch\",),\n                                  ),\n                              )),\n",
     "new": "                              link_inputs=()),\n",
     "target": "tests/test_media_fetch.py::test_an_instagram_page_link_is_sent_to_instagram_read_without_a_download tests/test_media_fetch.py::test_a_mobile_page_link_is_refused_and_asks_for_the_www_link"
   },

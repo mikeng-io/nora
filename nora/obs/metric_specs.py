@@ -843,9 +843,13 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     # second series counting the same calls would double any tool-volume sum.
     #   ok            — described (see `cached` for hit/miss).
     #   nothing_found — no such image in view here.
-    #   ambiguous     — two in-scope blobs share the handle prefix.
+    #   ambiguous     — two in-scope blobs share the handle prefix, or a blob
+    #                   and a shared file's link handle do.
+    #   refused       — a shared file the source refused (not shared with her,
+    #                   too large, download turned off).
     #   not_an_image  — the handle resolved to a blob NO describer reads (a
-    #                   file). Since DEC-114 this no longer covers voice notes
+    #                   file), or a shared file that is not a picture or video.
+    #                   Since DEC-114 this no longer covers voice notes
     #                   and videos: those are describable modalities, so an
     #                   unconfigured one is `unavailable`, not this.
     #   unavailable   — custody off, the blob was absent/corrupt, the modality
@@ -856,7 +860,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_media_fetch_total",
         "media_fetch calls, by outcome (ok / nothing_found / ambiguous / "
-        "not_an_image / unavailable), whether the description was served "
+        "refused / not_an_image / unavailable), whether the description was served "
         "from the content-hash cache (cached=true/false), and who asked "
         f"(caller={' / '.join(MEDIA_FETCH_CALLERS)}).",
         ("status", "cached", "caller"),

@@ -141,6 +141,18 @@ async def test_an_unshared_file_is_refused_with_how_to_share_it():
     _no_secret_in(out, UNSHARED)
 
 
+async def test_a_picture_is_not_text_and_the_note_points_at_media_fetch():
+    """A shared picture or video is looked at, not read: `file_fetch` refuses
+    it as text and names the tool that looks (and the code to give it)."""
+    photo = "1SynthPhotoLink00000000000"
+    server = _server()
+    server.files[photo] = DriveFile("beach.png", "image/png", data=b"\x89PNG")
+    out = await _tool(_drive(server))(link=f"https://drive.google.com/file/d/{photo}/view")
+    assert out["status"] == "refused"
+    assert "media_fetch" in out["note"]
+    _no_secret_in(out, photo)
+
+
 async def test_unwired_is_unavailable_never_nothing_found():
     metrics = Metrics()
     out = await _tool(None, metrics=metrics)(link=DOC_URL)

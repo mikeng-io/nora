@@ -2447,24 +2447,3 @@ async def test_a_room_clips_stored_comprehension_is_served_before_the_cache(
 
     assert out["status"] == "ok"
     assert vision.calls == [] and readings.gets == []
-
-
-async def test_a_file_link_handle_is_pointed_at_file_fetch_not_resolved_as_media(
-    wiring, monkeypatch,
-):
-    # A shared-file handle: `_handle_hex` alone drops the label and searches
-    # the room's media for the six hex (a clash would describe a picture as
-    # the file). Either slot, it points at file_fetch and never looks.
-    calls = []
-
-    async def fake_download(url: str) -> tuple[bytes, str]:
-        calls.append(url)
-        return RED_PNG, "image/jpeg"
-    monkeypatch.setattr("nora.agent.tools._download_media", fake_download)
-    clash = PNG_SHA[:6]
-    for kw in ({"code": f"[Google Doc link {clash}]"}, {"url": f"Google Sheet link {clash}"}):
-        out = await _call(wiring["build"](), **kw)
-        assert out["status"] == "nothing_found"
-        assert "file_fetch" in out["note"] and clash in out["note"]
-    assert wiring["vision"].calls == 0
-    assert calls == []
