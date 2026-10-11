@@ -296,10 +296,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     computer to compute on, against `file_fetch`; NOT yet run), plus 1
     `tool_selection` case for `media_fetch` with a shared photo's link
     (2026-10-11, design/external-files §2: looked at through the source,
-    against `file_fetch` and `web_fetch`; NOT yet run);
+    against `file_fetch` and `web_fetch`; NOT yet run), plus 1
+    `proactive_act` case, a12 (2026-10-11: her own answer five minutes old,
+    the row framed as `own_intention` rather than `tag_message`);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 275
-    assert sum(c.active + c.parked for c in totals) == 275
+    assert sum(c.total for c in totals) == 276
+    assert sum(c.active + c.parked for c in totals) == 276
