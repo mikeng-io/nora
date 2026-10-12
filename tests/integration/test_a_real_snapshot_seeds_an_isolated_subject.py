@@ -57,6 +57,7 @@ from nora.subject import (
     sandbox_database,
     sandbox_from_snapshot,
 )
+from nora.subject.proactive import owe
 from tests.sandbox_fixtures import ROOM, Source, seed_source
 
 BEFORE_MS = 1_752_000_000_000
@@ -655,6 +656,73 @@ async def test_a_seeded_note_keeps_its_source_id_end_to_end(
     finally:
         await sandbox_engine.dispose()
 
+
+
+async def test_a_case_row_replaces_the_seeded_copy_of_itself(
+    sandbox, source, engine,
+) -> None:
+    """A case cut just before a proactive row fired carries that row as
+    PENDING, on the same note `owe()` then links. The open-note index refused
+    the case's own row and the case ERRORed before any turn ran (proactive_act
+    a12). `owe()` now cancels the seeded copy and writes its own.
+
+    Revert the cancel loop in `nora.subject.proactive.owe` and this goes RED
+    with `DuplicateProactiveNoteError`."""
+    notes = SqlNoteStore(engine)
+    linked = await notes.create(
+        unit="nora", title="Sunday plan", description="where to meet",
+        uncertainty="open", closing_condition="somebody names a place",
+        established_in=ROOM[1], body="meeting place not settled",
+        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
+    )
+    await SqlReminderStore(engine).create(Reminder(
+        id=UUID("77777777-0000-4000-8000-000000000003"), requester_person_id="nora", platform=ROOM[0],
+        conversation_id=ROOM[1], conversation_type="group",
+        text="ask where to meet", created_at=_at(BEFORE_MS - 3 * MINUTE),
+        due_at=_at(BEFORE_MS + MINUTE), state=ReminderState.PENDING,
+        fired_at=None, outcome=None, kind="proactive",
+        payload={"note_id": linked.id, "note_title": linked.title},
+    ))
+
+    await _seed(sandbox, source)
+    # The sandbox holds its own copy of the row, under an id of its own.
+    [copy] = [r for r in await _pending(sandbox) if r.text == "ask where to meet"]
+    row = await owe(sandbox, note_title="Sunday plan", intent="ask where to meet")
+
+    pending = {r.id for r in await _pending(sandbox)}
+    assert row.id in pending
+    assert copy.id not in pending
+    cancelled = await sandbox.deps.reminders.get(copy.id)
+    assert cancelled is not None and cancelled.state is ReminderState.CANCELLED
+
+
+async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
+    sandbox, source, engine,
+) -> None:
+    """A note with entity anchors and no date is a legal note. Seeding used to
+    refuse it, so every case whose room held one ERRORed (proactive_act a07).
+    It now arrives in the sandbox with the same anchor.
+
+    Revert `anchor_entity_ids` in `nora.subject.sandbox._note_seed` and this
+    goes RED: the note reaches `Note.__post_init__` with no anchor."""
+    await SqlNoteStore(engine).create(
+        unit="nora", title="Ongoing thing", description="a running topic",
+        uncertainty="open", closing_condition="it ends",
+        established_in=ROOM[1], body="still going",
+        established_by="test-seed", now_ms=BEFORE_MS - HOUR,
+        anchor_date=None, anchor_entity_ids=("ent-1",),
+    )
+
+    await _seed(sandbox, source)
+
+    sandbox_engine = create_sql_engine(sandbox.database_url)
+    try:
+        standing = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
+        [note] = [n for n in standing if n.title == "Ongoing thing"]
+        assert note.anchor_date is None
+        assert note.anchor_entity_ids == ("ent-1",)
+    finally:
+        await sandbox_engine.dispose()
 
 # --- migration 0075_withdrawal: an OLDER row_history image missing a new
 #     column must restore to SQL NULL, not error or misbehave -------------

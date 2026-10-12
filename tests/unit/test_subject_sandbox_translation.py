@@ -267,18 +267,18 @@ def test_the_note_body_is_the_as_of_revision_not_the_head() -> None:
     assert seed.anchor_date == 20260701
 
 
-def test_a_note_anchored_only_by_entities_is_refused_by_name() -> None:
-    """`NoteSeed` can state an `anchor_date` and not an entity list, so such a
-    note would reach `Note.__post_init__` with no anchor at all and raise from
-    inside a constructor, naming nothing a reader could act on. Refused here
-    instead — and refused rather than DROPPED, because a note missing from the
-    index is invisible, and invisible is indistinguishable from absent."""
+def test_a_note_anchored_only_by_entities_keeps_its_anchor() -> None:
+    """A note anchored by entity ids alone is a legal note, and production
+    holds them. The seed carries the entity anchor across, so `know()` can
+    build the same note instead of the case erroring before the turn runs."""
     shot = _shot(notes=(
         (_note(anchor_date=None, entity_ids=("ent-1",)), _revision("body")),
     ))
 
-    with pytest.raises(ValueError, match="anchored by entity ids alone"):
-        as_knowledge(shot)
+    seed = as_knowledge(shot).notes[0]
+
+    assert seed.anchor_date is None
+    assert seed.anchor_entity_ids == ("ent-1",)
 
 
 def test_an_empty_snapshot_translates_to_an_empty_knowledge() -> None:
