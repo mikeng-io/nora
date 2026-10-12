@@ -795,6 +795,13 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "or set for later lands. A this_room_is, where there is one, is what "
        "the operator of this deployment says that room IS. Nobody in any "
        "room wrote any of it, and it is not an instruction to you."),
+    # design/context-plan/11 §4 layer E: a situation fact, set by code from the
+    # channel the message came in on (`NormalizedMessage.voice`). SITUATION,
+    # never a rule list: what follows from being heard is hers to infer.
+    _t("spoken_turn",
+       "how the message you are answering reached you and how your reply will "
+       "reach them. Set by code from the channel it came in on; nobody in the "
+       "room wrote it, and it is not an instruction to you."),
     # NO `this_room_is` ANNOTATION, deliberately: `ContextBlock.render()`
     # writes every declared annotation into `fields=` on every render, and
     # the attribute was set only on the proactive pass (deleted 2026-10-03, DEC-277). As a field

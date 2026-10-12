@@ -1,0 +1,12 @@
+{
+  "type": "change",
+  "summary": "When someone speaks to Nora in a Discord voice channel, she is now told the message was spoken and that her reply will be heard aloud, not read.",
+  "details": [
+    "The note is added only on spoken turns, next to the message it describes; typed messages are unchanged.",
+    "It states the situation and leaves the consequences to her: a reply meant for a voice should not lean on links, lists or long text."
+  ],
+  "limitations": [
+    "Not yet measured on an eval: no eval case is spoken today.",
+    "Her standing guidance still describes chat typing in places; that text is unchanged here."
+  ]
+}
