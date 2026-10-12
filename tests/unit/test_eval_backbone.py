@@ -1289,3 +1289,25 @@ def test_date_split_passes_either_correct_answer_and_fails_the_misdating():
         "date_split: a note dated 20261017 carries the 20260927 plan's rows [28]",
     ]
     assert backbone._date_split(None, out(), rows) == []
+
+
+def _cited(expect: str, said: tuple[str, ...]) -> tuple[str, ...]:
+    case = SimpleNamespace(expect=expect, metadata={"must_cite": ["三多"]})
+    outcome = backbone._check_the_corpus_assertions(
+        case, Outcome(admitted=None, said=said), rows={},
+    )
+    return outcome.checks_failed
+
+
+def test_a_text_must_cite_does_not_fail_a_silence_the_case_allows():
+    """`either` grades the message if there was one: a silence is a legal
+    answer and has no words to check. It failed every correct silence on
+    proactive_act a10. Revert the `said or ...` guard and this goes RED."""
+    assert _cited("either", ()) == ()
+    assert _cited("silence", ()) == ()
+
+
+def test_a_text_must_cite_still_binds_a_message_and_a_required_reply():
+    assert _cited("either", ("去元朗食",)) != ()
+    assert _cited("either", ("三多 12點",)) == ()
+    assert _cited("speak", ()) != ()
