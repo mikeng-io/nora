@@ -5,7 +5,9 @@ title: Context plan — what the tag turn is allowed to look at, and whether a d
 description: 'Dynamic context exposure for accepted tag turns: current source-grounded contract, October
   7 iGPU/T4/DeepSeek probes, fixed eval sender-name projection and experiment-only replay filter. Historical
   October 5 CPU-only conclusions are marked superseded. PARKED 2026-10-07 by the operator after the
-  first replay: no arm withheld anything in the sandbox, so Nora benefit is unmeasured (node 08).'
+  first replay: no arm withheld anything in the sandbox, so Nora benefit is unmeasured (node 08).
+  REOPENED 2026-10-12 on a wider question: compose the whole per-turn prompt, doctrine included
+  (nodes 09-10).'
 tags:
 - nora
 - context
@@ -19,8 +21,8 @@ tags:
 - deepseek
 - igpu
 - context-transfer
-timestamp: '2026-10-07'
-status: parked
+timestamp: '2026-10-12'
+status: active
 governance: operator-directed
 origin: "Operator 2026-10-05 (Discord, #nora thread, \"strand decision 2b - benchmark the performance\
   \ on this machine with ollama cloud with iGPU\"). Two asks in one message: (1) inspect the CURRENT\
@@ -30,7 +32,10 @@ origin: "Operator 2026-10-05 (Discord, #nora thread, \"strand decision 2b - benc
   \ on this machine, ollama-cloud with iGPU, for reference.\n Operator 2026-10-07 subsequently authorized\
   \ DeepSeek V4.1 Flash through OmniRoute/Ollama Cloud, fixing eval sender-name projection and adding\
   \ an experiment-only context filter. Latest instruction: save all as a design bundle, commit the isolated\
-  \ worktree and provide a context-transfer prompt."
+  \ worktree and provide a context-transfer prompt.\n Operator 2026-10-12 reopened it: a weather\
+  \ question should not carry the full doctrine and every block; the component may compose the whole\
+  \ prompt, doctrine included, and \"context router\" may be the wrong name. Measure first, then audit\
+  \ the doctrine against what Nora now is (cognition loop, computer, media generation)."
 members:
 - 00-overview.md
 - 01-the-seam.md
@@ -41,6 +46,9 @@ members:
 - 06-current-recommendation.md
 - 07-current-measurements.md
 - 08-experiment-and-handoff.md
+- 09-what-a-turn-carries.md
+- 10-doctrine-audit.md
+- 11-composition-is-the-doctrine-cut.md
 edges:
 - src: 00-overview
   dst: 01-the-seam
@@ -70,6 +78,18 @@ edges:
   dst: 08-experiment-and-handoff
   rel: sequences
   provenance: asserted
+- src: 09-what-a-turn-carries
+  dst: 08-experiment-and-handoff
+  rel: supersedes
+  provenance: asserted
+- src: 09-what-a-turn-carries
+  dst: 10-doctrine-audit
+  rel: informs
+  provenance: asserted
+- src: 11-composition-is-the-doctrine-cut
+  dst: ../self-growth/30-doctrine-sort.md
+  rel: extends
+  provenance: asserted
 scope:
   v1:
   - current source-grounded architecture and separate ContextPlan/EngageDecision responsibilities
@@ -77,6 +97,9 @@ scope:
   - existing eval sender-name fix and opt-in full/rules/Flash exposure comparison
   - full retrieval/transcript and mandatory context preserved; peer-history exposure aligns with about
   - local committed checkpoint and continuation instructions; first replay run 2026-10-07, blind (no block withheld); parked
+  - per-block measurement of 200 live first calls and the whole-turn multiplier (node 09)
+  - doctrine audit against current capabilities and a proposed unit decomposition (node 10)
+  - reframe: composition is the self-growth step 5 cut; target prompt layers and sequence (node 11)
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
