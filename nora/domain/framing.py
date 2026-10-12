@@ -580,6 +580,17 @@ TAG_HEADER = (
 #: and reply, so the turn that follows begins in her own voice.
 CLOSING_LINE = "Understood. I'll read the conversation and reply as myself."
 
+#: The body of `<spoken_turn>` (design/context-plan/11 §4 layer E): rendered only
+#: when the message she is answering was spoken in a voice channel. The SITUATION,
+#: not a rule list: what she is reading and where the reply goes. What follows
+#: from it (no link read aloud, no list, no GIF, short) is hers to infer; telling
+#: a model what it is reading has measured better here than telling it what to do.
+SPOKEN_TURN = (
+    "This message was spoken aloud in the voice channel and reached you as a "
+    "transcript. Your reply will be said aloud there by a voice: heard once, "
+    "not read."
+)
+
 
 @dataclass(frozen=True)
 class ContextHeader:

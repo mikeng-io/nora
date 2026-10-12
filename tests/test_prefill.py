@@ -34,9 +34,9 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          standing=None, decisions=(), people_in_window=(), culture=None,
          room_members=(), computer=None, documents=None, character=(),
          subagents=None, unit_culture=None, self_account=None,
-         lessons=(), memos=()) -> TagContext:
+         lessons=(), memos=(), voice=False) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
-                            quote=quote)
+                            quote=quote, voice=voice)
     kwargs = {"tagger_card": tuple(tagger_card),
               "notes": tuple(notes), "standing": standing, "culture": culture,
               "decisions": tuple(decisions),
@@ -292,6 +292,8 @@ def _full_prefill_body() -> str:
         computer=_computer(), documents=_documents(), subagents=_subagents(),
         character=(("Miles", _culture()),),
         unit_culture=_culture(),
+        # `<spoken_turn>` renders only on a spoken message.
+        voice=True,
     )
     return build_prefill(
         ctx, display_name="Nora", context_window=40,
