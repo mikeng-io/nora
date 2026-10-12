@@ -2312,12 +2312,14 @@ async def build_dependencies(
     # (DEC-277).
     proactive_homes = allowlist.home_rooms()
 
-    def _auto_runner(effort: str, source: str) -> LiveAgentRunner:
+    def _auto_runner(
+        effort: str, source: str, *, max_tokens: int | None = None,
+    ) -> LiveAgentRunner:
         return LiveAgentRunner(
             models=factory.ModelSource(
                 client=client,
                 spec=factory.ModelSpec(
-                    model=tier.model, max_tokens=tier.max_tokens,
+                    model=tier.model, max_tokens=max_tokens or tier.max_tokens,
                     temperature=tier.temperature,
                     reasoning_effort=str(_reasoning_effort(effort, source=source)),
                     tool_choice=tool_choice.AFTER_SPEAKING,
@@ -2346,6 +2348,7 @@ async def build_dependencies(
     if proactive_homes:
         proactive_runner = _auto_runner(
             cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
+            max_tokens=cfg.proactive.max_tokens,
         )
     # The public Instagram summons' runner (design/instagram-adoption/19,
     # `nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the

@@ -1478,6 +1478,7 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
         assert path._proactive_runner is not path._participation_runner
         assert path._proactive_runner._models._spec.reasoning_effort == "low"
         assert path._participation_runner._models._spec.reasoning_effort == "none"
+        assert path._proactive_runner._models._spec.max_tokens == cfg.proactive.max_tokens
     finally:
         await deps.background.cancel_all()
 

@@ -386,6 +386,11 @@ shadow = false
 # proactive_act suite); at `low` it stayed silent on 32/40 and still spoke on
 # 8/10 of the cases that needed it.
 reasoning_effort = "low"
+# One call's output ceiling for this turn, replacing [llm] max_tokens here:
+# its reasoning counts against it, and at `low` one call in 60 overran 8000 and
+# was lost as a silent failure. [llm.limits] output_tokens still bounds the
+# whole turn; this only stops one call being cut off mid-reply.
+max_tokens = 20000
 
 [relevance_gate]
 # The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured model

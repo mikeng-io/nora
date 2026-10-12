@@ -482,6 +482,12 @@ class ProactiveConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reasoning_effort: str = "low"
+    # One call's output ceiling for this turn, NOT `[llm] max_tokens`: reasoning
+    # counts against it, and at `low` one proactive call in 60 overran the
+    # deployment's 8000 and died `PartialReplyError` (eval, 2026-10-12). A cap
+    # is not a reservation, so headroom costs nothing; the turn's
+    # `[llm.limits] output_tokens` (24000 live) still bounds a runaway turn.
+    max_tokens: int = Field(default=20000, gt=0)
 
 
 class ParticipationConfig(BaseModel):
