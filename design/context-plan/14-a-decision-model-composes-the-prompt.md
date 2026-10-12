@@ -75,17 +75,18 @@ contract, not an optimisation:
    or tool that renders outside it. The floor is the only exception, and a test
    caps its size.
 2. **New units are selectable without retraining.** A fixed multi-label head
-   (one output per unit) must be retrained for every new block. The composer
-   instead scores (turn, unit card) pairs, where a card is the unit's short
-   statement of what it is for: block descriptions (`block_types.py`), tool
-   descriptions, doctrine `description` and headings already exist. A feature
-   ships with its card and is composable on day one; retraining improves it,
-   it does not enable it.
-3. **Latency stays flat in the unit count.** Pairs are scored in one batch (a
-   cross-encoder) or as one turn embedding against precomputed card embeddings
-   (a bi-encoder with a learned threshold), so 64 units or 600 fit the same
-   budget. This favours §6 candidate (b), in its pairwise form, over (a) and
-   (c); the labels still decide.
+   (one output per unit) must be retrained for every new block. The decision
+   model is asked per (turn, unit card): "does this turn need <card>?", where a
+   card is the unit's short statement of what it is for: block descriptions
+   (`block_types.py`), tool descriptions, doctrine `description` and headings
+   already exist. A feature ships with its card and is composable on day one;
+   retraining improves it, it does not enable it.
+3. **Latency must stay flat enough in the unit count.** Operator: the composer
+   is a **decision model, not an embedding model**. With one question per unit,
+   the turn is the shared prefix (cached by the server) and each question adds
+   only the card and one output token; questions run in parallel. Where that
+   does not fit the budget, units are grouped into a few multi-option
+   questions. Both are measured on norty.
 4. **Measured as an invariant:** the greeting target (< 5k) is re-checked on
    every release, not once.
 
@@ -115,25 +116,22 @@ No gold set exists. For each recorded tag turn (Langfuse), what did it need?
 
 ## 6. Train, serve, measure
 
-1. **Latency forces one pass.** Operator: accuracy first, composer latency
-   under 2 s, ideally under 1 s. Node 07 measured Tev1 4B at 4.1 s for one
-   five-question request on the iGPU, so a question per unit (64) cannot fit.
-   The composer scores every unit in ONE pass. Candidates, chosen by held-out
-   accuracy on the labels, then latency on norty:
-   (a) an LLM with a multi-label head (Unsloth's decision head; not servable
-   by Ollama, which serves GGUF causal LMs: own small server on ROCm or CPU);
-   (b) a fine-tuned multilingual encoder with a multi-label head (`bge-m3` is
-   on norty; Cantonese-capable; one forward pass, well under 1 s);
-   (c) a Tev1-style causal LM that emits the selected unit ids in one
-   generation (GGUF, Ollama `/v1/systemone`; output length costs latency).
-   Tev1 itself is a plain Qwen 3.5 4B GGUF tagged `decision-model`
-   (Together AI, Apache-2.0), served on norty with Ollama's `decision`
-   capability, no separate head.
+1. **Candidates, all decision models** (operator 2026-10-12: not an embedding
+   model). Tev1 4B and 0.8B as they are (Together AI, Apache-2.0; a plain
+   Qwen 3.5 GGUF tagged `decision-model`, served on norty by Ollama's
+   `decision` capability, no separate head), and Qwen 3.5 0.8B / 2B / 4B
+   trained on our labels (Unsloth on Modal). Each arm is measured on held-out
+   labelled turns: missed needed units (the cost that matters), tokens saved,
+   latency on norty against the budget (accuracy first; under 2 s, ideally
+   under 1 s; node 07: Tev1 4B 4.1 s and 0.8B ~1.0 s per five-question request
+   on the iGPU, before prefix caching and parallelism). A trained model is
+   adopted only if it beats Tev1 held out.
 2. **Train on Modal**, state = the message, the last lines of the transcript,
    the occasion and room facts; calibrated per-unit probabilities.
-3. **Serve on norty:** for (c), Ollama `/v1/systemone` on the Radeon 680M with
-   `HSA_OVERRIDE_GFX_VERSION=10.3.0` (node 07); for (a) and (b), a small
-   service beside it.
+3. **Serve on norty:** Ollama `/v1/systemone` on the Radeon 680M with
+   `HSA_OVERRIDE_GFX_VERSION=10.3.0` (node 07). A trained model is exported to
+   GGUF in Tev1's shape (letter answers, no separate head) so the same server
+   serves it.
 4. **Fail closed to today's prompt:** the model unavailable or late (a budget
    in ms, measured) means the full prompt, as now.
 5. **Measure:** offline replay of recorded turns (tokens, and whether a judge
@@ -143,10 +141,10 @@ No gold set exists. For each recorded tag turn (Langfuse), what did it need?
 ## 7. Sequence
 
 1. Unit inventory as data (done: [composer-units.yaml](evidence/composer-units.yaml)).
-2. The serving shape (a/b/c above) is chosen by the labels, not before them.
+2. Benchmark Tev1 as is on the first labels; that is the bar a trained model must beat.
 3. Label 200 recorded turns (§5), spot-check, measure label agreement.
-4. Train candidates (a)-(c); compare held-out per-unit recall at the include
-   threshold, then latency on norty against the 2 s / 1 s budget.
+4. Train Qwen 3.5 decision models on the labels; compare held-out per-unit
+   recall at the include threshold against Tev1, then latency on norty.
 5. Shadow on live turns; replay tokens against the targets.
 6. Apply, behind a config switch, with the fail-closed path.
 
