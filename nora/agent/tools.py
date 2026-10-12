@@ -6342,7 +6342,12 @@ Returns `status`: ok (`members`, by name) or unavailable, with a `note`."""
         # (`nora.agent.clock`), so a mid-turn answer states exactly its facts.
         # It read a fixed `+08:00` labelled HKT until 2026-09-24, and said
         # «(HKT)» after the clock line had gained its zone name and place.
-        moment = local_now()
+        # The injected `clock` when there is one, read the way the fire path
+        # reads it for its clock line (`self._clock().astimezone()`): an eval
+        # sandbox freezes the turn at a past instant, and a `now` that read the
+        # wall instead told her a Sunday plan was «yesterday» mid-turn
+        # (proactive_act a12, 2026-10-12). In production both are the wall.
+        moment = clock().astimezone() if clock is not None else local_now()
         # The clock reading stays in the line — it is a fact about Nora's own
         # host, not about the group, and it is the one thing that tells an
         # operator the container's timezone is what they think it is. It was

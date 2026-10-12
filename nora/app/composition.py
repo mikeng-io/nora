@@ -3281,6 +3281,7 @@ async def build_dependencies(
         rosters=rosters,
         preview_source=preview_source,
         slots=slots,
+        clock=clock,
         tool_call_log_store=tool_call_log_store,
         reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,

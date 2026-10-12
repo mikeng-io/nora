@@ -296,6 +296,7 @@ def _build_pipeline(
     debrief_wiring=None,
     decisions=None,
     defer_tools: bool = False,
+    turn_clock=None,
 ):
     # Always a real (fake) store, never `None`: every scenario below can read
     # `pipeline._tag_trace_store.saved` (mirroring how `pipeline._slots` is
@@ -340,6 +341,7 @@ def _build_pipeline(
         tag_trace_store=tag_trace_store,
         debrief_wiring=debrief_wiring,
         decisions=decisions,
+        clock=turn_clock,
         **extra,
     )
     return pipeline, metrics, audit, memory, background
@@ -423,6 +425,22 @@ def _prompt_text(call: dict) -> str:
         for message in call["pre_fill"] for block in message["content"]
     )
 
+
+
+async def test_the_clock_line_states_the_injected_clock():
+    """The tag turn's clock line reads the injected clock, as the fire path's
+    does and as the `now` tool does, so a turn frozen at a past instant (an
+    eval sandbox) states one time everywhere. It read the wall regardless.
+
+    Revert `now=` on the pipeline's `build_prefill` call and this goes RED."""
+    frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
+    pipeline, _metrics, _audit, _memory, background = _build_pipeline(
+        turn_clock=lambda: frozen,
+    )
+    await pipeline.run(_request())
+    await _drain(background)
+
+    assert "Sunday 11 October 2026" in _prompt_text(pipeline._runner.calls[-1])
 
 async def test_deferring_ships_the_hot_set_the_loader_and_the_catalogue():
     """The switch, end to end through the pipeline: the model is handed the
