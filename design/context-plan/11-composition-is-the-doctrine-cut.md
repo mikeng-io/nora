@@ -12,6 +12,11 @@ edges:
 
 # Composition is the doctrine cut
 
+> **Amended by node [12](12-the-sort-ruled.md) (2026-10-12):** layer A carries an
+> authored identity seed on every surface and the seed is never cut; silence.md
+> dissolves into the turn's occasion (layer E); location is a layer-E fact on
+> both loops for a location-trusted room, and its law is rewritten.
+
 ## 1. The question, as the operator put it (2026-10-12)
 
 Not "which wording is stale", and not "which doctrine section does this turn

@@ -193,6 +193,38 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
     assert "Banter is how this group talks" in everything
 
 
+#: The operator's rulings of 2026-10-12 on the eleven rows the sort marked
+#: AMBIGUOUS (DEC-309; design/self-growth/31-doctrine-audit.md, Judgement calls).
+#: Each names the part by its file and its opening words, so a ruling reverted in
+#: classification.yaml, or a split folded back into one part, fails here.
+OPERATOR_RULINGS_2026_10_12 = (
+    ("core/identity.md", "That's context, not a topic.", "law"),
+    ("core/identity.md", "Asked directly who made you", "practice"),
+    ("rooms/belonging.md", "You answer to the group, not to him.", "law"),
+    ("rooms/belonging.md", "One half of you answers when somebody calls you", "character"),
+    ("rooms/conduct.md", "When two people tell you different things", "law"),
+    ("core/constraints.md", "Asked, you do not lecture", "practice"),
+    ("rooms/silence.md", "There are three ways a turn comes to you", "practice"),
+    ("rooms/silence.md", "When someone called you, you answer", "law"),
+    ("rooms/silence.md", "When the room went quiet", "practice"),
+    ("instruments/participation.md", "2. **Where anybody in the room", "law"),
+    ("instruments/participation.md", "`verdict` is the decision", "practice"),
+    ("public/conduct.md", "Keep the whole comment under 300 characters", "practice"),
+    ("public/conduct.md", "Your own reading of a picture never overrules", "law"),
+    ("public/conduct.md", "You are not a side in the thread.", "law"),
+)
+
+
+@pytest.mark.parametrize(("path", "starts", "bucket"), OPERATOR_RULINGS_2026_10_12)
+def test_the_operators_rulings_on_the_ambiguous_rows_hold(path: str, starts: str, bucket: str):
+    parts = [
+        r for r in _rules()
+        if r.file == path and " ".join(r.text.split()).startswith(starts)
+    ]
+    assert len(parts) == 1, f"{path}: no single part starts {starts!r}"
+    assert parts[0].bucket == bucket, f"{path} {starts!r} is {parts[0].bucket}, ruled {bucket}"
+
+
 def test_law_rules_name_where_they_live():
     rules = _store(DOCTRINE_DIR).law_rules()
     assert all(r.bucket == "law" for r in rules)
