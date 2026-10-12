@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Eval grader only: on an `either` case, a turn that ran and chose silence now counts as an answer instead of ungradable, so proactive_act a10 can be scored. A case where nothing ran is still an error. No runtime change.", "details": [], "limitations": []}
