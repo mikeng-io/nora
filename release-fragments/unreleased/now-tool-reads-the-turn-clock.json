@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "The `now` tool answers with the same clock as the line at the top of her turn, so a turn replayed at a past moment no longer hears a different date when she checks the time.",
+  "details": [
+    "It read the wall clock directly while the turn's clock line read the clock the turn was given; in an eval case frozen at a Sunday morning she called `now`, heard Monday, and told the room the plan was yesterday's."
+  ],
+  "limitations": [
+    "In production the given clock is the wall clock, so live answers are unchanged."
+  ]
+}
