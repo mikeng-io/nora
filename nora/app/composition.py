@@ -2306,26 +2306,22 @@ async def build_dependencies(
     #
     # The proactive occasion (design/dreamer-agent-loop/39 D12, DEC-162)
     # needs the SAME runner shape for the same reason — its act turn may end
-    # in silence — so the one auto-runner is built when EITHER occasion is
-    # wired and handed to `FirePath` under both names. The act turn is wired
-    # when `policy.toml` names a home room (39 D2); its rows are written by the
-    # Cognition session's `remind` (DEC-277).
+    # in silence — so both are built by `_auto_runner` below, each with its own
+    # reasoning effort. The act turn is wired when `policy.toml` names a home
+    # room (39 D2); its rows are written by the Cognition session's `remind`
+    # (DEC-277).
     proactive_homes = allowlist.home_rooms()
-    participation_runner: LiveAgentRunner | None = None
-    if cfg.participation.enabled or proactive_homes:
-        participation_runner = LiveAgentRunner(
+
+    def _auto_runner(
+        effort: str, source: str, *, max_tokens: int | None = None,
+    ) -> LiveAgentRunner:
+        return LiveAgentRunner(
             models=factory.ModelSource(
                 client=client,
                 spec=factory.ModelSpec(
-                    model=tier.model, max_tokens=tier.max_tokens,
+                    model=tier.model, max_tokens=max_tokens or tier.max_tokens,
                     temperature=tier.temperature,
-                    # `[participation]`'s own, never the tag lane's — see the
-                    # field's note: silence is this occasion's default, and
-                    # more reasoning measurably produces more of it.
-                    reasoning_effort=str(_reasoning_effort(
-                        cfg.participation.reasoning_effort,
-                        source="[participation] reasoning_effort",
-                    )),
+                    reasoning_effort=str(_reasoning_effort(effort, source=source)),
                     tool_choice=tool_choice.AFTER_SPEAKING,
                 ),
             ),
@@ -2333,6 +2329,26 @@ async def build_dependencies(
             skills_dir=cfg.doctrine.dir.parent / "skills",
             agent_name=cfg.agent.name,
             metrics=metrics,
+        )
+
+    # `[participation]`'s own effort, never the tag lane's — see the field's
+    # note: silence is this occasion's default, and more reasoning measurably
+    # produces more of it.
+    participation_runner: LiveAgentRunner | None = None
+    if cfg.participation.enabled:
+        participation_runner = _auto_runner(
+            cfg.participation.reasoning_effort, "[participation] reasoning_effort",
+        )
+    # The proactive act turn's runner: the same `auto` shape, its OWN effort
+    # (`ProactiveConfig`, design/cognition-loop/35 §3.4). It shared the
+    # participation runner until 2026-10-12, and the two fail in opposite
+    # directions: at `none` a proactive turn spoke on every case where
+    # silence was right.
+    proactive_runner: LiveAgentRunner | None = None
+    if proactive_homes:
+        proactive_runner = _auto_runner(
+            cfg.proactive.reasoning_effort, "[proactive] reasoning_effort",
+            max_tokens=cfg.proactive.max_tokens,
         )
     # The public Instagram summons' runner (design/instagram-adoption/19,
     # `nora.app.summons`): the SAME `AFTER_SPEAKING` shape as the
@@ -3465,7 +3481,7 @@ async def build_dependencies(
             # The participation occasion's own runner (§4) — None whenever the
             # occasion is disabled, which is also exactly when no participation
             # Event can reach `speak` (no policy marks one, no trigger exists).
-            participation_runner=participation_runner if cfg.participation.enabled else None,
+            participation_runner=participation_runner,
             # The proactive act turn's runner (39 D12): the same auto-runner,
             # under its own name. Gated on a HOME ROOM existing, not on the
             # adaptor being wired (audit 2026-09-09): a proactive row written
@@ -3473,7 +3489,7 @@ async def build_dependencies(
             # off, the screen below admits it, and a fire path with no runner
             # would fail every such row `failed_error`. The row's existence
             # condition is the home room; so is the runner's.
-            proactive_runner=participation_runner if proactive_homes else None,
+            proactive_runner=proactive_runner,
             # The §10.6 shadow mirror: wired only when the operator turned BOTH
             # the occasion AND the review surface on — a mirrored determination
             # always cleared the room opt-in and the enabled gate first. The

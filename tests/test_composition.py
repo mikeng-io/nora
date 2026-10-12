@@ -1459,6 +1459,29 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
         await deps.background.cancel_all()
 
 
+
+async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
+    """design/cognition-loop/35 §3.4: the proactive act turn reasons at
+    `[proactive] reasoning_effort`, not `[participation]`'s. They shared one
+    runner, and at `none` a proactive turn spoke on every case where silence
+    was right. With participation ON, the two runners are distinct and each
+    carries its own effort."""
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {
+        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+        "participation.enabled": True, "participation.reasoning_effort": "none",
+        "proactive.reasoning_effort": "low",
+    }))
+    try:
+        (loop,) = _spawned(deps, "HeartbeatLoop.run")
+        path = loop._fire.__self__
+        assert path._proactive_runner is not path._participation_runner
+        assert path._proactive_runner._models._spec.reasoning_effort == "low"
+        assert path._participation_runner._models._spec.reasoning_effort == "none"
+        assert path._proactive_runner._models._spec.max_tokens == cfg.proactive.max_tokens
+    finally:
+        await deps.background.cancel_all()
+
 async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
     cfg, tmp_path,
 ):

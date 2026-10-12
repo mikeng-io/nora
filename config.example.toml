@@ -377,6 +377,21 @@ shadow = false
 # shadow_channel = "1234567890123456789/9876543210987654321"  # required when shadow = true
 # shadow_platform = "discord"              # the mirror's platform
 
+[proactive]
+# The proactive act turn (design/cognition-loop/35): a reminder Cognition wrote
+# to itself comes due and she decides, in the room, whether anything needs
+# saying. Its OWN reasoning budget, not [participation]'s, which it shared
+# until 2026-10-12: the two fail in opposite directions. At `none` a proactive
+# turn spoke on every case where silence was right (8/40 silent on the
+# proactive_act suite); at `low` it stayed silent on 32/40 and still spoke on
+# 8/10 of the cases that needed it.
+reasoning_effort = "low"
+# One call's output ceiling for this turn, replacing [llm] max_tokens here:
+# its reasoning counts against it, and at `low` one call in 60 overran 8000 and
+# was lost as a silent failure. [llm.limits] output_tokens still bounds the
+# whole turn; this only stops one call being cut off mid-reply.
+max_tokens = 20000
+
 [relevance_gate]
 # The Relevance Gate (design/dreamer-agent-loop/36): ONE cheap structured model
 # call, on every quiescence-closed window, deciding whether the burst is worth a
