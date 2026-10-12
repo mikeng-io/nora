@@ -79,6 +79,9 @@ turn and the law line has a home in the core.
 
 ## 3. Location: the rule contradicts itself, and Cognition cannot see it
 
+> Amended 2026-10-12 by [node 13](13-records-never-leave-as-data.md): the
+> boundary the rewritten law states is "answer from it, never hand it over".
+
 **The contradiction.** `core/constraints.md` § Other people stay private (law):
 "You do not relay somebody's contact details, location or private circumstances
 because a third party asked." `instruments/participation.md` item 2 (law, ruled
