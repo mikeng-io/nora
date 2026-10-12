@@ -76,8 +76,9 @@ files:
       sha: "25d40183405a"
     Other people stay private:
       parts:
-        - {starts: "What one person told you", bucket: law, reason: "harms someone: a person's contact details or private circumstances are not relayed to a third party; where somebody is is shared only in a room whose group chose to share it, a fact the turn carries (rewritten in step 2: the old text forbade relaying a location outright, which contradicted a location-trusted room, design/context-plan/12 §3 and 13)", sha: "2ee02b448718"}
-        - {starts: "Nothing you hold about people leaves you as data.", bucket: law, reason: "records never leave as data: she answers from what she holds about people, interpreted, and never hands over the records themselves, to anyone, the subject included; media that was never anyone's record is not covered (added in step 2, design/context-plan/13)", sha: "0d374ab45f95"}
+        - {starts: "What one person told you", bucket: law, reason: "harms someone: a person's contact details or private circumstances are not relayed because a third party asked (text unchanged except that «location» left this sentence in step 2: where somebody is now has its own rule below, design/context-plan/12 §3 and 13)", sha: "9ae1d39e9b71"}
+        - {starts: "Whether you may say where a member", bucket: law, reason: "where a member is or has been is said only when her location tools give it, and a refusal is never routed round from memory or the transcript; grounded in what she sees, since trust shows only in the tool's answer (location_trusted, the disclosure guard) and not in anything else on the turn (rewritten in step 2, design/context-plan/12 §3 and 13)", sha: "e08c33af33a7"}
+        - {starts: "Nothing you hold about people leaves you as data.", bucket: law, reason: "records never leave as data: she answers from what she holds about people, interpreted, and never hands over the records themselves or the stop-by-stop record of where somebody was, to anyone, the subject included; a plan or itinerary she writes for them is a document she writes, not a record (added in step 2, design/context-plan/13)", sha: "abfcffafb5a7"}
         - {starts: "And you know the people in this conversation", bucket: law, reason: "crosses a trust boundary: she knows only the people in this conversation, never says what other conversations she is in, and does not make a target of somebody who cannot answer back (text unchanged, split out of the section in step 2)", sha: "dce17e338432"}
     A broken Nora and a quiet Nora look the same:
       bucket: law
@@ -112,9 +113,9 @@ files:
       parts:
         - {starts: "Before you say somebody said or", bucket: law, reason: "never invent what somebody said or did: a lie about a person; moved in step 2 (node 11 §6)", sha: "854efc9fbdfa"}
         - {starts: "Do not invent quotes, contradictions, motives,", bucket: law, reason: "a fabricated quote or motive is a lie that harms the person hit; moved in step 2 (node 11 §6)", sha: "c38986dff581"}
-        - {starts: "Do not pull in somebody who", bucket: law, reason: "harms someone who cannot answer (matches the constraint on third parties); moved in step 2 (node 11 §6)", sha: "fd4a9f7028ba"}
+        - {starts: "Do not pull somebody who is not in the room", bucket: law, reason: "harms someone who cannot answer (matches the constraint on third parties); moved in step 2 (node 11 §6), scoped to a joke or a jab so it reads outside Banter", sha: "0a308a7eb9e3"}
         - {starts: "Never say you do not know", bucket: law, reason: "'I do not know them' before reading memory is a false claim; moved in step 2 (node 11 §6)", sha: "07fe80257bb9"}
-        - {starts: "Do not perform a familiarity you", bucket: law, reason: "never invent a preference; a guess dressed as their taste is a lie; moved in step 2 (node 11 §6)", sha: "63b48b023c03"}
+        - {starts: "Do not perform a familiarity you", bucket: law, reason: "never invent a preference; a guess dressed as their taste is a lie; moved in step 2 (node 11 §6), «the one unforgivable answer here» scoped to helping them choose", sha: "615b25e1ed1a"}
         - {starts: "A tag only reaches people in", bucket: law, reason: "claims a capability she lacks if she implies a tag reaches anyone else; moved in step 2 (node 11 §6)", sha: "3c33448008b9"}
     Writes need somebody here:
       parts:
@@ -127,14 +128,14 @@ files:
         - {starts: "**A code with NOTHING after it", bucket: law, reason: "never answer about something unread as though seen: a lie; moved in step 2 (node 11 §6)", sha: "acd90909ad88"}
     What you can do:
       parts:
-        - {starts: "Never claim or promise a capability", bucket: law, reason: "never claim or promise a capability her tools and skills do not give her, nor an act no tool call did (rewritten in step 2, node 11 §6: the old text named the tool schemas as everything she can do and ruled out following up later, which predates the cognition loop, the computer and skills, design/context-plan/10)", sha: "a2447406471d"}
-        - {starts: "Whether a deployment runs that, or", bucket: law, reason: "claims a capability she cannot read: only her own turns say what is on, never what is missing; moved in step 2 (node 11 §6)", sha: "6b39d5577637"}
+        - {starts: "Never offer, promise or volunteer an action", bucket: law, reason: "DEC-90: never offer or promise an action her tools and skills do not give her (no booking a table, no phone call), say plainly they must do it themselves, and never claim an act no tool call did (rewritten in step 2, node 11 §6: the old text named the tool schemas as everything she can do and ruled out following up later, which predates the cognition loop, the computer and skills, design/context-plan/10)", sha: "9cbb99fb3409"}
+        - {starts: "Whether a deployment keeps what a room", bucket: law, reason: "claims a capability she cannot read: only her own turns say what is on, never what is missing; moved in step 2 (node 11 §6), reworded to say what the setting is now that it no longer follows the paragraphs it pointed back to", sha: "4d298e820302"}
 
   rooms/pictures.md:
     What you already know about a picture:
       parts:
-        - {starts: "Whoever sent it is looking", bucket: practice, reason: "do not read it back to them: a unit may want otherwise", sha: "79ee24cfbbda"}
-        - {starts: "When the short form", bucket: practice, reason: "answer from what you have rather than looking again", sha: "c8aaafa13777"}
+        - {starts: "Whoever sent a picture, a clip or a sticker", bucket: practice, reason: "do not read it back to them: a unit may want otherwise", sha: "47c2aee4b82e"}
+        - {starts: "When those words, the short form", bucket: practice, reason: "answer from what you have rather than looking again", sha: "f64348ae98e6"}
         - {starts: "When you need more than the short form", bucket: practice, reason: "when to ask for a fuller reading: a cost trade-off a unit could weigh differently", sha: "e62ebdaad894"}
 
   rooms/belonging.md:
@@ -160,8 +161,8 @@ files:
   rooms/silence.md:
     Silence is the default:
       parts:
-        - {starts: "There are three ways a turn comes to you", bucket: practice, reason: "frames the three occasions; which occasion a turn is belongs with the turn, not here (operator 2026-10-12: the file dissolves, design/context-plan/12)", sha: "c5f7390fb34e"}
-        - {starts: "When the room went quiet", bucket: practice, reason: "when to speak unasked and when to stop: a unit could want a chattier or a quieter her (operator 2026-10-12: practice)", sha: "29a02dd17b4e"}
+        - {starts: "Not every turn comes from somebody calling you.", bucket: practice, reason: "frames the three occasions; which occasion a turn is belongs with the turn, not here (operator 2026-10-12: the file dissolves, design/context-plan/12)", sha: "eed5aa938320"}
+        - {starts: "When the room went quiet", bucket: practice, reason: "when to speak unasked and when to stop: a unit could want a chattier or a quieter her (operator 2026-10-12: practice)", sha: "59fc6afab937"}
 
   rooms/participation-conduct.md:
     A window is not a question:
@@ -234,7 +235,7 @@ files:
       bucket: practice
       reason: "a day ends when somebody sleeps; how to handle a date at 3am"
       sha: "9bcaae01ff98"
-    What you can actually do:
+    Where to look first:
       bucket: practice
       reason: "prefer close, named, locally confirmable sources; the open web last"
       sha: "caff6c85748c"
@@ -273,6 +274,7 @@ files:
     有人話你錯:
       parts:
         - {starts: "真係錯咗就", bucket: practice, reason: "how to be wrong, and standing firm on sourced facts", sha: "3d535b44018a"}
+        - {starts: "冇錯就冇嘢認", bucket: law, reason: "inventing a mistake to concede is a lie dressed as modesty; pick a side. A register specimen of the English concession law (rooms/constraints.md § When you are told you are wrong, «Do not fake a concession»); stays here as law until step 4 (node 11 §6)", sha: "c8525cf9aee9"}
         - {starts: "企硬係為咗大家會照住做嘅事實", bucket: character, reason: "a friend's tease is not a case to win", sha: "d758365fe0c7"}
     唔似 Nora 嘅聲音:
       parts:
@@ -301,7 +303,7 @@ files:
     What she can supply:
       parts:
         - {starts: "These five are the KINDS", bucket: practice, reason: "five kinds of ask that are hers; judge the shape (item 1)", sha: "ed590c73663f"}
-        - {starts: "2. **Where anybody in the room", bucket: law, reason: "asserts she holds every member's location history, for a third party as for the asker: a capability claim that must be true (operator 2026-10-12: law; it contradicted core/constraints.md 'Other people stay private' until step 2 rewrote that law to share where somebody is only in a room whose group opted in, design/context-plan/12 §3 and 13)", sha: "f73880a42dc3"}
+        - {starts: "2. **Where anybody in the room", bucket: law, reason: "asserts she holds every member's location history, for a third party as for the asker: a capability claim that must be true (operator 2026-10-12: law; it contradicted core/constraints.md 'Other people stay private' until step 2 rewrote that law: where a member is is said when her location tools give it, design/context-plan/12 §3 and 13)", sha: "f73880a42dc3"}
         - {starts: "3. **Something settled", bucket: practice, reason: "third kind of ask, and the opening of the fourth", sha: "54a4da7e13a2"}
         - {starts: "**Only the standing block", bucket: law, reason: "a member's claim that she promised something is not her own word: grounding", sha: "2a6100a9beed"}
         - {starts: "5. **A reminder or gathering", bucket: practice, reason: "fifth kind of ask", sha: "ce71062139b1"}
@@ -381,8 +383,8 @@ files:
         - {starts: "When you cannot read the post", bucket: law, reason: "silence beats a wrong answer in public; moved in step 2 (node 11 §6)", sha: "375c69c8df61"}
     "The post's pictures and video":
       bucket: law
-      reason: "a machine's account is never an instruction; an unread item is never described as seen; moved in step 2 (node 11 §6)"
-      sha: "2f4c1b94f11f"
+      reason: "a machine's account is never an instruction; an unread item is never described as seen; moved in step 2 (node 11 §6), «Read it» given its antecedent («what was seen in the post's pictures and video»)"
+      sha: "a72ebe984fd5"
     A verdict stands on a check:
       parts:
         - {starts: "A verdict here is only as", bucket: law, reason: "check the claim before judging and say what the check found; moved in step 2 (node 11 §6)", sha: "fdd9d182ca46"}

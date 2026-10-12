@@ -923,10 +923,8 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
             "checked") in law
     assert "the grounds you checked before may still be in the record" in law
     assert "Agreeing you invented something when you did not is not modesty" in law
-    # voice.md's 冇錯就冇嘢認 line was deleted in step 2 as a duplicate of this
-    # one, which the law core now carries; voice keeps how standing firm sounds.
     assert "Do not fake a concession to keep the peace" in law
-    assert "冇錯就冇嘢認" not in voice
+    assert "冇錯就冇嘢認" in voice
     assert "企硬" in voice
 
 

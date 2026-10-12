@@ -716,7 +716,8 @@ def test_conduct_allows_personal_banter_only_for_an_in_room_instigator():
     assert "convert an odd request into a roast just because it is odd" in conduct
     # 人身攻擊 against somebody who cannot answer back. Law, so it moved to
     # rooms/constraints.md in step 2 (design/context-plan/11 §6).
-    assert "Do not pull in somebody who is not in the room." in _room_constraints()
+    assert "Do not pull somebody who is not in the room into a joke or a jab." in \
+        " ".join(_room_constraints().split())
     assert "target of a fight" in constraints
 
 
@@ -966,13 +967,15 @@ def test_pushback_is_split_by_kind_across_voice_and_conduct():
     assert "# Being contradicted" in conduct
 
     # The forbidden move itself — inventing a fault so there is one to concede —
-    # is law. Since step 2 (design/context-plan/11 §6, 2026-10-12) it is stated
-    # once, in rooms/constraints.md: voice.md's Cantonese twin of it (作一個自己嘅錯
-    # 出嚟俾人認, and the half-agreement «你講得都啱, 不過») was deleted as a
-    # duplicate of «Do not fake a concession», which the law core now carries.
+    # is what BOTH files reach, from their own side. The English half has been
+    # rooms/constraints.md since step 2 (design/context-plan/11 §6, 2026-10-12);
+    # the Cantonese half stays in voice.md as its register specimen until step 4.
+    assert "作一個自己嘅錯出嚟俾人認" in voice
     assert "Agreeing you invented something when you did not is not modesty" in law
-    assert "Do not fake a concession to keep the peace" in law
-    assert "作一個自己嘅錯出嚟俾人認" not in voice
+
+    # …and the half-agreement, which is the failure in its most survivable
+    # disguise and the reason the voice half is not redundant with the law's.
+    assert "你講得都啱，不過" in voice
 
     # The split holds: register examples stay in voice alone, and the grounding
     # vocabulary stays in the law alone. A copy in either direction is the drift

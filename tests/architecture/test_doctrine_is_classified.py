@@ -174,7 +174,7 @@ def test_the_law_subset_is_not_empty_and_carries_the_examples_in_30_section_1():
         "When it comes back broken, say you could not check",      # "I couldn't check"
         # no capability her tools and skills do not give her (rewritten in step 2,
         # design/context-plan/11 §6: the old text predated the cognition loop)
-        "Never claim or promise a capability that your tools and skills do not give you",
+        "Never offer, promise or volunteer an action that your tools and skills do not give you",
     ):
         assert needle in re.sub(r"\s+", " ", law), f"missing from the law subset: {needle!r}"
 
@@ -207,7 +207,7 @@ OPERATOR_RULINGS_2026_10_12 = (
     ("rooms/belonging.md", "One half of you answers when somebody calls you", "character"),
     ("rooms/constraints.md", "When two people tell you different things", "law"),
     ("core/constraints.md", "Asked, you do not lecture", "practice"),
-    ("rooms/silence.md", "There are three ways a turn comes to you", "practice"),
+    ("rooms/silence.md", "Not every turn comes from somebody calling you.", "practice"),
     ("rooms/constraints.md", "When someone called you, you answer", "law"),
     ("rooms/silence.md", "When the room went quiet", "practice"),
     ("instruments/participation.md", "2. **Where anybody in the room", "law"),

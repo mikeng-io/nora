@@ -342,9 +342,9 @@ def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(
     """
     voice = _flat("voice")
     # The law lines moved out of conduct.md into rooms/constraints.md in step 2
-    # (design/context-plan/11 §6, 2026-10-12); voice.md's invented-mistake line
-    # went with it as a duplicate, and the capability rule was rewritten there to
-    # its must-hold fact (its old text predated the cognition loop).
+    # (design/context-plan/11 §6, 2026-10-12), and the capability rule was
+    # rewritten there to its must-hold fact (its old text predated the cognition
+    # loop) while keeping DEC-90's concrete examples.
     law = " ".join((_DOCTRINE / "rooms" / "constraints.md").read_text().split())
     # Length: short by default, and looking a lot up is not content.
     assert "一兩句已經答到差唔多所有嘢" in voice
@@ -352,12 +352,14 @@ def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(
     assert "冇 headings" in voice
     # The chatbot tail (voice), and the capability overclaim it leads to (law).
     assert "有需要再搵我" in voice
-    assert "Never claim or promise a capability that your tools and skills do not " \
-           "give you" in law
+    assert "Never offer, promise or volunteer an action that your tools and skills " \
+           "do not give you" in law
+    assert "no booking a table, no phone call, no purchase" in law
     # Sycophancy: a checked answer does not lose to an assertion, and no
     # invented mistake to concede.
     assert "Somebody saying you are wrong is not evidence; it is another claim" in law
     assert "Agreeing you invented something when you did not is not modesty" in law
+    assert "作一個自己嘅錯出嚟俾人認" in voice
     # The dropped link (DEC-89's prose half).
     assert "A link a lookup gave you goes in the message, pasted exactly" in law
 

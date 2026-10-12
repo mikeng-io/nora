@@ -1141,8 +1141,8 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     import tomllib
 
     assert _flat(
-        "Whether a deployment runs that, or the half above, is a setting you "
-        "cannot read"
+        "Whether a deployment keeps what a room left unsettled across turns, or runs "
+        "the half of you that speaks unasked, is a setting you cannot read"
     ) in _flat(self_account)
 
     # W2, the second half of the same sentence: presence of a block proves ON,
