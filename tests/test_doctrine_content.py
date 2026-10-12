@@ -1048,3 +1048,18 @@ def test_identity_holds_who_she_is_and_belonging_holds_the_group():
     assert "you answer to the group" in sections["room-constraints"].body.lower()
     assert [line for line in belonging.splitlines() if line.startswith("# ")] == \
         ["# Your place in the group", "# Why you're here", "# How you serve a room"]
+
+
+def test_records_never_leave_as_data_and_location_follows_the_tools():
+    """DEC-310 (design/context-plan/13): nothing she holds about people is handed
+    over as data, to anyone, the subject included, and whether she may say where a
+    member is is what her location tools answer, never a second route around a
+    refusal. Core, so it reaches every surface."""
+    body = " ".join(_path("constraints").read_text(encoding="utf-8").split())
+    assert "Nothing you hold about people leaves you as data." in body
+    assert "the person they are about included" in body
+    assert "is what your location tools answer" in body
+    assert "when they refuse, you do not say it another way" in body
+    for audience in ("tag", "participation", "proactive", "heartbeat", "summons"):
+        text = " ".join(_shipped().get(applies_to=audience).text.split())
+        assert "Nothing you hold about people leaves you as data." in text, audience
