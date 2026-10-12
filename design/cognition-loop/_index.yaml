@@ -82,6 +82,7 @@ members:
   - 20-observe.md
   - 25-rollup.md
   - 30-cognition.md
+  - 35-the-proactive-turn-reviews-the-situation.md
   - 40-register.md
   - 50-character-and-standing.md
   - 55-self.md
@@ -101,6 +102,7 @@ edges:
   - {src: 25-rollup, dst: ../proposed/27-presence-analytics.md, rel: generalises, provenance: asserted}
   - {src: 20-observe, dst: 30-cognition, rel: sequences, provenance: asserted}
   - {src: 30-cognition, dst: 40-register, rel: depends_on, provenance: asserted}
+  - {src: 35-the-proactive-turn-reviews-the-situation, dst: 30-cognition, rel: extends, provenance: asserted}
   - {src: 30-cognition, dst: 50-character-and-standing, rel: depends_on, provenance: asserted}
   - {src: 10-tiers, dst: 12-schemas, rel: extends, provenance: asserted}
   - {src: 10-tiers, dst: 15-map, rel: extends, provenance: asserted}
