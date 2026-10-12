@@ -464,6 +464,26 @@ class EngagementConfig(BaseModel):
     queue: QueueConfig = QueueConfig()
 
 
+class ProactiveConfig(BaseModel):
+    """The proactive act turn: a reminder Cognition wrote to itself comes due
+    and she decides, in the room, whether anything needs saying
+    (design/cognition-loop/35).
+
+    `reasoning_effort` is this turn's own, NOT `[participation]`'s, which it
+    shared until 2026-10-12. The two fail in opposite directions: a
+    participation turn measured too SILENT with more reasoning, while a
+    proactive turn at `none` spoke on every case where silence was right,
+    restating a plan the room had already settled or a question she had asked
+    minutes earlier. Measured on the proactive_act suite (n=5 per case): `none`
+    stayed silent on 8/40 silence draws, `low` on 32/40, with the speak cases
+    10/10 and 8/10.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    reasoning_effort: str = "low"
+
+
 class ParticipationConfig(BaseModel):
     """The participation occasion (design/dreamer-agent-loop/35): Nora MAY speak
     in a room she was not tagged in, judged once per quiescence-closed window,
@@ -4277,6 +4297,7 @@ class Config(BaseModel):
     # ever evaluated. On, it STILL engages nowhere until a room is opted in via
     # `participation = true` in policy.toml.
     participation: ParticipationConfig = ParticipationConfig()
+    proactive: ProactiveConfig = ProactiveConfig()
     # The Relevance Gate (design/dreamer-agent-loop/36) — the admission call in
     # FRONT of the participation turn. Ships INERT; see the cross-section
     # validator below for why it cannot be enabled on its own.
