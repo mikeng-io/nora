@@ -106,6 +106,41 @@ quoted parent's surroundings).
 Two questions: ~0.5 s on Tev1 0.8B; ~2.6 s on 4B, over budget unless the state
 is kept small.
 
+## 4a. The other shape: one yes/no per part, and the rules after it
+
+Asking every part at once is allowed by the API (all questions in one request)
+and is the more direct judgement. On norty it is slow for a reason found
+2026-10-12: Ollama logs "model architecture does not currently support parallel
+requests" for `qwen35`, Tev1's base. Questions run one after another at ~0.28 s
+each on 0.8B (8 questions 2.3–2.5 s whatever the state size; 8 parallel
+requests 4.3 s, slower). So 64 parts is ~18 s on 0.8B and minutes on 4B. This is
+the server's limit, not the model's or the API's (TypeSafe's hosted API runs
+questions in parallel). The benchmark measures this shape for ACCURACY, and the
+latency is solved separately if it wins (a runtime that batches, or a base the
+server can run in parallel).
+
+**Rules, in code, after the answers:**
+
+1. **Include:** a part is in when `noul(part) >= threshold(part)`. Thresholds by
+   the cost of a miss, starting points to tune: law sections 0.10; memory and
+   person blocks 0.20; tools and catalogue 0.20; practice and style 0.35.
+2. **Dependencies:** a tool in brings its doctrine section (document tools →
+   "a written piece is a document"; `media_fetch` → the picture law; lookup
+   tools → "say only what you found"; location tools → the location law);
+   `peer_history` brings `peer_card`; `standing_working_set` brings `standing`;
+   any deferred tool brings the `tool_catalogue`.
+3. **Floor:** always in (§3).
+4. **Code facts override:** `msg.voice` → `<spoken_turn>`; a media code in the
+   recent lines → the media parts.
+5. **Budget (optional):** over a cap, drop included parts lowest probability
+   first; never the floor or a law section.
+6. **Fail closed:** the model errors or misses its time budget → today's full
+   prompt.
+
+The same rules apply to the two-question shape, with a bundle in place of a
+part. In both, the model judges and the rules decide; thresholds, dependencies
+and the floor are config.
+
 ## 5. Rough sizes (estimates)
 
 Floor + base: about 2.5–3k. A greeting (`small_talk`, `last_few`): about 3–3.5k,
@@ -114,6 +149,8 @@ three bundles + 20 lines: about 8–10k.
 
 ## 6. What the benchmark (step 2) checks
 
+0. **Both shapes:** per-part (§4a) for accuracy, two-question (§4) for the
+   latency budget, on Tev1 0.8B and 4B.
 1. **Feasibility:** Tev1 answers D1 and D2 in the `/v1/systemone` contract on
    norty, within budget, on real turns.
 2. **Multi-select by probability:** on turns that are two things at once (a
