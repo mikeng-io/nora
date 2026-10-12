@@ -121,7 +121,7 @@ The proactive turn gets its own `reasoning_effort` instead of inheriting
 
 **Instrument:** `python -m evals proactive_act` on norty (sandbox DB per case).
 
-**Prerequisites** (the suite cannot run the cases that matter today):
+**Prerequisites** (the first two landed in #812, 2026-10-12; a07 and a12 now reach the turn):
 
 - `NoteSeed` carries `anchor_entity_ids` and passes them through `know()`
   (`nora/subject/knowledge.py`, `nora/subject/sandbox.py` `_note_seed`), so
@@ -140,6 +140,9 @@ still speak (a01).
 +3.1+3.2+3.3; then 3.4 at `none` vs `low`. Report silence-case passes and
 a01 separately; a01 regressing is a FAIL whatever the silence cases do. An
 ERROR row counts as neither.
+
+**Baseline** (2026-10-12, #813, n=5, unchanged runtime): silence cases
+a13 1/5, a12 0/5, a11 2/5, a03 1/5 (4/20); a01 4/5, a07 4/5.
 
 **Done** when the 2026-10-11 cases go silent at a rate clearly above
 baseline across two runs, and a01 holds.
