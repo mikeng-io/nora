@@ -94,6 +94,7 @@ def build_offline_pipeline(
     participation: ParticipationTrigger | None = None,
     extra_engage_policies: tuple[EngagePolicy, ...] = (),
     participation_runner: Any = None,
+    proactive_runner: Any = None,
     participation_clock: Callable[[], float] | None = None,
     participation_opt_in: bool = False,
     participation_gate: RelevanceGate | None = None,
@@ -360,12 +361,13 @@ def build_offline_pipeline(
             lessons=None,
             policy=permissive_policy(),
             participation_runner=participation_runner,
-            # The proactive act turn's runner (39 D12): the SAME auto-runner
-            # under its own name, exactly as the composition root hands one
-            # object to both parameters. The act suite drives `FirePath.run`
-            # through `nora.app.eval_support` rather than this seam, so this
-            # is parity with production's kwarg names, not a second drive.
-            proactive_runner=participation_runner,
+            # The proactive act turn's runner: its OWN, as the composition root
+            # builds it (design/cognition-loop/35 §3.4: a separate runner at
+            # `[proactive] reasoning_effort`). It was this harness's
+            # `participation_runner` until the two were split. The act suite
+            # drives `FirePath.run` through `nora.app.eval_support` rather than
+            # this seam, so this is parity with production's kwarg names.
+            proactive_runner=proactive_runner,
             # The §10.6 shadow mirror, mirrored from the composition root's
             # gating (the parity test pins these kwarg NAMES to production's):
             # an offline/eval run can review determinations on the mirror
