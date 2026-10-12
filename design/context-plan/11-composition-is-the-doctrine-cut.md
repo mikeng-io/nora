@@ -133,7 +133,13 @@ until a measured quality problem says otherwise.
 2. **Move law out of practice-looking sections.** *(Done 2026-10-12: `rooms/constraints.md`, `public/constraints.md`; DEC-310.)* Node 10 found law lines inside
    sections that read as conditional (no invented quotes, no fake concession,
    find it before you say it). They join the law core before anything is cut.
-3. **Operating knowledge to its instruments.** Capability how-to that duplicates
+3. *(Ruled down 2026-10-12: production runs `defer_tools = true`, so only
+   `HOT_TOOLS` schemas are resident; for every other instrument the doctrine line
+   is the one copy she reads before the load decision, and a must-hold rule kept
+   only in a skill was skipped 3 of 6 live. No how-to leaves the doctrine while
+   deferral is on. What step 3 shipped is the spoken-turn marker, `<spoken_turn>`,
+   a per-turn block; the typing-assuming doctrine lines it should outweigh are
+   step 4's.)* **Operating knowledge to its instruments.** Capability how-to that duplicates
    a tool or skill leaves the doctrine; each instrument's must-hold fact stays
    law; the spoken-turn marker is added to E (`msg.voice`).
 4. **The cut (self-growth step 5), per bucket, each a before/after eval,** under
