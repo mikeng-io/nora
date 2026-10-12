@@ -1254,7 +1254,13 @@ def _check_the_corpus_assertions(
             absent = [w for w in wanted if str(w).casefold() not in folded]
             if negate and present:
                 failed.append(f"{key}: the reply contains {present}")
-            elif not negate and absent:
+            # A text `must_cite` grades the MESSAGE, so it binds only when
+            # there was one or the case requires one. On `either` (and
+            # `silence`) staying quiet is a legal answer, and the corpus
+            # header says what is graded there is «the message, if there was
+            # one»; checking an empty reply for a word failed every correct
+            # silence (proactive_act a10, 0/5 at effort low, 2026-10-12).
+            elif not negate and absent and (said or case.expect not in ("either", "silence")):
                 failed.append(f"{key}: the reply does not contain {absent}")
     failed += _check_the_body(meta, outcome, rows, require_open=case.expect == "create")
     failed += _date_split(meta.get("date_split"), outcome, rows)
