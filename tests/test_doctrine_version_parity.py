@@ -153,7 +153,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # was cut at "but". No eval, by operator decision.
     "identity": (14, "cbc95bd23310c9ccd09e19d9d9532468b9529d5dcd4ea4615ac39b1c52f8e40f"),
     # v1 (2026-09-25): split out of identity.md v13, see above.
-    "belonging": (1, "f1e2b3d69dd3ba80d7962e17ccf554fb3797b387055347936e9954b68a8b7b16"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): its three law lines moved word for word to
+    # rooms/constraints.md.
+    "belonging": (2, "f3ff3a2a543b624fe87aab92446350172539dd986775fd8692e3a59ad96e543a"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register
@@ -183,7 +185,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # give-it-back draft with no 撚/屌/柒 read as soft, laughing it off as the
     # other answer, 撚 inside the stressed word, and a soft verdict with a 屌
     # still soft. The tail offers were already here and were not copied.
-    "voice": (23, "ad3d816363b61113844b24d1d42e7e360d9cb79e0149578178641e9647d6b46d"),
+    # v24 (2026-10-12, design/context-plan/11 §6 step 2): the 冇錯就冇嘢認 line
+    # deleted; conduct.md's «Do not fake a concession», now in
+    # rooms/constraints.md, carries it.
+    "voice": (24, "14cc91cae12fcbefc5200a7f7e2c1d43e2fcf942db87bcacd2353aa5d0be657d"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -191,7 +196,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # Repinned to the version each file already carries; NOT bumped again, because
     # nothing has moved since.
     # v4: dashes out (7), no other change.
-    "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
+    # v5 (2026-10-12, design/context-plan/11 §6 step 2): «when someone called you, you answer» moved
+    # to rooms/constraints.md.
+    "silence": (5, "b82da8bf3c889e82d87bec7672c792b947ec3d043ef8fe309c1d53b331bfd95c"),
     # v26: compression. Three pairs of sections said one thing twice and became
     # one each: what she remembers about a person and what she recommends from
     # it; the three write verbs and what they need; the hedge-free answer in
@@ -263,7 +270,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # v36 (2026-10-09, DEC-306): a «記低» about the group is kept by her
     # notebook and she says it WILL be kept; the kinds of record gain the memo.
     # v37 (2026-10-09, review of #781): the keep promise names no time.
-    "conduct": (37, "f33b0d8d01bafc76dddd54fe9e7ce7c8b8bd5efa2b80c28157f0065840f8f6f2"),
+    # v38 (2026-10-12, design/context-plan/11 §6 step 2): every law part moved word for word to
+    # rooms/constraints.md, «What a source does not say» with it; «What you can
+    # actually do» left as a two-sentence rewrite there (its text predated the
+    # cognition loop, design/context-plan/10).
+    "conduct": (38, "2cc414b4cd52ddd27f4830e403d40ba75106f77dc5d38a826e5ef49d90c6e446"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -326,13 +337,22 @@ PINNED: dict[str, tuple[int, str]] = {
     # verbatim, to rooms/pictures.md. It is room-chat mechanics (placeholders,
     # the transcript, the full reading) and core/ also reaches the public
     # summons, where a live dry-run trace carried it. Nothing else moved.
-    "constraints": (12, "b5dece41a71da212b0d9e1c47899e769c0efb83f6876fa54da0458e638a8a4ac"),
+    # v13 (2026-10-12, design/context-plan/11 §6 step 2): «Other people stay
+    # private» states the real location boundary (shared only where the group
+    # opted in) and that records never leave as data (design/context-plan/13).
+    "constraints": (13, "ebb90d54a1a61da2ef976aa55323bd82bc686fda62f6e77061d31ea0282a8b64"),
+    # v1 (2026-10-12, design/context-plan/11 §6 step 2): room-constraints, the law moved out of
+    # conduct.md, belonging.md, pictures.md and silence.md; order 42, right
+    # after constraints.
+    "room-constraints": (1, "cbb0d0735bf33580c9dea6d31594ed0fa5ccc0ed0cf6128e12ccc41fd8c9d337"),
     # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
     # byte-identical to the section it was; loaded for the four room occasions
     # only, immediately before constraints (order 38).
     # v2 (2026-09-26, operator): whoever sent it is looking at the thing
     # itself; the description is for her eyes, not to read back.
-    "pictures": (2, "b4e07054e67027d63ce254615890f2e7d2dc7d911e00c9f58bcf5b798ce59817"),
+    # v3 (2026-10-12, design/context-plan/11 §6 step 2): its three law parts moved to
+    # rooms/constraints.md; what is left is when to look again.
+    "pictures": (3, "19efd0d29d415cc830ba8ef5944832b43f44c91d08a9a3d5aa27c785a773b669"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -363,9 +383,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # does not make them clickable); not finding a source is not a finding.
     # v7 (2026-09-26): names as plain words, never an @handle.
     # v8 (2026-09-26, operator): under 300 characters; a longer one is not posted.
-    "public-conduct": (8, "b9fd8db16d4d6b19cec8591c3f22d7136e268ac93f7fb3e3e583a424533e45a7"),
+    # v9 (2026-10-12, design/context-plan/11 §6 step 2): its nine law parts moved word for word to
+    # public/constraints.md.
+    "public-conduct": (9, "e98a42e4b359a6a7ce411f78a145c6ce2221055acb517b5a6b1199df4e562ffd"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): gains public/conduct.md's nine law parts.
     "public-constraints": (
-        1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
+        2, "484414518b967bd36c25c54d0d3d1de2f9bd9e4bb0e348f56203f8d9014c6228",
     ),
 }
 

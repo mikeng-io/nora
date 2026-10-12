@@ -286,7 +286,8 @@ RULE_TESTS = {
     "R-51": "test_r51_a_media_description_is_never_invented",
     # R-53 (DEC-123): a source that is SILENT on the question is not a source
     # that denies it. Behavioural, the same shape as R-14 and R-41 — asserted
-    # by `conduct.md`'s "What a source does not say", measured by the corpus,
+    # by `rooms/constraints.md` § Say only what you found (until 2026-10-12
+    # `conduct.md`'s "What a source does not say"), measured by the corpus,
     # NOT a currently-passing gate. R-27's three-state discipline is enforced
     # on tool RESULTS; this is the same discipline one level up, on INFERENCE
     # OVER results, where nothing enforced it: a scoped article's omission was
@@ -783,7 +784,10 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     assert "re-running" in doc, doc
 
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    section = conduct.split("# Being contradicted", 1)[1].split("\n# ", 1)[0]
+    # The law half of «Being contradicted» moved word for word to
+    # rooms/constraints.md in step 2 (design/context-plan/11 §6, 2026-10-12).
+    law = (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text()
+    section = law.split("# When you are told you are wrong", 1)[1].split("\n# ", 1)[0]
     # The prose is hard-wrapped, so every phrase below spans a newline in the
     # file; match on the sentence, not on the line breaks it happens to have.
     contradicted = " ".join(section.split())
@@ -801,6 +805,7 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
     # The position must NOT name the tool: tools are described by their schemas,
     # and an authored copy is a cache with no invalidation.
     assert "recall_lookups" not in conduct
+    assert "recall_lookups" not in law
 
 
 # name -> the scope folder it ships under, same table as
@@ -879,13 +884,20 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     says. Every position is unchanged and the token cost went UP by 66, which is
     the honest reason this was done for clarity and not for compression.
     """
-    conduct = _doctrine("conduct")
     voice = _doctrine("voice")
+    # Since step 2 (design/context-plan/11 §6, 2026-10-12) the law lines of
+    # «Being contradicted» live in rooms/constraints.md § When you are told you
+    # are wrong; the practice line (「我去睇返」) stays in conduct.md.
+    law = " ".join((ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split())
 
     # The carve-out lives in the section that owns whether a challenge should
     # move her at all. `voice.md` owns how it SOUNDS and is operator-only; a
     # copy there is the drift DEC-92's split exists to prevent.
     section = " ".join(
+        (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text()
+        .split("# When you are told you are wrong", 1)[1].split("\n# ", 1)[0].split()
+    )
+    being_contradicted = " ".join(
         (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
         .split("# Being contradicted", 1)[1].split("\n# ", 1)[0].split()
     )
@@ -901,16 +913,20 @@ def test_r83_the_anti_cave_position_is_scoped_to_a_checked_claim():
     # 3. R-5's temperament: there is a real reply, and neither branch of it is
     #    a defence of the ungrounded claim. The utterance stays Cantonese: it is
     #    something she SAYS, not prose about what she does.
-    assert "Saying 「我去睇返」 or letting the thing go are both fine" in section, section
+    assert ("Saying 「我去睇返」 or letting the thing go are both fine"
+            in being_contradicted), being_contradicted
 
     # POSITIVE CONTROL — the armour for a CHECKED claim is untouched. Delete
     # any of these to buy the carve-out and this goes red, which is the whole
     # point: the ask was a missing branch, not a weaker stance.
     assert ("Not remembering whether you checked is not the same as not having "
-            "checked") in conduct
-    assert "the grounds you checked before may still be in the record" in conduct
-    assert "Agreeing you invented something when you did not is not modesty" in conduct
-    assert "冇錯就冇嘢認" in voice
+            "checked") in law
+    assert "the grounds you checked before may still be in the record" in law
+    assert "Agreeing you invented something when you did not is not modesty" in law
+    # voice.md's 冇錯就冇嘢認 line was deleted in step 2 as a duplicate of this
+    # one, which the law core now carries; voice keeps how standing firm sounds.
+    assert "Do not fake a concession to keep the peace" in law
+    assert "冇錯就冇嘢認" not in voice
     assert "企硬" in voice
 
 

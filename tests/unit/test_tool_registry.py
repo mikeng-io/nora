@@ -632,27 +632,37 @@ def test_the_sourcing_priority_lives_in_conduct_not_a_generated_block():
     assert "open web, which is the last resort" in conduct
 
 
-def test_the_closed_world_clause_lives_in_conduct_not_a_generated_block(): # DEC-90
+def test_the_closed_world_clause_lives_in_doctrine_not_a_generated_block(): # DEC-90
     """The list of tools was never stated to be the WHOLE list, and she filled
     the gap: a restaurant answer ended «講清楚我幫你睇埋使唔使訂位» — offering to
     check a booking, which no tool here does and none is planned. DEC-150 moved
-    the rule to conduct.md; it must read exactly as strongly there."""
+    the rule to conduct.md.
+
+    RE-POINTED 2026-10-12 (design/context-plan/11 §6, step 2): the rule is law
+    and lives in rooms/constraints.md § What you can do. Its old text («the tool
+    schemas are everything you can do … no following up later») predated the
+    cognition loop, the computer and skills (design/context-plan/10), so it was
+    rewritten to the must-hold fact only: nothing her tools and skills do not
+    give her is claimed or promised, and no act is claimed that no tool call
+    did. The closed world still closes, and an offer is still a promise."""
+    law = " ".join(
+        (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split()
+    )
+    assert "Never claim or promise a capability that your tools and skills do not give you" in law
+    assert "what you can do is what they offer, and nothing more" in law
+    assert "Never say you have done something that no tool call of yours did" in law
     conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    assert "That list is the WHOLE of what you can do" in conduct
-    assert "no request you can put in on somebody's behalf" in conduct
-    assert "Never offer, promise or volunteer an action that is not one of those tools" in conduct
-    # The measured overclaim, and the family it belongs to, named concretely —
-    # a rule stated only in the abstract is the one the model reads past.
-    assert "no booking a" in conduct
+    assert "The tool schemas are everything you can do" not in conduct
 
 
 def test_the_closed_world_clause_forbids_offers_not_ignorance():
     """It must not collide with the rule beside it. She may always say she
-    cannot find something out — `constraints.md` and `conduct.md` both insist on
-    it — so the ban is on PROMISED ACTS. The two sentences sit in different
-    files now, which is exactly why they could not contradict before."""
-    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    assert conduct.index("That list is the WHOLE") < conduct.index("prefer your own")
+    cannot find something out — `constraints.md` and `rooms/constraints.md` both
+    insist on it — so the ban is on PROMISED ACTS."""
+    law = " ".join(
+        (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text().split()
+    )
+    assert "When it comes back broken, say you could not check" in law
     constraints = (ROOT / "nora" / "doctrine" / "core" / "constraints.md").read_text()
     assert "我唔知」 and 「我查唔到」 are real" in " ".join(constraints.split())
 

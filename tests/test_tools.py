@@ -340,23 +340,26 @@ def test_the_three_reply_defects_live_in_the_doctrine_not_the_send_reply_schema(
     the rules hold from the system prompt alone, without the at-the-moment
     restatement, is unmeasured and is the reversal condition.
     """
-    voice, conduct = _flat("voice"), _flat("conduct")
+    voice = _flat("voice")
+    # The law lines moved out of conduct.md into rooms/constraints.md in step 2
+    # (design/context-plan/11 §6, 2026-10-12); voice.md's invented-mistake line
+    # went with it as a duplicate, and the capability rule was rewritten there to
+    # its must-hold fact (its old text predated the cognition loop).
+    law = " ".join((_DOCTRINE / "rooms" / "constraints.md").read_text().split())
     # Length: short by default, and looking a lot up is not content.
     assert "一兩句已經答到差唔多所有嘢" in voice
     assert "查咗幾多都唔係內容" in voice
     assert "冇 headings" in voice
-    # The chatbot tail (voice), and the capability overclaim it leads to (conduct).
+    # The chatbot tail (voice), and the capability overclaim it leads to (law).
     assert "有需要再搵我" in voice
-    assert "A closing offer to do more is usually where that kind of promise " \
-           "slips in" in conduct
-    assert "no booking a table, no phone call, no purchase, no form" in conduct
+    assert "Never claim or promise a capability that your tools and skills do not " \
+           "give you" in law
     # Sycophancy: a checked answer does not lose to an assertion, and no
     # invented mistake to concede.
-    assert "Somebody saying you are wrong is not evidence; it is another claim" in conduct
-    assert "Agreeing you invented something when you did not is not modesty" in conduct
-    assert "作一個自己嘅錯出嚟俾人認" in voice
+    assert "Somebody saying you are wrong is not evidence; it is another claim" in law
+    assert "Agreeing you invented something when you did not is not modesty" in law
     # The dropped link (DEC-89's prose half).
-    assert "A link a lookup gave you goes in the message, pasted exactly" in conduct
+    assert "A link a lookup gave you goes in the message, pasted exactly" in law
 
     # The other half: one copy. The schema carries no style block and none of
     # the moved lines.

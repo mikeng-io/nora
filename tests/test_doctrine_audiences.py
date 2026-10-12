@@ -29,7 +29,11 @@ import pytest
 from nora.doctrine.loader import DoctrineStore
 
 # `pictures` joined 2026-09-26: split out of constraints.md, room occasions only.
-AUTHORED = ("identity", "belonging", "voice", "conduct", "pictures", "constraints")
+# `room-constraints` joined 2026-10-12: the law moved out of the room files
+# (design/context-plan/11 §6, step 2), room occasions only.
+AUTHORED = (
+    "identity", "belonging", "voice", "conduct", "pictures", "constraints", "room-constraints",
+)
 
 # Every audience of HERS, and exactly what the ASSEMBLY must resolve to.
 #
@@ -402,7 +406,9 @@ def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
     transcript, asking for the full reading) is room-chat mechanics. It lived in
     core/constraints.md until 2026-09-26, so a live dry-run summons carried it
     to a stranger's comment, where there is no transcript and no placeholder.
-    It is rooms/pictures.md now, and every room occasion still gets it."""
+    It is rooms/pictures.md now, and every room occasion still gets it; since
+    2026-10-12 its law half is rooms/constraints.md, the last section of every
+    room occasion."""
     summons = doctrine_store.get(applies_to="summons").text
     assert "What you already know about a picture" not in summons
     assert "transcript" not in summons
@@ -410,5 +416,6 @@ def test_the_summons_carries_no_room_media_mechanics(doctrine_store):
     for audience in ("tag", "heartbeat", "participation", "proactive"):
         doctrine = doctrine_store.get(applies_to=audience)
         assert "# What you already know about a picture" in doctrine.text, audience
+        assert "[image a3f2c1" in doctrine.text, audience
         names = [s.name for s in doctrine.sections]
-        assert names[-2:] == ["pictures", "constraints"], (audience, names)
+        assert names[-3:] == ["pictures", "constraints", "room-constraints"], (audience, names)

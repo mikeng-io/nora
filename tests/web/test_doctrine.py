@@ -8,6 +8,7 @@ def test_lists_every_tag_audience_section_in_doctrine_order(doctrine_store: Doct
     payload = build_doctrine_payload(doctrine_store=doctrine_store)
     assert [section["name"] for section in payload] == [
         "identity", "belonging", "voice", "silence", "conduct", "pictures", "constraints",
+        "room-constraints",
     ]
 
 
