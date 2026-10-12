@@ -17,6 +17,11 @@ edges:
 > dissolves into the turn's occasion (layer E); location is a layer-E fact on
 > both loops for a location-trusted room, and its law is rewritten.
 
+> **Amended 2026-10-12 by [node 14](14-a-decision-model-composes-the-prompt.md):**
+> the composer is a trained decision model over the whole prompt, law units
+> included, with targets of <5k for a greeting and ~10k for a typical turn;
+> code rules and the doctrine cut are no longer the main lever.
+
 ## 1. The question, as the operator put it (2026-10-12)
 
 Not "which wording is stale", and not "which doctrine section does this turn
