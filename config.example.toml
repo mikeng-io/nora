@@ -1593,7 +1593,8 @@ horizon_seconds = 5184000
 # Closed episodes one session is handed, the newest.
 batch_limit = 100
 # Render the unit's active lessons as <lessons> on tag and fire turns (L5),
-# after <self>. OFF until its before/after eval: it changes what she reads.
+# after <self>. Off by default: it changes what she reads. The deploy host
+# runs it on since 2026-10-09 (DEC-301, after its before/after eval).
 render = false
 # The correction fast path (L4): a message that speaks to her and reads as an
 # instruction about how she acts ("stop", "唔好", "next time") wakes the unit's
