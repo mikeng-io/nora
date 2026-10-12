@@ -11,6 +11,10 @@ edges:
 
 # Experiment and handoff
 
+> **Reopened 2026-10-12 on a wider question** (node [09](09-what-a-turn-carries.md)):
+> compose the whole per-turn prompt, doctrine included. The park below still
+> holds for what it measured, a model selector over four optional blocks.
+
 ## 2026-10-07 result: the first replay was blind, and the bundle is parked
 
 The prerequisites landed as PR [732](https://github.com/mikeng-io/nora/pull/732)
