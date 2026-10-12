@@ -52,6 +52,7 @@ members:
 - 12-the-sort-ruled.md
 - 13-records-never-leave-as-data.md
 - 14-a-decision-model-composes-the-prompt.md
+- 15-what-the-composer-decides.md
 edges:
 - src: 00-overview
   dst: 01-the-seam
@@ -105,6 +106,10 @@ edges:
   dst: 11-composition-is-the-doctrine-cut
   rel: amends
   provenance: asserted
+- src: 15-what-the-composer-decides
+  dst: 14-a-decision-model-composes-the-prompt
+  rel: realizes
+  provenance: asserted
 scope:
   v1:
   - current source-grounded architecture and separate ContextPlan/EngageDecision responsibilities
@@ -118,6 +123,7 @@ scope:
   - operator rulings on the sort: identity seed, silence dissolves, location contradiction and blind Cognition, no fixed lengths (node 12)
   - operator ruling: records never leave as data, law only; the location law's real boundary (node 13)
   - a trained decision model composes the whole tag prompt; targets <5k greeting, ~10k typical (node 14)
+  - the decomposition and the two decisions, sized to measured Tev1 latency (node 15)
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
