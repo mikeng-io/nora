@@ -63,4 +63,6 @@ def test_the_now_tool_reads_the_injected_clock_not_the_wall(monkeypatch):
     answer = asyncio.run(_now_tool(clock=lambda: frozen).call())
 
     assert answer == clock.state_time(frozen.astimezone())
-    assert answer.startswith("Sunday 11 October 2026, 09:05")
+    # The date only: the hour depends on the process zone, which `setenv`
+    # alone does not change.
+    assert answer.startswith("Sunday 11 October 2026")

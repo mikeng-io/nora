@@ -79,6 +79,7 @@ import dataclasses
 import logging
 import time
 from collections.abc import Callable, Coroutine, Mapping
+from datetime import datetime
 from typing import Any
 
 from nora.agent.intent_router import route_intent
@@ -207,6 +208,7 @@ class EngagementPipeline:
         tag_trace_store: Any = None,
         debrief_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         # Platform -> adapter, not a single adapter: a reply must leave on the
         # SAME platform the tag arrived on. Nora reached a second platform
@@ -237,6 +239,11 @@ class EngagementPipeline:
         # The Nora aiPeer id (Honcho v2, design/24): her replies feed under it.
         self._ai_peer = ai_peer
         self._context_window = context_window
+        # The turn's clock, read for the clock line the way the fire path reads
+        # it (`self._clock().astimezone()`), so the line and the `now` tool
+        # (which reads the same injected clock) state one instant. `None`
+        # falls back to the wall, which is what production's clock is.
+        self._clock = clock
         self._timeout_seconds = timeout_seconds
         self._limits = limits
         self._defer_tools = defer_tools
@@ -774,6 +781,7 @@ class EngagementPipeline:
             pre_fill = build_prefill(
                 ctx, display_name=self._display_name, context_window=self._context_window,
                 catalogue=surface.prompt_catalogue,
+                now=self._clock().astimezone() if self._clock is not None else None,
             )
             tag_message = build_tag_message(
                 ctx, tagger_name=tagger_name, display_name=self._display_name,
