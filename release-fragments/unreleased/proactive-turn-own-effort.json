@@ -1,0 +1,13 @@
+{
+  "type": "change",
+  "summary": "When one of Nora's own reminders comes due, she now thinks before deciding whether to say anything, so she stops repeating a plan the group already settled or a question she asked minutes ago.",
+  "details": [
+    "The proactive turn has its own `[proactive] reasoning_effort`, `low` by default; it used to share `[participation]`'s `none`.",
+    "It also has its own per-call output ceiling, `[proactive] max_tokens` (20000 by default), because its reasoning counts against that ceiling and one call in 60 overran 8000 and was lost.",
+    "On the proactive_act eval suite (5 draws per case) she stayed silent where silence was right 32 times in 40, up from 8, and spoke where she should 8 times in 10, down from 10."
+  ],
+  "limitations": [
+    "The case that most often goes quiet when it should speak is a follow-up she still owes someone (3 of 5).",
+    "Each proactive turn now writes about 4,000 more reasoning tokens."
+  ]
+}
