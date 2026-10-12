@@ -148,6 +148,10 @@ class NoteSeed:
     closing_condition: str = "the room settles it"
     anchor_date: int | None = 20260901
     id: str | None = None
+    #: The note's entity anchor (`Note.anchor_entity_ids`). A note from a real
+    #: snapshot may carry this and no `anchor_date`; without it such a note
+    #: could not be seeded at all.
+    anchor_entity_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -848,6 +852,7 @@ async def know(
                             created_at=now_ms + n,
                             head_revision_id=str(uuid.uuid4()),
                             anchor_date=note.anchor_date,
+                            anchor_entity_ids=note.anchor_entity_ids,
                         ),
                         body=note.body,
                         established_by="case-seed",
@@ -869,6 +874,7 @@ async def know(
                     established_by="case-seed",
                     now_ms=now_ms + n,
                     anchor_date=note.anchor_date,
+                    anchor_entity_ids=note.anchor_entity_ids,
                 )
         if knowledge.reminders:
             # THE REAL STORE, so the row a proactive turn reads is the row

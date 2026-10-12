@@ -789,14 +789,10 @@ def _reminder_seed(reminder: Reminder, *, before_ms: int) -> ReminderSeed:
 def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     """One `(Note, NoteRevision)` pair as the seed that reproduces it.
 
-    **A note anchored only by entity ids is REFUSED here rather than
-    re-anchored.** `Note.__post_init__` requires `anchor_date` or
-    `anchor_entity_ids`, and `NoteSeed` carries only the first — so such a note
-    would reach `SqlNoteStore.create` with neither and raise `ValueError` from
-    inside the domain, naming a constructor rather than the room the
-    reconstruction came from. Raising here says which note and why. It is not
-    silently dropped: a note missing from the index is invisible, and invisible
-    is indistinguishable from absent.
+    **The anchor goes across whole**: `anchor_date` and `anchor_entity_ids`
+    both, so a note anchored by entity ids alone seeds like any other instead
+    of being refused (it once was, and every case built on such a note
+    errored before the turn ran).
 
     **`id=note.id` — the SOURCE's own id, not left for `know()` to assign
     (issue #158, review).** A reminder seeded alongside keeps this SAME id in
@@ -805,12 +801,6 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
     docstring) would leave nothing in the sandbox agreeing on what a note's id
     even was.
     """
-    if note.anchor_date is None:
-        raise ValueError(
-            f"note {note.id!r} ({note.title!r}) is anchored by entity ids "
-            "alone, and `NoteSeed` can only state an anchor_date — seeding it "
-            "would reach `Note.__post_init__` with no anchor at all"
-        )
     return NoteSeed(
         id=note.id,
         title=note.title,
@@ -819,6 +809,7 @@ def _note_seed(note: Note, revision: NoteRevision) -> NoteSeed:
         uncertainty=note.uncertainty,
         closing_condition=note.closing_condition,
         anchor_date=note.anchor_date,
+        anchor_entity_ids=tuple(note.anchor_entity_ids),
     )
 
 
