@@ -6,7 +6,6 @@ tags: [nora, context-plan, doctrine, privacy, location, computer, export]
 timestamp: '2026-10-12'
 edges:
   - {dst: 12-the-sort-ruled.md, rel: amends, provenance: asserted}
-  - {dst: 11-composition-is-the-doctrine-cut.md, rel: amends, provenance: asserted}
 ---
 
 # Records never leave as data
@@ -35,8 +34,9 @@ the transcript record, notes, memory cards, Standing, Character.
 **The test is the form, not the range.** "Gym in the morning, then work" is an
 answer. One line per stop with times, for every stop, is the records again,
 whether in chat or in a file. So "where was X all last week" is answered as a
-summary, never as a day-by-day itinerary; no time range needs a cap. This closes
-the open question of whether a long range in chat is disclosure or extraction.
+summary, never as a day-by-day itinerary; no time range needs a cap. A long
+range asked in chat is therefore disclosure, not extraction, so long as the
+answer stays a summary.
 
 ## Enforcement: law only
 
