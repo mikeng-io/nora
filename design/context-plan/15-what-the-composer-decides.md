@@ -11,6 +11,20 @@ edges:
 
 # What the composer decides
 
+> **Parked 2026-10-13 (operator), after step 2.** Result
+> ([evidence/composer-tev1-step2-2026-10-12/](evidence/composer-tev1-step2-2026-10-12/),
+> #833): Tev1 as shipped cannot compose the prompt. Per part it says yes to ~90%
+> (AUC 0.557, 73 s a turn on 0.8B); two questions drop ~40% of what turns used
+> (59% recall, 4.6 s on 0.8B). Next was training (step 3); its data is thin:
+> ~500 real tag turns since 2026-08-28 (~15 a day), lopsided across turn kinds.
+> Effort estimated at 4–5 days, 1–2 h of operator review and ~$100–300 of
+> compute: evidence labels plus a strong teacher model, ablation replay on ~100
+> turns as a check, synthetic turns for rare kinds (never in the held-out set).
+> **Resume when** the operator asks; by then more real turns exist (~450 a month).
+> Also open regardless of the model: Ollama's `/v1/systemone` puts every
+> question's text into each question's prompt (quadratic), Tev1 ships with
+> `num_ctx` 2050, and the fixed floor plus base is already ~4.6k for a greeting.
+
 Operator, 2026-10-12, the sequence: (1) understand what is decomposed and which
 decisions the model makes; (2) benchmark Tev1 to prove it can; data preparation
 and training only after.

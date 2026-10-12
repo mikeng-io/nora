@@ -7,7 +7,9 @@ description: 'Dynamic context exposure for accepted tag turns: current source-gr
   October 5 CPU-only conclusions are marked superseded. PARKED 2026-10-07 by the operator after the
   first replay: no arm withheld anything in the sandbox, so Nora benefit is unmeasured (node 08).
   REOPENED 2026-10-12 on a wider question: compose the whole per-turn prompt, doctrine included
-  (nodes 09-10).'
+  (nodes 09-10). PARKED again 2026-10-13 by the operator after step 2 (node 15,
+  #833): Tev1 as shipped cannot compose the prompt; training waits on data
+  (~500 real tag turns).'
 tags:
 - nora
 - context
@@ -22,7 +24,7 @@ tags:
 - igpu
 - context-transfer
 timestamp: '2026-10-12'
-status: active
+status: parked
 governance: operator-directed
 origin: "Operator 2026-10-05 (Discord, #nora thread, \"strand decision 2b - benchmark the performance\
   \ on this machine with ollama cloud with iGPU\"). Two asks in one message: (1) inspect the CURRENT\
