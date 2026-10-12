@@ -77,3 +77,12 @@ needs a DEC row (`nora-decision`) in the PR that ships the classification.
 
 Cutting before the receivers exist leaves her flat. Character may only cite
 the Record and Rollup, so an authored seed account is not an option.
+
+> **Amended 2026-10-12 (operator; [context-plan 12](../context-plan/12-the-sort-ruled.md) §1).**
+> An authored seed account inside Character is still not an option, but an
+> authored **identity seed in the doctrine** is required: the character bucket
+> splits into seed (who she is: name, AI, maker, form, temperament, a register
+> specimen; always on, every audience, never cut) and grown (how she is with a
+> group; cut once Character · Nora carries it). Without the seed the loop grows
+> from evidence written under text that no longer exists, and `<self>` reached
+> only 65% of measured turns.
