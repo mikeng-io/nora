@@ -25,8 +25,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-import pytest
-
 from nora.domain.culture import CultureRevision
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.domain.notes import Note, NoteRevision

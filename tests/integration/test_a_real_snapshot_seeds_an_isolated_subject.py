@@ -676,7 +676,8 @@ async def test_a_case_row_replaces_the_seeded_copy_of_itself(
         established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
     )
     await SqlReminderStore(engine).create(Reminder(
-        id=UUID("77777777-0000-4000-8000-000000000003"), requester_person_id="nora", platform=ROOM[0],
+        id=UUID("77777777-0000-4000-8000-000000000003"),
+        requester_person_id="nora", platform=ROOM[0],
         conversation_id=ROOM[1], conversation_type="group",
         text="ask where to meet", created_at=_at(BEFORE_MS - 3 * MINUTE),
         due_at=_at(BEFORE_MS + MINUTE), state=ReminderState.PENDING,
