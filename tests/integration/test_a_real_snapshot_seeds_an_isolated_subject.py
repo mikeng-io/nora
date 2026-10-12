@@ -730,6 +730,7 @@ async def test_a_case_row_replaces_a_seeded_copy_that_names_no_note(
     pending = {r.id for r in await _pending(sandbox)}
     assert pending & {row.id, copy.id} == {row.id}
 
+
 async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
     sandbox, source, engine,
 ) -> None:
