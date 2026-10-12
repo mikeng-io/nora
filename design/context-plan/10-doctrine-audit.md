@@ -8,6 +8,8 @@ edges:
   - {dst: 09-what-a-turn-carries.md, rel: constrained_by, provenance: asserted}
 ---
 
+> `pipeline.py` below is `nora/engagement/pipeline.py` throughout.
+>
 > Source audit, not a measurement: token sizes are character estimates using
 > node 09's fit; nothing here was evaluated against the model.
 
@@ -31,7 +33,7 @@ edges:
 - `DoctrineStore.get(applies_to=...)` (loader.py:912-933) keeps every section whose `applies_to` names the audience or `always`, renders each through `render_section` as `<section kind=".." name=".." description="..">body</section>` (loader.py:338-380), wraps them in `<nora_doctrine>` (`_assemble`, loader.py:383-390) and appends a `<runtime_context>` (display name, trigger, language hint, canary; loader.py:881-899). The result is cached per audience string (loader.py:914-916). That is the whole selection mechanism. Nothing inside it varies by turn.
 - Closed audience vocabulary (loader.py:106-109): `tag, heartbeat, participation, proactive, relevance_gate, dreamer, reaction, summons, speech_format`.
 
-**What reaches the tag-turn system prompt** (`pipeline.py:640` `get(applies_to="tag")` → `agent_runner.py:192` `system_prompt=doctrine.text`), in `order`:
+**What reaches the tag-turn system prompt** (`nora/engagement/pipeline.py:640` `get(applies_to="tag")` → `agent_runner.py:192` `system_prompt=doctrine.text`), in `order`:
 
 | order | file | name | kind | applies_to |
 |---|---|---|---|---|
@@ -76,7 +78,7 @@ The instruments are other model calls. They are not part of the tag prompt.
 
 | capability | where it is defined | model-facing guidance lives in |
 |---|---|---|
-| Tool registry: 86 native tools in source (`NATIVE_TOOLS`, tools.py:643 onward), each with ADR 0015 `level` 1-3. About 54 are admitted live per the operator's count; the rest are withheld by config (registry.py:298-309) | `nora/agent/tools.py`, `nora/agent/registry.py` | the tool's docstring (schema) and its catalogue first line (registry.py:766 `tool_catalogue`) |
+| Tool registry: 87 native tools in source (`NATIVE_TOOLS`, tools.py:643 onward), each with ADR 0015 `level` 1-3. About 54 are admitted live per the operator's count; the rest are withheld by config (registry.py:298-309) | `nora/agent/tools.py`, `nora/agent/registry.py` | the tool's docstring (schema) and its catalogue first line (registry.py:766 `tool_catalogue`) |
 | Level 3 (longest descriptions): routine_read, file_fetch, generate_image, video_create, x_/linkedin_/instagram_ read+search, remind, computer_run/read/write/edit/export/import/browse, document_publish, subagent_create, send_reply | tools.py | descriptions carry MUSTs, e.g. generate_image "MUST: load the image-generation skill", subagent_create "MUST: after `started`, tell the room" |
 | Resident under deferral: web_search, send_reply, note_read, web_fetch, now, search_memory (`HOT_TOOLS`, tools.py:2056); music verbs on voice turns | tools.py | `<tool_catalogue>` block description (block_types.py:815) |
 | Runtime skills: computer-use (4.2k chars), document-creation (2.4k), image-generation (6.9k), navigation (3.2k), video-generation (6.8k) | `nora/skills/*/SKILL.md`; loaded through the `skills` tool (tools.py:2003) | `<available_skills>` (name + when), body on load (ADR 0016) |

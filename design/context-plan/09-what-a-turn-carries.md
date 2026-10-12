@@ -55,6 +55,10 @@ Scripts and numeric output: [composition-2026-10-12/](evidence/composition-2026-
 
 `input_tokens` median **20,848**, p10 19,337, p90 23,912.
 
+Group rows are sums of their members' medians, not the median of the group;
+the memory-block range weights each block by how often it is present (flat
+sum of medians 6.6k, presence-weighted 4.2k).
+
 | Part | Median tokens | Share | Present |
 |---|---:|---:|---|
 | **Doctrine** (7 sections) | **~9,130** | **44%** | every turn |
@@ -69,7 +73,7 @@ Scripts and numeric output: [composition-2026-10-12/](evidence/composition-2026-
 | ↳ `tool_catalogue` block | 2,669 | | 200/200 |
 | ↳ tool schemas + framing (fit intercept) | ~2,073 | | |
 | ↳ `available_skills` | 476 | | 200/200 |
-| **Memory and room blocks** | ~4,000–5,000 | ~22% | varies |
+| **Memory and room blocks** | ~4,000–5,000 | ~20% | varies |
 | ↳ `character` | 871 | | 82/200 |
 | ↳ `culture` | 827 | | 200/200 |
 | ↳ `notes` | 750 | | 176/200 |
@@ -92,18 +96,20 @@ The message a turn exists to answer is under 1% of what the model reads.
 | Of which not served from cache | 36,120 | 74,875 |
 
 Every loop iteration resends the full prompt, so the first-call size is paid
-once per generation. The count includes the post-turn debrief generation
-(~7k input in the sampled trace); it is not the main agent alone.
+once per generation. The count includes every generation in the trace; in the one trace
+read by hand that included a post-turn debrief call (~7k input), so it is not
+the main agent alone. How often a debrief call is present was not counted.
 
 ## What this does and does not establish
 
 - **Established:** doctrine and the tool surface are ~69% of every first call
   and are present regardless of what was asked. The memory blocks the parked
-  experiment could withhold are ~22%, which is why withholding them could not pay.
+  experiment could withhold are ~20%, which is why withholding them could not pay.
 - **Cost is not tokens.** 123 of 200 first calls reported `cache_read_input_tokens`
   (median 11,822), and the cached part is the stable head, mostly doctrine. Cutting
   doctrine saves fewer dollars than tokens; a turn-variable head would also break
-  the cache for everything behind it, as the September defer-tools measurement showed: input fell 36% and cost rose.
+  the cache for everything behind it, as the September defer-tools measurement showed: input fell 36% and cost rose
+  ([tool-catalogue/05](../tool-catalogue/05-measurement.md)).
   The design must keep a byte-stable core first and put composed units after it.
 - **Not established:** that a smaller composed prompt answers as well. That needs
   the eval suite on a built composition, not this measurement.
