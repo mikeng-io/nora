@@ -12,7 +12,7 @@ own clock, or formats its own way, answers something else.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from nora.agent import clock, prefill
 from nora.agent import tools as tools_module
@@ -57,7 +57,7 @@ def test_the_now_tool_reads_the_injected_clock_not_the_wall(monkeypatch):
     `now` must state the same one: reading the wall instead told her a
     Sunday plan was «yesterday» mid-turn (proactive_act a12, 2026-10-12)."""
     monkeypatch.setenv("TZ", "Asia/Hong_Kong")
-    frozen = datetime(2026, 10, 11, 1, 5, tzinfo=timezone.utc)
+    frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
     monkeypatch.setattr(tools_module, "local_now", lambda: _INSTANT)
 
     answer = asyncio.run(_now_tool(clock=lambda: frozen).call())
