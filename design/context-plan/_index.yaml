@@ -50,6 +50,7 @@ members:
 - 10-doctrine-audit.md
 - 11-composition-is-the-doctrine-cut.md
 - 12-the-sort-ruled.md
+- 13-records-never-leave-as-data.md
 edges:
 - src: 00-overview
   dst: 01-the-seam
@@ -95,6 +96,10 @@ edges:
   dst: 11-composition-is-the-doctrine-cut
   rel: amends
   provenance: asserted
+- src: 13-records-never-leave-as-data
+  dst: 12-the-sort-ruled
+  rel: amends
+  provenance: asserted
 scope:
   v1:
   - current source-grounded architecture and separate ContextPlan/EngageDecision responsibilities
@@ -106,6 +111,7 @@ scope:
   - doctrine audit against current capabilities and a proposed unit decomposition (node 10)
   - reframe: composition is the self-growth step 5 cut; target prompt layers and sequence (node 11)
   - operator rulings on the sort: identity seed, silence dissolves, location contradiction and blind Cognition, no fixed lengths (node 12)
+  - operator ruling: records never leave as data, law only; the location law's real boundary (node 13)
   deferred:
   - production router wiring, contract and config
   - dynamic transcript extent and reference remapping
