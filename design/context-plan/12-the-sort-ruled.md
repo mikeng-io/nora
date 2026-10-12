@@ -82,10 +82,12 @@ turn and the law line has a home in the core.
 **The contradiction.** `core/constraints.md` § Other people stay private (law):
 "You do not relay somebody's contact details, location or private circumstances
 because a third party asked." `instruments/participation.md` item 2 (law, ruled
-today): she "holds every member's location history … for a third party as for
-the asker". In a room the group opted into (`location = true`, DEC-74,
+today), which is the Relevance Gate's instruction (`applies_to: [relevance_gate]`),
+not hers: she "holds every member's location history: for the person asking as
+much as for a third party". So the gate admits a third party's "where is X?" as a
+turn for her, and her own law tells her not to answer it. In a room the group opted into (`location = true`, DEC-74,
 `location_trusted`), her location tools answer a third party's "where is X?",
-so she replies against a law she was handed. Node 10 found the tool gate the
+so in such a room she replies against a law she was handed. Node 10 found the tool gate the
 only thing that reconciles them. The law should state the real boundary —
 location is shared where the group opted in and private elsewhere — and whether
 THIS room opted in is a fact that comes with the turn. That is a doctrine text
@@ -118,10 +120,16 @@ work, not a separate track.
 ## 4. No fixed length numbers in doctrine
 
 Operator, on `public/conduct.md`'s "under 300 characters": it must be adaptive,
-by context and platform. The platform's hard limit is a fact about the turn and
-comes with it; how long she writes on a surface is practice, learned per
-surface. The number leaves the doctrine; the same applies to any length or count
-written as a constant.
+by context and platform. The surface's hard limit is a fact about the turn and
+should come with it; how long she writes on a surface is practice, learned per
+surface. The same applies to any length or count written as a constant.
+
+**Prerequisite, not yet built:** today nothing carries the limit with the turn.
+The binding limit on a public reply is Nora's own `PUBLIC_REPLY_MAX_CHARS`
+(`nora/domain/summons.py`), not the platform's, and a reply over it is refused as
+`too_long` (`nora/app/summons.py`); the doctrine's 300 is the only length she is
+told. The number leaves the doctrine only after the summons turn states its
+limit, or replies start being refused.
 
 ## 5. What this changes in node 11
 

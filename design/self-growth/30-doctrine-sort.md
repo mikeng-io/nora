@@ -64,6 +64,10 @@ needs a DEC row (`nora-decision`) in the PR that ships the classification.
 
 ## 4. Step 5: cut (last)
 
+> **Amended 2026-10-12** (§5's marker; [context-plan 12](../context-plan/12-the-sort-ruled.md) §1):
+> "character text is deleted" now applies to GROWN character only. An authored
+> identity seed stays on every surface, units included, and is never cut.
+
 - Practice text is deleted from the doctrine once Lessons is live and its
   labelled set passes.
 - Character text is deleted once Character · Nora and the self block are live

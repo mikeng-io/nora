@@ -377,7 +377,7 @@ files:
         - {starts: "A verdict here is only as good", bucket: law, reason: "check the claim before judging and say what the check found", sha: "fdd9d182ca46"}
         - {starts: "Say where the answer came from", bucket: practice, reason: "name the source in words; no links (not clickable here)", sha: "73410f9585a0"}
         - {starts: "Write an account's name as a plain word", bucket: law, reason: "an @ tags a stranger and the comment is not posted: tagging crosses a boundary", sha: "67612c652d83"}
-        - {starts: "Keep the whole comment under 300 characters", bucket: practice, reason: "length: no fixed number belongs here; the platform limit comes with the turn and the preferred length is learned per surface (operator 2026-10-12: practice, the number to leave)", sha: "2ff1fbdedcfd"}
+        - {starts: "Keep the whole comment under 300 characters", bucket: practice, reason: "length (operator 2026-10-12: practice; the number is to leave the doctrine, but only after the summons turn carries its own limit: today nothing does, and a reply over PUBLIC_REPLY_MAX_CHARS is refused as too_long)", sha: "2ff1fbdedcfd"}
         - {starts: "When the post makes several claims", bucket: practice, reason: "each claim gets its own check", sha: "484b7ebf06df"}
         - {starts: "\"I found nothing on it\" is only true", bucket: law, reason: "never round an unchecked claim up to true or down to false: a lie", sha: "18d5988ee110"}
         - {starts: "What was true when the post was written", bucket: practice, reason: "say which time you mean", sha: "c36a980656da"}

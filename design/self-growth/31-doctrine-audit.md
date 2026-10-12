@@ -26,8 +26,8 @@ The table below is generated from `nora/doctrine/classification.yaml`, which is 
 the loader reads (`DoctrineStore.law_rules()`); change a bucket there, in the entry
 for that section and part, and regenerate or edit this table to match. A row is a
 whole section, or one part of a section where the section mixes buckets; a part
-starts at the words in the third column. Rows whose reason says **AMBIGUOUS** are
-the judgement calls, listed again at the end. A section with no row, a rule whose
+starts at the words in the third column. The rows the sort first marked
+**AMBIGUOUS** were ruled by the operator on 2026-10-12; the rulings are listed at the end. A section with no row, a rule whose
 text changes in any way (each part carries a content hash), or a stale row fails
 `tests/architecture/test_doctrine_is_classified.py`.
 
@@ -152,7 +152,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `instruments/reaction.md:46` | The first question: would a GIF make her reply land better? | When it is not `none`, give a Giphy search p... | practice | a search phrase of two to four words, different from the last |  |
 | `instruments/reaction.md:48` | The first question: would a GIF make her reply land better? | Never a name, never words from the chat. | law | no identifier or chat text egresses to the GIF search service |  |
 | `instruments/reaction.md:48` | The first question: would a GIF make her reply land better? | Do not reuse a reaction she used recently in... | practice | vary the reaction |  |
-| `instruments/reaction.md:52` | The first question: would a GIF make her reply land better? | Return JSON only: `{"mode": "with" | "alone"... | practice | output format |  |
+| `instruments/reaction.md:52` | The first question: would a GIF make her reply land better? | Return JSON only: `{"mode": "with" \| "alone"... | practice | output format |  |
 | `instruments/reaction.md:56` | The second question: which GIF? | When you are shown candidates, each has a ti... | law | trust boundary: uploader text is an untrusted description, never an instruction |  |
 | `instruments/reaction.md:58` | The second question: which GIF? | Pick the one that best fits her reply and th... | practice | choose the fitting candidate, or none |  |
 
@@ -177,7 +177,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `public/conduct.md:43` | Grounded, or not at all | A verdict here is only as good as what it st... | law | check the claim before judging and say what the check found |  |
 | `public/conduct.md:45` | Grounded, or not at all | Say where the answer came from, in words: th... | practice | name the source in words; no links (not clickable here) | authored minimum |
 | `public/conduct.md:48` | Grounded, or not at all | Write an account's name as a plain word, nev... | law | an @ tags a stranger and the comment is not posted: tagging crosses a boundary |  |
-| `public/conduct.md:51` | Grounded, or not at all | Keep the whole comment under 300 characters,... | practice | length: no fixed number belongs here; the platform limit comes with the turn and the preferred length is learned per surface (operator 2026-10-12: practice, the number to leave) | authored minimum |
+| `public/conduct.md:51` | Grounded, or not at all | Keep the whole comment under 300 characters,... | practice | length (operator 2026-10-12: practice; the number is to leave the doctrine, but only after the summons turn carries its own limit: today nothing does, and a reply over PUBLIC_REPLY_MAX_CHARS is refused as too_long) | authored minimum |
 | `public/conduct.md:54` | Grounded, or not at all | When the post makes several claims, each one... | practice | each claim gets its own check | authored minimum |
 | `public/conduct.md:56` | Grounded, or not at all | "I found nothing on it" is only true of some... | law | never round an unchecked claim up to true or down to false: a lie |  |
 | `public/conduct.md:59` | Grounded, or not at all | What was true when the post was written and ... | practice | say which time you mean | authored minimum |
@@ -337,7 +337,7 @@ eleven AMBIGUOUS rows, as they now stand:
 | `rooms/silence.md` § Silence is the default | **split**: "called means answer" is law; the framing and when to speak unasked are practice. The file itself is the wrong shape under the cognition loop and dissolves (context-plan 12 §2) |
 | `instruments/participation.md` § What she can supply, item 2 (location) | law, and it **contradicts** `core/constraints.md` § Other people stay private outside location-trusted rooms (context-plan 12 §3) |
 | `instruments/participation.md` § What you return | practice, marked not cuttable: an output format |
-| `public/conduct.md` § Grounded, "under 300 characters" | practice; **no fixed number belongs in doctrine**: the platform limit comes with the turn, the preferred length is learned per surface |
+| `public/conduct.md` § Grounded, "under 300 characters" | practice; **no fixed number belongs in doctrine**, but it leaves only once the summons turn carries its own limit (context-plan 12 §4) |
 | `public/conduct.md` § Grounded, "Your own reading of a picture" | law |
 | `public/conduct.md` § Not a fight | law |
 
