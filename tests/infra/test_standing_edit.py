@@ -10,7 +10,6 @@ revision.py`'s module docstring makes for `read_as_of`.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from uuid import uuid4
@@ -269,38 +268,38 @@ async def test_an_over_ceiling_body_is_still_refused_and_writes_nothing(
 
 
 async def test_the_recheck_reports_a_fold_that_lands_during_the_wait(
-    store: SqlStandingStore,
+    store: SqlStandingStore, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The race this script CANNOT close, only narrow. A fold's write is
-    scheduled to land during the (zero-length, for the test) recheck window;
-    `apply_operator_edit`'s own write has already succeeded by then, so this
-    is not a refusal — it is the outcome reporting that something moved
-    again right after."""
+    """The race this script CANNOT close, only narrow. A fold's write lands
+    during the recheck window; `apply_operator_edit`'s own write has already
+    succeeded by then, so this is not a refusal — it is the outcome reporting
+    that something moved again right after."""
     await store.write(standing=Standing(
         platform=PLATFORM, conversation_id=CONV, body="position one",
         fold_count=1, updated_at=T0,
     ))
 
-    async def _a_fold_lands_right_after() -> None:
+    # The fold is written the moment the operator's compare-and-set returns,
+    # never on a wall clock. A task started before the edit raced it: under a
+    # loaded parallel gate the fold landed BEFORE the operator's write, which
+    # then refused as stale (2026-10-12).
+    operator_write = store.write_if_unchanged
+
+    async def _operator_write_then_a_fold(**kwargs: Any) -> bool:
+        applied = await operator_write(**kwargs)
         await store.write(standing=Standing(
             platform=PLATFORM, conversation_id=CONV,
             body="folded during the recheck window", fold_count=2,
             updated_at=T0 + 5000,
         ))
+        return applied
 
-    fold_task = asyncio.create_task(_a_fold_lands_right_after())
-    try:
-        # A real (small) delay, not zero: the interfering write is a genuine
-        # network round trip to the test container, and the recheck has to
-        # give it enough wall-clock time to land — a bare `asyncio.sleep(0)`
-        # yields the loop once, which is not the same guarantee.
-        outcome = await apply_operator_edit(
-            platform=PLATFORM, conversation_id=CONV,
-            new_body="the operator's correction", store=store, now_ms=T0 + 1000,
-            max_chars=MAX_CHARS, recheck_delay_seconds=0.2,
-        )
-    finally:
-        await fold_task
+    monkeypatch.setattr(store, "write_if_unchanged", _operator_write_then_a_fold)
+    outcome = await apply_operator_edit(
+        platform=PLATFORM, conversation_id=CONV,
+        new_body="the operator's correction", store=store, now_ms=T0 + 1000,
+        max_chars=MAX_CHARS, recheck_delay_seconds=0,
+    )
 
     assert outcome.moved_again is True
     assert outcome.reread is not None
