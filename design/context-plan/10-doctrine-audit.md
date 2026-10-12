@@ -12,6 +12,15 @@ edges:
 >
 > Source audit, not a measurement: token sizes are character estimates using
 > node 09's fit; nothing here was evaluated against the model.
+>
+> **Line numbers are the doctrine as audited, before step 2 of
+> [node 11 §6](11-composition-is-the-doctrine-cut.md) (2026-10-12).** Step 2
+> moved every law line out of `rooms/conduct.md`, `rooms/belonging.md`,
+> `rooms/pictures.md` and `rooms/silence.md` into `rooms/constraints.md`, and
+> `public/conduct.md`'s into `public/constraints.md`; conduct.md:103 below
+> («What you can actually do») was replaced there by two sentences, and the
+> location clause of `core/constraints.md` was rewritten per node 13.
+> `design/self-growth/31-doctrine-audit.md` has the current file:line of every part.
 
 # Doctrine audit: what a composed prompt could select, unit by unit
 

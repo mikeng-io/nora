@@ -153,7 +153,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # was cut at "but". No eval, by operator decision.
     "identity": (14, "cbc95bd23310c9ccd09e19d9d9532468b9529d5dcd4ea4615ac39b1c52f8e40f"),
     # v1 (2026-09-25): split out of identity.md v13, see above.
-    "belonging": (1, "f1e2b3d69dd3ba80d7962e17ccf554fb3797b387055347936e9954b68a8b7b16"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): its three law lines moved word for word to
+    # rooms/constraints.md.
+    "belonging": (2, "f3ff3a2a543b624fe87aab92446350172539dd986775fd8692e3a59ad96e543a"),
     # v19 (2026-09-10): same room-name removal as identity v8.
     # v20: the REVISION half of the same pass, and the only file that grew.
     # Three positions it did not carry: the dash is a written-register
@@ -191,7 +193,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # Repinned to the version each file already carries; NOT bumped again, because
     # nothing has moved since.
     # v4: dashes out (7), no other change.
-    "silence": (4, "f60ae519df1a0dae7bc24d5c15c6be002e84ff345d4bb13c9f6ac652819d6d6d"),
+    # v5 (2026-10-12, design/context-plan/11 §6 step 2): «when someone called you, you answer» moved
+    # to rooms/constraints.md.
+    "silence": (5, "4c948439a2fb6d2cba53b4d169071c2d827f36e89a85dc8ba74c2990d9248e70"),
     # v26: compression. Three pairs of sections said one thing twice and became
     # one each: what she remembers about a person and what she recommends from
     # it; the three write verbs and what they need; the hedge-free answer in
@@ -263,7 +267,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # v36 (2026-10-09, DEC-306): a «記低» about the group is kept by her
     # notebook and she says it WILL be kept; the kinds of record gain the memo.
     # v37 (2026-10-09, review of #781): the keep promise names no time.
-    "conduct": (37, "f33b0d8d01bafc76dddd54fe9e7ce7c8b8bd5efa2b80c28157f0065840f8f6f2"),
+    # v38 (2026-10-12, design/context-plan/11 §6 step 2): every law part moved word for word to
+    # rooms/constraints.md, «What a source does not say» with it; «What you can
+    # actually do» left as a short rewrite there (its text predated the
+    # cognition loop, design/context-plan/10), and the heading over what stayed
+    # is «Where to look first».
+    "conduct": (38, "55167e8dd5486c31b4703531306270dea6c7ec33eadc72216b2e3ef7b4c58f7a"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -326,13 +335,23 @@ PINNED: dict[str, tuple[int, str]] = {
     # verbatim, to rooms/pictures.md. It is room-chat mechanics (placeholders,
     # the transcript, the full reading) and core/ also reaches the public
     # summons, where a live dry-run trace carried it. Nothing else moved.
-    "constraints": (12, "b5dece41a71da212b0d9e1c47899e769c0efb83f6876fa54da0458e638a8a4ac"),
+    # v13 (2026-10-12, design/context-plan/11 §6 step 2): «Other people stay
+    # private» states the real location boundary (what her location tools
+    # answer, never routed round when they refuse) and that records never leave
+    # as data (design/context-plan/13).
+    "constraints": (13, "eb71a2acd9b663cdcadac1b9f8e5191acf02242e6b0140ce3347536e666c392c"),
+    # v1 (2026-10-12, design/context-plan/11 §6 step 2): room-constraints, the law moved out of
+    # conduct.md, belonging.md, pictures.md and silence.md; order 42, right
+    # after constraints.
+    "room-constraints": (1, "cebd1eae47e49ce4d8593288db03bc8c9c54485169e572e116429c98be90cb8b"),
     # v1 (2026-09-26): split out of constraints.md v11, see above. Body is
     # byte-identical to the section it was; loaded for the four room occasions
     # only, immediately before constraints (order 38).
     # v2 (2026-09-26, operator): whoever sent it is looking at the thing
     # itself; the description is for her eyes, not to read back.
-    "pictures": (2, "b4e07054e67027d63ce254615890f2e7d2dc7d911e00c9f58bcf5b798ce59817"),
+    # v3 (2026-10-12, design/context-plan/11 §6 step 2): its three law parts moved to
+    # rooms/constraints.md; what is left is when to look again.
+    "pictures": (3, "3169fa3d26a2adfb03b371953a21b61d1847a9a8e6b57deccd1d1edd01171a2d"),
     # The public summons files (design/instagram-adoption/19), v1 (2026-09-25):
     # drafted for the operator to rewrite, loaded only on `applies_to="summons"`.
     # identity and constraints gained `summons` in `applies_to` and the public
@@ -363,9 +382,12 @@ PINNED: dict[str, tuple[int, str]] = {
     # does not make them clickable); not finding a source is not a finding.
     # v7 (2026-09-26): names as plain words, never an @handle.
     # v8 (2026-09-26, operator): under 300 characters; a longer one is not posted.
-    "public-conduct": (8, "b9fd8db16d4d6b19cec8591c3f22d7136e268ac93f7fb3e3e583a424533e45a7"),
+    # v9 (2026-10-12, design/context-plan/11 §6 step 2): its nine law parts moved word for word to
+    # public/constraints.md.
+    "public-conduct": (9, "e98a42e4b359a6a7ce411f78a145c6ce2221055acb517b5a6b1199df4e562ffd"),
+    # v2 (2026-10-12, design/context-plan/11 §6 step 2): gains public/conduct.md's nine law parts.
     "public-constraints": (
-        1, "88b47c480e3948332c8281cacb0efbdc9094176d16f1704593df8eaa8b735dfa",
+        2, "04533c61a9bdebafa288e7a3710dc43f9aabbc342527f75dcfb32c6444cb71d5",
     ),
 }
 

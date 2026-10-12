@@ -130,7 +130,7 @@ until a measured quality problem says otherwise.
 1. **Operator mark-up of [31](../self-growth/31-doctrine-audit.md)** — the
    law/practice/character split, especially rows marked AMBIGUOUS. Input only the
    operator holds; nothing below moves text before it.
-2. **Move law out of practice-looking sections.** Node 10 found law lines inside
+2. **Move law out of practice-looking sections.** *(Done 2026-10-12: `rooms/constraints.md`, `public/constraints.md`; DEC-310.)* Node 10 found law lines inside
    sections that read as conditional (no invented quotes, no fake concession,
    find it before you say it). They join the law core before anything is cut.
 3. **Operating knowledge to its instruments.** Capability how-to that duplicates

@@ -685,11 +685,14 @@ def self_account() -> str:
     # identity.md (true on any surface) and belonging.md (her place in a
     # group, and the two halves that serve a room). The claims pinned below
     # span both, so the fixture is both, in the order a tag assembles them.
+    # Since 2026-10-12 (design/context-plan/11 §6, step 2) its law lines,
+    # among them the W2 caveat below, are rooms/constraints.md, so that is the
+    # third section of it.
     bodies = {s.name: s.body for s in doctrine.sections}
-    missing = {"identity", "belonging"} - set(bodies)
+    missing = {"identity", "belonging", "room-constraints"} - set(bodies)
     if missing:
         raise AssertionError(f"{sorted(missing)} must ship and must apply to the tag path")
-    return bodies["identity"] + "\n" + bodies["belonging"]
+    return "\n".join(bodies[n] for n in ("identity", "belonging", "room-constraints"))
 
 
 def _portal_routes() -> tuple[str, ...]:
@@ -1138,8 +1141,8 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     import tomllib
 
     assert _flat(
-        "Whether a deployment runs that, or the half above, is a setting you "
-        "cannot read"
+        "Whether a deployment keeps what a room left unsettled across turns, or runs "
+        "the half of you that speaks unasked, is a setting you cannot read"
     ) in _flat(self_account)
 
     # W2, the second half of the same sentence: presence of a block proves ON,

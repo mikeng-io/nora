@@ -5,7 +5,7 @@ order: 20
 applies_to: [tag, heartbeat, participation, proactive]
 version: 23
 kind: identity
-authority_above: [constraints, pictures]
+authority_above: [constraints, room-constraints, pictures]
 authority_below: [silence, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   呢度講你係邊個，唔係話你點做。幾時出聲、出幾多個 message、幾時要查、

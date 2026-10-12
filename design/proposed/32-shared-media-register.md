@@ -147,7 +147,7 @@ rather than reported.
 | transcript placeholder `[image a3f2c1: title - description]` | `nora/domain/media.py:731` (`render_placeholder`), joined at `:651`, applied by `enrich_placeholders` `:682` |
 | the reading's register: «"description": one or two sentences on what it shows», «Describe this image…», «Describe what happens in this segment…» | `nora/infra/vision/comprehend.py:84`, `:103`, `:112` |
 | the shared line `[shared reel by @x <link> — caption]` | `nora/platform/instagram/parser.py:449` |
-| doctrine: «the words after the code are the short form: what it is, and what it shows» | `nora/doctrine/rooms/pictures.md:27` (operator-only) |
+| doctrine: «the words after the code are the short form: what it is, and what it shows» | `nora/doctrine/rooms/constraints.md:86` (operator-only; in `rooms/pictures.md` until 2026-10-12) |
 | `rooms/voice.md` | no line on media; its «冒號拉個小標題出嚟 … 你已經喺度寫報告» already names the colon-heading tell her reports use |
 
 ## Decision
@@ -190,11 +190,11 @@ change is framing, not information. So:
   constant across every turn, so the data cannot speak to it, and a
   catalogue line is routing text that ADR 0015 changes only with a
   `tool_selection` measurement.
-- `pictures.md:27`. Operator-only. See below.
+- `rooms/constraints.md:86`. Operator-only. See below.
 
 ## For the operator
 
-`pictures.md:27` frames a transcript description as «the short form: what it
+`rooms/constraints.md:86` frames a transcript description as «the short form: what it
 is, and what it shows». That is accurate, and it is also the only framing on
 the path the conduct paragraph now covers. A clause there saying the thing is
 in front of whoever sent it would put that framing where the placeholder is

@@ -93,10 +93,10 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
     [
         # the first words change: the anchor no longer resolves
         (
-            "rooms/conduct.md",
+            "rooms/constraints.md",
             "Agreement you do not hold is useless",
             "Agreement you never held is useless",
-            r"You have judgement: anchor 'Agreement you do not hold'",
+            r"Say only what you found: anchor 'Agreement you do not hold is'",
         ),
         # a flipped word in the MIDDLE of a part: the anchor still resolves, the hash does not
         (
@@ -172,8 +172,9 @@ def test_the_law_subset_is_not_empty_and_carries_the_examples_in_30_section_1():
         # a write that did not succeed
         "Only claim you have remembered something once the recording has succeeded",
         "When it comes back broken, say you could not check",      # "I couldn't check"
-        # no action no tool offers
-        "Never offer, promise or volunteer an action that is not one of those tools",
+        # no capability her tools and skills do not give her (rewritten in step 2,
+        # design/context-plan/11 §6: the old text predated the cognition loop)
+        "Never offer, promise or volunteer an action that your tools and skills do not give you",
     ):
         assert needle in re.sub(r"\s+", " ", law), f"missing from the law subset: {needle!r}"
 
@@ -196,22 +197,24 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
 #: The operator's rulings of 2026-10-12 on the eleven rows the sort marked
 #: AMBIGUOUS (DEC-309; design/self-growth/31-doctrine-audit.md, Judgement calls).
 #: Each names the part by its file and its opening words, so a ruling reverted in
-#: classification.yaml, or a split folded back into one part, fails here.
+#: classification.yaml, or a split folded back into one part, fails here. Law parts
+#: that step 2 (design/context-plan/11 §6) moved into rooms/constraints.md or
+#: public/constraints.md are named in their new file; the bucket is the ruling.
 OPERATOR_RULINGS_2026_10_12 = (
     ("core/identity.md", "That's context, not a topic.", "law"),
     ("core/identity.md", "Asked directly who made you", "practice"),
-    ("rooms/belonging.md", "You answer to the group, not to him.", "law"),
+    ("rooms/constraints.md", "You answer to the group, not to the person who built you.", "law"),
     ("rooms/belonging.md", "One half of you answers when somebody calls you", "character"),
-    ("rooms/conduct.md", "When two people tell you different things", "law"),
+    ("rooms/constraints.md", "When two people tell you different things", "law"),
     ("core/constraints.md", "Asked, you do not lecture", "practice"),
-    ("rooms/silence.md", "There are three ways a turn comes to you", "practice"),
-    ("rooms/silence.md", "When someone called you, you answer", "law"),
+    ("rooms/silence.md", "Not every turn comes from somebody calling you.", "practice"),
+    ("rooms/constraints.md", "When someone called you, you answer", "law"),
     ("rooms/silence.md", "When the room went quiet", "practice"),
     ("instruments/participation.md", "2. **Where anybody in the room", "law"),
     ("instruments/participation.md", "`verdict` is the decision", "practice"),
     ("public/conduct.md", "Keep the whole comment under 300 characters", "practice"),
-    ("public/conduct.md", "Your own reading of a picture never overrules", "law"),
-    ("public/conduct.md", "You are not a side in the thread.", "law"),
+    ("public/constraints.md", "Your own reading of a picture never overrules", "law"),
+    ("public/constraints.md", "You are not a side in the thread.", "law"),
 )
 
 

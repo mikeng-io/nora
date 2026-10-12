@@ -69,6 +69,11 @@ EXPECTED = {
     "public-voice": ("identity", 21, ("summons",)),
     "public-conduct": ("conduct", 31, ("summons",)),
     "public-constraints": ("constraint", 41, ("summons",)),
+    # The law moved out of conduct, belonging, pictures and silence word for word
+    # (design/context-plan/11 §6, step 2), so a later cut of practice and
+    # character cannot take a rule with it. Every room occasion, and order 42
+    # puts it right after constraints, last in each of them.
+    "room-constraints": ("constraint", 42, ("tag", "heartbeat", "participation", "proactive")),
 }
 
 
@@ -76,13 +81,15 @@ EXPECTED = {
 # `nora/doctrine/<folder>/<stem>.md`. `tests/architecture/test_doctrine_scope_
 # folders.py` pins the folder -> allowed-audience table this mirrors; this dict
 # only needs to resolve a real path. The stem is the name everywhere except
-# `public/`, whose files drop the `public-` prefix because the folder says it.
+# `public/` and `rooms/constraints.md`, whose files drop the `public-` and
+# `room-` prefix because the folder says it.
 _SCOPE_FOLDER = {
     "identity": ("core", "identity"), "constraints": ("core", "constraints"),
     "belonging": ("rooms", "belonging"), "voice": ("rooms", "voice"),
     "conduct": ("rooms", "conduct"), "silence": ("rooms", "silence"),
     "participation-conduct": ("rooms", "participation-conduct"),
     "pictures": ("rooms", "pictures"),
+    "room-constraints": ("rooms", "constraints"),
     "participation": ("instruments", "participation"),
     "reaction": ("instruments", "reaction"),
     "speech-format": ("instruments", "speech-format"),
@@ -126,11 +133,13 @@ def test_each_file_has_the_expected_name_kind_order_and_audience(name, kind, ord
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "belonging", "voice", "silence", "conduct", "pictures", "constraints"]
+        ["identity", "belonging", "voice", "silence", "conduct", "pictures", "constraints",
+         "room-constraints"]
 
 
 def test_constraints_is_last_for_recency():
-    assert _shipped().get().sections[-1].name == "constraints"
+    """The hard rules close the prompt: the core constraints, then the room's."""
+    assert [s.name for s in _shipped().get().sections[-2:]] == ["constraints", "room-constraints"]
 
 
 def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only():
@@ -705,8 +714,10 @@ def test_conduct_allows_personal_banter_only_for_an_in_room_instigator():
     assert "taking a shot at you, you can give it back" in conduct
     # 主動開火, negated: oddness alone is not a licence.
     assert "convert an odd request into a roast just because it is odd" in conduct
-    # 人身攻擊 against somebody who cannot answer back.
-    assert "Do not pull in somebody who is not in the room." in conduct
+    # 人身攻擊 against somebody who cannot answer back. Law, so it moved to
+    # rooms/constraints.md in step 2 (design/context-plan/11 §6).
+    assert "Do not pull somebody who is not in the room into a joke or a jab." in \
+        " ".join(_room_constraints().split())
     assert "target of a fight" in constraints
 
 
@@ -730,11 +741,12 @@ def test_voice_binds_the_one_hard_rule_of_the_open_register():
     """
     text = _voice()
     assert "唔好作 quote" not in text
-    conduct = (_path("conduct")).read_text()
-    assert "Do not invent quotes" in conduct
+    # Law: in rooms/constraints.md since step 2 (design/context-plan/11 §6).
+    law = _room_constraints()
+    assert "Do not invent quotes" in law
     # The restriction has to reach past quotes, or «invent nothing» is only
     # about words somebody said and the hit can still be built on a fiction.
-    assert "to make a hit land" in conduct
+    assert "to make a hit land" in law
 
 
 def test_conduct_separates_a_burst_from_one_answer_in_instalments():
@@ -778,13 +790,23 @@ def test_conduct_keeps_judgement_and_the_three_state_honesty():
 
     assert "judgement" in text.lower()
     assert "wrong question" in text or "refuse a premise" in text
-    assert "could not check" in text
-    assert "found nothing" in text or "you found nothing" in text
-    assert "never claim to have done" in text.lower()
+    # The three-state contract is law, in rooms/constraints.md since step 2
+    # (design/context-plan/11 §6).
+    law = _room_constraints()
+    assert "could not check" in law
+    assert "found nothing" in law or "you found nothing" in law
+    assert "never claim to have done" in law.lower()
 
 
 def _conduct() -> str:
     return (_path("conduct")).read_text()
+
+
+def _room_constraints() -> str:
+    """The law moved out of conduct.md, belonging.md, pictures.md and silence.md
+    word for word (design/context-plan/11 §6, step 2). Tests that pinned a law
+    line in its old file read it here."""
+    return (_path("room-constraints")).read_text()
 
 
 def test_conduct_puts_the_day_boundary_at_sleep_rather_than_at_midnight():
@@ -858,9 +880,11 @@ def test_conduct_separates_a_source_that_is_silent_from_a_source_that_denies():
     DEC-78/DEC-92's finding that prose alone does not move behaviour has not
     been overturned by writing more of it.
     """
-    text = _conduct()
-    assert "# What a source does not say" in text
-    section = " ".join(text.split("# What a source does not say", 1)[1]
+    # Law: the section moved word for word into rooms/constraints.md § Say only
+    # what you found in step 2 (design/context-plan/11 §6).
+    text = _room_constraints()
+    assert "# Say only what you found" in text
+    section = " ".join(text.split("# Say only what you found", 1)[1]
                        .split("\n# ", 1)[0].split())
 
     # 1. Omission is not denial.
@@ -936,25 +960,28 @@ def test_pushback_is_split_by_kind_across_voice_and_conduct():
     """
     voice = " ".join(_voice().split())
     conduct = " ".join(_conduct().split())
+    law = " ".join(_room_constraints().split())
 
     # Both halves exist, each under its own kind.
     assert "# 有人話你錯" in voice
     assert "# Being contradicted" in conduct
 
     # The forbidden move itself — inventing a fault so there is one to concede —
-    # is what BOTH files reach, from their own side.
+    # is what BOTH files reach, from their own side. The English half has been
+    # rooms/constraints.md since step 2 (design/context-plan/11 §6, 2026-10-12);
+    # the Cantonese half stays in voice.md as its register specimen until step 4.
     assert "作一個自己嘅錯出嚟俾人認" in voice
-    assert "Agreeing you invented something when you did not is not modesty" in conduct
+    assert "Agreeing you invented something when you did not is not modesty" in law
 
     # …and the half-agreement, which is the failure in its most survivable
-    # disguise and the reason the voice half is not redundant with conduct's.
+    # disguise and the reason the voice half is not redundant with the law's.
     assert "你講得都啱，不過" in voice
 
     # The split holds: register examples stay in voice alone, and the grounding
-    # vocabulary stays in conduct alone. A copy in either direction is the drift
+    # vocabulary stays in the law alone. A copy in either direction is the drift
     # this test exists to catch.
-    assert "企硬" in voice and "企硬" not in conduct
-    assert "another claim" in conduct and "another claim" not in voice
+    assert "企硬" in voice and "企硬" not in conduct and "企硬" not in law
+    assert "another claim" in law and "another claim" not in voice
 
 
 def test_constraints_covers_every_occasion_it_is_served_to():
@@ -1011,9 +1038,28 @@ def test_identity_holds_who_she_is_and_belonging_holds_the_group():
     sections = {s.name: s for s in _all_sections()}
     identity, belonging = sections["identity"].body, sections["belonging"].body
     group_framing = ("in this group", "hold a friend's place", "The group calls you",
-                     "you answer to the group", "Two loops", "What carries across turns")
+                     "Two loops", "What carries across turns")
     for phrase in group_framing:
         assert phrase.lower() not in identity.lower(), f"identity.md frames a group: {phrase!r}"
         assert phrase.lower() in belonging.lower(), f"belonging.md lost: {phrase!r}"
+    # Law, so it moved to rooms/constraints.md in step 2 (design/context-plan/11
+    # §6); still a room file, never identity.md.
+    assert "you answer to the group" not in identity.lower()
+    assert "you answer to the group" in sections["room-constraints"].body.lower()
     assert [line for line in belonging.splitlines() if line.startswith("# ")] == \
         ["# Your place in the group", "# Why you're here", "# How you serve a room"]
+
+
+def test_records_never_leave_as_data_and_location_follows_the_tools():
+    """DEC-310 (design/context-plan/13): nothing she holds about people is handed
+    over as data, to anyone, the subject included, and whether she may say where a
+    member is is what her location tools answer, never a second route around a
+    refusal. Core, so it reaches every surface."""
+    body = " ".join(_path("constraints").read_text(encoding="utf-8").split())
+    assert "Nothing you hold about people leaves you as data." in body
+    assert "the person they are about included" in body
+    assert "is what your location tools answer" in body
+    assert "when they refuse, you do not say it another way" in body
+    for audience in ("tag", "participation", "proactive", "heartbeat", "summons"):
+        text = " ".join(_shipped().get(applies_to=audience).text.split())
+        assert "Nothing you hold about people leaves you as data." in text, audience
