@@ -138,6 +138,35 @@ No gold set exists. For each recorded tag turn (Langfuse), what did it need?
    finds the composed reply worse), then the eval corpora before/after, then
    live in shadow (compose, log, do not apply), then live.
 
+## 6a. How decision models are meant to be used (TypeSafe guidance, read 2026-10-12)
+
+Read before building: the TypeSafe skill (github.com/typesafe-ai/skills,
+`skills/typesafe-ai/SKILL.md`) and its docs pages on Noul, state, reranking and
+hierarchical classification (docs.typesafe.ai). What it changes here:
+
+1. **Language.** The state page: Jev's primary training language is English;
+   CJK is accepted "but lower accuracy". Nora's rooms are mostly Cantonese, and
+   node 07's Tev1 misses were Cantonese recall. This is the main case for
+   training on our own data; every benchmark reports Cantonese turns separately.
+2. **One Noul per unit, all in one request.** Questions over the same state are
+   evaluated independently and in parallel (the Noul page; the reranking
+   cookbook asks one Noul per query/candidate pair and sorts by it). That is the
+   (turn, unit card) design of §3a. Question ids are not sent to the model, so
+   each question carries the unit's full meaning (its card).
+3. **Known facts go in state, not in questions.** Code-known facts (spoken,
+   media present, occasion, which tools are loaded, the hour) are named JSON
+   fields of the state; the model judges, code supplies what is exact.
+4. **Instructions and criteria.** Instructions ask whether this turn needs the
+   unit; criteria define yes (the turn would go worse without it) and no (only
+   topically related). Phrased so high means include.
+5. **Thresholds by error cost.** A missed needed unit costs more than an extra
+   one, so the include threshold sits below 0.5, set on our labels; the middle
+   band includes.
+6. **Shortlist when the unit count outgrows the budget.** The reranking pattern
+   is two-stage (a cheap shortlist, then judgment); hierarchical classification
+   asks one Choice per level with a beam. Either is the fallback if one Noul per
+   unit stops fitting the latency budget.
+
 ## 7. Sequence
 
 1. Unit inventory as data (done: [composer-units.yaml](evidence/composer-units.yaml)).
