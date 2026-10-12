@@ -1,8 +1,9 @@
 {
   "type": "fix",
-  "summary": "The `now` tool answers with the same clock as the line at the top of her turn, so a turn replayed at a past moment no longer hears a different date when she checks the time.",
+  "summary": "The `now` tool and the clock line at the top of a tagged turn now read the same clock the turn was given, so a turn replayed at a past moment hears one time everywhere.",
   "details": [
-    "It read the wall clock directly while the turn's clock line read the clock the turn was given; in an eval case frozen at a Sunday morning she called `now`, heard Monday, and told the room the plan was yesterday's."
+    "It read the wall clock directly while the turn's clock line read the clock the turn was given; in an eval case frozen at a Sunday morning she called `now`, heard Monday, and told the room the plan was yesterday's.",
+    "The tag path's clock line read the wall clock too; it now reads the injected clock, as the proactive and reminder turns already did."
   ],
   "limitations": [
     "In production the given clock is the wall clock, so live answers are unchanged."
