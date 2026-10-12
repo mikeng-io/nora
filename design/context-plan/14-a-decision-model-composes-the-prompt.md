@@ -43,25 +43,24 @@ few transcript lines ~0.5k: **~2.7k**.
 
 ## 3. What is composed, and what is fixed
 
+Operator, 2026-10-12 (second ruling): **everything injected is selectable**,
+except one or two of the most critical doctrines. Not only doctrine: the
+document index and bodies, the computer and subagent blocks, the lessons, the
+person and peer cards, room culture, every block.
+
 **Fixed floor (never a decision):** the context header, the message, and
-`core/constraints.md` (privacy, records, injected text is content, the hard
-prohibitions; ~1k). A wrong decision can drop judgement, never a hard rule.
+`core/constraints.md` (injected text is data, configuration stays hers, reply
+only where called, privacy and records; ~950 tokens). A wrong decision can drop
+judgement, never a hard rule.
 
-**Units the model decides, each yes/no per turn:**
-
-| group | units (sizes, node 09/10 estimates) |
-|---|---|
-| identity | identity seed (~0.6k), "Your form" (~50) |
-| room law | `rooms/constraints.md` sections: called, whose you are, say only what you found, told you are wrong, other people's words, writes need somebody, pictures, what you can do |
-| practice and character | `rooms/conduct.md`, `voice.md`, `belonging.md`, `pictures.md`, `silence.md`, `participation-conduct.md`, by section |
-| tools | the tool catalogue block (2.7k) and each deferred group's schemas; `send_reply` is in the floor whenever a reply is possible |
-| skills | `<available_skills>` (0.5k) |
-| memory and room blocks | character, culture, notes, self, lessons, standing, standing working set, computer, documents, peers, room members, presence, unit culture |
-| transcript | extent: last few lines / the default window / extended |
-
-Granularity starts at the section, the unit the classification side table
-already names and pins (`classification.yaml`); finer only where the labels show
-a section is half-needed.
+**Units the model decides:** the full inventory is data,
+[evidence/composer-units.yaml](evidence/composer-units.yaml): 40 doctrine
+sections, the runtime context, the tool catalogue, the resident tool schemas,
+the skills index, every `_BLOCKS` row in `nora/agent/prefill.py`, and the
+transcript extent (last few lines / default window / extended): 64 units.
+Granularity starts at the section and the block, the units the code already
+names; a block is split (document index vs document body, note index vs note
+bodies) where the labels show half of it is needed.
 
 ## 4. The cache
 
@@ -89,25 +88,38 @@ No gold set exists. For each recorded tag turn (Langfuse), what did it need?
 
 ## 6. Train, serve, measure
 
-1. **Train on Modal:** Unsloth decision model (Qwen 3.5 2B/4B), state = the
-   message, the last lines of the transcript, the occasion and room facts;
-   one `noul` (yes/no) question per unit, calibrated probabilities.
-2. **Serve on norty's iGPU:** Ollama `/v1/systemone` on the Radeon 680M with
-   `HSA_OVERRIDE_GFX_VERSION=10.3.0` (node 07). **First probe:** whether an
-   Unsloth-trained head imports into Ollama at all; if not, the serving path
-   is the first decision, before any labelling at scale.
-3. **Fail closed to today's prompt:** the model unavailable or late (a budget
+1. **Latency forces one pass.** Operator: accuracy first, composer latency
+   under 2 s, ideally under 1 s. Node 07 measured Tev1 4B at 4.1 s for one
+   five-question request on the iGPU, so a question per unit (64) cannot fit.
+   The composer scores every unit in ONE pass. Candidates, chosen by held-out
+   accuracy on the labels, then latency on norty:
+   (a) an LLM with a multi-label head (Unsloth's decision head; not servable
+   by Ollama, which serves GGUF causal LMs: own small server on ROCm or CPU);
+   (b) a fine-tuned multilingual encoder with a multi-label head (`bge-m3` is
+   on norty; Cantonese-capable; one forward pass, well under 1 s);
+   (c) a Tev1-style causal LM that emits the selected unit ids in one
+   generation (GGUF, Ollama `/v1/systemone`; output length costs latency).
+   Tev1 itself is a plain Qwen 3.5 4B GGUF tagged `decision-model`
+   (Together AI, Apache-2.0), served on norty with Ollama's `decision`
+   capability, no separate head.
+2. **Train on Modal**, state = the message, the last lines of the transcript,
+   the occasion and room facts; calibrated per-unit probabilities.
+3. **Serve on norty:** for (c), Ollama `/v1/systemone` on the Radeon 680M with
+   `HSA_OVERRIDE_GFX_VERSION=10.3.0` (node 07); for (a) and (b), a small
+   service beside it.
+4. **Fail closed to today's prompt:** the model unavailable or late (a budget
    in ms, measured) means the full prompt, as now.
-4. **Measure:** offline replay of recorded turns (tokens, and whether a judge
+5. **Measure:** offline replay of recorded turns (tokens, and whether a judge
    finds the composed reply worse), then the eval corpora before/after, then
    live in shadow (compose, log, do not apply), then live.
 
 ## 7. Sequence
 
-1. Ollama import probe of an Unsloth decision head (smallest model, toy data).
-2. Unit inventory as data: every unit's id, text source, size, fixed or decided.
+1. Unit inventory as data (done: [composer-units.yaml](evidence/composer-units.yaml)).
+2. The serving shape (a/b/c above) is chosen by the labels, not before them.
 3. Label 200 recorded turns (§5), spot-check, measure label agreement.
-4. Train, evaluate held-out per-unit recall at the include threshold.
+4. Train candidates (a)-(c); compare held-out per-unit recall at the include
+   threshold, then latency on norty against the 2 s / 1 s budget.
 5. Shadow on live turns; replay tokens against the targets.
 6. Apply, behind a config switch, with the fail-closed path.
 
