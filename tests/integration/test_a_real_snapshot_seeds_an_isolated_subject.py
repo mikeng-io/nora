@@ -725,6 +725,26 @@ async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
     finally:
         await sandbox_engine.dispose()
 
+
+async def test_a_hand_written_entity_anchored_note_seeds_through_create(sandbox) -> None:
+    """The other `know()` path: a `NoteSeed` with no source id goes through
+    `SqlNoteStore.create`, which must receive the entity anchor too.
+
+    Revert `anchor_entity_ids=` on `know()`'s `notes.create` call and this
+    goes RED: the note reaches the store with no anchor."""
+    await know(sandbox, Knowledge(notes=(NoteSeed(
+        title="Hand written", description="a running topic", body="still going",
+        anchor_date=None, anchor_entity_ids=("ent-2",),
+    ),)), now_ms=BEFORE_MS)
+
+    sandbox_engine = create_sql_engine(sandbox.database_url)
+    try:
+        standing = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
+        [note] = [n for n in standing if n.title == "Hand written"]
+        assert note.anchor_entity_ids == ("ent-2",)
+    finally:
+        await sandbox_engine.dispose()
+
 # --- migration 0075_withdrawal: an OLDER row_history image missing a new
 #     column must restore to SQL NULL, not error or misbehave -------------
 
