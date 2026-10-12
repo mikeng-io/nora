@@ -62,6 +62,33 @@ Granularity starts at the section and the block, the units the code already
 names; a block is split (document index vs document body, note index vs note
 bodies) where the labels show half of it is needed.
 
+## 3a. It must scale with features, not grow with them
+
+Operator, 2026-10-12: Nora will keep gaining features, blocks, doctrine and
+tools. If each is injected by default, a greeting's prompt grows with the
+system (toward 50k) instead of with the turn. Composition is therefore the
+contract, not an optimisation:
+
+1. **Nothing reaches the prompt except through the composer.** The inventory is
+   generated from code (every `_BLOCKS` row, every classified doctrine section,
+   every tool and skill), not kept by hand; a gate test fails a block, section
+   or tool that renders outside it. The floor is the only exception, and a test
+   caps its size.
+2. **New units are selectable without retraining.** A fixed multi-label head
+   (one output per unit) must be retrained for every new block. The composer
+   instead scores (turn, unit card) pairs, where a card is the unit's short
+   statement of what it is for: block descriptions (`block_types.py`), tool
+   descriptions, doctrine `description` and headings already exist. A feature
+   ships with its card and is composable on day one; retraining improves it,
+   it does not enable it.
+3. **Latency stays flat in the unit count.** Pairs are scored in one batch (a
+   cross-encoder) or as one turn embedding against precomputed card embeddings
+   (a bi-encoder with a learned threshold), so 64 units or 600 fit the same
+   budget. This favours §6 candidate (b), in its pairwise form, over (a) and
+   (c); the labels still decide.
+4. **Measured as an invariant:** the greeting target (< 5k) is re-checked on
+   every release, not once.
+
 ## 4. The cache
 
 A per-turn composition changes the prefix, and a changed prefix is re-read at
