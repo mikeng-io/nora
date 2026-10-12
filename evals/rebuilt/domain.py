@@ -352,14 +352,14 @@ class Outcome:
             # do is read healthy while it measured nothing".
             #
             # So: something must have happened. A turn that spoke or a pass
-            # that wrote satisfies it, and so does a turn that REACHED a
-            # decision and chose silence: `admitted` is set only when the
-            # pipeline decided (a proactive act turn that ran, or a row the
-            # screen cancelled), and every way of not running returns
-            # `admitted=None` with an error. Without it a proactive turn that
-            # declined the floor on an `either` case was ungradable (a10,
-            # 2026-10-12). A case where nothing ran still falls to `None`.
-            if self.said or self.written or self.changed or self.admitted is not None:
+            # that wrote satisfies it, and so does an act turn that RAN and
+            # chose silence (`admitted=True`, nothing said): without it a
+            # proactive turn that declined the floor on an `either` case was
+            # ungradable (a10, 2026-10-12). `admitted=False` is NOT enough: on
+            # the act path it is a row the screen cancelled, a turn that never
+            # ran, so the case's own question was never asked. A case where
+            # nothing ran still falls to `None`.
+            if self.said or self.written or self.changed or self.admitted is True:
                 return True
             return None
         if expect == "none":

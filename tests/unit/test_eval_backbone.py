@@ -1246,11 +1246,11 @@ def test_meets_grader_either_passes_a_turn_that_decided_on_silence():
     """A proactive act turn that ran and declined the floor (`admitted=True`,
     nothing said) is one of `either`'s two answers, not a turn that never
     happened. It was ungradable (proactive_act a10, 2026-10-12). Revert the
-    `admitted is not None` clause and this goes RED."""
+    `admitted is True` clause and this goes RED."""
     out = meets_grader.evaluate(_meets_data(expect="either", admitted=True))[0]
     assert out.label == PASS
     out = meets_grader.evaluate(_meets_data(expect="either", admitted=False))[0]
-    assert out.label == PASS, "a row the screen cancelled is a decision too"
+    assert out.label == ERROR, "a row the screen cancelled never asked the case's question"
 
 
 def test_meets_grader_a_judge_fail_overrides_a_structural_pass():
