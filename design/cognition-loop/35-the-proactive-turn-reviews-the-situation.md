@@ -164,3 +164,24 @@ baseline across two runs, and a01 holds.
   If it lags, 3.2 reads the latest fixes directly rather than the rollup.
 - **Which members.** The room's members per the identity map; a member with
   no presence circle renders nothing.
+
+## 8. Results (2026-10-12)
+
+Measured on `proactive_act`, n=5 per case, after three eval defects were
+fixed: a seeded copy of the case's row fired beside it (#814), `now` read the
+wall instead of the frozen clock (#815), and a text `must_cite` failed an
+allowed silence (#816). Before those, the a12/a13 numbers above were invalid.
+
+| arm | silence cases | speak cases |
+|---|---|---|
+| baseline, effort `none` (full corpus) | 8/40 | 10/10 |
+| §3.1 own_intention (6 cases) | 0/20 | 9/10 |
+| §3.3 closing line (6 cases) | 0/20 | 10/10 |
+| §3.4 effort `low` (full corpus) | 32/40 | 8/10 |
+
+§3.1 and §3.3 moved nothing and are not shipped. §3.4 is the lever: at `none`
+she read the note's stale "not settled" line and either announced the plan
+the room had settled or chased the last open item; given room to reason she
+weighed the transcript against it. Shipped as `[proactive] reasoning_effort =
+"low"`. §3.2 (whereabouts) is not built; a13 already goes silent 5/5 at `low`
+from the transcript alone.
