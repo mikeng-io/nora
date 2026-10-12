@@ -311,9 +311,9 @@ cases:
     # instant her own message answered the row's question outright («呢兩樣
     # 唔使再問»). Live she spoke again and repeated it. The row's text went out
     # under `<tag_message>`, described as a person's request to answer, which
-    # contradicted the header; this case measures the framing that replaced it
-    # (`own_intention`). Like a11, `<loop_decisions>` is absent in the sandbox,
-    # so the judgement rests on the transcript alone.
+    # contradicted the header (design/cognition-loop/35 §2). Like a11,
+    # `<loop_decisions>` is absent in the sandbox, so the judgement rests on
+    # the transcript alone.
     snapshot:
       platform: signal
       conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
@@ -329,4 +329,28 @@ cases:
         verdict: spoke
         reason: spoke
         minutes_ago: 5
+      origin: the 2026-10-11 triple-ask incident
+
+  - name: a13_the_group_met_an_hour_before_the_ask
+    entry: proactive_act
+    expect: silence
+    # REAL: 2026-10-11 08:00, the FIRST of the three `ask` rows (a12 is the
+    # third). Cognition wrote it at 06:31 because the meeting place and time
+    # were not yet said in the room. Between 06:47 and 06:59 the members
+    # asked whether the others had arrived, answered yes, and named the
+    # convenience store they were standing at, so by the fire the question
+    # was moot. She had not yet spoken that morning, so unlike a12 nothing of
+    # hers answers it: only the room's own lines and, once presence is a
+    # block (design/cognition-loop/35 §3.2), where they were. Live she spoke
+    # and restated the meeting arrangements.
+    snapshot:
+      platform: signal
+      conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
+      before_ms: 1791676823606
+    metadata:
+      expect_original: silent
+      row:
+        note: 星期日行程（2026-10-11）
+        intent: 星期日 My Garden 行程今日 11:00 入場；28座小巴 09:30 天水圍天祐苑迴旋處開。集合時間同地點仲未講實，問吓邊度幾點等。
+        decided_hours_ago: 1.48
       origin: the 2026-10-11 triple-ask incident

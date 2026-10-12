@@ -296,12 +296,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     computer to compute on, against `file_fetch`; NOT yet run), plus 1
     `tool_selection` case for `media_fetch` with a shared photo's link
     (2026-10-11, design/external-files §2: looked at through the source,
-    against `file_fetch` and `web_fetch`; NOT yet run), plus 1
-    `proactive_act` case, a12 (2026-10-11: her own answer five minutes old,
-    the row framed as `own_intention` rather than `tag_message`);
+    against `file_fetch` and `web_fetch`; NOT yet run), plus 2
+    `proactive_act` cases from the 2026-10-11 triple ask (design/cognition-
+    loop/35 §5): a12, her own answer five minutes old, and a13, the group
+    met an hour before the ask;
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 276
-    assert sum(c.active + c.parked for c in totals) == 276
+    assert sum(c.total for c in totals) == 277
+    assert sum(c.active + c.parked for c in totals) == 277
