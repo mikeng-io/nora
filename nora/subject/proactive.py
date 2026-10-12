@@ -97,12 +97,16 @@ async def owe(
         linked = matches[0]
         # A case built from a real snapshot can carry the very row it stands
         # in for: the snapshot is cut just before that row fired, so it is
-        # still PENDING on the same note, and the open-note unique index then
-        # refuses this one (`DuplicateProactiveNoteError`, the a12 ERROR).
-        # The row written below IS the case's row, so the seeded copy is
-        # cancelled first rather than left to collide.
+        # still PENDING. Left in place it either collides with this one on the
+        # open-note unique index (`DuplicateProactiveNoteError`, when it names
+        # the same note) or, when it names no note (Cognition's rows carry
+        # `subject_rows`, not `note_id`), fires BESIDE it, so the turn reads
+        # the same intention twice. The row written below IS the case's row,
+        # so the seeded copy, found by its note or by its identical text, is
+        # cancelled first.
         for seeded in await subject.deps.reminders.pending_for(conversation_id):
-            if seeded.kind == "proactive" and (seeded.payload or {}).get("note_id") == linked.id:
+            same_note = (seeded.payload or {}).get("note_id") == linked.id
+            if seeded.kind == "proactive" and (same_note or seeded.text == intent):
                 await subject.deps.reminders.cancel(
                     seeded.id, conversation_id=conversation_id,
                 )
