@@ -697,6 +697,40 @@ async def test_a_case_row_replaces_the_seeded_copy_of_itself(
     assert cancelled is not None and cancelled.state is ReminderState.CANCELLED
 
 
+async def test_a_case_row_replaces_a_seeded_copy_that_names_no_note(
+    sandbox, source, engine,
+) -> None:
+    """Cognition's rows carry `subject_rows`, not `note_id`, so the seeded
+    copy of the case's own row does not collide: it fires BESIDE the case's
+    row and the turn reads the intention twice (proactive_act a12 and a13,
+    2026-10-12). `owe()` matches it by its identical text and cancels it.
+
+    Revert the text match in `nora.subject.proactive.owe` and this goes RED:
+    the copy is still pending."""
+    await SqlNoteStore(engine).create(
+        unit="nora", title="Day trip", description="where to meet",
+        uncertainty="open", closing_condition="somebody names a place",
+        established_in=ROOM[1], body="meeting place not settled",
+        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
+    )
+    await SqlReminderStore(engine).create(Reminder(
+        id=UUID("77777777-0000-4000-8000-000000000004"),
+        requester_person_id="nora", platform=ROOM[0],
+        conversation_id=ROOM[1], conversation_type="group",
+        text="ask where to meet for the trip", created_at=_at(BEFORE_MS - 3 * MINUTE),
+        due_at=_at(BEFORE_MS + MINUTE), state=ReminderState.PENDING,
+        fired_at=None, outcome=None, kind="proactive",
+        payload={"by": "cognition:test", "intent": "ask", "subject_rows": "1 2"},
+    ))
+
+    await _seed(sandbox, source)
+    [copy] = [r for r in await _pending(sandbox) if r.text == "ask where to meet for the trip"]
+    row = await owe(sandbox, note_title="Day trip", intent="ask where to meet for the trip")
+
+    pending = {r.id for r in await _pending(sandbox)}
+    assert pending & {row.id, copy.id} == {row.id}
+
+
 async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
     sandbox, source, engine,
 ) -> None:
