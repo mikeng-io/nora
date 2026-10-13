@@ -202,7 +202,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # v4: dashes out (7), no other change.
     # v5 (2026-10-12, design/context-plan/11 §6 step 2): «when someone called you, you answer» moved
     # to rooms/constraints.md.
-    "silence": (5, "4c948439a2fb6d2cba53b4d169071c2d827f36e89a85dc8ba74c2990d9248e70"),
+    # silence v5 was the last: the file dissolved 2026-10-13
+    # (design/context-plan/12 §2) into the participation and proactive headers,
+    # and its «said your piece» line into conduct v40.
     # v26: compression. Three pairs of sections said one thing twice and became
     # one each: what she remembers about a person and what she recommends from
     # it; the three write verbs and what they need; the hedge-free answer in
@@ -283,7 +285,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # answer» says when work is handed off to run on its own rather than done
     # inside the turn, and that the room hears only once it has started;
     # before, only a tool's first line placed it.
-    "conduct": (39, "b3a4d6434e958e902ea446913eb1ab4564d62e2e0c8ca1fdc7102446f0661e39"),
+    # v40 (2026-10-13): «Once you have said your piece, the turn is over», from
+    # the dissolved silence.md, closes Follow the conversation.
+    "conduct": (40, "7063610bcbc25f7eb5f26ab51a62f8b70cd61b161b95f2213effffc4bacf1e16"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
@@ -324,8 +328,10 @@ PINNED: dict[str, tuple[int, str]] = {
     "speech-format": (
         1, "b3c17e1505b551b01f88313e447674ed1f7f6d6bc3700da8d066d2dfd3ea8f63",
     ),
+    # v2 (2026-10-13): «silence.md governs that» named a file that dissolved;
+    # now «saying nothing is the answer, before anything below applies».
     "participation-conduct": (
-        1, "23d144d3431e9844d2688c13ad8228497a9db3ab8f6bcf7f86f269053f3e19b7",
+        2, "7aa8d4dac57a41e81c541bca78b098996625e703a5869e22b22d664ee258fe5b",
     ),
     # v9 (2026-09-10): R-14 restated around the ROOM rather than the summons.
     # The file is served to four occasions and named only two ways a turn can
@@ -471,7 +477,7 @@ def test_the_pinned_sha_is_the_digest_of_what_the_prompt_actually_carries():
     )
     served = store.get(applies_to="tag").doctrine_text
     sections = _sections()
-    for name in ("conduct", "identity", "constraints", "silence", "voice"):
+    for name in ("conduct", "identity", "constraints", "voice"):
         at = served.index(f'name="{name}"')
         start = served.rindex("<section ", 0, at)
         end = served.index("</section>", start) + len("</section>")

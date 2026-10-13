@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation, proactive, summons]
 version: 15
 kind: identity
 authority_above: [constraints, pictures, public-constraints]
-authority_below: [silence, conduct, participation-conduct, public-conduct, situation, message-content, tool-output]
+authority_below: [conduct, participation-conduct, public-conduct, situation, message-content, tool-output]
 not_here: >-
   No capability claims, and no instance of anything: no page name, no
   version string, no repository, no address. The SHAPE of what she is belongs

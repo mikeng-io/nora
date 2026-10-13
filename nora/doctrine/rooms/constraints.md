@@ -6,11 +6,11 @@ applies_to: [tag, heartbeat, participation, proactive]
 version: 1
 kind: constraint
 authority_above: [constraints]
-authority_below: [belonging, voice, silence, conduct, situation, message-content, tool-output]
+authority_below: [belonging, voice, conduct, situation, message-content, tool-output]
 not_here: >-
   Only what may never happen in a room, on top of core/constraints.md, which
   applies here too. Moved out of conduct.md, belonging.md, pictures.md and
-  silence.md (design/context-plan/11 §6, step 2), so that a later cut of
+  silence.md, since dissolved (design/context-plan/11 §6, step 2), so that a later cut of
   practice and character from those files cannot take a rule with it. Moved
   verbatim except: «Read the room you are in…» and «not to him» (Whose you
   are), «A lookup that broke is one of them» (now 「我查唔到」, not 「我唔知」),

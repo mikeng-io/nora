@@ -24,17 +24,17 @@ DOCTRINE_DIR = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # holds however the turn started (and so reaches `participation` too — the
 # LeakGuard corpus argument of `tests/test_doctrine_audiences.py` applies to
 # the newest audience exactly as it applied to `heartbeat`), while the
-# occasion-SPECIFIC files are narrow: `silence` is the tag/participation
-# difference itself, and `participation` is not hers at all — it is the
+# occasion-SPECIFIC files are narrow: `participation-conduct` is the offered
+# floor's alone (`silence`, the tag/participation difference, dissolved
+# 2026-10-13 into the turns' headers, design/context-plan/12 §2), and
+# `participation` is not hers at all — it is the
 # Relevance Gate's whole instruction, on an audience no other file declares,
 # so it can never leak into a turn she reads. A file quietly gaining or
 # losing an audience is the failure this column exists to catch.
 EXPECTED = {
     # `proactive` (design/dreamer-agent-loop/39 D12, DEC-162) joins every
-    # occasion-neutral file AND `silence`: a proactive act turn is an offered
-    # floor — Nora's own earlier intention, put back to her — so the
-    # may-speak half of silence.md is true of it exactly as it is of
-    # participation, and the heartbeat's obliged-to-speak reading is not.
+    # occasion-neutral file: a proactive act turn is an offered floor, Nora's
+    # own earlier intention put back to her, and `ProactiveHeader` says so.
     # `identity` and `constraints` are core: true on every surface, so they
     # reach the public summons too (design/instagram-adoption/19).
     "identity": ("identity", 10, ("tag", "heartbeat", "participation", "proactive", "summons")),
@@ -42,7 +42,6 @@ EXPECTED = {
     # who she is can load on a surface that is not one.
     "belonging": ("identity", 12, ("tag", "heartbeat", "participation", "proactive")),
     "voice": ("identity", 20, ("tag", "heartbeat", "participation", "proactive")),
-    "silence": ("conduct", 25, ("tag", "participation", "proactive")),
     "conduct": ("conduct", 30, ("tag", "heartbeat", "participation", "proactive")),
     # NOT hers: the gate's system prompt, isolated on its own audience.
     "participation": ("instrument", 5, ("relevance_gate",)),
@@ -86,7 +85,7 @@ EXPECTED = {
 _SCOPE_FOLDER = {
     "identity": ("core", "identity"), "constraints": ("core", "constraints"),
     "belonging": ("rooms", "belonging"), "voice": ("rooms", "voice"),
-    "conduct": ("rooms", "conduct"), "silence": ("rooms", "silence"),
+    "conduct": ("rooms", "conduct"),
     "participation-conduct": ("rooms", "participation-conduct"),
     "pictures": ("rooms", "pictures"),
     "room-constraints": ("rooms", "constraints"),
@@ -133,7 +132,7 @@ def test_each_file_has_the_expected_name_kind_order_and_audience(name, kind, ord
 def test_the_shipped_doctrine_assembles_in_strict_mode():
     doctrine = _shipped().get()
     assert [s.name for s in doctrine.sections] == \
-        ["identity", "belonging", "voice", "silence", "conduct", "pictures", "constraints",
+        ["identity", "belonging", "voice", "conduct", "pictures", "constraints",
          "room-constraints"]
 
 
@@ -145,15 +144,14 @@ def test_constraints_is_last_for_recency():
 def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only():
     """The public summons (design/instagram-adoption/19) reads who she is and
     the hard rules, plus the public files, and NOTHING about a room: no
-    belonging, no group voice, no room conduct, no silence rule written for a
-    group. A strict load of the real tree, so a broken authority edge or an
+    belonging, no group voice, no room conduct, nothing written for a group. A strict load of the real tree, so a broken authority edge or an
     unknown audience fails here rather than at boot on the deploy host."""
     doctrine = _shipped().get(applies_to="summons")
     names = [s.name for s in doctrine.sections]
     assert names == [
         "identity", "public-voice", "public-conduct", "constraints", "public-constraints",
     ]
-    for room_only in ("belonging", "voice", "conduct", "silence", "participation-conduct",
+    for room_only in ("belonging", "voice", "conduct", "participation-conduct",
                       "pictures"):
         assert room_only not in names
     for section in doctrine.sections:
@@ -199,25 +197,23 @@ def test_the_authority_graph_is_declared_relatively_and_terminates_at_tool_outpu
         assert "tool-output" in sections[name].authority_below
 
 
-def test_identity_voice_and_silence_conduct_are_peers_on_purpose():
+def test_identity_voice_and_the_conduct_files_are_peers_on_purpose():
     """The graph is a TOTAL order over tiers and a PARTIAL one over sections.
 
     design/17 §7b writes the tier order as `constraint -> identity/voice ->
     conduct -> ...`, with `identity/voice` deliberately one rung; `kind` — the
     only part of the authority model design/17 §6 says can be mechanised — puts
-    `silence` and `conduct` on one rung the same way, both being `kind:
-    conduct`. So neither pair naming the other is the declaration, not an
+    `conduct` and `participation-conduct` on one rung the same way, both being
+    `kind: conduct` (`silence` was a third until it dissolved, 2026-10-13). So neither pair naming the other is the declaration, not an
     omission, and this pins it: a later edit that ranks one of these pairs is
     asserting something no gate checks and no measurement supports, and should
     have to delete this test to do it.
     """
     sections = {s.name: s for s in _all_sections()}
     # `participation-conduct` joins the conduct tier: an occasion-specific
-    # conduct file, unranked against its two peers for exactly the reason
-    # `silence` and `conduct` are unranked.
+    # conduct file, unranked against `conduct`.
     peers = (("identity", "voice"), ("identity", "belonging"),
-             ("belonging", "voice"), ("silence", "conduct"),
-             ("silence", "participation-conduct"),
+             ("belonging", "voice"),
              ("conduct", "participation-conduct"))
     for a, b in peers:
         assert sections[a].kind == sections[b].kind

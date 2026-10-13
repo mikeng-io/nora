@@ -1203,7 +1203,7 @@ class ReplyGuard(HookProvider):
             #
             # WHY IT IS A VETO AND NOT A SENTENCE IN THE HEADER. The #144/#147
             # precedent, and the one this repo states as a Never: her
-            # instruction already said it (silence.md — "silence is a complete
+            # instruction already said it (silence.md, until 2026-10-13 — "silence is a complete
             # answer here, not a failure"; `ParticipationHeader` — "stay
             # silent anyway if you hold nothing"), and she spoke anyway. The
             # thing that changed between the prompt and the send is a tool

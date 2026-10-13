@@ -237,7 +237,7 @@ SILENT = "silent"
 # The proactive occasion's audience (design/dreamer-agent-loop/39 D4/D12,
 # DEC-162): a `kind="proactive"` reminder row — written by Nora's own decide
 # turn, owed to nobody — coming due. Its doctrine is read at this audience
-# (silence.md's may-speak rule reaches it; the heartbeat's obliged-to-speak
+# (`ProactiveHeader`'s may-speak rule reaches it; the heartbeat's obliged-to-speak
 # reading does not), its failures are labelled apart from the heartbeat's
 # and participation's, and a turn that ends without speaking answers
 # `SILENT`, the same healthy default participation has and the heartbeat

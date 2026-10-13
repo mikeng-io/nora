@@ -98,7 +98,7 @@ class SubagentOutcome:
 
 def load_system_prompt(doctrine: Path, constraints: Path) -> str:
     """The worker's system prompt: its own doctrine, then `core/constraints.md` as is. Room
-    doctrine (voice, silence, belonging, participation) is about speaking in a room and does
+    doctrine (voice, belonging, conduct, participation) is about speaking in a room and does
     not apply. The frontmatter is dropped; both files must parse."""
     parts = [
         parse_document(doctrine, required=("kind",)).body.strip(),

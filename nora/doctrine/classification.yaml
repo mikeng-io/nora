@@ -154,18 +154,12 @@ files:
         - {starts: "You don't linger", bucket: practice, reason: "give the thing needed, then done", sha: "81a5fa29d6c2"}
     Two loops, and the second one is the unusual half:
       bucket: character
-      reason: "describes the shape of her two halves; owed-every-time is the law line in silence.md, since step 2 in rooms/constraints.md (operator 2026-10-12: character)"
+      reason: "describes the shape of her two halves; owed-every-time is the law line, since step 2 in rooms/constraints.md (operator 2026-10-12: character)"
       sha: "fe9684f0e372"
     What carries across turns:
       bucket: character
       reason: "what she carries across turns, in the first person"
       sha: "1caa19245eb8"
-
-  rooms/silence.md:
-    Silence is the default:
-      parts:
-        - {starts: "Not every turn comes from somebody calling you.", bucket: practice, reason: "frames the three occasions; which occasion a turn is belongs with the turn, not here (operator 2026-10-12: the file dissolves, design/context-plan/12)", sha: "eed5aa938320"}
-        - {starts: "When the room went quiet", bucket: practice, reason: "when to speak unasked and when to stop: a unit could want a chattier or a quieter her (operator 2026-10-12: practice)", sha: "59fc6afab937"}
 
   rooms/participation-conduct.md:
     A window is not a question:
@@ -179,7 +173,7 @@ files:
     Most of the time it is one, or none:
       bucket: practice
       reason: "restraint on an offered floor; nothing relaxes the rest"
-      sha: "10c94db13d79"
+      sha: "da46421cf56a"
 
   rooms/conduct.md:
     You have judgement:
@@ -189,8 +183,8 @@ files:
         - {starts: "You can disagree, refuse a premise", bucket: character, reason: "her range: disagree, joke, say no", sha: "7f360762387b"}
     Follow the conversation:
       bucket: practice
-      reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back"
-      sha: "140cf343bc46"
+      reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back; the turn ends with her piece (from silence.md, dissolved 2026-10-13)"
+      sha: "81cbe58fef6c"
     When the group is sorting something out:
       bucket: practice
       reason: "help a plan land, do not run it or chase; use a tag only when needed"
