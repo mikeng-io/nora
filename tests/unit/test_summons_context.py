@@ -119,7 +119,8 @@ def test_the_turn_states_the_limit_its_reply_is_refused_over():
     as public/conduct.md's 300 against the cap's 320 did."""
     head = render_summons(_context()).split("\n", 1)[0]
     assert f"A reply longer than {PUBLIC_REPLY_MAX_CHARS} characters is not posted at all." in head
-    conduct = (Path(__file__).parents[2] / "nora" / "doctrine" / "public" / "conduct.md").read_text()
+    doctrine = Path(__file__).parents[2] / "nora" / "doctrine"
+    conduct = (doctrine / "public" / "conduct.md").read_text()
     assert not re.search(r"\d+\s+characters", conduct)
 
 
