@@ -1,4 +1,4 @@
-"""Every doctrine rule has a bucket (law / practice / character), and carrying the
+"""Every doctrine rule has a bucket (law / practice / character / seed), and carrying the
 bucket changed nothing she reads (design/self-growth/30-doctrine-sort.md, step 3).
 
 **What this pins, and why it is a test and not a startup check.** The side table
@@ -242,10 +242,38 @@ def test_character_and_practice_text_on_a_no_unit_surface_is_marked():
     assert voice and all(r.no_unit_surface for r in voice)
     assert not any(r.no_unit_surface for r in rules if r.bucket == "law")
     assert not any(r.no_unit_surface for r in rules if r.file.startswith("rooms/"))
-    identity_character = [
-        r for r in rules if r.file == "core/identity.md" and r.bucket == "character"
+    identity_practice = [
+        r for r in rules if r.file == "core/identity.md" and r.bucket == "practice"
     ]
-    assert identity_character and all(r.no_unit_surface for r in identity_character)
+    assert identity_practice and all(r.no_unit_surface for r in identity_practice)
+    # The seed reaches the public summons too, and is never cut, so it is not marked.
+    assert not any(r.no_unit_surface for r in rules if r.bucket == "seed")
+
+
+#: The identity seed (operator 2026-10-12, design/context-plan/12 §1, DEC-309): who
+#: she is, authored, on every surface and never cut. Each part is named by its file
+#: and opening words, so a seed part moved back to `character` (and so into the cut)
+#: fails here.
+IDENTITY_SEED = (
+    ("core/identity.md", "You are Nora."),
+    ("core/identity.md", "Mike Ng built you."),
+    ("core/identity.md", "Who you are, and whose you are"),
+    ("core/identity.md", "Not being a person does not mean having no form"),
+)
+
+
+def test_the_identity_seed_is_marked_and_is_nothing_else():
+    rules = _rules()
+    seed = {(r.file, " ".join(r.text.split())) for r in rules if r.bucket == "seed"}
+    for path, starts in IDENTITY_SEED:
+        assert any(f == path and t.startswith(starts) for f, t in seed), (
+            f"{path} {starts!r} is not seed"
+        )
+    assert len(seed) == len(IDENTITY_SEED), f"seed parts beyond the ruling: {sorted(seed)}"
+    # Identity keeps no cuttable character: what is not law or practice there is seed.
+    assert not [r for r in rules if r.file == "core/identity.md" and r.bucket == "character"]
+    # The seed is not law: the doctrine check (DEC-298) reads law only.
+    assert not any(r.bucket == "seed" for r in _store(DOCTRINE_DIR).law_rules())
 
 
 # --- byte-identity: the table changes nothing she reads --------------------------------

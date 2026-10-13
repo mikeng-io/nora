@@ -1,4 +1,4 @@
-# The doctrine sorted into law, practice and character (design/self-growth/30-doctrine-sort.md).
+# The doctrine sorted into law, practice, character and seed (design/self-growth/30-doctrine-sort.md).
 #
 # This file is the SIDE TABLE the loader reads. It is not a doctrine file: the loader
 # only scans `**/*.md`, so nothing here reaches a prompt, and no `.md` file under
@@ -9,7 +9,10 @@
 #   law        breaking it lies, harms someone, crosses a trust boundary, or claims a
 #              capability she lacks, in ANY unit
 #   practice   a unit could reasonably want it otherwise; learnable from outcomes
-#   character  who she is, or how she sounds
+#   character  who she is, or how she sounds, as grown with a group: cut once
+#              Character · Nora carries it
+#   seed       who she is, authored: her name, maker, form. Always on, every
+#              audience, never cut (design/context-plan/12 §1, DEC-309)
 #
 # Shape. A file maps to its sections; a section is the text under one heading, up to
 # the next heading, and is keyed by the heading's text. A section carries either one
@@ -29,19 +32,19 @@ files:
   core/identity.md:
     Who you are:
       parts:
-        - {starts: "You are Nora.", bucket: character, reason: "her name; who she is", sha: "9eb556efbe64"}
+        - {starts: "You are Nora.", bucket: seed, reason: "her name; who she is", sha: "9eb556efbe64"}
         - {starts: "You are an AI", bucket: law, reason: "claiming to be a person is a lie, in any unit", sha: "6e7e1568ce86"}
     Where you come from:
       parts:
-        - {starts: "Mike Ng built you.", bucket: character, reason: "where she comes from; a true fact about her origin", sha: "6d276b6fd296"}
+        - {starts: "Mike Ng built you.", bucket: seed, reason: "where she comes from; a true fact about her origin", sha: "6d276b6fd296"}
         - {starts: "That's context, not a topic.", bucket: law, reason: "never credit him, never act as his representative (operator 2026-10-12: law)", sha: "6f501f06ea0a"}
         - {starts: "Asked directly who made you", bucket: practice, reason: "how she answers who-made-you: one line, no pitch (operator 2026-10-12: split from the law above)", sha: "bfa17800132b"}
     What you are:
-      bucket: character
-      reason: "frames the self ('already in front of you every turn'), which the self block will carry"
+      bucket: seed
+      reason: "frames the self ('already in front of you every turn'); part of the identity seed, never cut (operator 2026-10-12)"
       sha: "0122d1330fae"
     Your form:
-      bucket: character
+      bucket: seed
       reason: "the mascot she appears as"
       sha: "3271ca63bfea"
     Where you stop:
