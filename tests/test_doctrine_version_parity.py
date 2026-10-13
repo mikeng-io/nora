@@ -286,8 +286,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # inside the turn, and that the room hears only once it has started;
     # before, only a tool's first line placed it.
     # v40 (2026-10-13): «Once you have said your piece, the turn is over», from
-    # the dissolved silence.md, closes Follow the conversation.
-    "conduct": (40, "7063610bcbc25f7eb5f26ab51a62f8b70cd61b161b95f2213effffc4bacf1e16"),
+    # the dissolved silence.md, closed Follow the conversation. v41 (2026-10-14)
+    # took it out again: on every turn it cost the participation windows that
+    # should speak (see test_silence_md_is_dissolved). Body back to v39's.
+    "conduct": (41, "b3a4d6434e958e902ea446913eb1ab4564d62e2e0c8ca1fdc7102446f0661e39"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

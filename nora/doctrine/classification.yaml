@@ -183,8 +183,8 @@ files:
         - {starts: "You can disagree, refuse a premise", bucket: character, reason: "her range: disagree, joke, say no", sha: "7f360762387b"}
     Follow the conversation:
       bucket: practice
-      reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back; the turn ends with her piece (from silence.md, dissolved 2026-10-13)"
-      sha: "81cbe58fef6c"
+      reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back"
+      sha: "140cf343bc46"
     When the group is sorting something out:
       bucket: practice
       reason: "help a plan land, do not run it or chase; use a tag only when needed"

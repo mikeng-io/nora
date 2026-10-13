@@ -318,11 +318,14 @@ def test_silence_md_is_dissolved():
     """The operator's ruling (design/context-plan/12 §2): what a turn IS belongs
     with the turn, so silence.md goes. Its law line lives in rooms/constraints.md,
     the right to stay silent in `ParticipationHeader` and `ProactiveHeader` (the
-    base rate in the proactive one only), and "the turn ends with your piece"
-    in rooms/conduct.md."""
+    base rate in the proactive one only)."""
     assert not (DOCTRINE_DIR / "rooms" / "silence.md").exists()
     text = {r.file: "" for r in _rules()}
     for r in _rules():
         text[r.file] += " ".join(r.text.split()) + " "
     assert "When someone called you, you answer" in text["rooms/constraints.md"]
-    assert "Once you have said your piece, the turn is over" in text["rooms/conduct.md"]
+    # silence.md's «you do not speak again into the space after your own reply»
+    # was NOT moved into conduct.md: read there, on every turn, it cost the
+    # participation windows that should speak (stalled-question-known 23/45
+    # with it, 14/15 without, against 25/30 before; 2026-10-14).
+    assert "speak again into the space after your own reply" not in text["rooms/conduct.md"]

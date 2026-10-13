@@ -84,10 +84,12 @@ turn and the law line has a home in the core.
 you are called (step 2). `ParticipationHeader` and `ProactiveHeader` already
 stated the occasion and that silence answers it. `ProactiveHeader` gained the
 file's base rate, «most turns like this one end that way»; `ParticipationHeader`
-tried it and dropped it, because read first it cost the windows that should
-speak (stalled-question-known 14/15 to 8/15, n=15). The one line true of a called
-turn too, «once you have said your piece, the turn is over», closes
-`rooms/conduct.md` § Follow the conversation (v40). `rooms/silence.md` is
+does not carry it (the before arm never had it there; its effect alone is
+unmeasured). The file's «you do not speak again into the space after your own
+reply» was moved into `rooms/conduct.md` (v40) and taken out again (v41): read on
+every turn, it cost the participation windows that should speak
+(stalled-question-known 23/45 with it, 14/15 without, 25/30 before; the drop
+was first wrongly blamed on the base rate). `rooms/silence.md` is
 deleted; `participation-conduct.md` (v2) no longer names it. Pinned by
 `tests/architecture/test_doctrine_is_classified.py::test_silence_md_is_dissolved`
 and `tests/test_doctrine_audiences.py::test_the_right_to_stay_silent_comes_with_the_offered_turn`.

@@ -408,9 +408,10 @@ class ParticipationHeader:
     `silence.md` dissolved (design/context-plan/12 §2, 2026-10-13): what a turn
     is belongs with the turn, and the header is the sentence she reads first.
     It does NOT carry that file's base rate («most turns like this one end that
-    way»), unlike `ProactiveHeader`: read first, it cost the turns that should
-    speak (stalled-question-known 14/15 -> 8/15 over n=15, 2026-10-13), and the
-    Relevance Gate has already screened the window before this turn exists.
+    way»), unlike `ProactiveHeader`: it never sat in this header, its effect
+    here is unmeasured, and the Relevance Gate has already screened the window
+    before this turn exists. (A drop in windows that should speak, 2026-10-13,
+    was first blamed on it; the cause was a line moved into conduct.md.)
     """
 
     relevance_score: float | None = None
