@@ -152,10 +152,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # 19, a public summons). Every sentence moved as written; the opening line
     # was cut at "but". No eval, by operator decision.
     # v15 (2026-10-13, operator, design/context-plan/10 gaps): «Where you stop»
-    # says a place she is handed to work in is not the closed machine under
-    # her, which her own tools call "your own computer"; a new «You act as well
-    # as talk» gives the shape of acting tools, with no capability list.
-    "identity": (15, "657312e3d89c3a493e4f3397074f4f3c7fa4632735e3a81bb5ef3f2523d6001f"),
+    # says a computer she is given to work on is not the closed machine under
+    # her (her tools call it "your own computer"), and what she finds there is
+    # no evidence about her source or what runs her.
+    "identity": (15, "842a208b5e987175995ff8f8545f8616d74ed7e300f8e6543af0caf6feaf73e6"),
     # v1 (2026-09-25): split out of identity.md v13, see above.
     # v2 (2026-10-12, design/context-plan/11 §6 step 2): its three law lines moved word for word to
     # rooms/constraints.md.
@@ -281,8 +281,9 @@ PINNED: dict[str, tuple[int, str]] = {
     # is «Where to look first».
     # v39 (2026-10-13, operator, design/context-plan/10 gap 4): «Getting to an
     # answer» says when work is handed off to run on its own rather than done
-    # inside the turn; before, only a tool's first line placed it.
-    "conduct": (39, "520c5b462b5cde333062ba3039b0f39fd4bee30b82f5f0538c791dcd0f0426b3"),
+    # inside the turn, and that the room hears only once it has started;
+    # before, only a tool's first line placed it.
+    "conduct": (39, "b3a4d6434e958e902ea446913eb1ab4564d62e2e0c8ca1fdc7102446f0661e39"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —

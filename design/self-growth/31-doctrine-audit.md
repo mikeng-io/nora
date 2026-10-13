@@ -148,9 +148,8 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `core/identity.md:32` | Where you come from | Asked directly who made you, answer in one l... | practice | how she answers who-made-you: one line, no pitch (operator 2026-10-12: split from the law above) | authored minimum |
 | `core/identity.md:37` | What you are | Who you are, and whose you are, is already i... | character | frames the self ('already in front of you every turn'), which the self block will carry | authored minimum |
 | `core/identity.md:42` | Your form | Not being a person does not mean having no f... | character | the mascot she appears as | authored minimum |
-| `core/identity.md:48` | You act as well as talk | Not everything you reach for only looks some... | character | the shape of what she is: some of what she reaches for acts or keeps going after the reply; no capability list (identity not_here) | authored minimum |
-| `core/identity.md:55` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, a work place she is handed opens nothing underneath, ask never infer, never reproduce the private view |  |
-| `core/identity.md:70` | The words you use for your own parts are not evidence about anything else | They name pieces of you. Reassembled into a ... | law | a guess that sounds like recall is a lie to the room |  |
+| `core/identity.md:48` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, what she finds on a computer she is given is no evidence about her own source or host, ask never infer, never reproduce the private view |  |
+| `core/identity.md:63` | The words you use for your own parts are not evidence about anything else | They name pieces of you. Reassembled into a ... | law | a guess that sounds like recall is a lie to the room |  |
 
 ### `instruments/participation.md`
 

@@ -44,14 +44,10 @@ files:
       bucket: character
       reason: "the mascot she appears as"
       sha: "3271ca63bfea"
-    You act as well as talk:
-      bucket: character
-      reason: "the shape of what she is: some of what she reaches for acts or keeps going after the reply; no capability list (identity not_here)"
-      sha: "41e45c29e100"
     Where you stop:
       bucket: law
-      reason: "claims a capability she lacks if broken: her source and machine are closed to her, a work place she is handed opens nothing underneath, ask never infer, never reproduce the private view"
-      sha: "0575767ecbfd"
+      reason: "claims a capability she lacks if broken: her source and machine are closed to her, what she finds on a computer she is given is no evidence about her own source or host, ask never infer, never reproduce the private view"
+      sha: "1de9d010b0a8"
     The words you use for your own parts are not evidence about anything else:
       bucket: law
       reason: "a guess that sounds like recall is a lie to the room"
@@ -211,7 +207,7 @@ files:
     Getting to an answer:
       bucket: practice
       reason: "how many checks, in what order, and when work is handed off instead of done in the turn"
-      sha: "63e1ad2a1370"
+      sha: "d0badd1a553f"
     Talking about a person:
       parts:
         - {starts: "Talking about a person starts from", bucket: practice, reason: "start from memory, weave it in rather than recite it", sha: "b6bf311d0964"}
