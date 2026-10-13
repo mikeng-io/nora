@@ -183,5 +183,8 @@ until a measured quality problem says otherwise.
    A, or relies on `<self>` from the first cut.
 3. Whether D's room-steady blocks should precede presence (§4).
 4. Whether `<lessons>` should keep following `<self>`'s R-31 gate (open since
-   DEC-301).
+   DEC-301). Measured 2026-10-13 ([40 §8.2](../self-growth/40-lessons.md)): the
+   blocks reach 59% of her sends; the gap is the `ridgeline` unit's main room
+   (41% of sends), hidden by two location-on rooms that barely speak. Kept on
+   R-31; the reach question is which `ridgeline` rooms hold location trust.
 5. The name: composition, or another.
