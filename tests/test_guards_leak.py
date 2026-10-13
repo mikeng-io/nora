@@ -103,3 +103,19 @@ def test_a_recital_of_what_the_model_was_shown_is_caught_across_a_dash(tmp_path)
     shown = "never a failure here, when you cannot answer"
     assert len(shown) == 44
     assert guard.check(shown) == "doctrine_span"
+
+
+def test_leak_guard_blocks_the_prompts_transcript_markup(guard):
+    """A draft quoting a transcript row by its tag is the prompt leaking, not a
+    reply: members' bodies are escaped when rendered, so `<m n=` can only come
+    from the prompt (seen live 2026-10-06, a deliberation delivered as prose)."""
+    draft = 'Let me reread.\n\n<m n="12">see you at six</m> came after my question.\n\n"Six works."'
+    assert guard.check(draft) == "prompt_markup"
+    assert guard.check("<m  n = '7'>x</m>") == "prompt_markup"
+
+
+def test_leak_guard_allows_an_escaped_or_ordinary_angle_bracket(guard):
+    """What a member can actually type reaches her escaped, and ordinary
+    angle brackets are chat content."""
+    for reply in ["&lt;m n=\"1\"&gt; is how it looks", "3 < 5 and <b>", "<mine> n=2"]:
+        assert guard.check(reply) is None, reply

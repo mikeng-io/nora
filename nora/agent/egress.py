@@ -142,8 +142,19 @@ def _normalize(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
+#: The transcript element's opening tag, `<m n="38" ...>` (`nora.domain.blocks`,
+#: `render_row_window` / `render_messages`). A member's body is XML-escaped when
+#: rendered, so a literal `<m n=` in her draft can only have come from the
+#: PROMPT, never from anything a member wrote. Seen live 2026-10-06: a turn
+#: ended in prose without `send_reply`, the DEC-93 recovery delivered it, and
+#: the prose was her deliberation, quoting a transcript row by its tag. That tag
+#: is the deterministic tell; deliberation without one is not caught here.
+_TRANSCRIPT_TAG = re.compile(r"<m\s+n\s*=")
+
+
 class LeakGuard:
-    """R-6: no reply carries the canary or a verbatim >=min_span doctrine span.
+    """R-6: no reply carries the canary, a verbatim >=min_span doctrine span,
+    or the prompt's own transcript markup (`<m n=...>`).
 
     Doctrine sections only — runtime_context holds config values (display name,
     trigger) that are legitimately quotable. Somebody ELSE's identifiers are a
@@ -178,6 +189,8 @@ class LeakGuard:
             return None
         if self._canary and self._canary in text:
             return "canary"
+        if _TRANSCRIPT_TAG.search(text):
+            return "prompt_markup"
         candidate = _normalize(text)
         if len(candidate) < self._min_span:
             return None

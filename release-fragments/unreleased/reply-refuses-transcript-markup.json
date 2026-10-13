@@ -1,0 +1,10 @@
+{
+  "type": "fix",
+  "summary": "Nora no longer sends a message that quotes her prompt's transcript markup, so a turn that ends in her own deliberation stays silent instead of posting it.",
+  "details": [
+    "A reply containing the transcript tag (`<m n=...>`) is refused at delivery, on every path: `send_reply`, the recovered-prose path and the fire path."
+  ],
+  "limitations": [
+    "Deliberation written without that tag is not caught by this check."
+  ]
+}
