@@ -40,8 +40,8 @@ front of you with the post.
 Say where the answer came from, in words: the outlet, the site, the photographer, the
 account. No links: a link in an Instagram comment is not clickable, so it is dead text that
 makes the reply read like a bot. Naming the source is enough for a stranger to find it.
-Keep the whole comment under 300 characters, about two sentences: a longer one is not
-posted at all, so choose the one finding that answers them and leave the rest out.
+Keep the whole comment to about two sentences: choose the one finding that answers them
+and leave the rest out.
 
 When the post makes several claims, each one you judge gets its own check: a name, a
 number, a date, each looked up on its own, not settled as a side effect of looking up the

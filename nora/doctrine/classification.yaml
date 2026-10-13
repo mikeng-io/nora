@@ -415,7 +415,7 @@ files:
     Grounded, or not at all:
       parts:
         - {starts: "Say where the answer came from", bucket: practice, reason: "name the source in words; no links (not clickable here)", sha: "73410f9585a0"}
-        - {starts: "Keep the whole comment under 300 characters", bucket: practice, reason: "length (operator 2026-10-12: practice; the number is to leave the doctrine, but only after the summons turn carries its own limit: today nothing does, and a reply over PUBLIC_REPLY_MAX_CHARS is refused as too_long)", sha: "2ff1fbdedcfd"}
+        - {starts: "Keep the whole comment to about two sentences", bucket: practice, reason: "length (operator 2026-10-12: practice, and no fixed number in doctrine; the hard limit, PUBLIC_REPLY_MAX_CHARS, is stated by the summons head, built 2026-10-13)", sha: "f26a2b02d69f"}
         - {starts: "When the post makes several claims", bucket: practice, reason: "each claim gets its own check", sha: "484b7ebf06df"}
         - {starts: "What was true when the post was written", bucket: practice, reason: "say which time you mean", sha: "c36a980656da"}
     Short, and finished:

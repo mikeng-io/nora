@@ -98,7 +98,7 @@ byte-identity proof above is for the 2026-10-07 sort only.
 | `instruments/participation.md` | 4 (992) | 9 (4768) | 0 (0) | 0 (0) |
 | `instruments/reaction.md` | 2 (217) | 8 (1614) | 1 (93) | 0 (0) |
 | `instruments/speech-format.md` | 1 (184) | 3 (1402) | 0 (0) | 0 (0) |
-| `public/conduct.md` | 0 (0) | 9 (1665) | 0 (0) | 0 (0) |
+| `public/conduct.md` | 0 (0) | 9 (1608) | 0 (0) | 0 (0) |
 | `public/constraints.md` | 13 (3166) | 0 (0) | 0 (0) | 0 (0) |
 | `public/voice.md` | 0 (0) | 1 (558) | 2 (994) | 0 (0) |
 | `rooms/belonging.md` | 0 (0) | 2 (585) | 6 (1614) | 0 (0) |
@@ -108,7 +108,7 @@ byte-identity proof above is for the 2026-10-07 sort only.
 | `rooms/pictures.md` | 0 (0) | 3 (781) | 0 (0) | 0 (0) |
 | `rooms/silence.md` | 0 (0) | 2 (864) | 0 (0) | 0 (0) |
 | `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1797) | 0 (0) |
-| **total** | **62 (15975)** | **70 (23697)** | **24 (5335)** | **4 (535)** |
+| **total** | **62 (15975)** | **70 (23640)** | **24 (5335)** | **4 (535)** |
 
 ## Surfaces with no unit
 
@@ -203,7 +203,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `public/conduct.md:28` | What you were asked | Answer the question under which you were tag... | practice | answer the question, or the claim in the post; the claim not the person | authored minimum |
 | `public/conduct.md:35` | What the post shows | The post's pictures and video were looked at... | practice | what she was handed with the post | authored minimum |
 | `public/conduct.md:40` | Grounded, or not at all | Say where the answer came from, in words: th... | practice | name the source in words; no links (not clickable here) | authored minimum |
-| `public/conduct.md:43` | Grounded, or not at all | Keep the whole comment under 300 characters,... | practice | length (operator 2026-10-12: practice; the number is to leave the doctrine, but only after the summons turn carries its own limit: today nothing does, and a reply over PUBLIC_REPLY_MAX_CHARS is refused as too_long) | authored minimum |
+| `public/conduct.md:43` | Grounded, or not at all | Keep the whole comment to about two sentences... | practice | length (operator 2026-10-12: practice, and no fixed number in doctrine; the hard limit, PUBLIC_REPLY_MAX_CHARS, is stated by the summons head, built 2026-10-13) | authored minimum |
 | `public/conduct.md:46` | Grounded, or not at all | When the post makes several claims, each one... | practice | each claim gets its own check | authored minimum |
 | `public/conduct.md:48` | Grounded, or not at all | What was true when the post was written and ... | practice | say which time you mean | authored minimum |
 | `public/conduct.md:52` | Short, and finished | One reply, to the person who tagged you. It ... | practice | answer first, then only what is needed to trust it; no greeting or sign-off | authored minimum |
@@ -372,7 +372,7 @@ eleven AMBIGUOUS rows, as they now stand:
 | `rooms/silence.md` § Silence is the default | **split**: "called means answer" is law (since step 2 in `rooms/constraints.md` § When you are called); the framing and when to speak unasked are practice. The file itself is the wrong shape under the cognition loop and dissolves (context-plan 12 §2) |
 | `instruments/participation.md` § What she can supply, item 2 (location) | law, and it **contradicted** `core/constraints.md` § Other people stay private outside location-trusted rooms (context-plan 12 §3) until step 2 rewrote that law (context-plan 13) |
 | `instruments/participation.md` § What you return | practice, marked not cuttable: an output format |
-| `public/conduct.md` § Grounded, "under 300 characters" | practice; **no fixed number belongs in doctrine**, but it leaves only once the summons turn carries its own limit (context-plan 12 §4) |
+| `public/conduct.md` § Grounded, "under 300 characters" | practice; **no fixed number belongs in doctrine**. Built 2026-10-13: the summons head states the hard limit (`PUBLIC_REPLY_MAX_CHARS`, 320) and the number left the doctrine (context-plan 12 §4) |
 | `public/conduct.md` § Grounded, "Your own reading of a picture" | law (since step 2 in `public/constraints.md` § A verdict stands on a check) |
 | `public/conduct.md` § Not a fight | law, the first sentence (since step 2 in `public/constraints.md` § Not a side) |
 
