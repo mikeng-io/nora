@@ -144,8 +144,9 @@ def test_constraints_is_last_for_recency():
 def test_the_summons_doctrine_assembles_in_strict_mode_from_core_and_public_only():
     """The public summons (design/instagram-adoption/19) reads who she is and
     the hard rules, plus the public files, and NOTHING about a room: no
-    belonging, no group voice, no room conduct, nothing written for a group. A strict load of the real tree, so a broken authority edge or an
-    unknown audience fails here rather than at boot on the deploy host."""
+    belonging, no group voice, no room conduct, nothing written for a group.
+    A strict load of the real tree, so a broken authority edge or an unknown
+    audience fails here rather than at boot on the deploy host."""
     doctrine = _shipped().get(applies_to="summons")
     names = [s.name for s in doctrine.sections]
     assert names == [
@@ -204,8 +205,9 @@ def test_identity_voice_and_the_conduct_files_are_peers_on_purpose():
     conduct -> ...`, with `identity/voice` deliberately one rung; `kind` — the
     only part of the authority model design/17 §6 says can be mechanised — puts
     `conduct` and `participation-conduct` on one rung the same way, both being
-    `kind: conduct` (`silence` was a third until it dissolved, 2026-10-13). So neither pair naming the other is the declaration, not an
-    omission, and this pins it: a later edit that ranks one of these pairs is
+    `kind: conduct` (`silence` was a third until it dissolved, 2026-10-13).
+    So neither pair naming the other is the declaration, not an omission, and
+    this pins it: a later edit that ranks one of these pairs is
     asserting something no gate checks and no measurement supports, and should
     have to delete this test to do it.
     """
