@@ -46,8 +46,8 @@ files:
       sha: "3271ca63bfea"
     Where you stop:
       bucket: law
-      reason: "claims a capability she lacks if broken: her source and machine are closed to her, ask never infer, never reproduce the private view"
-      sha: "36923c6f1342"
+      reason: "claims a capability she lacks if broken: her source and machine are closed to her, what she finds on a computer she is given is no evidence about her own source or host, ask never infer, never reproduce the private view"
+      sha: "1de9d010b0a8"
     The words you use for your own parts are not evidence about anything else:
       bucket: law
       reason: "a guess that sounds like recall is a lie to the room"
@@ -206,8 +206,8 @@ files:
       sha: "779acb028fbc"
     Getting to an answer:
       bucket: practice
-      reason: "how many checks, in what order"
-      sha: "f43c4c404d7d"
+      reason: "how many checks, in what order, and when work is handed off instead of done in the turn"
+      sha: "d0badd1a553f"
     Talking about a person:
       parts:
         - {starts: "Talking about a person starts from", bucket: practice, reason: "start from memory, weave it in rather than recite it", sha: "b6bf311d0964"}
@@ -248,7 +248,7 @@ files:
     香港人點樣打字:
       bucket: character
       reason: "colloquial Cantonese, code-switching, particles: sound and register"
-      sha: "2ef850c75770"
+      sha: "f8b56613abc2"
     打字唔係寫文:
       parts:
         - {starts: "Chat message 唔使完整小答案", bucket: practice, reason: "short is the default, no recap, a fragment can be the message", sha: "fe2be4080c78"}

@@ -148,8 +148,8 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `core/identity.md:32` | Where you come from | Asked directly who made you, answer in one l... | practice | how she answers who-made-you: one line, no pitch (operator 2026-10-12: split from the law above) | authored minimum |
 | `core/identity.md:37` | What you are | Who you are, and whose you are, is already i... | character | frames the self ('already in front of you every turn'), which the self block will carry | authored minimum |
 | `core/identity.md:42` | Your form | Not being a person does not mean having no f... | character | the mascot she appears as | authored minimum |
-| `core/identity.md:48` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, ask never infer, never reproduce the private view |  |
-| `core/identity.md:61` | The words you use for your own parts are not evidence about anything else | They name pieces of you. Reassembled into a ... | law | a guess that sounds like recall is a lie to the room |  |
+| `core/identity.md:48` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, what she finds on a computer she is given is no evidence about her own source or host, ask never infer, never reproduce the private view |  |
+| `core/identity.md:63` | The words you use for your own parts are not evidence about anything else | They name pieces of you. Reassembled into a ... | law | a guess that sounds like recall is a lie to the room |  |
 
 ### `instruments/participation.md`
 
@@ -260,7 +260,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `rooms/conduct.md:42` | Being asked to judge | Being tagged in to judge is already your per... | practice | tell the loser directly and tagged, a name owed to their face |  |
 | `rooms/conduct.md:42` | Being asked to judge | And you have to have read the conversation i... | practice | read the conversation first |  |
 | `rooms/conduct.md:46` | Depth follows the stakes | Banter usually earns a dry line. A route, bo... | practice | dry line for banter, the checked answer for what somebody will rely on; short is the default |  |
-| `rooms/conduct.md:50` | Getting to an answer | Do not re-check what you know or look again ... | practice | how many checks, in what order |  |
+| `rooms/conduct.md:50` | Getting to an answer | Do not re-check what you know or look again ... | practice | how many checks, in what order, and when work is handed off instead of done in the turn |  |
 | `rooms/conduct.md:54` | Talking about a person | Talking about a person starts from what you ... | practice | start from memory, weave it in rather than recite it |  |
 | `rooms/conduct.md:54` | Talking about a person | Then use it the way a friend does, woven in ... | practice | weave memory in; do not recite it with dates and figures |  |
 | `rooms/conduct.md:56` | Talking about a person | If somebody asks about a person who is in th... | practice | ask that person, tagged, instead of guessing |  |
@@ -335,7 +335,7 @@ character: practice text on those surfaces has no Lessons receiver either.
 | file | section | starts | bucket | reason | no-unit surface |
 |---|---|---|---|---|---|
 | `rooms/voice.md:17` | 你係邊個 | 你把聲係呢班朋友入面其中一個：抵死、隨意、唔驚唔忟，唔係企喺出面扮地道。快、具體、有立場... | character | her voice among the friends: dry, specific, with a view |  |
-| `rooms/voice.md:21` | 香港人點樣打字 | 口語廣東話、繁體，似人喺 Signal 打字，唔似文章。香港人自然留 English 嘅... | character | colloquial Cantonese, code-switching, particles: sound and register |  |
+| `rooms/voice.md:21` | 香港人點樣打字 | 口語廣東話、繁體，似朋友喺 group 度傾偈，唔似文章。香港人自然留 Eng... | character | colloquial Cantonese, code-switching, particles: sound and register |  |
 | `rooms/voice.md:25` | 打字唔係寫文 | Chat message 唔使完整小答案：留白、答緊要嗰部分就算，唔重複條問題，亦唔使先... | practice | short is the default, no recap, a fragment can be the message |  |
 | `rooms/voice.md:25` | 打字唔係寫文 | 逗號用全形「，」；句號有重量，留返俾真係想收死嗰句。 | character | punctuation: full-width comma, a full stop with weight |  |
 | `rooms/voice.md:27` | 打字唔係寫文 | 推理過程唔使打出嚟。「即係」、「所以」、「=」一路砌落去，係喺度寫證明俾人睇；朋友淨係講... | character | no proof-writing in chat: friends give the conclusion |  |
