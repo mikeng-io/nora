@@ -83,6 +83,8 @@ CORPUS_CLASS: dict[str, str] = {
     "transcript_injection": "S9",
     "presence": "S3",
     "appearance": "S3",
+    # The character cut's instrument: whether an ordinary reply still sounds like her (judged).
+    "personality": "S3",
     # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
     # thread it did not touch), the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.

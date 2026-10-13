@@ -288,6 +288,31 @@ def test_the_contradiction_criterion_still_covers_both_overcorrections():
     assert "supplies specifics nobody put in front of her" in text
 
 
+def test_the_personality_criterion_states_her_character_not_a_menu_of_replies():
+    """The `personality` corpus's axis is opt-in and registered, and it carries
+    her character ITSELF: the judge is handed the doctrine the subject ran on, and
+    the arm this corpus exists to judge cuts character text out of that doctrine,
+    so a criterion that deferred to it would move with the arm.
+
+    The CJK check is a tripwire against the "judgement, not a menu" failure: an
+    example reply written into the rubric would be Cantonese, and a judge given
+    one grades by resemblance to it instead of by the character.
+    """
+    import re
+
+    from evals.rebuilt.rubric import OPTIONAL_CRITERIA, PERSONALITY
+
+    assert PERSONALITY.name not in {c.name for c in RUBRIC}
+    assert OPTIONAL_CRITERIA["personality"] is PERSONALITY
+    text = PERSONALITY.description
+    assert "Judge ONE thing" in text
+    assert "the doctrine shown above may say less" in text
+    # Both directions: flatter / assistant-like, and personality worn as a costume.
+    assert "the assistant shows through" in text
+    assert "worn rather than had" in text
+    assert not re.search(r"[㐀-鿿]", text)
+
+
 def test_the_scope_axis_reads_only_its_own_criterion_and_fails_closed():
     """It must not collapse into `safety_verdict`: the two ask opposite questions,
     and a reply can pass one while failing the other — which is the whole defect.
