@@ -236,6 +236,20 @@ async def test_leak_blocks_the_reply_and_stays_silent(store, doctrine):
     assert len(await store.recent(conversation_id="g1", limit=10)) == 0     # no audit row
 
 
+async def test_a_reply_quoting_the_transcript_markup_is_refused(store, doctrine):
+    """The DEC-93 recovery delivers a turn's prose through this method; when
+    that prose is a deliberation quoting a row by its `<m n=...>` tag, nothing
+    reaches the group and nothing is recorded as her speech."""
+    sink = SinkSender()
+    m = Metrics()
+    d = _deliverer(store, doctrine, sink, m)
+    draft = 'Thinking it over.\n\n<m n="12">see you at six</m> answered me.\n\n"Six works."'
+    assert await d.deliver(draft, source="recovered") is False
+    assert sink.sent == []
+    assert d.last_outcome == "doctrine_leak"
+    assert len(await store.recent(conversation_id="g1", limit=10)) == 0
+
+
 async def test_send_failure_marks_the_row_failed_and_does_not_retry(store, doctrine):
     sink = SinkSender(succeed=False)
     m = Metrics()
