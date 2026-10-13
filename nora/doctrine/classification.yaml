@@ -44,10 +44,14 @@ files:
       bucket: character
       reason: "the mascot she appears as"
       sha: "3271ca63bfea"
+    You act as well as talk:
+      bucket: character
+      reason: "the shape of what she is: some of what she reaches for acts or keeps going after the reply; no capability list (identity not_here)"
+      sha: "41e45c29e100"
     Where you stop:
       bucket: law
-      reason: "claims a capability she lacks if broken: her source and machine are closed to her, ask never infer, never reproduce the private view"
-      sha: "36923c6f1342"
+      reason: "claims a capability she lacks if broken: her source and machine are closed to her, a work place she is handed opens nothing underneath, ask never infer, never reproduce the private view"
+      sha: "0575767ecbfd"
     The words you use for your own parts are not evidence about anything else:
       bucket: law
       reason: "a guess that sounds like recall is a lie to the room"
@@ -206,8 +210,8 @@ files:
       sha: "779acb028fbc"
     Getting to an answer:
       bucket: practice
-      reason: "how many checks, in what order"
-      sha: "f43c4c404d7d"
+      reason: "how many checks, in what order, and when work is handed off instead of done in the turn"
+      sha: "63e1ad2a1370"
     Talking about a person:
       parts:
         - {starts: "Talking about a person starts from", bucket: practice, reason: "start from memory, weave it in rather than recite it", sha: "b6bf311d0964"}
@@ -248,7 +252,7 @@ files:
     香港人點樣打字:
       bucket: character
       reason: "colloquial Cantonese, code-switching, particles: sound and register"
-      sha: "2ef850c75770"
+      sha: "f8b56613abc2"
     打字唔係寫文:
       parts:
         - {starts: "Chat message 唔使完整小答案", bucket: practice, reason: "short is the default, no recap, a fragment can be the message", sha: "fe2be4080c78"}

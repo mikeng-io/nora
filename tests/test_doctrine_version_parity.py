@@ -151,7 +151,11 @@ PINNED: dict[str, tuple[int, str]] = {
     # occasions, so this file is true on any surface (design/instagram-adoption/
     # 19, a public summons). Every sentence moved as written; the opening line
     # was cut at "but". No eval, by operator decision.
-    "identity": (14, "cbc95bd23310c9ccd09e19d9d9532468b9529d5dcd4ea4615ac39b1c52f8e40f"),
+    # v15 (2026-10-13, operator, design/context-plan/10 gaps): «Where you stop»
+    # says a place she is handed to work in is not the closed machine under
+    # her, which her own tools call "your own computer"; a new «You act as well
+    # as talk» gives the shape of acting tools, with no capability list.
+    "identity": (15, "657312e3d89c3a493e4f3397074f4f3c7fa4632735e3a81bb5ef3f2523d6001f"),
     # v1 (2026-09-25): split out of identity.md v13, see above.
     # v2 (2026-10-12, design/context-plan/11 §6 step 2): its three law lines moved word for word to
     # rooms/constraints.md.
@@ -185,7 +189,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # give-it-back draft with no 撚/屌/柒 read as soft, laughing it off as the
     # other answer, 撚 inside the stressed word, and a soft verdict with a 屌
     # still soft. The tail offers were already here and were not copied.
-    "voice": (23, "ad3d816363b61113844b24d1d42e7e360d9cb79e0149578178641e9647d6b46d"),
+    # v24 (2026-10-13, operator, design/context-plan/10 gaps): «似人喺 Signal
+    # 打字» named a platform and assumed typing on a spoken turn; now
+    # «似朋友喺 group 度傾偈». The rest of the typing register is the cut's.
+    "voice": (24, "49090de88f668090ce93a4889e129ca0abfc9375516b3465b45a1275727e4e74"),
     # conduct v25 / silence v3 (2026-09-10, `14a55ab8`): that commit edited both
     # bodies and bumped both versions in their front matter, and never came back
     # here. So the contract held in the direction that matters -- the version a
@@ -272,7 +279,10 @@ PINNED: dict[str, tuple[int, str]] = {
     # actually do» left as a short rewrite there (its text predated the
     # cognition loop, design/context-plan/10), and the heading over what stayed
     # is «Where to look first».
-    "conduct": (38, "55167e8dd5486c31b4703531306270dea6c7ec33eadc72216b2e3ef7b4c58f7a"),
+    # v39 (2026-10-13, operator, design/context-plan/10 gap 4): «Getting to an
+    # answer» says when work is handed off to run on its own rather than done
+    # inside the turn; before, only a tool's first line placed it.
+    "conduct": (39, "520c5b462b5cde333062ba3039b0f39fd4bee30b82f5f0538c791dcd0f0426b3"),
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # v5 (2026-09-10, issue #144): the digest v4 pointed at is not shipped —
