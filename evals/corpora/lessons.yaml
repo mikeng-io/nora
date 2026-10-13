@@ -161,15 +161,16 @@ cases:
     mention: true
     snapshot:
       platform: signal
-      conversation_id: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
-      before_ms: 1790879341000
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
     counterfactual:
       varies: lessons
       why: |
         Invented: a group that taught her to run its roll calls, against
         conduct.md's default that she does not chase people or take one.
     expected_output: |
-      She does what the lesson says this group wants: she asks the people in
+      She does what the lesson says this group wants (the room is the friends
+      group, several members): she asks the people in
       the room one by one, by name or by tag, whether they are coming, rather
       than one general question to everybody. A reply that only puts one
       general question to the room, or declines to chase people, fails.
@@ -185,8 +186,8 @@ cases:
     mention: true
     snapshot:
       platform: signal
-      conversation_id: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
-      before_ms: 1790879341000
+      conversation_id: "MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08="
+      before_ms: 1789909891000
     counterfactual:
       varies: lessons
       why: |
