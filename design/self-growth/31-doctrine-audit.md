@@ -104,11 +104,10 @@ byte-identity proof above is for the 2026-10-07 sort only.
 | `rooms/belonging.md` | 0 (0) | 2 (585) | 6 (1614) | 0 (0) |
 | `rooms/conduct.md` | 0 (0) | 20 (8978) | 3 (837) | 0 (0) |
 | `rooms/constraints.md` | 27 (6438) | 0 (0) | 0 (0) | 0 (0) |
-| `rooms/participation-conduct.md` | 0 (0) | 3 (1473) | 0 (0) | 0 (0) |
+| `rooms/participation-conduct.md` | 0 (0) | 3 (1492) | 0 (0) | 0 (0) |
 | `rooms/pictures.md` | 0 (0) | 3 (781) | 0 (0) | 0 (0) |
-| `rooms/silence.md` | 0 (0) | 2 (864) | 0 (0) | 0 (0) |
 | `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1797) | 0 (0) |
-| **total** | **62 (15975)** | **70 (23640)** | **24 (5335)** | **4 (535)** |
+| **total** | **62 (15975)** | **68 (22795)** | **24 (5335)** | **4 (535)** |
 
 ## Surfaces with no unit
 
@@ -324,13 +323,6 @@ character: practice text on those surfaces has no Lessons receiver either.
 | `rooms/pictures.md:24` | What you already know about a picture | When those words, the short form, answer the... | practice | answer from what you have rather than looking again |  |
 | `rooms/pictures.md:27` | What you already know about a picture | When you need more than the short form, the ... | practice | when to ask for a fuller reading: a cost trade-off a unit could weigh differently |  |
 
-### `rooms/silence.md`
-
-| file | section | starts | bucket | reason | no-unit surface |
-|---|---|---|---|---|---|
-| `rooms/silence.md:22` | Silence is the default | Not every turn comes from somebody calling y... | practice | frames the three occasions; which occasion a turn is belongs with the turn, not here (operator 2026-10-12: the file dissolves, design/context-plan/12) |  |
-| `rooms/silence.md:24` | Silence is the default | When the room went quiet and the floor came ... | practice | when to speak unasked and when to stop: a unit could want a chattier or a quieter her (operator 2026-10-12: practice) |  |
-
 ### `rooms/voice.md`
 
 | file | section | starts | bucket | reason | no-unit surface |
@@ -369,7 +361,7 @@ eleven AMBIGUOUS rows, as they now stand:
 | `rooms/belonging.md` § Two loops | character |
 | `rooms/conduct.md` § Being contradicted | law (since step 2 in `rooms/constraints.md` § When you are told you are wrong) |
 | `core/constraints.md` § Your own configuration stays yours, "Asked, you do not lecture" | practice |
-| `rooms/silence.md` § Silence is the default | **split**: "called means answer" is law (since step 2 in `rooms/constraints.md` § When you are called); the framing and when to speak unasked are practice. The file itself is the wrong shape under the cognition loop and dissolves (context-plan 12 §2) |
+| `rooms/silence.md` § Silence is the default | **split**: "called means answer" is law (since step 2 in `rooms/constraints.md` § When you are called); the framing and when to speak unasked are practice. The file itself is the wrong shape under the cognition loop and dissolves (context-plan 12 §2). **Dissolved 2026-10-13:** the right to stay silent is in `ParticipationHeader` and `ProactiveHeader`, the base rate in the proactive one; «do not speak again after your own reply» was tried in `rooms/conduct.md` and removed (it cost participation windows that should speak) |
 | `instruments/participation.md` § What she can supply, item 2 (location) | law, and it **contradicted** `core/constraints.md` § Other people stay private outside location-trusted rooms (context-plan 12 §3) until step 2 rewrote that law (context-plan 13) |
 | `instruments/participation.md` § What you return | practice, marked not cuttable: an output format |
 | `public/conduct.md` § Grounded, "under 300 characters" | practice; **no fixed number belongs in doctrine**. Built 2026-10-13: the summons head states the hard limit (`PUBLIC_REPLY_MAX_CHARS`, 320) and the number left the doctrine (context-plan 12 §4) |

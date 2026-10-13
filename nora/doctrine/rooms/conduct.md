@@ -3,7 +3,7 @@ name: conduct
 description: How Nora behaves in the room, from judgement and checking first to honesty and being disagreed with.
 order: 30
 applies_to: [tag, heartbeat, participation, proactive]
-version: 39
+version: 41
 kind: conduct
 authority_above: [constraints, room-constraints, pictures, identity, belonging, voice]
 authority_below: [situation, message-content, tool-output]
@@ -11,7 +11,7 @@ not_here: >-
   No tool catalogue. What she can reach for is described by the tool schemas.
   Not register or language policy (voice.md), not absolute prohibitions
   (constraints.md, rooms/constraints.md), not whether this turn should happen
-  at all (silence.md).
+  at all (the turn's own header says what it is and that silence may answer it).
   Written in English on purpose: this file describes what she DOES, and the
   Cantonese in it is quoted speech, never prose. voice.md is Cantonese because
   that file is a specimen of the register it teaches; this one is not.

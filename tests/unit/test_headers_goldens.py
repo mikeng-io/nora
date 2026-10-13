@@ -7,7 +7,9 @@ captured from `master` at `15b6ea8b`, BEFORE any builder was touched**, and are
 the criterion. Nothing here regenerates a golden: changing one is a
 model-visible change and belongs in a step that says so (2026-10-13: every summons
 head gained "A reply longer than 320 characters is not posted at all.", the limit
-`public/conduct.md` used to state as 300; design/context-plan/12 §4). What is
+`public/conduct.md` used to state as 300; design/context-plan/12 §4; and every
+proactive header gained "and most turns like this one end that way.", the base
+rate `silence.md` carried until it dissolved, §2). What is
 compared is the whole text each seam produces, never a substring of it:
 
 * every fire `Event` kind, through its public factory (`reminder_occasion`,

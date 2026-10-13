@@ -80,6 +80,22 @@ ruling:
 So the file is not relabelled; it goes, once the occasion is stated with the
 turn and the law line has a home in the core.
 
+**Built 2026-10-13.** The law line was already in `rooms/constraints.md` § When
+you are called (step 2). `ParticipationHeader` and `ProactiveHeader` already
+stated the occasion and that silence answers it. `ProactiveHeader` gained the
+file's base rate, «most turns like this one end that way»; `ParticipationHeader`
+does not carry it (the before arm never had it there; its effect alone is
+unmeasured). The file's «you do not speak again into the space after your own
+reply» was moved into `rooms/conduct.md` (v40) and taken out again (v41): read on
+every turn, it cost the participation windows that should speak
+(stalled-question-known 23/45 with it, 14/15 without, 25/30 before; the drop
+was first wrongly blamed on the base rate). `rooms/silence.md` is
+deleted; `participation-conduct.md` (v2) no longer names it. Pinned by
+`tests/architecture/test_doctrine_is_classified.py::test_silence_md_is_dissolved`
+and `tests/test_doctrine_audiences.py::test_the_right_to_stay_silent_comes_with_the_offered_turn`.
+The before/after on the participation and proactive suites is recorded in the
+PR.
+
 ## 3. Location: the rule contradicts itself, and Cognition cannot see it
 
 > Amended 2026-10-12 by [node 13](13-records-never-leave-as-data.md): the

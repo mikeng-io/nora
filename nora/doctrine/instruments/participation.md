@@ -10,9 +10,9 @@ authority_below: []
 not_here: >-
   Nothing about how Nora behaves. This file is not read by Nora — it is read
   by the gate, a separate cheap model call that decides whether her turn
-  happens at all. Her doctrine (identity, voice, silence, conduct,
+  happens at all. Her doctrine (identity, voice, conduct,
   constraints) is never shown to the gate, and this file is never shown to
-  her. What she does once admitted is silence.md and conduct.md.
+  her. What she does once admitted is her turn's header and conduct.md.
 change_policy: operator-only
 ---
 

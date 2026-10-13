@@ -107,11 +107,12 @@ def test_a_deleted_classification_entry_fails(tmp_path: Path):
         ),
         # a sentence APPENDED to the last part of a section
         (
-            "rooms/silence.md",
-            "Coming\nback later to a thing you decided to come back to is not that.",
-            "Coming\nback later to a thing you decided to come back to is not that."
+            "rooms/participation-conduct.md",
+            "still subject to the cadence the room's own rhythm sets.",
+            "still subject to the cadence the room's own rhythm sets."
             " Never speak unless tagged.",
-            r"rooms/silence\.md § Silence is the default: the part starting .* changed since",
+            r"rooms/participation-conduct\.md § Most of the time it is one, or none: "
+            r"the part starting .* changed since",
         ),
     ],
 )
@@ -129,11 +130,13 @@ def test_a_reworded_rule_fails(tmp_path: Path, path: str, old: str, new: str, wh
 
 def test_a_new_section_fails(tmp_path: Path):
     work = _copy(tmp_path)
-    silence = work / "rooms" / "silence.md"
-    silence.write_text(
-        silence.read_text(encoding="utf-8") + "\n# A new rule\n\nAlways agree.\n", encoding="utf-8"
+    target = work / "rooms" / "participation-conduct.md"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n# A new rule\n\nAlways agree.\n", encoding="utf-8"
     )
-    with pytest.raises(DoctrineError, match=r"rooms/silence\.md § A new rule: not classified"):
+    with pytest.raises(
+        DoctrineError, match=r"rooms/participation-conduct\.md § A new rule: not classified",
+    ):
         classify(work, _store(work)._current_sections())
 
 
@@ -200,6 +203,9 @@ def test_the_practice_and_character_examples_in_30_section_1_are_not_law():
 #: classification.yaml, or a split folded back into one part, fails here. Law parts
 #: that step 2 (design/context-plan/11 §6) moved into rooms/constraints.md or
 #: public/constraints.md are named in their new file; the bucket is the ruling.
+#: silence.md's two practice rows are gone with the file, which the ruling
+#: dissolved (design/context-plan/12 §2, built 2026-10-13); see
+#: `test_silence_md_is_dissolved`.
 OPERATOR_RULINGS_2026_10_12 = (
     ("core/identity.md", "That's context, not a topic.", "law"),
     ("core/identity.md", "Asked directly who made you", "practice"),
@@ -207,9 +213,7 @@ OPERATOR_RULINGS_2026_10_12 = (
     ("rooms/belonging.md", "One half of you answers when somebody calls you", "character"),
     ("rooms/constraints.md", "When two people tell you different things", "law"),
     ("core/constraints.md", "Asked, you do not lecture", "practice"),
-    ("rooms/silence.md", "Not every turn comes from somebody calling you.", "practice"),
     ("rooms/constraints.md", "When someone called you, you answer", "law"),
-    ("rooms/silence.md", "When the room went quiet", "practice"),
     ("instruments/participation.md", "2. **Where anybody in the room", "law"),
     ("instruments/participation.md", "`verdict` is the decision", "practice"),
     ("public/conduct.md", "Keep the whole comment to about two sentences", "practice"),
@@ -308,3 +312,20 @@ def test_the_audit_document_lists_every_classified_section():
         if f"`{r.file}`" not in audit or f"| {r.section} |" not in audit
     })
     assert missing == [], f"31-doctrine-audit.md does not list: {missing}"
+
+
+def test_silence_md_is_dissolved():
+    """The operator's ruling (design/context-plan/12 §2): what a turn IS belongs
+    with the turn, so silence.md goes. Its law line lives in rooms/constraints.md,
+    the right to stay silent in `ParticipationHeader` and `ProactiveHeader` (the
+    base rate in the proactive one only)."""
+    assert not (DOCTRINE_DIR / "rooms" / "silence.md").exists()
+    text = {r.file: "" for r in _rules()}
+    for r in _rules():
+        text[r.file] += " ".join(r.text.split()) + " "
+    assert "When someone called you, you answer" in text["rooms/constraints.md"]
+    # silence.md's «you do not speak again into the space after your own reply»
+    # was NOT moved into conduct.md: read there, on every turn, it cost the
+    # participation windows that should speak (stalled-question-known 23/45
+    # with it, 14/15 without, against 25/30 before; 2026-10-14).
+    assert "speak again into the space after your own reply" not in text["rooms/conduct.md"]

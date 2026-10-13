@@ -312,7 +312,7 @@ _DOCTRINE = Path(__file__).resolve().parents[1] / "nora" / "doctrine"
 # name -> scope folder, same table as tests/test_doctrine_content.py::_SCOPE_FOLDER.
 _DOCTRINE_SCOPE_FOLDER = {
     "identity": "core", "constraints": "core",
-    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "voice": "rooms", "conduct": "rooms",
     "participation-conduct": "rooms",
     "participation": "instruments", "reaction": "instruments",
 }

@@ -233,8 +233,10 @@ class ProactiveHeader:
     Same opening shape as every fire header — nobody called her, and that is not
     why this turn is happening — with the reason clause that is true here and
     nowhere else: SHE decided, earlier, that this was worth raising at about this
-    time. The right to decline is stated here as well as in `silence.md`, for
-    `ParticipationHeader`'s reason: the header is the sentence she reads first.
+    time. The right to decline is stated here, and only here since `silence.md`
+    dissolved (design/context-plan/12 §2, 2026-10-13): what a turn is belongs
+    with the turn. Its base rate («most turns like this one end that way») came
+    from that file.
 
     Times are stamped the way `ReminderHeader` stamps them — the reader's own
     zone, never UTC. The note title is escaped like every other value a prompt
@@ -296,7 +298,8 @@ class ProactiveHeader:
             "(note_read gives you a note's current body; where_is and route are "
             "worth asking now, not earlier) — and decide again. If the thing has "
             "since been settled, or somebody already said it, or it would not "
-            "help, stay silent: silence is a complete answer here, not a failure. "
+            "help, stay silent: silence is a complete answer here, not a failure, "
+            "and most turns like this one end that way. "
             "If it is still worth saying, say it once, briefly, in your own words, "
             "and never as «I set myself a reminder» or «my note says», and never "
             "in the note's own words — the note and the reminder are WHY you are "
@@ -401,9 +404,14 @@ class ParticipationHeader:
     Same opening shape as the other fire headers — nobody called her, and that is
     not why this turn is happening — but the reason clause differs: no one asked
     for anything, earlier or otherwise. The room went quiet and the floor was
-    offered. The right to decline it is stated HERE as well as here rather than
-    only in `silence.md`, because the doctrine can only oblige a model that reads
-    it and the header is the sentence she reads first.
+    offered. The right to decline it is stated HERE, and only here since
+    `silence.md` dissolved (design/context-plan/12 §2, 2026-10-13): what a turn
+    is belongs with the turn, and the header is the sentence she reads first.
+    It does NOT carry that file's base rate («most turns like this one end that
+    way»), unlike `ProactiveHeader`: it never sat in this header, its effect
+    here is unmeasured, and the Relevance Gate has already screened the window
+    before this turn exists. (A drop in windows that should speak, 2026-10-13,
+    was first blamed on it; the cause was a line moved into conduct.md.)
     """
 
     relevance_score: float | None = None

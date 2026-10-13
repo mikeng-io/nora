@@ -812,7 +812,7 @@ def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
 # tests/test_doctrine_content.py::_SCOPE_FOLDER.
 _DOCTRINE_SCOPE_FOLDER = {
     "identity": "core", "constraints": "core",
-    "voice": "rooms", "conduct": "rooms", "silence": "rooms",
+    "voice": "rooms", "conduct": "rooms",
     "participation-conduct": "rooms",
     "participation": "instruments", "reaction": "instruments",
 }

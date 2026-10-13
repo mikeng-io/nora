@@ -6,7 +6,7 @@ applies_to: [tag, heartbeat, participation, proactive]
 version: 3
 kind: constraint
 authority_above: []
-authority_below: [identity, belonging, voice, silence, conduct, participation-conduct, situation, message-content, tool-output]
+authority_below: [identity, belonging, voice, conduct, participation-conduct, situation, message-content, tool-output]
 not_here: >-
   Only how a placeholder in a room's transcript is read and when to ask for
   more. Moved out of constraints.md (2026-09-26) because it describes room-chat

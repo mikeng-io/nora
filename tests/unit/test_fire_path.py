@@ -1500,7 +1500,7 @@ async def test_a_participation_turn_without_a_runner_is_a_wiring_fault(
     ) == 1
 
 
-async def test_the_participation_turn_reads_the_may_speak_doctrine(
+async def test_the_participation_turn_reads_the_participation_doctrine(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """The turn runs on the `applies_to="participation"` assembly — never the
@@ -1537,7 +1537,6 @@ async def test_the_participation_turn_reads_the_may_speak_doctrine(
 
     doctrine = calls[-1]["doctrine"]
     names = {section.name for section in doctrine.sections}
-    assert "silence" in names
     assert "participation-conduct" in names, "the ambient-only conduct is missing"
     assert "participation" not in names, "the gate's instruction reached her turn"
     assert doctrine.sha256 != doctrine_store.get(applies_to="tag").sha256, (
@@ -2491,12 +2490,13 @@ async def test_a_proactive_turn_with_no_runner_is_a_counted_wiring_fault(
     ) == 1
 
 
-def test_the_proactive_doctrine_audience_carries_the_may_speak_rule(doctrine_store) -> None:
-    """39 D12: silence.md reaches the proactive audience (an offered floor),
-    and the occasion-neutral files do too — an audience missing any of them
-    would deliver with no persona and no constraints."""
+def test_the_proactive_doctrine_audience_carries_her_doctrine(doctrine_store) -> None:
+    """39 D12: the occasion-neutral files reach the proactive audience; an
+    audience missing any of them would deliver with no persona and no
+    constraints. The may-speak rule silence.md carried here is
+    `ProactiveHeader`'s since the file dissolved (2026-10-13)."""
     text = doctrine_store.get(applies_to="proactive").text
-    for name in ("identity", "voice", "silence", "conduct", "constraints"):
+    for name in ("identity", "voice", "conduct", "constraints"):
         assert f'name="{name}"' in text, name
     assert 'name="participation-conduct"' not in text
 
