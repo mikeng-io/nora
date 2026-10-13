@@ -317,8 +317,8 @@ def test_the_audit_document_lists_every_classified_section():
 def test_silence_md_is_dissolved():
     """The operator's ruling (design/context-plan/12 §2): what a turn IS belongs
     with the turn, so silence.md goes. Its law line lives in rooms/constraints.md,
-    the right to stay silent and its base rate in `ParticipationHeader` and
-    `ProactiveHeader`, and "the turn ends with your piece" in rooms/conduct.md."""
+    the right to stay silent in `ParticipationHeader` and `ProactiveHeader` (the
+    base rate in the proactive one only), and "the turn ends with your piece" in rooms/conduct.md."""
     assert not (DOCTRINE_DIR / "rooms" / "silence.md").exists()
     text = {r.file: "" for r in _rules()}
     for r in _rules():

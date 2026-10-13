@@ -82,8 +82,10 @@ turn and the law line has a home in the core.
 
 **Built 2026-10-13.** The law line was already in `rooms/constraints.md` § When
 you are called (step 2). `ParticipationHeader` and `ProactiveHeader` already
-stated the occasion and that silence answers it; each gained the file's base
-rate, «most turns like this one end that way». The one line true of a called
+stated the occasion and that silence answers it. `ProactiveHeader` gained the
+file's base rate, «most turns like this one end that way»; `ParticipationHeader`
+tried it and dropped it, because read first it cost the windows that should
+speak (stalled-question-known 14/15 to 8/15, n=15). The one line true of a called
 turn too, «once you have said your piece, the turn is over», closes
 `rooms/conduct.md` § Follow the conversation (v40). `rooms/silence.md` is
 deleted; `participation-conduct.md` (v2) no longer names it. Pinned by

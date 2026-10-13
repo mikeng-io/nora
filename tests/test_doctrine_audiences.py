@@ -309,7 +309,10 @@ def test_the_right_to_stay_silent_comes_with_the_offered_turn(doctrine_store):
     for header in (ParticipationHeader(), ProactiveHeader(rows=())):
         text = " ".join(header.render().split())
         assert "silence is a complete answer here, not a failure" in text, header
-        assert "most turns like this one end that way" in text, header
+    # The base rate is the proactive turn's only: on the participation turn it
+    # cost the windows that should speak (ParticipationHeader's docstring).
+    assert "most turns like this one end that way" in ProactiveHeader(rows=()).render()
+    assert "most turns" not in ParticipationHeader().render()
     for audience in ("tag", "heartbeat", "participation", "proactive"):
         assert 'name="silence"' not in doctrine_store.get(applies_to=audience).text
         assert SILENCE not in _bodies(doctrine_store, audience), audience

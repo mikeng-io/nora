@@ -406,8 +406,11 @@ class ParticipationHeader:
     for anything, earlier or otherwise. The room went quiet and the floor was
     offered. The right to decline it is stated HERE, and only here since
     `silence.md` dissolved (design/context-plan/12 §2, 2026-10-13): what a turn
-    is belongs with the turn, and the header is the sentence she reads first. Its
-    base rate («most turns like this one end that way») came from that file.
+    is belongs with the turn, and the header is the sentence she reads first.
+    It does NOT carry that file's base rate («most turns like this one end that
+    way»), unlike `ProactiveHeader`: read first, it cost the turns that should
+    speak (stalled-question-known 14/15 -> 8/15 over n=15, 2026-10-13), and the
+    Relevance Gate has already screened the window before this turn exists.
     """
 
     relevance_score: float | None = None
@@ -421,8 +424,7 @@ class ParticipationHeader:
             "Decide from what is already in front of you — the transcript above, "
             "and whatever standing and notes came with it. If speaking "
             "would add something the room can use, say it — once, briefly. If "
-            "not, stay silent: silence is a complete answer here, not a failure, "
-            "and most turns like this one end that way."
+            "not, stay silent: silence is a complete answer here, not a failure."
             f"{_gate_note(self.relevance_score)}"
         )
 
