@@ -9,8 +9,8 @@
   {
     "name": "4b: a header's wording changes (participation: the closing exclamation)",
     "file": "nora/domain/framing.py",
-    "old": "\"not, stay silent: silence is a complete answer here, not a failure.\"",
-    "new": "\"not, stay silent: silence is a complete answer here, not a failure!\"",
+    "old": "\"and most turns like this one end that way.\"",
+    "new": "\"and most turns like this one end that way!\"",
     "target": "tests/unit/test_headers_goldens.py::test_the_text_the_model_reads_is_byte_identical[participation-the-event-and-its-defaults]"
   },
   {

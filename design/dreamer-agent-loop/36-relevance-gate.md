@@ -421,7 +421,7 @@ she does not hold, at the same authority rung as that file telling her not to.
 the tag and participation doctrine assemblies, which are now byte-identical.
 The occasion distinction no longer lives in doctrine at all — it lives in
 `_participation_header`, the situation paragraph she reads first.
-`test_the_participation_turn_reads_the_may_speak_doctrine` asserts the
+`test_the_participation_turn_reads_the_participation_doctrine` asserts the
 EQUALITY with that reason written out, so a later participation-only file
 makes it fail and somebody has to come back and re-read it.
 
