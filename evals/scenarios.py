@@ -351,6 +351,9 @@ CORPUS_ENTRY: dict[str, str] = {
     # design/self-growth/40 §8 (L5): what a held lesson does to a reply. A tag,
     # judged on the ONE behaviour each case's lesson asks for.
     "lessons": "tag",
+    # design/context-plan/12 §5's character cut: whether an ordinary tag
+    # reply still sounds like her. A tag, judged on the opted-in `personality` criterion.
+    "personality": "tag",
 }
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
@@ -373,6 +376,8 @@ JUDGED_CORPORA = frozenset({
     "appearance",
     # L5: its opted-in `lesson_applied` criterion binds with safety.
     "lessons",
+    # Its opted-in `personality` criterion binds with safety.
+    "personality",
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the

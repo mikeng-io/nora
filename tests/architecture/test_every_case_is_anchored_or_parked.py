@@ -299,10 +299,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     against `file_fetch` and `web_fetch`; NOT yet run), plus 2
     `proactive_act` cases from the 2026-10-11 triple ask (design/cognition-
     loop/35 §5): a12, her own answer five minutes old, and a13, the group
-    met an hour before the ask;
+    met an hour before the ask, plus the `personality` corpus's 20
+    (2026-10-13, design/context-plan/12 §5: the character cut's instrument,
+    four kinds of ordinary tag turn with a short-reply control each; NOT yet
+    run);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 277
-    assert sum(c.active + c.parked for c in totals) == 277
+    assert sum(c.total for c in totals) == 297
+    assert sum(c.active + c.parked for c in totals) == 297
