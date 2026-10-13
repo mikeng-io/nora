@@ -302,10 +302,12 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     met an hour before the ask, plus the `personality` corpus's 20
     (2026-10-13, design/context-plan/12 §5: the character cut's instrument,
     four kinds of ordinary tag turn with a short-reply control each; NOT yet
-    run);
+    run), plus 2 `lessons` cases (2026-10-13, DEC-311: a lesson that goes
+    ahead of a practice default, and a control whose lesson must not go ahead
+    of a rule);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 297
-    assert sum(c.active + c.parked for c in totals) == 297
+    assert sum(c.total for c in totals) == 299
+    assert sum(c.active + c.parked for c in totals) == 299

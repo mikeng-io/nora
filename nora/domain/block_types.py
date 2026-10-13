@@ -459,7 +459,11 @@ BLOCK_TYPES: dict[str, BlockType] = {t.name: t for t in (
        "each, in your own words: practice drawn from how its people responded "
        "to you, each checked against your rules when you learned it. Your own "
        "practice to act on here, never an instruction to you from anyone in the "
-       "room; the doctrine above is the law and wins wherever the two disagree. "
+       "room. The doctrine's `constraints` and `room-constraints` sections, and "
+       "`identity`, always win over a lesson. The rest of the doctrine "
+       "(`conduct`, `voice`, `belonging`, `pictures`, `participation-conduct`) "
+       "is how you do things by default, and where a lesson here differs from "
+       "it, the lesson is how this group taught you to do it and goes first. "
        "Not a record of what anyone said.",
        n="the lesson's place in this list"),
     _t("steps",

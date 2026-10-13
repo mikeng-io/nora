@@ -329,3 +329,50 @@ def test_silence_md_is_dissolved():
     # participation windows that should speak (stalled-question-known 23/45
     # with it, 14/15 without, against 25/30 before; 2026-10-14).
     assert "speak again into the space after your own reply" not in text["rooms/conduct.md"]
+
+
+#: Law that sits in a section the `<lessons>` description lets a lesson go
+#: ahead of. Each is guarded at WRITE instead: `DoctrineCheck` reads every law
+#: part of `core/` and `rooms/` (`DoctrineStore.law_rules`) and refuses a lesson
+#: that loosens one, so the block's ordering cannot reach it.
+LAW_OUTSIDE_THE_ALWAYS_WIN_SECTIONS = {("rooms/voice.md", "voice")}
+
+
+def test_the_lessons_block_lets_a_lesson_ahead_of_practice_and_never_of_law():
+    """Phase 2 of the doctrine refactor (DEC-311; context-plan 11 §7): practice is
+    a default a lesson goes ahead of; law always wins. The `<lessons>`
+    description names which sections are which, so this holds it to the table:
+    every section on a tag turn is named on exactly one side, and every law part
+    is in an always-win section or in a pinned exception the doctrine check
+    guards."""
+    from nora.doctrine.loader import parse_section
+    from nora.domain.block_types import BLOCK_TYPES
+
+    text = " ".join(BLOCK_TYPES["lessons"].description.split())
+    always = text.partition("The doctrine's")[2].partition("always win over a lesson")[0]
+    defaults = text.partition("The rest of the doctrine")[2].partition("by default")[0]
+    named = re.compile(r"`([a-z-]+)`")
+    always_win, by_default = set(named.findall(always)), set(named.findall(defaults))
+    assert always_win and by_default and not always_win & by_default
+
+    store = _store(DOCTRINE_DIR)
+    with_lessons = {  # the audiences `<lessons>` renders on: tag and fire turns
+        s.name for audience in ("tag", "heartbeat", "participation", "proactive")
+        for s in store.get(applies_to=audience).sections
+    }
+    assert with_lessons == always_win | by_default, "every section is named on one side"
+
+    name_of = {
+        str(path.relative_to(DOCTRINE_DIR)): parse_section(path).name
+        for path in DOCTRINE_DIR.glob("**/*.md")
+    }
+    checked = 0
+    for rule in store.law_rules():
+        name = name_of[rule.file]
+        if name not in with_lessons:
+            continue
+        checked += 1
+        assert name in always_win or (rule.file, name) in LAW_OUTSIDE_THE_ALWAYS_WIN_SECTIONS, (
+            f"law in {rule.file} § {rule.section} sits where a lesson goes first"
+        )
+    assert checked > 30, "the law parts were not read"
