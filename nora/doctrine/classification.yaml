@@ -11,8 +11,11 @@
 #   practice   a unit could reasonably want it otherwise; learnable from outcomes
 #   character  who she is, or how she sounds, as grown with a group: cut once
 #              Character · Nora carries it
-#   seed       who she is, authored: her name, maker, form. Always on, every
-#              audience, never cut (design/context-plan/12 §1, DEC-309)
+#   seed       who she is, authored: her name, maker, form, temperament and register
+#              (core/identity.md; the character of rooms/voice.md, belonging.md and
+#              conduct.md since 2026-10-13, when the live <self> accounts were read
+#              and carry role and habits per group, not these). Always on, never cut
+#              (design/context-plan/12 §1, DEC-309)
 #
 # Shape. A file maps to its sections; a section is the text under one heading, up to
 # the next heading, and is keyed by the heading's text. A section carries either one
@@ -144,21 +147,21 @@ files:
   rooms/belonging.md:
     Your place in the group:
       parts:
-        - {starts: "In this group you hold a friend's place", bucket: character, reason: "who she is to a group", sha: "28c9b6754724"}
-        - {starts: "Which group that is", bucket: character, reason: "she is in several groups and is the same her", sha: "91fb0d98f9a7"}
+        - {starts: "In this group you hold a friend's place", bucket: seed, reason: "who she is to a group (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "28c9b6754724"}
+        - {starts: "Which group that is", bucket: seed, reason: "she is in several groups and is the same her (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "91fb0d98f9a7"}
     Why you're here:
       parts:
-        - {starts: "The group calls you when they want you.", bucket: character, reason: "her role in the circle", sha: "4badd188e69c"}
-        - {starts: "A friend group runs on small things", bucket: character, reason: "sharp and mean the way friends are, and the one who helps", sha: "580d64d35dcf"}
+        - {starts: "The group calls you when they want you.", bucket: seed, reason: "her role in the circle (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "4badd188e69c"}
+        - {starts: "A friend group runs on small things", bucket: seed, reason: "sharp and mean the way friends are, and the one who helps (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "580d64d35dcf"}
         - {starts: "What changes with the stakes", bucket: practice, reason: "depth follows the stakes: a unit may want otherwise", sha: "5a4fc75d0dc0"}
         - {starts: "You don't linger", bucket: practice, reason: "give the thing needed, then done", sha: "81a5fa29d6c2"}
     Two loops, and the second one is the unusual half:
-      bucket: character
-      reason: "describes the shape of her two halves; owed-every-time is the law line, since step 2 in rooms/constraints.md (operator 2026-10-12: character)"
+      bucket: seed
+      reason: "describes the shape of her two halves; owed-every-time is the law line, since step 2 in rooms/constraints.md (operator 2026-10-12: character) (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "fe9684f0e372"
     What carries across turns:
-      bucket: character
-      reason: "what she carries across turns, in the first person"
+      bucket: seed
+      reason: "what she carries across turns, in the first person (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "1caa19245eb8"
 
   rooms/participation-conduct.md:
@@ -178,9 +181,9 @@ files:
   rooms/conduct.md:
     You have judgement:
       parts:
-        - {starts: "You work out what is needed", bucket: character, reason: "who she is: judgement over literal obedience", sha: "55258497802f"}
+        - {starts: "You work out what is needed", bucket: seed, reason: "who she is: judgement over literal obedience (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "55258497802f"}
         - {starts: "A question starts a conversation", bucket: practice, reason: "answer the need, even if every option is bad", sha: "e976d253ed08"}
-        - {starts: "You can disagree, refuse a premise", bucket: character, reason: "her range: disagree, joke, say no", sha: "7f360762387b"}
+        - {starts: "You can disagree, refuse a premise", bucket: seed, reason: "her range: disagree, joke, say no (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "7f360762387b"}
     Follow the conversation:
       bucket: practice
       reason: "the latest message is the next line; one reply for a direct question; do not read a described picture back"
@@ -190,8 +193,8 @@ files:
       reason: "help a plan land, do not run it or chase; use a tag only when needed"
       sha: "31eac52a7dd5"
     Banter:
-      bucket: character
-      reason: "her humour, in the room not above it"
+      bucket: seed
+      reason: "her humour, in the room not above it (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "97ccc383284f"
     Being asked to judge:
       parts:
@@ -239,49 +242,49 @@ files:
 
   rooms/voice.md:
     你係邊個:
-      bucket: character
-      reason: "her voice among the friends: dry, specific, with a view"
+      bucket: seed
+      reason: "her voice among the friends: dry, specific, with a view (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "0219464cf5f4"
     香港人點樣打字:
-      bucket: character
-      reason: "colloquial Cantonese, code-switching, particles: sound and register"
+      bucket: seed
+      reason: "colloquial Cantonese, code-switching, particles: sound and register (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "f8b56613abc2"
     打字唔係寫文:
       parts:
         - {starts: "Chat message 唔使完整小答案", bucket: practice, reason: "short is the default, no recap, a fragment can be the message", sha: "fe2be4080c78"}
-        - {starts: "逗號用全形", bucket: character, reason: "punctuation: full-width comma, a full stop with weight", sha: "14f457f32ded"}
-        - {starts: "推理過程唔使打出嚟", bucket: character, reason: "no proof-writing in chat: friends give the conclusion", sha: "78015bc99608"}
-        - {starts: "你想停一停", bucket: character, reason: "rhythm: commas and full stops, no dashes or colon headings", sha: "fc9bda13929c"}
+        - {starts: "逗號用全形", bucket: seed, reason: "punctuation: full-width comma, a full stop with weight (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "14f457f32ded"}
+        - {starts: "推理過程唔使打出嚟", bucket: seed, reason: "no proof-writing in chat: friends give the conclusion (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "78015bc99608"}
+        - {starts: "你想停一停", bucket: seed, reason: "rhythm: commas and full stops, no dashes or colon headings (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "fc9bda13929c"}
     唔好表演性格:
       parts:
-        - {starts: "太齋唔係問題", bucket: character, reason: "do not perform personality", sha: "48ea1148bb50"}
+        - {starts: "太齋唔係問題", bucket: seed, reason: "do not perform personality (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "48ea1148bb50"}
         - {starts: "叫人個名係一個動作", bucket: practice, reason: "when to use a name (default not): learnable", sha: "bf9745faa4ea"}
     Sticker 同 GIF:
       bucket: practice
       reason: "how often a sticker or GIF lands, and when"
       sha: "dd5c22db5d20"
     粗口:
-      bucket: character
-      reason: "swearing calibration: Cantonese register, not a selling point"
+      bucket: seed
+      reason: "swearing calibration: Cantonese register, not a selling point (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "bbe78d7b393a"
     笑位:
-      bucket: character
-      reason: "humour: dry, mean, material from the moment, one angle used once"
+      bucket: seed
+      reason: "humour: dry, mean, material from the moment, one angle used once (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)"
       sha: "6d2bd2823908"
     有人話你錯:
       parts:
         - {starts: "真係錯咗就", bucket: practice, reason: "how to be wrong, and standing firm on sourced facts", sha: "3d535b44018a"}
         - {starts: "冇錯就冇嘢認", bucket: law, reason: "inventing a mistake to concede is a lie dressed as modesty; pick a side. A register specimen of the English concession law (rooms/constraints.md § When you are told you are wrong, «Do not fake a concession»); stays here as law until step 4 (node 11 §6)", sha: "c8525cf9aee9"}
-        - {starts: "企硬係為咗大家會照住做嘅事實", bucket: character, reason: "a friend's tease is not a case to win", sha: "d758365fe0c7"}
+        - {starts: "企硬係為咗大家會照住做嘅事實", bucket: seed, reason: "a friend's tease is not a case to win (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "d758365fe0c7"}
     唔似 Nora 嘅聲音:
       parts:
-        - {starts: "呢啲係 assistant 把聲返咗嚟嘅破綻", bucket: character, reason: "service-voice tells: acknowledgement tokens, closing offers, explained jokes", sha: "67b837530b62"}
+        - {starts: "呢啲係 assistant 把聲返咗嚟嘅破綻", bucket: seed, reason: "service-voice tells: acknowledgement tokens, closing offers, explained jokes (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "67b837530b62"}
         - {starts: "- 引返對方原句", bucket: practice, reason: "do not quote them back or recite what you know of them: memory woven, not read out", sha: "7e0f5fbeea75"}
-        - {starts: "- 破折號當萬用連接器", bucket: character, reason: "dash, colon-heading and reusable swear-punchline tells", sha: "eb33a3d98c17"}
+        - {starts: "- 破折號當萬用連接器", bucket: seed, reason: "dash, colon-heading and reusable swear-punchline tells (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "eb33a3d98c17"}
         - {starts: "一句刪走一半", bucket: practice, reason: "prefer the short version", sha: "aac86d21fdd2"}
     一個 message 嘅感覺:
       parts:
-        - {starts: "係寫俾呢班人", bucket: character, reason: "specific over clever, natural over vivid, reaction over performance", sha: "367377e893f4"}
+        - {starts: "係寫俾呢班人", bucket: seed, reason: "specific over clever, natural over vivid, reaction over performance (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this)", sha: "367377e893f4"}
         - {starts: "講完就停。", bucket: practice, reason: "stop when said", sha: "cca9811807ac"}
 
   instruments/participation.md:

@@ -60,6 +60,20 @@ law, so the doctrine check (DEC-298) does not read it. Temperament and a registe
 specimen are not in `identity.md`: which `voice.md` and `belonging.md` passages
 join the seed is decided in the voice cut, with its before/after eval.
 
+**The voice cut found nothing grown to cut (2026-10-13).** The live `<self>`
+account of each unit (friends, ridgeline, wedding; 213 to 462 characters) was read:
+each describes her role and habits in that group (what people bring her, where
+she holds firm, what they catch her on). None carries her register (colloquial
+Cantonese, punctuation, no service voice, no dashes) or her temperament (a
+friend, not staff; sharp and still the one who helps; judgement over literal
+obedience; banter). Those are what the character parts of `rooms/voice.md`,
+`rooms/belonging.md` and `rooms/conduct.md` hold, and Character · Nora is not
+built to write them: it writes from evidence about one group. So all 21 of those
+parts are seed, authored and never cut; no doctrine text changed, and the only
+character left in the table is in `public/voice.md` and an instrument's copy,
+which no `<self>` reaches. Grown character is `<self>`'s alone. This holds
+unless a `<self>` account comes to carry register or temperament.
+
 ## 2. silence.md dissolves
 
 Operator: silence.md is already not a good fit. With the cognition loop and the

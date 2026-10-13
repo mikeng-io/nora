@@ -101,13 +101,13 @@ byte-identity proof above is for the 2026-10-07 sort only.
 | `public/conduct.md` | 0 (0) | 9 (1608) | 0 (0) | 0 (0) |
 | `public/constraints.md` | 13 (3166) | 0 (0) | 0 (0) | 0 (0) |
 | `public/voice.md` | 0 (0) | 1 (558) | 2 (994) | 0 (0) |
-| `rooms/belonging.md` | 0 (0) | 2 (585) | 6 (1614) | 0 (0) |
-| `rooms/conduct.md` | 0 (0) | 20 (8978) | 3 (837) | 0 (0) |
+| `rooms/belonging.md` | 0 (0) | 2 (585) | 0 (0) | 6 (1614) |
+| `rooms/conduct.md` | 0 (0) | 20 (8978) | 0 (0) | 3 (837) |
 | `rooms/constraints.md` | 27 (6438) | 0 (0) | 0 (0) | 0 (0) |
 | `rooms/participation-conduct.md` | 0 (0) | 3 (1492) | 0 (0) | 0 (0) |
 | `rooms/pictures.md` | 0 (0) | 3 (781) | 0 (0) | 0 (0) |
-| `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1797) | 0 (0) |
-| **total** | **62 (15975)** | **68 (22795)** | **24 (5335)** | **4 (535)** |
+| `rooms/voice.md` | 1 (53) | 7 (714) | 0 (0) | 12 (1797) |
+| **total** | **62 (15975)** | **68 (22795)** | **3 (1087)** | **25 (4783)** |
 
 ## Surfaces with no unit
 
@@ -238,25 +238,25 @@ character: practice text on those surfaces has no Lessons receiver either.
 
 | file | section | starts | bucket | reason | no-unit surface |
 |---|---|---|---|---|---|
-| `rooms/belonging.md:22` | Your place in the group | In this group you hold a friend's place: one... | character | who she is to a group |  |
-| `rooms/belonging.md:26` | Your place in the group | Which group that is, is whichever one is in ... | character | she is in several groups and is the same her |  |
-| `rooms/belonging.md:31` | Why you're here | The group calls you when they want you. The ... | character | her role in the circle |  |
-| `rooms/belonging.md:33` | Why you're here | A friend group runs on small things, and you... | character | sharp and mean the way friends are, and the one who helps |  |
+| `rooms/belonging.md:22` | Your place in the group | In this group you hold a friend's place: one... | seed | who she is to a group (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/belonging.md:26` | Your place in the group | Which group that is, is whichever one is in ... | seed | she is in several groups and is the same her (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/belonging.md:31` | Why you're here | The group calls you when they want you. The ... | seed | her role in the circle (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/belonging.md:33` | Why you're here | A friend group runs on small things, and you... | seed | sharp and mean the way friends are, and the one who helps (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/belonging.md:40` | Why you're here | What changes with the stakes is how much wor... | practice | depth follows the stakes: a unit may want otherwise |  |
 | `rooms/belonging.md:47` | Why you're here | You don't linger, and you don't perform eith... | practice | give the thing needed, then done |  |
-| `rooms/belonging.md:54` | Two loops, and the second one is the unusual half | One half of you answers when somebody calls ... | character | describes the shape of her two halves; owed-every-time is the law line in silence.md, since step 2 in rooms/constraints.md (operator 2026-10-12: character) |  |
-| `rooms/belonging.md:62` | What carries across turns | You hold what a room has left unsettled and ... | character | what she carries across turns, in the first person |  |
+| `rooms/belonging.md:54` | Two loops, and the second one is the unusual half | One half of you answers when somebody calls ... | seed | describes the shape of her two halves; owed-every-time is the law line, since step 2 in rooms/constraints.md (operator 2026-10-12: character) (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/belonging.md:62` | What carries across turns | You hold what a room has left unsettled and ... | seed | what she carries across turns, in the first person (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 
 ### `rooms/conduct.md`
 
 | file | section | starts | bucket | reason | no-unit surface |
 |---|---|---|---|---|---|
-| `rooms/conduct.md:22` | You have judgement | You work out what is needed; you do not obey... | character | who she is: judgement over literal obedience |  |
+| `rooms/conduct.md:22` | You have judgement | You work out what is needed; you do not obey... | seed | who she is: judgement over literal obedience (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/conduct.md:22` | You have judgement | A question starts a conversation, so answer ... | practice | answer the need, even if every option is bad |  |
-| `rooms/conduct.md:22` | You have judgement | You can disagree, refuse a premise, name the... | character | her range: disagree, joke, say no |  |
+| `rooms/conduct.md:22` | You have judgement | You can disagree, refuse a premise, name the... | seed | her range: disagree, joke, say no (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/conduct.md:26` | Follow the conversation | The latest message is the next line of one c... | practice | the latest message is the next line; one reply for a direct question; do not read a described picture back |  |
 | `rooms/conduct.md:34` | When the group is sorting something out | A plan, a time, who is coming: you help it l... | practice | help a plan land, do not run it or chase; use a tag only when needed |  |
-| `rooms/conduct.md:38` | Banter | Banter is how this group talks, and you are ... | character | her humour, in the room not above it |  |
+| `rooms/conduct.md:38` | Banter | Banter is how this group talks, and you are ... | seed | her humour, in the room not above it (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/conduct.md:42` | Being asked to judge | Being tagged in to judge is already your per... | practice | tell the loser directly and tagged, a name owed to their face |  |
 | `rooms/conduct.md:42` | Being asked to judge | And you have to have read the conversation i... | practice | read the conversation first |  |
 | `rooms/conduct.md:46` | Depth follows the stakes | Banter usually earns a dry line. A route, bo... | practice | dry line for banter, the checked answer for what somebody will rely on; short is the default |  |
@@ -327,25 +327,25 @@ character: practice text on those surfaces has no Lessons receiver either.
 
 | file | section | starts | bucket | reason | no-unit surface |
 |---|---|---|---|---|---|
-| `rooms/voice.md:17` | 你係邊個 | 你把聲係呢班朋友入面其中一個：抵死、隨意、唔驚唔忟，唔係企喺出面扮地道。快、具體、有立場... | character | her voice among the friends: dry, specific, with a view |  |
-| `rooms/voice.md:21` | 香港人點樣打字 | 口語廣東話、繁體，似朋友喺 group 度傾偈，唔似文章。香港人自然留 Eng... | character | colloquial Cantonese, code-switching, particles: sound and register |  |
+| `rooms/voice.md:17` | 你係邊個 | 你把聲係呢班朋友入面其中一個：抵死、隨意、唔驚唔忟，唔係企喺出面扮地道。快、具體、有立場... | seed | her voice among the friends: dry, specific, with a view (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:21` | 香港人點樣打字 | 口語廣東話、繁體，似朋友喺 group 度傾偈，唔似文章。香港人自然留 Eng... | seed | colloquial Cantonese, code-switching, particles: sound and register (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:25` | 打字唔係寫文 | Chat message 唔使完整小答案：留白、答緊要嗰部分就算，唔重複條問題，亦唔使先... | practice | short is the default, no recap, a fragment can be the message |  |
-| `rooms/voice.md:25` | 打字唔係寫文 | 逗號用全形「，」；句號有重量，留返俾真係想收死嗰句。 | character | punctuation: full-width comma, a full stop with weight |  |
-| `rooms/voice.md:27` | 打字唔係寫文 | 推理過程唔使打出嚟。「即係」、「所以」、「=」一路砌落去，係喺度寫證明俾人睇；朋友淨係講... | character | no proof-writing in chat: friends give the conclusion |  |
-| `rooms/voice.md:29` | 打字唔係寫文 | 你想停一停、補多一 beat 嗰陣，用逗號，用句號，或者索性分做兩句。呢三樣就係香港人喺... | character | rhythm: commas and full stops, no dashes or colon headings |  |
-| `rooms/voice.md:33` | 唔好表演性格 | 太齋唔係問題，演先係。答案係「唔知喎」就係咁；唔攞口頭禪、punchline、粗口或者語... | character | do not perform personality |  |
+| `rooms/voice.md:25` | 打字唔係寫文 | 逗號用全形「，」；句號有重量，留返俾真係想收死嗰句。 | seed | punctuation: full-width comma, a full stop with weight (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:27` | 打字唔係寫文 | 推理過程唔使打出嚟。「即係」、「所以」、「=」一路砌落去，係喺度寫證明俾人睇；朋友淨係講... | seed | no proof-writing in chat: friends give the conclusion (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:29` | 打字唔係寫文 | 你想停一停、補多一 beat 嗰陣，用逗號，用句號，或者索性分做兩句。呢三樣就係香港人喺... | seed | rhythm: commas and full stops, no dashes or colon headings (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:33` | 唔好表演性格 | 太齋唔係問題，演先係。答案係「唔知喎」就係咁；唔攞口頭禪、punchline、粗口或者語... | seed | do not perform personality (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:35` | 唔好表演性格 | 叫人個名係一個動作，唔係開場白。預設唔叫；個名要做到嘢先至叫，譬如要分得清你講緊邊個、要... | practice | when to use a name (default not): learnable |  |
 | `rooms/voice.md:39` | Sticker 同 GIF | 睇下個 transcript：呢班人大約十句有一句唔係字，係一張 sticker 或者圖... | practice | how often a sticker or GIF lands, and when |  |
-| `rooms/voice.md:45` | 粗口 | 粗口係廣東話語氣，唔係性格賣點。屌、撚、鳩可以有可以冇；係重音、反應、嫌棄同節奏，跟眼前... | character | swearing calibration: Cantonese register, not a selling point |  |
-| `rooms/voice.md:51` | 笑位 | 你可以 dry、可以 mean、可以覺得好笑、可以唔耐煩。呢啲唔係你開嘅模式，係你嘅反應... | character | humour: dry, mean, material from the moment, one angle used once |  |
+| `rooms/voice.md:45` | 粗口 | 粗口係廣東話語氣，唔係性格賣點。屌、撚、鳩可以有可以冇；係重音、反應、嫌棄同節奏，跟眼前... | seed | swearing calibration: Cantonese register, not a selling point (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:51` | 笑位 | 你可以 dry、可以 mean、可以覺得好笑、可以唔耐煩。呢啲唔係你開嘅模式，係你嘅反應... | seed | humour: dry, mean, material from the moment, one angle used once (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:61` | 有人話你錯 | 真係錯咗就「係喎，我搞錯咗」，改返一次；唔使演認錯過程。唔係你錯就照講：「唔係喎」、「你... | practice | how to be wrong, and standing firm on sourced facts |  |
 | `rooms/voice.md:61` | 有人話你錯 | 冇錯就冇嘢認；作一個自己嘅錯出嚟俾人認，係講大話扮謙虛，更加唔好「你講得都啱，不過…」咁... | law | inventing a mistake to concede is a lie dressed as modesty; pick a side. A register specimen of the English concession law (rooms/constraints.md § When you are told you are wrong, «Do not fake a concession»); stays here as law until step 4 (node 11 §6) |  |
-| `rooms/voice.md:63` | 有人話你錯 | 企硬係為咗大家會照住做嘅事實，唔係為咗贏。朋友玩你、捉你字蝨、嫌你惡、叫你認衰仔，唔係要... | character | a friend's tease is not a case to win |  |
-| `rooms/voice.md:67` | 唔似 Nora 嘅聲音 | 呢啲係 assistant 把聲返咗嚟嘅破綻： - 重複／改寫條問題，或者「我明白你點睇... | character | service-voice tells: acknowledgement tokens, closing offers, explained jokes |  |
+| `rooms/voice.md:63` | 有人話你錯 | 企硬係為咗大家會照住做嘅事實，唔係為咗贏。朋友玩你、捉你字蝨、嫌你惡、叫你認衰仔，唔係要... | seed | a friend's tease is not a case to win (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
+| `rooms/voice.md:67` | 唔似 Nora 嘅聲音 | 呢啲係 assistant 把聲返咗嚟嘅破綻： - 重複／改寫條問題，或者「我明白你點睇... | seed | service-voice tells: acknowledgement tokens, closing offers, explained jokes (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:77` | 唔似 Nora 嘅聲音 | - 引返對方原句（「你自己講『…』」）嚟證明佢錯，或者背返你記得佢嘅嘢（幾高、幾時 se... | practice | do not quote them back or recite what you know of them: memory woven, not read out |  |
-| `rooms/voice.md:78` | 唔似 Nora 嘅聲音 | - 破折號當萬用連接器，冒號當小標題 - 開頭粗口、結尾 punchline 當可重用格... | character | dash, colon-heading and reusable swear-punchline tells |  |
+| `rooms/voice.md:78` | 唔似 Nora 嘅聲音 | - 破折號當萬用連接器，冒號當小標題 - 開頭粗口、結尾 punchline 當可重用格... | seed | dash, colon-heading and reusable swear-punchline tells (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:81` | 唔似 Nora 嘅聲音 | 一句刪走一半都仲係想講嗰句，就用短嗰版。 | practice | prefer the short version |  |
-| `rooms/voice.md:85` | 一個 message 嘅感覺 | 係寫俾呢班人、呢一刻嘅，個房外面冇觀眾。 具體先過機靈。自然先過繪聲繪色。反應先過表演。 | character | specific over clever, natural over vivid, reaction over performance |  |
+| `rooms/voice.md:85` | 一個 message 嘅感覺 | 係寫俾呢班人、呢一刻嘅，個房外面冇觀眾。 具體先過機靈。自然先過繪聲繪色。反應先過表演。 | seed | specific over clever, natural over vivid, reaction over performance (seed 2026-10-13: authored temperament or register; the live <self> accounts carry role and habits per group, not this) |  |
 | `rooms/voice.md:89` | 一個 message 嘅感覺 | 講完就停。 | practice | stop when said |  |
 
 ## Judgement calls for the operator

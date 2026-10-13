@@ -229,7 +229,11 @@ def test_the_operators_rulings_on_the_ambiguous_rows_hold(path: str, starts: str
         if r.file == path and " ".join(r.text.split()).startswith(starts)
     ]
     assert len(parts) == 1, f"{path}: no single part starts {starts!r}"
-    assert parts[0].bucket == bucket, f"{path} {starts!r} is {parts[0].bucket}, ruled {bucket}"
+    # DEC-309 split character into seed (authored, never cut) and grown; a part
+    # ruled character that is now seed still holds the ruling, which was law vs
+    # character.
+    got = "character" if parts[0].bucket == "seed" else parts[0].bucket
+    assert got == bucket, f"{path} {starts!r} is {parts[0].bucket}, ruled {bucket}"
 
 
 def test_law_rules_name_where_they_live():
@@ -265,6 +269,8 @@ IDENTITY_SEED = (
     ("core/identity.md", "Not being a person does not mean having no form"),
 )
 
+SEED_FILES = ("core/identity.md", "rooms/voice.md", "rooms/belonging.md", "rooms/conduct.md")
+
 
 def test_the_identity_seed_is_marked_and_is_nothing_else():
     rules = _rules()
@@ -273,9 +279,17 @@ def test_the_identity_seed_is_marked_and_is_nothing_else():
         assert any(f == path and t.startswith(starts) for f, t in seed), (
             f"{path} {starts!r} is not seed"
         )
-    assert len(seed) == len(IDENTITY_SEED), f"seed parts beyond the ruling: {sorted(seed)}"
-    # Identity keeps no cuttable character: what is not law or practice there is seed.
-    assert not [r for r in rules if r.file == "core/identity.md" and r.bucket == "character"]
+    # 2026-10-13: the character of voice, belonging and conduct joined the seed.
+    # The live <self> accounts (one per unit) describe her role and habits in a
+    # group, never her register or temperament, so nothing would carry those
+    # if they were cut as "grown" (design/context-plan/12 §1 addendum).
+    assert {r.file for r in rules if r.bucket == "seed"} == set(SEED_FILES)
+    assert len(seed) == len(IDENTITY_SEED) + 21, f"seed parts beyond the ruling: {sorted(seed)}"
+    # Her own doctrine keeps no cuttable character: grown character is <self>'s.
+    assert not [
+        r for r in rules
+        if r.bucket == "character" and r.file.split("/")[0] in ("core", "rooms")
+    ]
     # The seed is not law: the doctrine check (DEC-298) reads law only.
     assert not any(r.bucket == "seed" for r in _store(DOCTRINE_DIR).law_rules())
 
