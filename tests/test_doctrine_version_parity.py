@@ -430,10 +430,11 @@ def test_the_served_section_has_not_moved_without_the_version_moving(name: str):
         f"{pinned_version}. If you bumped it deliberately, update PINNED to "
         f"({section.version}, {section.sha256!r})."
     )
-    if not pinned_sha:
-        pytest.skip(
-            f"{name} has no sha pinned yet — record {section.sha256!r} to arm it"
-        )
+    # An empty pin fails rather than skips: a skip read as green and left the
+    # file ungoverned (found 2026-10-13, when a botched edit pinned "").
+    assert pinned_sha, (
+        f"{name} has no sha pinned; record {section.sha256!r} to arm it"
+    )
     assert section.sha256 == pinned_sha, (
         f"{name}.md's SERVED SECTION changed but `version: {section.version}` "
         f"did not.\n"
