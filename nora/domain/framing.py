@@ -656,17 +656,23 @@ class SummonsHead:
     block, on the premise that nothing a stranger wrote is in the head but a
     username; escaping it means a future path that sets the summoner without that
     filter cannot inject into the first line.
+
+    `max_chars` is the reply's hard limit (`PUBLIC_REPLY_MAX_CHARS`), stated as
+    a fact about this turn: a reply over it is refused whole as `too_long`, and
+    the doctrine names no number (design/context-plan/12 §4).
     """
 
     now: datetime
     summoned_by: str
     summoned: str
+    max_chars: int
 
     def render(self) -> str:
         return (
             "You were tagged in a comment under a public Instagram post. Whatever "
             "you send is posted once, as a public reply to that comment, where "
-            "strangers read it. Saying nothing is a complete answer. It is now "
+            f"strangers read it. A reply longer than {_figure(self.max_chars)} characters "
+            "is not posted at all. Saying nothing is a complete answer. It is now "
             f"{_utc_minute(self.now)} UTC. {_put(self.summoned_by)} tagged "
             f"you {_put(self.summoned, 'system')}. Under each item of the post is "
             "what a reading of it before this turn found, or that it was not read."

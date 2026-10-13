@@ -184,7 +184,7 @@
   {
     "name": "4b: the summons head is built inline again",
     "file": "nora/domain/summons.py",
-    "old": "    return SummonsHead(\n        now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),\n    ).render()",
+    "old": "    return SummonsHead(\n        now=now, summoned_by=_who(ctx.summoner), summoned=age(ctx.summoned_at, now),\n        max_chars=PUBLIC_REPLY_MAX_CHARS,\n    ).render()",
     "new": "    return f\"You were tagged in a comment under a public Instagram post by {_who(ctx.summoner)}, who wrote to you {age(ctx.summoned_at, now)}.\"",
     "target": "tests/architecture/test_framing_is_one_typed_place.py::test_no_prose_is_built_outside_framing_but_the_allowed_data"
   },

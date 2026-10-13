@@ -130,12 +130,17 @@ by context and platform. The surface's hard limit is a fact about the turn and
 should come with it; how long she writes on a surface is practice, learned per
 surface. The same applies to any length or count written as a constant.
 
-**Prerequisite, not yet built:** today nothing carries the limit with the turn.
-The binding limit on a public reply is Nora's own `PUBLIC_REPLY_MAX_CHARS`
-(`nora/domain/summons.py`), not the platform's, and a reply over it is refused as
-`too_long` (`nora/app/summons.py`); the doctrine's 300 is the only length she is
-told. The number leaves the doctrine only after the summons turn states its
-limit, or replies start being refused.
+**Built 2026-10-13 for the public reply.** The binding limit on a public reply is
+Nora's own `PUBLIC_REPLY_MAX_CHARS` (`nora/domain/summons.py`, 320), not the
+platform's, and a reply over it is refused whole as `too_long`
+(`nora/app/summons.py`). The summons head (`nora.domain.framing.SummonsHead`) now
+states that number as a fact of the turn, and `public/conduct.md` keeps only the
+practice, "about two sentences", with no number
+(`tests/unit/test_summons_context.py::test_the_turn_states_the_limit_its_reply_is_refused_over`).
+Before, the doctrine told her 300 and the code refused over 320. Not measured: no
+summons eval exists, and only seven summons have ever run (two published, 91 and
+533 characters, both before the cap), so whether stating 320 instead of 300 moves
+her length is unknown until replies are read back.
 
 ## 5. What this changes in node 11
 

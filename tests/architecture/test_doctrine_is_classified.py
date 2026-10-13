@@ -212,7 +212,7 @@ OPERATOR_RULINGS_2026_10_12 = (
     ("rooms/silence.md", "When the room went quiet", "practice"),
     ("instruments/participation.md", "2. **Where anybody in the room", "law"),
     ("instruments/participation.md", "`verdict` is the decision", "practice"),
-    ("public/conduct.md", "Keep the whole comment under 300 characters", "practice"),
+    ("public/conduct.md", "Keep the whole comment to about two sentences", "practice"),
     ("public/constraints.md", "Your own reading of a picture never overrules", "law"),
     ("public/constraints.md", "You are not a side in the thread.", "law"),
 )
