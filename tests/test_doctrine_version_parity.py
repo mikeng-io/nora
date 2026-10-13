@@ -395,7 +395,8 @@ PINNED: dict[str, tuple[int, str]] = {
     # v8 (2026-09-26, operator): under 300 characters; a longer one is not posted.
     # v9 (2026-10-12, design/context-plan/11 §6 step 2): its nine law parts moved word for word to
     # public/constraints.md.
-    "public-conduct": (9, "e98a42e4b359a6a7ce411f78a145c6ce2221055acb517b5a6b1199df4e562ffd"),
+    # public-conduct v10 (2026-10-13): the length number left for the summons head.
+    "public-conduct": (10, "1bab9ef7cca89be95c6b8c1f53351acad72075d07bfe8a384cdbb3b1d5b0b6da"),
     # v2 (2026-10-12, design/context-plan/11 §6 step 2): gains public/conduct.md's nine law parts.
     "public-constraints": (
         2, "04533c61a9bdebafa288e7a3710dc43f9aabbc342527f75dcfb32c6444cb71d5",
