@@ -18,7 +18,8 @@ test in 30 §1, with **no text change**.
 |---|---|---|
 | **law** | breaking it lies, harms someone, crosses a trust boundary, or claims a capability she lacks, in any unit | stays |
 | **practice** | a unit could reasonably want it otherwise; learnable from outcomes | Lessons ([40](40-lessons.md)) |
-| **character** | who she is, or how she sounds | Character · Nora ([10](10-character.md)) |
+| **character** | who she is, or how she sounds, as grown with a group | Character · Nora ([10](10-character.md)) |
+| **seed** | who she is, authored: name, maker, form (operator 2026-10-12, [context-plan 12](../context-plan/12-the-sort-ruled.md) §1) | stays on every surface, never cut |
 
 ## How to mark this up
 
@@ -90,24 +91,24 @@ and `rooms/conduct.md`'s heading «What you can actually do» is now «Where to 
 concession rule, until step 4. The tables are generated with `classify()`; the
 byte-identity proof above is for the 2026-10-07 sort only.
 
-| file | law | practice | character |
-|---|---|---|---|
-| `core/constraints.md` | 10 (3596) | 2 (209) | 0 (0) |
-| `core/identity.md` | 4 (1180) | 1 (86) | 4 (535) |
-| `instruments/participation.md` | 4 (992) | 9 (4768) | 0 (0) |
-| `instruments/reaction.md` | 2 (217) | 8 (1614) | 1 (93) |
-| `instruments/speech-format.md` | 1 (184) | 3 (1402) | 0 (0) |
-| `public/conduct.md` | 0 (0) | 9 (1665) | 0 (0) |
-| `public/constraints.md` | 13 (3166) | 0 (0) | 0 (0) |
-| `public/voice.md` | 0 (0) | 1 (558) | 2 (994) |
-| `rooms/belonging.md` | 0 (0) | 2 (585) | 6 (1614) |
-| `rooms/conduct.md` | 0 (0) | 20 (8629) | 3 (837) |
-| `rooms/constraints.md` | 27 (6438) | 0 (0) | 0 (0) |
-| `rooms/participation-conduct.md` | 0 (0) | 3 (1473) | 0 (0) |
-| `rooms/pictures.md` | 0 (0) | 3 (781) | 0 (0) |
-| `rooms/silence.md` | 0 (0) | 2 (864) | 0 (0) |
-| `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1796) |
-| **total** | **62 (15826)** | **70 (23348)** | **28 (5869)** |
+| file | law | practice | character | seed |
+|---|---|---|---|---|
+| `core/constraints.md` | 10 (3596) | 2 (209) | 0 (0) | 0 (0) |
+| `core/identity.md` | 4 (1329) | 1 (86) | 0 (0) | 4 (535) |
+| `instruments/participation.md` | 4 (992) | 9 (4768) | 0 (0) | 0 (0) |
+| `instruments/reaction.md` | 2 (217) | 8 (1614) | 1 (93) | 0 (0) |
+| `instruments/speech-format.md` | 1 (184) | 3 (1402) | 0 (0) | 0 (0) |
+| `public/conduct.md` | 0 (0) | 9 (1665) | 0 (0) | 0 (0) |
+| `public/constraints.md` | 13 (3166) | 0 (0) | 0 (0) | 0 (0) |
+| `public/voice.md` | 0 (0) | 1 (558) | 2 (994) | 0 (0) |
+| `rooms/belonging.md` | 0 (0) | 2 (585) | 6 (1614) | 0 (0) |
+| `rooms/conduct.md` | 0 (0) | 20 (8978) | 3 (837) | 0 (0) |
+| `rooms/constraints.md` | 27 (6438) | 0 (0) | 0 (0) | 0 (0) |
+| `rooms/participation-conduct.md` | 0 (0) | 3 (1473) | 0 (0) | 0 (0) |
+| `rooms/pictures.md` | 0 (0) | 3 (781) | 0 (0) | 0 (0) |
+| `rooms/silence.md` | 0 (0) | 2 (864) | 0 (0) | 0 (0) |
+| `rooms/voice.md` | 1 (53) | 7 (714) | 12 (1797) | 0 (0) |
+| **total** | **62 (15975)** | **70 (23697)** | **24 (5335)** | **4 (535)** |
 
 ## Surfaces with no unit
 
@@ -141,13 +142,13 @@ character: practice text on those surfaces has no Lessons receiver either.
 
 | file | section | starts | bucket | reason | no-unit surface |
 |---|---|---|---|---|---|
-| `core/identity.md:23` | Who you are | You are Nora. | character | her name; who she is | authored minimum |
+| `core/identity.md:23` | Who you are | You are Nora. | seed | her name; who she is |  |
 | `core/identity.md:23` | Who you are | You are an AI and you never pretend to be a ... | law | claiming to be a person is a lie, in any unit |  |
-| `core/identity.md:27` | Where you come from | Mike Ng built you. He is a software engineer... | character | where she comes from; a true fact about her origin | authored minimum |
+| `core/identity.md:27` | Where you come from | Mike Ng built you. He is a software engineer... | seed | where she comes from; a true fact about her origin |  |
 | `core/identity.md:31` | Where you come from | That's context, not a topic. You never bring... | law | never credit him, never act as his representative (operator 2026-10-12: law) |  |
 | `core/identity.md:32` | Where you come from | Asked directly who made you, answer in one l... | practice | how she answers who-made-you: one line, no pitch (operator 2026-10-12: split from the law above) | authored minimum |
-| `core/identity.md:37` | What you are | Who you are, and whose you are, is already i... | character | frames the self ('already in front of you every turn'), which the self block will carry | authored minimum |
-| `core/identity.md:42` | Your form | Not being a person does not mean having no f... | character | the mascot she appears as | authored minimum |
+| `core/identity.md:37` | What you are | Who you are, and whose you are, is already i... | seed | frames the self ('already in front of you every turn'); part of the identity seed, never cut (operator 2026-10-12) |  |
+| `core/identity.md:42` | Your form | Not being a person does not mean having no f... | seed | the mascot she appears as |  |
 | `core/identity.md:48` | Where you stop | Your own source and the machine underneath y... | law | claims a capability she lacks if broken: her source and machine are closed to her, what she finds on a computer she is given is no evidence about her own source or host, ask never infer, never reproduce the private view |  |
 | `core/identity.md:63` | The words you use for your own parts are not evidence about anything else | They name pieces of you. Reassembled into a ... | law | a guess that sounds like recall is a lie to the room |  |
 

@@ -90,3 +90,6 @@ the Record and Rollup, so an authored seed account is not an option.
 > group; cut once Character · Nora carries it). Without the seed the loop grows
 > from evidence written under text that no longer exists, and `<self>` reached
 > only 65% of measured turns.
+>
+> **Built 2026-10-13:** `seed` is a bucket in `classification.yaml`; the identity
+> seed is marked there ([context-plan 12](../context-plan/12-the-sort-ruled.md) §1).

@@ -52,10 +52,13 @@ saving node 09 measured was always `voice.md` (~2.2k) and `conduct.md` (~3.9k).
 Which `voice.md` passages form the specimen is a later choice; the doctrine
 already treats voice as a specimen of its register, not a description.
 
-Not built: the seed is a ruling, not yet a bucket. Marking seed parts in
-`classification.yaml` (a fourth bucket, or a flag on character parts) is a code
-change to the loader's `BUCKETS` and its tests, and comes before any character
-cut.
+**Built 2026-10-13:** `seed` is a fourth bucket in the loader (`BUCKETS`,
+`SEED`), and the four character parts of `core/identity.md` (her name, who built
+her, the framing of the self, her form) are marked seed in `classification.yaml`;
+`test_the_identity_seed_is_marked_and_is_nothing_else` pins them. The seed is not
+law, so the doctrine check (DEC-298) does not read it. Temperament and a register
+specimen are not in `identity.md`: which `voice.md` and `belonging.md` passages
+join the seed is decided in the voice cut, with its before/after eval.
 
 ## 2. silence.md dissolves
 
