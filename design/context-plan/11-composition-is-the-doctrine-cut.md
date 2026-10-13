@@ -172,7 +172,10 @@ until a measured quality problem says otherwise.
   "wins" (prefill.py, rows 1-2). The L3 doctrine check reads law only (DEC-298),
   so it loses nothing; but a practice rule cut from the doctrine no longer
   outranks a lesson that disagrees with it. That is the intent, and it is also
-  how a bad lesson goes unopposed in the prompt.
+  how a bad lesson goes unopposed in the prompt. **Since DEC-311 (2026-10-13)**
+  that holds before any cut: the `<lessons>` description lets a lesson go ahead
+  of the practice sections and never of `constraints`, `room-constraints` or
+  `identity`, so practice is a default now rather than after it is deleted.
 - **Cost is not tokens.** A and B are cached; the cut saves partly quality and
   latency, not price. Price the cached and uncached split.
 
