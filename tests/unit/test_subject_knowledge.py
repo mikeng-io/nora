@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -169,14 +170,14 @@ async def test_know_raises_loudly_if_the_peer_was_never_ensured() -> None:
 # --- `settle()` waits for THIS case's turn, not for an empty process --------
 
 
-class _Background:
-    """`BackgroundTasks`'s public surface, as `settle()` uses it."""
+def _subject() -> Any:
+    from nora.app.runtime import BackgroundTasks
 
-    def __init__(self, count: int) -> None:
-        self.count = count
+    return SimpleNamespace(deps=SimpleNamespace(background=BackgroundTasks()))
 
-    def __len__(self) -> int:
-        return self.count
+
+async def _forever() -> None:
+    await asyncio.Event().wait()
 
 
 @pytest.mark.asyncio
@@ -188,33 +189,70 @@ async def test_settle_returns_once_the_turn_is_done_though_a_loop_is_still_runni
     Composition spawns ENDLESS loops into the same set the turn is spawned
     into — `ComputeJobPoller.run()` when `[compute]` is enabled,
     `VersionAnnouncer.run()`, `heartbeat.run()`. Waiting for that set to reach
-    ZERO is waiting for the process to exit, so every case that drove the
-    inbound path timed out and was reported as an un-run case. The deployment
-    enables compute; the example does not, which is why no test saw it.
+    ZERO is waiting for the process to exit.
     """
-    from nora.subject import pending, settle
+    from nora.subject import settle, watch
 
-    background = _Background(2)          # two endless loops, already running
-    subject = SimpleNamespace(deps=SimpleNamespace(background=background))
-    baseline = pending(subject)          # read BEFORE the line arrives
-    assert baseline == 2
+    subject = _subject()
+    for _ in range(2):
+        subject.deps.background.spawn(_forever())     # two endless loops, already running
+    spawned = watch(subject)                          # BEFORE the line arrives
+    subject.deps.background.spawn(asyncio.sleep(0.05))  # the turn
+    assert await settle(subject, spawned=spawned, timeout_seconds=5.0) is True
+    await subject.deps.background.cancel_all()
 
-    background.count = 3                 # the turn is spawned
 
-    async def _finish() -> None:
-        await asyncio.sleep(0.05)
-        background.count = 2             # the turn ends; the loops do not
+@pytest.mark.asyncio
+async def test_settle_waits_for_the_turn_when_an_earlier_task_finishes_first():
+    """MEASURED 2026-10-15: the presence pre-flight was still running when the
+    line arrived and finished mid-turn, so a count fell back to its baseline
+    with the turn still running; three turns were torn down and graded silent."""
+    from nora.subject import settle, watch
 
-    task = asyncio.create_task(_finish())
-    assert await settle(subject, baseline=baseline, timeout_seconds=5.0) is True
-    await task
+    subject = _subject()
+    subject.deps.background.spawn(asyncio.sleep(0.05))  # a pre-flight, still reading
+    spawned = watch(subject)
+    turn_done = asyncio.Event()
+
+    async def turn() -> None:
+        await asyncio.sleep(0.3)
+        turn_done.set()
+
+    subject.deps.background.spawn(turn())
+    assert await settle(subject, spawned=spawned, timeout_seconds=5.0) is True
+    assert turn_done.is_set()
+
+
+@pytest.mark.asyncio
+async def test_settle_waits_for_what_the_turn_itself_spawns():
+    from nora.subject import settle, watch
+
+    subject = _subject()
+    spawned = watch(subject)
+    follow_up_done = asyncio.Event()
+
+    async def follow_up() -> None:
+        await asyncio.sleep(0.2)
+        follow_up_done.set()
+
+    async def turn() -> None:
+        subject.deps.background.spawn(follow_up())
+
+    subject.deps.background.spawn(turn())
+    assert await settle(subject, spawned=spawned, timeout_seconds=5.0) is True
+    assert follow_up_done.is_set()
 
 
 @pytest.mark.asyncio
 async def test_settle_still_times_out_when_the_turn_never_finishes():
-    """The control: the baseline must not turn a hung turn into a settled one,
-    which is the failure mode this whole distinction exists to keep visible."""
-    from nora.subject import settle
+    """The control: a hung turn is never a settled one, which is the failure
+    mode this whole distinction exists to keep visible. And the subject's own
+    `spawn` is put back either way."""
+    from nora.subject import settle, watch
 
-    subject = SimpleNamespace(deps=SimpleNamespace(background=_Background(3)))
-    assert await settle(subject, baseline=2, timeout_seconds=0.2) is False
+    subject = _subject()
+    spawned = watch(subject)
+    subject.deps.background.spawn(_forever())
+    assert await settle(subject, spawned=spawned, timeout_seconds=0.2) is False
+    assert "spawn" not in vars(subject.deps.background)
+    await subject.deps.background.cancel_all()
