@@ -96,6 +96,7 @@ from nora.infra.sql.schema import (
 )
 
 __all__ = [
+    "BACKFILLED",
     "CONFIG_FILES",
     "EXCEPTED",
     "InForce",
@@ -450,12 +451,30 @@ async def _target_columns(conn: AsyncConnection, table: str) -> list[tuple[str, 
     return [(r[0], r[1], bool(r[2])) for r in rows]
 
 
+#: NOT NULL columns a migration added AFTER history began (0068) with a
+#: backfill default it then DROPPED, keyed `(table, column)` to the value that
+#: migration gave every existing row. The target column has no default to read
+#: back, so without this an image recorded before the migration restores the
+#: column as NULL and the whole table's insert is refused (2026-10-15: every
+#: `conversational_recall` case ERRORed on `compute_jobs.kind`). One entry per
+#: `alter_column(..., server_default=None)` on a copied table;
+#: `tests/architecture/test_restore_knows_every_dropped_backfill.py` holds the
+#: list to the migrations.
+BACKFILLED: dict[tuple[str, str], str] = {
+    # 0094_compute_jobs_generic_outbox: "every existing row is `legacy`".
+    ("compute_jobs", "kind"): "'legacy'::text",
+    ("compute_jobs", "payload"): "'{}'::jsonb",
+}
+
+
 def _insert_sql(table: str, columns: list[tuple[str, str | None, bool]]) -> str:
     """`INSERT ... SELECT` from a JSON array of row images.
 
     A NOT NULL column with a default reads its default where the image has no
     value: an image recorded before a later migration added the column holds
     no key for it, and the migration's own default is what such a row got.
+    A NOT NULL column whose migration dropped its backfill default reads the
+    backfill instead (`BACKFILLED`), for the same reason.
     A foreign key to ANOTHER table keeps only the rows whose parent is
     already there (parents are copied first); `seed` counts what it drops.
     """
@@ -464,6 +483,8 @@ def _insert_sql(table: str, columns: list[tuple[str, str | None, bool]]) -> str:
     for name, default, not_null in columns:
         if not_null and default is not None and not default.startswith("nextval("):
             exprs.append(f'coalesce(r."{name}", {default})')
+        elif not_null and (table, name) in BACKFILLED:
+            exprs.append(f'coalesce(r."{name}", {BACKFILLED[(table, name)]})')
         else:
             exprs.append(f'r."{name}"')
     guards = []
