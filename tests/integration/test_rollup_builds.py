@@ -13,6 +13,7 @@ must agree.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -25,6 +26,7 @@ from nora.analytics.units import EventPlace, PersonScope, UnitConfig, UnitRollup
 from nora.domain.mobility import TaggedPlace
 from nora.domain.models import mentions_json
 from nora.domain.rollup import Citation, episode_key
+from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
@@ -36,6 +38,8 @@ from nora.infra.sql.schema import (
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    PRESENCE_STAYS,
+    ROLLUP_BUILD,
     ROLLUP_COLOCATION,
     ROLLUP_DAYBOOK,
     ROLLUP_OUTING,
@@ -620,6 +624,15 @@ async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(pg_
     for text in texts:
         assert _SAVED_NAME not in text and "Street" not in text and "Road" not in text
         assert str(PUB[0]) not in text and str(HOME["a"][0]) not in text
+    # Nor in a key: a node's source_id and an edge's ends are read as text too.
+    async with engine.connect() as conn:
+        ids = [*(await conn.execute(sa.select(MEMORY_NODE.c.source_id))).scalars(),
+               *(await conn.execute(sa.select(MEMORY_EDGE.c.src_id))).scalars(),
+               *(await conn.execute(sa.select(MEMORY_EDGE.c.dst_id))).scalars()]
+    assert ids
+    for ident in ids:
+        assert _SAVED_NAME not in ident and "Street" not in ident and "Road" not in ident
+        assert str(PUB[0]) not in ident and str(HOME["a"][0]) not in ident
     assert await _edges(engine, rel="during") == {("message", str(talk), "during", "outing", key)}
     assert await _edges(engine, src_kind="outing") == {
         ("outing", key, "about", "person", "a"), ("outing", key, "about", "person", "b"),
@@ -730,4 +743,67 @@ async def test_a_tick_on_the_current_build_projects_what_it_folds(pg_url):
     outings = set(await _episode_nodes(engine, "outing"))
     assert outings == _outing_keys(await rollups.rows(table=ROLLUP_OUTING, build_id=build))
     assert len(outings) == 2 and len(before["outing"]) == 1
+    await engine.dispose()
+
+
+async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(pg_url):
+    """A drain that blocks on the build row while a switch commits must read
+    the NEW current build after it, never «no build»: under READ COMMITTED the
+    locked re-check sees only the old row, now superseded, and the drain used
+    to drop the node the switch had just projected and clear its queue row."""
+    engine = create_sql_engine(pg_url)
+    key = episode_key("a", _t(0, 19), _t(0, 20))
+    async with engine.begin() as conn:
+        old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="current",
+        ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+        new = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="building",
+        ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+        await conn.execute(sa.insert(PRESENCE_STAYS).values(
+            subject_id="a", person_id="a", circle_id="c1", started_ts=_t(0, 19),
+            ended_ts=_t(0, 20), lat=0.0, lng=0.0, radius_m=10.0, fix_count=3,
+            build_id=new, lineage=[],
+        ))
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+            kind="stay", source_id=key, last_error="RuntimeError",
+        ))
+    rollups = SqlRollupStore(engine)
+    # `switch_build`'s statements, held open so the drain meets them mid-switch.
+    switching = await engine.connect()
+    tx = await switching.begin()
+    await switching.execute(
+        sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == old).values(status="superseded")
+    )
+    await switching.execute(
+        sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == new).values(status="current")
+    )
+    await memory_index.reproject_episodes(switching)
+    drain = asyncio.create_task(rollups.drain_index_queue())
+    await asyncio.sleep(1.0)
+    assert not drain.done(), "the drain waits on the build row the switch holds"
+    await tx.commit()
+    await switching.close()
+    await drain
+    assert key in await _episode_nodes(engine, "stay")
+    await engine.dispose()
+
+
+async def test_a_switch_that_fails_abandons_the_build(pg_url, monkeypatch):
+    """A rebuild whose switch raises leaves no build `building` forever: the
+    switch rolled back whole, and the build is abandoned."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+
+    async def _refused(*, build_id: int) -> None:
+        raise RuntimeError("switch refused")
+
+    monkeypatch.setattr(runner._rollups, "switch_build", _refused)
+    with pytest.raises(RuntimeError, match="switch refused"):
+        await runner.rebuild(through_ms=_t(1, 12))
+    async with engine.connect() as conn:
+        statuses = (await conn.execute(sa.select(ROLLUP_BUILD.c.status))).scalars().all()
+    assert statuses == ["abandoned"]
     await engine.dispose()

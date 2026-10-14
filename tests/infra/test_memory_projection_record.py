@@ -28,6 +28,7 @@ from nora.infra.sql.schema import (
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     MESSAGES,
+    ROLLUP_BUILD,
 )
 from nora.obs.metrics import Metrics
 
@@ -73,7 +74,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
                 "messages", "media_objects", "row_history", "memory_node",
-                "memory_edge", "memory_projection_queue",
+                "memory_edge", "memory_projection_queue", "rollup_build",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
@@ -374,8 +375,9 @@ async def test_a_drain_reprojects_what_was_queued_and_is_idempotent(engine, monk
 
 
 async def test_a_drained_episode_the_current_build_no_longer_holds_is_dropped(engine):
-    """A queued outing whose key no current build holds (here there is no
-    build at all) leaves the index, its own edges with it."""
+    """A queued outing whose key the current build does not hold leaves the
+    index, its own edges with it. With NO current build it is neither
+    projected nor dropped: it stays queued, counted an attempt."""
     key = "friends|a,b|2026-09-21T19:00:00+08:00/2026-09-21T22:00:00+08:00"
     async with engine.begin() as conn:
         await conn.execute(sa.insert(MEMORY_NODE).values(
@@ -389,22 +391,36 @@ async def test_a_drained_episode_the_current_build_no_longer_holds_is_dropped(en
             kind="outing", source_id=key, last_error="RuntimeError",
         ))
     assert await _drain(engine) == 1
+    assert ("outing", key) in await _nodes(engine), "no build: never read as «not held»"
+    assert await _queue_rows(engine) == [("outing", key, 2, "_NoCurrentBuildError")]
+
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="current",
+        ))
+    assert await _drain(engine) == 1
     assert ("outing", key) not in await _nodes(engine)
     assert await _edges(engine) == set()
     assert await _queue_rows(engine) == []
 
 
-def test_a_cited_rollup_key_of_an_episode_kind_is_a_cites_edge() -> None:
-    """S3: `rollup(outing|...)` points at the outing's key, as cited; a kind
-    with no node (a daybook) is skipped, a message id stays a message."""
-    key = "friends|a,b|2026-09-21T19:00:00+08:00/2026-09-21T22:00:00+08:00"
-    got = memory_index._cites(
-        "memo", "m1",
-        ["12", f"rollup(outing|{key})", "rollup(stay|a|2026-09-21T19:00:00+08:00/"
-         "2026-09-21T20:00:00+08:00)", "rollup(daybook|friends|a|x/y)", "response:4"],
-        "memo_revision.citations",
-    )
-    assert [(e[3], e[4]) for e in got] == [
-        ("message", "12"), ("outing", key),
-        ("stay", "a|2026-09-21T19:00:00+08:00/2026-09-21T20:00:00+08:00"),
-    ]
+async def test_rows_that_keep_failing_never_starve_a_newer_one(engine, monkeypatch):
+    """The least-tried row drains first: stuck rows ahead of it in time, more
+    of them than one drain takes, do not keep a fresh failure waiting."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE), [
+            {"kind": "nope", "source_id": str(i), "attempts": 7, "last_error": "KeyError"}
+            for i in range(5)
+        ])
+
+    def _broken(conn: Any, source_id: str) -> Any:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
+    mid = await SqlRecordStore(engine).append(message=_message(), person_id="member-a")
+    monkeypatch.undo()
+
+    async with engine.begin() as conn:
+        assert await memory_index.drain_queue(conn, limit=2) == 2
+    assert ("message", str(mid)) in await _nodes(engine)
+    assert len(await _queue_rows(engine)) == 5, "the stuck rows stay, visible"

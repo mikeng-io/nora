@@ -157,12 +157,14 @@ class RollupRunner:
             )
             if report.failed:
                 raise RuntimeError(f"folds failed for {list(report.failed)}")
+            if switch:
+                # Inside the try: a switch that fails rolls back whole, and
+                # the build it leaves `building` is abandoned, not orphaned.
+                await self._rollups.switch_build(build_id=build_id)
+                log.info("rollup build %d is current", build_id)
         except Exception:
             await self._rollups.abandon_build(build_id=build_id)
             raise
-        if switch:
-            await self._rollups.switch_build(build_id=build_id)
-            log.info("rollup build %d is current", build_id)
         return build_id
 
     async def ensure_build(self, *, through_ms: int) -> int:

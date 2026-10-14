@@ -76,6 +76,7 @@ restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
@@ -712,7 +713,7 @@ async def reproject_episodes(conn: AsyncConnection, *, metrics: Any = None) -> N
                 held = set((await conn.execute(
                     sa.select(MEMORY_NODE.c.source_id).where(MEMORY_NODE.c.kind == kind)
                 )).scalars())
-                found = [] if build is None else await _episodes(conn, kind, build, None)
+                found = await _episodes(conn, kind, build, None)
         except Exception as exc:  # noqa: BLE001 — the switch stands; a rebuild repairs
             log.warning(
                 "memory projection of a build switch could not read (%s, %s)",
@@ -724,24 +725,40 @@ async def reproject_episodes(conn: AsyncConnection, *, metrics: Any = None) -> N
         stale = sorted(held - {e.key for e in found})
 
         async def work(
-            kind: str = kind, build: int | None = build, stale: list[str] = stale,
+            kind: str = kind, build: int = build, stale: list[str] = stale,
             found: list[_Episode] = found,
         ) -> None:
             await _drop_episodes(conn, kind, stale)
-            if build is not None:
-                await _write_episodes(conn, build, found)
+            await _write_episodes(conn, build, found)
 
         await _guarded(conn, kind, stale + [e.key for e in found], work, metrics)
 
 
-async def _current_build(conn: AsyncConnection) -> int | None:
+class _NoCurrentBuildError(RuntimeError):
+    """No build is current: an episode cannot be projected OR dropped, so the
+    source stays queued (a fresh database before its first switch)."""
+
+
+async def _current_build(conn: AsyncConnection) -> int:
     """The current build, its row held FOR SHARE (`project_episodes`).
     `nora.infra.sql.mobility.current_build_id` is the same pointer; it is
-    not imported because `mobility` imports this module."""
-    return (await conn.execute(
+    not imported because `mobility` imports this module.
+
+    Read twice when the first read finds none: a read that waited on the row
+    a committing `switch_build` held re-checks only that row, now superseded,
+    and never sees the build switched in (READ COMMITTED). The second
+    statement reads after the switch. Still none raises, never «nothing»: a
+    caller that took it for «this build holds no such episode» would drop a
+    node the switch had just written."""
+    stmt = (
         sa.select(ROLLUP_BUILD.c.id).where(ROLLUP_BUILD.c.status == "current")
         .with_for_update(read=True)
-    )).scalar_one_or_none()
+    )
+    for _ in range(2):
+        build = (await conn.execute(stmt)).scalar_one_or_none()
+        if build is not None:
+            return int(build)
+    raise _NoCurrentBuildError("no Rollup build is current")
 
 
 def _instant(text: str) -> int | None:
@@ -758,8 +775,8 @@ def _episode_projector(kind: str) -> Callable[[AsyncConnection, str], Awaitable[
     whatever the current build holds at that key, or nothing."""
     async def run(conn: AsyncConnection, key: str) -> None:
         build = await _current_build(conn)
-        found = [] if build is None else await _episodes(conn, kind, build, [key])
-        if build is None or not found:
+        found = await _episodes(conn, kind, build, [key])
+        if not found:
             await _drop_episodes(conn, kind, [key])
             return
         await _write_episodes(conn, build, found)
@@ -924,15 +941,24 @@ _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS
 
 
 async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any = None) -> int:
-    """Re-project up to `limit` queued sources, oldest failure first. A
-    projection that lands clears its row and one that fails again counts an
-    attempt (`_guarded`), so a drain is idempotent and a source that keeps
-    failing stays queued. Returns how many rows it tried."""
+    """Re-project up to `limit` queued sources, the least-tried first, then
+    the oldest. A projection that lands clears its row and one that fails
+    again counts an attempt (`_guarded`), so a drain is idempotent and a
+    source that keeps failing stays queued, visible in the queue's length,
+    and sinks behind every newer row instead of starving it. Nothing is
+    abandoned: a row given up on would be a silent miss.
+
+    The current build's row is locked FIRST, before any projection writes a
+    node: `switch_build` takes that row and then writes nodes, so a drain
+    that wrote a hub node and then waited on the build row could deadlock
+    with it. With no build yet, there is nothing to lock."""
+    with contextlib.suppress(_NoCurrentBuildError):
+        await _current_build(conn)
     rows = (await conn.execute(
         sa.select(MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id)
         .order_by(
-            MEMORY_PROJECTION_QUEUE.c.first_failed_at, MEMORY_PROJECTION_QUEUE.c.kind,
-            MEMORY_PROJECTION_QUEUE.c.source_id,
+            MEMORY_PROJECTION_QUEUE.c.attempts, MEMORY_PROJECTION_QUEUE.c.first_failed_at,
+            MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id,
         )
         .limit(limit)
     )).all()
