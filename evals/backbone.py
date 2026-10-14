@@ -91,6 +91,7 @@ from nora.subject import (
     seed_lessons,
 )
 from nora.subject.obtain import RoomNotInPolicyError
+from nora.subject.sandbox_roster import recorded_rosters
 from nora.subject.transport import held_states, hold_transports
 
 #: Names carried on `environment_state`. A reader must key on these, never on
@@ -1503,42 +1504,52 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     subject = None
     try:
         async with _sandbox_for(spec, now) as database_url:
-            subject = await obtain(
-                SubjectSpec(
-                    database_url=database_url,
-                    workdir=workdir,
-                    room=room,
-                    # LAST, so nothing a spec states can redirect it: THIS
-                    # DRAW'S Honcho workspace, created empty (issue #462).
-                    overrides={
-                        **port.config,
-                        # A full restore turns the presence READER back on
-                        # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
-                        # Before the spec's own, so a caller can still state
-                        # otherwise; empty on every other corpus.
-                        **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
-                        **(spec.overrides or {}),
-                        "memory.workspace_id": memory_workspace,
-                    },
-                    # The deployment's OWN roster and room set, verbatim.
-                    # `_DEFAULT_IDENTITY` knows ONE person; a real room has
-                    # ten, and a snapshot copies each row's real `person_id`
-                    # — so nine speakers in ten would resolve to "the
-                    # identity does not know them" and render nameless,
-                    # while 15% of message BODIES name a roster member
-                    # outright. A real policy entry also carries
-                    # `description` (which REACHES THE MODEL), the
-                    # `relevance_gate`/`home_room`/`voice` opt-ins and the
-                    # room's tool grant; a minimal invented one measures a
-                    # different room.
-                    identity=spec.identity if spec.identity is not None else _deployment_identity(),
-                    policy=spec.policy if spec.policy is not None else _deployment_policy(),
-                    # FROZEN AT THE MOMENT. The seeded rows keep their real
-                    # timestamps, so the clock she reads them against must be
-                    # the instant they were written up to.
-                    now=now,
+            # A full restore holds the real speakers, so each room's members
+            # are read from them while the graph composes; without it every
+            # lineage tool answers `unavailable` (`nora.subject.sandbox_roster`).
+            with (
+                recorded_rosters(database_url=database_url, now=now)
+                if spec.full_restore else contextlib.nullcontext()
+            ):
+                subject = await obtain(
+                    SubjectSpec(
+                        database_url=database_url,
+                        workdir=workdir,
+                        room=room,
+                        # LAST, so nothing a spec states can redirect it: THIS
+                        # DRAW'S Honcho workspace, created empty (issue #462).
+                        overrides={
+                            **port.config,
+                            # A full restore turns the presence READER back on
+                            # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
+                            # Before the spec's own, so a caller can still state
+                            # otherwise; empty on every other corpus.
+                            **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
+                            **(spec.overrides or {}),
+                            "memory.workspace_id": memory_workspace,
+                        },
+                        # The deployment's OWN roster and room set, verbatim.
+                        # `_DEFAULT_IDENTITY` knows ONE person; a real room has
+                        # ten, and a snapshot copies each row's real `person_id`
+                        # — so nine speakers in ten would resolve to "the
+                        # identity does not know them" and render nameless,
+                        # while 15% of message BODIES name a roster member
+                        # outright. A real policy entry also carries
+                        # `description` (which REACHES THE MODEL), the
+                        # `relevance_gate`/`home_room`/`voice` opt-ins and the
+                        # room's tool grant; a minimal invented one measures a
+                        # different room.
+                        identity=(
+                            spec.identity if spec.identity is not None
+                            else _deployment_identity()
+                        ),
+                        policy=spec.policy if spec.policy is not None else _deployment_policy(),
+                        # FROZEN AT THE MOMENT. The seeded rows keep their real
+                        # timestamps, so the clock she reads them against must be
+                        # the instant they were written up to.
+                        now=now,
+                    )
                 )
-            )
             # SPEAKING NEEDS AN ADAPTER, and the sandbox disables Discord's
             # (a declared divergence — it authenticates for real at startup).
             # `FirePath._turn` resolves the room's own adapter before it says

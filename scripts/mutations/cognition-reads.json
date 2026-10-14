@@ -142,7 +142,7 @@
  {
   "name": "registry: the gate's capability digest offers a tool a reply cannot call",
   "file": "nora/agent/registry.py",
-  "old": " - self._withheld - DREAMER_LOOP_TOOLS,\n",
+  "old": " - self._withheld - (DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS),\n",
   "new": " - self._withheld,\n",
   "target": "tests/unit/test_tool_surface.py::test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do"
  },
@@ -158,14 +158,14 @@
   "file": "nora/app/composition.py",
   "old": "        rollup=SqlRollupRead(engine),\n",
   "new": "",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
  },
  {
   "name": "composition: the registry is not handed the Standing head",
   "file": "nora/app/composition.py",
   "old": "        standing_head=standing_store,\n",
   "new": "",
-  "target": "tests/test_composition.py::test_session_mode_shadow_builds_one_runner_and_hands_its_hook_to_the_evaluator"
+  "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
  },
  {
   "name": "audit: the rollup_read audit line is dropped",
@@ -236,5 +236,12 @@
   "old": "            **({\"revision\": head.revision_id} if head.revision_id is not None else {}),\n",
   "new": "            \"revision\": head.revision_id,\n",
   "target": "tests/infra/test_standing_read.py::test_a_head_with_no_revision_omits_the_key_not_null"
+ },
+ {
+  "name": "surface: a fire turn or a worker is offered rollup_read",
+  "file": "nora/agent/surface.py",
+  "old": "            return self.dreamer or (self.tag_turn and not self.worker)\n",
+  "new": "            return True\n",
+  "target": "tests/unit/test_tool_surface.py::test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions"
  }
 ]

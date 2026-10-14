@@ -383,16 +383,35 @@ _LOOP_ONLY = ("rollup_read", "standing_read", "character_read")
 
 
 def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
-    """`rollup_read` supersedes `where_been`'s 90-day cap for a Dreamer adaptor
-    only, and `standing_read` is the session's own position: a reply neither
-    pays their prompt nor can route to them, in a Discord room or a Signal one."""
-    from nora.agent.surface import DREAMER_LOOP_TOOLS
+    """`standing_read` is the session's own position and `character_read` waits
+    on a `tool_selection` run: a reply neither pays their prompt nor can route
+    to them, in a Discord room or a Signal one."""
+    from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_READABLE_LOOP_TOOLS
 
-    assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS <= DREAMER_ONLY_TOOLS
+    assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS
+    loop_only = DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS
+    assert loop_only == {"standing_read", "character_read"}
+    assert loop_only <= DREAMER_ONLY_TOOLS
     for platform in ("signal", "discord"):        # `None` is the DECLARED table: everything
         tag = ToolScope(platform=platform, dreamer=False)
-        assert not any(tag.admits(n) for n in _LOOP_ONLY), platform
+        assert not any(tag.admits(n) for n in loop_only), platform
         assert all(ToolScope(platform=platform, dreamer=True).admits(n) for n in _LOOP_ONLY)
+
+
+def test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions():
+    """«Where have we been together lately» reaches the outing rows from a tag
+    turn (unified-memory step 0). A fire turn and the sub-agent worker are not
+    a person asking, and stay without it."""
+    from nora.agent.surface import TAG_READABLE_LOOP_TOOLS
+
+    assert {"rollup_read"} == TAG_READABLE_LOOP_TOOLS
+    assert "rollup_read" not in DREAMER_ONLY_TOOLS
+    for platform in ("signal", "discord", "instagram"):
+        assert ToolScope(platform=platform).admits("rollup_read"), platform
+        assert ToolScope(platform=platform, dreamer=True).admits("rollup_read"), platform
+        assert not ToolScope(platform=platform, tag_turn=False).admits("rollup_read"), platform
+        assert not ToolScope(
+            platform=platform, tag_turn=False, worker=True).admits("rollup_read"), platform
 
 
 def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
@@ -400,7 +419,8 @@ def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_canno
 
     wired = ToolRegistry(rollup=object(), standing_head=object(), culture=object())
     digest = wired.capability_digest()
-    assert not any(n in digest for n in _LOOP_ONLY)
+    assert not any(n in digest for n in ("standing_read", "character_read"))
+    assert "rollup_read" in digest, "a tag turn can call it, so the gate may count on it"
     assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
 
 

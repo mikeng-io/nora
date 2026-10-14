@@ -49,17 +49,29 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: workspace, every unit, and a room could otherwise surface words said by
 #: people in none of its units — the crossing `send_to` refuses (R-49).
 #:
-#: `rollup_read` supersedes `where_been`'s 90-day cap for the Dreamer's
-#: adaptors only (25 §5), and `standing_read` shows her own held position to
-#: the session that revises it (30 §2). `character_read` (self-growth C4) shows
-#: the unit's accounts; it joins the tag path only after a `tool_selection`
-#: run (`nora-tool`). None is a tag-path tool, so a reply
-#: neither pays their prompt nor can route to them, and the Relevance Gate's
-#: capability digest does not offer them as something she can serve
-#: (`ToolRegistry.capability_digest`).
+#: `rollup_read` supersedes `where_been`'s 90-day cap (25 §5), and is also a
+#: tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below). `standing_read` shows her
+#: own held position to the session that revises it (30 §2). `character_read`
+#: (self-growth C4) shows the unit's accounts; it joins the tag path only after
+#: a `tool_selection` run (`nora-tool`). Neither of those two is a tag-path
+#: tool, so a reply neither pays their prompt nor can route to them, and the
+#: Relevance Gate's capability digest does not offer them as something she can
+#: serve (`ToolRegistry.capability_digest`).
 DREAMER_LOOP_TOOLS: frozenset[str] = frozenset(
     {"rollup_read", "standing_read", "character_read"})
-DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | DREAMER_LOOP_TOOLS
+
+#: Cognition-loop tools a person's TAG turn may also call (unified-memory step 0,
+#: 2026-10-15). `rollup_read` joins the tag path because «where have we been
+#: together lately» had no other way to reach the outing rows: the recall
+#: journeys rebuilt them from four transcript loads and placed an older outing in
+#: the asked week. The read is the same SELECT under the same lineage for the
+#: room the tool is bound to; nothing here widens what a row may show. Not a fire
+#: turn's and not an adaptor's (`dreamer.py` still refuses every
+#: `DREAMER_LOOP_TOOLS` name an adaptor declares).
+TAG_READABLE_LOOP_TOOLS: frozenset[str] = frozenset({"rollup_read"})
+
+DREAMER_ONLY_TOOLS: frozenset[str] = frozenset({"search_memory_workspace"}) | (
+    DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS)
 
 #: Tag-turn tools only (design/subagent §3): the four `subagent_*` tools are a person's
 #: tool for handing work to a background worker, and `video_create` starts a clip delivered
@@ -119,6 +131,8 @@ class ToolScope:
             return True
         if name in DISCORD_ONLY_TOOLS and self.platform != "discord":
             return False
+        if name in TAG_READABLE_LOOP_TOOLS:
+            return self.dreamer or (self.tag_turn and not self.worker)
         return not (name in DREAMER_ONLY_TOOLS and not self.dreamer)
 
 

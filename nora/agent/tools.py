@@ -936,9 +936,9 @@ NATIVE_TOOLS: Mapping[str, NativeTool] = {
                                side_effect_state="none", idempotency="idempotent",
                                retry="safe", output_contract="three_state", level=2),
     # `rollup_read` (design/cognition-loop/25-rollup.md §5, migration step 3):
-    # the Rollup's typed rows over an interval, for a Dreamer adaptor ONLY
-    # (`nora.agent.surface.DREAMER_ONLY_TOOLS`): the tag path keeps
-    # `where_been` and `routine_read`. 4, the same currency as `where_been`:
+    # the Rollup's typed rows over an interval, for the Cognition session and
+    # a person's tag turn (`nora.agent.surface.TAG_READABLE_LOOP_TOOLS`), never
+    # a fire turn or an adaptor. 4, the same currency as `where_been`:
     # cheap local SELECTs, so the model round trip is the cost, and one
     # question can walk a person's days, then the pair, then a week. A
     # Cognition session holds no per-tool ceiling at all (DEC-247).
@@ -5662,8 +5662,8 @@ def build_tool_specs(
         subject: str,
         interval: str,
     ) -> dict:
-        """Read what people here did, as computed rows: stays, trips, days, ties, who
-        was together. Call this when you need a pattern over days or weeks.
+        """What people here did, as computed rows: outings together, stays, trips.
+        Call this when you need a pattern over days or weeks.
 
         SHOULD: name people as they are named here. Rows come oldest first,
         each with `kind`, `subject`, `from` and `to`, the key a note cites it

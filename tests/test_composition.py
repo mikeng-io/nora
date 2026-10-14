@@ -856,6 +856,21 @@ async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
         await deps.background.cancel_all()
 
 
+async def test_the_composed_registry_holds_the_rollup_read_and_the_standing_head(
+    cfg, no_build_stamp,
+):
+    """Both reads are SELECTs with no flag: a composed graph always wires them, so
+    `rollup_read` reaches a tag turn and `standing_read` the Cognition session.
+    Unwired, the registry withholds each from every surface, silently."""
+    deps = await build_dependencies(cfg)
+    try:
+        registry = deps.engagement._tool_registry
+        assert registry._rollup is not None and registry._standing_head is not None
+        assert {"rollup_read", "standing_read"}.isdisjoint(registry._withheld)
+    finally:
+        await deps.background.cancel_all()
+
+
 async def test_subagent_off_registers_no_backend(cfg, no_build_stamp):
     """`[subagent] enabled = false` is the shipped default: nothing is built, nothing is
     registered with the poller, and boot is what it was (design/subagent step 2)."""
