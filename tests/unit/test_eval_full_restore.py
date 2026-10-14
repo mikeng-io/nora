@@ -247,6 +247,7 @@ def judged(seams, monkeypatch) -> dict[str, list[Any]]:
     calls: dict[str, list[Any]] = {"recall_facts": [], "presence_facts": []}
 
     async def drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        _render_her_turn()
         return Outcome(admitted=True, said=("she said",))
 
     async def recall_facts(_subject: object, md: Any, *, now_ms: int) -> str:
@@ -264,6 +265,44 @@ def judged(seams, monkeypatch) -> dict[str, list[Any]]:
     monkeypatch.setattr(backbone, "recall_facts", recall_facts)
     monkeypatch.setattr(backbone, "_presence_facts", presence_facts)
     return calls
+
+
+#: A block her turn was shown that names a fact the evidence does not: the
+#: 2026-10-15 J4 shape, a trip a note held open at the instant.
+_NOTE_BLOCK = (
+    '<notes description="what the group has planned">\n'
+    "[7] (2d ago) the trip on the 17th is on\n"
+    "</notes>"
+)
+_WINDOW = (
+    '<group_transcript window="1" description="the room">\n'
+    '<m n="1" age="just now" from="Miles">where have we been lately?</m>\n'
+    "</group_transcript>"
+)
+
+
+def _render_her_turn(
+    blocks: str = _NOTE_BLOCK, rendered: str = "notes,group_transcript",
+) -> None:
+    """What `build_prefill` leaves on the spans: its `agent.prefill` span
+    naming the blocks it served, and the turn's first `chat` call carrying the
+    volatile message (clock line, the blocks, the window). A second message on
+    the same call carries a block-shaped string with NO window, the way the
+    system prompt or the tag message would: it must never reach the judge."""
+    from nora.obs.tracing import annotate, span
+
+    with span("agent.prefill"):
+        annotate(**{"nora.prefill.blocks_rendered": rendered})
+    with span("chat", **{"gen_ai.operation.name": "chat"}):
+        annotate(**{
+            "gen_ai.system_instructions": (
+                '<notes description="x">\nTHE DOCTRINE, NOT A BLOCK\n</notes>'
+            ),
+            "gen_ai.input.messages": (
+                "Right now it is Saturday 11 October 2026, 20:00 HKT.\n"
+                f"{blocks}\n\n{_WINDOW}"
+            ),
+        })
 
 
 def _judged_case(name: str, criteria: list[str], **md: Any) -> Case:
@@ -332,6 +371,88 @@ def test_the_judge_source_carries_tool_results_for_a_recall_case() -> None:
     assert with_results is not None and "media_fetch: " in with_results
     assert "send_reply" not in with_results
     assert backbone._judge_source("<m>hi</m>", results, ("presence",)) == "<m>hi</m>"
+
+
+async def test_a_recall_judge_is_shown_every_block_her_turn_was_shown(judged) -> None:
+    """2026-10-15, `j4_where_have_we_been_together_lately`: the judge called
+    «the trip on the 17th is still there» fabricated while a note saying so
+    was open in the `<notes>` block she was shown, because its source was
+    only the window and her tool results. Reverting `_judge_source`'s
+    `recall_grounded` branch (or `_drive`'s `shown_blocks` argument) drops
+    the note from the source and this fails."""
+    judge = _Judge()
+    await backbone._drive(
+        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _spec(full_restore=True, judge=judge),
+    )
+    [graded] = judge.graded
+    source = graded["source"]
+    assert _NOTE_BLOCK in source, "a block she was shown never reached the recall judge"
+    assert source.startswith("<m>the window</m>")
+    assert source.count("<group_transcript") == 0, "the window is the source's head, once"
+    assert "THE DOCTRINE, NOT A BLOCK" not in source, "only the message carrying her window"
+
+
+_RESULTS = (("media_fetch", '{"status": "unavailable"}'), ("send_reply", "sent"))
+_BLOCKS = (("notes", _NOTE_BLOCK), ("group_transcript", _WINDOW))
+
+
+@pytest.mark.parametrize("criteria", [
+    (), ("presence",), ("tool_status_reported",), ("lesson_applied",),
+    ("personality", "source_scope", "being_contradicted", "appearance"),
+])
+def test_the_judge_source_is_unchanged_for_every_other_criterion(criteria) -> None:
+    """Byte for byte what `_judge_source` returned before it took `blocks`:
+    only `recall_grounded` reads them."""
+    reporting = {"tool_status_reported", "lesson_applied"} & set(criteria)
+    expected = "<m>hi</m>" + (
+        '\n\nTool results this turn:\n- media_fetch: {"status": "unavailable"}'
+        if reporting else ""
+    )
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria, _BLOCKS) == expected
+    assert backbone._judge_source("<m>hi</m>", _RESULTS, criteria) == expected
+
+
+async def test_a_presence_case_is_judged_on_exactly_the_window(judged) -> None:
+    """The drive-level half: the same spans carry a `<notes>` block, and a
+    presence case's source is still the window alone."""
+    judge = _Judge()
+    await backbone._drive(_judged_case("presence", ["presence"]), _spec(judge=judge))
+    [graded] = judge.graded
+    assert graded["source"] == "<m>the window</m>"
+
+
+@pytest.mark.parametrize(("blocks", "rendered", "fragment"), [
+    (None, "", "no context blocks were captured"),
+    (_NOTE_BLOCK, "notes,events,group_transcript", "['events']"),
+])
+async def test_a_recall_draw_whose_blocks_are_not_read_back_is_an_error(
+    judged, monkeypatch, blocks, rendered, fragment,
+) -> None:
+    """Fail closed: no blocks captured off her call, or fewer than the prefill
+    says it rendered, is an ERROR draw, and the judge is never called."""
+    from strands_evals.types.evaluation import EvaluationData
+
+    from evals.backbone import NORA_ERROR, NORA_JUDGED, state_of
+
+    async def drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        if blocks is not None:
+            _render_her_turn(blocks, rendered)
+        return Outcome(admitted=True, said=("she said",))
+
+    monkeypatch.setitem(
+        ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True, config={}),
+    )
+    judge = _Judge()
+    result = await backbone._drive(
+        _judged_case("recall", [CRITERION], evidence={"messages": [1]}),
+        _spec(full_restore=True, judge=judge),
+    )
+    assert judge.graded == [], "a recall draw graded blind"
+    data = EvaluationData(input="x", actual_environment_state=result["environment_state"])
+    assert state_of(data, NORA_JUDGED) == ""
+    error = state_of(data, NORA_ERROR)
+    assert error and fragment in error and "recall_grounded" in error
 
 
 _SHA = "a" * 64
@@ -430,3 +551,16 @@ def test_an_event_is_rendered_in_the_deployments_timezone_with_its_distance() ->
         "to 2026-10-02 23:00 (Fri), 2 days 2 h after she was asked"
     ) in text
     assert "with Miles" in text and "no venue set" in text
+
+
+def test_a_self_closed_block_never_swallows_the_next_one() -> None:
+    """A `when_empty="self_close"` block (`<memos .../>`) must not match as an
+    opening tag and swallow through the next same-name block's close."""
+    from evals.backbone import _CONTEXT_BLOCK
+
+    text = '<memos kind="x"/>\n\n<notes kind="y">\nbody &lt;b&gt;x&lt;/b&gt;\n</notes>'
+    names = [m.group(1) for m in _CONTEXT_BLOCK.finditer(text)]
+    assert names == ["notes"]
+    doubled = '<memos a="1"/>\n\n<memos a="2">\nreal\n</memos>'
+    [only] = list(_CONTEXT_BLOCK.finditer(doubled))
+    assert only.group(0).startswith('<memos a="2">')
