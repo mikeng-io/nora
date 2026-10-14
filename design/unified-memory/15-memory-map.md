@@ -16,10 +16,9 @@ does not need a new topology. It needs three changes to that one:
 
 1. **Nothing beside the flow.** What Honcho did moves into a layer or is
    dropped ([10](10-honcho-audit.md) §4).
-2. **An Identity tier** for every entity, beside Character, pending the
-   operator's ruling and a DEC-249 amendment
-   ([30](30-identity-and-character.md)). Character answers *what is it like*;
-   Identity answers *who or what is it*, a question no tier answers today.
+2. **Persona** for every entity ([35](35-persona.md), ruled 2026-10-15): the
+   Character tier widened to hold who or what the entity is, what it is like,
+   and abduced hypotheses about why, one account with one writer.
 3. **One index across the layers** ([00](00-intent.md) part 1), so a reader
    asks one verb, not the store.
 
@@ -39,7 +38,7 @@ does not need a new topology. It needs three changes to that one:
 | place, rhythm, tie, play profile | Rollup · aggregate | patterns over a window | no: numbers are read by key (`rollup_read`, `where_been`), not by meaning | rebuilt |
 | note, memo, event | Notebook · Register | the state of the unit's affairs | one row per head revision | a later told row supersedes; the revision chain keeps the old |
 | Character (person, room, unit, Nora) | Notebook · Character | what an entity is like | one row per section, so a hit lands on a paragraph, not a whole account | dispute (cognition-loop/50 §4) |
-| **Identity** (new) | Notebook · Identity | who or what an entity is | one row per line | [30](30-identity-and-character.md) |
+| **Persona** (widens Character) | Notebook · Persona | who an entity is, what it is like, why | one row per line | [35](35-persona.md) |
 | Lessons | Notebook · Lessons | how she has learned to act | one row per lesson | the operator's retire on the portal |
 | Standing | Notebook · Standing | where she stands | one row per section | its next fold |
 | Tension | operator-only | — | **never**: code guarantees she cannot read it (cognition-loop/10 §1), and an index row would break that | — |

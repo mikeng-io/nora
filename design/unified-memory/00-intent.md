@@ -35,14 +35,15 @@ retrieval layer exists means they are searchable from their first row.
   (Honcho) *beside* the flow. **This bundle proposes amending DEC-249**, and
   says so rather than calling it a reading: §1 fixes the Notebook at four
   tiers, and §2 rules that "per-person facts live in Memory". With Memory
-  gone, per-person facts need a lawful home, and [30](30-identity-and-character.md)
-  proposes a fifth tier, Identity. Rules 3 (one writer per tier) and 4
+  gone, per-person facts need a lawful home: [35](35-persona.md) (ruled
+  2026-10-15) widens Character into Persona, identity, character and abduced
+  hypotheses in one account, so the Notebook keeps four tiers. Rules 3 (one writer per tier) and 4
   (speaking turns only read) are kept, not reopened.
 - **The reasoning modes** are [cognition-loop/10](../cognition-loop/10-tiers.md)
   §4: `computed`, `told`, `deduced`, `induced`, **`abduced`** and `said`
   (whether they stay as stored detail is cognition-loop/05 §10 Q2, still
-  open; this bundle assumes they do, and node 30 amends their "allowed in"
-  column for Identity).
+  open; this bundle assumes they do, and node 35 amends their "allowed in"
+  column for Persona).
   Abduction already exists as a mode, and its rule is already the right one:
   a value resting only on abduction "goes out as a question", and is never
   upgraded by assent. The operator's three reasoning layers are this table,
@@ -67,7 +68,8 @@ retrieval layer exists means they are searchable from their first row.
 | [15](15-memory-map.md) | every store as part of the one memory: notes, memos, media, presence episodes, social items, with what each remembers and how it is indexed and corrected |
 | [20](20-embedding-bakeoff.md) | the retrieval-stack bake-off: trigram vs BM25, bge-m3 vs EmbeddingGemma 2 (released 2026-10-06) vs WeMM-Embedding, fused, then reranked, on Nora's own mixed Cantonese and English corpus |
 | [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
-| [30](30-identity-and-character.md) | Identity as its own tier beside Character, for actors (human, Nora, another agent) and collectives (room, unit), with "remember this" and "that's wrong" |
+| [30](30-identity-and-character.md) | (superseded in part by 35) Identity as its own tier beside Character, for actors (human, Nora, another agent) and collectives (room, unit), with "remember this" and "that's wrong" |
+| [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; anyone may dispute; visibility; the one-off backfill |
 | [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
 
 ## The proposed shape, in three parts
@@ -94,8 +96,8 @@ without one is a defect.
 **2. Conclusions for any subject, in Nora's tables.** Honcho's two prefilled
 reads (the peer card, and the tagger's representation, rendered as
 `peer_history`) and its one write (`remember` → `conclude`) are replaced by
-Nora's own tiers: Identity for who an entity is ([30](30-identity-and-character.md)),
-Character for what it is like, Register for the unit's affairs. What Honcho holds that no tier holds yet is measured in
+Nora's own tiers: Persona for who an entity is, what it is like and why
+([35](35-persona.md)), Register for the unit's affairs. What Honcho holds that no tier holds yet is measured in
 [10](10-honcho-audit.md) before anything is cut.
 
 **3. The Dreamer's modes, made complete.** The Cognition session already
