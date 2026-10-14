@@ -55,8 +55,10 @@ WHAT IS STILL NOT BYTE-IDENTICAL, each a stated limitation of the extraction:
   earlier row a message replied to; `Message` has no quote field. Closing it
   needs a citation-style translation, a second piece of work.
 - **Only four tiers are extracted** by this path. `sandbox_as_of` (step 1b)
-  restores every store as of T instead, row for row; cases have not moved
-  onto it yet. Reminders, note candidates and the
+  restores every store as of T instead, row for row; the corpora
+  `evals.scenarios.FULL_RESTORE_CORPORA` names are seeded that way, and
+  `restored_room` hands their drive what this path's `Sandboxed` carries.
+  For every other corpus, reminders, note candidates and the
   debounce/window state tables are EMPTY in the sandbox. That is the same
   emptiness the hashed-room design had, now visible in one place; extending
   `snapshot.py` is how it closes, and `11-the-sandbox-rebuild.md` §6 R1 is
@@ -133,7 +135,7 @@ from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.notes import Note, NoteRevision
 from nora.domain.reminders import Reminder, ReminderState
-from nora.infra.sql import create_readonly_sql_engine, snapshot_at
+from nora.infra.sql import create_readonly_sql_engine, history, snapshot_at
 from nora.infra.sql.migrations_runner import (
     SourceRevisionMismatchError,
     current_revision,
@@ -142,6 +144,7 @@ from nora.infra.sql.migrations_runner import (
     run_migrations,
     sync_url_for,
 )
+from nora.infra.sql.schema import MESSAGES
 from nora.infra.sql.snapshot import Snapshot, snapshot
 from nora.infra.sql.snapshot_at import SeedReport
 from nora.persons import Persons
@@ -154,7 +157,7 @@ __all__ = [
     "Sandboxed", "SharedDatabaseMutatedError", "SharedDatabaseVersions",
     "SourceRevisionMismatchError", "as_knowledge", "assert_shared_databases_unchanged",
     "close_private_blank_templates", "judge_source", "refuse_if_source_diverges_from_head",
-    "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "seed_lessons",
+    "restored_room", "sandbox_as_of", "sandbox_database", "sandbox_from_snapshot", "seed_lessons",
     "shared_database_versions",
     "sweep_stale_private_blank_templates",
 ]
@@ -612,8 +615,8 @@ async def sandbox_as_of(
     ids, sender ids included, so a subject composed against the result reads
     what Nora read then. Seeded BEFORE any subject is composed against it, so
     the target is empty (`snapshot_at.seed` refuses one that is not).
-    Memory, events, and the Rollup before migration 0071 are not restored;
-    `snapshot_at.EXCEPTED` says why. Yields the sandbox's URL and what was copied.
+    Memory, the Rollup before migration 0071 and events before 0074 are not
+    restored; `snapshot_at.EXCEPTED` says why. Yields the sandbox's URL and what was copied.
     """
     async with sandbox_database(source_url, template=template) as url:
         source = create_readonly_sql_engine(source_url)
@@ -970,6 +973,108 @@ async def sandbox_from_snapshot(
     return Sandboxed(
         now_ms=written.now_ms,
         rows=written.rows,
+        transcript=judge_source(
+            shown,
+            persons=subject.deps.persons,
+            platform=platform,
+            display_name=subject.cfg.doctrine.display_name,
+            now=subject.deps.clock(),
+        ),
+    )
+
+
+async def restored_room(
+    subject: Subject,
+    *,
+    source_url: str,
+    before_ms: int,
+) -> Sandboxed:
+    """What the drive needs from a sandbox `sandbox_as_of` already filled.
+
+    The FULL-RESTORE sibling of `sandbox_from_snapshot`: that one writes one
+    room's four tiers through the stores and returns the row map it built;
+    this one writes nothing, because `snapshot_at.seed` copied every
+    restorable store as of the instant, row for row WITH ITS OWN IDS, before
+    the subject was composed. So the row map is the identity, and that is
+    VERIFIED here rather than assumed: the room's message ids in the sandbox
+    must be exactly the ids the source's own as-of read
+    (`nora.infra.sql.history.as_of`) holds for that room at the instant. A
+    restore that renumbered, dropped or added a row refuses the case.
+
+    Refusals, each an ERROR rather than an empty room, the same three
+    `sandbox_from_snapshot` makes: a source that names the subject's own
+    database, a subject whose clock is not frozen at `before_ms`, and a room
+    that held no row at the instant.
+
+    `transcript` is built exactly as `sandbox_from_snapshot` builds it: the
+    room's rows read back through the store her turn reads, joined through the
+    media join (`path="judge_source"`), named and rendered by
+    `judge_source`. Here the join has the restored `media_json` and
+    `media_objects` to work with, so an image row carries its stored reading
+    instead of a bare handle.
+    """
+    if make_url(source_url).database == make_url(subject.database_url).database:
+        raise ValueError(
+            "source_url names the subject's own database "
+            f"({make_url(source_url).database!r}); a full restore is read FROM the "
+            "deployment's clone INTO a database of its own, never from itself"
+        )
+    clock_ms = int(subject.deps.clock().timestamp() * 1000)
+    if clock_ms != before_ms:
+        raise ValueError(
+            f"the subject's clock reads {clock_ms} and the moment is "
+            f"{before_ms}; compose it with SubjectSpec.now at the moment, or "
+            "every age the model sees is measured against the wrong instant"
+        )
+    platform, conversation_id = subject.room
+    at = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
+
+    def in_room(image: dict[str, Any]) -> bool:
+        return (
+            image.get("platform") == platform
+            and image.get("conversation_id") == conversation_id
+        )
+
+    source = create_readonly_sql_engine(source_url)
+    try:
+        held: set[int] = set()
+        async with source.connect() as conn:
+            async for batch in history.as_of(conn, "messages", at):
+                held |= {int(image["id"]) for image in batch if in_room(image)}
+    finally:
+        await source.dispose()
+    target = create_async_engine(subject.database_url)
+    try:
+        async with target.connect() as conn:
+            restored = {int(i) for i in (await conn.execute(
+                sa.select(MESSAGES.c.id).where(
+                    MESSAGES.c.platform == platform,
+                    MESSAGES.c.conversation_id == conversation_id,
+                )
+            )).scalars()}
+    finally:
+        await target.dispose()
+    if not held:
+        raise ValueError(
+            f"the source held no row for {platform}/{conversation_id} at "
+            f"{at.isoformat()}; a moment before the room's first line is not a "
+            "moment, and an unknown id reads exactly the same"
+        )
+    if restored != held:
+        raise ValueError(
+            f"the restore holds {len(restored)} rows for the room and the source "
+            f"held {len(held)} at the instant ({len(restored - held)} extra, "
+            f"{len(held - restored)} missing); a full restore copies ids "
+            "verbatim, so the row map is the identity only when the two agree"
+        )
+    join: MediaJoin = subject.deps.media_join
+    shown = await join.enrich(
+        await subject.deps.audit.recent(conversation_id=conversation_id, limit=len(held)),
+        path="judge_source",
+    )
+    return Sandboxed(
+        now_ms=before_ms,
+        rows={i: i for i in sorted(held)},
         transcript=judge_source(
             shown,
             persons=subject.deps.persons,

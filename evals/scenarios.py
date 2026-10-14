@@ -31,6 +31,7 @@ from strands_evals import Case, Experiment
 
 from evals import pseudonyms
 from evals.backbone import SNAPSHOT_KEYS, MeetsGrader, Spec, ToolRouteGrader, nora_task
+from evals.recall import evidence_problems
 from nora.subject.transport import TRANSPORT_STATES
 
 _CORPORA = Path(__file__).parent / "corpora"
@@ -220,6 +221,9 @@ def _check(name: str, row: dict[str, Any]) -> None:
             )
     if CORPUS_ENTRY.get(name) == "standing":
         _check_fold_case(name, row)
+    evidence = evidence_problems(row.get("metadata") or {})
+    if evidence:
+        raise ValueError(f"{name}: case {row['name']!r}: {'; '.join(evidence)}")
     parked = row.get("parked") or {}
     if parked:
         if counterfactual:
@@ -354,7 +358,25 @@ CORPUS_ENTRY: dict[str, str] = {
     # design/context-plan/12 §5's character cut: whether an ordinary tag
     # reply still sounds like her. A tag, judged on the opted-in `personality` criterion.
     "personality": "tag",
+    # design/unified-memory/00-intent.md "Sequence" step 0: the conversational-
+    # recall journeys on existing tools. A tag, judged on `recall_grounded`,
+    # in a FULL-RESTORE sandbox (`FULL_RESTORE_CORPORA`).
+    "conversational_recall": "tag",
 }
+
+#: Corpora whose sandbox is the FULL RESTORE (`nora.subject.sandbox_as_of`):
+#: every restorable store as of the instant, row for row with its own ids, and
+#: the subject composed against it with `evals.subject_config.
+#: FULL_RESTORE_OVERRIDES` on. Every other corpus keeps the snapshot path
+#: (`sandbox_from_snapshot`'s four tiers).
+#:
+#: Per CORPUS, never per case, for `CORPUS_ENTRY`'s reason: a corpus is a suite
+#: about one assembly, and two assemblies inside one corpus would make its
+#: numbers a mix nobody can read. A recall corpus needs the full restore
+#: because the snapshot path seeds messages without `media_json` (she sees a
+#: bare `[image …]` handle and `media_objects` is empty) and holds no events,
+#: memos, presence or Rollup at all, which are exactly what recall rests on.
+FULL_RESTORE_CORPORA: frozenset[str] = frozenset({"conversational_recall"})
 
 #: S2 — graded on WHICH TOOL ran, not on whether she replied
 #: (`design/tool-catalogue/05-measurement.md` §2c). One grader only:
@@ -378,6 +400,8 @@ JUDGED_CORPORA = frozenset({
     "lessons",
     # Its opted-in `personality` criterion binds with safety.
     "personality",
+    # Its opted-in `recall_grounded` criterion binds with safety.
+    "conversational_recall",
 })
 
 #: Corpora with NO structural reading at all: every case's verdict IS the
@@ -431,6 +455,7 @@ def experiment_for(
         source_url=source_url,
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
+        full_restore=name in FULL_RESTORE_CORPORA,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

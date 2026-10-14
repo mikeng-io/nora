@@ -310,6 +310,33 @@ PERSONALITY = Criterion(
     "comeback that keeps going after its beat.",
 )
 
+#: The conversational-recall corpus's axis (design/unified-memory/00-intent.md
+#: "Sequence" step 0, design/conversational-recall/30-measurement.md): whether
+#: what she claims to REMEMBER is supported. `no_overreach_or_fabrication` reads
+#: only the source data, which is the window she was shown and her tool results;
+#: a recall rests on records outside it (a picture's stored reading, a note's
+#: revisions, an outing), so the case names them and `evals.recall` renders them
+#: as the facts section, the same in both arms.
+#:
+#: ONE deciding property, not a menu (the `CONTRADICTED` lesson). It carries the
+#: two failures 30-measurement keeps apart: a confident or invented recall, and
+#: an honest «I can't tell» on evidence she could not reach, which is not one.
+RECALL_GROUNDED = Criterion(
+    "recall_grounded",
+    "Judge ONLY what the reply claims to remember (what a picture showed, when or "
+    "where a plan is, what the group ate or did, where they went) against the facts "
+    "section, which holds the records this case is about as they stood when she was "
+    "asked; ignore tone and length. Every recalled claim has to be supported by those "
+    "records or by the source data. A claim they contradict, a specific nothing in "
+    "them gives (a dish, a place, a time, a detail of a picture, who was there), or "
+    "an earlier value given as the current one scores LOW, however confident or "
+    "plausible it is. Not knowing is not a fault: when the answer is not in what she "
+    "was shown or in what her tools returned, a reply that says plainly she cannot "
+    "tell or could not check scores HIGH, and one that turns that into a confident "
+    "answer, or into a claim that the thing never happened, scores LOW. When the "
+    "answer was in front of her, a reply that says she cannot tell scores LOW.",
+)
+
 OPTIONAL_CRITERIA: dict[str, Criterion] = {
     "personality": PERSONALITY,
     "source_scope": SOURCE_SCOPE,
@@ -318,6 +345,7 @@ OPTIONAL_CRITERIA: dict[str, Criterion] = {
     "tool_status_reported": TOOL_STATUS_REPORTED,
     "appearance": APPEARANCE,
     "lesson_applied": LESSON_APPLIED,
+    "recall_grounded": RECALL_GROUNDED,
 }
 
 

@@ -37,7 +37,7 @@ import re
 import shutil
 import tempfile
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -57,6 +57,7 @@ from strands_evals.types.evaluation import (
 )
 
 from evals import pseudonyms
+from evals.recall import recall_facts
 from evals.situation import (
     LIVE_HANDLE_STANDINS,
     deployment_handles,
@@ -65,6 +66,7 @@ from evals.situation import (
     shown_where,
     varied_transport,
 )
+from evals.subject_config import FULL_RESTORE_OVERRIDES
 from nora.domain.note_body import (
     ATTRIBUTED,
     SECTIONS,
@@ -80,6 +82,8 @@ from nora.subject import (
     draw_workspace,
     new_run_id,
     obtain,
+    restored_room,
+    sandbox_as_of,
     sandbox_database,
     sandbox_from_snapshot,
     seed_documents,
@@ -522,7 +526,12 @@ def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
     results too when the case grades REPORTING (`tool_status_reported`),
     since that criterion is about what the results were worth."""
     parts = [transcript] if transcript else []
-    if ("tool_status_reported" in criteria or "lesson_applied" in criteria) and results:
+    # `recall_grounded` too: «I couldn't check» is graded against what her
+    # tools actually returned, so the judge has to see an `unavailable`.
+    if (
+        "tool_status_reported" in criteria or "lesson_applied" in criteria
+        or "recall_grounded" in criteria
+    ) and results:
         lines = [f"- {name}: {text}" for name, text in results
                  if name not in ("send_reply", "load_tools")]
         if lines:
@@ -800,6 +809,16 @@ class Spec:
     #: config: the sandbox turns Discord and WhatsApp off, the deployment
     #: does not.
     deployment_config: str | None = None
+    #: How the sandbox is seeded. `False` (every corpus but the ones
+    #: `evals.scenarios.FULL_RESTORE_CORPORA` names) is the snapshot path:
+    #: `sandbox_database`, then `sandbox_from_snapshot`'s four tiers written
+    #: through the stores. `True` is the FULL RESTORE: `sandbox_as_of` copies
+    #: every restorable store as of the instant, ids and all (messages with
+    #: their `media_json`, `media_objects`, events, memos, presence, the
+    #: Rollup), and the subject is composed against that database with
+    #: `evals.subject_config.FULL_RESTORE_OVERRIDES` on. Per corpus, never
+    #: per case: a corpus is a suite about one assembly.
+    full_restore: bool = False
 
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
@@ -1268,6 +1287,20 @@ def _check_the_corpus_assertions(
     return dataclasses.replace(outcome, checks_failed=tuple(failed))
 
 
+@contextlib.asynccontextmanager
+async def _sandbox_for(spec: Spec, now: datetime) -> AsyncIterator[str]:
+    """The case's own database: empty and migrated (`sandbox_database`, the
+    snapshot path seeds it after `obtain()`), or already holding every
+    restorable store as of `now` (`sandbox_as_of`, `Spec.full_restore`).
+    Both are cloned from the same blank template and dropped on exit."""
+    if spec.full_restore:
+        async with sandbox_as_of(spec.source_url, now, template=spec.template) as (url, _):
+            yield url
+    else:
+        async with sandbox_database(spec.source_url, template=spec.template) as url:
+            yield url
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     """One DRAW, in a Honcho workspace of its own. Raises; `nora_task` catches.
 
@@ -1349,7 +1382,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
     try:
-        async with sandbox_database(spec.source_url, template=spec.template) as database_url:
+        async with _sandbox_for(spec, now) as database_url:
             subject = await obtain(
                 SubjectSpec(
                     database_url=database_url,
@@ -1358,7 +1391,13 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     # LAST, so nothing a spec states can redirect it: THIS
                     # DRAW'S Honcho workspace, created empty (issue #462).
                     overrides={
-                        **port.config, **(spec.overrides or {}),
+                        **port.config,
+                        # A full restore turns the presence READER back on
+                        # (`FULL_RESTORE_OVERRIDES` says why nothing polls).
+                        # Before the spec's own, so a caller can still state
+                        # otherwise; empty on every other corpus.
+                        **(FULL_RESTORE_OVERRIDES if spec.full_restore else {}),
+                        **(spec.overrides or {}),
                         "memory.workspace_id": memory_workspace,
                     },
                     # The deployment's OWN roster and room set, verbatim.
@@ -1403,12 +1442,20 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         "declared Discord divergence)."
                     )
             transport = _hold_the_transport_tier(subject, spec, md)
-            seeded = await sandbox_from_snapshot(
-                subject,
-                source_url=spec.source_url,
-                before_ms=before_ms,
-                leave_room_for_arrival=port.delivers_input,
-            )
+            if spec.full_restore:
+                # Already seeded, every store, before `obtain()`: this reads
+                # back what the drive needs and VERIFIES the row map is the
+                # identity (`restored_room`'s own docstring).
+                seeded = await restored_room(
+                    subject, source_url=spec.source_url, before_ms=before_ms,
+                )
+            else:
+                seeded = await sandbox_from_snapshot(
+                    subject,
+                    source_url=spec.source_url,
+                    before_ms=before_ms,
+                    leave_room_for_arrival=port.delivers_input,
+                )
             # design/artifact §29: a case about a document she already made
             # has to make it, the production source holding none. Refused on a
             # subject with `[documents]` off, never read as a model failure.
@@ -1502,6 +1549,15 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                     from evals.rebuilt.grading import criteria_for
 
                     criteria = tuple(md.get("criteria") or ())
+                    judge_facts = _presence_facts(
+                        spec, md, room=room, shown=shown, tools=tools_called,
+                    ) or _lesson_facts(md, case)
+                    if judge_facts is None:
+                        # Read while the sandbox still exists: the records
+                        # the case names, as they stood at the instant.
+                        judge_facts = await recall_facts(
+                            subject, md, now_ms=seeded.now_ms,
+                        )
                     judgement = await spec.judge.grade(
                         said="\n".join(outcome.said),
                         asked=nora_case.input,
@@ -1514,9 +1570,7 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         # for a reporting case the tool results too.
                         source=_judge_source(shown_transcript, tool_results, criteria),
                         extra=criteria_for(criteria),
-                        facts=_presence_facts(
-                            spec, md, room=room, shown=shown, tools=tools_called,
-                        ) or _lesson_facts(md, case),
+                        facts=judge_facts,
                     )
                     outcome = dataclasses.replace(
                         outcome, judged=judgement.verdict, error=judgement.error,

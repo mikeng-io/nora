@@ -98,6 +98,35 @@ FORCE_OFF: tuple[str, ...] = (
     "compute.enabled",
 )
 
+#: Switched back ON, for a FULL-RESTORE sandbox only (`evals.scenarios.
+#: FULL_RESTORE_CORPORA`, seeded by `nora.subject.sandbox_as_of`). Applied as a
+#: subject override by `evals.backbone._drive_draw`, never written into the
+#: generated config, so every other corpus composes exactly as before.
+#:
+#: `presence.enabled` is forced off above because a snapshot-seeded sandbox holds
+#: no presence rows: its reason was «a live location feed no anchor can
+#: reconstruct». A full restore DOES reconstruct them: `presence_fixes`,
+#: `presence_stays`/`_trips`/`_places` and the `rollup_*` builds are restored as
+#: of the instant (`nora.infra.sql.history.HISTORY_TABLES`). In the Nora process
+#: the flag wires the READER and nothing else (`nora/app/composition.py:2730`:
+#: the `PresenceStore` and the circles `where_is`, `where_been` and
+#: `routine_read` read through). The COLLECTOR, which polls Life360, is a
+#: separate process (`python -m nora.presence`, `nora/presence/composition.py`)
+#: that `obtain()` never composes, so with the flag on NOTHING POLLS.
+#: `presence.refresh_url` stays the example's empty value (`presence.` is in
+#: `SKIP_PREFIX`), so `where_is` asks no collector for a fresh fix either.
+#:
+#: A DIVERGENCE THAT REMAINS, declared: the R-31 guard is production's and is not
+#: touched (`_presence_audience`, `Whereis.locate`, the policy's `location`
+#: flag). It needs the room's live roster, and the sandbox's Signal roster dials
+#: no daemon (`obtain._baseline`'s placeholder account), so `room.scope()` reads
+#: the room as DEGRADED and every presence read answers `unavailable` («I can't
+#: confirm who is in this group right now») — production's own answer for an
+#: unreadable roster. The rows are restored and reachable by the reader; what
+#: is not reconstructed is who was in the room at the instant, which is
+#: recorded nowhere.
+FULL_RESTORE_OVERRIDES: dict[str, object] = {"presence.enabled": True}
+
 #: What `[subagent] enabled` needs ON to load (`nora/config.py`
 #: `_subagent_needs_the_dreamer_and_the_poller`); a key here leaves `FORCE_OFF`
 #: when the deployment runs the sub-agent. The eval subject then registers a
@@ -237,7 +266,10 @@ ALLOWED_TO_DIFFER: dict[str, str] = {
     "obs.errors.enabled": "a run's exceptions would page on a real Sentry project",
     "analytics.enabled": "a run's counters would move the deployment's dashboards",
     "heartbeat.enabled": "nothing in an eval is long-lived enough to heartbeat",
-    "presence.enabled": "reads a live location feed no anchor can reconstruct",
+    "presence.enabled":
+        "reads a live location feed no SNAPSHOT anchor can reconstruct; a "
+        "full-restore sandbox turns the reader back on (FULL_RESTORE_OVERRIDES), "
+        "never the collector",
     "media.rustfs.enabled": "its endpoint resolves only inside the deploy network",
     "evals.langfuse.enabled": "as above, and a run would write its own traces back",
     "compute.enabled":
