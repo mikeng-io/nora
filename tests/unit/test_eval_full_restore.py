@@ -551,3 +551,16 @@ def test_an_event_is_rendered_in_the_deployments_timezone_with_its_distance() ->
         "to 2026-10-02 23:00 (Fri), 2 days 2 h after she was asked"
     ) in text
     assert "with Miles" in text and "no venue set" in text
+
+
+def test_a_self_closed_block_never_swallows_the_next_one() -> None:
+    """A `when_empty="self_close"` block (`<memos .../>`) must not match as an
+    opening tag and swallow through the next same-name block's close."""
+    from evals.backbone import _CONTEXT_BLOCK
+
+    text = '<memos kind="x"/>\n\n<notes kind="y">\nbody &lt;b&gt;x&lt;/b&gt;\n</notes>'
+    names = [m.group(1) for m in _CONTEXT_BLOCK.finditer(text)]
+    assert names == ["notes"]
+    doubled = '<memos a="1"/>\n\n<memos a="2">\nreal\n</memos>'
+    [only] = list(_CONTEXT_BLOCK.finditer(doubled))
+    assert only.group(0).startswith('<memos a="2">')

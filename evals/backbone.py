@@ -768,7 +768,7 @@ def _shown_transcript(
 #: nested one on its own.
 _CONTEXT_BLOCK = re.compile(
     r"<(" + "|".join(sorted(map(re.escape, BLOCK_TYPES), key=len, reverse=True))
-    + r")\b[^>]*>\n.*?\n</\1>",
+    + r")\b[^>]*(?<!/)>\n.*?\n</\1>",
     re.DOTALL,
 )
 
