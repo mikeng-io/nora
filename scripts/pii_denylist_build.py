@@ -43,7 +43,9 @@ import time
 NON_IDENTIFYING_KEYS = {"label"}
 # The project's public org and domain tokens only (scripts/pii_scan.py says
 # why no personal name may be listed here).
-PROJECT_IDENTITY = {"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
+# The bare org stem is derived, not quoted: the scrub map rewrites a quoted
+# bare handle, and this set must survive the history rewrite unchanged.
+PROJECT_IDENTITY = {"mikeng-io", "mikeng-io".removesuffix("-io"), "mikeng.io", "iam@mikeng.io"}
 
 # Terms the owner has declared PUBLIC: an ordinary name that stays out of the
 # denylist even though a private source lists it. Owner decision 2026-09-27:

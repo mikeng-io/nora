@@ -716,8 +716,8 @@
  {
   "name": "item 2: no personal name is project identity",
   "file": "scripts/pii_scan.py",
-  "old": "PROJECT_IDENTITY = frozenset({\"mikeng-io\", \"mikeng\", \"mikeng.io\", \"iam@mikeng.io\"})",
-  "new": "PROJECT_IDENTITY = frozenset({\"a person\", \"mikeng-io\", \"mikeng\", \"mikeng.io\", \"iam@mikeng.io\"})",
+  "old": "PROJECT_IDENTITY = frozenset({\"mikeng-io\", \"mikeng-io\".removesuffix(\"-io\"), \"mikeng.io\", \"iam@mikeng.io\"})",
+  "new": "PROJECT_IDENTITY = frozenset({\"a person\", \"mikeng-io\", \"mikeng-io\".removesuffix(\"-io\"), \"mikeng.io\", \"iam@mikeng.io\"})",
   "target": "tests/unit/test_pii_scan.py::test_project_identity_is_the_org_and_the_domain_only"
  },
  {

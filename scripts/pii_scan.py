@@ -147,7 +147,9 @@ def configure() -> None:
 # the hook's own source under it, and would exempt a person from the denylist.
 # A credit line that must keep a real name is a keep-phrase, in a private
 # file outside the repo (NORA_PII_KEEP_PHRASES).
-PROJECT_IDENTITY = frozenset({"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"})
+# The bare org stem is derived, not quoted: the scrub map rewrites a quoted
+# bare handle, and this set must survive the history rewrite unchanged.
+PROJECT_IDENTITY = frozenset({"mikeng-io", "mikeng-io".removesuffix("-io"), "mikeng.io", "iam@mikeng.io"})
 PROJECT_EMAIL_DOMAINS = frozenset({"mikeng.io"})
 
 ACK_TRAILER = "PII-Ack"

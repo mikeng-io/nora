@@ -143,7 +143,8 @@ def test_denylist_cjk_is_a_substring_match():
     assert "denylist:text" in _rules(f"佢叫{CJK}呀\n")
 
 
-PROJECT_TOKENS = {"mikeng-io", "pinegrove", "mikeng.io", "iam@mikeng.io"}
+_ORG = "mikeng-io"
+PROJECT_TOKENS = {_ORG, _ORG.removesuffix("-io"), "mikeng.io", "iam@mikeng.io"}
 
 
 def test_project_identity_is_the_org_and_the_domain_only():
@@ -159,7 +160,12 @@ def test_project_identity_is_the_org_and_the_domain_only():
 
 def test_project_identity_is_never_denied_and_a_personal_name_always_is():
     d = P.parse_denylist(
-        f"text\tmilesng-io\ntext\tmilesng_io\ntext\tmilesng\ntext\tiam@mikeng.io\ntext\t{NAME}\n",
+        "".join(
+            f"text\t{v}\n"
+            for v in (
+                _ORG, _ORG.replace("-", "_"), _ORG.removesuffix("-io"), "iam@mikeng.io", NAME
+            )
+        ),
         "t",
     )
     assert d.count == 1
