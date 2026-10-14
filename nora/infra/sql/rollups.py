@@ -53,12 +53,14 @@ from nora.domain.rollup import (
     SendFact,
     StaySpan,
     Tie,
+    episode_key,
     lineage_json,
     resolve_by_overlap,
     room_key,
     stay_from_json,
     unquoted_follows,
 )
+from nora.infra.sql import memory_index
 from nora.infra.sql.mobility import current_build_id
 from nora.infra.sql.schema import (
     MESSAGE_EDIT,
@@ -119,8 +121,11 @@ class UnitRooms:
 
 
 class SqlRollupStore:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+        """`metrics` is injected, never imported (`SqlMobilityStore`'s
+        reason); it counts the memory index's projections."""
         self._engine = engine
+        self._metrics = metrics
 
     # -- builds --------------------------------------------------------------
 
@@ -153,7 +158,9 @@ class SqlRollupStore:
 
     async def switch_build(self, *, build_id: int) -> None:
         """Make `build_id` current and supersede the build that was, in one
-        transaction. The old build's rows stay."""
+        transaction. The old build's rows stay; the memory index's episodes
+        move to the new build in the same transaction, so a reader of the
+        index never sees two builds' outings at once."""
         now = sa.func.clock_timestamp()
         async with self._engine.begin() as conn:
             await conn.execute(
@@ -165,6 +172,13 @@ class SqlRollupStore:
                 sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == build_id)
                 .values(status="current", switched_at=now)
             )
+            await memory_index.reproject_episodes(conn, metrics=self._metrics)
+
+    async def drain_index_queue(self, *, limit: int = 500) -> int:
+        """Re-project what the memory index's projections queued (the
+        analytics process drains once per tick). Returns the rows tried."""
+        async with self._engine.begin() as conn:
+            return await memory_index.drain_queue(conn, limit=limit, metrics=self._metrics)
 
     async def abandon_build(self, *, build_id: int) -> None:
         async with self._engine.begin() as conn:
@@ -509,6 +523,7 @@ class SqlRollupStore:
         key: an unchanged row is not written. Returns how many rows of each
         kind were inserted, updated or deleted."""
         changes: dict[str, int] = {}
+        touched: list[dict[str, Any]] = []
         async with self._engine.begin() as conn:
             for table, key, rows in (
                 (ROLLUP_COLOCATION, ("persons", "valid_from_ms"),
@@ -524,7 +539,14 @@ class SqlRollupStore:
             ):
                 changes[table.name] = await _diff_apply(
                     conn, table, build_id=build_id, unit=unit, key=key, rows=rows,
+                    touched=touched if table is ROLLUP_OUTING else None,
                 )
+            # Every outing this diff inserted, updated or deleted, by its key
+            # before and after: a key the build no longer holds is dropped.
+            await memory_index.project_episodes(
+                conn, build_id, "outing",
+                [_outing_key(r) for r in touched], metrics=self._metrics,
+            )
         return changes
 
     async def rows(self, *, table: sa.Table, build_id: int) -> list[dict[str, Any]]:
@@ -662,10 +684,19 @@ def _key_of(row: dict[str, Any], key: Sequence[str]) -> tuple[Any, ...]:
     return tuple(tuple(row[k]) if isinstance(row[k], list) else row[k] for k in key)
 
 
+def _outing_key(row: dict[str, Any]) -> str:
+    """An outing row's memory-index key: its citation, `unit|persons` and its
+    interval (`rollup_read`'s subject for it)."""
+    subject = f"{row['unit']}|{','.join(row['persons'])}"
+    return episode_key(subject, row["valid_from_ms"], row["valid_to_ms"])
+
+
 async def _diff_apply(
     conn: Any, table: sa.Table, *, build_id: int, unit: str, key: Sequence[str],
-    rows: Sequence[dict[str, Any]],
+    rows: Sequence[dict[str, Any]], touched: list[dict[str, Any]] | None = None,
 ) -> int:
+    """`touched`, when given, collects every row the diff changed, as it was
+    and as it is now."""
     columns = list(rows[0]) if rows else []
     stored = {
         _key_of(dict(r), key): dict(r)
@@ -679,6 +710,8 @@ async def _diff_apply(
     if doomed:
         await conn.execute(sa.delete(table).where(table.c.id.in_(doomed)))
         changed += len(doomed)
+        if touched is not None:
+            touched += [stored[k] for k in stored if k not in wanted]
     for k, row in wanted.items():
         prior = stored.get(k)
         if prior is None:
@@ -689,6 +722,12 @@ async def _diff_apply(
                 sa.update(table).where(table.c.id == prior["id"]).values(**row)
             )
             changed += 1
+            if touched is not None:
+                touched.append(prior)
+        else:
+            continue
+        if touched is not None:
+            touched.append(row)
     return changed
 
 

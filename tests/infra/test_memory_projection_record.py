@@ -344,3 +344,67 @@ async def test_a_failed_drop_of_any_size_queues_every_id(engine, monkeypatch):
             .where(MEMORY_PROJECTION_QUEUE.c.kind == "message")
         )).scalar_one()
     assert held == 20_000
+
+
+async def _drain(engine: Any, metrics: Any = None) -> int:
+    async with engine.begin() as conn:
+        return await memory_index.drain_queue(conn, metrics=metrics)
+
+
+async def test_a_drain_reprojects_what_was_queued_and_is_idempotent(engine, monkeypatch):
+    """60 S3: the analytics run drains the queue once per tick. A drain that
+    lands clears the row; one that fails again counts an attempt and keeps it;
+    a second drain over an empty queue does nothing."""
+    def _broken(conn: Any, source_id: str) -> Any:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message(), person_id="member-a")
+    assert await _drain(engine) == 1
+    assert await _queue_rows(engine) == [("message", str(mid), 2, "RuntimeError")]
+
+    monkeypatch.undo()
+    metrics = Metrics()
+    assert await _drain(engine, metrics) == 1
+    assert await _queue_rows(engine) == []
+    assert ("message", str(mid)) in await _nodes(engine)
+    assert metrics.get("nora_memory_projection_total", kind="message", outcome="ok") == 1
+    assert await _drain(engine) == 0
+
+
+async def test_a_drained_episode_the_current_build_no_longer_holds_is_dropped(engine):
+    """A queued outing whose key no current build holds (here there is no
+    build at all) leaves the index, its own edges with it."""
+    key = "friends|a,b|2026-09-21T19:00:00+08:00/2026-09-21T22:00:00+08:00"
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_NODE).values(
+            kind="outing", source_id=key, unit="friends", persons=["a", "b"], text="outing",
+        ))
+        await conn.execute(sa.insert(MEMORY_EDGE).values(
+            src_kind="outing", src_id=key, rel="about", dst_kind="person", dst_id="a",
+            provenance="rollup_outing.persons",
+        ))
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+            kind="outing", source_id=key, last_error="RuntimeError",
+        ))
+    assert await _drain(engine) == 1
+    assert ("outing", key) not in await _nodes(engine)
+    assert await _edges(engine) == set()
+    assert await _queue_rows(engine) == []
+
+
+def test_a_cited_rollup_key_of_an_episode_kind_is_a_cites_edge() -> None:
+    """S3: `rollup(outing|...)` points at the outing's key, as cited; a kind
+    with no node (a daybook) is skipped, a message id stays a message."""
+    key = "friends|a,b|2026-09-21T19:00:00+08:00/2026-09-21T22:00:00+08:00"
+    got = memory_index._cites(
+        "memo", "m1",
+        ["12", f"rollup(outing|{key})", "rollup(stay|a|2026-09-21T19:00:00+08:00/"
+         "2026-09-21T20:00:00+08:00)", "rollup(daybook|friends|a|x/y)", "response:4"],
+        "memo_revision.citations",
+    )
+    assert [(e[3], e[4]) for e in got] == [
+        ("message", "12"), ("outing", key),
+        ("stay", "a|2026-09-21T19:00:00+08:00/2026-09-21T20:00:00+08:00"),
+    ]
