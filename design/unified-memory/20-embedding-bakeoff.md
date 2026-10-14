@@ -1,4 +1,6 @@
-# Choosing the embedder: a bake-off on Nora's own corpus
+# Choosing the retrieval stack: a bake-off on Nora's own corpus
+
+Lexical, dense, fused and reranked arms, measured in that order.
 
 Status: **plan**, 2026-10-14. Nothing has been run. This node fixes what is
 compared, on what, and what counts as a pass before any model is downloaded.
@@ -62,11 +64,38 @@ goes into a fixture (conversational-recall/30).
 Each query has independently labelled relevant items, written before any model
 runs.
 
+## The arms: lexical, dense, fused, reranked
+
+Operator, 2026-10-14: the comparison is the whole retrieval stack, not the
+embedder alone. A BM25 plus embedding hybrid is measured, and its result
+decides whether a reranker is needed. Four stages, each run only if the
+previous one leaves a gap:
+
+| stage | arms | question it answers |
+|---|---|---|
+| 1. lexical | `pg_trgm` `word_similarity` (live, measured on Cantonese in 24); BM25 | does BM25 beat trigram on this corpus? |
+| 2. dense | bge-m3, EmbeddingGemma 2, WeMM-2B | which embedder, at which dimension? |
+| 3. fused | best lexical + each dense arm, by reciprocal rank fusion | does hybrid beat either channel alone, per slice? |
+| 4. reranked | the best fused arm, then a cross-encoder over its top 20–50 (bge-reranker-v2-m3 for text; Qwen3-VL-Reranker if media is in play) | does reranking fix an ordering failure the fused arm leaves? |
+
+**BM25 and Cantonese.** BM25 scores tokens, and a whitespace tokenizer sees a
+Cantonese sentence as one token. The BM25 arm therefore needs a CJK-aware
+tokenizer (a segmenter, or character bigrams), and the arm is that
+tokenizer plus BM25, measured as one. Postgres BM25 options (ParadeDB
+`pg_search`, VectorChord-bm25, Timescale `pg_textsearch`) are candidates
+whose availability on the deployed pgvector/pg18 image is checked before the
+arm runs. If none fits, the BM25 arm runs out of the database for
+measurement only.
+
+**When a reranker earns its place.** It adds a model call per search. It
+ships only if stage 4 lifts recall@5 or MRR@10 on a slice a live journey
+needs, at a latency the Cognition session (the main caller, [10](10-honcho-audit.md)
+§2) and the tag turn can absorb.
+
 ## The measure
 
-- **Retrieval:** recall@5 and MRR@10 per slice, per model, per dimension (768
-  and 256 for Gemma; 2048 and 256 for WeMM). Hybrid (trgm + vector) is scored
-  beside vector-only, because hybrid is what ships.
+- **Retrieval:** recall@5 and MRR@10 per slice, per arm, per dimension (768
+  and 256 for Gemma; 2048 and 256 for WeMM).
 - **Cost on norty:** warm latency per item and per batch, peak RSS, and
   whether it runs on the iGPU, measured with Nora running, not on an idle host.
 - **Fail-closed:** an embedding call that errors, returns NaN or returns the
@@ -84,5 +113,6 @@ doubles the index.
   rule stands: text readings of media are already searchable once the index
   exists, and visual vectors earn their place only where a journey shows the
   text path missing the evidence.
-- A reranker (Qwen3-VL-Reranker was listed in conversational-recall/10). Only
-  if the bake-off shows a ranking failure that a reranker could fix.
+- Graph expansion after the search ([25](25-memory-graph.md), if the operator
+  approves it) is measured in its own arm, after stage 3. Following edges from
+  the seeds is a different retrieval step from reranking them.

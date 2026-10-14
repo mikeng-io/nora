@@ -57,11 +57,16 @@ retrieval layer exists means they are searchable from their first row.
 | node | adds |
 |---|---|
 | [10](10-honcho-audit.md) | the measured inventory of what Honcho does for Nora today, every call site, how often each read runs live, and what replaces each |
-| [20](20-embedding-bakeoff.md) | the plan for choosing the embedder: EmbeddingGemma 2 (released 2026-10-06) and WeMM-Embedding against the incumbent bge-m3, on Nora's own mixed Cantonese and English corpus |
+| [15](15-memory-map.md) | every store as part of the one memory: notes, memos, media, presence episodes, social items, with what each remembers and how it is indexed and corrected |
+| [20](20-embedding-bakeoff.md) | the retrieval-stack bake-off: trigram vs BM25, bge-m3 vs EmbeddingGemma 2 (released 2026-10-06) vs WeMM-Embedding, fused, then reranked, on Nora's own mixed Cantonese and English corpus |
+| [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
+| [30](30-identity-and-character.md) | Identity as its own tier beside Character, for actors (human, Nora, another agent) and collectives (room, unit), with "remember this" and "that's wrong" |
+| [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
 
 ## The proposed shape, in three parts
 
-**1. One derived index, one verb.** A projection over every store: messages,
+**1. One index and graph, one verb** (detailed in [25](25-memory-graph.md),
+which supersedes this paragraph's flat-index framing). A projection over every store: messages,
 notes, memos, events, media readings (and media vectors, if the bake-off
 justifies them), Standing, Character, rollup episodes, presence episodes and
 social items once step 5 writes them. One row per item: kind, owner store and
@@ -77,11 +82,11 @@ the boundary"). Every result carries its kind, its age and a handle to its
 source. A judgement about *when* needs a time on its input, and an index row
 without one is a defect.
 
-**2. Conclusions for any subject, in Nora's tables.** Honcho's three reads in
-the prompt (the peer card, the tagger's representation, `peer_history`) and its
-one write (`remember` → `conclude`) are replaced by Nora's own tiers:
-Character for the account of a person, a room, the unit or Nora; Register for
-a person's told claims. What Honcho holds that no tier holds yet is measured in
+**2. Conclusions for any subject, in Nora's tables.** Honcho's two prefilled
+reads (the peer card, and the tagger's representation, rendered as
+`peer_history`) and its one write (`remember` → `conclude`) are replaced by
+Nora's own tiers: Identity for who an entity is ([30](30-identity-and-character.md)),
+Character for what it is like, Register for the unit's affairs. What Honcho holds that no tier holds yet is measured in
 [10](10-honcho-audit.md) before anything is cut.
 
 **3. The Dreamer's modes, made complete.** The Cognition session already

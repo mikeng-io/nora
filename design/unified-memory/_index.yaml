@@ -2,13 +2,15 @@
 type: design_index
 title: "Unified memory — one memory of her own, searched in one way"
 description: >
-  Retire Honcho and give Nora one memory system: a derived index over every
-  store behind one search verb, conclusions about any subject in Nora's own
-  tiers, and the Dreamer's reasoning modes made complete (abduction with a
-  prediction that can refute it). Records the measured Honcho audit (call
-  sites, live call volume, what Honcho holds) and the plan for an embedder
-  bake-off between bge-m3, EmbeddingGemma 2 and WeMM-Embedding on Nora's own
-  corpus. Nothing is built.
+  Retire Honcho and give Nora one memory system: every store stays its own
+  table, and a memory graph (one node per item, a closed set of edge
+  relations, citations written with their entries) indexes and connects them
+  behind one retrieval service (scope, hybrid seed, graph expansion, optional
+  rerank). Identity becomes its own tier beside Character, for actors (humans,
+  Nora, other agents) and collectives (rooms, units). Records the measured
+  Honcho audit, the memory map, a retrieval-stack bake-off plan (trigram vs
+  BM25; bge-m3, EmbeddingGemma 2, WeMM-Embedding; fusion; reranker) and
+  October 2026 prior art. Nothing is built.
 status: proposed
 governance: operator-directed
 timestamp: '2026-10-14'
@@ -20,7 +22,11 @@ origin: >
 members:
   - 00-intent.md
   - 10-honcho-audit.md
+  - 15-memory-map.md
   - 20-embedding-bakeoff.md
+  - 25-memory-graph.md
+  - 30-identity-and-character.md
+  - 40-prior-art.md
 edges:
   - {src: 00-intent, dst: ../cognition-loop/05-data-model, rel: depends_on, provenance: asserted}
   - {src: 00-intent, dst: ../cognition-loop/10-tiers, rel: depends_on, provenance: asserted}
@@ -30,4 +36,11 @@ edges:
   - {src: 10-honcho-audit, dst: 00-intent, rel: depends_on, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../dreamer-agent-loop/24-embedding-seam, rel: extends, provenance: asserted}
   - {src: 20-embedding-bakeoff, dst: ../conversational-recall/10-findings, rel: depends_on, provenance: asserted}
+  - {src: 15-memory-map, dst: ../cognition-loop/05-data-model, rel: extends, provenance: asserted}
+  - {src: 25-memory-graph, dst: 15-memory-map, rel: depends_on, provenance: asserted}
+  - {src: 25-memory-graph, dst: 20-embedding-bakeoff, rel: depends_on, provenance: asserted}
+  - {src: 25-memory-graph, dst: ../context-plan/15-what-the-composer-decides, rel: follows, provenance: asserted}
+  - {src: 30-identity-and-character, dst: ../cognition-loop/12-schemas, rel: extends, provenance: asserted}
+  - {src: 30-identity-and-character, dst: ../cognition-loop/50-character-and-standing, rel: extends, provenance: asserted}
+  - {src: 40-prior-art, dst: ../cognition-loop/80-prior-art, rel: extends, provenance: asserted}
 ---
