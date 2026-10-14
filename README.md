@@ -30,6 +30,12 @@ kept as history. Her releases are tagged `V1`, `V2`, `V3`…, one
 that mean something specific here), then `ARCHITECTURE.md`. Everything else
 is detail those three point at.
 
+**Issue and PR numbers.** This repository's history was rewritten on
+2026-10-14 to remove personal data, and the repository was recreated. A
+`#123` in a commit message, a document or a release note written before that
+date refers to an issue or pull request of the retired repository, not to the
+item with that number here.
+
 ## Prerequisites
 
 These must already be running on the host:
