@@ -28,14 +28,21 @@ This bundle comes before two later phases he named: social engagement
 and recommendations. Both write new stores, and building them after the
 retrieval layer exists means they are searchable from their first row.
 
-## What is already decided, and this bundle does not reopen
+## What this bundle builds on, and what it reopens
 
 - **The data model** is [cognition-loop/05](../cognition-loop/05-data-model.md)
   (DEC-249): Authored → Record → Rollup → Notebook → Views, with Memory
-  (Honcho) *beside* the flow. This bundle's job is to remove "beside": what
-  Honcho does moves into the flow or is dropped.
+  (Honcho) *beside* the flow. **This bundle proposes amending DEC-249**, and
+  says so rather than calling it a reading: §1 fixes the Notebook at four
+  tiers, and §2 rules that "per-person facts live in Memory". With Memory
+  gone, per-person facts need a lawful home, and [30](30-identity-and-character.md)
+  proposes a fifth tier, Identity. Rules 3 (one writer per tier) and 4
+  (speaking turns only read) are kept, not reopened.
 - **The reasoning modes** are [cognition-loop/10](../cognition-loop/10-tiers.md)
-  §4: `computed`, `told`, `deduced`, `induced`, **`abduced`** and `said`.
+  §4: `computed`, `told`, `deduced`, `induced`, **`abduced`** and `said`
+  (whether they stay as stored detail is cognition-loop/05 §10 Q2, still
+  open; this bundle assumes they do, and node 30 amends their "allowed in"
+  column for Identity).
   Abduction already exists as a mode, and its rule is already the right one:
   a value resting only on abduction "goes out as a question", and is never
   upgraded by assent. The operator's three reasoning layers are this table,
@@ -72,7 +79,9 @@ justifies them), Standing, Character, rollup episodes, presence episodes and
 social items once step 5 writes them. One row per item: kind, owner store and
 row id, subject, scope (workspace, unit, room), the item's own time, the model
 and version that embedded it. It is rebuilt from the stores, never written
-directly, so changing the embedder is a rebuild and not a migration. Search is
+directly. Changing the embedder re-embeds every row; if the new model's
+dimension differs from 1024, it is also a migration, because the `embedding`
+table holds one vector column per dimension (`v1024`, migration 0044). Search is
 hybrid: the existing `pg_trgm` lexical channel (measured on Cantonese and
 English, [dreamer-agent-loop/24](../dreamer-agent-loop/24-embedding-seam.md))
 plus vectors. Names, handles and game titles match on words, and meaning
@@ -107,8 +116,13 @@ writes with a mode. Two things are open:
 
 ## Sequence
 
+0. **The journeys on existing tools first**, conversational-recall's own
+   first step ([conversational-recall/20](../conversational-recall/20-orchestration.md)
+   "Smallest viable choice"): its three journeys, with better assembly and no
+   new index. If they pass, steps 2–3 wait.
 1. **Audit** ([10](10-honcho-audit.md)): what Honcho supplies that no tier
-   supplies. Done for code and call volume; the prompt-contribution read is open.
+   supplies. Done for code and call volume; whether the prefilled blocks
+   change replies is open.
 2. **Bake-off** ([20](20-embedding-bakeoff.md)): choose the embedder on Nora's
    corpus.
 3. **Index and the one verb**, over the stores that exist, with the

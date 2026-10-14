@@ -3,6 +3,14 @@
 Status: **proposed**, 2026-10-14. The tier question in §2 and the questions in
 §8 are the operator's to rule on.
 
+**This node proposes amending DEC-249.** [cognition-loop/05](../cognition-loop/05-data-model.md)
+§1 fixes the Notebook at four tiers, and §2 rules that "per-person facts live
+in Memory" (Honcho) and "the Notebook stores no statement-level provenance".
+With Honcho retired, per-person facts need a home. This node puts them in a
+fifth tier, Identity, which is a change to that ruling, not a reading of it.
+It needs the operator's ruling and its own decision row when it lands
+(nora-decision).
+
 ## What the operator asked
 
 Operator, 2026-10-14: a proper schema across two audiences: **actors** (a
@@ -32,7 +40,7 @@ suggests but does not carry, with no mode saying so.
 | doctrine `identity` | who Nora is | the operator | authored; correct as it is |
 | `<self>` | her Character · Nora account (DEC-292) | the Character adaptor | what she is like, not who she is |
 
-Nothing holds, with a citation, "Alex is Sam's sister", "call me Kit, not
+Nothing holds, with a citation, "Rin is Sam's sister", "call me Kit, not
 Katherine", "Kit is vegetarian since August", "this room is for the
 Tuesday game night", or "the bot in this room is X, run by Y".
 
@@ -49,7 +57,17 @@ differ in every property a tier is cut by:
 | comes from | mostly **listening**: what was authored or told | mostly **watching**: what is done over many instances |
 | reasoning modes | `told`, `deduced` (from authored and told lines) | `induced`; `abduced` only if §5 allows it |
 | changes | rarely, and by a new statement | by drift, and lines decay without re-evidence |
-| written by | the tag path on a told statement, and the Character adaptor for deductions | the Character adaptor only |
+| written by | the Character adaptor, its sole writer (DEC-249 rule 3: one writer per tier) | the Character adaptor |
+
+One adaptor writing two tiers is the existing pattern: Cognition writes both
+Register and Standing. **The tag turn never writes Identity** (DEC-249 rule 4:
+speaking turns only read Views, and change the Notebook by raising a
+stimulus); see §7.
+
+Identity also needs `told` and `deduced`, which cognition-loop/10 §4 allows
+only in Register and Standing. Its "allowed in" column is amended by this
+node. Whether the six modes stay as stored detail is itself open
+(cognition-loop/05 §10 Q2); this node assumes they do.
 
 **Recommendation:** Identity is the Notebook's fifth tier. The alternative
 is Identity sections inside a Character account, which mixes two
@@ -70,7 +88,7 @@ citations and its mode.
 | `Names` | names, preferred name, nicknames and who uses them | authored, told |
 | `Accounts` | platform identities | authored (`identity.toml`) only, rendered, never written by a model |
 | `Role` | operator, member, guest; for an agent, who runs it and what it is for | authored, told |
-| `Relationships` | to other actors ("Alex's sister") | told, deduced |
+| `Relationships` | to other actors ("Rin's sister") | told, deduced |
 | `Attributes` | stable facts: where they live, work, diet, languages | told |
 | `Instructions` | how they want to be treated ("don't call me Katherine") | **told by the subject only, never inferred** (Honcho 3.3's rule) |
 
@@ -78,13 +96,14 @@ citations and its mode.
 
 | section | holds | source |
 |---|---|---|
-| `Names` | the room's name, nicknames, how they refer to themselves | told |
 | `Purpose` | what it is for | authored, told |
-| `Origin` | how and when it started | told |
-| `Members` | who is in it and their role here | authored + Record (the roster), rendered |
 | `Norms` | rules someone **stated** ("no work talk here") | told |
 
-How a room *actually* behaves stays in its Culture. A stated norm in Identity
+Two things a collective's identity might hold are already answered elsewhere,
+and stay there so no question has two homes: its names and their origins are
+Culture's `Names and where they came from` section (cognition-loop/12 §4), and
+its members are the roster, already rendered as the `room_members` block. How
+a room *actually* behaves stays in its Culture. A stated norm in Identity
 and an observed practice in Culture may disagree, and the disagreement is
 itself worth seeing.
 
@@ -113,7 +132,8 @@ told with.
 
 ## 5. Character, with the modes made explicit
 
-The sections stay. Two changes:
+Two proposed changes to Character's schema (cognition-loop/12 §4, DEC-290),
+both the operator's to rule on (§8):
 
 - **`Unsure` becomes explicit modes.** Each line carries `induced` (with the
   Rollup aggregate or the instances it rests on) or, if the operator allows
@@ -131,16 +151,18 @@ about it. It is never evidence about the person who runs it.
 
 ## 7. "Remember this" and "that's wrong"
 
-**Remember.** A told statement is written on the tag path, with the message as
-its citation, to the tier its question names:
+**Remember.** The tag turn writes nothing to the Notebook (DEC-249 rule 4).
+`remember` records a Record item marking the message as a statement to keep,
+and raises a stimulus. That wakes the tier's own writer, which writes the
+entry citing the message. The tier is the one the statement's question names:
 
-| said | goes to |
-|---|---|
-| who someone is ("I'm vegetarian now", "call me Kit") | Identity, `told` |
-| a settled fact of the unit ("our usual place is X") | Register · memo |
-| something open or dated ("Japan in March") | Register · note or event |
+| said | goes to | written by |
+|---|---|---|
+| who someone is ("I'm vegetarian now", "call me Kit") | Identity, `told` | the Character adaptor |
+| a settled fact of the unit ("our usual place is X") | Register · memo | Cognition |
+| something open or dated ("Japan in March") | Register · note or event | Cognition |
 
-`remember` (today a Honcho `conclude`) becomes the Identity write.
+`remember` (today a Honcho `conclude`) becomes that Record item and stimulus.
 
 **Correct.** Nothing is overwritten:
 
@@ -148,8 +170,9 @@ its citation, to the tier its question names:
    itself), and the disputed line stops rendering at once.
 2. The writer's next session re-evidences the line or removes it
    (cognition-loop/50 §4).
-3. Everything whose `cites` edges reach it is marked `unsupported` and goes
-   back for re-derivation (the retraction cascade, [25](25-memory-graph.md) §1).
+3. Everything whose citations reach it is marked `unsupported` and goes
+   back for re-derivation (the retraction cascade, cognition-loop/80 §4
+   item 1; the citations live with the entries, [25](25-memory-graph.md) §1).
 4. The revision chain keeps what was believed and when it changed.
 
 **Only the subject may dispute a line about themselves** (cognition-loop/50
@@ -165,11 +188,15 @@ built**. They are this bundle's build, not new design.
 
 ## 8. For the operator
 
+0. The DEC-249 amendment above: per-person facts move from Memory into the
+   Notebook. Without it, Identity has no lawful home once Honcho goes.
 1. Identity as a fifth Notebook tier (recommended), or sections inside
    Character.
 2. Abduced lines in Character as marked hypotheses, or abduction kept to
    Register and Standing.
 3. Does the operator override "only the subject may dispute"?
+3a. `Unsure` replaced by explicit per-line modes (§5): a Character schema
+   change.
 4. Visibility of a told Identity line: today's lineage rule (its origin room,
    then the person's rooms in the unit, cognition-loop/50 §5). The prior-art
    review found one person's disclosure surfacing in another's session to be

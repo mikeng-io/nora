@@ -26,24 +26,31 @@ to find it (its text for matching, its vector, its time, its lineage). It
 never holds the item's truth; a reader follows the pointer to the current head.
 
 **An edge** is `(src_kind, src_id, rel, dst_kind, dst_id, provenance,
-created_at)`. The graph has two kinds of content, and they are kept apart
-because they fail differently:
+created_at)`.
 
-| content | examples | written by | if lost |
-|---|---|---|---|
-| **index** | node text, vectors, `authored_by`, `in_room`, `during` | code, derived from the stores' columns | rebuilt from the stores; nothing is lost |
-| **asserted relations** | `cites` (an entry and the Record rows it rests on), `supersedes`, `disputes`, `depicts` (a face label) | the owning store's write verb, **in the same transaction as the entry** | not rebuildable; they are part of the truth |
+**The whole graph is a projection and can be rebuilt.** Every edge is read
+from something an owning store already holds, so the graph is never an owner
+of truth (conversational-recall/20):
 
-`cites` is the citation-edge table cognition-loop/80 §4.1 already designed for
-the retraction cascade, made general. Without it a correction cannot find what
-rested on the corrected row.
+| edges | where the truth lives | projected by |
+|---|---|---|
+| `authored_by`, `in_room`, `attached_to`, `shared_by`, `during`, `mentions` | the stores' columns (a message's author and room, media in `messages.media_json`, an episode's interval) | code, from the columns |
+| `cites`, `about`, `supersedes` | the Notebook entry's own citations and revision chain (cognition-loop/05 §3: "code resolves them and writes the edges"), stored with the entry | code, from the entry |
+| `disputes`, `depicts` | a Record item (`character_dispute`, a face label) | code, from the Record |
+
+The citations the retraction cascade walks (cognition-loop/80 §4 item 1) are
+the Notebook's, written in the entry's own transaction. The graph projects
+them for retrieval; the cascade reads the Notebook, not the graph. A lost graph
+is rebuilt from the stores, and nothing is lost. The projection is updated in
+the same transaction as the write where it can be, so a search does not see a
+withdrawn item, but correctness never depends on it.
 
 ## 2. The relation vocabulary is closed
 
 A new relation is a schema change, not something a model invents. The starting
 set, each with its writer:
 
-| rel | from → to | writer |
+| rel | from → to | source of truth |
 |---|---|---|
 | `authored_by` | message, social item → person | ingestion |
 | `in_room` | message, link, entry → room | ingestion, write verb |
@@ -53,12 +60,12 @@ set, each with its writer:
 | `about` | entry → entity (person, room, unit, Nora) | write verb |
 | `cites` | entry → Record row or Rollup key | write verb |
 | `supersedes` | entry → entry | write verb |
-| `disputes` | dispute item → entry | tag path (`character_dispute`) |
+| `disputes` | dispute item → entry | projected from the `character_dispute` Record item |
 | `depicts` | media → person | face label (step 6) |
 | `mentions` | message → person, place | ingestion, from resolved handles only |
 
 **What is refused** (cognition-loop/80): a model-extracted triple such as
-"Alex –likes→ roguelikes". That is a Character line with its citations, not an
+"Rin –likes→ roguelikes". That is a Character line with its citations, not an
 edge. A memory graph records where things came from and how they are tied; a
 knowledge graph records claims a model pulled out of text, with nothing
 behind them. Mem0 removed graph memory from its open-source release, and the
@@ -71,11 +78,13 @@ Two tables, `memory_node` and `memory_edge`, beside the stores, in the same
 database. Walking edges is a `WITH RECURSIVE` query. pgvector 0.8.6 and
 pg_trgm 1.6 are already installed in Nora's database (read on norty
 2026-10-14). The unused `embedding` table and its HNSW index are where the
-vectors go.
+vectors go; a winning embedder whose dimension is not 1024 adds a column there
+by migration.
 
-**Why not Neo4j or FalkorDB.** A correction must withdraw the entry, its
-edges and its index rows together. In a second database those can disagree,
-and the retraction cascade becomes eventually consistent. The graph is small
+**Why not Neo4j or FalkorDB.** A correction should withdraw the entry and
+its projected edges and index rows together, so a search never returns a
+withdrawn item. In a second database those can disagree,
+and a search can return a withdrawn item until they converge. The graph is small
 (hundreds of thousands of nodes), and the reads walk one or two hops.
 
 **Apache AGE** (Cypher inside Postgres; a PG18 build exists) keeps the one
@@ -101,12 +110,14 @@ prompt, the Cognition session, the portal.
    search.
 3. **Expand** one or two hops along edges, weighted by relation and age.
    Personalized PageRank from the seeds (HippoRAG) is the candidate for
-   ranking the expanded set, measured against plain hop decay.
+   ranking the expanded set, measured against plain hop decay on recall@10 of
+   labelled evidence over the journey slices ([20](20-embedding-bakeoff.md));
+   PPR ships only if it wins by at least 0.05.
 4. **Rerank**, only if [20](20-embedding-bakeoff.md) stage 4 earns it.
 5. **Return** an evidence packet (conversational-recall/20): each item with
    its kind, age, source handle, reasoning mode for an entry, and **the path
    that reached it**. The path is the provenance: "this note, because it cites
-   a message in which the reel Alex shared was discussed".
+   a message in which the reel Rin shared was discussed".
 
 `ok`, `nothing_found` and `unavailable` stay distinct. An unreachable index is
 never "you never said that".
@@ -130,8 +141,8 @@ A separate query-planning agent before the turn would be a second model
 reading the same message (CMS: interpret once) and seconds of latency.
 conversational-recall/20 reached the same conclusion. **The reading that would
 reopen it:** traces showing Nora calling `ask_memory` right after a pre-fetch
-for what the pre-fetch should have held. That count is the measure of the
-pre-fetch's misses.
+for what the pre-fetch should have held, in more than 20% of at least 100
+tag turns. That rate is the measure of the pre-fetch's misses.
 
 ## 6. Worked example: an Instagram link someone shares
 

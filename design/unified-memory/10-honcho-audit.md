@@ -14,7 +14,7 @@ recorded here.
 |---|---|---|
 | `feed` | `nora/ingest/stages/memory_feed.py:74` | every inbound message body, under the sender's peer, before the engage gate |
 | `feed` | `nora/ingest/comprehension.py:487` | a media reading, once comprehension finishes |
-| `feed` | `nora/engagement/stages/feedback.py:52` | the tagging message (a byte-identical duplicate of the ingest feed, recorded in ADR 0001, DEC-36) |
+| `feed` | `nora/engagement/stages/feedback.py:52` | Nora's own sent replies, under the Nora peer, building her self card; the `<self_card>` block was retired by DEC-292, so this is a write with no reader |
 | `feed` | `nora/app/adoption.py:171`, `nora/app/memory_backfill.py:309` | a newly mapped person's earlier messages (DEC-16) |
 | `conclude` | `nora/agent/tools.py:13418` (`remember`) | a person's settled claim about themselves |
 | `conclude` | `nora/subject/knowledge.py:786` | eval seeding only |
@@ -92,28 +92,26 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 - **1,218 of 1,295 Honcho workspaces are `nora-eval*` leftovers**, one per
   eval draw, never deleted. That is a cleanup owed whether or not Honcho
   stays.
-- **The Honcho server has another tenant**, not Nora's, larger than Nora's
-  workspaces combined, starting three months before Nora's first message.
-  Retiring Honcho *for Nora* does not mean stopping the server, and nothing in
-  this bundle touches that tenant.
+- **Nora is not the Honcho server's only user.** Retiring Honcho *for Nora*
+  means removing her client and her workspaces, not stopping the server.
 
 ## 4. What replaces each, and what is not yet known
 
 | Honcho output | replaced by | open |
 |---|---|---|
 | `search_memory`, `search_memory_workspace` (Cognition's main use) | the derived index, scoped per room or unit, lexical + vector ([00](00-intent.md) part 1) | the bake-off ([20](20-embedding-bakeoff.md)); parity with Honcho's search measured on the Cognition session's own recorded queries |
-| `peer_card` block | the identity facet of a person ([30](30-identity-and-character.md)), plus Character · person | Character · person is **live** (DEC-290; 35 person rows on norty, the latest written 2026-10-14). It holds behaviour only; the card's identity, relationship and instruction lines have no home yet, which is node 30's subject |
-| tagger `representation` block (`peer_history`) | the index, queried with the message, filtered to the tagger | **present**: [context-plan/09](../context-plan/09-what-a-turn-carries.md) measured 200 live tag turns on 2026-10-12: `peer_history` in 197 (median 363 tokens), `peer_card` in 164 (262). Whether either **changes replies** is not measured; a replay with and without them answers it before cutting |
+| `peer_card` block | the Identity tier of a person (pending the operator's ruling, 30 §8) ([30](30-identity-and-character.md)), plus Character · person | Character · person is **live** (DEC-290; 35 person rows on norty, the latest written 2026-10-14). It holds behaviour only; the card's identity, relationship and instruction lines have no home yet, which is node 30's subject |
+| tagger `representation` block (`peer_history`) | the index, queried with the message, filtered to the tagger | **present**: [context-plan/09](../context-plan/09-what-a-turn-carries.md) measured 200 live tag turns on 2026-10-12: `peer_history` in 197 (median 363 tokens), `peer_card` in 164 (262). Whether either **changes replies** is not measured. The measure: replay ≥ 80 recorded tag turns with and without the two blocks (one variable per arm, as-recorded arm included), blind pairwise judgement; the blocks are cut if the with-arm is preferred in < 55% of pairs |
 | `about` | `character_read` for the person, plus the index | — |
 | `ask_memory` (Honcho `chat`) | `ask_memory` over the index, answered by Nora's own model call | the operator's single verb; [00](00-intent.md) |
 | `suggest_venue` preference question | the index: told preferences and induced Character lines | 1 call site |
-| `remember` → `conclude` | a `told` Register row about the person, citing the message | — |
+| `remember` → `conclude` | a Record item plus a stimulus; the Character adaptor writes the Identity line citing the message ([30](30-identity-and-character.md) §7) | depends on 30 §8's ruling |
 | `feed` (5 sites) | nothing: the Record already holds every message, and the index reads the Record | the media reading feed: the index reads `media_descriptions` directly |
 | 21,722 + 1,425 `explicit` conclusions | **not carried.** They have no citation to a Record row, so under rule 3 of cognition-loop/80 §6 ("memory is a hint, never a citation") they cannot ground a tier entry | operator: keep a read-only export, or drop |
 | `deductive` / `inductive` conclusions | dropped; cognition-loop/80 §6 step 2 already plans their exit from the prompt once Character ships | step 4 there ("measure before cutting") is this table's last column |
 
 **The order this forces.** Search can go first: it is the bulk of the use and
 has a clean replacement. The two prefilled blocks go last, after a person's
-identity facet exists beside their (already live) Character account, and after
+Identity tier exists beside their (already live) Character account, and after
 the blocks' live contribution is read. `feed` and
 `remember` go with them, because a write with no reader is not worth keeping.

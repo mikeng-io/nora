@@ -44,7 +44,8 @@ norty: Ryzen 7 PRO 6850U, 8 cores / 16 threads, Radeon 680M integrated
 graphics, ~27 GiB RAM shared with Nora and every other service (about 9 GiB
 available on 2026-10-14). conversational-recall/10 measured that Ollama runs
 **text** embeddings on the iGPU (4 captions in 0.41 s warm, against 2.68 s on
-CPU), and that image embedding worked only on CPU through a native
+CPU), and that image embedding was shown only on CPU (GPU image execution
+was not verified, which is not proof it is unsupported) through a native
 `llama-server`, at 3–5 s per bounded image. WeMM-9B does not fit. EmbeddingGemma 2's text
 encoder alone is 270M and can load without the vision and audio towers.
 
@@ -88,9 +89,10 @@ arm runs. If none fits, the BM25 arm runs out of the database for
 measurement only.
 
 **When a reranker earns its place.** It adds a model call per search. It
-ships only if stage 4 lifts recall@5 or MRR@10 on a slice a live journey
-needs, at a latency the Cognition session (the main caller, [10](10-honcho-audit.md)
-§2) and the tag turn can absorb.
+ships only if stage 4 lifts recall@5 or MRR@10 by at least 0.05 on a journey
+slice, at a p95 added latency on norty, with Nora running, of at most 300 ms
+on the tag turn's pre-fetch and 2 s in the Cognition session (the main caller,
+[10](10-honcho-audit.md) §2).
 
 ## The measure
 
@@ -101,9 +103,14 @@ needs, at a latency the Cognition session (the main caller, [10](10-honcho-audit
 - **Fail-closed:** an embedding call that errors, returns NaN or returns the
   wrong dimension is an ERROR for that item, never a miss and never a pass.
 
+**Slices and margins.** Each slice has at least 40 labelled queries. The
+**journey slices** are the three that map to conversational-recall's journeys:
+Cantonese and English text, names and titles, and text → image.
+
 **Pass:** a candidate replaces bge-m3 only if hybrid recall@5 on the
-Cantonese slice is no worse, and it wins at least one other slice that a live
-journey needs. A model that wins images but loses Cantonese text can only be a
+Cantonese slice is within 0.05 (absolute) of bge-m3's, and it beats bge-m3 by
+at least 0.10 recall@5 on another journey slice. Anything inside those
+margins is a tie, and a tie keeps the incumbent. A model that wins images but loses Cantonese text can only be a
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 

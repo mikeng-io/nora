@@ -16,7 +16,8 @@ does not need a new topology. It needs three changes to that one:
 
 1. **Nothing beside the flow.** What Honcho did moves into a layer or is
    dropped ([10](10-honcho-audit.md) §4).
-2. **An Identity facet** for every entity, beside Character
+2. **An Identity tier** for every entity, beside Character, pending the
+   operator's ruling and a DEC-249 amendment
    ([30](30-identity-and-character.md)). Character answers *what is it like*;
    Identity answers *who or what is it*, a question no tier answers today.
 3. **One index across the layers** ([00](00-intent.md) part 1), so a reader
@@ -26,7 +27,7 @@ does not need a new topology. It needs three changes to that one:
 
 | store | layer · tier | memory of | indexed as | how it is corrected |
 |---|---|---|---|---|
-| messages, edits, deletes, reactions | Record | what was said | one row per message, its own time | not edited: a delete withdraws it, and the retraction cascade (cognition-loop/80 §4.1) reaches everything derived from it |
+| messages, edits, deletes, reactions | Record | what was said | one row per message, its own time | not edited: a delete withdraws it, and the retraction cascade (cognition-loop/80 §4 item 1) reaches everything derived from it |
 | media bytes (`media_objects`) and their readings (`media_descriptions`) | Record | what was shown | the reading as text; a media vector only if [20](20-embedding-bakeoff.md) justifies it | a re-read replaces nothing; a new perception row is added |
 | stickers (`sticker_index`) | Record | what she can send | no: a send-side catalogue, not a memory of anyone | — |
 | external files | Record (the link only) | that a file was shared, and what was said about it | the link and its message | — (content is never kept, [external-files/00](../external-files/00-design.md)) |
