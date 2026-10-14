@@ -114,12 +114,38 @@ margins is a tie, and a tie keeps the incumbent. A model that wins images but lo
 second, media-only embedder, which is a decision for the operator because it
 doubles the index.
 
+## The target is one multimodal embedder (operator, 2026-10-15)
+
+EmbeddingGemma 2 and WeMM-2B are candidates **because** they embed images and
+video (Gemma 2 also audio) in the same space as text. The aim is one
+embedder for everything Nora keeps: a message, a photo with no caption, a
+reel, a voice note, found by one query. Embedding only media's text
+readings would waste the reason they were chosen.
+
+So the order changes:
+
+1. **The text → image slice is built first**, then text → video, then
+   text → audio. Step 0's photo journeys passed on stored readings alone
+   (unified-memory 00 «Sequence»), so nothing has yet shown a visual vector
+   finding what a reading misses. This slice is the measurement that would.
+2. **A multimodal candidate becomes the only embedder** if it holds the
+   Cantonese slice within 0.05 of bge-m3 and wins the text → image slice by
+   the pass margin above. Media then gets image and video vectors, embedded
+   from the stored bytes (media custody), alongside its reading.
+3. **If it wins media and loses Cantonese text**, two embedders mean two
+   vector columns and two seeds to fuse. That stays the operator's decision,
+   because it doubles the index.
+4. **If no multimodal candidate qualifies**, bge-m3 indexes text and media
+   readings, which is the floor and works from day one.
+
+**Cost on norty is part of the pass.** Image embedding was measured only on
+CPU, at 3–5 s per bounded image (conversational-recall/10). The backfill
+embeds every stored media object once, and the live path embeds each new
+one off the turn (the embedding worker, [25](25-memory-graph.md) §7). Both
+are measured with Nora running.
+
 ## Not decided here
 
-- Whether media gets vectors at all. conversational-recall's smallest-choice
-  rule stands: text readings of media are already searchable once the index
-  exists, and visual vectors earn their place only where a journey shows the
-  text path missing the evidence.
 - Graph expansion after the search ([25](25-memory-graph.md), if the operator
   approves it) is measured in its own arm, after stage 3. Following edges from
   the seeds is a different retrieval step from reranking them.
