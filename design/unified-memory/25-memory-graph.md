@@ -19,8 +19,8 @@ second owner of truth ([conversational-recall/20](../conversational-recall/20-or
 ## 1. Nodes, edges and the two kinds of content
 
 **A node** is one item in any store, addressed as `(kind, id)`: a message, a
-media object, a note, a memo, an event, a lesson, a Character or Identity
-section, a Standing section, a rollup episode, a social item, a link, a
+media object, a note, a memo, an event, a lesson, a Persona
+section ([35](35-persona.md)), a Standing section, a rollup episode, a social item, a link, a
 person, a room, the unit, Nora. A node row holds a pointer and what is needed
 to find it (its text for matching, its vector, its time, its lineage). It
 never holds the item's truth; a reader follows the pointer to the current head.
@@ -133,7 +133,7 @@ turns used. The graph allows a split that needs no decision model:
 
 | path | what | decided by |
 |---|---|---|
-| **push** | the fixed core: the speaker's Identity, the room's Culture, open notes, Standing (roughly today's blocks) | code, always |
+| **push** | the fixed core: the speaker's Persona, the room's Culture, open notes, Standing (roughly today's blocks) | code, always |
 | **pre-fetch** | the service run from the message's own seeds (speaker, room, referenced media and handles, the message text), rendered as one block under a token budget, through the one renderer (ADR 0012, ADR 0021) | code, from what the message names |
 | **pull** | `ask_memory`, when Nora wants more | Nora, who is already the agent |
 
@@ -172,3 +172,44 @@ Three constraints hold today:
   has a deadline.
 - **Cost.** An escalation is a fetch and a video read. The Cognition pass
   needs a per-pass budget for escalations.
+
+## 7. When each node and edge is written
+
+Ingestion stays what it is today: every store's own write path. Each one
+gains a single call, `project(kind, id)`, which upserts that row's node and
+its column-derived edges **in the same transaction** as the write. The only
+new moving part is the embedding worker.
+
+**What gets a node, and with what text:**
+
+| layer | item | searchable text | vector |
+|---|---|---|---|
+| Record | message | the body | yes |
+| Record | media object | its stored reading (description, video read) | yes, of the reading |
+| Record | link, social item | URL, caption, preview text | yes |
+| Rollup | outing, stay, trip | a rendered line: who, the place label, when | lexical only |
+| Rollup | rhythm, tie, play profile | no node: read by key (`rollup_read`, `where_been`) | no |
+| Notebook | note, memo, lesson | title and body | yes |
+| Notebook | Persona and Standing sections ([35](35-persona.md)) | the section text | yes |
+| entities | person, room, unit, Nora | names and handles | lexical only |
+
+**Not indexed:** raw presence fixes, authored doctrine and policy, external
+file content (only the link is kept, external-files/00), and Honcho.
+
+**When:**
+
+| moment | nodes | edges | written by |
+|---|---|---|---|
+| a message is ingested | message, its links | `authored_by`, `in_room`, `attached_to`, `shared_by`, `mentions` (resolved handles only) | ingestion, same transaction |
+| a media reading lands | the media node's text becomes the reading | `attached_to` | the media lane, same transaction as the reading |
+| a Rollup build becomes current | that build's episode nodes; the previous build's are removed | `during` (message, media → episode) | the Rollup builder, in the build's switch |
+| a Notebook entry or revision is written | the entry | `cites`, `about`, `supersedes` | the tier's one writer, same transaction (the citations are stored with the entry; the edges project them) |
+| a dispute is recorded | the dispute item | `disputes` | ingestion of the Record item |
+| an entry is withdrawn | node marked withdrawn | its edges removed | the writer, same transaction, so no search returns it |
+| after any of the above | vectors | — | the embedding worker, asynchronously; lexical search finds the node before its vector exists |
+| rebuild | all, from the stores | all | one command; also the first deployment's backfill ([35](35-persona.md) §4) |
+
+A node is never written for its own sake and an edge is never inferred from
+text by a model (§2). If a store's write path has no `project()` call, its rows
+are absent from search, which an architecture test catches by listing every
+indexed kind against the write paths that project it.

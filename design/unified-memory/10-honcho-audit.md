@@ -100,18 +100,38 @@ estimates were stale by three orders of magnitude, so these are `count(*)`.
 | Honcho output | replaced by | open |
 |---|---|---|
 | `search_memory`, `search_memory_workspace` (Cognition's main use) | the derived index, scoped per room or unit, lexical + vector ([00](00-intent.md) part 1) | the bake-off ([20](20-embedding-bakeoff.md)); parity with Honcho's search measured on the Cognition session's own recorded queries |
-| `peer_card` block | the Identity tier of a person (pending the operator's ruling, 30 §8) ([30](30-identity-and-character.md)), plus Character · person | Character · person is **live** (DEC-290; 35 person rows on norty, the latest written 2026-10-14). It holds behaviour only; the card's identity, relationship and instruction lines have no home yet, which is node 30's subject |
+| `peer_card` block | the person's Persona: its Identity part beside the (already live) Character part ([35](35-persona.md)) | Character · person is **live** (DEC-290; 35 person rows on norty, the latest written 2026-10-14). Persona's Identity part is not built |
 | tagger `representation` block (`peer_history`) | the index, queried with the message, filtered to the tagger | **present**: [context-plan/09](../context-plan/09-what-a-turn-carries.md) measured 200 live tag turns on 2026-10-12: `peer_history` in 197 (median 363 tokens), `peer_card` in 164 (262). Whether either **changes replies** is not measured. The measure: replay ≥ 80 recorded tag turns with and without the two blocks (one variable per arm, as-recorded arm included), blind pairwise judgement; the blocks are cut if the with-arm is preferred in < 55% of pairs |
 | `about` | `character_read` for the person, plus the index | — |
 | `ask_memory` (Honcho `chat`) | `ask_memory` over the index, answered by Nora's own model call | the operator's single verb; [00](00-intent.md) |
 | `suggest_venue` preference question | the index: told preferences and induced Character lines | 1 call site |
-| `remember` → `conclude` | a Record item plus a stimulus; the Character adaptor writes the Identity line citing the message ([30](30-identity-and-character.md) §7) | depends on 30 §8's ruling |
+| `remember` → `conclude` | a Record item plus a stimulus; the Persona adaptor writes the Identity line citing the message ([30](30-identity-and-character.md) §7, [35](35-persona.md)) | ruled 2026-10-15 (35) |
 | `feed` (5 sites) | nothing: the Record already holds every message, and the index reads the Record | the media reading feed: the index reads `media_descriptions` directly |
-| 21,722 + 1,425 `explicit` conclusions | **not carried.** They have no citation to a Record row, so under rule 3 of cognition-loop/80 §6 ("memory is a hint, never a citation") they cannot ground a tier entry | operator: keep a read-only export, or drop |
+| 21,722 + 1,425 `explicit` conclusions | **not carried.** They have no citation to a Record row, so under rule 3 of cognition-loop/80 §6 ("memory is a hint, never a citation") they cannot ground a tier entry | **dropped** (operator, 2026-10-15, [35](35-persona.md) §4) |
 | `deductive` / `inductive` conclusions | dropped; cognition-loop/80 §6 step 2 already plans their exit from the prompt once Character ships | step 4 there ("measure before cutting") is this table's last column |
 
 **The order this forces.** Search can go first: it is the bulk of the use and
 has a clean replacement. The two prefilled blocks go last, after a person's
-Identity tier exists beside their (already live) Character account, and after
+Persona has its Identity part beside the (already live) Character part, and after
 the blocks' live contribution is read. `feed` and
 `remember` go with them, because a write with no reader is not worth keeping.
+
+## 5. The rest of the client: every remaining use, mapped (2026-10-15)
+
+§4 maps what the model reads and writes. These are the uses §1 lists that §4
+did not, so that "Honcho out" (00 step 4) leaves nothing calling it:
+
+| use | site | after Honcho |
+|---|---|---|
+| `feed` of a newly mapped person's earlier messages (DEC-16) | `nora/app/adoption.py`, `nora/app/memory_backfill.py` | **deleted.** The Record already holds those messages, and the index projects them at ingestion ([25](25-memory-graph.md) §7). |
+| `feed` of Nora's own replies (no reader since DEC-292) | `nora/engagement/stages/feedback.py` | **deleted.** Her replies are Record rows and become index nodes like any message. |
+| the portal's memory page (`representation` + `peer_card`) | `nora/web/memory.py` | **re-pointed** to the caller's own Persona with the evidence behind each line (30 §7 «Seeing it»). The page stays user-scoped. |
+| `/status` Honcho health | `nora/web/status.py` | **replaced** by the index's own health: last projection, the embedding worker's backlog, unembedded node count. |
+| workspace routing (DEC-214) | `nora/app/memory_routing.py`, `WorkspaceRouter` | **deleted.** Scope is lineage over Nora's own unit and room columns ([25](25-memory-graph.md) §4 step 1); there is no external workspace to route to. `identity.toml`'s `[workspaces.*] honcho_workspace` binding goes with it. |
+| `carry-conclusions` | `nora/app/memory_carry.py` | **deleted.** It moved uncited conclusions between scopes, and those are dropped ([35](35-persona.md) §4). |
+| `detach-unit` (a unit leaving a workspace) | `nora/app/memory_detach.py` | **replaced, not dropped.** Its purpose, that a departed unit's speech stops shaping another unit's picture of a person, is now lineage: a Persona line and an index node carry their unit, and a read outside it never sees them. A unit leaving is a policy change, and the next index rebuild drops its rows from the other unit's scope. |
+| the per-call budget (`reserve`, `release`, `spent`, `at_ceiling`) | the memory client's guard | **deleted** with the client. Search becomes a local query; `ask_memory`'s model call is budgeted like any other tool. |
+| per-draw eval workspaces | `nora/subject/memory_workspace.py` | **deleted.** The eval sandbox is per-database already, and the index lives in that database. The 1,218 leftover `nora-eval*` workspaces on the Honcho server are deleted once. |
+| `conclude` in eval seeding | `nora/subject/knowledge.py` | **re-pointed** to seeding a Persona line. |
+
+With §4 and §5 together, every Honcho call site in `nora/` has a fate.

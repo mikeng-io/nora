@@ -1,7 +1,10 @@
 # Identity and character, for actors and collectives
 
-Status: **proposed**, 2026-10-14. The tier question in §2 and the questions in
-§8 are the operator's to rule on.
+Status: **proposed**, 2026-10-14. **Ruled 2026-10-15 in [35](35-persona.md):**
+identity, character and abduced hypotheses are one account, Persona, which
+widens the Character tier; there is no fifth tier. §2, §5 and the
+«only the subject may dispute» rule in §7 are superseded there; §3, §4, §6
+and the rest of §7 stand under Persona.
 
 **This node proposes amending DEC-249.** [cognition-loop/05](../cognition-loop/05-data-model.md)
 §1 fixes the Notebook at four tiers, and §2 rules that "per-person facts live
