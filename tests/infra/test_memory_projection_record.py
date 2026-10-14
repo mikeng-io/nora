@@ -261,3 +261,86 @@ async def test_a_failed_projection_queues_and_keeps_the_message(engine, monkeypa
     assert metrics.get(
         "nora_memory_projection_total", kind="message", outcome="ok",
     ) == 0
+
+
+async def _queue_rows(engine: Any) -> list[tuple[Any, ...]]:
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(
+            MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id,
+            MEMORY_PROJECTION_QUEUE.c.attempts, MEMORY_PROJECTION_QUEUE.c.last_error,
+        ))).all()
+    return [tuple(r) for r in rows]
+
+
+async def test_a_failure_inside_postgres_queues_and_the_transaction_survives(
+    engine, monkeypatch,
+):
+    """The failure a real projector meets: Postgres refuses a statement (here
+    a CHECK), which aborts the transaction unless the savepoint contains it.
+    The message still commits, the queue row is written after the refusal on
+    the same connection, and the store keeps working."""
+    async def _refused(conn: Any, source_id: str) -> None:
+        await conn.execute(sa.insert(MEMORY_NODE).values(
+            kind="not-a-kind", source_id=source_id, origin_room=_ROOM,
+        ))
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _refused)
+    metrics = Metrics()
+    store = SqlRecordStore(engine, metrics=metrics)
+
+    mid = await store.append(message=_message(), person_id="member-a")
+
+    async with engine.connect() as conn:
+        assert (await conn.execute(
+            sa.select(sa.func.count()).select_from(MESSAGES).where(MESSAGES.c.id == mid)
+        )).scalar_one() == 1, "the message committed"
+    assert await _queue_rows(engine) == [("message", str(mid), 1, "IntegrityError")]
+    assert metrics.get("nora_memory_projection_total", outcome="queued") == 1
+    assert ("message", str(mid)) not in await _nodes(engine)
+
+    monkeypatch.undo()
+    later = await store.append(message=_message(ts=2000), person_id="member-a")
+    assert ("message", str(later)) in await _nodes(engine), "the store still projects"
+
+
+async def test_a_projection_that_lands_clears_its_queue_row(engine, monkeypatch):
+    def _broken(conn: Any, source_id: str) -> Any:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message())
+    await store.set_person_id(row_id=mid, person_id="member-a")
+    assert await _queue_rows(engine) == [("message", str(mid), 2, "RuntimeError")], (
+        "a second failure of the same source counts an attempt, not a row"
+    )
+
+    monkeypatch.undo()
+    await store.set_person_id(row_id=mid, person_id="member-a")
+
+    assert await _queue_rows(engine) == []
+    assert ("message", str(mid)) in await _nodes(engine)
+
+
+async def test_a_failed_drop_of_any_size_queues_every_id(engine, monkeypatch):
+    """A retention prune drops every message past the window in one call. A
+    VALUES row per id would bind three parameters each and pass asyncpg's
+    32,767 at ~10,900 ids, losing the queue and leaving pruned text
+    searchable."""
+    async def _broken(conn: Any, kind: str, ids: list[str]) -> None:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setattr(memory_index, "_drop", _broken)
+    metrics = Metrics()
+    ids = [str(i) for i in range(1, 20_001)]
+    async with engine.begin() as conn:
+        await memory_index.drop(conn, "message", ids, metrics=metrics)
+
+    assert metrics.get("nora_memory_projection_total", outcome="queued") == 1
+    assert metrics.get("nora_memory_projection_total", outcome="lost") == 0
+    async with engine.connect() as conn:
+        held = (await conn.execute(
+            sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
+            .where(MEMORY_PROJECTION_QUEUE.c.kind == "message")
+        )).scalar_one()
+    assert held == 20_000

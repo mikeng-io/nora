@@ -44,11 +44,81 @@ _RAW = re.compile(
 _NOT_PROJECTED: dict[str, str] = {}
 
 
-def _table_of(node: ast.expr) -> str | None:
+_MEMORY_INDEX_MODULE = "nora.infra.sql.memory_index"
+
+
+def _table_of(node: ast.expr, aliases: dict[str, str]) -> str | None:
+    """A schema table named by `MESSAGES`, `schema.MESSAGES`, or a local
+    alias of either (`T = MESSAGES; sa.update(T)`)."""
     if isinstance(node, ast.Name):
-        table = getattr(schema, node.id, None)
-        return getattr(table, "name", None)
+        if node.id in aliases:
+            return aliases[node.id]
+        return getattr(getattr(schema, node.id, None), "name", None)
+    if isinstance(node, ast.Attribute):
+        return getattr(getattr(schema, node.attr, None), "name", None)
     return None
+
+
+def _aliases(scope: ast.AST, inherited: dict[str, str]) -> dict[str, str]:
+    """Simple `name = <table>` assignments in `scope` (not nested defs)."""
+    out = dict(inherited)
+    for node in _own_nodes(scope):
+        if (
+            isinstance(node, ast.Assign) and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            table = _table_of(node.value, out)
+            if table is not None:
+                out[node.targets[0].id] = table
+    return out
+
+
+def _own_nodes(scope: ast.AST) -> list[ast.AST]:
+    """Every node in `scope`, not descending into a nested def."""
+    out: list[ast.AST] = []
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _projector_names(tree: ast.Module) -> tuple[set[str], set[str]]:
+    """What, in this module, IS the projector: names bound to the
+    `memory_index` module, and names imported from it that are one of
+    `project` / `drop` / `reproject_media` (under any alias). A method called
+    `drop` on anything else is not a projection."""
+    modules: set[str] = set()
+    functions: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                if f"{node.module}.{alias.name}" == _MEMORY_INDEX_MODULE:
+                    modules.add(alias.asname or alias.name)
+                elif node.module == _MEMORY_INDEX_MODULE and alias.name in _PROJECTING_CALLS:
+                    functions.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == _MEMORY_INDEX_MODULE and alias.asname:
+                    modules.add(alias.asname)
+    return modules, functions
+
+
+def _is_projector_call(node: ast.AST, modules: set[str], functions: set[str]) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in functions
+    if isinstance(func, ast.Attribute) and func.attr in _PROJECTING_CALLS:
+        value = func.value
+        if isinstance(value, ast.Name):
+            return value.id in modules
+        # `nora.infra.sql.memory_index.project(...)`, fully qualified.
+        return ast.unparse(value) == _MEMORY_INDEX_MODULE
+    return False
 
 
 def _callee(call: ast.Call) -> str | None:
@@ -59,20 +129,21 @@ def _callee(call: ast.Call) -> str | None:
     return None
 
 
-def _written_tables(node: ast.AST) -> set[str]:
+def _written_tables(node: ast.AST, aliases: dict[str, str] | None = None) -> set[str]:
     """The tables one AST node writes, by every form the module docstring names."""
+    aliases = aliases or {}
     found: set[str] = set()
     if isinstance(node, ast.Call):
         name = _callee(node)
         if name in _WRITE_FUNCS and node.args:
-            table = _table_of(node.args[0])
+            table = _table_of(node.args[0], aliases)
             if table is not None:
                 found.add(table)
         if (
             name in {"insert", "update", "delete"} and not node.args
             and isinstance(node.func, ast.Attribute)
         ):
-            table = _table_of(node.func.value)
+            table = _table_of(node.func.value, aliases)
             if table is not None:
                 found.add(table)
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -81,33 +152,36 @@ def _written_tables(node: ast.AST) -> set[str]:
     return found
 
 
-def _calls_the_projector(function: ast.AST) -> bool:
-    return any(
-        isinstance(node, ast.Call) and _callee(node) in _PROJECTING_CALLS
-        for node in ast.walk(function)
-    )
+def _scan(tree: ast.Module) -> list[tuple[str, str, bool]]:
+    """Every write in one module: (enclosing function, table, projects?). The
+    enclosing function is the innermost `def`; `<module>` if none."""
+    modules, functions = _projector_names(tree)
+    out: list[tuple[str, str, bool]] = []
+
+    def visit(scope: ast.AST, name: str, inherited: dict[str, str]) -> None:
+        aliases = _aliases(scope, inherited)
+        projects = not isinstance(scope, ast.Module) and any(
+            _is_projector_call(n, modules, functions) for n in _own_nodes(scope)
+        )
+        for node in _own_nodes(scope):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(node, node.name, aliases)
+            for table in _written_tables(node, aliases):
+                out.append((name, table, projects))
+
+    visit(tree, "<module>", {})
+    return out
 
 
 def _writes() -> list[tuple[str, str, str, bool]]:
-    """Every write in `nora/`: (path, enclosing function, table, projects?).
-    The enclosing function is the innermost `def`; `<module>` if none."""
+    """Every write in `nora/`: (path, enclosing function, table, projects?)."""
     out: list[tuple[str, str, str, bool]] = []
     for path in sorted((ROOT / "nora").rglob("*.py")):
         if "migrations" in path.parts:
             continue
         rel = str(path.relative_to(ROOT))
         tree = ast.parse(path.read_text(encoding="utf-8"))
-
-        def visit(node: ast.AST, scope: str, function: ast.AST | None, rel: str = rel) -> None:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                scope, function = node.name, node
-            for table in _written_tables(node):
-                projects = function is not None and _calls_the_projector(function)
-                out.append((rel, scope, table, projects))
-            for child in ast.iter_child_nodes(node):
-                visit(child, scope, function)
-
-        visit(tree, "<module>", None)
+        out.extend((rel, scope, table, projects) for scope, table, projects in _scan(tree))
     return out
 
 
@@ -169,11 +243,47 @@ def test_each_write_form_is_recognised() -> None:
     one cannot pass on an empty result."""
     code = (
         "def f():\n"
+        "    T = MESSAGES\n"
         "    sa.insert(MESSAGES); pg_insert(MEDIA_OBJECTS); sa.update(MESSAGE_EDIT)\n"
         "    MESSAGES.delete(); x.update(NOPE)\n"
+        "    sa.update(schema.MESSAGES); sa.delete(T)\n"
         "    'UPDATE messages SET body = 1'; 'delete from \"media_objects\"'\n"
     )
-    found: set[str] = set()
-    for node in ast.walk(ast.parse(code)):
-        found |= _written_tables(node)
-    assert found == {"messages", "media_objects", "message_edit"}
+    assert {table for _, table, _ in _scan(ast.parse(code))} == {
+        "messages", "media_objects", "message_edit",
+    }
+    # The two shapes that used to escape the scan, each alone.
+    assert _scan(ast.parse("def f():\n    sa.update(schema.MESSAGES)\n")) == [
+        ("f", "messages", False),
+    ]
+    assert _scan(ast.parse("def f():\n    T = MESSAGES\n    sa.delete(T)\n")) == [
+        ("f", "messages", False),
+    ]
+
+
+def test_only_a_memory_index_call_counts_as_projecting() -> None:
+    """A method that merely shares a name (`self._cache.drop`) used to pass
+    for a projection. Only the `memory_index` module's own functions count,
+    however they are imported."""
+    def projects(code: str) -> bool:
+        return all(p for _, _, p in _scan(ast.parse(code)))
+
+    write = "    sa.update(MESSAGES)\n"
+    assert not projects("def f(self):\n" + write + "    self._cache.drop(1)\n")
+    assert not projects("def f():\n" + write + "    project(conn, 'message', 1)\n")
+    assert not projects(
+        "from other import memory_index\n"
+        "def f():\n" + write + "    memory_index.project(conn, 'message', 1)\n"
+    )
+    assert projects(
+        "from nora.infra.sql import memory_index\n"
+        "def f():\n" + write + "    memory_index.project(conn, 'message', 1)\n"
+    )
+    assert projects(
+        "from nora.infra.sql import memory_index as mi\n"
+        "def f():\n" + write + "    mi.drop(conn, 'message', [1])\n"
+    )
+    assert projects(
+        "from nora.infra.sql.memory_index import reproject_media as rm\n"
+        "def f():\n" + write + "    rm(conn, 'x')\n"
+    )

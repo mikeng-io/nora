@@ -109,11 +109,17 @@ async def _guarded(
 ) -> None:
     """The savepoint every projection runs in (60 §2). `begin_nested` rolls
     back the projection alone; the caller's transaction, and the store write
-    in it, carry on."""
+    in it, carry on. A projection that lands clears any queue row its source
+    left behind, in the same savepoint, so the queue holds only what is still
+    unprojected (its length is the index's health, 25 §7)."""
     outcome: ProjectionOutcome = "ok"
     try:
         async with conn.begin_nested():
             await work()
+            await conn.execute(sa.delete(MEMORY_PROJECTION_QUEUE).where(
+                MEMORY_PROJECTION_QUEUE.c.kind == kind,
+                _among(MEMORY_PROJECTION_QUEUE.c.source_id, source_ids),
+            ))
     except Exception as exc:  # noqa: BLE001 — any failure queues; the store write stands
         log.warning(
             "memory projection failed (%s, %s); queued for the next pass",
@@ -129,9 +135,21 @@ async def _queue(
 ) -> ProjectionOutcome:
     """A queue row per source, or `lost` if even that cannot be written. A
     media row is keyed by its `sha256`, which re-projects every attachment of
-    those bytes; every other row by its source's own id."""
-    stmt = pg_insert(MEMORY_PROJECTION_QUEUE).values(
-        [{"kind": kind, "source_id": sid, "last_error": error} for sid in source_ids]
+    those bytes; every other row by its source's own id.
+
+    ONE statement over `unnest` of one array parameter, never a VALUES row per
+    id: a failed `drop` inside a large retention prune queues every pruned id,
+    and three parameters per id passes asyncpg's 32,767 at ~10,900 ids, which
+    would leave pruned text searchable with nothing queued to remove it.
+    Deduplicated, because one upsert cannot touch the same row twice."""
+    ids = list(dict.fromkeys(source_ids))
+    stmt = pg_insert(MEMORY_PROJECTION_QUEUE).from_select(
+        ["kind", "source_id", "last_error"],
+        sa.select(
+            sa.literal(kind, sa.Text),
+            sa.func.unnest(sa.bindparam("ids", ids, type_=pg.ARRAY(sa.Text))),
+            sa.literal(error, sa.Text),
+        ),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id],
