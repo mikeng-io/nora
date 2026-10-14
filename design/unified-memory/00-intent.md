@@ -120,6 +120,10 @@ writes with a mode. Two things are open:
    first step ([conversational-recall/20](../conversational-recall/20-orchestration.md)
    "Smallest viable choice"): its three journeys, with better assembly and no
    new index. If they pass, steps 2–3 wait.
+   Its instrument (0a) is built, 2026-10-14: the
+   [`conversational_recall`](../../evals/corpora/conversational_recall.yaml)
+   corpus, eight anchored cases judged on `recall_grounded`, each on a full
+   restore of every store as of its instant. Not yet run.
 1. **Audit** ([10](10-honcho-audit.md)): what Honcho supplies that no tier
    supplies. Done for code and call volume; whether the prefilled blocks
    change replies is open.

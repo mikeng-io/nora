@@ -39,6 +39,7 @@ from evals.backbone import (
 from evals.rebuilt.grading import DEFAULT_JUDGE_MODEL, DEFAULT_SAMPLES, Judge
 from evals.scenarios import (
     CORPUS_ENTRY,
+    FULL_RESTORE_CORPORA,
     JUDGE_REQUIRED,
     JUDGED_CORPORA,
     census,
@@ -85,6 +86,8 @@ CORPUS_CLASS: dict[str, str] = {
     "appearance": "S3",
     # The character cut's instrument: whether an ordinary reply still sounds like her (judged).
     "personality": "S3",
+    # design/unified-memory "Sequence" step 0: is what she REMEMBERS supported (judged).
+    "conversational_recall": "S3",
     # What a WRITE keeps: `carry` is #228's shape (an unrelated pass lost a
     # thread it did not touch), the nearest class the map has. Its `stale`
     # cases are S5-shaped (time misread) — approximate, as this map says.
@@ -384,7 +387,10 @@ def _print_input(name: str, case_name: str, *, source_url: str) -> int:
         return 2
     [case] = matches
     case = case.model_copy(update={"metadata": {**(case.metadata or {}), "print_input": True}})
-    result = nora_task(Spec(source_url=source_url, entry=CORPUS_ENTRY[name]))(case)
+    result = nora_task(Spec(
+        source_url=source_url, entry=CORPUS_ENTRY[name],
+        full_restore=name in FULL_RESTORE_CORPORA,
+    ))(case)
     state = {e.name: e.state for e in result.get("environment_state") or ()}
     shown = state.get(NORA_SHOWN) or ""
     if not shown:

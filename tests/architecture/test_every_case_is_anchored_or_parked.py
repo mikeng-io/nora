@@ -304,10 +304,13 @@ def test_the_whole_corpus_is_accounted_for() -> None:
     four kinds of ordinary tag turn with a short-reply control each; NOT yet
     run), plus 2 `lessons` cases (2026-10-13, DEC-311: a lesson that goes
     ahead of a practice default, and a control whose lesson must not go ahead
-    of a rule);
+    of a rule), plus the `conversational_recall` corpus's 8 (2026-10-14,
+    design/unified-memory/00-intent.md "Sequence" step 0: J1 a photo's
+    reading twice, J2 a dated plan twice, J3 an outing's food and doings,
+    J4 outings in a week twice, every case on a full restore; NOT yet run);
     a change to it
     is a change to what the suite claims to measure and belongs in a commit that
     says so. Recomputed with `census()` at each merge, never summed."""
     totals = [census(n) for n in CORPORA]
-    assert sum(c.total for c in totals) == 299
-    assert sum(c.active + c.parked for c in totals) == 299
+    assert sum(c.total for c in totals) == 307
+    assert sum(c.active + c.parked for c in totals) == 307
