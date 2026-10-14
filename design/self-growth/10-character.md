@@ -226,6 +226,8 @@ nothing here conflicts with it.
 
 - ~~Section schema for accounts~~ SETTLED by DEC-290 (2026-10-07): prose, no
   schema; DEC-184 stands. The cognition design's fixed Character sections are
-  not built.
+  not built. **Reversed for Persona by the operator, 2026-10-15**
+  ([unified-memory/45](../unified-memory/45-persona-adaptor.md) §0): typed
+  lines around prose claims. Prose stays the live format until that is built.
 - Whether a stale wake needs a floor of a few items
   ([50](50-readback-and-sizing.md) §4).

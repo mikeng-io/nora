@@ -63,6 +63,7 @@ set, each with its writer:
 | `disputes` | dispute item → entry | projected from the `character_dispute` Record item |
 | `depicts` | media → person | face label (step 6) |
 | `mentions` | message → person, place | ingestion, from resolved handles only |
+| `outcome_of` (proposed, [50](50-learning-from-acts.md)) | episode → act | the Rollup builder |
 
 **What is refused** (cognition-loop/80): a model-extracted triple such as
 "Rin –likes→ roguelikes". That is a Character line with its citations, not an
@@ -185,7 +186,7 @@ new moving part is the embedding worker.
 | layer | item | searchable text | vector |
 |---|---|---|---|
 | Record | message | the body | yes |
-| Record | media object | its stored reading (description, video read) | yes, of the reading |
+| Record | media object | its stored reading (description, video read) | yes: the reading's text, and the image or video itself if a multimodal embedder qualifies ([20](20-embedding-bakeoff.md)) |
 | Record | link, social item | URL, caption, preview text | yes |
 | Rollup | outing, stay, trip | a rendered line: who, the place label, when | lexical only |
 | Rollup | rhythm, tie, play profile | no node: read by key (`rollup_read`, `where_been`) | no |

@@ -70,6 +70,8 @@ retrieval layer exists means they are searchable from their first row.
 | [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
 | [30](30-identity-and-character.md) | (superseded in part by 35) Identity as its own tier beside Character, for actors (human, Nora, another agent) and collectives (room, unit), with "remember this" and "that's wrong" |
 | [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; anyone may dispute; visibility; the one-off backfill |
+| [45](45-persona-adaptor.md) | the Persona schema (typed lines around prose), the enforced reasoning modes, the adaptor's inputs and its one write verb, and the Honcho coverage measure; reverses DEC-184/290's no-schema rule for Persona |
+| [50](50-learning-from-acts.md) | learning from every act: an outcome episode per social act, explicit feedback, `outcome_of`, what Lessons and Persona learn from them |
 | [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
 
 ## The shape after Honcho (as ruled 2026-10-15)

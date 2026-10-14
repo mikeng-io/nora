@@ -114,10 +114,11 @@ Honcho's conclusions are dropped, not exported. A one-off script, run once
 when the new memory is first deployed, builds everything else from Nora's own
 stores:
 
-1. **Persona from Character.** Every live Character account (35 person
-   accounts on 2026-10-14) becomes that entity's Persona Character part,
-   byte for byte; its `Unsure` lines become `Hypotheses` lines without a
-   prediction, marked for the adaptor to give one or retire.
+1. **Persona from Character.** Every live Character head (35 person accounts
+   on 2026-10-14) keeps rendering as it does until the Persona adaptor's first
+   session rewrites it into at most 5 `trait` lines citing what the head cited
+   ([45](45-persona-adaptor.md) §8). Nothing is converted by code, because a
+   prose account does not split into lines without a judgement.
 2. **Identity's authored lines.** `Names` and `Accounts` from `identity.toml`,
    rendered rather than written (30 §3: accounts are never model-written).
 3. **The memory index.** One `project()` over every row of every indexed store
