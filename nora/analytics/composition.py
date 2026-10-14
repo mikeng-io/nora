@@ -223,7 +223,7 @@ def build_rollup(cfg: Config) -> AnalyticsDependencies:
         health_max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
         tz_name=analytics.tz_name,
     )
-    rollups = SqlRollupStore(engine)
+    rollups = SqlRollupStore(engine, metrics=metrics)
     people = {
         s.subject_id: PersonScope(
             subject=s.subject_id, circles=s.circle_ids,

@@ -44,10 +44,31 @@ show it in every room of the unit.
 
 **`cites` comes only from a stored citations column** (25 §1): memos,
 lessons and Character revisions. A message id becomes an edge to its
-message node; a `rollup(...)` key and a `response:<n>` episode are skipped
-until S3 gives Rollup episodes their nodes. Notes and events store no
+message node; a `rollup(outing|stay|trip|...)` key an edge to that episode's
+key, as cited (S3). A key of a kind with no node (a co-location, daybook,
+tie or response) and a `response:<n>` episode are skipped. Notes and events store no
 citations (a note's sit in its body's brackets until step 4; an event's were
 never stored after `citation` was dropped in 0093), so they have none.
+
+**What a Rollup episode is** (S3). An outing, a stay or a trip of the
+CURRENT build, keyed by its citation `(subject, interval)`
+(`nora.domain.rollup.episode_key`), never by its row id: a rebuild that
+recomputes the same happening keeps the key, so a memo's `cites` edge reaches
+it again. A build still `building` has no nodes; `switch_build` drops the old
+build's and projects the new one's in its own transaction. An episode's
+`cites` edges INTO it belong to the entry that cites it and outlive the node
+(a dangling edge drops itself at the hop's join, 0105); its `during` edges
+belong to the episode, and are rewritten with it.
+
+Its text is the kind and the interval only. Never a place: a label can be a
+saved place's name, whose existence is itself secret (R-35), or a geocoder's
+street, which is an address; never a coordinate (R-28); never a person, who
+is an `about` edge. Its scope is the narrowest its rows support: an outing is
+its unit AND every person in it (readable only in a room of the unit that
+lists them all, 35 §3); a stay or trip, which carries no unit and no room, is
+its person alone. Both copy the row's presence lineage, which a reader must
+pass as `rollup_read.visible_rows` does (R-31, DEC-222, 60 §0.3): the scope
+alone never discloses a place.
 
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
 restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
@@ -55,9 +76,12 @@ restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import re
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any
+from datetime import datetime
+from typing import Any, NamedTuple
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
@@ -67,7 +91,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from nora.domain.culture import split_culture_key
 from nora.domain.media_join import shas_in
 from nora.domain.memory_index import ProjectionOutcome
-from nora.domain.rollup import room_key
+from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.infra.sql.schema import (
     CULTURE,
     CULTURE_REVISION,
@@ -86,9 +110,22 @@ from nora.infra.sql.schema import (
     MESSAGES,
     NOTE,
     NOTE_REVISION,
+    PRESENCE_STAYS,
+    PRESENCE_TRIPS,
+    ROLLUP_BUILD,
+    ROLLUP_DAYBOOK,
+    ROLLUP_OUTING,
 )
 
-__all__ = ["INDEXED_WRITES", "drop", "project", "reproject_media"]
+__all__ = [
+    "INDEXED_WRITES",
+    "drain_queue",
+    "drop",
+    "project",
+    "project_episodes",
+    "reproject_episodes",
+    "reproject_media",
+]
 
 log = logging.getLogger("nora.infra.sql.memory_index")
 
@@ -112,6 +149,12 @@ INDEXED_WRITES: dict[str, str] = {
     "event_rsvps": "event",
     "culture": "character",
     "culture_revision": "character",
+    "rollup_outing": "outing",
+    "presence_stays": "stay",
+    "presence_trips": "trip",
+    # The build pointer: switching it changes which build's outings, stays
+    # and trips have nodes (all three kinds).
+    "rollup_build": "outing",
 }
 
 _METRIC = "nora_memory_projection_total"
@@ -304,11 +347,13 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
             edges.append(("media", att, "shared_by", author[0], author[1], author[2]))
 
     # Outgoing edges are rewritten whole: a re-attributed message must not keep
-    # the edge to nobody it had before.
+    # the edge to nobody it had before. A `during` edge is the episode's, which
+    # rewrites it when it is projected (S3), so an edit keeps it.
     for kind, ids in (("message", [source_id]), ("media", list(wanted))):
         if ids:
             await conn.execute(sa.delete(MEMORY_EDGE).where(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
+                MEMORY_EDGE.c.rel != "during",
             ))
     await _insert_edges(conn, edges)
 
@@ -328,6 +373,11 @@ async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
 
 
 # --- the Notebook ------------------------------------------------------------
+
+#: The Rollup kinds that are episodes with nodes of their own (25 §7).
+_EPISODES = ("outing", "stay", "trip")
+#: A cited Rollup key as a citations column stores it (`nora.domain.memo`).
+_ROLLUP_CITATION = re.compile(r"rollup\((?P<kind>[a-z]+)\|(?P<key>[^()]+)\)")
 
 Edge = tuple[str, str, str, str, str, str]
 
@@ -354,11 +404,20 @@ async def _room_of(conn: AsyncConnection, conversation_id: str) -> str | None:
 
 
 def _cites(kind: str, source_id: str, citations: Iterable[str], prov: str) -> list[Edge]:
-    """`cites` edges to the message nodes a citations column names. A
-    `rollup(...)` key or a `response:<n>` episode has no node until S3, so it
-    is skipped rather than pointed at a node that does not exist."""
-    ids = dict.fromkeys(c.strip() for c in citations if c.strip().isdigit())
-    return [(kind, source_id, "cites", "message", i, prov) for i in ids]
+    """`cites` edges to the nodes a citations column names: a message id to
+    its message, a `rollup(kind|subject|from/to)` key of an episode kind to
+    that episode's key, which is the cited text itself (`episode_key`), so it
+    needs no lookup and reaches the node of whichever build is current. Any
+    other key has no node and is skipped."""
+    out: list[Edge] = []
+    for c in dict.fromkeys(c.strip() for c in citations):
+        if c.isdigit():
+            out.append((kind, source_id, "cites", "message", c, prov))
+            continue
+        m = _ROLLUP_CITATION.fullmatch(c)
+        if m is not None and m["kind"] in _EPISODES:
+            out.append((kind, source_id, "cites", m["kind"], m["key"].strip(), prov))
+    return out
 
 
 async def _entry_edges(
@@ -596,6 +655,322 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "character", source_id, edges)
 
 
+# --- Rollup episodes ---------------------------------------------------------
+
+
+class _Episode(NamedTuple):
+    """One current-build outing, stay or trip, as its node needs it."""
+
+    kind: str
+    key: str
+    unit: str | None
+    persons: tuple[str, ...]
+    start_ms: int
+    end_ms: int
+    lineage: Any
+
+
+async def project_episodes(
+    conn: AsyncConnection, build_id: int, kind: str, keys: Iterable[str], *,
+    metrics: Any = None,
+) -> None:
+    """`apply` and `commit_fold`: project the episodes of `kind` at `keys`
+    (`episode_key`) when `build_id` is the current build, and drop a key the
+    build no longer holds (the delete half of a diff, or an open outing that
+    grew a new end). A build still `building` gets no nodes (60 §0.4).
+
+    The build's row is read FOR SHARE: `switch_build` updates it, so a
+    projection of the build being switched out lands before the switch drops
+    its nodes, never after."""
+    wanted = list(dict.fromkeys(keys))
+    if not wanted:
+        return
+    status = (await conn.execute(
+        sa.select(ROLLUP_BUILD.c.status).where(ROLLUP_BUILD.c.id == build_id)
+        .with_for_update(read=True)
+    )).scalar_one_or_none()
+    if status != "current":
+        return
+
+    async def work() -> None:
+        found = await _episodes(conn, kind, build_id, wanted)
+        await _drop_episodes(conn, kind, sorted(set(wanted) - {e.key for e in found}))
+        await _write_episodes(conn, build_id, found)
+
+    await _guarded(conn, kind, wanted, work, metrics)
+
+
+async def reproject_episodes(conn: AsyncConnection, *, metrics: Any = None) -> None:
+    """`switch_build`, after the pointer moved in the same transaction: every
+    episode node of the build switched out is dropped, unless the new build
+    holds the same happening under the same key, and every episode of the new
+    build is projected. A failure queues every key involved, so the next
+    drain finishes the switch one key at a time."""
+    for kind in _EPISODES:
+        try:
+            async with conn.begin_nested():
+                build = await _current_build(conn)
+                held = set((await conn.execute(
+                    sa.select(MEMORY_NODE.c.source_id).where(MEMORY_NODE.c.kind == kind)
+                )).scalars())
+                found = await _episodes(conn, kind, build, None)
+        except Exception as exc:  # noqa: BLE001 — the switch stands; a rebuild repairs
+            log.warning(
+                "memory projection of a build switch could not read (%s, %s)",
+                kind, type(exc).__name__,
+            )
+            if metrics is not None:
+                metrics.inc(_METRIC, kind=kind, outcome="lost")
+            continue
+        stale = sorted(held - {e.key for e in found})
+
+        async def work(
+            kind: str = kind, build: int = build, stale: list[str] = stale,
+            found: list[_Episode] = found,
+        ) -> None:
+            await _drop_episodes(conn, kind, stale)
+            await _write_episodes(conn, build, found)
+
+        await _guarded(conn, kind, stale + [e.key for e in found], work, metrics)
+
+
+class _NoCurrentBuildError(RuntimeError):
+    """No build is current: an episode cannot be projected OR dropped, so the
+    source stays queued (a fresh database before its first switch)."""
+
+
+async def _current_build(conn: AsyncConnection) -> int:
+    """The current build, its row held FOR SHARE (`project_episodes`).
+    `nora.infra.sql.mobility.current_build_id` is the same pointer; it is
+    not imported because `mobility` imports this module.
+
+    Read twice when the first read finds none: a read that waited on the row
+    a committing `switch_build` held re-checks only that row, now superseded,
+    and never sees the build switched in (READ COMMITTED). The second
+    statement reads after the switch. Still none raises, never «nothing»: a
+    caller that took it for «this build holds no such episode» would drop a
+    node the switch had just written."""
+    stmt = (
+        sa.select(ROLLUP_BUILD.c.id).where(ROLLUP_BUILD.c.status == "current")
+        .with_for_update(read=True)
+    )
+    for _ in range(2):
+        build = (await conn.execute(stmt)).scalar_one_or_none()
+        if build is not None:
+            return int(build)
+    raise _NoCurrentBuildError("no Rollup build is current")
+
+
+def _instant(text: str) -> int | None:
+    """One end of a key's interval (`iso`) in epoch ms; `None` if malformed."""
+    try:
+        at = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return None if at.tzinfo is None else int(at.timestamp() * 1000)
+
+
+def _episode_projector(kind: str) -> Callable[[AsyncConnection, str], Awaitable[None]]:
+    """`project(conn, kind, key)` for one episode (a drained queue row):
+    whatever the current build holds at that key, or nothing."""
+    async def run(conn: AsyncConnection, key: str) -> None:
+        build = await _current_build(conn)
+        found = await _episodes(conn, kind, build, [key])
+        if not found:
+            await _drop_episodes(conn, kind, [key])
+            return
+        await _write_episodes(conn, build, found)
+    return run
+
+
+async def _episodes(
+    conn: AsyncConnection, kind: str, build: int, keys: list[str] | None,
+) -> list[_Episode]:
+    """`build`'s rows of `kind` whose key is one of `keys`, or all of them.
+    The read narrows on the keys' subjects and start range, then keeps the
+    rows whose own key is asked: a key is printed to the second, so equality
+    of keys is `rollup_read`'s matching of a citation within its second."""
+    table = ROLLUP_OUTING if kind == "outing" else _PRESENCE[kind]
+    start = table.c.valid_from_ms if kind == "outing" else table.c.started_ts
+    where: list[Any] = [table.c.build_id == build]
+    asked = None if keys is None else set(keys)
+    if keys is not None:
+        parsed = [p for k in keys if (p := _split_key(k)) is not None]
+        if not parsed:
+            return []
+        subjects = sorted({p[0] for p in parsed})
+        where += [
+            start >= min(p[1] for p in parsed), start < max(p[1] for p in parsed) + 1000,
+        ]
+        if kind == "outing":
+            where.append(table.c.unit.in_(sorted({s.partition("|")[0] for s in subjects})))
+        else:
+            where.append(table.c.subject_id.in_(subjects))
+    if kind == "outing":
+        stmt = sa.select(
+            table.c.unit, table.c.persons, table.c.valid_from_ms.label("start"),
+            table.c.valid_to_ms.label("end"), table.c.lineage,
+        )
+    else:
+        stmt = sa.select(
+            table.c.subject_id, table.c.started_ts.label("start"),
+            table.c.ended_ts.label("end"), table.c.lineage,
+        )
+    out: dict[str, _Episode] = {}
+    for r in await conn.execute(stmt.where(*where).order_by(start, table.c.id)):
+        if kind == "outing":
+            unit, persons = r.unit, tuple(r.persons)
+            subject = f"{unit}|{','.join(persons)}"
+        else:
+            unit, persons, subject = None, (r.subject_id,), r.subject_id
+        key = episode_key(subject, r.start, r.end)
+        if asked is None or key in asked:
+            out.setdefault(key, _Episode(kind, key, unit, persons, r.start, r.end, r.lineage))
+    return list(out.values())
+
+
+def _split_key(key: str) -> tuple[str, int, int] | None:
+    subject, _, interval = key.rpartition("|")
+    start_text, _, end_text = interval.partition("/")
+    start, end = _instant(start_text), _instant(end_text)
+    if not subject or start is None or end is None:
+        return None
+    return subject, start, end
+
+
+async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episode]) -> None:
+    """Upsert each episode's node and rewrite the edges it owns: `about` its
+    persons, and the `during` edges into it."""
+    if not found:
+        return
+    for kind in dict.fromkeys(e.kind for e in found):
+        keys = [e.key for e in found if e.kind == kind]
+        await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+            sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
+            sa.and_(
+                MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
+                MEMORY_EDGE.c.rel == "during",
+            ),
+        )))
+    await _upsert_nodes(conn, [
+        _node_values(
+            kind=e.kind, source_id=e.key, unit=e.unit, persons=e.persons,
+            lineage=e.lineage, at_ms=e.start_ms,
+            # The kind and when, nothing else (module docstring): no place,
+            # no coordinate, no person.
+            text=f"{e.kind} {iso(e.start_ms)} to {iso(e.end_ms)}",
+        )
+        for e in found
+    ])
+    edges: list[Edge] = []
+    for person in sorted({p for e in found for p in e.persons}):
+        await _hub(conn, "person", person)
+    for e in found:
+        prov = (
+            "rollup_outing.persons" if e.kind == "outing"
+            else f"{_PRESENCE[e.kind].name}.subject_id"
+        )
+        edges += [(e.kind, e.key, "about", "person", p, prov) for p in e.persons]
+        if e.kind == "outing":
+            edges += await _during(conn, build, e)
+    await _insert_edges(conn, edges)
+
+
+async def _during(conn: AsyncConnection, build: int, e: _Episode) -> list[Edge]:
+    """`during` edges from the messages the outing's people wrote in the
+    unit's rooms inside its interval (25 §2). The unit's rooms are the policy's
+    (`nora.infra` cannot read it); the build's daybooks name every room of the
+    unit each person wrote in on a day, so the rooms are read from those.
+
+    A stay or trip carries no unit, so it has no unit rooms and no `during`
+    edge: every room the person wrote in would reach their whereabouts.
+    """
+    # ponytail: messages are matched by the person id the roster resolved, so
+    # a renamed person's messages under a former id get no edge (a miss, never
+    # a leak); the daybooks' days are padded a day each side for the same
+    # reason, a deployment whose `tz_name` is not Hong Kong's.
+    days = [local_date(e.start_ms - 86_400_000), *days_touched(e.start_ms, e.end_ms),
+            local_date(e.end_ms + 86_400_000)]
+    rooms: set[str] = set()
+    for books in (await conn.execute(
+        sa.select(ROLLUP_DAYBOOK.c.rooms).where(
+            ROLLUP_DAYBOOK.c.build_id == build, ROLLUP_DAYBOOK.c.unit == e.unit,
+            ROLLUP_DAYBOOK.c.person_id.in_(list(e.persons)),
+            ROLLUP_DAYBOOK.c.local_date.in_(sorted(set(days))),
+        )
+    )).scalars():
+        rooms.update(books or {})
+    if not rooms:
+        return []
+    in_rooms = sa.or_(*(
+        sa.and_(MESSAGES.c.platform == platform, MESSAGES.c.conversation_id == cid)
+        for platform, _, cid in (r.partition(":") for r in sorted(rooms))
+    ))
+    ids = (await conn.execute(
+        sa.select(MESSAGES.c.id).where(
+            in_rooms, MESSAGES.c.person_id.in_(list(e.persons)), MESSAGES.c.is_nora == 0,
+            MESSAGES.c.hidden_at.is_(None),
+            MESSAGES.c.ts >= e.start_ms, MESSAGES.c.ts <= e.end_ms,
+        ).order_by(MESSAGES.c.id)
+    )).scalars()
+    return [("message", str(i), "during", e.kind, e.key, "messages.ts") for i in ids]
+
+
+async def _drop_episodes(conn: AsyncConnection, kind: str, keys: list[str]) -> None:
+    """An episode's node and the edges it owns. The `cites` edges into it
+    stay: they are the citing entry's, and reach the node again if a later
+    build holds the same happening under the same key."""
+    if not keys:
+        return
+    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+        sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
+        sa.and_(
+            MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
+            MEMORY_EDGE.c.rel != "cites",
+        ),
+    )))
+    await conn.execute(sa.delete(MEMORY_NODE).where(
+        MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, keys),
+    ))
+
+
+_PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS}
+
+
+# --- the queue ---------------------------------------------------------------
+
+
+async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any = None) -> int:
+    """Re-project up to `limit` queued sources, the least-tried first, then
+    the oldest. A projection that lands clears its row and one that fails
+    again counts an attempt (`_guarded`), so a drain is idempotent and a
+    source that keeps failing stays queued, visible in the queue's length,
+    and sinks behind every newer row instead of starving it. Nothing is
+    abandoned: a row given up on would be a silent miss.
+
+    The current build's row is locked FIRST, before any projection writes a
+    node: `switch_build` takes that row and then writes nodes, so a drain
+    that wrote a hub node and then waited on the build row could deadlock
+    with it. With no build yet, there is nothing to lock."""
+    with contextlib.suppress(_NoCurrentBuildError):
+        await _current_build(conn)
+    rows = (await conn.execute(
+        sa.select(MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id)
+        .order_by(
+            MEMORY_PROJECTION_QUEUE.c.attempts, MEMORY_PROJECTION_QUEUE.c.first_failed_at,
+            MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id,
+        )
+        .limit(limit)
+    )).all()
+    for r in rows:
+        if r.kind == "media":
+            # A media row is keyed by its sha256 (`_queue`).
+            await reproject_media(conn, r.source_id, metrics=metrics)
+        else:
+            await project(conn, r.kind, r.source_id, metrics=metrics)
+    return len(rows)
+
+
 _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "message": _project_message,
     "note": _project_note,
@@ -603,47 +978,65 @@ _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "lesson": _project_lesson,
     "event": _project_event,
     "character": _project_character,
+    **{kind: _episode_projector(kind) for kind in _EPISODES},
 }
 
 
 # --- the writes --------------------------------------------------------------
 
 
-async def _upsert_node(
-    conn: AsyncConnection, *, kind: str, source_id: str, text: str, at_ms: int | None,
+def _node_values(
+    *, kind: str, source_id: str, text: str, at_ms: int | None,
     origin_room: str | None = None, unit: str | None = None,
     persons: Iterable[str] = (), exclude_persons: Iterable[str] | None = (),
-    sha256: str | None = None, state: str = "live",
-) -> None:
-    stmt = pg_insert(MEMORY_NODE).values(
-        kind=kind, source_id=source_id, unit=unit, origin_room=origin_room,
-        persons=list(persons), exclude_persons=list(exclude_persons or ()), text=text,
-        at_ms=at_ms, sha256=sha256, state=state,
-    )
-    await conn.execute(stmt.on_conflict_do_update(
+    sha256: str | None = None, state: str = "live", lineage: Any = None,
+) -> dict[str, Any]:
+    return {
+        "kind": kind, "source_id": source_id, "unit": unit, "origin_room": origin_room,
+        "persons": list(persons), "exclude_persons": list(exclude_persons or ()),
+        "lineage": lineage if lineage is not None else [], "text": text,
+        "at_ms": at_ms, "sha256": sha256, "state": state,
+    }
+
+
+async def _upsert_node(conn: AsyncConnection, **values: Any) -> None:
+    await _upsert_nodes(conn, [_node_values(**values)])
+
+
+#: Rows per statement: a switch projects every stay of every person, and one
+#: statement's parameters must stay under asyncpg's 32,767.
+_CHUNK = 1000
+
+
+async def _upsert_nodes(conn: AsyncConnection, rows: list[dict[str, Any]]) -> None:
+    stmt = pg_insert(MEMORY_NODE)
+    stmt = stmt.on_conflict_do_update(
         constraint="uq_memory_node_kind_source",
         set_={
             "unit": stmt.excluded.unit,
             "origin_room": stmt.excluded.origin_room,
             "persons": stmt.excluded.persons,
             "exclude_persons": stmt.excluded.exclude_persons,
+            "lineage": stmt.excluded.lineage,
             "text": stmt.excluded.text,
             "at_ms": stmt.excluded.at_ms,
             "sha256": stmt.excluded.sha256,
             "state": stmt.excluded.state,
             "projected_at": sa.func.clock_timestamp(),
         },
-    ))
+    )
+    for i in range(0, len(rows), _CHUNK):
+        await conn.execute(stmt, rows[i:i + _CHUNK])
 
 
 async def _insert_edges(conn: AsyncConnection, edges: list[Edge]) -> None:
-    if not edges:
-        return
-    await conn.execute(pg_insert(MEMORY_EDGE).values([
-        {"src_kind": sk, "src_id": si, "rel": rel, "dst_kind": dk, "dst_id": di,
-         "provenance": prov}
-        for sk, si, rel, dk, di, prov in dict.fromkeys(edges)
-    ]).on_conflict_do_nothing())
+    unique = list(dict.fromkeys(edges))
+    for i in range(0, len(unique), _CHUNK):
+        await conn.execute(pg_insert(MEMORY_EDGE).values([
+            {"src_kind": sk, "src_id": si, "rel": rel, "dst_kind": dk, "dst_id": di,
+             "provenance": prov}
+            for sk, si, rel, dk, di, prov in unique[i:i + _CHUNK]
+        ]).on_conflict_do_nothing())
 
 
 async def _hub(
@@ -678,6 +1071,9 @@ async def _named_hub(
 
 
 async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
+    if kind in _EPISODES:
+        await _drop_episodes(conn, kind, ids)
+        return
     if kind == "message":
         attachments = list((await conn.execute(
             sa.select(MEMORY_EDGE.c.src_id).where(

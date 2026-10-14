@@ -7,6 +7,9 @@ it (design/cognition-loop/25-rollup.md §2).
   records the watermark on the build. The daemon calls it every tick on the
   current build; a rebuild calls the SAME method on a fresh build — which is
   why the two agree: they are one function of the Record.
+- Each run then drains the memory index's projection queue once
+  (`SqlRollupStore.drain_index_queue`): what any store's projection queued is
+  re-projected here, on the one loop that runs on a clock.
 - `ensure_build` keeps the pointer on a build of THIS code and these
   parameters: when the current build was made by other code (a deploy) or
   other parameters (a config change), or there is none, it rebuilds from the
@@ -129,6 +132,12 @@ class RollupRunner:
         )
         if not failed:
             await self._rollups.advance_build(build_id=build_id, through_ms=through_ms)
+        try:
+            # Whatever a projection queued since the last run, from any process
+            # (60 §2): this is the one loop that runs on a clock.
+            await self._rollups.drain_index_queue()
+        except Exception:
+            log.exception("memory index queue drain failed — retried next run")
         return RunReport(
             build_id=build_id, through_ms=through_ms, folds=folds,
             failed=tuple(failed), units=tuple(units),
@@ -148,12 +157,14 @@ class RollupRunner:
             )
             if report.failed:
                 raise RuntimeError(f"folds failed for {list(report.failed)}")
+            if switch:
+                # Inside the try: a switch that fails rolls back whole, and
+                # the build it leaves `building` is abandoned, not orphaned.
+                await self._rollups.switch_build(build_id=build_id)
+                log.info("rollup build %d is current", build_id)
         except Exception:
             await self._rollups.abandon_build(build_id=build_id)
             raise
-        if switch:
-            await self._rollups.switch_build(build_id=build_id)
-            log.info("rollup build %d is current", build_id)
         return build_id
 
     async def ensure_build(self, *, through_ms: int) -> int:

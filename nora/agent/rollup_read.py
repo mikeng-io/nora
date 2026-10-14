@@ -29,6 +29,7 @@ from typing import Any
 
 from nora.agent.lineage import section_permits
 from nora.domain.lineage import ROW, RenderRoom
+from nora.domain.rollup import iso
 from nora.domain.rollup_read import RollupReadRow
 
 __all__ = ["iso", "parse_interval", "render_row", "visible_rows"]
@@ -36,12 +37,6 @@ __all__ = ["iso", "parse_interval", "render_row", "visible_rows"]
 _HKT = timezone(timedelta(hours=8), "HKT")
 _BARE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _MS_DAY = 86_400_000
-
-
-def iso(ts_ms: int) -> str:
-    """RFC 3339 in Hong Kong time, seconds: the form a model can read
-    (DEC-156: epoch milliseconds are unreadable to it)."""
-    return datetime.fromtimestamp(ts_ms / 1000, tz=_HKT).isoformat(timespec="seconds")
 
 
 def _instant(text: str) -> tuple[int, bool]:

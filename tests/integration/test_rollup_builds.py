@@ -13,6 +13,7 @@ must agree.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -22,15 +23,23 @@ import sqlalchemy as sa
 from nora.analytics.rollup import RollupConfig
 from nora.analytics.runner import CODE_VERSION, RollupRunner, Subject
 from nora.analytics.units import EventPlace, PersonScope, UnitConfig, UnitRollups
+from nora.domain.mobility import TaggedPlace
 from nora.domain.models import mentions_json
-from nora.domain.rollup import Citation
+from nora.domain.rollup import Citation, episode_key
+from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
+from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.schema import (
+    MEMORY_EDGE,
+    MEMORY_NODE,
+    MEMORY_PROJECTION_QUEUE,
     MESSAGE_EDIT,
     MESSAGE_REACTION,
     MESSAGES,
+    PRESENCE_STAYS,
+    ROLLUP_BUILD,
     ROLLUP_COLOCATION,
     ROLLUP_DAYBOOK,
     ROLLUP_OUTING,
@@ -540,4 +549,261 @@ async def test_a_run_with_nothing_new_rewrites_no_settled_row(pg_url):
         for t in TABLES
     }
     assert any(settled.values())  # positive control: there were settled rows
+    await engine.dispose()
+
+
+# --- the memory index's episodes (design/unified-memory/60-build-step-3.md S3) --
+
+_SAVED_NAME = "Hidden Den"  # a saved place's name: its existence is the secret (R-35)
+
+
+async def _episode_nodes(engine, kind: str) -> dict[str, dict]:
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            sa.select(MEMORY_NODE).where(MEMORY_NODE.c.kind == kind)
+        )).mappings().all()
+    return {r["source_id"]: dict(r) for r in rows}
+
+
+async def _edges(engine, **where) -> set[tuple]:
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(
+            MEMORY_EDGE.c.src_kind, MEMORY_EDGE.c.src_id, MEMORY_EDGE.c.rel,
+            MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id,
+        ).where(*(getattr(MEMORY_EDGE.c, k) == v for k, v in where.items())))).all()
+    return {tuple(r) for r in rows}
+
+
+def _outing_keys(rows) -> set[str]:
+    return {
+        episode_key(f"{r['unit']}|{','.join(r['persons'])}", r["valid_from_ms"], r["valid_to_ms"])
+        for r in rows
+    }
+
+
+async def _seed_with_outing_talk(engine, mobility) -> int:
+    """The shared Record, a saved place where the pub is, and one message by
+    a at the pub, inserted FIRST so its id sits below every post-watermark
+    row (`mark` takes the newest id recorded in time)."""
+    async with engine.begin() as conn:
+        talk = (await conn.execute(sa.insert(MESSAGES).values(
+            platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
+            sender_id="acct-a", person_id="a", ts=_t(0, 20), body="…", is_nora=0,
+            delivery_status="sent", created_at=_ts(_t(0, 20) + 1_000).isoformat(),
+        ).returning(MESSAGES.c.id))).scalar_one()
+    await mobility._seed_tagged_place_for_test(TaggedPlace(
+        circle_id="c1", place_id="p-1", name=_SAVED_NAME, lat=PUB[0], lng=PUB[1], radius_m=200.0,
+    ))
+    await _seed(engine, mobility)
+    return int(talk)
+
+
+async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(pg_url):
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    talk = await _seed_with_outing_talk(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+    first = await runner.rebuild(through_ms=_t(1, 12))
+
+    outings = await _episode_nodes(engine, "outing")
+    first_rows = await rollups.rows(table=ROLLUP_OUTING, build_id=first)
+    assert set(outings) == _outing_keys(first_rows) and len(outings) == 1
+    [(key, node)] = outings.items()
+    # The narrowest scope the row supports: its unit AND both its people, with
+    # the presence lineage a reader must pass (R-31).
+    assert (node["unit"], node["origin_room"], node["persons"]) == ("friends", None, ["a", "b"])
+    assert node["lineage"] == [["presence", "a", None], ["presence", "b", None]]
+    # Positive control: the row does name the saved place, so the text could leak it.
+    assert first_rows[0]["place_label"] == _SAVED_NAME and first_rows[0]["saved_place_id"]
+    texts = [
+        n["text"] for kind in ("outing", "stay", "trip")
+        for n in (await _episode_nodes(engine, kind)).values()
+    ]
+    assert texts
+    for text in texts:
+        assert _SAVED_NAME not in text and "Street" not in text and "Road" not in text
+        assert str(PUB[0]) not in text and str(HOME["a"][0]) not in text
+    # Nor in a key: a node's source_id and an edge's ends are read as text too.
+    async with engine.connect() as conn:
+        ids = [*(await conn.execute(sa.select(MEMORY_NODE.c.source_id))).scalars(),
+               *(await conn.execute(sa.select(MEMORY_EDGE.c.src_id))).scalars(),
+               *(await conn.execute(sa.select(MEMORY_EDGE.c.dst_id))).scalars()]
+    assert ids
+    for ident in ids:
+        assert _SAVED_NAME not in ident and "Street" not in ident and "Road" not in ident
+        assert str(PUB[0]) not in ident and str(HOME["a"][0]) not in ident
+    assert await _edges(engine, rel="during") == {("message", str(talk), "during", "outing", key)}
+    assert await _edges(engine, src_kind="outing") == {
+        ("outing", key, "about", "person", "a"), ("outing", key, "about", "person", "b"),
+    }
+
+    stays = await _episode_nodes(engine, "stay")
+    assert stays and all(
+        (n["unit"], n["origin_room"], n["persons"], n["lineage"])
+        == (None, None, [k.split("|")[0]], [["presence", k.split("|")[0], None]])
+        for k, n in stays.items()
+    ), "a stay is its person's alone: no unit, no room"
+    assert await _episode_nodes(engine, "trip")
+
+    # A memo cites the outing by the key `rollup_read` showed it under.
+    memo = await SqlMemoStore(engine).create(
+        unit="friends", platform=ROOM[0], conversation_id=ROOM[1], title="pub night",
+        body="…", citations=[f"rollup(outing|{key})"], mode="told",
+        established_by="a", model=None, now_ms=_t(1, 12),
+    )
+    cites = ("memo", str(memo.id), "cites", "outing", key)
+    assert cites in await _edges(engine, rel="cites")
+
+    second = await runner.rebuild(through_ms=_WATERMARK)
+    second_rows = await rollups.rows(table=ROLLUP_OUTING, build_id=second)
+    assert set(await _episode_nodes(engine, "outing")) == _outing_keys(second_rows)
+    assert len(second_rows) == 2
+    async with engine.connect() as conn:
+        stays_now = (await conn.execute(sa.select(sa.func.count()).select_from(
+            sa.table("presence_stays", sa.column("build_id"))
+        ).where(sa.column("build_id") == second))).scalar_one()
+    assert len(await _episode_nodes(engine, "stay")) == stays_now
+    # The same happening recomputed keeps its key, so the memo still reaches it.
+    assert key in await _episode_nodes(engine, "outing")
+    assert cites in await _edges(engine, rel="cites")
+    await engine.dispose()
+
+
+async def test_a_build_still_building_has_no_episode_nodes(pg_url):
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+    building = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
+    await runner.run(build_id=building, through_ms=_WATERMARK)
+    assert await rollups.rows(table=ROLLUP_OUTING, build_id=building)  # positive control
+    for kind in ("outing", "stay", "trip"):
+        assert await _episode_nodes(engine, kind) == {}, kind
+    await rollups.switch_build(build_id=building)
+    for kind in ("outing", "stay", "trip"):
+        assert await _episode_nodes(engine, kind), f"{kind}: the switch projects the build"
+    await engine.dispose()
+
+
+async def test_the_delete_half_of_the_diff_drops_the_outing_node(pg_url):
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed_with_outing_talk(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+    build = await runner.rebuild(through_ms=_WATERMARK)
+    assert len(await _episode_nodes(engine, "outing")) == 2
+    assert await _edges(engine, rel="during")
+    await rollups.apply(
+        build_id=build, unit="friends", colocations=[], outings=[], daybooks=[],
+        ties=[], responses=[],
+    )
+    assert await _episode_nodes(engine, "outing") == {}
+    assert await _edges(engine, rel="during") == set()
+    assert await _episode_nodes(engine, "stay")  # the person-scoped kinds are not the unit's
+    await engine.dispose()
+
+
+async def test_a_tick_on_the_current_build_projects_what_it_folds(pg_url):
+    """The daemon's path, not a switch: each run on the current build adds its
+    new stays, trips and outings to the index as `commit_fold` and `apply`
+    write them."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+    rollups = SqlRollupStore(engine)
+    build = await runner.rebuild(through_ms=_t(1, 12))
+    before = {k: set(await _episode_nodes(engine, k)) for k in ("outing", "stay", "trip")}
+    async with engine.begin() as conn:  # a projection some process queued
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+            kind="stay", source_id="a|gone", last_error="RuntimeError",
+        ))
+    await runner.run(build_id=build, through_ms=_WATERMARK)
+    async with engine.connect() as conn:
+        assert (await conn.execute(
+            sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
+        )).scalar_one() == 0, "the run drained the queue"
+    async with engine.connect() as conn:
+        held = {
+            kind: {
+                episode_key(r.subject_id, r.started_ts, r.ended_ts)
+                for r in await conn.execute(sa.text(
+                    f"SELECT subject_id, started_ts, ended_ts FROM {table} "  # noqa: S608 — test constants
+                    "WHERE build_id = :b"
+                ), {"b": build})
+            }
+            for kind, table in (("stay", "presence_stays"), ("trip", "presence_trips"))
+        }
+    for kind in ("stay", "trip"):
+        now = set(await _episode_nodes(engine, kind))
+        assert now == held[kind] and now > before[kind], kind
+    outings = set(await _episode_nodes(engine, "outing"))
+    assert outings == _outing_keys(await rollups.rows(table=ROLLUP_OUTING, build_id=build))
+    assert len(outings) == 2 and len(before["outing"]) == 1
+    await engine.dispose()
+
+
+async def test_a_drain_waiting_on_a_switch_keeps_the_new_builds_episode(pg_url):
+    """A drain that blocks on the build row while a switch commits must read
+    the NEW current build after it, never «no build»: under READ COMMITTED the
+    locked re-check sees only the old row, now superseded, and the drain used
+    to drop the node the switch had just projected and clear its queue row."""
+    engine = create_sql_engine(pg_url)
+    key = episode_key("a", _t(0, 19), _t(0, 20))
+    async with engine.begin() as conn:
+        old = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="current",
+        ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+        new = (await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="building",
+        ).returning(ROLLUP_BUILD.c.id))).scalar_one()
+        await conn.execute(sa.insert(PRESENCE_STAYS).values(
+            subject_id="a", person_id="a", circle_id="c1", started_ts=_t(0, 19),
+            ended_ts=_t(0, 20), lat=0.0, lng=0.0, radius_m=10.0, fix_count=3,
+            build_id=new, lineage=[],
+        ))
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+            kind="stay", source_id=key, last_error="RuntimeError",
+        ))
+    rollups = SqlRollupStore(engine)
+    # `switch_build`'s statements, held open so the drain meets them mid-switch.
+    switching = await engine.connect()
+    tx = await switching.begin()
+    await switching.execute(
+        sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == old).values(status="superseded")
+    )
+    await switching.execute(
+        sa.update(ROLLUP_BUILD).where(ROLLUP_BUILD.c.id == new).values(status="current")
+    )
+    await memory_index.reproject_episodes(switching)
+    drain = asyncio.create_task(rollups.drain_index_queue())
+    await asyncio.sleep(1.0)
+    assert not drain.done(), "the drain waits on the build row the switch holds"
+    await tx.commit()
+    await switching.close()
+    await drain
+    assert key in await _episode_nodes(engine, "stay")
+    await engine.dispose()
+
+
+async def test_a_switch_that_fails_abandons_the_build(pg_url, monkeypatch):
+    """A rebuild whose switch raises leaves no build `building` forever: the
+    switch rolled back whole, and the build is abandoned."""
+    engine = create_sql_engine(pg_url)
+    mobility = SqlMobilityStore(engine)
+    await _seed(engine, mobility)
+    runner = _runner(engine)
+
+    async def _refused(*, build_id: int) -> None:
+        raise RuntimeError("switch refused")
+
+    monkeypatch.setattr(runner._rollups, "switch_build", _refused)
+    with pytest.raises(RuntimeError, match="switch refused"):
+        await runner.rebuild(through_ms=_t(1, 12))
+    async with engine.connect() as conn:
+        statuses = (await conn.execute(sa.select(ROLLUP_BUILD.c.status))).scalars().all()
+    assert statuses == ["abandoned"]
     await engine.dispose()

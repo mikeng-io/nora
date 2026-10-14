@@ -28,6 +28,7 @@ from nora.infra.sql.schema import (
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     MESSAGES,
+    ROLLUP_BUILD,
 )
 from nora.obs.metrics import Metrics
 
@@ -73,7 +74,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
             await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
             for table in (
                 "messages", "media_objects", "row_history", "memory_node",
-                "memory_edge", "memory_projection_queue",
+                "memory_edge", "memory_projection_queue", "rollup_build",
             ):
                 await conn.execute(sa.text(f'TRUNCATE "{table}" CASCADE'))
         await eng.dispose()
@@ -344,3 +345,82 @@ async def test_a_failed_drop_of_any_size_queues_every_id(engine, monkeypatch):
             .where(MEMORY_PROJECTION_QUEUE.c.kind == "message")
         )).scalar_one()
     assert held == 20_000
+
+
+async def _drain(engine: Any, metrics: Any = None) -> int:
+    async with engine.begin() as conn:
+        return await memory_index.drain_queue(conn, metrics=metrics)
+
+
+async def test_a_drain_reprojects_what_was_queued_and_is_idempotent(engine, monkeypatch):
+    """60 S3: the analytics run drains the queue once per tick. A drain that
+    lands clears the row; one that fails again counts an attempt and keeps it;
+    a second drain over an empty queue does nothing."""
+    def _broken(conn: Any, source_id: str) -> Any:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
+    store = SqlRecordStore(engine)
+    mid = await store.append(message=_message(), person_id="member-a")
+    assert await _drain(engine) == 1
+    assert await _queue_rows(engine) == [("message", str(mid), 2, "RuntimeError")]
+
+    monkeypatch.undo()
+    metrics = Metrics()
+    assert await _drain(engine, metrics) == 1
+    assert await _queue_rows(engine) == []
+    assert ("message", str(mid)) in await _nodes(engine)
+    assert metrics.get("nora_memory_projection_total", kind="message", outcome="ok") == 1
+    assert await _drain(engine) == 0
+
+
+async def test_a_drained_episode_the_current_build_no_longer_holds_is_dropped(engine):
+    """A queued outing whose key the current build does not hold leaves the
+    index, its own edges with it. With NO current build it is neither
+    projected nor dropped: it stays queued, counted an attempt."""
+    key = "friends|a,b|2026-09-21T19:00:00+08:00/2026-09-21T22:00:00+08:00"
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_NODE).values(
+            kind="outing", source_id=key, unit="friends", persons=["a", "b"], text="outing",
+        ))
+        await conn.execute(sa.insert(MEMORY_EDGE).values(
+            src_kind="outing", src_id=key, rel="about", dst_kind="person", dst_id="a",
+            provenance="rollup_outing.persons",
+        ))
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE).values(
+            kind="outing", source_id=key, last_error="RuntimeError",
+        ))
+    assert await _drain(engine) == 1
+    assert ("outing", key) in await _nodes(engine), "no build: never read as «not held»"
+    assert await _queue_rows(engine) == [("outing", key, 2, "_NoCurrentBuildError")]
+
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(ROLLUP_BUILD).values(
+            code_version="t", params_sha256="", status="current",
+        ))
+    assert await _drain(engine) == 1
+    assert ("outing", key) not in await _nodes(engine)
+    assert await _edges(engine) == set()
+    assert await _queue_rows(engine) == []
+
+
+async def test_rows_that_keep_failing_never_starve_a_newer_one(engine, monkeypatch):
+    """The least-tried row drains first: stuck rows ahead of it in time, more
+    of them than one drain takes, do not keep a fresh failure waiting."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(MEMORY_PROJECTION_QUEUE), [
+            {"kind": "nope", "source_id": str(i), "attempts": 7, "last_error": "KeyError"}
+            for i in range(5)
+        ])
+
+    def _broken(conn: Any, source_id: str) -> Any:
+        raise RuntimeError("projector down")
+
+    monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
+    mid = await SqlRecordStore(engine).append(message=_message(), person_id="member-a")
+    monkeypatch.undo()
+
+    async with engine.begin() as conn:
+        assert await memory_index.drain_queue(conn, limit=2) == 2
+    assert ("message", str(mid)) in await _nodes(engine)
+    assert len(await _queue_rows(engine)) == 5, "the stuck rows stay, visible"

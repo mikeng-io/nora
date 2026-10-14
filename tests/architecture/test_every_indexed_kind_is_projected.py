@@ -7,7 +7,8 @@ answers without the row, and nobody can tell a miss from an absence. So the
 rule is held here, from source, the way `test_in_place_writes_keep_history.py`
 holds history: every function under `nora/` (outside the migrations) that
 writes a table in `nora.infra.sql.memory_index.INDEXED_WRITES` must itself
-call `project`, `drop` or `reproject_media`, or be listed in `_NOT_PROJECTED`
+call `project`, `drop`, `reproject_media`, or for the Rollup's episodes
+`project_episodes` / `reproject_episodes`, or be listed in `_NOT_PROJECTED`
 with the reason it need not.
 
 A write is `insert(T)` / `pg_insert(T)` / `update(T)` / `delete(T)` (bare or
@@ -31,7 +32,9 @@ from nora.infra.sql.memory_index import INDEXED_WRITES
 
 ROOT = Path(__file__).resolve().parents[2]
 _PROJECTOR = "nora/infra/sql/memory_index.py"
-_PROJECTING_CALLS = frozenset({"project", "drop", "reproject_media"})
+_PROJECTING_CALLS = frozenset({
+    "project", "drop", "reproject_media", "project_episodes", "reproject_episodes",
+})
 _WRITE_FUNCS = frozenset({"insert", "pg_insert", "update", "delete"})
 _RAW = re.compile(
     r'\bINSERT\s+INTO\s+"?([a-z_]+)'
@@ -41,9 +44,28 @@ _RAW = re.compile(
 )
 
 #: `path::function` -> why that write to an indexed table projects nothing.
-#: Empty since S1: every writer projects. A new entry needs a reason a reader
-#: of the index would accept.
-_NOT_PROJECTED: dict[str, str] = {}
+#: A new entry needs a reason a reader of the index would accept.
+_NOT_PROJECTED: dict[str, str] = {
+    "nora/infra/sql/mobility.py::relink_stays": (
+        "sets only a stay's place_id; no node carries a place (a label can be "
+        "a secret saved place, R-35)"
+    ),
+    "nora/infra/sql/mobility.py::relink_trips": (
+        "sets only a trip's corridor_id, which no node carries"
+    ),
+    "nora/infra/sql/rollups.py::create_build": "a new build is `building`: it has no nodes",
+    "nora/infra/sql/rollups.py::advance_build": "moves a watermark, not the pointer",
+    "nora/infra/sql/rollups.py::abandon_build": "only a `building` build, which has no nodes",
+    "nora/infra/sql/mobility.py::_seed_build_for_test": (
+        "contract-suite seeding; production switches builds only through switch_build"
+    ),
+}
+
+#: Writes the scan cannot see, because their table is a variable: each named
+#: function must still call the projector. `path::function` -> the write.
+_UNSEEN_WRITERS: dict[str, str] = {
+    "nora/infra/sql/rollups.py::apply": "rollup_outing, through _diff_apply's `table`",
+}
 
 
 _MEMORY_INDEX_MODULE = "nora.infra.sql.memory_index"
@@ -228,7 +250,31 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/infra/sql/gatherings.py", "add_rsvp"),
         ("nora/infra/sql/culture.py", "append"),
         ("nora/subject/knowledge.py", "_seed_note_with_id"),
+        ("nora/infra/sql/mobility.py", "commit_fold"),
+        ("nora/infra/sql/rollups.py", "switch_build"),
     } <= sites
+
+
+def test_a_write_the_scan_cannot_see_projects_too() -> None:
+    """`SqlRollupStore.apply` writes `rollup_outing` through a helper whose
+    table is a loop variable, so the scan above never sees it; it is held to
+    the same rule by name."""
+    missing = []
+    for site in _UNSEEN_WRITERS:
+        path, _, name = site.partition("::")
+        tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+        modules, functions = _projector_names(tree)
+        found = [
+            n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name
+        ]
+        assert found, f"{site} no longer exists; update _UNSEEN_WRITERS"
+        if not any(
+            _is_projector_call(n, modules, functions)
+            for fn in found for n in _own_nodes(fn)
+        ):
+            missing.append(site)
+    assert not missing, f"these write an indexed table and never project: {missing}"
 
 
 def test_every_write_to_an_indexed_table_projects_or_says_why_not() -> None:

@@ -229,10 +229,12 @@ async def test_a_memo_cites_messages_and_is_retired_when_withdrawn(engine):
     assert (node.unit, node.origin_room, node.text, node.state) == (
         _UNIT, None, "Wifi\nthe code is on the fridge", "live",
     )
-    # A Rollup key has no node until S3: skipped, never a dangling guess.
+    # An episode's Rollup key is an edge to that key as cited (S3): it reaches
+    # the outing's node whenever the current build holds that happening.
     assert await _edges(engine, "memo", sid) == {
         ("memo", sid, "in_room", "room", _ROOM),
         ("memo", sid, "cites", "message", mid),
+        ("memo", sid, "cites", "outing", "x|a/b"),
     }
 
     await store.append(

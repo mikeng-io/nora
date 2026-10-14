@@ -26,7 +26,7 @@ import json
 from bisect import bisect_left
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from itertools import pairwise
 from typing import Any, Literal, NamedTuple
 from zoneinfo import ZoneInfo
@@ -286,6 +286,26 @@ def resolve_by_overlap(
         if (start <= citation.end_ms and end >= citation.start_ms)
     ]
     return Resolution(citation=citation, row_ids=tuple(sorted(hits)))
+
+
+#: The offset a cited interval is printed in: Hong Kong's, fixed.
+_CITED_TZ = timezone(timedelta(hours=8), "HKT")
+
+
+def iso(ts_ms: int) -> str:
+    """RFC 3339 in Hong Kong time, to the second: how `rollup_read` shows a
+    row's interval and so how a note or memo cites it (DEC-156: epoch
+    milliseconds are unreadable to a model)."""
+    return datetime.fromtimestamp(ts_ms / 1000, tz=_CITED_TZ).isoformat(timespec="seconds")
+
+
+def episode_key(subject: str, start_ms: int, end_ms: int) -> str:
+    """An outing's, stay's or trip's memory-index key: its citation
+    `(subject, interval)` exactly as `rollup(kind|subject|from/to)` writes it
+    (`nora.domain.note_body.rollup_key`), without the kind, which the node
+    carries. Never a row id, so a rebuild that recomputes the same happening
+    keeps the key, and what cites it still reaches it."""
+    return f"{subject}|{iso(start_ms)}/{iso(end_ms)}"
 
 
 # --- the unit rollups (25 §3) ---------------------------------------------
@@ -1037,6 +1057,8 @@ __all__ = [
     "colocations",
     "daybooks",
     "days_touched",
+    "episode_key",
+    "iso",
     "iso_week",
     "iso_week_bounds",
     "lineage_json",
