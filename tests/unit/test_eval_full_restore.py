@@ -26,11 +26,14 @@ from evals.recall import CRITERION, evidence_problems, render
 from evals.subject_config import (
     ALLOWED_TO_DIFFER,
     FULL_RESTORE_OVERRIDES,
+    NO_GEOCODER_ENV,
+    SKIP_PREFIX,
     adopted,
 )
-from nora.subject import DrawWorkspace, Sandboxed
+from nora.subject import DrawWorkspace, Sandboxed, SubjectSpec
 from nora.subject.evidence import (
     Evidence,
+    HeldEvent,
     HeldMedia,
     HeldMessage,
     HeldNote,
@@ -168,9 +171,135 @@ async def test_a_spec_override_still_wins_over_the_restore_override(seams) -> No
 def test_the_restore_override_is_declared_and_the_generated_config_keeps_it_off() -> None:
     """The reader is turned on per subject, never in the generated config: the
     file every corpus composes from still forces presence off."""
-    assert FULL_RESTORE_OVERRIDES == {"presence.enabled": True}
-    assert set(FULL_RESTORE_OVERRIDES) <= set(ALLOWED_TO_DIFFER)
+    assert FULL_RESTORE_OVERRIDES["presence.enabled"] is True
+    assert "presence.enabled" in ALLOWED_TO_DIFFER
+    assert all(k.startswith(SKIP_PREFIX) or k in ALLOWED_TO_DIFFER for k in FULL_RESTORE_OVERRIDES)
     assert adopted("[presence]\nenabled = true\n")["presence.enabled"] is False
+
+
+def _built(tmp_path: Any, overrides: dict[str, object] | None) -> Any:
+    from nora.subject.obtain import build_config
+
+    return build_config(SubjectSpec(
+        database_url="postgresql://unused/x", workdir=tmp_path, overrides=overrides,
+    ))
+
+
+#: Every geocoder credential, set as a deploy host's environment would hold it.
+_KEYED = {"GOOGLE_MAPS_API_KEY": "a-real-looking-key", "HKGOV_MAPS_TOKEN": "a-token"}
+
+
+def test_a_full_restore_subject_builds_no_geocoder_even_with_the_keys_set(
+    tmp_path, monkeypatch,
+) -> None:
+    """The reader hands `reverse_geocode` coordinates, and the geocoder is built
+    from the environment whatever the flag says, so the full-restore subject
+    points both credentials at a name nothing sets. The control: the same
+    environment composes a billed client for a snapshot subject, so the test
+    can see one."""
+    from nora.app.composition import reverse_geocoder
+
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    default = _built(tmp_path / "default", None)
+    assert reverse_geocoder(default, _KEYED, cache_store=None) is not None
+    restored = _built(tmp_path / "restore", dict(FULL_RESTORE_OVERRIDES))
+    assert restored.presence.enabled is True
+    assert reverse_geocoder(restored, _KEYED, cache_store=None) is None
+    hkgov = _built(tmp_path / "hkgov", {
+        **FULL_RESTORE_OVERRIDES, "presence.geocode_provider": "hkgov",
+        "presence.hkgov_geocode_url": "https://example.invalid/reverseGeocode",
+    })
+    assert reverse_geocoder(hkgov, _KEYED, cache_store=None) is None
+
+
+async def test_a_full_restore_refuses_while_the_no_geocoder_name_is_set(seams, monkeypatch) -> None:
+    monkeypatch.setenv(NO_GEOCODER_ENV, "someone-set-it")
+    with pytest.raises(ValueError, match=NO_GEOCODER_ENV):
+        await backbone._drive_draw(_case("set"), _spec(full_restore=True), memory_workspace="w")
+    assert seams["obtain"] == []
+
+
+def test_the_corpus_is_judge_only_and_a_run_without_a_judge_refuses(monkeypatch, capsys) -> None:
+    """`expect: reply` is met by ANY reply, so without the judge every recall
+    case would pass on having spoken."""
+    from evals import __main__ as cli
+    from evals.scenarios import JUDGE_REQUIRED
+
+    assert "conversational_recall" in JUDGE_REQUIRED
+    monkeypatch.setattr("sys.argv", ["evals", "conversational_recall"])
+    assert cli.main() == 2
+    assert "refusing to run: ['conversational_recall']" in capsys.readouterr().err
+
+
+class _Judge:
+    def __init__(self) -> None:
+        self.graded: list[dict[str, Any]] = []
+
+    async def grade(self, **kwargs: Any) -> Any:
+        self.graded.append(kwargs)
+        return SimpleNamespace(verdict="PASS", error=None, why="ok")
+
+
+@pytest.fixture
+def judged(seams, monkeypatch) -> dict[str, list[Any]]:
+    """The seams, with a turn that SPOKE and a captured window, so the drive
+    reaches its judge branch; the facts builders are recorded."""
+    calls: dict[str, list[Any]] = {"recall_facts": [], "presence_facts": []}
+
+    async def drive(_subject: object, _case: object, *, now_ms: int) -> Outcome:
+        return Outcome(admitted=True, said=("she said",))
+
+    async def recall_facts(_subject: object, md: Any, *, now_ms: int) -> str:
+        calls["recall_facts"].append(md)
+        return "RECALL FACTS"
+
+    def presence_facts(_spec: Any, md: Any, **_kw: Any) -> str | None:
+        calls["presence_facts"].append(md)
+        return "PRESENCE FACTS" if "presence" in (md.get("criteria") or ()) else None
+
+    monkeypatch.setitem(
+        ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True, config={}),
+    )
+    monkeypatch.setattr(backbone, "_shown_transcript", lambda *_a, **_k: "<m>the window</m>")
+    monkeypatch.setattr(backbone, "recall_facts", recall_facts)
+    monkeypatch.setattr(backbone, "_presence_facts", presence_facts)
+    return calls
+
+
+def _judged_case(name: str, criteria: list[str], **md: Any) -> Case:
+    return Case(name=name, input="x", metadata={
+        "snapshot": dict(_SHOT), "criteria": criteria, **md,
+    })
+
+
+async def test_the_judge_is_handed_the_recall_evidence(judged) -> None:
+    """Pins `_drive_draw`'s wiring: delete the `recall_facts` call and the
+    judge grades a recall case on no facts."""
+    judge = _Judge()
+    case = _judged_case("recall", [CRITERION], evidence={"messages": [1]})
+    await backbone._drive(case, _spec(full_restore=True, judge=judge))
+    [graded] = judge.graded
+    assert graded["facts"] == "RECALL FACTS"
+    assert judged["recall_facts"] == [case.metadata]
+
+
+async def test_a_presence_case_keeps_its_own_facts_and_never_reads_recall_evidence(judged) -> None:
+    """The other half of the claim that the judge branch is unchanged for
+    every other corpus: `recall_facts` runs only when no other builder
+    applied, so a presence case is graded on the presence facts."""
+    judge = _Judge()
+    await backbone._drive(_judged_case("presence", ["presence"]), _spec(judge=judge))
+    [graded] = judge.graded
+    assert graded["facts"] == "PRESENCE FACTS"
+    assert judged["recall_facts"] == []
+
+
+@pytest.mark.parametrize("other", ["presence", "lesson_applied"])
+def test_recall_combined_with_another_facts_criterion_is_refused(other) -> None:
+    problems = evidence_problems({
+        "criteria": [CRITERION, other], "evidence": {"messages": [1]},
+    })
+    assert any("cannot be combined" in p and other in p for p in problems), problems
 
 
 def test_the_registry_names_the_recall_corpus_and_experiment_for_threads_it(monkeypatch) -> None:
@@ -284,3 +413,20 @@ def test_the_facts_name_people_and_times_and_mark_the_current_revision() -> None
     assert "Miles, someone outside this group's roster, at a place with no label" in text
     assert "- none: no outing was recorded in that window." in text
     assert "miles_novak" not in text and "self-set" not in text
+
+
+def test_an_event_is_rendered_in_the_deployments_timezone_with_its_distance() -> None:
+    at = datetime(2026, 9, 30, 13, 0, tzinfo=UTC)
+    at_ms = int(at.timestamp() * 1000)
+    held = Evidence(at=at, events=(HeldEvent(
+        id=_NOTE, title="dinner", when_ms=at_ms + 2 * 86_400_000,
+        end_ms=at_ms + 2 * 86_400_000 + 7_200_000, venue=None, status="confirmed",
+        people=("miles_novak",),
+    ),))
+    text = render(held, names={"miles_novak": "Miles"}, display_name="Nora",
+                  tz=ZoneInfo("Asia/Hong_Kong"))
+    assert (
+        "when 2026-10-02 21:00 (Fri), 2 days 0 h after she was asked "
+        "to 2026-10-02 23:00 (Fri), 2 days 2 h after she was asked"
+    ) in text
+    assert "with Miles" in text and "no venue set" in text

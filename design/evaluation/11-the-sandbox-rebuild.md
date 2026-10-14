@@ -19,6 +19,22 @@ does not run — it is never quietly assembled without it.
 defensible default, because the thing that would license any exception cannot be
 measured.** See §1.1.
 
+> **Amendment, 2026-10-15 (design/unified-memory step 0a): a second assembly,
+> chosen per CORPUS.** A corpus in `evals.scenarios.FULL_RESTORE_CORPORA`
+> (today `conversational_recall` alone) is seeded by `sandbox_as_of`, every
+> restorable store as of the instant with its own ids, instead of
+> `sandbox_database` + `sandbox_from_snapshot`'s four tiers, and its subject
+> composes with the presence READER on (`evals.subject_config.
+> FULL_RESTORE_OVERRIDES`: no collector, no geocoder, R-31 untouched). Why:
+> the memory journeys recall a picture's stored reading, a note's revisions
+> and the Rollup's outings, which the snapshot path does not reconstruct, so
+> on it those cases could not run at all. The choice is the corpus's, never a
+> case's: every case of such a corpus is assembled the same way, every other
+> corpus keeps the snapshot path byte for byte
+> (`tests/unit/test_eval_full_restore.py`), and the rule above still binds
+> within each. Honcho is still not replayed (§3): both assemblies start each
+> draw on an empty workspace, which the corpus declares.
+
 ## 1. What this replaces, and why twice was not enough
 
 > **Re-baseline, throughout this document (2026-09-25):** a re-baseline is the before arm of the next confirming run, never a standalone run. See the nora-eval skill, "An eval confirms a fix; it never finds one".

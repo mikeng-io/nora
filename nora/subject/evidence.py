@@ -115,8 +115,9 @@ class HeldNote:
 class HeldEvent:
     id: str
     title: str
-    when: str | None
-    end: str | None
+    #: When it starts and ends, epoch ms; `None` when the row set none.
+    when_ms: int | None
+    end_ms: int | None
     venue: str | None
     status: str
     people: tuple[str, ...]
@@ -263,18 +264,29 @@ async def evidence_at(
                     )
                 out_events.append(HeldEvent(
                     id=str(event_id), title=str(row.get("title") or ""),
-                    when=row.get("when"), end=row.get("end"),
+                    when_ms=_instant(row.get("when"), what=f"event {event_id}'s start"),
+                    end_ms=_instant(row.get("end"), what=f"event {event_id}'s end"),
                     venue=row.get("venue_name") or row.get("venue_text") or None,
                     status=str(row.get("status") or ""),
                     people=tuple(str(p) for p in row.get("people") or ()),
                 ))
 
             out_outings = []
+            if outings:
+                current = await _current_build(conn, at=at)
             for outing_id in outings:
                 row = await held("rollup_outing", {"id": int(outing_id)})
                 if row.get("unit") != subject.unit:
                     raise EvidenceUnavailableError(
                         f"outing {outing_id} is not in the case's own unit"
+                    )
+                # An outing of a build that was not current at the instant is
+                # one the Rollup had already replaced (or not yet switched to):
+                # not what it recorded then.
+                if int(row.get("build_id") or 0) != current:
+                    raise EvidenceUnavailableError(
+                        f"outing {outing_id} is of Rollup build {row.get('build_id')}, "
+                        f"and build {current} was the current one at {at.isoformat()}"
                     )
                 out_outings.append(_outing(row))
 
@@ -290,19 +302,25 @@ async def evidence_at(
     )
 
 
-async def _window(conn: Any, *, unit: str, at: datetime, days: int) -> tuple[HeldOuting, ...]:
-    """Every outing of `unit` in the Rollup build that was CURRENT at `at`
-    whose window overlaps the `days` before it. No build current at `at` is
-    unavailable, never «no outings»: the Rollup did not exist yet."""
+async def _current_build(conn: Any, *, at: datetime) -> int:
+    """The id of the ONE Rollup build current at `at`. None is unavailable,
+    never «no outings» (the Rollup did not exist yet), and several is a
+    Rollup in a state no single answer describes."""
     builds = (await conn.execute(sa.text(
         _OPEN_VERSIONS + "image->>'status' = 'current'"
     ), {"t": "rollup_build", "at": at})).scalars().all()
     if len(builds) != 1:
         raise EvidenceUnavailableError(
-            f"{len(builds)} Rollup builds were current at {at.isoformat()}; an outing "
-            "window is read from exactly one"
+            f"{len(builds)} Rollup builds were current at {at.isoformat()}; outings "
+            "are read from exactly one"
         )
-    build_id = int(dict(builds[0])["id"])
+    return int(dict(builds[0])["id"])
+
+
+async def _window(conn: Any, *, unit: str, at: datetime, days: int) -> tuple[HeldOuting, ...]:
+    """Every outing of `unit` in the Rollup build that was CURRENT at `at`
+    whose window overlaps the `days` before it."""
+    build_id = await _current_build(conn, at=at)
     since = _ms(at) - days * _DAY_MS
     rows = (await conn.execute(sa.text(
         _OPEN_VERSIONS + "image->>'unit' = :u AND (image->>'build_id')::bigint = :b"
@@ -316,6 +334,21 @@ async def _window(conn: Any, *, unit: str, at: datetime, days: int) -> tuple[Hel
 
 def _ms(at: datetime) -> int:
     return int(at.timestamp() * 1000)
+
+
+def _instant(value: Any, *, what: str) -> int | None:
+    """A `timestamptz` as `row_history` holds it (an ISO string in the jsonb
+    image), as epoch ms. Unreadable RAISES: a time the judge cannot be told
+    is not rendered as some other time."""
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError as exc:
+        raise EvidenceUnavailableError(f"{what} is not a time: {value!r}") from exc
+    if parsed.tzinfo is None:
+        raise EvidenceUnavailableError(f"{what} carries no timezone: {value!r}")
+    return _ms(parsed)
 
 
 def _message(row: dict[str, Any]) -> HeldMessage:

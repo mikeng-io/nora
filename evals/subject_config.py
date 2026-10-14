@@ -107,14 +107,38 @@ FORCE_OFF: tuple[str, ...] = (
 #: no presence rows: its reason was «a live location feed no anchor can
 #: reconstruct». A full restore DOES reconstruct them: `presence_fixes`,
 #: `presence_stays`/`_trips`/`_places` and the `rollup_*` builds are restored as
-#: of the instant (`nora.infra.sql.history.HISTORY_TABLES`). In the Nora process
-#: the flag wires the READER and nothing else (`nora/app/composition.py:2730`:
-#: the `PresenceStore` and the circles `where_is`, `where_been` and
-#: `routine_read` read through). The COLLECTOR, which polls Life360, is a
-#: separate process (`python -m nora.presence`, `nora/presence/composition.py`)
-#: that `obtain()` never composes, so with the flag on NOTHING POLLS.
-#: `presence.refresh_url` stays the example's empty value (`presence.` is in
-#: `SKIP_PREFIX`), so `where_is` asks no collector for a fresh fix either.
+#: of the instant (`nora.infra.sql.history.HISTORY_TABLES`).
+#:
+#: WHAT THE FLAG DOES IN THE NORA PROCESS, all of it (`nora/app/composition.py`):
+#:
+#: - wires the READER, `PresenceStore` and the circles that `where_is`,
+#:   `where_been` and `routine_read` read through (`:2730`);
+#: - spawns `_presence_preflight` as a background task (`:3194`, the R-21/R-31
+#:   boot alarm), which reads the roster of EVERY policy conversation whose
+#:   platform has a roster. Checked, not neutralised: the rosters are exactly
+#:   the ones composition already builds for every corpus (`:2104`). Signal's
+#:   dials `platforms.signal.base_url`, the example's loopback
+#:   `127.0.0.1:18080` (`SKIP_PREFIX`); Discord and WhatsApp are forced off, so
+#:   they have none; Instagram's dials the deployment's compose-private
+#:   `instagram-bridge:18082`, which `nora/platform/registry.py:292` already
+#:   dials at composition for every corpus. Every read is a GET of a member
+#:   list; it writes nothing and adds no endpoint;
+#: - and, with a store present, lets `where_is` ask `presence.refresh_url` for a
+#:   fresh fix, which stays the example's empty value here (`presence.` is in
+#:   `SKIP_PREFIX`), so nothing is asked.
+#:
+#: The COLLECTOR, which polls Life360, is a separate process (`python -m
+#: nora.presence`, `nora/presence/composition.py`) that `obtain()` never
+#: composes, so NOTHING POLLS.
+#:
+#: THE GEOCODER IS NOT THE FLAG'S. `reverse_geocoder` (composition.py) builds a
+#: billed Google (or HK-gov) client from the process environment whenever the
+#: key is set, flag on or off. With the flag off nothing can hand
+#: `reverse_geocode` a coordinate; with the reader on, `where_is`/`where_been`
+#: can, and the only thing between them and a billed call would be the room
+#: reading as degraded (below), which a roster fix would remove. So the key's
+#: env var is pointed at a name nothing sets: the full-restore subject holds no
+#: geocoder, and `reverse_geocode` answers its own `unavailable`.
 #:
 #: A DIVERGENCE THAT REMAINS, declared: the R-31 guard is production's and is not
 #: touched (`_presence_audience`, `Whereis.locate`, the policy's `location`
@@ -125,7 +149,16 @@ FORCE_OFF: tuple[str, ...] = (
 #: unreadable roster. The rows are restored and reachable by the reader; what
 #: is not reconstructed is who was in the room at the instant, which is
 #: recorded nowhere.
-FULL_RESTORE_OVERRIDES: dict[str, object] = {"presence.enabled": True}
+FULL_RESTORE_OVERRIDES: dict[str, object] = {
+    "presence.enabled": True,
+    "presence.geocode_api_key_env": "NORA_EVAL_NO_GEOCODER",
+    "presence.hkgov_token_env": "NORA_EVAL_NO_GEOCODER",
+}
+
+#: The env var `FULL_RESTORE_OVERRIDES` names for every geocoder credential.
+#: `obtain` never sets it, and a subject composed while something has refuses
+#: in `evals.backbone._drive_draw` rather than build a billed client.
+NO_GEOCODER_ENV = "NORA_EVAL_NO_GEOCODER"
 
 #: What `[subagent] enabled` needs ON to load (`nora/config.py`
 #: `_subagent_needs_the_dreamer_and_the_poller`); a key here leaves `FORCE_OFF`

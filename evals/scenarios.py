@@ -410,7 +410,12 @@ JUDGED_CORPORA = frozenset({
 #: something" is true of every fold that did not fail. Run without a judge,
 #: every case would pay for a fold and then ERROR, so `python -m evals` refuses
 #: to start one instead.
-JUDGE_REQUIRED = frozenset({"standing"})
+#:
+#: `conversational_recall` too: its only structural reading is `expect: reply`,
+#: which any reply meets, including one that invents a place, and its evidence
+#: is read (fail-closed, `evals.recall.recall_facts`) only inside the judge
+#: branch. Run without a judge, every case would PASS on having spoken.
+JUDGE_REQUIRED = frozenset({"standing", "conversational_recall"})
 
 
 def experiment_for(

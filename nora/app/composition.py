@@ -2810,21 +2810,7 @@ async def build_dependencies(
     # the pool.
     from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
     geocode_cache_store = SqlGeocodeCacheStore(engine)
-    geocoder: ReverseGeocoder | None = None
-    if cfg.presence.geocode_provider == "hkgov":
-        hkgov_token = os.environ.get(cfg.presence.hkgov_token_env, "")
-        if hkgov_token and cfg.presence.hkgov_geocode_url:
-            from nora.infra.geocode_hkgov import HKGovGeocoder
-            geocoder = HKGovGeocoder(
-                service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
-                lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
-                cache_store=geocode_cache_store,
-            )
-    else:
-        maps_key = os.environ.get(cfg.presence.geocode_api_key_env, "")
-        if maps_key:
-            from nora.infra.geocode import GoogleGeocoder
-            geocoder = GoogleGeocoder(api_key=maps_key, cache_store=geocode_cache_store)
+    geocoder = reverse_geocoder(cfg, os.environ, cache_store=geocode_cache_store)
     # `ComputeBackend`: NO adapter ships. The per-job container backend was
     # retired in S3b (design/sandbox-runtime decision 4); the port,
     # `ComputeJobPoller`, `compute_jobs` and boot recovery stay
@@ -4619,6 +4605,32 @@ def _roster_names_of(
         return {p.name: p.person_id for p in view.people}
 
     return roster_of
+
+
+def reverse_geocoder(
+    cfg: Config, environ: Mapping[str, str], *, cache_store: Any,
+) -> ReverseGeocoder | None:
+    """The on-demand reverse-geocoder `[presence] geocode_provider` names, or
+    `None` when that backend's credential (read from `environ` under the env
+    var the config names) or endpoint is absent. Independent of `[presence]
+    enabled`: `reverse_geocode` holds it whatever the reader's state. A name of
+    its own so a composition's geocoder can be checked without driving a turn
+    (`tests/unit/test_eval_full_restore.py`)."""
+    if cfg.presence.geocode_provider == "hkgov":
+        hkgov_token = environ.get(cfg.presence.hkgov_token_env, "")
+        if hkgov_token and cfg.presence.hkgov_geocode_url:
+            from nora.infra.geocode_hkgov import HKGovGeocoder
+            return HKGovGeocoder(
+                service_url=cfg.presence.hkgov_geocode_url, token=hkgov_token,
+                lang_zh=cfg.presence.hkgov_lang_zh, lang_en=cfg.presence.hkgov_lang_en,
+                cache_store=cache_store,
+            )
+        return None
+    maps_key = environ.get(cfg.presence.geocode_api_key_env, "")
+    if maps_key:
+        from nora.infra.geocode import GoogleGeocoder
+        return GoogleGeocoder(api_key=maps_key, cache_store=cache_store)
+    return None
 
 
 async def _presence_preflight(

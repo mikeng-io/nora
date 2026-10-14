@@ -1,0 +1,6 @@
+{
+  "type": "none",
+  "reason": "Review fixes to the recall eval: the corpus now needs a judge, the full-restore subject builds no geocoder, and the evidence read refuses more. Production gains a named geocoder builder with the same behaviour.",
+  "details": [],
+  "limitations": []
+}

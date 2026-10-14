@@ -41,6 +41,11 @@ EVIDENCE_KEYS: dict[str, str] = {
     "rollup_window_days": "an integer from 1 to 90: every outing in the days before the instant",
 }
 
+#: Criteria with a facts builder of their own (`evals.backbone._presence_facts`,
+#: `_lesson_facts`); a case opting into one of them and `recall_grounded` is
+#: refused at load (`evidence_problems`).
+EXCLUSIVE_WITH = frozenset({"presence", "lesson_applied"})
+
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 #: A note or event is named by the first 8 hex of its uuid, never the whole
 #: uuid: a full uuid is the shape of a Signal account id, which the repo's PII
@@ -64,6 +69,16 @@ def evidence_problems(metadata: Mapping[str, Any]) -> list[str]:
         return ["`metadata.evidence` is read only by `recall_grounded`"] if evidence else []
     if not isinstance(evidence, Mapping) or not evidence:
         return ["`recall_grounded` needs `metadata.evidence`, the records it is graded on"]
+    # The judge reads ONE facts section, and the drive fills it from the first
+    # builder that applies (`evals.backbone._drive_draw`): a case that also
+    # opts into one of these would be graded with the other's facts and its
+    # evidence silently dropped. Refused rather than merged.
+    clashing = sorted(set(criteria) & EXCLUSIVE_WITH)
+    if clashing:
+        return [
+            f"`recall_grounded` cannot be combined with {clashing}: each brings its "
+            "own facts section and the judge reads one"
+        ]
     problems = [
         f"`evidence.{k}` is not a key; known: {sorted(EVIDENCE_KEYS)}"
         for k in evidence if k not in EVIDENCE_KEYS
@@ -192,9 +207,11 @@ def render(held: Evidence, *, names: Mapping[str, str], display_name: str, tz: Z
         lines += ["", "Events in her calendar for this group:"]
         for e in held.events:
             people = ", ".join(person(p) for p in e.people) or "nobody named"
+            start = when(e.when_ms) if e.when_ms is not None else "not set"
+            end = f" to {when(e.end_ms)}" if e.end_ms is not None else ""
             lines.append(
-                f"- event «{e.title}», {e.status or 'no status'}, when {e.when or 'not set'}"
-                f"{f' to {e.end}' if e.end else ''}, at {e.venue or 'no venue set'}, with {people}"
+                f"- event «{e.title}», {e.status or 'no status'}, when {start}{end}, "
+                f"at {e.venue or 'no venue set'}, with {people}"
             )
     if held.outings:
         lines += [
@@ -229,14 +246,14 @@ def _date(anchor: int | None) -> str:
 
 
 def _age(ms: int) -> str:
-    """How long before the moment, in the largest two units."""
-    if ms < 0:
-        return "after the moment"
-    minutes = ms // 60_000
+    """How long before the moment (or, for a planned event, after it), in the
+    largest two units."""
+    side = "before" if ms >= 0 else "after"
+    minutes = abs(ms) // 60_000
     days, rem = divmod(minutes, 1440)
     hours, mins = divmod(rem, 60)
     if days:
-        return f"{days} day{'s' if days != 1 else ''} {hours} h before she was asked"
+        return f"{days} day{'s' if days != 1 else ''} {hours} h {side} she was asked"
     if hours:
-        return f"{hours} h {mins} min before she was asked"
-    return f"{mins} min before she was asked"
+        return f"{hours} h {mins} min {side} she was asked"
+    return f"{mins} min {side} she was asked"

@@ -66,7 +66,7 @@ from evals.situation import (
     shown_where,
     varied_transport,
 )
-from evals.subject_config import FULL_RESTORE_OVERRIDES
+from evals.subject_config import FULL_RESTORE_OVERRIDES, NO_GEOCODER_ENV
 from nora.domain.note_body import (
     ATTRIBUTED,
     SECTIONS,
@@ -1379,6 +1379,13 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
     room = (str(shot["platform"]), str(shot["conversation_id"]))
     before_ms = int(shot["before_ms"])
     now = datetime.fromtimestamp(before_ms / 1000, tz=UTC)
+    if spec.full_restore and os.environ.get(NO_GEOCODER_ENV):
+        # The geocoder credentials are pointed at this name BECAUSE nothing
+        # sets it; set, the full-restore subject would build a billed client.
+        raise ValueError(
+            f"${NO_GEOCODER_ENV} is set, and a full-restore subject reads its "
+            "geocoder credential from it (`FULL_RESTORE_OVERRIDES`); unset it"
+        )
     workdir = Path(tempfile.mkdtemp(prefix="nora-case-"))
     subject = None
     try:
