@@ -106,8 +106,8 @@ counting a module's responsibilities to counting its lines.
     it silently, while its own docstring named that exact shape as the one that
     must never happen (#166).
 
-    What it did by the time it was removed (it no longer runs; #283 tracks
-    the pre-commit detector that should replace it): walked every git OBJECT,
+    What it did by the time it was removed (it no longer runs; #283's
+    pre-commit detector replaced it, below): walked every git OBJECT,
     every commit MESSAGE, and the working tree — objects being what would be
     published and the working tree what is about to become one. Undecodable content, and a tracked path that
     is not a regular file, were ERRORS with a declared allowlist rather than
@@ -116,8 +116,32 @@ counting a module's responsibilities to counting its lines.
     their declared form. The coordinate rule was shape-agnostic — comma-, tab-
     and JSON-separated rows all count — and a location table must be DECLARED
     WITH A SIZE, never merely by path: exempting a path outright let the next
-    corpus be pasted into a file already on the list. Until #283 lands, nothing
-    enforces any of this.
+    corpus be pasted into a file already on the list.
+
+    Its replacement (#283, 2026-09-26) is `scripts/pii_scan.py`, run by the
+    `pre-commit`, `commit-msg` and `pre-push` hooks (`.githooks/README.md`).
+    It keeps the object-level look — pre-push reads every blob, message and
+    author identity a push introduces, so the `git rm` replay above fails
+    there — and judges only what a change ADDS, which is what makes it
+    seconds, not a history scan. The real values sit in a denylist outside
+    the repo, matched after normalisation. The four structural holes the old
+    gate left are the new one's design: coordinates are read as FIELDS and
+    scored on dwell (rows x places), not literal count; a declared table is
+    pinned to its CONTENT digest, not its size; declarations and placeholders
+    are read from the newest ancestor the remote already has, so a
+    declaration cannot land beside, be amended into, or be pushed with its
+    payload; phones written with a `+` are detected in every country, and the
+    denylist is matched through separators, look-alike letters, Traditional
+    and Simplified Chinese, and decoded JSON, URL, HTML and base64 layers. UTF-16, undecodable
+    bytes, symlinks and gitlinks stay ERRORs with a declared allowlist, and a
+    declared binary is scanned for embedded strings, never skipped. Every
+    rule is guarded by a named test, shown by a mutation table
+    (`scripts/mutations/pii-precommit-detector.json`). Since round 3 it is
+    deterministic end to end -- the model adjudicator and commit judge were
+    removed, and a finding clears only by a pushed declaration, the private
+    pseudonym registry or a human acknowledgement. It is still not a
+    control against a motivated author, and not what decides a public
+    release (#167).
 
     Falsified by attack, not by assertion: an undeclared identifier planted in
     the gate's OWN source, a table pasted into a declared path, a table at an
