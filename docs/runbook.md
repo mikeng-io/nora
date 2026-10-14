@@ -1248,6 +1248,10 @@ host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
 `unavailable`). See `ARCHITECTURE.md` §1's browser-boundary note.
 
+The Tailscale address, the OpenCLI profile alias and the host user in the unit
+names below are placeholders; the real ones are on the deploy host
+(`tailscale ip -4`, `systemctl --user list-units '*-desktop*' '*-chrome*'`, `opencli profile list`).
+
 - `nora-social-desktop.service` — `tigervncserver :2 -fg` (Xtigervnc,
   1920x1080, Openbox), VNC bound to the Tailscale interface only
   (`-interface 100.91.183.127 -localhost=0`, port 5902, `-SecurityTypes VncAuth`:
