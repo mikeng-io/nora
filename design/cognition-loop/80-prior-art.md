@@ -74,7 +74,10 @@ is also a background job: nobody tagged her when it runs.
 
 ## 4. Adopted
 
-1. **Retraction cascade** (Honcho scopes). When a Record item is withdrawn — a
+1. *(Superseded 2026-10-03: the cascade and its `citation` table were removed,
+   migrations 0092/0093, [10](10-tiers.md) §2 rule 7; a deleted message is
+   hidden and nothing derived is withdrawn, [unified-memory/35](../unified-memory/35-persona.md) §5.)*
+   **Retraction cascade** (Honcho scopes). When a Record item is withdrawn — a
    message deleted, the PII scrub, a face label removed, a person leaving a
    unit — every derived revision whose citation chain reaches it is marked
    `unsupported`, stops rendering, and goes to its writer's next session for

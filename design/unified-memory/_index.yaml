@@ -8,7 +8,12 @@ description: >
   behind one retrieval service (scope, hybrid seed, graph expansion, optional
   rerank). Persona (ruled 2026-10-15) composes identity, character and
   abduced hypotheses into one account per actor (humans, Nora, other agents)
-  and collective (rooms, units), widening the Character tier. Records the measured
+  and collective (rooms, units), widening the Character tier. Amended
+  2026-10-15 on an audit: the unit is the read boundary (lineage stays off),
+  a deleted message is hidden and nothing derived is withdrawn, graph
+  expansion has adaptive depth with scope on every node, hypotheses are
+  graded by a judge other than their writer, and shadow changes no prompt.
+  Records the measured
   Honcho audit, the memory map, a retrieval-stack bake-off plan (trigram vs
   BM25; bge-m3, EmbeddingGemma 2, WeMM-Embedding; fusion; reranker) and
   October 2026 prior art. Nothing is built.

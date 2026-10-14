@@ -42,8 +42,8 @@ retrieval layer exists means they are searchable from their first row.
 - **The reasoning modes** are [cognition-loop/10](../cognition-loop/10-tiers.md)
   §4: `computed`, `told`, `deduced`, `induced`, **`abduced`** and `said`
   (whether they stay as stored detail is cognition-loop/05 §10 Q2, still
-  open; this bundle assumes they do, and node 35 amends their "allowed in"
-  column for Persona).
+  open; this bundle assumes they do, and [45](45-persona-adaptor.md) §3 is
+  the one amended "allowed in" table for Persona).
   Abduction already exists as a mode, and its rule is already the right one:
   a value resting only on abduction "goes out as a question", and is never
   upgraded by assent. The operator's three reasoning layers are this table,
@@ -69,7 +69,7 @@ retrieval layer exists means they are searchable from their first row.
 | [20](20-embedding-bakeoff.md) | the retrieval-stack bake-off: trigram vs BM25, bge-m3 vs EmbeddingGemma 2 (released 2026-10-06) vs WeMM-Embedding, fused, then reranked, on Nora's own mixed Cantonese and English corpus |
 | [25](25-memory-graph.md) | the memory graph (one node per item in any store, a closed set of edge relations, citations written with their entries) and the one retrieval service over it: scope, seed, expand, rerank, with push / pre-fetch / pull injection |
 | [30](30-identity-and-character.md) | (superseded in part by 35) Identity as its own tier beside Character, for actors (human, Nora, another agent) and collectives (room, unit), with "remember this" and "that's wrong" |
-| [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; anyone may dispute; visibility; the one-off backfill |
+| [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; disputes (the subject's hides a line at once, anyone else's is weighed); the unit as the read boundary; deleted messages; the one-off backfill |
 | [45](45-persona-adaptor.md) | the Persona schema (typed lines around prose), the enforced reasoning modes, the adaptor's inputs and its one write verb, and the Honcho coverage measure; reverses DEC-184/290's no-schema rule for Persona |
 | [50](50-learning-from-acts.md) | learning from every act: an outcome episode per social act, explicit feedback, `outcome_of`, what Lessons and Persona learn from them |
 | [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
@@ -79,31 +79,39 @@ retrieval layer exists means they are searchable from their first row.
 ```
  AUTHORED   doctrine, policy, identity.toml            (not indexed)
     │
- RECORD     messages · media readings · links · social items · disputes
-    │          ingestion writes the row and project()s its node + edges
+ RECORD     messages · media readings · links · social items · disputes ·
+    │       feedback      ingestion writes the row and project()s its node + edges
     ▼
- ROLLUP     outings · stays · trips (episodes)   rhythm · ties (by key only)
+ ROLLUP     outings · stays · trips · response episodes   rhythm · ties (by key only)
     │          each current build projects its episodes + `during` edges
     ▼
  NOTEBOOK   Register (notes, memos, events)   Persona (identity · character ·
-            hypotheses)   Lessons   Standing      each written by its one writer,
-            citations stored with the entry and projected as `cites`/`about` edges
+            hypotheses)   Lessons   Standing      each written by its one writer;
+            memos, events, lessons, Persona (and notes, once built) store their
+            citations with the entry, projected as `cites` edges; Standing has none
     │
-    ├──────────►  MEMORY INDEX  (derived, rebuildable, one per database)
-    │               memory_node: pointer + text + vector + time + scope
-    │               memory_edge: closed relation set, copied from the stores
+    │      ┄┄┄┄┄┄┄┄┄┄  MEMORY INDEX  (outside the layers: derived, rebuildable,
+    │                  never cited; one per database)
+    │                    memory_node: pointer + text + vector + time + scope
+    │                    memory_edge: closed relation set, copied from the stores
     │                    ▲
     ▼                    │ one retrieval service: scope → seed → expand → rerank
- VIEWS      push (Persona, Culture, open notes, Standing) · pre-fetch · ask_memory
+ VIEWS      push (the speaker's and the room's Persona, open notes, Standing)
+            · pre-fetch · ask_memory
 ```
 
-Nothing sits beside the flow any more: Honcho's every use has a fate in
-[10](10-honcho-audit.md) §4 and §5.
+Honcho no longer sits beside the flow: its every use has a fate in
+[10](10-honcho-audit.md) §4 and §5. The memory index is drawn outside the
+layers because it is not one (amended 2026-10-15): it is a derived index
+rebuilt from the stores it reads, it is never cited, and nothing derived
+rests on it (cognition-loop/05 rule 2: only the Record and the Rollup are
+evidence). Losing it loses nothing but speed.
 
 ## The proposed shape, in three parts
 
 **1. One index and graph, one verb** (detailed in [25](25-memory-graph.md),
-which supersedes this paragraph's flat-index framing). A projection over every store: messages,
+which supersedes this paragraph's flat-index framing and the vector storage
+below, [25](25-memory-graph.md) §3). A projection over every store: messages,
 notes, memos, events, media readings (and media vectors, if the bake-off
 justifies them), Standing, Character, rollup episodes, presence episodes and
 social items once step 5 writes them. One row per item: kind, owner store and
@@ -135,36 +143,69 @@ writes with a mode. Two things are open:
   and Standing only. The recommendation case ("they pick short co-op games
   *because* one of them only has evenings free") is an explanation of a
   unit's behaviour, which is Character's question, and Character is
-  `induced`-only. Whether an abduced line may sit in Character, marked as a
-  hypothesis, or must live in Standing, is the operator's decision.
+  `induced`-only. **Ruled 2026-10-15 ([35](35-persona.md)):** abduced lines
+  are Persona's third part, Hypotheses, each with a prediction, and never
+  rendered as fact.
 - **A hypothesis that can be proved wrong.** An abduced row today goes out as
   a question. The proposal: it also carries a **prediction** that later Record
   rows confirm or refute ("if the evening explanation holds, a long RPG
   suggestion is declined"), and it is retired when refuted. The confirmation
   rate is then a grounded measure of the Dreamer's abduction, read from later
-  evidence rather than from the model's opinion of itself.
+  evidence rather than from the model's opinion of itself. How the verdict is
+  kept from being self-graded is [45](45-persona-adaptor.md) §3.
 
 ## Sequence
+
+Amended 2026-10-15 (operator): step 0 has run, and the steps between the
+index and Honcho's exit are now listed in their order.
 
 0. **The journeys on existing tools first**, conversational-recall's own
    first step ([conversational-recall/20](../conversational-recall/20-orchestration.md)
    "Smallest viable choice"): its three journeys, with better assembly and no
-   new index. If they pass, steps 2–3 wait.
-   Its instrument (0a) is built, 2026-10-14: the
+   new index. Its instrument (0a) is the
    [`conversational_recall`](../../evals/corpora/conversational_recall.yaml)
    corpus, eight anchored cases judged on `recall_grounded`, each on a full
-   restore of every store as of its instant. Not yet run.
+   restore of every store as of its instant.
+   **Run at `ba17dcdd`, n=1: 7 of 8 PASS.** The one failure was a
+   time-scoping misread (a week with no outings answered with an older
+   outing); no case failed because a record could not be found. A rerun at
+   `b34d34e1` with `rollup_read` on the tag path (PR #8, DEC-312) scored 7 of
+   8 again, one case fixed and another broken, so that change is not shown to
+   help. n=1 decides nothing about a rate, but it is the reading this step
+   asked for.
+   **Applying this step's own rule honestly:** recall correctness does not
+   justify the index; the journeys pass on existing tools. The refactor
+   proceeds on the operator's own grounds (operator, 2026-10-15): retire
+   Honcho, one memory she owns, one verb, and Persona. The index is the means
+   to those, not a fix for a measured recall failure.
 1. **Audit** ([10](10-honcho-audit.md)): what Honcho supplies that no tier
    supplies. Done for code and call volume; whether the prefilled blocks
-   change replies is open.
+   change replies is step 7's replay.
 2. **Bake-off** ([20](20-embedding-bakeoff.md)): choose the embedder on Nora's
-   corpus.
-3. **Index and the one verb**, over the stores that exist, with the
-   conversational-recall journeys as its acceptance cases.
-4. **Honcho out**: each read replaced or dropped per the audit, the feed and
-   `remember` rerouted, the client and its routing deleted.
-5. Then cognition-loop step 5 (social and play), writing into the index from
-   its first row; step 6 (faces); then personalisation.
+   corpus. Runs beside step 3; the index's lexical channel does not wait for it.
+3. **Index, `project()` and the one verb**, lexical first, over the stores
+   that exist ([25](25-memory-graph.md) §7); vectors join when step 2 picks
+   the embedder. The conversational-recall journeys are its acceptance cases.
+4. **Note citations.** `note_create` / `note_update` gain citations like
+   memos, lessons and events. `note_revision` has no citations column today
+   (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema
+   and verb change, not a projection.
+5. **Persona schema and `persona_write`** ([45](45-persona-adaptor.md) §1–§4),
+   with the build prerequisites listed in 45 §4.
+6. **The Persona adaptor in shadow, and the backfill** ([35](35-persona.md)
+   §4, [45](45-persona-adaptor.md) §6): Persona is written under a shadow key,
+   every prompt is unchanged, Honcho's feed keeps running.
+7. **The gates**: the coverage measure and the reply replay
+   ([45](45-persona-adaptor.md) §6).
+8. **Switch the prompts**: `<persona>` replaces `peer_card`, `peer_history`
+   and `<person_account>`.
+9. **Honcho out**: each read replaced or dropped per the audit, the feed and
+   `remember` rerouted, the routing deleted. The Honcho client itself is
+   deleted only after the switch has held for 14 days with the gates' readings
+   unchanged, so the rollback until then is a config flip.
+10. **Acts get outcomes** ([50](50-learning-from-acts.md)), before:
+11. cognition-loop step 5 (social and play), writing into the index from its
+    first row; step 6 (faces); then personalisation.
 
 ## Not in this bundle
 
@@ -183,4 +224,7 @@ writes with a mode. Two things are open:
   deletion.
 - The conversational-recall journeys pass on existing tools with better
   assembly alone: then the index is not needed yet (that bundle's own
-  smallest-choice rule).
+  smallest-choice rule). **Read 2026-10-15:** they did, 7 of 8 at n=1
+  («Sequence» step 0). The operator proceeds on the grounds recorded there,
+  so this reading no longer gates the index; it still forbids claiming the
+  index improves recall until a journey shows it.

@@ -59,14 +59,18 @@ such, and "not found" means not found.
 
 ## 4. What this bundle takes
 
+Re-pointed 2026-10-15: node 30's proposals were superseded by
+[35](35-persona.md) and [45](45-persona-adaptor.md), which are where each
+taken idea now lives.
+
 | taken | from | where |
 |---|---|---|
-| identity as a separate record from behaviour; stable only; capped; instructions never inferred | Honcho 3.3 peer card | [30](30-identity-and-character.md) §3 |
-| any participant can be the subject, agents included | Honcho | 30 §6 |
-| conflicts as rows marked current / superseded / disputed | Cognee | 30 §4 |
-| keep the speech act; never record exploration as fact | ChatGPT's failure | 30 §4 |
-| per-section caps with a stated eviction | Kindroid | 30 §3 |
-| show which memory fed a reply; let the subject correct it | Kindroid, Claude | 30 §7 |
+| identity as a separate part from behaviour; stable only; capped; instructions never inferred | Honcho 3.3 peer card | [35](35-persona.md) §1 (a part of Persona, not a separate record), [45](45-persona-adaptor.md) §2–§3 |
+| any participant can be the subject, agents included | Honcho | 30 §6, under Persona (35) |
+| conflicts as rows marked current / superseded / disputed / outranked | Cognee | [45](45-persona-adaptor.md) §3 |
+| keep the speech act; never record exploration as fact | ChatGPT's failure | 45 §3 |
+| per-part caps with a stated eviction | Kindroid | 45 §2 |
+| show which memory fed a reply; let the subject correct it | Kindroid, Claude | 30 §7 «Seeing it», 35 §2 |
 | semantic + lexical + graph, fused by RRF, then an optional reranker, all in Postgres | Hindsight, Graphiti | [25](25-memory-graph.md) §4 |
 | scope before ranking, and test every read path under every scope | Honcho scopes; governed-memory reviews | 25 §4 |
 | media is text plus a pointer back to the original | every system checked | [15](15-memory-map.md) |
@@ -85,9 +89,9 @@ such, and "not found" means not found.
 
 ## 6. Where Nora is ahead, and where it is not
 
-**Ahead.** Collective subjects (a room's and a unit's Character, and Identity
-in [30](30-identity-and-character.md)) where no shipped system stores a group's
-identity. Reasoning modes including abduction where Honcho has it in its docs
+**Ahead.** Collective subjects (a room's and a unit's Persona, its identity
+and character parts, [35](35-persona.md), [45](45-persona-adaptor.md)) where
+no shipped system stores a group's identity. Reasoning modes including abduction where Honcho has it in its docs
 only. Citations to Record rows on every derived line.
 
 **Not ahead.** GroupMemBench's finding applies to Nora: speaker attribution
