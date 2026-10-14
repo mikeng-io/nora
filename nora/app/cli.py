@@ -4,7 +4,8 @@ the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). This module's own commands only READ the record
 store; four write elsewhere, each named where it is registered: `xai-login`
 and `openai-codex-login` (the host `.env`), and `memory backfill`, `memory carry-conclusions` and
-`memory detach-unit`, each only with `--apply` (Honcho, DEC-214).
+`memory detach-unit`, each only with `--apply` (Honcho, DEC-214), and
+`memory rebuild` (the memory index, unless `--dry-run`).
 
 design/10 §6, plan Task 6. This answers the operator's original complaint —
 *"I CANNOT identify that group ID belongs to which group ... there is NO
@@ -83,6 +84,7 @@ from nora.infra.sql import (
     SqlRecordStore,
     create_readonly_sql_engine,
     create_sql_engine,
+    memory_index,
     snapshot_at,
 )
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -306,7 +308,8 @@ def add_subcommands(
     # covers — the record store is still opened read-only; what it writes
     # is Honcho, and only with `--apply`. See `nora.app.memory_backfill`.
     memory = subparsers.add_parser(
-        "memory", parents=[parent], help="Honcho memory maintenance (operator only)",
+        "memory", parents=[parent],
+        help="Honcho memory and memory index maintenance (operator only)",
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     backfill = memory_sub.add_parser(
@@ -359,6 +362,19 @@ def add_subcommands(
         help="step 2: once Honcho has finished deleting, rebuild the recorded peers' cards",
     )
     detach.set_defaults(func=cmd_memory_detach)
+    # `memory rebuild` (design/unified-memory/60-build-step-3.md S4): WRITES
+    # the memory index through a writable engine, like `events
+    # backfill-units`; the stores it reads are never written.
+    rebuild = memory_sub.add_parser(
+        "rebuild", parents=[parent],
+        help="re-project every store into the memory index (also its first "
+             "backfill); idempotent, refused while another rebuild runs",
+    )
+    rebuild.add_argument(
+        "--dry-run", action="store_true",
+        help="count what would be projected and dropped; write nothing",
+    )
+    rebuild.set_defaults(func=cmd_memory_rebuild)
 
     # `events backfill-units` (B3(b), design/cognition-loop/70-migration.md
     # §8, DEC-237): the THIRD command here that WRITES — unlike `memory
@@ -815,6 +831,43 @@ async def cmd_memory_backfill(args: argparse.Namespace) -> int:
     for line in render_backfill(result):
         print(line)
     return 1 if result.failed else 0
+
+
+async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
+    """`nora memory rebuild [--dry-run]` (design/unified-memory/
+    60-build-step-3.md S4). A WRITABLE engine, like `events backfill-units`:
+    it writes the memory index (`nora.infra.sql.memory_index.rebuild`), never
+    a store. Prints counts per kind only, never an id or a text. Exit 1 when
+    a source stayed unprojected, so a script reads «incomplete» as a failure."""
+    cfg = _config(args)
+    engine = create_sql_engine(_database_url(cfg))
+    try:
+        result = await memory_index.rebuild(engine, dry_run=bool(args.dry_run))
+    except memory_index.RebuildRefusedError as exc:
+        raise CliError(str(exc)) from exc
+    finally:
+        await engine.dispose()
+    for line in render_rebuild(result):
+        print(line)
+    return 1 if result.unprojected and not result.dry_run else 0
+
+
+def render_rebuild(result: memory_index.RebuildReport) -> list[str]:
+    """One line per kind, then the queue: counts only."""
+    verb = ("would project", "would drop") if result.dry_run else ("projected", "dropped")
+    lines = [
+        f"{kind}: {verb[0]} {n}, {verb[1]} {result.dropped.get(kind, 0)}"
+        for kind, n in result.projected.items()
+    ]
+    lines += [
+        f"{kind} hubs: {verb[1]} {n}"
+        for kind, n in result.dropped.items() if kind not in result.projected
+    ]
+    if result.dry_run:
+        lines.append(f"queued now: {result.unprojected} (dry run: nothing written)")
+    else:
+        lines.append(f"unprojected: {result.unprojected}; index status complete")
+    return lines
 
 
 async def cmd_events_backfill_units(args: argparse.Namespace) -> int:

@@ -72,6 +72,17 @@ alone never discloses a place.
 
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
 restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
+
+**What a delete removes** (S4): a node and the edges its own projection
+writes, never an edge another node's projection owns. The edges into a
+hidden message from the memos that cite it stay, dangling, exactly as a
+rebuild writes them, so a live delete and a rebuild agree; a hop joins
+`memory_node`, so a dangling edge drops itself at the read.
+
+**`rebuild`** (S4) walks every source through `project` and
+`reproject_episodes`, the functions live writes call, so a rebuild equals
+live projection by construction; `index_status` is what a reader (S5) needs
+to tell `ok` from `partial`.
 """
 
 from __future__ import annotations
@@ -80,17 +91,18 @@ import contextlib
 import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NamedTuple
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.culture import split_culture_key
 from nora.domain.media_join import shas_in
-from nora.domain.memory_index import ProjectionOutcome
+from nora.domain.memory_index import HUB_KINDS, ProjectionOutcome
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
 from nora.infra.sql.schema import (
     CULTURE,
@@ -104,6 +116,7 @@ from nora.infra.sql.schema import (
     MEMO,
     MEMO_REVISION,
     MEMORY_EDGE,
+    MEMORY_INDEX_STATE,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     MESSAGE_EDIT,
@@ -119,10 +132,16 @@ from nora.infra.sql.schema import (
 
 __all__ = [
     "INDEXED_WRITES",
+    "REBUILD_LOCK_KEY",
+    "IndexStatus",
+    "RebuildRefusedError",
+    "RebuildReport",
     "drain_queue",
     "drop",
+    "index_status",
     "project",
     "project_episodes",
+    "rebuild",
     "reproject_episodes",
     "reproject_media",
 ]
@@ -182,7 +201,7 @@ async def reproject_media(
 async def drop(
     conn: AsyncConnection, kind: str, ids: Iterable[str | int], *, metrics: Any = None,
 ) -> None:
-    """Remove `kind`'s nodes for `ids` and every edge into or out of them; a
+    """Remove `kind`'s nodes for `ids` and the edges they own (`_delete`); a
     message takes its attachments with it."""
     sids = [str(i) for i in ids]
     if not sids:
@@ -349,13 +368,16 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
     # Outgoing edges are rewritten whole: a re-attributed message must not keep
     # the edge to nobody it had before. A `during` edge is the episode's, which
     # rewrites it when it is projected (S3), so an edit keeps it.
+    ends: list[tuple[str, str]] = []
     for kind, ids in (("message", [source_id]), ("media", list(wanted))):
         if ids:
-            await conn.execute(sa.delete(MEMORY_EDGE).where(
+            ends += await _delete_edges(conn, sa.and_(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
                 MEMORY_EDGE.c.rel != "during",
             ))
     await _insert_edges(conn, edges)
+    # A re-attributed message may have been its former author's last edge.
+    await _drop_orphans(conn, ends)
 
 
 async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
@@ -432,7 +454,7 @@ async def _entry_edges(
     for _, _, _, dk, di, _ in edges:
         if dk in ("person", "room", "unit", "nora"):
             await _hub(conn, dk, di, origin_room=di if dk == "room" else None)
-    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+    ends = await _delete_edges(conn, sa.or_(
         sa.and_(
             MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
             MEMORY_EDGE.c.rel != "supersedes",
@@ -441,8 +463,10 @@ async def _entry_edges(
             MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,
             MEMORY_EDGE.c.rel == "supersedes",
         ),
-    )))
+    ))
     await _insert_edges(conn, edges)
+    # An `about` target the entry no longer names may have no edge left.
+    await _drop_orphans(conn, ends)
 
 
 async def _project_note(conn: AsyncConnection, source_id: str) -> None:
@@ -843,15 +867,16 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
     persons, and the `during` edges into it."""
     if not found:
         return
+    ends: list[tuple[str, str]] = []
     for kind in dict.fromkeys(e.kind for e in found):
         keys = [e.key for e in found if e.kind == kind]
-        await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+        ends += await _delete_edges(conn, sa.or_(
             sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
             sa.and_(
                 MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
                 MEMORY_EDGE.c.rel == "during",
             ),
-        )))
+        ))
     await _upsert_nodes(conn, [
         _node_values(
             kind=e.kind, source_id=e.key, unit=e.unit, persons=e.persons,
@@ -874,6 +899,7 @@ async def _write_episodes(conn: AsyncConnection, build: int, found: list[_Episod
         if e.kind == "outing":
             edges += await _during(conn, build, e)
     await _insert_edges(conn, edges)
+    await _drop_orphans(conn, ends)
 
 
 async def _during(conn: AsyncConnection, build: int, e: _Episode) -> list[Edge]:
@@ -922,16 +948,17 @@ async def _drop_episodes(conn: AsyncConnection, kind: str, keys: list[str]) -> N
     build holds the same happening under the same key."""
     if not keys:
         return
-    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+    ends = await _delete_edges(conn, sa.or_(
         sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, keys)),
         sa.and_(
             MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, keys),
             MEMORY_EDGE.c.rel != "cites",
         ),
-    )))
+    ))
     await conn.execute(sa.delete(MEMORY_NODE).where(
         MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, keys),
     ))
+    await _drop_orphans(conn, ends)
 
 
 _PRESENCE: dict[str, sa.Table] = {"stay": PRESENCE_STAYS, "trip": PRESENCE_TRIPS}
@@ -954,6 +981,9 @@ async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any =
     with it. With no build yet, there is nothing to lock."""
     with contextlib.suppress(_NoCurrentBuildError):
         await _current_build(conn)
+    # SKIP LOCKED: two processes drain (the analytics tick and the nora
+    # process's `memory_drain_loop`, S4), and each takes only rows the other
+    # is not already re-projecting, so they never wait on or repeat each other.
     rows = (await conn.execute(
         sa.select(MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id)
         .order_by(
@@ -961,6 +991,7 @@ async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any =
             MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id,
         )
         .limit(limit)
+        .with_for_update(skip_locked=True)
     )).all()
     for r in rows:
         if r.kind == "media":
@@ -1045,11 +1076,28 @@ async def _hub(
     """An entity node, written the first time an edge needs it: a bare
     endpoint with no text, so it names nobody (a person's name is identity's,
     which a pure projector cannot read, 60 §0.6)."""
-    await conn.execute(
+    await _held_hub(conn, kind, source_id, (
         pg_insert(MEMORY_NODE)
         .values(kind=kind, source_id=source_id, origin_room=origin_room, state="live")
         .on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
-    )
+    ))
+
+
+async def _held_hub(conn: AsyncConnection, kind: str, source_id: str, write: Any) -> None:
+    """Write a hub, then hold it FOR KEY SHARE until the transaction ends, so
+    a concurrent `_drop_orphan_hubs` skips it while the caller attaches its
+    edge. A hub that orphan drop deleted between the write and the lock is
+    written again."""
+    for _ in range(3):
+        await conn.execute(write)
+        held = (await conn.execute(
+            sa.select(MEMORY_NODE.c.id).where(
+                MEMORY_NODE.c.kind == kind, MEMORY_NODE.c.source_id == source_id,
+            ).with_for_update(read=True, key_share=True)
+        )).first()
+        if held is not None:
+            return
+    raise RuntimeError(f"memory index: {kind} hub kept vanishing")
 
 
 async def _named_hub(
@@ -1062,12 +1110,13 @@ async def _named_hub(
         kind=kind, source_id=source_id, text=text or "", state="live",
     )
     if not text:
-        await conn.execute(stmt.on_conflict_do_nothing(constraint="uq_memory_node_kind_source"))
-        return
-    await conn.execute(stmt.on_conflict_do_update(
-        constraint="uq_memory_node_kind_source",
-        set_={"text": stmt.excluded.text, "projected_at": sa.func.clock_timestamp()},
-    ))
+        write = stmt.on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
+    else:
+        write = stmt.on_conflict_do_update(
+            constraint="uq_memory_node_kind_source",
+            set_={"text": stmt.excluded.text, "projected_at": sa.func.clock_timestamp()},
+        )
+    await _held_hub(conn, kind, source_id, write)
 
 
 async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
@@ -1093,13 +1142,374 @@ def _among(column: sa.ColumnElement[Any], ids: list[str]) -> sa.ColumnElement[bo
 
 
 async def _delete(conn: AsyncConnection, kind: str, ids: list[str]) -> None:
-    """Nodes and every edge touching them, in or out."""
+    """Nodes and the edges their own projection writes: every edge out of
+    them except `supersedes`, and the `supersedes` edges into them (that edge
+    is its target's, `_entry_edges`). Every other edge INTO a deleted node is
+    its source's (a memo's `cites` of a hidden message, a note's `tracks` of
+    a gone event), outlives it and drops itself at a read's join to
+    `memory_node` (0105). A rebuild writes exactly these dangling edges, so a
+    live delete and a rebuild agree (S4); removing them here was the one
+    place the two disagreed."""
     if not ids:
         return
-    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
-        sa.and_(MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids)),
-        sa.and_(MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, ids)),
-    )))
+    ends = await _delete_edges(conn, sa.or_(
+        sa.and_(
+            MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
+            MEMORY_EDGE.c.rel != "supersedes",
+        ),
+        sa.and_(
+            MEMORY_EDGE.c.dst_kind == kind, _among(MEMORY_EDGE.c.dst_id, ids),
+            MEMORY_EDGE.c.rel == "supersedes",
+        ),
+    ))
     await conn.execute(sa.delete(MEMORY_NODE).where(
         MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, ids),
     ))
+    await _drop_orphans(conn, ends)
+
+
+async def _delete_edges(conn: AsyncConnection, where: Any) -> list[tuple[str, str]]:
+    """Delete the edges `where` selects; return the hub ends they reached,
+    for `_drop_orphans` once the caller has written its new edges."""
+    rows = (await conn.execute(
+        sa.delete(MEMORY_EDGE).where(where)
+        .returning(MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id)
+    )).all()
+    return [(k, i) for k, i in rows if k in HUB_KINDS]
+
+
+async def _drop_orphans(conn: AsyncConnection, ends: Iterable[tuple[str, str]]) -> None:
+    """A hub the removed edges were the last to reach goes too: a rebuild
+    writes a hub only when an edge needs it, so a live index that kept one
+    would differ from an index rebuilt from empty."""
+    by_kind: dict[str, set[str]] = {}
+    for kind, sid in ends:
+        by_kind.setdefault(kind, set()).add(sid)
+    for kind in sorted(by_kind):
+        await _drop_orphan_hubs(conn, kind, sorted(by_kind[kind]))
+
+
+def _touched() -> Any:
+    """Some edge starts or ends at the `memory_node` row in hand."""
+    node = MEMORY_NODE
+    return sa.exists().where(sa.or_(
+        sa.and_(MEMORY_EDGE.c.src_kind == node.c.kind, MEMORY_EDGE.c.src_id == node.c.source_id),
+        sa.and_(MEMORY_EDGE.c.dst_kind == node.c.kind, MEMORY_EDGE.c.dst_id == node.c.source_id),
+    ))
+
+
+async def _drop_orphan_hubs(
+    conn: AsyncConnection, kind: str, ids: list[str] | None = None,
+) -> int:
+    """Hub nodes of `kind` (among `ids`, or all) with no edge in either
+    direction. Returns how many were removed.
+
+    Two statements, on purpose. The first locks the candidates FOR UPDATE
+    SKIP LOCKED: a hub another transaction holds is being attached to
+    (`_hub` holds it FOR KEY SHARE until that transaction ends, and writes
+    an edge to it), so it is skipped, never waited on, and this can never
+    be one side of a deadlock over hubs. The second re-checks under a fresh
+    READ COMMITTED snapshot, which sees every edge an attacher committed
+    before the lock was granted; an attacher arriving after it waits on the
+    row, finds it gone, and writes it again."""
+    where: list[Any] = [MEMORY_NODE.c.kind == kind, ~_touched()]
+    if ids is not None:
+        where.append(_among(MEMORY_NODE.c.source_id, ids))
+    locked = list((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(*where)
+        .with_for_update(skip_locked=True)
+    )).scalars())
+    if not locked:
+        return 0
+    result = await conn.execute(sa.delete(MEMORY_NODE).where(
+        MEMORY_NODE.c.kind == kind, _among(MEMORY_NODE.c.source_id, locked), ~_touched(),
+    ))
+    return int(result.rowcount or 0)
+
+
+# --- rebuild (S4) ------------------------------------------------------------
+
+#: The session-level advisory lock a `rebuild` holds from start to finish, so
+#: two never run at once. Not a row lock on `memory_index_state`: a rebuild is
+#: many transactions, one per batch, and a row lock ends with the first of
+#: them. Spells "NORAMIDX" in ASCII (`MIGRATION_LOCK_KEY`'s convention), so it
+#: is recognisable in `pg_locks`; the top byte keeps it a positive `bigint`.
+REBUILD_LOCK_KEY = 0x4E4F52414D494458
+
+#: Sources per transaction. A message is a few statements, so a batch is a
+#: few thousand statements and a few seconds: short enough that a live write
+#: waiting on a node the batch holds is not held up for long.
+REBUILD_BATCH = 500
+
+
+class RebuildRefusedError(RuntimeError):
+    """Another rebuild holds `REBUILD_LOCK_KEY`."""
+
+
+class IndexStatus(NamedTuple):
+    """What a reader needs to tell `ok` from `partial` (25 §4, S5)."""
+
+    #: `never` (no rebuild has run on this database, or a restore emptied
+    #: it), `building` (one is running, or died part-way), `complete`.
+    status: str
+    #: What the last completed rebuild left on the queue.
+    unprojected: int
+    #: What is on the queue now.
+    queue: int
+
+
+async def index_status(conn: AsyncConnection) -> IndexStatus:
+    """The index's state row and its queue's length. A database with no
+    state row reads `never`: a snapshot restore copies none of the four
+    tables (`NOT_RESTORED`), and a sandbox built without the migration's
+    seed has no row at all, so an empty index is never read as complete."""
+    row = (await conn.execute(
+        sa.select(MEMORY_INDEX_STATE.c.status, MEMORY_INDEX_STATE.c.unprojected)
+    )).first()
+    queue = int((await conn.execute(
+        sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
+    )).scalar_one())
+    if row is None:
+        return IndexStatus("never", 0, queue)
+    return IndexStatus(str(row.status), int(row.unprojected), queue)
+
+
+@dataclass(frozen=True, slots=True)
+class RebuildReport:
+    """Counts only: kinds and numbers, never an id or a text."""
+
+    #: Sources handed to the projector, per kind (a source the projector
+    #: declines, such as a room-keyed person account, is counted here and has
+    #: no node). An episode kind counts the current build's episodes.
+    projected: dict[str, int]
+    #: Nodes the final pass removed because their source is hidden or gone,
+    #: or, for an episode, not in the current build; for a hub kind, hubs no
+    #: edge reaches.
+    dropped: dict[str, int]
+    #: The queue's length at the end: what could not be projected.
+    unprojected: int
+    dry_run: bool
+
+
+#: What a rebuild walks, in key order so a batch boundary is a plain `>`:
+#: each kind's root table and the column its node is keyed by. A hidden
+#: message is not walked; the final pass removes any node it still has.
+def _sources() -> list[tuple[str, Any, list[Any]]]:
+    return [
+        ("message", MESSAGES.c.id, [MESSAGES.c.hidden_at.is_(None)]),
+        ("note", NOTE.c.id, []),
+        ("memo", MEMO.c.id, []),
+        ("lesson", LESSON.c.id, []),
+        ("event", EVENTS.c.id, []),
+        ("character", CULTURE.c.key, []),
+    ]
+
+
+def _source_of(kind: str) -> Any:
+    """An existence test, against `memory_node`'s current row, for the
+    source a node of `kind` was projected from. The casts are safe because
+    only this module writes `source_id`, from these columns."""
+    node = MEMORY_NODE.c.source_id
+    if kind == "message":
+        return sa.exists().where(
+            MESSAGES.c.id == sa.cast(node, sa.BigInteger), MESSAGES.c.hidden_at.is_(None),
+        )
+    if kind == "character":
+        return sa.exists().where(CULTURE.c.key == node)
+    table = {"note": NOTE, "memo": MEMO, "lesson": LESSON, "event": EVENTS}[kind]
+    return sa.exists().where(table.c.id == sa.cast(node, pg.UUID(as_uuid=False)))
+
+
+async def _stale(conn: AsyncConnection, kind: str) -> list[str]:
+    return list((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id)
+        .where(MEMORY_NODE.c.kind == kind, ~_source_of(kind))
+        .order_by(MEMORY_NODE.c.source_id)
+    )).scalars())
+
+
+async def _episode_keys(
+    conn: AsyncConnection, kind: str, *, lock: bool = True,
+) -> tuple[set[str], set[str]]:
+    """(the current build's keys of `kind`, the keys the index holds). No
+    current build holds none. `lock` holds the build row FOR SHARE, so a
+    switch cannot move the pointer between this read and the drop that
+    follows it; a dry run reads without it (its connection may be
+    read-only)."""
+    build: int | None
+    if lock:
+        try:
+            build = await _current_build(conn)
+        except _NoCurrentBuildError:
+            build = None
+    else:
+        build = (await conn.execute(
+            sa.select(ROLLUP_BUILD.c.id).where(ROLLUP_BUILD.c.status == "current")
+        )).scalar_one_or_none()
+    current = set() if build is None else {e.key for e in await _episodes(conn, kind, build, None)}
+    held = set((await conn.execute(
+        sa.select(MEMORY_NODE.c.source_id).where(MEMORY_NODE.c.kind == kind)
+    )).scalars())
+    return current, held
+
+
+async def _queue_length(conn: AsyncConnection) -> int:
+    return int((await conn.execute(
+        sa.select(sa.func.count()).select_from(MEMORY_PROJECTION_QUEUE)
+    )).scalar_one())
+
+
+async def _set_state(conn: AsyncConnection, **values: Any) -> None:
+    """The one state row, written whether or not it exists (a restored
+    database has none)."""
+    stmt = pg_insert(MEMORY_INDEX_STATE).values(id=True, **values)
+    await conn.execute(stmt.on_conflict_do_update(
+        index_elements=[MEMORY_INDEX_STATE.c.id], set_=values,
+    ))
+
+
+async def rebuild(
+    engine: AsyncEngine, *, dry_run: bool = False, batch: int = REBUILD_BATCH,
+    metrics: Any = None,
+) -> RebuildReport:
+    """`nora memory rebuild`, and the first deployment's backfill (25 §7,
+    60 S4): every source through the SAME projector a live write calls, so
+    a rebuild equals live projection by construction.
+
+    1. `building`, under `REBUILD_LOCK_KEY` (refused if another holds it).
+    2. Every row of every kind, `batch` per transaction, in key order.
+    3. The current build's episodes through `reproject_episodes`, the
+       function a build switch calls, which also drops every episode node
+       the current build does not hold.
+    4. A final pass re-projecting every node whose source is now hidden or
+       gone. A live hide that commits while a batch holds that message would
+       otherwise be overwritten by the batch's upsert; the projector drops
+       the node when it re-reads the hidden row.
+    5. One drain of the queue, then `complete` with what stayed queued.
+
+    Idempotent: a second run rewrites the same nodes and edges. A run that
+    dies part-way leaves `building` (a reader answers `partial`, which is
+    true), and running it again finishes the job. Draining concurrently
+    (the analytics tick, the nora process) is harmless: a drain calls the
+    same projector, which converges on the source's current row, and
+    whichever lands last writes what the other would have.
+
+    `dry_run` counts what it would project and drop and writes nothing."""
+    if dry_run:
+        return await _count(engine)
+    lock = await engine.connect()
+    try:
+        held = (await lock.execute(
+            sa.select(sa.func.pg_try_advisory_lock(REBUILD_LOCK_KEY))
+        )).scalar_one()
+        await lock.commit()
+        if not held:
+            raise RebuildRefusedError(
+                "another `nora memory rebuild` holds the advisory lock "
+                f"{REBUILD_LOCK_KEY:#x} (pg_locks: locktype = 'advisory'); "
+                "wait for it to finish"
+            )
+        try:
+            return await _rebuild(engine, batch=batch, metrics=metrics)
+        finally:
+            await lock.execute(sa.select(sa.func.pg_advisory_unlock(REBUILD_LOCK_KEY)))
+            await lock.commit()
+    except BaseException:
+        # A pooled connection keeps a session lock: never hand one back that
+        # might still hold it.
+        await lock.invalidate()
+        raise
+    finally:
+        await lock.close()
+
+
+async def _rebuild(engine: AsyncEngine, *, batch: int, metrics: Any) -> RebuildReport:
+    now = sa.func.clock_timestamp()
+    async with engine.begin() as conn:
+        await _set_state(conn, status="building", started_at=now, finished_at=None)
+    projected: dict[str, int] = {}
+    dropped: dict[str, int] = {}
+    for kind, key, where in _sources():
+        projected[kind] = 0
+        last: Any = None
+        while True:
+            async with engine.begin() as conn:
+                ids = list((await conn.execute(
+                    sa.select(key)
+                    .where(*where, *([] if last is None else [key > last]))
+                    .order_by(key).limit(batch)
+                )).scalars())
+                for sid in ids:
+                    await project(conn, kind, sid, metrics=metrics)
+            if not ids:
+                break
+            projected[kind] += len(ids)
+            last = ids[-1]
+    async with engine.begin() as conn:
+        if await _has_current_build(conn):
+            await reproject_episodes(conn, metrics=metrics)
+    for kind in _EPISODES:
+        async with engine.begin() as conn:
+            current, held = await _episode_keys(conn, kind)
+            stale = sorted(held - current)
+            if stale:
+                # Not the current build's (or no build is current): no node.
+                await drop(conn, kind, stale, metrics=metrics)
+        projected[kind] = len(current)
+        dropped[kind] = len(stale)
+    for kind, _, _ in _sources():
+        async with engine.begin() as conn:
+            stale = await _stale(conn, kind)
+        dropped[kind] = len(stale)
+        for i in range(0, len(stale), batch):
+            async with engine.begin() as conn:
+                for sid in stale[i:i + batch]:
+                    await project(conn, kind, sid, metrics=metrics)
+    async with engine.begin() as conn:
+        queued = await _queue_length(conn)
+    tried = 0
+    while tried < queued:
+        async with engine.begin() as conn:
+            n = await drain_queue(conn, limit=min(batch, queued - tried), metrics=metrics)
+        if n == 0:
+            break
+        tried += n
+    # Last: a hub no edge reaches is not written by a rebuild from empty, so
+    # one left behind (a re-attribution, a pre-S4 delete) goes.
+    for kind in HUB_KINDS:
+        async with engine.begin() as conn:
+            dropped[kind] = await _drop_orphan_hubs(conn, kind)
+    async with engine.begin() as conn:
+        unprojected = await _queue_length(conn)
+        await _set_state(conn, status="complete", finished_at=now, unprojected=unprojected)
+    return RebuildReport(projected, dropped, unprojected, dry_run=False)
+
+
+async def _has_current_build(conn: AsyncConnection) -> bool:
+    return bool((await conn.execute(
+        sa.select(sa.exists().where(ROLLUP_BUILD.c.status == "current"))
+    )).scalar())
+
+
+async def _count(engine: AsyncEngine) -> RebuildReport:
+    """What `rebuild` would project and drop, read in one transaction."""
+    projected: dict[str, int] = {}
+    dropped: dict[str, int] = {}
+    async with engine.connect() as conn:
+        for kind, key, where in _sources():
+            projected[kind] = int((await conn.execute(
+                sa.select(sa.func.count(key)).where(*where)
+            )).scalar_one())
+            dropped[kind] = len(await _stale(conn, kind))
+        for kind in _EPISODES:
+            current, held = await _episode_keys(conn, kind, lock=False)
+            projected[kind] = len(current)
+            dropped[kind] = len(held - current)
+        for kind in HUB_KINDS:
+            dropped[kind] = int((await conn.execute(
+                sa.select(sa.func.count()).select_from(MEMORY_NODE).where(
+                    MEMORY_NODE.c.kind == kind, ~_touched(),
+                )
+            )).scalar_one())
+        unprojected = await _queue_length(conn)
+    return RebuildReport(projected, dropped, unprojected, dry_run=True)

@@ -131,6 +131,34 @@ async def prune_loop(store: _PrunableStore, metrics: Metrics, *, interval_second
             metrics.inc("nora_errors_total", stage="prune")
 
 
+class _DrainsIndexQueue(Protocol):
+    """The one method `memory_drain_loop` needs
+    (`nora.infra.sql.audit.SqlRecordStore.drain_index_queue`)."""
+
+    async def drain_index_queue(self) -> int: ...
+
+
+async def memory_drain_loop(
+    store: _DrainsIndexQueue, metrics: Metrics, *, interval_seconds: float,
+) -> None:
+    """Re-project what the memory index queued (design/unified-memory/
+    60-build-step-3.md S4), `prune_loop`'s shape: sleep, drain, and on
+    failure log + count `nora_errors_total{stage=memory_drain}` and keep
+    looping. The analytics process drains on its own tick; this one covers a
+    deployment that runs no analytics. It runs during a `nora memory
+    rebuild` too: a drain calls the projector a rebuild calls, which writes
+    the source's current row, so the two converge whichever lands last."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            tried = await store.drain_index_queue()
+            if tried:
+                log.info("memory index drain re-projected %d queued sources", tried)
+        except Exception:
+            log.exception("memory index drain failed")
+            metrics.inc("nora_errors_total", stage="memory_drain")
+
+
 class _SweepsComputerSessions(Protocol):
     """The one method `computer_sweep_loop` needs
     (`nora.app.computer_sweeper.ComputerSessionSweeper`)."""

@@ -1069,6 +1069,14 @@ refresh_timeout_seconds = 8
 # hkgov_lang_zh = "zh"
 # hkgov_lang_en = "en"
 
+# The memory index (design/unified-memory/60-build-step-3.md): written by every
+# store's own write, read by nothing yet. A projection that fails is queued,
+# and the nora process re-projects the queue every `drain_seconds` (the
+# analytics process drains it on its own tick as well). `nora memory rebuild`
+# rebuilds the whole index; leaving the section out keeps the default.
+[memory_index]
+drain_seconds = 60.0
+
 # The presence analytics substrate — the DERIVED layer (docs/superpowers/
 # specs/2026-08-18-presence-analytics-substrate-design.md), DEC-115. Ships
 # INERT like [presence]/[search]/[compute]: turning it on is an
