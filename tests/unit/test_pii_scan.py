@@ -194,9 +194,17 @@ def test_an_owner_name_that_spells_the_org_stem_never_fires_inside_the_org():
         f"see github.com/{_ORG}/nora\n",
         f"branch {_ORG}/readme-note\n",
         "mail iam@mikeng.io or visit mikeng.io\n",
-        f"the org stem {stem} on its own\n",
     ):
         assert sc.scan_text(project, "README.md").findings == [], project
+    # the bare stem is a handle, another mailbox at the domain is a person
+    for personal in (
+        f"github.com/{stem}\n",
+        f"ping @{stem}\n",
+        f"write to x@{stem}.io\n",
+        f"{stem}.dev\n",
+    ):
+        assert [f.rule for f in sc.scan_text(personal, "x.md").findings
+                if f.rule == "denylist:text"] == ["denylist:text"], personal
     assert [f.rule for f in sc.scan_text(f"signed, {owner}\n", "x.md").findings] == [
         "denylist:text"
     ]

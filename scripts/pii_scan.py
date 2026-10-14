@@ -439,10 +439,20 @@ _PROJECT_TOKENS = {_tokens_of(v) for v in PROJECT_IDENTITY}
 # keep-phrase: matching drops separators, so an owner's name whose letters
 # spell the org stem would otherwise fire inside the org, the domain and the
 # project email (2026-10-14: every `mikeng-io/<slug>` branch was refused).
-# Longest first, and not glued to a letter or digit: `stemFBID` is an app id.
+# Only the org, the domain and the project email: the bare stem is also a
+# personal handle (`@stem`, `github.com/stem`), and another mailbox at the
+# domain (`x@domain`) is a person, so neither is blanked. Not glued to a
+# letter or digit on either side (`stemFBID` is an app id).
+_ORG_TOKEN = next(v for v in PROJECT_IDENTITY if v.endswith("-io"))
+_PROJECT_EMAIL = next(v for v in PROJECT_IDENTITY if "@" in v)
+_PROJECT_DOMAIN = _PROJECT_EMAIL.split("@", 1)[1]
 _PROJECT_RX = re.compile(
     r"(?<![A-Za-z0-9])(?:"
-    + "|".join(re.escape(v) for v in sorted(PROJECT_IDENTITY, key=len, reverse=True))
+    + re.escape(_PROJECT_EMAIL)
+    + "|"
+    + re.escape(_ORG_TOKEN)
+    + r"|(?<![@.])"
+    + re.escape(_PROJECT_DOMAIN)
     + r")(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
