@@ -66,6 +66,11 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                "an id and no result yet. Not `ok` (that reads as «done») and not "
                "`unavailable` (it did start). The result arrives later, by message "
                "(design/subagent §3).",
+    "partial": "a search answered from an index still being rebuilt, or with "
+               "sources waiting on its projection queue: what it found is real, "
+               "and what it did not find may still exist. Not `nothing_found` "
+               "(an unfinished index is never «you never said that») and not "
+               "`ok` (25-memory-graph.md §4, design/unified-memory/60 S5).",
     "bad_arguments": "the call named an argument the tool does not take; "
                      "nothing ran; calling again with the listed arguments "
                      "will work. Not `unavailable` (R-99, design/"

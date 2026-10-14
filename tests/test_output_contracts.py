@@ -88,6 +88,10 @@ def test_every_declared_extension_is_named_and_documented() -> None:
         # design/subagent §3 (DEC-283): a background job was launched and has no result
         # yet. Not `ok` (that reads as done) and not `unavailable` (it did start).
         "started",
+        # design/unified-memory/25 §4, 60 S5: the memory index answered while
+        # a rebuild is incomplete or its queue is not empty; what it did not
+        # find may still exist, so never `nothing_found`.
+        "partial",
     }
     undocumented = sorted(k for k, v in DECLARED_STATUS_EXTENSIONS.items() if not v.strip())
     assert undocumented == [], f"declared with no meaning: {undocumented}"

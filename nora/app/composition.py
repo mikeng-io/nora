@@ -49,6 +49,7 @@ from nora.agent.dreamer import (
 )
 from nora.agent.egress import scan_identifiers, scan_reply
 from nora.agent.mcp import McpMount, build_mcp_tools
+from nora.agent.memory_search import MemorySearch
 from nora.agent.registry import ToolRegistry
 from nora.agent.relay import Relay
 from nora.agent.room import Room
@@ -177,6 +178,7 @@ from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.media_descriptions import SqlMediaDescriptionStore
 from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memo import SqlMemoStore
+from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.music_queue import SqlMusicQueueStore
 from nora.infra.sql.music_session import SqlMusicSessionStore
@@ -3033,6 +3035,12 @@ async def build_dependencies(
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         record=SqlRecordQuery(engine) if cfg.record_query.enabled else None,
+        # `[memory_index] enabled` (design/unified-memory/60 S5, ships off):
+        # `ask_memory` answers from the index; off, from Honcho as before.
+        memory_search=(
+            MemorySearch(SqlMemoryIndex(engine), metrics)
+            if cfg.memory_index.enabled else None
+        ),
         lineage=lineage,
         # The current Rollup build's rows and the Standing head. SELECTs, so no
         # flag. The Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the
