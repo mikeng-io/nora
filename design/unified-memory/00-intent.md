@@ -72,6 +72,7 @@ retrieval layer exists means they are searchable from their first row.
 | [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; disputes (the subject's hides a line at once, anyone else's is weighed); the unit as the read boundary; deleted messages; the one-off backfill |
 | [45](45-persona-adaptor.md) | the Persona schema (typed lines around prose), the enforced reasoning modes, the adaptor's inputs and its one write verb, and the Honcho coverage measure; reverses DEC-184/290's no-schema rule for Persona |
 | [50](50-learning-from-acts.md) | learning from every act: an outcome episode per social act, explicit feedback, `outcome_of`, what Lessons and Persona learn from them |
+| [60](60-build-step-3.md) | the step 3 build plan: five slices, and where the code corrected the design |
 | [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
 
 ## The shape after Honcho (as ruled 2026-10-15)
@@ -186,6 +187,12 @@ index and Honcho's exit are now listed in their order.
 3. **Index, `project()` and the one verb**, lexical first, over the stores
    that exist ([25](25-memory-graph.md) §7); vectors join when step 2 picks
    the embedder. The conversational-recall journeys are its acceptance cases.
+3a. **Place containment** ([25](25-memory-graph.md) §6a, [60](60-build-step-3.md) §0
+   item 2): place nodes and `located_in` edges (venue → district → city),
+   from the geocoder's structured address components for event venues and
+   outing places. Nothing holds a place hierarchy today, and saved places
+   stay out (R-35). Until this lands, "near Mong Kok" reaches only what names
+   Mong Kok.
 4. **Note citations.** `note_create` / `note_update` gain citations like
    memos, lessons and events. `note_revision` has no citations column today
    (`nora/infra/sql/schema.py`, the `note_revision` table), so this is a schema

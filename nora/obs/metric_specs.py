@@ -22,6 +22,7 @@ from nora.domain.doctrine_check import CHECK_OUTCOMES
 from nora.domain.lessons import LESSONS_OUTCOMES
 from nora.domain.media import MEDIA_FETCH_CALLERS
 from nora.domain.media_join import JOIN_PATHS
+from nora.domain.memory_index import NODE_KINDS, PROJECTION_OUTCOMES
 from nora.domain.otp import CHECK_OUTCOMES as OTP_CHECK_OUTCOMES
 from nora.domain.otp import REQUEST_OUTCOMES as OTP_REQUEST_OUTCOMES
 from nora.domain.reasoning_strip import (
@@ -2171,6 +2172,22 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Refreshes of Nora's one Google refresh token refused as invalid_grant "
         "(the sign-in is revoked or expired: run scripts/google_auth.py again).",
         (),
+    ),
+    # The memory index's projection (`nora.infra.sql.memory_index`,
+    # design/unified-memory/60-build-step-3.md §2): one per projection a store
+    # write made. `queued` is a projection that failed inside the store's
+    # transaction while the store's own write stood; its source waits on
+    # `memory_projection_queue`. `lost` failed to queue as well, so only a
+    # rebuild finds it. `ok` is counted too, so a `queued` rate has a
+    # denominator and an absent series is not read as «never failed».
+    _CounterSpec(
+        "nora_memory_projection_total",
+        "Memory index projections made by store writes, by node kind ("
+        + " / ".join(NODE_KINDS) + ") and outcome ("
+        + " / ".join(PROJECTION_OUTCOMES) + "). queued = failed in the "
+        "store's transaction and put on memory_projection_queue, the store "
+        "write kept; lost = the queue write failed too.",
+        ("kind", "outcome"),
     ),
 )
 

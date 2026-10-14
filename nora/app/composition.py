@@ -1574,7 +1574,7 @@ async def build_dependencies(
     # job writes the read, the assembler joins it into the transcript and
     # `media_fetch` serves it. One instance, `engine` reused for the reason
     # every other store here reuses it (one pool, one lifecycle).
-    media_objects = SqlMediaObjectStore(engine)
+    media_objects = SqlMediaObjectStore(engine, metrics=metrics)
     documents_store: DocumentStore = SqlDocumentStore(engine)
     # The window scanned for a picture's marker code is the one `media_fetch` scans: the
     # prefill plus `load_transcript`'s reach, so any picture she can still see resolves
@@ -2431,7 +2431,7 @@ async def build_dependencies(
     # `compute_jobs`/`tool_call_log_store` all do above (one pool, one
     # lifecycle; a second `create_sql_engine` would fork the pool and its own
     # `aclose()` would dispose the engine everything else is still using).
-    media_descriptions = SqlMediaDescriptionStore(engine)
+    media_descriptions = SqlMediaDescriptionStore(engine, metrics=metrics)
     # The per-modality DIRECT lanes (provider-aware describers, 2026-08-30;
     # OpenCode Go added by DEC-197): a describer configured with a direct
     # provider travels through its own client, NOT the process-wide OmniRoute

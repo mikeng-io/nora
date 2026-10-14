@@ -32,7 +32,7 @@ import re
 from pathlib import Path
 
 from nora.infra.sql import schema
-from nora.infra.sql.history import CAPTURE_SETTING, DEFERRED, HISTORY_TABLES
+from nora.infra.sql.history import CAPTURE_SETTING, DEFERRED, HISTORY_TABLES, NOT_RESTORED
 
 ROOT = Path(__file__).resolve().parents[2]
 _DIRECT = re.compile(
@@ -122,9 +122,12 @@ def test_the_scan_sees_the_known_in_place_writers() -> None:
 
 
 def test_every_in_place_table_keeps_history_or_names_its_step() -> None:
+    # A NOT_RESTORED table serves no as-of read, so its in-place changes need
+    # no history: the memory index (0105) is rebuilt from the restored stores.
     uncovered = {
         table: sorted(paths) for table, paths in _in_place_targets().items()
         if table not in HISTORY_TABLES and table not in DEFERRED
+        and table not in NOT_RESTORED
     }
     assert not uncovered, (
         "these tables are changed in place and keep no row_history: add them "

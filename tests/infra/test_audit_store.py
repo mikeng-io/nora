@@ -319,6 +319,13 @@ class _Metrics:
         self.calls.append((name, tuple(sorted(labels.items()))))
 
 
+def _truncations(metrics: _Metrics) -> list[tuple[str, tuple[tuple[str, object], ...]]]:
+    """The bound counter's calls only: every `append` also counts its memory
+    index projection (`nora_memory_projection_total`), which is not what these
+    tests are about."""
+    return [call for call in metrics.calls if call[0] == "nora_bound_truncated_total"]
+
+
 async def test_a_clipped_transcript_window_is_counted(make_store):
     """`recent` is the read `_subjects_in_play` builds the room's subject set
     from, so a silent cut here makes an empty facts block ambiguous three ways
@@ -335,7 +342,7 @@ async def test_a_clipped_transcript_window_is_counted(make_store):
         "the NEWEST three, oldest-first — the over-fetched row must be cut "
         "from the OLD end, before the reverse, not after it"
     )
-    assert metrics.calls == [("nora_bound_truncated_total", (("site", "audit.recent"),))]
+    assert _truncations(metrics) == [("nora_bound_truncated_total", (("site", "audit.recent"),))]
 
 
 async def test_a_window_that_exactly_fits_is_not_counted(make_store):
@@ -351,7 +358,7 @@ async def test_a_window_that_exactly_fits_is_not_counted(make_store):
     rows = await store.recent(conversation_id="g1", limit=3)
 
     assert [r.body for r in rows] == ["m0", "m1", "m2"]
-    assert metrics.calls == [], "a full page is not a truncation"
+    assert _truncations(metrics) == [], "a full page is not a truncation"
 
 
 async def test_the_over_fetched_row_never_reaches_the_caller(make_store):

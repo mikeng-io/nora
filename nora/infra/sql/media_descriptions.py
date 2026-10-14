@@ -11,12 +11,14 @@ its own statement, logs, and degrades — a read to a miss, a write to a no-op.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaBlob
+from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEDIA_OBJECTS, STICKER_INDEX
 
 log = logging.getLogger("nora.infra.sql.media_descriptions")
@@ -25,8 +27,11 @@ log = logging.getLogger("nora.infra.sql.media_descriptions")
 class SqlMediaDescriptionStore:
     """Satisfies `nora.domain.ports.MediaDescriptionStore`."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+        """`metrics` is injected for `SqlRecordStore.__init__`'s reason; it
+        counts the memory index's projection of a description."""
         self._engine = engine
+        self._metrics = metrics
 
     async def resolve(self, *, platform: str, token: str) -> MediaBlob | None:
         stmt = sa.select(
@@ -151,6 +156,10 @@ class SqlMediaDescriptionStore:
                     )
                     await conn.execute(index_stmt)
                 await conn.execute(desc_stmt)
+                # The description is an attachment's reading (25 §7).
+                await memory_index.reproject_media(
+                    conn, blob.sha256, metrics=self._metrics,
+                )
         except Exception:
             # The caller already has a usable description and nothing to do
             # differently. Losing the cache row costs one re-description on the
