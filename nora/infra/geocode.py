@@ -84,8 +84,9 @@ class CachingBilingualGeocoder:
         """The best formatted address for `lat,lng` in BOTH languages, or None.
         NEVER raises.
 
-        The group reads both, and Life360's own label was bilingual («雲杉徑 Cloudfir Path»), so store both: a backend returns ONE language per call, so
-        this asks for `zh` and `en` and joins them «中文 / English» (Chinese first —
+        The group reads both, and Life360's own label was bilingual («雲杉徑
+        Cloudfir Path»), so store both: a backend returns ONE language per
+        call, so this asks for `zh` and `en` and joins them «中文 / English» (Chinese first —
         a Cantonese group). One language missing still yields the other; both
         missing is None (the caller falls back to Life360's label, or the raw
         coordinate). Two calls per NEW coordinate, but the ~11 m cache means a

@@ -1,0 +1,1 @@
+{"type": "none", "reason": "Replaces street names in comments, docstrings and test fixtures, and rewrites the hooks' project-identity sets so the history rewrite leaves them unchanged; no behaviour changes.", "details": [], "limitations": []}
