@@ -832,3 +832,54 @@ async def test_a_row_history_image_missing_the_new_hidden_at_key_restores_as_nul
 
     assert row.body == "a message from before the withdrawal migration"
     assert row.hidden_at is None
+
+
+# --- migration 0094: a NOT NULL column whose backfill default was DROPPED ---
+
+
+async def test_an_image_from_before_a_dropped_backfill_restores_the_backfill(
+    pg_url: str, pg_template: str, engine: Any,
+) -> None:
+    """`0094_compute_jobs_generic_outbox` added `compute_jobs.kind` and
+    `.payload` NOT NULL with a backfill default (`legacy`, `{}`), then DROPPED
+    the default. An image recorded before 0094 holds neither key, and the
+    target column has no default to read back, so the restore must fill the
+    migration's own backfill (`snapshot_at.BACKFILLED`) or the insert is
+    refused and every case on a full restore ERRORs (2026-10-15).
+
+    The row is written through SQL (its trigger records a genuine image), then
+    both keys are stripped from that image, simulating a pre-0094 version.
+    """
+    job_id = "00000000-0000-0000-0000-000000000094"
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO compute_jobs (id, backend_job_id, task, platform, conversation_id, "
+            "conversation_type, requester_person_id, kind, payload) VALUES "
+            "(:id, 'job_x', 'a task from before 0094', 'signal', :cid, 'group', 'miles_novak', "
+            "'report', '{\"x\": 1}'::jsonb)"
+        ), {"id": job_id, "cid": ROOM[1]})
+        result = await conn.execute(sa.text(
+            "UPDATE row_history SET image = image - 'kind' - 'payload' "
+            "WHERE table_name = 'compute_jobs' AND superseded_at IS NULL "
+            "AND image->>'id' = :id RETURNING image"
+        ), {"id": job_id})
+        [(image,)] = result.all()
+        assert "kind" not in image and "payload" not in image, (
+            "the fixture must simulate a pre-0094 image"
+        )
+
+    at = datetime.now(UTC)
+    async with sandbox_as_of(pg_url, at, template=pg_template) as (sandbox_url, report):
+        assert report.copied.get("compute_jobs", 0) >= 1
+        sandbox_engine = create_sql_engine(sandbox_url)
+        try:
+            async with sandbox_engine.connect() as conn:
+                row = (await conn.execute(sa.text(
+                    "SELECT task, kind, payload FROM compute_jobs WHERE id = :id"
+                ), {"id": job_id})).one()
+        finally:
+            await sandbox_engine.dispose()
+
+    assert row.task == "a task from before 0094"
+    assert row.kind == "legacy"
+    assert row.payload == {}
