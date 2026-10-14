@@ -178,6 +178,33 @@ def test_project_identity_is_never_denied_and_a_personal_name_always_is():
     assert P.parse_denylist(f"text\t{owner}\n", "t").count == 1
 
 
+def test_an_owner_name_that_spells_the_org_stem_never_fires_inside_the_org():
+    """The owner's name, written with a separator, is denied (the test
+    above); with the separator gone it is the org's stem, so separator-free
+    matching found it inside `mikeng-io`, `mikeng.io` and the project email
+    and refused every `mikeng-io/<slug>` branch (2026-10-14, the first push
+    after the cutover). Project identity is blanked before matching, like a
+    keep-phrase; the name on its own still fires."""
+    stem = _ORG.removesuffix("-io")
+    owner = f"{stem[:4].title()} {stem[4:].title()}"
+    d = P.parse_denylist(f"text\t{owner}\n", "t")
+    assert d.count == 1
+    sc = P.Scanner(d, P.Allowlist(), set())
+    for project in (
+        f"see github.com/{_ORG}/nora\n",
+        f"branch {_ORG}/readme-note\n",
+        "mail iam@mikeng.io or visit mikeng.io\n",
+        f"the org stem {stem} on its own\n",
+    ):
+        assert sc.scan_text(project, "README.md").findings == [], project
+    assert [f.rule for f in sc.scan_text(f"signed, {owner}\n", "x.md").findings] == [
+        "denylist:text"
+    ]
+    assert [f.rule for f in sc.scan_text(f"{stem}FBID 1\n", "x.md").findings] == [
+        "denylist:text"
+    ]
+
+
 def test_denylist_rejects_unknown_kind():
     with pytest.raises(P.DenylistError):
         P.parse_denylist("secret\tx\n", "t")
