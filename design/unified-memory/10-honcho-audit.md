@@ -115,3 +115,23 @@ has a clean replacement. The two prefilled blocks go last, after a person's
 Persona has its Identity part beside the (already live) Character part, and after
 the blocks' live contribution is read. `feed` and
 `remember` go with them, because a write with no reader is not worth keeping.
+
+## 5. The rest of the client: every remaining use, mapped (2026-10-15)
+
+§4 maps what the model reads and writes. These are the uses §1 lists that §4
+did not, so that "Honcho out" (00 step 4) leaves nothing calling it:
+
+| use | site | after Honcho |
+|---|---|---|
+| `feed` of a newly mapped person's earlier messages (DEC-16) | `nora/app/adoption.py`, `nora/app/memory_backfill.py` | **deleted.** The Record already holds those messages, and the index projects them at ingestion ([25](25-memory-graph.md) §7). |
+| `feed` of Nora's own replies (no reader since DEC-292) | `nora/engagement/stages/feedback.py` | **deleted.** Her replies are Record rows and become index nodes like any message. |
+| the portal's memory page (`representation` + `peer_card`) | `nora/web/memory.py` | **re-pointed** to the caller's own Persona with the evidence behind each line (30 §7 «Seeing it»). The page stays user-scoped. |
+| `/status` Honcho health | `nora/web/status.py` | **replaced** by the index's own health: last projection, the embedding worker's backlog, unembedded node count. |
+| workspace routing (DEC-214) | `nora/app/memory_routing.py`, `WorkspaceRouter` | **deleted.** Scope is lineage over Nora's own unit and room columns ([25](25-memory-graph.md) §4 step 1); there is no external workspace to route to. `identity.toml`'s `[workspaces.*] honcho_workspace` binding goes with it. |
+| `carry-conclusions` | `nora/app/memory_carry.py` | **deleted.** It moved uncited conclusions between scopes, and those are dropped ([35](35-persona.md) §4). |
+| `detach-unit` (a unit leaving a workspace) | `nora/app/memory_detach.py` | **replaced, not dropped.** Its purpose, that a departed unit's speech stops shaping another unit's picture of a person, is now lineage: a Persona line and an index node carry their unit, and a read outside it never sees them. A unit leaving is a policy change, and the next index rebuild drops its rows from the other unit's scope. |
+| the per-call budget (`reserve`, `release`, `spent`, `at_ceiling`) | the memory client's guard | **deleted** with the client. Search becomes a local query; `ask_memory`'s model call is budgeted like any other tool. |
+| per-draw eval workspaces | `nora/subject/memory_workspace.py` | **deleted.** The eval sandbox is per-database already, and the index lives in that database. The 1,218 leftover `nora-eval*` workspaces on the Honcho server are deleted once. |
+| `conclude` in eval seeding | `nora/subject/knowledge.py` | **re-pointed** to seeding a Persona line. |
+
+With §4 and §5 together, every Honcho call site in `nora/` has a fate.

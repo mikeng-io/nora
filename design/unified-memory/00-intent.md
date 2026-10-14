@@ -72,6 +72,32 @@ retrieval layer exists means they are searchable from their first row.
 | [35](35-persona.md) | the operator's rulings: Persona composes identity, character and hypotheses; anyone may dispute; visibility; the one-off backfill |
 | [40](40-prior-art.md) | October 2026 prior art: 12 memory frameworks, the shipped products and companions, the multi-party research, and what is taken and refused |
 
+## The shape after Honcho (as ruled 2026-10-15)
+
+```
+ AUTHORED   doctrine, policy, identity.toml            (not indexed)
+    │
+ RECORD     messages · media readings · links · social items · disputes
+    │          ingestion writes the row and project()s its node + edges
+    ▼
+ ROLLUP     outings · stays · trips (episodes)   rhythm · ties (by key only)
+    │          each current build projects its episodes + `during` edges
+    ▼
+ NOTEBOOK   Register (notes, memos, events)   Persona (identity · character ·
+            hypotheses)   Lessons   Standing      each written by its one writer,
+            citations stored with the entry and projected as `cites`/`about` edges
+    │
+    ├──────────►  MEMORY INDEX  (derived, rebuildable, one per database)
+    │               memory_node: pointer + text + vector + time + scope
+    │               memory_edge: closed relation set, copied from the stores
+    │                    ▲
+    ▼                    │ one retrieval service: scope → seed → expand → rerank
+ VIEWS      push (Persona, Culture, open notes, Standing) · pre-fetch · ask_memory
+```
+
+Nothing sits beside the flow any more: Honcho's every use has a fate in
+[10](10-honcho-audit.md) §4 and §5.
+
 ## The proposed shape, in three parts
 
 **1. One index and graph, one verb** (detailed in [25](25-memory-graph.md),
