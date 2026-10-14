@@ -22,6 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
+from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEMO, MEMO_REVISION
 
 __all__ = ["SqlMemoStore"]
@@ -121,6 +122,7 @@ class SqlMemoStore:
                     written_at=now_ms, established_by=established_by, model=model,
                 ).returning(*MEMO_REVISION.c)
             )).one()
+            await memory_index.project(conn, "memo", str(memo_id))
         return Memo(
             id=memo_id, unit=unit, platform=platform, conversation_id=conversation_id,
             created_at=now_ms, head=_revision(row),
@@ -154,6 +156,7 @@ class SqlMemoStore:
                         written_at=now_ms, established_by=established_by, model=model,
                     ).returning(*MEMO_REVISION.c)
                 )).one()
+                await memory_index.project(conn, "memo", memo_id)
         except sa.exc.IntegrityError as exc:
             if "uq_memo_revision_seq" not in str(exc):
                 raise

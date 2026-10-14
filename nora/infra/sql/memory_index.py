@@ -18,16 +18,36 @@ counted `nora_memory_projection_total{outcome="queued"}`. It never undoes the
 store's own write (60 §2): a message the index missed is a search miss until
 the next pass; a message lost because its index row failed is a lost message.
 
-S1 projects messages and their attachments only. Nothing reads the index yet
-(S5), so it is written dark.
+S1 projects messages and their attachments; S2 the Notebook (notes, memos,
+lessons, events, culture and Character accounts) and the entity hubs they
+point at. Nothing reads the index yet (S5), so it is written dark.
 
 **What a node's text holds** (R-18, R-28): a message's body, and an
 attachment's reading. Never a sender id, a sender name, a raw envelope or a
 coordinate; the person and room are edges to hub nodes, keyed by the
-roster's `person_id` and `nora.domain.rollup.room_key`, and hub nodes carry no
-text until S2 names them. A failure's `last_error` is the exception's CLASS
+roster's `person_id` and `nora.domain.rollup.room_key`. Hub nodes carry no
+text, except a venue's place node, which carries the venue's name (never its
+address or coordinates). A failure's `last_error` is the exception's CLASS
 only: a driver error's message carries the statement's parameters, which here
 are message bodies.
+
+**What a Notebook node is.** One node per entry, keyed by the entry's own id
+(a culture key for a culture or Character account), holding its CURRENT
+head: re-projected on every revision, so a search never matches a body the
+entry no longer says. Retired and superseded entries keep their node, marked
+(25 §7). An entry's scope is the scope its own store reads it by: a note,
+memo, lesson or event its unit; a room's culture its room; a person's
+account its unit AND that person, so it is readable only where a room lists
+them (35 §3). A pre-C2b ROOM-keyed person account is never indexed
+(60 §0.8): it was written from one room's messages, and a unit scope would
+show it in every room of the unit.
+
+**`cites` comes only from a stored citations column** (25 §1): memos,
+lessons and Character revisions. A message id becomes an edge to its
+message node; a `rollup(...)` key and a `response:<n>` episode are skipped
+until S3 gives Rollup episodes their nodes. Notes and events store no
+citations (a note's sit in its body's brackets until step 4; an event's were
+never stored after `citation` was dropped in 0093), so they have none.
 
 A snapshot restore copies none of the four tables (`NOT_RESTORED`): the
 restored index is empty and reads `never` until a rebuild (60 §0.5, S4).
@@ -44,16 +64,28 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nora.domain.culture import split_culture_key
 from nora.domain.media_join import shas_in
 from nora.domain.memory_index import ProjectionOutcome
 from nora.domain.rollup import room_key
 from nora.infra.sql.schema import (
+    CULTURE,
+    CULTURE_REVISION,
+    EVENT_REVISION,
+    EVENT_RSVPS,
+    EVENTS,
+    LESSON,
+    LESSON_REVISION,
     MEDIA_OBJECTS,
+    MEMO,
+    MEMO_REVISION,
     MEMORY_EDGE,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     MESSAGE_EDIT,
     MESSAGES,
+    NOTE,
+    NOTE_REVISION,
 )
 
 __all__ = ["INDEXED_WRITES", "drop", "project", "reproject_media"]
@@ -62,12 +94,24 @@ log = logging.getLogger("nora.infra.sql.memory_index")
 
 #: Every table whose writes change what the index holds, and the node kind
 #: they change. `message_edit` is a message's text; `media_objects` is the
-#: reading every attachment of those bytes copies in. The architecture test
-#: reads this to find the write paths that must project.
+#: reading every attachment of those bytes copies in; a revision table is its
+#: entry's head; `event_rsvps` adds an `about` edge to its event. The
+#: architecture test reads this to find the write paths that must project.
 INDEXED_WRITES: dict[str, str] = {
     "messages": "message",
     "message_edit": "message",
     "media_objects": "media",
+    "note": "note",
+    "note_revision": "note",
+    "memo": "memo",
+    "memo_revision": "memo",
+    "lesson": "lesson",
+    "lesson_revision": "lesson",
+    "events": "event",
+    "event_revision": "event",
+    "event_rsvps": "event",
+    "culture": "character",
+    "culture_revision": "character",
 }
 
 _METRIC = "nora_memory_projection_total"
@@ -266,11 +310,7 @@ async def _project_message(conn: AsyncConnection, source_id: str) -> None:
             await conn.execute(sa.delete(MEMORY_EDGE).where(
                 MEMORY_EDGE.c.src_kind == kind, _among(MEMORY_EDGE.c.src_id, ids),
             ))
-    await conn.execute(pg_insert(MEMORY_EDGE).values([
-        {"src_kind": sk, "src_id": si, "rel": rel, "dst_kind": dk, "dst_id": di,
-         "provenance": prov}
-        for sk, si, rel, dk, di, prov in edges
-    ]))
+    await _insert_edges(conn, edges)
 
 
 async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
@@ -287,8 +327,269 @@ async def _reproject_media(conn: AsyncConnection, sha256: str) -> None:
     )
 
 
+# --- the Notebook ------------------------------------------------------------
+
+Edge = tuple[str, str, str, str, str, str]
+
+#: An event that will not happen, or was put out of the register, is history
+#: rather than a plan: `retired`, still found, never read as current.
+_EVENT_RETIRED = frozenset({"cancelled", "lapsed", "evicted"})
+
+
+def _text(*parts: str | None) -> str:
+    return "\n".join(p for p in parts if p)
+
+
+async def _room_of(conn: AsyncConnection, conversation_id: str) -> str | None:
+    """The room key of a bare `conversation_id`, from the Record (the stores
+    that keep only the id, `nora.infra.sql.event_evidence._room_key_of`'s
+    rule); `None` when the Record holds no message of it."""
+    platform = (await conn.execute(
+        sa.select(MESSAGES.c.platform)
+        .where(MESSAGES.c.conversation_id == conversation_id)
+        .order_by(MESSAGES.c.id.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return None if platform is None else room_key(platform, conversation_id)
+
+
+def _cites(kind: str, source_id: str, citations: Iterable[str], prov: str) -> list[Edge]:
+    """`cites` edges to the message nodes a citations column names. A
+    `rollup(...)` key or a `response:<n>` episode has no node until S3, so it
+    is skipped rather than pointed at a node that does not exist."""
+    ids = dict.fromkeys(c.strip() for c in citations if c.strip().isdigit())
+    return [(kind, source_id, "cites", "message", i, prov) for i in ids]
+
+
+async def _entry_edges(
+    conn: AsyncConnection, kind: str, source_id: str, edges: list[Edge],
+) -> None:
+    """Replace an entry's edges with `edges`, upserting the hubs they reach.
+
+    A `supersedes` edge belongs to the entry it points AT, because the
+    superseded entry's own column (`note.replaced_by`) is what records it: an
+    entry re-projecting drops its outgoing edges except `supersedes`, and the
+    `supersedes` edges into it, and writes both afresh from its row."""
+    for _, _, _, dk, di, _ in edges:
+        if dk in ("person", "room", "unit", "nora"):
+            await _hub(conn, dk, di, origin_room=di if dk == "room" else None)
+    await conn.execute(sa.delete(MEMORY_EDGE).where(sa.or_(
+        sa.and_(
+            MEMORY_EDGE.c.src_kind == kind, MEMORY_EDGE.c.src_id == source_id,
+            MEMORY_EDGE.c.rel != "supersedes",
+        ),
+        sa.and_(
+            MEMORY_EDGE.c.dst_kind == kind, MEMORY_EDGE.c.dst_id == source_id,
+            MEMORY_EDGE.c.rel == "supersedes",
+        ),
+    )))
+    await _insert_edges(conn, edges)
+
+
+async def _project_note(conn: AsyncConnection, source_id: str) -> None:
+    row = (await conn.execute(
+        sa.select(
+            NOTE.c.unit, NOTE.c.title, NOTE.c.established_in, NOTE.c.retired_at,
+            NOTE.c.replaced_by, NOTE.c.event_id, NOTE.c.exclude_persons,
+            NOTE_REVISION.c.body, NOTE_REVISION.c.written_at,
+        )
+        .select_from(NOTE.join(NOTE_REVISION, NOTE_REVISION.c.id == NOTE.c.head_revision_id))
+        .where(NOTE.c.id == source_id)
+    )).first()
+    if row is None:
+        await _drop(conn, "note", [source_id])
+        return
+    state = (
+        "live" if row.retired_at is None
+        else "superseded" if row.replaced_by is not None else "retired"
+    )
+    await _upsert_node(
+        conn, kind="note", source_id=source_id, unit=row.unit,
+        exclude_persons=row.exclude_persons, text=_text(row.title, row.body),
+        at_ms=row.written_at, state=state,
+    )
+    # `anchor_entity_ids` is the writer's free text, «named the way this group
+    # names them», never a resolved `person_id`: an `about` edge from it would
+    # name a person hub by a guess. It waits for identity resolution (60 §0.6).
+    edges: list[Edge] = []
+    room = await _room_of(conn, row.established_in)
+    if room is not None:
+        edges.append(("note", source_id, "in_room", "room", room, "note.established_in"))
+    if row.event_id is not None:
+        edges.append(("note", source_id, "tracks", "event", str(row.event_id), "note.event_id"))
+    if row.replaced_by is not None:
+        edges.append((
+            "note", str(row.replaced_by), "supersedes", "note", source_id, "note.replaced_by",
+        ))
+    await _entry_edges(conn, "note", source_id, edges)
+
+
+async def _project_memo(conn: AsyncConnection, source_id: str) -> None:
+    top = MEMO_REVISION.alias("top")
+    newest = sa.select(sa.func.max(top.c.seq)).where(top.c.memo_id == MEMO.c.id)
+    row = (await conn.execute(
+        sa.select(
+            MEMO.c.unit, MEMO.c.platform, MEMO.c.conversation_id, MEMO_REVISION.c.title,
+            MEMO_REVISION.c.body, MEMO_REVISION.c.citations, MEMO_REVISION.c.state,
+            MEMO_REVISION.c.written_at,
+        )
+        .select_from(MEMO.join(MEMO_REVISION, sa.and_(
+            MEMO_REVISION.c.memo_id == MEMO.c.id,
+            MEMO_REVISION.c.seq == newest.scalar_subquery(),
+        )))
+        .where(MEMO.c.id == source_id)
+    )).first()
+    if row is None:
+        await _drop(conn, "memo", [source_id])
+        return
+    await _upsert_node(
+        conn, kind="memo", source_id=source_id, unit=row.unit,
+        text=_text(row.title, row.body), at_ms=row.written_at,
+        state="live" if row.state == "kept" else "retired",
+    )
+    room = room_key(row.platform, row.conversation_id)
+    edges = [("memo", source_id, "in_room", "room", room, "memo.conversation_id")]
+    edges += _cites("memo", source_id, row.citations, "memo_revision.citations")
+    await _entry_edges(conn, "memo", source_id, edges)
+
+
+async def _project_lesson(conn: AsyncConnection, source_id: str) -> None:
+    row = (await conn.execute(
+        sa.select(
+            LESSON.c.unit, LESSON_REVISION.c.body, LESSON_REVISION.c.citations,
+            LESSON_REVISION.c.state, LESSON_REVISION.c.written_at,
+        )
+        .select_from(LESSON.join(LESSON_REVISION, LESSON_REVISION.c.lesson_id == LESSON.c.id))
+        .where(LESSON.c.id == source_id)
+        .order_by(LESSON_REVISION.c.seq.desc())
+        .limit(1)
+    )).first()
+    if row is None:
+        await _drop(conn, "lesson", [source_id])
+        return
+    await _upsert_node(
+        conn, kind="lesson", source_id=source_id, unit=row.unit, text=row.body,
+        at_ms=row.written_at, state="live" if row.state == "active" else "retired",
+    )
+    edges = _cites("lesson", source_id, row.citations, "lesson_revision.citations")
+    await _entry_edges(conn, "lesson", source_id, edges)
+
+
+async def _project_event(conn: AsyncConnection, source_id: str) -> None:
+    row = (await conn.execute(
+        sa.select(
+            EVENTS.c.conversation_id, EVENTS.c.unit_id, EVENTS.c.title, EVENTS.c.when,
+            EVENTS.c.created_at, EVENTS.c.status, EVENTS.c.people,
+            EVENTS.c.exclude_persons, EVENTS.c.venue_text, EVENTS.c.venue_name,
+            EVENTS.c.venue_place_id, EVENT_REVISION.c.body,
+        )
+        .select_from(EVENTS.outerjoin(
+            EVENT_REVISION, EVENT_REVISION.c.id == EVENTS.c.head_revision_id,
+        ))
+        .where(EVENTS.c.id == source_id)
+    )).first()
+    if row is None:
+        await _drop(conn, "event", [source_id])
+        return
+    room = await _room_of(conn, row.conversation_id)
+    # An event is read unit-wide (`SqlGatheringStore.search`). One written
+    # before `0074` carries no unit (`unit_id = ''`) and is found only in its
+    # own room, so it is scoped to that room; a room the Record cannot name
+    # keeps the bare id, which matches no room key and so no read.
+    unit = row.unit_id or None
+    origin_room = None if unit else (room or row.conversation_id)
+    at = row.when or row.created_at
+    # The venue by its NAME only: its address and map link locate it, and a
+    # node's text never carries a location (R-28).
+    venue = row.venue_name or row.venue_text
+    await _upsert_node(
+        conn, kind="event", source_id=source_id, unit=unit, origin_room=origin_room,
+        exclude_persons=row.exclude_persons, text=_text(row.title, row.body, venue),
+        at_ms=int(at.timestamp() * 1000),
+        state="retired" if row.status in _EVENT_RETIRED else "live",
+    )
+    edges: list[Edge] = []
+    if room is not None:
+        edges.append(("event", source_id, "in_room", "room", room, "events.conversation_id"))
+    rsvps = (await conn.execute(
+        sa.select(EVENT_RSVPS.c.person_id).distinct()
+        .where(EVENT_RSVPS.c.event_id == source_id)
+    )).scalars()
+    people = dict.fromkeys(row.people or ())
+    edges += [("event", source_id, "about", "person", p, "events.people") for p in people]
+    edges += [
+        ("event", source_id, "about", "person", p, "event_rsvps.person_id")
+        for p in rsvps if p not in people
+    ]
+    if row.venue_place_id:
+        await _named_hub(conn, "place", row.venue_place_id, text=row.venue_name)
+        edges.append((
+            "event", source_id, "about", "place", row.venue_place_id, "events.venue_place_id",
+        ))
+    await _entry_edges(conn, "event", source_id, edges)
+
+
+async def _is_a_room(conn: AsyncConnection, owner: str) -> bool:
+    """Whether `owner` is a room's `primary_id`: the Record holds a message
+    of it, or a room's own culture is keyed by it."""
+    found = await conn.execute(sa.select(sa.or_(
+        sa.exists().where(MESSAGES.c.conversation_id == owner),
+        sa.exists().where(CULTURE.c.key == owner),
+    )))
+    return bool(found.scalar())
+
+
+async def _project_character(conn: AsyncConnection, source_id: str) -> None:
+    form, owner, person = split_culture_key(source_id)
+    if form == "character" and await _is_a_room(conn, owner):
+        # A pre-C2b account keyed by a ROOM (60 §0.8, `character_key`): never
+        # indexed, and dropped if it ever was.
+        await _drop(conn, "character", [source_id])
+        return
+    row = (await conn.execute(
+        sa.select(
+            CULTURE_REVISION.c.body, CULTURE_REVISION.c.written_at,
+            CULTURE_REVISION.c.citations, CULTURE_REVISION.c.exclude_persons,
+        )
+        .select_from(CULTURE.join(
+            CULTURE_REVISION, CULTURE_REVISION.c.id == CULTURE.c.head_revision_id,
+        ))
+        .where(CULTURE.c.key == source_id)
+    )).first()
+    room = await _room_of(conn, owner) if form == "room" else None
+    if row is None or (form == "room" and room is None):
+        # No head, or a room the Record cannot name: no scope to give it.
+        await _drop(conn, "character", [source_id])
+        return
+    persons: list[str] = []
+    about: tuple[str, str]
+    if form == "room":
+        about = ("room", str(room))
+    elif form == "unit":
+        about = ("unit", owner)
+    elif form == "nora":
+        about = ("nora", "nora")
+    else:
+        # Readable only where a room lists the person (35 §3).
+        persons = [str(person)]
+        about = ("person", str(person))
+    await _upsert_node(
+        conn, kind="character", source_id=source_id,
+        unit=None if form == "room" else owner, origin_room=room, persons=persons,
+        exclude_persons=row.exclude_persons, text=row.body, at_ms=row.written_at,
+    )
+    edges: list[Edge] = [("character", source_id, "about", *about, "culture.key")]
+    edges += _cites("character", source_id, row.citations, "culture_revision.citations")
+    await _entry_edges(conn, "character", source_id, edges)
+
+
 _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
     "message": _project_message,
+    "note": _project_note,
+    "memo": _project_memo,
+    "lesson": _project_lesson,
+    "event": _project_event,
+    "character": _project_character,
 }
 
 
@@ -296,17 +597,23 @@ _PROJECTORS: dict[str, Callable[[AsyncConnection, str], Awaitable[None]]] = {
 
 
 async def _upsert_node(
-    conn: AsyncConnection, *, kind: str, source_id: str, origin_room: str | None,
-    text: str, at_ms: int | None, sha256: str | None = None,
+    conn: AsyncConnection, *, kind: str, source_id: str, text: str, at_ms: int | None,
+    origin_room: str | None = None, unit: str | None = None,
+    persons: Iterable[str] = (), exclude_persons: Iterable[str] | None = (),
+    sha256: str | None = None, state: str = "live",
 ) -> None:
     stmt = pg_insert(MEMORY_NODE).values(
-        kind=kind, source_id=source_id, origin_room=origin_room, text=text,
-        at_ms=at_ms, sha256=sha256, state="live",
+        kind=kind, source_id=source_id, unit=unit, origin_room=origin_room,
+        persons=list(persons), exclude_persons=list(exclude_persons or ()), text=text,
+        at_ms=at_ms, sha256=sha256, state=state,
     )
     await conn.execute(stmt.on_conflict_do_update(
         constraint="uq_memory_node_kind_source",
         set_={
+            "unit": stmt.excluded.unit,
             "origin_room": stmt.excluded.origin_room,
+            "persons": stmt.excluded.persons,
+            "exclude_persons": stmt.excluded.exclude_persons,
             "text": stmt.excluded.text,
             "at_ms": stmt.excluded.at_ms,
             "sha256": stmt.excluded.sha256,
@@ -316,16 +623,45 @@ async def _upsert_node(
     ))
 
 
+async def _insert_edges(conn: AsyncConnection, edges: list[Edge]) -> None:
+    if not edges:
+        return
+    await conn.execute(pg_insert(MEMORY_EDGE).values([
+        {"src_kind": sk, "src_id": si, "rel": rel, "dst_kind": dk, "dst_id": di,
+         "provenance": prov}
+        for sk, si, rel, dk, di, prov in dict.fromkeys(edges)
+    ]).on_conflict_do_nothing())
+
+
 async def _hub(
     conn: AsyncConnection, kind: str, source_id: str, *, origin_room: str | None = None,
 ) -> None:
-    """An entity node, written the first time an edge needs it. S2 gives it
-    its name; until then it is a bare endpoint with no text."""
+    """An entity node, written the first time an edge needs it: a bare
+    endpoint with no text, so it names nobody (a person's name is identity's,
+    which a pure projector cannot read, 60 §0.6)."""
     await conn.execute(
         pg_insert(MEMORY_NODE)
         .values(kind=kind, source_id=source_id, origin_room=origin_room, state="live")
         .on_conflict_do_nothing(constraint="uq_memory_node_kind_source")
     )
+
+
+async def _named_hub(
+    conn: AsyncConnection, kind: str, source_id: str, *, text: str | None,
+) -> None:
+    """A hub whose name its source states (a venue's place node, by the name
+    the place lookup resolved, never the group's own words for it: the hub
+    has no scope). The latest name wins; no name keeps the one it has."""
+    stmt = pg_insert(MEMORY_NODE).values(
+        kind=kind, source_id=source_id, text=text or "", state="live",
+    )
+    if not text:
+        await conn.execute(stmt.on_conflict_do_nothing(constraint="uq_memory_node_kind_source"))
+        return
+    await conn.execute(stmt.on_conflict_do_update(
+        constraint="uq_memory_node_kind_source",
+        set_={"text": stmt.excluded.text, "projected_at": sa.func.clock_timestamp()},
+    ))
 
 
 async def _drop(conn: AsyncConnection, kind: str, ids: list[str]) -> None:

@@ -357,6 +357,16 @@ _INPUT_EXEMPT = {
         "a NormalizedMessage for the trigger gate, which reads no model",
     ("nora/subject/knowledge.py", "know", "message"):
         "a NormalizedMessage the eval seeds into the record",
+    ("nora/infra/sql/memory_index.py", "_project_note", "text"):
+        "an index node's searchable text (60 §2), stored, never a model input",
+    ("nora/infra/sql/memory_index.py", "_project_memo", "text"):
+        "an index node's searchable text (60 §2), stored, never a model input",
+    ("nora/infra/sql/memory_index.py", "_project_lesson", "text"):
+        "an index node's searchable text (60 §2), stored, never a model input",
+    ("nora/infra/sql/memory_index.py", "_project_event", "text"):
+        "an index node's searchable text (60 §2), stored, never a model input",
+    ("nora/infra/sql/memory_index.py", "_project_character", "text"):
+        "an index node's searchable text (60 §2), stored, never a model input",
 }
 
 
