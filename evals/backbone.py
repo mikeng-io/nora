@@ -67,6 +67,7 @@ from evals.situation import (
     varied_transport,
 )
 from evals.subject_config import FULL_RESTORE_OVERRIDES, NO_GEOCODER_ENV
+from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.note_body import (
     ATTRIBUTED,
     SECTIONS,
@@ -518,14 +519,39 @@ def _tool_results(exporter: InMemorySpanExporter) -> tuple[tuple[str, str], ...]
     return tuple(out)
 
 
+#: Blocks `_shown_blocks` captures that `_judge_source` does NOT add as
+#: recall context: `group_transcript` is already the source's first part
+#: (`_shown_transcript`), and `tool_catalogue` describes her tools rather than
+#: holding any record of the group, so neither can support a recalled claim.
+_NOT_RECALL_CONTEXT = frozenset({"group_transcript", "tool_catalogue"})
+
+
 def _judge_source(transcript: str | None, results: tuple[tuple[str, str], ...],
-                  criteria: tuple[str, ...]) -> str | None:
+                  criteria: tuple[str, ...],
+                  blocks: tuple[tuple[str, str], ...] = ()) -> str | None:
     """The source data a judge grades against — `transcript` is what
     `_shown_transcript` read back off the turn's own call, i.e. the window
     her turn actually rendered (#459), never the whole seeded room. The tool
     results too when the case grades REPORTING (`tool_status_reported`),
-    since that criterion is about what the results were worth."""
+    since that criterion is about what the results were worth.
+
+    `blocks` (`_shown_blocks`) are the OTHER context blocks the same model
+    call carried — notes, events, standing, culture, character… — and are
+    read ONLY for `recall_grounded`: a recall grounded in a note she was shown
+    is not a fabrication, and a judge that never saw the note graded it as
+    one (2026-10-15, `j4_where_have_we_been_together_lately`). Every other
+    criterion's source is byte-for-byte what it was before `blocks` existed
+    (`test_the_judge_source_is_unchanged_for_every_other_criterion`). Never
+    the doctrine: that is the system prompt, not a block, and the judge is
+    handed it separately."""
     parts = [transcript] if transcript else []
+    if "recall_grounded" in criteria:
+        shown = [text for name, text in blocks if name not in _NOT_RECALL_CONTEXT]
+        if shown:
+            parts.append(
+                "The other context blocks her turn was shown, exactly as rendered "
+                "(each tag names its block):\n" + "\n\n".join(shown)
+            )
     # `recall_grounded` too: «I couldn't check» is graded against what her
     # tools actually returned, so the judge has to see an `unavailable`.
     if (
@@ -729,6 +755,93 @@ def _shown_transcript(
                 found = _GROUP_TRANSCRIPT.search(text)
                 if found:
                     return found.group(1)
+    return None
+
+
+#: A top-level context block as `ContextBlock.render()` writes it: an opening
+#: tag named for a registered block type, the body on its own lines, the
+#: matching close. Names come from `BLOCK_TYPES` (every block the prefill can
+#: serve), longest first so `person` never wins over `person_account`. Bodies
+#: are XML-escaped (R-13), so a member's text cannot close one early, and an
+#: element nested inside a block's body starts AFTER that block's own opening
+#: tag, so `finditer` consumes the outer block first and never yields the
+#: nested one on its own.
+_CONTEXT_BLOCK = re.compile(
+    r"<(" + "|".join(sorted(map(re.escape, BLOCK_TYPES), key=len, reverse=True))
+    + r")\b[^>]*>\n.*?\n</\1>",
+    re.DOTALL,
+)
+
+
+def _shown_blocks(
+    exporter: InMemorySpanExporter, *, agent: str | None = None,
+) -> tuple[tuple[str, str], ...] | None:
+    """`(block name, block as rendered)` for every context block in the message
+    that carried the turn's `<group_transcript>` — `build_prefill`'s volatile
+    message, the clock line plus `assemble(declared)` — read off the turn's own
+    first model call exactly as `_shown_transcript` reads the window, and
+    scoped by `agent` for the same reason (the relevance gate renders a
+    `<group_transcript>` of its own).
+
+    Anchored on the transcript block rather than on any message with a tag in
+    it: the tag message (`<tag_message>`, `<replying_to>`) is the judge's
+    `asked`, and the system prompt is the doctrine, which the judge gets on its
+    own. `None` when no call carried the window — the caller checks the names
+    against `_blocks_rendered` too, so a block the prefill built and this
+    parse missed is an ERROR rather than a judge grading without it.
+    """
+    spans = exporter.get_finished_spans()
+    if agent is not None:
+        spans = _under_agent(spans, agent)
+    chats = [
+        span for span in spans
+        if (span.attributes or {}).get("gen_ai.operation.name") == "chat"
+    ]
+    for span in sorted(chats, key=lambda s: s.start_time or 0):
+        values = [*(span.attributes or {}).values()]
+        for event in span.events or ():
+            values.extend((event.attributes or {}).values())
+        for raw in values:
+            if not isinstance(raw, str):
+                continue
+            for text in _texts_in(raw):
+                if _GROUP_TRANSCRIPT.search(text):
+                    return tuple(
+                        (found.group(1), found.group(0))
+                        for found in _CONTEXT_BLOCK.finditer(text)
+                    )
+    return None
+
+
+def _blocks_rendered(exporter: InMemorySpanExporter) -> tuple[str, ...] | None:
+    """`nora.prefill.blocks_rendered` off the first `agent.prefill` span — the
+    blocks `build_prefill` itself says it served with a body — or `None` when
+    no such span was captured (`_blocks_empty` has why `None` is its own fact)."""
+    for finished in exporter.get_finished_spans():
+        if finished.name == "agent.prefill":
+            raw = str((finished.attributes or {}).get("nora.prefill.blocks_rendered", ""))
+            return tuple(name for name in raw.split(",") if name)
+    return None
+
+
+def _recall_blocks_problem(
+    blocks: tuple[tuple[str, str], ...] | None, rendered: tuple[str, ...] | None,
+) -> str | None:
+    """Why a `recall_grounded` draw cannot be judged on what she was shown, or
+    `None` when it can. Fail closed: a judge that misses a block she read
+    grades a grounded recall as fabricated, which is the defect this exists
+    to end — so an uncaptured or incomplete set is an ERROR, never a blind
+    grade."""
+    if blocks is None:
+        return ("no context blocks were captured off the turn's own model call; "
+                "a recall_grounded draw is not judged without them")
+    if rendered is None:
+        return ("no agent.prefill span was captured, so the blocks she was shown "
+                "cannot be checked complete; a recall_grounded draw is not judged")
+    missing = sorted(set(rendered) - {name for name, _ in blocks})
+    if missing:
+        return (f"the prefill rendered {missing} but the turn's model call was not "
+                "read back with them; a recall_grounded draw is not judged without them")
     return None
 
 
@@ -1501,6 +1614,8 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
             # `agent=agent_name`: the turn's own render, never the relevance
             # gate's (`_shown_transcript`'s own docstring, #459 review).
             shown_transcript = _shown_transcript(exporter, agent=agent_name or None)
+            shown_blocks = _shown_blocks(exporter, agent=agent_name or None)
+            blocks_rendered = _blocks_rendered(exporter)
             shown = shown_where(exporter.get_finished_spans())
             _SPEND.append(spend)
             outcome = _check_the_corpus_assertions(nora_case, outcome, seeded.rows)
@@ -1552,6 +1667,10 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                             "judged (#459)"
                         ),
                     )
+                elif "recall_grounded" in tuple(md.get("criteria") or ()) and (
+                    blocks_problem := _recall_blocks_problem(shown_blocks, blocks_rendered)
+                ):
+                    outcome = dataclasses.replace(outcome, error=blocks_problem)
                 else:
                     from evals.rebuilt.grading import criteria_for
 
@@ -1575,7 +1694,11 @@ async def _drive_draw(case: Case, spec: Spec, *, memory_workspace: str) -> dict[
                         # `sandbox_from_snapshot` read back, unbounded — the
                         # room up to the instant, not what she was shown), and
                         # for a reporting case the tool results too.
-                        source=_judge_source(shown_transcript, tool_results, criteria),
+                        # `recall_grounded` reads every other block she
+                        # was shown too (`_judge_source`'s docstring).
+                        source=_judge_source(
+                            shown_transcript, tool_results, criteria, shown_blocks or (),
+                        ),
                         extra=criteria_for(criteria),
                         facts=judge_facts,
                     )

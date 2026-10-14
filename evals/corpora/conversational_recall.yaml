@@ -30,8 +30,14 @@
 # first 8 hex of its id, resolved uniquely at the instant); `evals.recall`
 # renders them FROM THE SANDBOX as they stood at the instant (a revision the
 # turn writes is not evidence) and refuses an id the sandbox did not hold. The
-# judge's source is the window she was shown plus her tool results, so an
-# `unavailable` she was handed is visible to it.
+# judge's source is everything her turn's own model call was shown, read back
+# off that call: the window, every other context block it rendered (notes,
+# events, standing, culture, character and the rest, by block name; never the
+# doctrine, which the judge gets separately) and her tool results, so a recall
+# grounded in a note she was shown reads as supported and an `unavailable` she
+# was handed is visible to it. A draw whose blocks cannot be read back, or are
+# read back short of what the prefill says it rendered, is an ERROR, not a
+# blind grade (`evals.backbone._recall_blocks_problem`).
 #
 # --- WHAT THE SANDBOX CANNOT DO, AND WHAT THE CASES THEREFORE ASK ------------
 #

@@ -312,11 +312,15 @@ PERSONALITY = Criterion(
 
 #: The conversational-recall corpus's axis (design/unified-memory/00-intent.md
 #: "Sequence" step 0, design/conversational-recall/30-measurement.md): whether
-#: what she claims to REMEMBER is supported. `no_overreach_or_fabrication` reads
-#: only the source data, which is the window she was shown and her tool results;
-#: a recall rests on records outside it (a picture's stored reading, a note's
-#: revisions, an outing), so the case names them and `evals.recall` renders them
-#: as the facts section, the same in both arms.
+#: what she claims to REMEMBER is supported. For this criterion the source data
+#: is the window she was shown, EVERY other context block her turn was shown
+#: (notes, events, standing, culture, character…, `evals.backbone._shown_blocks`)
+#: and her tool results; a recall rests on records outside it too (a picture's
+#: stored reading, a note's revisions, an outing), so the case names them and
+#: `evals.recall` renders them as the facts section, the same in both arms.
+#: A claim a shown block supports is supported: a judge that could not see the
+#: notes block called «the trip on the 17th is still there» fabricated while
+#: that note was open (2026-10-15, `j4_where_have_we_been_together_lately`).
 #:
 #: ONE deciding property, not a menu (the `CONTRADICTED` lesson). It carries the
 #: two failures 30-measurement keeps apart: a confident or invented recall, and
@@ -327,7 +331,11 @@ RECALL_GROUNDED = Criterion(
     "where a plan is, what the group ate or did, where they went) against the facts "
     "section, which holds the records this case is about as they stood when she was "
     "asked; ignore tone and length. Every recalled claim has to be supported by those "
-    "records or by the source data. A claim they contradict, a specific nothing in "
+    "records or by the source data, which holds everything she was shown this turn: "
+    "the conversation window, every other context block her turn rendered (notes, "
+    "events, standing and the rest, each named by its tag) and what her tools "
+    "returned. A claim any of those supports is supported, even when the facts "
+    "section does not name it. A claim they contradict, a specific nothing in "
     "them gives (a dish, a place, a time, a detail of a picture, who was there), or "
     "an earlier value given as the current one scores LOW, however confident or "
     "plausible it is. Not knowing is not a fault: when the answer is not in what she "
