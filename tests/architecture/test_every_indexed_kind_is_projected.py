@@ -13,7 +13,9 @@ with the reason it need not.
 A write is `insert(T)` / `pg_insert(T)` / `update(T)` / `delete(T)` (bare or
 `sa.`-qualified), `T.insert()` / `T.update()` / `T.delete()` on a table
 constant, or raw SQL naming the table (`INSERT INTO t`, `UPDATE t SET`,
-`DELETE FROM t`). A write whose table is a variable cannot be seen from
+`DELETE FROM t`); a docstring that quotes such SQL is prose, not a write
+(`nora/infra/sql/notes.py`'s module docstring quotes its compare-and-swap).
+A write whose table is a variable cannot be seen from
 source: `nora.infra.sql.snapshot_at.seed` copies `messages` that way, into a
 sandbox whose index is empty and reads `never` until a rebuild (60 §0.5).
 """
@@ -129,6 +131,21 @@ def _callee(call: ast.Call) -> str | None:
     return None
 
 
+def _docstrings(tree: ast.Module) -> set[int]:
+    """The `id`s of every docstring's constant in `tree`."""
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if (
+                body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                out.add(id(body[0].value))
+    return out
+
+
 def _written_tables(node: ast.AST, aliases: dict[str, str] | None = None) -> set[str]:
     """The tables one AST node writes, by every form the module docstring names."""
     aliases = aliases or {}
@@ -156,6 +173,7 @@ def _scan(tree: ast.Module) -> list[tuple[str, str, bool]]:
     """Every write in one module: (enclosing function, table, projects?). The
     enclosing function is the innermost `def`; `<module>` if none."""
     modules, functions = _projector_names(tree)
+    docstrings = _docstrings(tree)
     out: list[tuple[str, str, bool]] = []
 
     def visit(scope: ast.AST, name: str, inherited: dict[str, str]) -> None:
@@ -166,6 +184,8 @@ def _scan(tree: ast.Module) -> list[tuple[str, str, bool]]:
         for node in _own_nodes(scope):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 visit(node, node.name, aliases)
+            if id(node) in docstrings:
+                continue
             for table in _written_tables(node, aliases):
                 out.append((name, table, projects))
 
@@ -195,6 +215,19 @@ def test_the_scan_sees_the_known_projecting_writers() -> None:
         ("nora/infra/sql/audit.py", "prune_all"),
         ("nora/infra/sql/media_objects.py", "comprehend"),
         ("nora/infra/sql/media_descriptions.py", "remember"),
+        ("nora/infra/sql/notes.py", "_create_on_conn"),
+        ("nora/infra/sql/notes.py", "_append_on_conn"),
+        ("nora/infra/sql/notes.py", "supersede"),
+        ("nora/infra/sql/notes.py", "merge_into"),
+        ("nora/infra/sql/memo.py", "create"),
+        ("nora/infra/sql/memo.py", "append"),
+        ("nora/infra/sql/lessons.py", "create"),
+        ("nora/infra/sql/lessons.py", "_append"),
+        ("nora/infra/sql/gatherings.py", "create"),
+        ("nora/infra/sql/gatherings.py", "update"),
+        ("nora/infra/sql/gatherings.py", "add_rsvp"),
+        ("nora/infra/sql/culture.py", "append"),
+        ("nora/subject/knowledge.py", "_seed_note_with_id"),
     } <= sites
 
 
@@ -257,6 +290,12 @@ def test_each_write_form_is_recognised() -> None:
         ("f", "messages", False),
     ]
     assert _scan(ast.parse("def f():\n    T = MESSAGES\n    sa.delete(T)\n")) == [
+        ("f", "messages", False),
+    ]
+    # A docstring quoting SQL is prose; the same string as a statement is not.
+    docstrings = '"""UPDATE messages SET x"""\ndef f():\n    "DELETE FROM messages"\n'
+    assert _scan(ast.parse(docstrings)) == []
+    assert _scan(ast.parse("def f():\n    x = 1\n    'DELETE FROM messages'\n")) == [
         ("f", "messages", False),
     ]
 

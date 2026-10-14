@@ -45,6 +45,7 @@ from nora.domain.gatherings import (
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
+from nora.infra.sql import memory_index
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
@@ -225,6 +226,7 @@ class SqlGatheringStore:
                 await conn.execute(
                     sa.insert(EVENT_REVISION).values(**_revision_values(revision)),
                 )
+                await memory_index.project(conn, "event", str(row.id))
         except IntegrityError as exc:
             if getattr(exc.orig, "sqlstate", None) != _PG_UNIQUE_VIOLATION:
                 raise
@@ -306,6 +308,7 @@ class SqlGatheringStore:
             await conn.execute(
                 sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
             )
+            await memory_index.project(conn, "event", str(row.id))
         return _replace(row, head_revision_id=revision.id)
 
     async def add_rsvp(self, rsvp: RSVP) -> None:
@@ -321,7 +324,17 @@ class SqlGatheringStore:
             recorded_at=rsvp.responded_at,
         )
         async with self._engine.begin() as conn:
+            # Locked as `update` locks it: the projection below re-reads the
+            # whole event row, and without the lock a concurrent `update`
+            # committing between that read and this commit would have its
+            # node overwritten with the older values (a newly added
+            # `exclude_persons` undone in the index).
+            await conn.execute(
+                sa.select(EVENTS.c.id).where(EVENTS.c.id == rsvp.event_id).with_for_update(),
+            )
             await conn.execute(stmt)
+            # The person who answered is someone the event is about.
+            await memory_index.project(conn, "event", str(rsvp.event_id))
 
     async def rsvps_for(self, event_id: UUID) -> Sequence[RSVP]:
         # DISTINCT ON the newest row per person (Postgres extension; both

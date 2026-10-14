@@ -37,7 +37,7 @@ from nora.domain.models import NormalizedMessage
 from nora.domain.notes import Note
 from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
-from nora.infra.sql import create_sql_engine
+from nora.infra.sql import create_sql_engine, memory_index
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.notes import SqlNoteStore
@@ -683,6 +683,9 @@ async def _seed_note_with_id(
             parent_revision_id=None, written_at=written_at,
             established_by=established_by, instruction_sha256=None, model=None,
         ))
+        # The sandbox's index holds what the case seeds, as production's would
+        # (60 §0.9).
+        await memory_index.project(conn, "note", note.id)
 
 
 async def know(

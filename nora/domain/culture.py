@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from math import ceil
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from nora.domain.lineage import Lineage
 
@@ -52,6 +52,7 @@ __all__ = [
     "REVISE_REFUSALS",
     "Citable",
     "Culture",
+    "CultureKeyForm",
     "CultureProposal",
     "CultureRevision",
     "Episode",
@@ -60,6 +61,7 @@ __all__ = [
     "character_key",
     "check_revision",
     "nora_character_key",
+    "split_culture_key",
     "unit_culture_key",
 ]
 
@@ -463,6 +465,9 @@ def check_revision(
     return None
 
 
+_CHARACTER_MARK = "#character:"
+
+
 def character_key(unit: str, person_id: str) -> str:
     """The `culture` key one person's account is stored under, in `unit`
     (design/self-growth/10 §3, C2b): ONE account per (unit, person), written by
@@ -482,7 +487,7 @@ def character_key(unit: str, person_id: str) -> str:
     wakes on the first tick (a key never run has an infinitely old watermark
     and a person with an old account has posted).
     """
-    return f"{unit}#character:{person_id}"
+    return f"{unit}{_CHARACTER_MARK}{person_id}"
 
 
 def unit_culture_key(unit: str) -> str:
@@ -498,6 +503,29 @@ def nora_character_key(unit: str) -> str:
     §4, C3b): what she is like HERE, as its people have met her. Per unit,
     never per room. No room, person or unit key ends in `#nora`."""
     return f"{unit}#nora"
+
+
+#: What a `culture` key names, read back by `split_culture_key`.
+CultureKeyForm = Literal["room", "unit", "nora", "character"]
+
+
+def split_culture_key(key: str) -> tuple[CultureKeyForm, str, str | None]:
+    """The inverse of the three builders above: `(form, owner, person)`.
+
+    `owner` is the unit for `unit`, `nora` and `character`, and the room's bare
+    `primary_id` for `room`; `person` is set for `character` only. The split
+    cannot tell a unit-keyed person account from a pre-C2b ROOM-keyed one
+    (`<room primary_id>#character:<p>`, `character_key`'s docstring): both
+    read `character` here, and a caller that must not widen the old one's
+    disclosure checks `owner` against the Record's rooms itself."""
+    if _CHARACTER_MARK in key:
+        owner, _, person = key.partition(_CHARACTER_MARK)
+        return "character", owner, person
+    if key.endswith("#unit"):
+        return "unit", key.removesuffix("#unit"), None
+    if key.endswith("#nora"):
+        return "nora", key.removesuffix("#nora"), None
+    return "room", key, None
 
 
 @dataclass(frozen=True, slots=True)
