@@ -74,6 +74,10 @@ from nora.domain.facts import (
     FACT_TERM_CEILING_CHARS,
 )
 from nora.domain.lineage import CONFIDENCES, REASONING_MODES
+from nora.domain.memory_index import HUB_KINDS as MEMORY_HUB_KINDS
+from nora.domain.memory_index import NODE_KINDS as MEMORY_NODE_KINDS
+from nora.domain.memory_index import NODE_STATES as MEMORY_NODE_STATES
+from nora.domain.memory_index import RELATIONS as MEMORY_RELATIONS
 from nora.domain.notes import (
     MERGE_REASON_MAX_CHARS,
     NOTE_BODY_CEILING_CHARS,
@@ -4739,4 +4743,112 @@ MEMO_REVISION = sa.Table(
 # memo at the same moment cannot both take the next `seq`.
 UQ_MEMO_REVISION_SEQ = sa.Index(
     "uq_memo_revision_seq", MEMO_REVISION.c.memo_id, MEMO_REVISION.c.seq, unique=True,
+)
+
+# The memory index (migration `0105_memory_index`, design/unified-memory/
+# 60-build-step-3.md §1, 25-memory-graph.md): a PROJECTION of every store into
+# one node table and one edge table, written only by
+# `nora.infra.sql.memory_index` and rebuilt, never restored (`NOT_RESTORED`).
+# The closed vocabularies are `nora.domain.memory_index`'s; the migration spells
+# them out, and the parity gate compares the two.
+MEMORY_NODE = sa.Table(
+    "memory_node",
+    METADATA,
+    sa.Column("id", sa.BigInteger, sa.Identity(always=False), primary_key=True),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column("unit", sa.Text),
+    sa.Column("origin_room", sa.Text),
+    sa.Column("persons", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'::text[]")),
+    sa.Column("exclude_persons", pg.ARRAY(sa.Text), nullable=False,
+              server_default=sa.text("'{}'::text[]")),
+    sa.Column("lineage", pg.JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    sa.Column("sha256", sa.Text),
+    sa.Column("text", sa.Text, nullable=False, server_default=sa.text("''")),
+    sa.Column("at_ms", sa.BigInteger),
+    sa.Column("state", sa.Text, nullable=False, server_default=sa.text("'live'")),
+    sa.Column(
+        "projected_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
+    sa.UniqueConstraint("kind", "source_id", name="uq_memory_node_kind_source"),
+    sa.CheckConstraint(f"kind IN ({_in_list(MEMORY_NODE_KINDS)})", name="ck_memory_node_kind"),
+    sa.CheckConstraint(
+        f"state IN ({_in_list(MEMORY_NODE_STATES)})", name="ck_memory_node_state",
+    ),
+    # 60 §1: a node that is not an entity carries a scope, or no read could
+    # ever place it and it would be either invisible or visible everywhere.
+    sa.CheckConstraint(
+        f"kind IN ({_in_list(MEMORY_HUB_KINDS)}) "
+        "OR unit IS NOT NULL OR origin_room IS NOT NULL "
+        "OR cardinality(persons) > 0",
+        name="ck_memory_node_has_a_scope",
+    ),
+)
+IDX_MEMORY_NODE_UNIT = sa.Index("idx_memory_node_unit", MEMORY_NODE.c.unit)
+IDX_MEMORY_NODE_ORIGIN_ROOM = sa.Index("idx_memory_node_origin_room", MEMORY_NODE.c.origin_room)
+#: `reproject_media`'s seek: a reading lands by `sha256`, and every attachment
+#: of those bytes takes it.
+IDX_MEMORY_NODE_SHA256 = sa.Index("idx_memory_node_sha256", MEMORY_NODE.c.sha256)
+#: The lexical seed (25 §4 step 2), for `idx_messages_body_trgm`'s reason.
+IDX_MEMORY_NODE_TEXT_TRGM = sa.Index(
+    "idx_memory_node_text_trgm", MEMORY_NODE.c.text,
+    postgresql_using="gin", postgresql_ops={"text": "gin_trgm_ops"},
+)
+
+#: Ends named by `(kind, source_id)`, so an edge outlives a rebuild that
+#: renumbers nodes; no foreign key, because every hop joins `memory_node` and an
+#: edge whose end is gone drops itself (60 §1).
+MEMORY_EDGE = sa.Table(
+    "memory_edge",
+    METADATA,
+    sa.Column("src_kind", sa.Text, nullable=False),
+    sa.Column("src_id", sa.Text, nullable=False),
+    sa.Column("rel", sa.Text, nullable=False),
+    sa.Column("dst_kind", sa.Text, nullable=False),
+    sa.Column("dst_id", sa.Text, nullable=False),
+    sa.Column("provenance", sa.Text, nullable=False),
+    sa.Column(
+        "created_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
+    sa.PrimaryKeyConstraint(
+        "src_kind", "src_id", "rel", "dst_kind", "dst_id", name="memory_edge_pkey",
+    ),
+    sa.CheckConstraint(f"rel IN ({_in_list(MEMORY_RELATIONS)})", name="ck_memory_edge_rel"),
+)
+IDX_MEMORY_EDGE_DST = sa.Index(
+    "idx_memory_edge_dst", MEMORY_EDGE.c.dst_kind, MEMORY_EDGE.c.dst_id,
+)
+
+#: A projection that failed inside its store's write (60 §2): the write stood,
+#: and the source waits here for the next pass.
+MEMORY_PROJECTION_QUEUE = sa.Table(
+    "memory_projection_queue",
+    METADATA,
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("source_id", sa.Text, nullable=False),
+    sa.Column(
+        "first_failed_at", sa.DateTime(timezone=True), nullable=False,
+        server_default=sa.text("clock_timestamp()"),
+    ),
+    sa.Column("attempts", sa.Integer, nullable=False, server_default=sa.text("1")),
+    sa.Column("last_error", sa.Text, nullable=False),
+    sa.PrimaryKeyConstraint("kind", "source_id", name="memory_projection_queue_pkey"),
+)
+
+#: One row (`id` is a true-only key), seeded `never` by the migration.
+MEMORY_INDEX_STATE = sa.Table(
+    "memory_index_state",
+    METADATA,
+    sa.Column("id", sa.Boolean, primary_key=True, server_default=sa.text("true")),
+    sa.Column("status", sa.Text, nullable=False),
+    sa.Column("started_at", sa.DateTime(timezone=True)),
+    sa.Column("finished_at", sa.DateTime(timezone=True)),
+    sa.Column("unprojected", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.CheckConstraint("id", name="ck_memory_index_state_one_row"),
+    sa.CheckConstraint(
+        "status IN ('never', 'building', 'complete')", name="ck_memory_index_state_status",
+    ),
 )

@@ -28,7 +28,9 @@ or when the migrated database's triggers disagree with `HISTORY_TABLES`:
 - **`NOT_RESTORED`** — not state a restore needs: operator and trace logs no
   turn reads, deprecated tiers (tables kept, code gone), and the history
   and revision tables themselves (the snapshot copies those on their own
-  terms).
+  terms), and the memory index, which is rebuilt from the restored stores.
+  A table nothing restores serves no as-of read, so it may change in place
+  without a history.
 
 `as_of` is the read: the version of each row held at T.
 """
@@ -228,6 +230,13 @@ NOT_RESTORED: dict[str, str] = {
     "presence_corridor_speed": (
         "retired writer (design/27 §4.4 M2): nothing writes or reads it; table kept"
     ),
+    # 0105_memory_index (design/unified-memory/60-build-step-3.md §1): a
+    # projection of the stores above, so a restore leaves it empty and
+    # `memory_index_state` reads `never` until a rebuild (60 §0.5).
+    "memory_node": "derived; nora memory rebuild",
+    "memory_edge": "derived; nora memory rebuild",
+    "memory_projection_queue": "derived; nora memory rebuild",
+    "memory_index_state": "derived; nora memory rebuild",
 }
 
 

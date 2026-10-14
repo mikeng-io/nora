@@ -41,6 +41,7 @@ from nora.domain.models import (
     parse_mentions_json,
 )
 from nora.domain.ports import RoomActivity
+from nora.infra.sql import memory_index
 from nora.infra.sql.migrations_runner import head_revision
 from nora.infra.sql.schema import (
     MESSAGE_DELETE,
@@ -211,8 +212,12 @@ class SqlRecordStore:
         # read back from the statement itself. `scalar_one` also asserts exactly
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.scalar_one())
+            row_id = int((await conn.execute(stmt)).scalar_one())
+            # Its node, attachments and edges in the same transaction
+            # (design/unified-memory/60-build-step-3.md S1); a failure queues
+            # the projection and never costs the message.
+            await memory_index.project(conn, "message", row_id, metrics=self._metrics)
+        return row_id
 
     async def recent(self, *, conversation_id: str, limit: int) -> list[TranscriptRow]:
         """Newest `limit` rows for one conversation, returned oldest-first.
@@ -513,6 +518,8 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+            # The node's text is the newest edit's (25 §7).
+            await memory_index.project(conn, "message", message_id, metrics=self._metrics)
 
     async def append_reaction(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
@@ -557,6 +564,13 @@ class SqlRecordStore:
                 .where(MESSAGES.c.id == message_id, MESSAGES.c.hidden_at.is_(None))
                 .values(hidden_at=now_ms)
             )
+            if result.rowcount:
+                # A hidden message is never a hit: its node, its attachments'
+                # nodes and their edges go in the hide's own write (15 «Three
+                # rules»).
+                await memory_index.project(
+                    conn, "message", message_id, metrics=self._metrics,
+                )
         return bool(result.rowcount)
 
     async def aclose(self) -> None:
@@ -595,6 +609,11 @@ class SqlRecordStore:
         stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(**values)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+            # Only the platform's timestamp is indexed (the node's `at_ms`);
+            # the delivery status is not, so a status-only close projects
+            # nothing.
+            if ts is not None:
+                await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
         """Audited rows still attributed to nobody, OLDEST FIRST.
@@ -666,6 +685,8 @@ class SqlRecordStore:
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+            # The attribution is the `authored_by` and `shared_by` edges.
+            await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
     async def room_activity(self, *, conversation_id: str, since_ts: int) -> RoomActivity:
         """See `nora.domain.ports.RecordStore.room_activity`.
@@ -746,7 +767,12 @@ class SqlRecordStore:
             .label("rank"),
         ).subquery()
         doomed = sa.select(ranked.c.id).where(ranked.c.rank > keep)
-        stmt = sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed))
+        stmt = (
+            sa.delete(MESSAGES).where(MESSAGES.c.id.in_(doomed)).returning(MESSAGES.c.id)
+        )
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return int(result.rowcount or 0)
+            pruned = list((await conn.execute(stmt)).scalars())
+            # The delete path 25 §7 missed (60 §0.5): a pruned message's node
+            # goes with it.
+            await memory_index.drop(conn, "message", pruned, metrics=self._metrics)
+        return len(pruned)

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaObject
 from nora.domain.ports import MediaLookup
+from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEDIA_OBJECTS
 
 log = logging.getLogger("nora.infra.sql.media_objects")
@@ -34,8 +35,11 @@ log = logging.getLogger("nora.infra.sql.media_objects")
 class SqlMediaObjectStore:
     """Satisfies `nora.domain.ports.MediaObjectStore`."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, metrics: Any = None) -> None:
+        """`metrics` is injected for `SqlRecordStore.__init__`'s reason; it
+        counts the memory index's projection of a reading."""
         self._engine = engine
+        self._metrics = metrics
 
     async def save(self, *, obj: MediaObject) -> bool:
         insert = pg_insert(MEDIA_OBJECTS).values(
@@ -85,6 +89,9 @@ class SqlMediaObjectStore:
         try:
             async with self._engine.begin() as conn:
                 await conn.execute(stmt)
+                # A generated or fetched object's insert can carry a reading;
+                # every attachment already holding these bytes takes it.
+                await memory_index.reproject_media(conn, obj.sha256, metrics=self._metrics)
             return True
         except Exception:
             log.exception("media_objects save failed; media stays deliverable")
@@ -177,6 +184,10 @@ class SqlMediaObjectStore:
         try:
             async with self._engine.begin() as conn:
                 await conn.execute(stmt)
+                # A reading landing after its message: every attachment of
+                # these bytes takes it (design/unified-memory/25 §7). A failure
+                # is queued, never the read lost.
+                await memory_index.reproject_media(conn, sha256, metrics=self._metrics)
             return True
         except Exception:
             log.exception("media_objects comprehend failed; the read is not cached")

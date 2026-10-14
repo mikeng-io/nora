@@ -205,7 +205,7 @@ class MediaJoin:
         # sha256 -> handle, from `media_json` ONLY (see the module docstring).
         wanted: dict[str, str] = {}
         for row in rows:
-            for sha in _shas(row.media_json):
+            for sha in shas_in(row.media_json):
                 wanted[sha] = sha[:HANDLE_CHARS]
         if not wanted:
             return tuple(rows)
@@ -321,8 +321,10 @@ class MediaJoin:
             "nora_media_join_total", path=path, status=status, reason=reason)
 
 
-def _shas(media_json: str | None) -> tuple[str, ...]:
-    """Every sha256 in one row's `messages.media_json`, or `()`.
+def shas_in(media_json: str | None) -> tuple[str, ...]:
+    """Every sha256 in one row's `messages.media_json`, or `()`. Public
+    because the memory index reads a message's attachments with it too
+    (`nora.infra.sql.memory_index`), so the two cannot parse the column apart.
 
     Total, like everything else on this path: a row whose JSON does not decode
     contributes nothing rather than raising into a turn. The column is written

@@ -147,6 +147,13 @@ _NOT_A_RAW_READER = {
     "nora/infra/sql/rollups.py": (
         "matches a member's body against her name and keeps a boolean, renders no transcript"
     ),
+    # design/unified-memory/60-build-step-3.md S1: the memory index copies a
+    # message's body into its node and joins its attachments' readings into
+    # their own nodes itself; no model sees what it reads until S5's service.
+    "nora/infra/sql/memory_index.py": (
+        "projects a message into its index node and joins its readings itself, "
+        "renders no transcript"
+    ),
     # `idx_messages_body_trgm` names `MESSAGES.c.body` in an index; it reads
     # nothing.
     "nora/infra/sql/schema.py": "declares an index over the column, reads nothing",
